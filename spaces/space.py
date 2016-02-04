@@ -4,7 +4,7 @@ import numpy as np
 __all__ = ['Space']
 
 
-class Space:
+class Space(object):
     def __init__(self, shape, log=logging.getLogger()):
         self.shape = shape
         self.log = log

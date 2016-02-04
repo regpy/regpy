@@ -4,7 +4,7 @@ import numpy as np
 __all__ = ['Operator', 'LinearOperator']
 
 
-class Operator:
+class Operator(object):
     def __init__(self, domx, domy=None, log=logging.getLogger()):
         self.domx = domx
         self.domy = domy or domx

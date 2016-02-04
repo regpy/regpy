@@ -1,7 +1,7 @@
 import logging
 
 
-class Solver:
+class Solver(object):
     def __init__(self, log=logging.getLogger()):
         self.log = log
 

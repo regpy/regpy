@@ -14,7 +14,7 @@ class Landweber(Solver):
         self.op = op
         self.data = data
         self.setx(init)
-        self.stepsize = stepsize or (1 / self.deriv.norm())
+        self.stepsize = stepsize or 1 / self.deriv.norm()
 
     def setx(self, x):
         self.x = x
@@ -24,11 +24,13 @@ class Landweber(Solver):
     def next(self):
         residual = self.y - self.data
         gy_residual = self.op.domy.gram(residual)
-        self.x -= self.stepsize * self.op.domx.gram_inv(self.deriv.adjoint(gy_residual))
+        self.x -= self.stepsize * self.op.domx.gram_inv(
+            self.deriv.adjoint(gy_residual))
         self.setx(self.x)
 
         if log.isEnabledFor(logging.INFO):
-            norm_residual = np.sqrt(np.real(np.vdot(residual[:], gy_residual[:])))
+            norm_residual = np.sqrt(np.real(
+                np.vdot(residual[:], gy_residual[:])))
             log.info('|residual| = {}'.format(norm_residual))
 
         return True

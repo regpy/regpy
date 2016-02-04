@@ -17,7 +17,8 @@ class Discrepancy(StopRule):
         self.needs_y = True
 
     def __repr__(self):
-        return 'Discrepancy(noiselevel={}, tau={})'.format(self.noiselevel, self.tau)
+        return 'Discrepancy(noiselevel={}, tau={})'.format(
+            self.noiselevel, self.tau)
 
     def stop(self, x, y=None):
         if y is None:
@@ -25,8 +26,9 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.op.domy.norm(residual)
         if discrepancy < self.noiselevel * self.tau:
-            self.log.info('Rule triggered: discrepancy = {}, noiselevel = {}, tau = {}'
-                          .format(discrepancy, self.noiselevel, self.tau))
+            self.log.info(
+                'Rule triggered: discrepancy = {}, noiselevel = {}, tau = {}'
+                .format(discrepancy, self.noiselevel, self.tau))
             self.x = x
             return True
         return False

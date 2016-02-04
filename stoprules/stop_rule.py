@@ -1,7 +1,7 @@
 import logging
 
 
-class StopRule:
+class StopRule(object):
     def __init__(self, log=logging.getLogger()):
         self.log = log
         self.needs_y = False
