@@ -15,6 +15,13 @@ class StopRule(object):
     ----------
     log : :class:`logging.Logger`
         The logger in use.
+    x : array or `None`
+        The final solution. Stopping rules may decide to yield a result
+        different from the last iterate. Therefore, after :meth:`stop` has
+        triggered, it should store the solution in this attribute.
+
+        Callers should not assume this attribute to contain any useful
+        information before :meth:`stop` has triggered.
     needs_y : bool
         Should be set to `True` by child classes if the stopping rule needs the
         operator value at the current point. This can be used by callers to pass
@@ -25,6 +32,7 @@ class StopRule(object):
 
     def __init__(self, log=logging.getLogger()):
         self.log = log
+        self.x = None
         self.needs_y = False
 
     def stop(self, x, y=None):
@@ -48,22 +56,6 @@ class StopRule(object):
 
         """
         raise NotImplementedError()
-
-    def select(self):
-        """Select the final solution after iterations have been stopped.
-
-        Stopping rules may decide to yield a result different from the last
-        iterate. Therefore, after :meth:`stop` has triggered, this method needs
-        to be called to obtain the solution.
-
-        Returns
-        -------
-        array
-            The final solution. The default implementation returns the attribute
-            :attr:`x`, which child classes should set appropriately.
-
-        """
-        return self.x
 
 
 from .combine_rules import CombineRules  # NOQA

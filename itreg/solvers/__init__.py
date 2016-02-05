@@ -63,7 +63,7 @@ class Solver(object):
                     stop = stoprule.stop(self.x)
                 if stop:
                     self.log.info('Stopping rule triggered.')
-                    return stoprule.select()
+                    return stoprule.x
             if not self.next():
                 self.log.info('Solver converged.')
                 return self.x

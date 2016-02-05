@@ -28,7 +28,8 @@ class CountIterations(StopRule):
 
     def stop(self, x, y=None):
         self.iteration += 1
-        if self.iteration > self.max_iterations:
-            self.x = x
-            return True
-        return False
+        self.log.info(
+            'iteration = {} / {}'
+            .format(self.iteration, self.max_iterations))
+        self.x = x
+        return self.iteration >= self.max_iterations

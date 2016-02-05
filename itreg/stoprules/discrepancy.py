@@ -30,6 +30,7 @@ class Discrepancy(StopRule):
         The multiplier; must be larger than 1. Defaults to 2.
 
     """
+
     def __init__(self, op, data, noiselevel, tau=2):
         super().__init__(log)
         self.op = op
@@ -43,14 +44,12 @@ class Discrepancy(StopRule):
             self.noiselevel, self.tau)
 
     def stop(self, x, y=None):
+        self.x = x
         if y is None:
             y = self.op(x)
         residual = self.data - y
         discrepancy = self.op.domy.norm(residual)
-        if discrepancy < self.noiselevel * self.tau:
-            self.log.info(
-                'Rule triggered: discrepancy = {}, noiselevel = {}, tau = {}'
-                .format(discrepancy, self.noiselevel, self.tau))
-            self.x = x
-            return True
-        return False
+        self.log.info(
+            'discrepancy = {}, noiselevel = {}, tau = {}'
+            .format(discrepancy, self.noiselevel, self.tau))
+        return discrepancy < self.noiselevel * self.tau
