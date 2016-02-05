@@ -15,7 +15,7 @@ class Solver(object):
     ----------
     x : array
         The current iterate.
-    y : array, optional
+    y : array or `None`
         The value at the current iterate. May be needed by stopping rules, but
         callers should handle the case when it is not available.
     log : :class:`logging.Logger`
@@ -25,6 +25,8 @@ class Solver(object):
 
     def __init__(self, log=logging.getLogger()):
         self.log = log
+        self.x = None
+        self.y = None
 
     def next(self):
         """Perform a single iteration.
@@ -41,12 +43,25 @@ class Solver(object):
         """
         raise NotImplementedError()
 
+    def __iter__(self):
+        """Return and iterator on the iterates of the solver.
+
+        Yields
+        ------
+        tuple of array
+            The (x, y) pair of the current iteration. Callers should not expect
+            arrays from previous iterations to be valid, as the solver might
+            modify them in-place.
+
+        """
+        while self.next():
+            yield (self.x, self.y)
+
     def run(self, stoprule=None):
         """Run the solver with the given stopping rule.
 
         This is convenience method that implements a simple loop running the
-        solver using its :meth:`next` method until it either converges or the
-        stopping rule triggers
+        solver until it either converges or the stopping rule triggers.
 
         Parameters
         ----------
@@ -55,18 +70,12 @@ class Solver(object):
             based on the return value of :meth:`next`.
 
         """
-        while True:
-            if stoprule is not None:
-                if hasattr(self, 'y'):
-                    stop = stoprule.stop(self.x, self.y)
-                else:
-                    stop = stoprule.stop(self.x)
-                if stop:
-                    self.log.info('Stopping rule triggered.')
-                    return stoprule.x
-            if not self.next():
-                self.log.info('Solver converged.')
-                return self.x
+        for x, y in self:
+            if stoprule is not None and stoprule.stop(x, y):
+                self.log.info('Stopping rule triggered.')
+                return stoprule.x
+        self.log.info('Solver converged.')
+        return x
 
 
 from .landweber import Landweber  # NOQA
