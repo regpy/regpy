@@ -4,8 +4,6 @@ from . import StopRule
 
 __all__ = ['CombineRules']
 
-log = logging.getLogger(__name__)
-
 
 class CombineRules(StopRule):
     """Combine several stopping rules into one.
@@ -35,7 +33,7 @@ class CombineRules(StopRule):
     """
 
     def __init__(self, rules, op=None):
-        super().__init__(log)
+        super().__init__(logging.getLogger(__name__))
         self.rules = rules
         self.needs_y = any([rule.needs_y for rule in self.rules])
         self.op = op

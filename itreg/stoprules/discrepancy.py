@@ -4,8 +4,6 @@ from . import StopRule
 
 __all__ = ['Discrepancy']
 
-log = logging.getLogger(__name__)
-
 
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
@@ -32,7 +30,7 @@ class Discrepancy(StopRule):
     """
 
     def __init__(self, op, data, noiselevel, tau=2):
-        super().__init__(log)
+        super().__init__(logging.getLogger(__name__))
         self.op = op
         self.data = data
         self.noiselevel = noiselevel

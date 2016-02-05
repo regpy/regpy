@@ -5,8 +5,6 @@ from . import Solver
 
 __all__ = ['Landweber']
 
-log = logging.getLogger(__name__)
-
 
 class Landweber(Solver):
     """The Landweber method.
@@ -48,7 +46,7 @@ class Landweber(Solver):
     """
 
     def __init__(self, op, data, init, stepsize=None):
-        super().__init__(log)
+        super().__init__(logging.getLogger(__name__))
         self.op = op
         self.data = data
         self.setx(init)
@@ -84,9 +82,9 @@ class Landweber(Solver):
             self.deriv.adjoint(gy_residual))
         self.setx(self.x)
 
-        if log.isEnabledFor(logging.INFO):
+        if self.log.isEnabledFor(logging.INFO):
             norm_residual = np.sqrt(np.real(
                 np.vdot(residual[:], gy_residual[:])))
-            log.info('|residual| = {}'.format(norm_residual))
+            self.log.info('|residual| = {}'.format(norm_residual))
 
         return True

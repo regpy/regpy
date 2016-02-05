@@ -4,8 +4,6 @@ from . import Space
 
 __all__ = ['L2']
 
-log = logging.getLogger(__name__)
-
 
 class L2(Space):
     """Space with default L^2 inner product.
@@ -19,7 +17,7 @@ class L2(Space):
     """
 
     def __init__(self, *shape):
-        super().__init__(shape, log)
+        super().__init__(shape, logging.getLogger(__name__))
 
     def gram(self, x):
         return x
