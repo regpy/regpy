@@ -1,6 +1,6 @@
 import logging
 
-from .stop_rule import StopRule
+from . import StopRule
 
 __all__ = ['CountIterations']
 
@@ -8,6 +8,16 @@ log = logging.getLogger(__name__)
 
 
 class CountIterations(StopRule):
+    """Stopping rule based on number of iterations.
+
+    Each call to :meth:`stop` increments the iteration count by 1.
+
+    Parameters
+    ----------
+    max_iterations : int
+        The number of iterations after which to stop.
+
+    """
     def __init__(self, max_iterations):
         super().__init__(log)
         self.max_iterations = max_iterations
