@@ -1,7 +1,4 @@
-itreg — Iterative solvers for ill-posed problems
-================================================
-
-.. automodule:: itreg
+.. include:: ../README.rst
 
 Modules
 =======
