@@ -31,16 +31,18 @@ class Newton_CG(Solver):
         super().__init__(logging.getLogger(__name__)) # noch verstehen
         self.op = op
         self.data = data
+        self.x_k = np.zeros(len(init))
         self.setx(init)
         self.rho = rho
         self.cgmaxit = cgmaxit
         
     def setx(self, x):
-        self.x = x
+        self.x = x + self.x_k
+        self.x_k = np.zeros(len(x))
         self.y = self.op(self.x)
         self._residual = self.data - self.y
         
-        self.s = self._residual - self.op.derivative()(self.x)
+        self.s = self._residual - self.op.derivative()(self.x_k)
         self.s2 = self.op.domy.gram(self.s)
         self.rtilde = self.op.adjoint(self.s2)
         self.r = self.op.domx.gram_inv(self.rtilde)
@@ -55,7 +57,7 @@ class Newton_CG(Solver):
             self.aux = self.op.derivative()(self.d)
             self.aux2 = self.op.domy.gram(self.aux)
             self.alpha = self.innerProd / np.real(self.op.domy.inner(self.aux,self.aux2))
-            self.x = self.x + self.alpha * self.d
+            self.x_k = self.x_k + self.alpha * self.d
             self.s2 = self.s2 - self.alpha*self.aux2
             self.rtilde = self.op.adjoint(self.s2)
             self.r = self.op.domx.gram_inv(self.rtilde)
