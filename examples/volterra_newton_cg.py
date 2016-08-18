@@ -20,7 +20,7 @@ spacing = xs[1] - xs[0]
 
 op = Volterra(L2(len(xs)), spacing=spacing)
 
-exact_solution = np.sin(xs)
+exact_solution = np.cos(xs)
 exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=xs.shape)
 data = exact_data + noise
@@ -33,9 +33,12 @@ stoprule = rules.CombineRules(
      rules.Discrepancy(op, data, noiselevel, tau=1.1)],
     op=op)
 
-plt.plot(xs, exact_solution)
+
 plt.plot(xs, exact_data)
-plt.plot(xs, newton_cg.run(stoprule))
 plt.plot(xs, data)
+
+plt.plot(xs, exact_solution)
+plt.plot(xs, newton_cg.run(stoprule))
+
 plt.show()
 
