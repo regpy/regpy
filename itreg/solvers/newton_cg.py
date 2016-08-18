@@ -34,13 +34,14 @@ class Newton_CG(Solver):
         super().__init__(logging.getLogger(__name__)) # noch verstehen
         self.op = op
         self.data = data
-        self.outer_update(init)                        # initialize certain variables
+        self.x = init
+        self.outer_update()                        # initialize certain variables
         
         # parameters for exiting the inner iteration (CG method)
         self.rho = rho
         self.cgmaxit = cgmaxit
         
-    def outer_update(self, x):
+    def outer_update(self):
         """
         This function does two things:
             1. Initialization of the needed variables in the outer iteration with the input init.
@@ -48,7 +49,7 @@ class Newton_CG(Solver):
                actually not needed.
         
         """
-        self.x_k = np.zeros(np.shape(x))            # x_k = 0
+        self.x_k = np.zeros(np.shape(self.x))       # x_k = 0
         self.y = self.op(self.x)                    # y = T(x)
         self._residual = self.data - self.y
         self.s = self._residual - self.op.derivative()(self.x_k)
@@ -83,5 +84,5 @@ class Newton_CG(Solver):
             self.d = self.r + self.beta * self.d
             self.k += 1
         self.x += self.x_k
-        self.outer_update(self.x)
+        self.outer_update()
         return True
