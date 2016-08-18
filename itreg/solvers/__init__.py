@@ -79,8 +79,10 @@ class Solver(object):
 
 
 from .landweber import Landweber  # NOQA
+from .newton_cg import Newton_CG
 
 __all__ = [
     'Landweber',
+    'Newton_CG',
     'Solver'
 ]
