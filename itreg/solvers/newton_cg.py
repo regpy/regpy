@@ -30,7 +30,7 @@ class Newton_CG(Solver):
     
     """
     
-    def __init__(self, op, data, init, rho = 0.8, cgmaxit = 50):
+    def __init__(self, op, data, init, cgmaxit = 50, rho = 0.8):
         super().__init__(logging.getLogger(__name__)) # noch verstehen
         self.op = op
         self.data = data
