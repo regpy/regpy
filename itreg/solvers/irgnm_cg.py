@@ -94,27 +94,6 @@ class IRGNM_CG(Solver):
         self.gamma = self.norm_s / \
             np.real(self.regpar*self.op.domx.inner(self.dtilde,self.d)+self.op.domx.inner(self.ztilde,self.z))
         
-        # prepare the stopping parameters for the inner iteration (CG method),
-        # since we might divide by zero.
-        
-        # First condition
-        if self.norm_h == 0 or self.kappa == 0 or self.regpar == 0:
-            self.stop1 = self.cgtol[0]/(1 + self.cgtol[0]) + 1
-        else:
-            self.stop1 = np.sqrt(self.norm_s/self.norm_h/self.kappa)/self.regpar
-
-        # Second condition
-        if np.real(self.op.domx.inner(self.Thtilde,self.Th)) == 0 or self.kappa == 0 or self.regpar == 0:
-            self.stop2 = self.cgtol[1]/(1 + self.cgtol[1]) + 1
-        else:
-            self.stop2 = np.sqrt(self.norm_s/np.real(self.op.domx.inner(self.Thtilde,self.Th))/self.kappa/self.regpar)
-
-        # Third condition
-        if self.norm_s0 == 0 or self.kappa == 0:
-            self.stop3 = self.cgtol[2] + 1
-        else:
-            self.stop3 = np.sqrt(self.norm_s/self.norm_s0/self.kappa)
-
     def inner_update(self):
         self.Th = self.Th + self.gamma * self.z
         self.Thtilde = self.Thtilde + self.gamma * self.ztilde
@@ -133,27 +112,6 @@ class IRGNM_CG(Solver):
         self.ztilde = self.op.domy.gram(self.z)
         self.gamma = self.norm_s / \
             np.real(self.regpar*self.op.domx.inner(self.dtilde,self.d)+self.op.domx.inner(self.ztilde,self.z))
-            
-        # prepare the stopping parameters for the inner iteration (CG method),
-        # since we might divide by zero.
-        
-        # First condition
-        if self.norm_h == 0 or self.kappa == 0 or self.regpar == 0:
-            self.stop1 = self.cgtol[0]/(1 + self.cgtol[0]) + 1
-        else:
-            self.stop1 = np.sqrt(self.norm_s/self.norm_h/self.kappa)/self.regpar
-
-        # Second condition
-        if np.real(self.op.domx.inner(self.Thtilde,self.Th)) == 0 or self.kappa == 0 or self.regpar == 0:
-            self.stop2 = self.cgtol[1]/(1 + self.cgtol[1]) + 1
-        else:
-            self.stop2 = np.sqrt(self.norm_s/np.real(self.op.domx.inner(self.Thtilde,self.Th))/self.kappa/self.regpar)
-
-        # Third condition
-        if self.norm_s0 == 0 or self.kappa == 0:
-            self.stop3 = self.cgtol[2] + 1
-        else:
-            self.stop3 = np.sqrt(self.norm_s/self.norm_s0/self.kappa)
         
     def next(self):
         """Run a single IRGNM_CG iteration.
@@ -164,9 +122,9 @@ class IRGNM_CG(Solver):
             Always True, as the IRGNM_CG method never stops on its own.
 
         """
-        while self.stop1 > self.cgtol[0]/(1 + self.cgtol[0]) and \
-              self.stop2 > self.cgtol[1]/(1 + self.cgtol[1]) and \
-              self.stop3 > self.cgtol[2] and self.cgstep <= self.cgmaxit:
+        while np.sqrt(np.float64(self.norm_s)/self.norm_h/self.kappa)/self.regpar > self.cgtol[0]/(1 + self.cgtol[0]) and \
+              np.sqrt(np.float64(self.norm_s)/np.real(self.op.domx.inner(self.Thtilde,self.Th))/self.kappa/self.regpar) > self.cgtol[1]/(1 + self.cgtol[1]) and \
+              np.sqrt(np.float64(self.norm_s)/self.norm_s0/self.kappa) > self.cgtol[2] and self.cgstep <= self.cgmaxit:
             self.h = self.h + self.gamma * self.d
             self.x += self.h
             self.inner_update()        

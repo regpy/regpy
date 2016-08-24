@@ -4,13 +4,19 @@ import logging
 
 
 class Inner_Solver(object):
-    """Abstract base class for solvers.
-
+    """Abstract base class for inner solvers (for example SQP method).
 
 
     """
 
-    def __init__(self,solver=)Landweber, log=logging.getLogger()):
+    def __init__(self,solver = landweber,log=logging.getLogger()):
+        self.solver = solver
+        self.op = solver.op
+        self.
+        
+        
+        
+        
         self.log = log
         self.x = None
         self.y = None

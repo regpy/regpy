@@ -81,10 +81,12 @@ class Solver(object):
 from .landweber import Landweber  # NOQA
 from .newton_cg import Newton_CG
 from .irgnm_cg import IRGNM_CG
+from .irgnm_l1_fid import IRGNM_L1_fid
 
 __all__ = [
     'Landweber',
     'Newton_CG',
     'IRGNM_CG',
+    'IRGNM_L1_fid',
     'Solver'
 ]
