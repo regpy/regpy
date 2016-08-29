@@ -7,12 +7,21 @@ __all__ = ['Newton_CG']
 
 
 class Newton_CG(Solver):
-    """The Newton-CG method. #fragen
+    """The Newton-CG method. 
+    
     
     Solves the potentially non-linear, ill-posed equation ::
 
         T(x) = y,
-        #hier weiter machen
+
+    where `T` is a Frechet-differentiable operator. The number of iterations is
+    effectively the regularization parameter and needs to be picked carefully.
+
+    The Newton equations are solved by the conjugate gradient
+    method applied to the normal equation (CGNE)
+    using the regularizing properties of CGNE with early stopping
+    (see Hanke 1997).
+
         
     
     Parameters
@@ -23,10 +32,26 @@ class Newton_CG(Solver):
         The right hand side.
     init : array
         The initial guess.
-    rho : int
-        A factor considered for stopping the inner iteration (which is the CG method).
-    cgmaxit : int
+    cgmaxit : int, optional
         Maximum iterations for the inner iteration (which is the CG method).
+    rho : float, optional
+        A factor considered for stopping the inner iteration (which is the CG method).
+        
+    Attributes
+    ----------
+    op : :class:`Operator <itreg.operators.Operator>`
+        The forward operator.
+    data : array
+        The right hand side.
+    x : array
+        The current point.
+    y : array
+        The value at the current point.
+    deriv : :class:`LinearOperator <itreg.operators.LinearOperator>`
+        The derivative of the operator at the current point.
+    stepsize : float
+        The step length to be used in the next step.
+    
     
     """
     
@@ -49,17 +74,17 @@ class Newton_CG(Solver):
                actually not needed.
         
         """
-        self.x_k = np.zeros(np.shape(self.x))       # x_k = 0
+        self._x_k = np.zeros(np.shape(self.x))       # x_k = 0
         self.y = self.op(self.x)                    # y = T(x)
         self._residual = self.data - self.y
-        self.s = self._residual - self.op.derivative()(self.x_k)
-        self.s2 = self.op.domy.gram(self.s)
-        self.rtilde = self.op.adjoint(self.s2)
-        self.r = self.op.domx.gram_inv(self.rtilde)
-        self.d = self.r
-        self.innerProd = self.op.domx.inner(self.r,self.rtilde)
-        self.norms0 = np.sqrt(np.real(self.op.domx.inner(self.s2,self.s)))
-        self.k = 1
+        self._s = self._residual - self.op.derivative()(self._x_k)
+        self._s2 = self.op.domy.gram(self._s)
+        self._rtilde = self.op.adjoint(self._s2)
+        self._r = self.op.domx.gram_inv(self._rtilde)
+        self._d = self._r
+        self._innerProd = self.op.domx.inner(self._r,self._rtilde)
+        self._norms0 = np.sqrt(np.real(self.op.domx.inner(self._s2,self._s)))
+        self._k = 1
      
     def inner_update(self):
         """
@@ -67,22 +92,30 @@ class Newton_CG(Solver):
         Its whole purpose is to increase readability.
         
         """
-        self.aux = self.op.derivative()(self.d)
-        self.aux2 = self.op.domy.gram(self.aux)
-        self.alpha = self.innerProd / np.real(self.op.domy.inner(self.aux,self.aux2))
-        self.s2 += -self.alpha*self.aux2
-        self.rtilde = self.op.adjoint(self.s2)
-        self.r = self.op.domx.gram_inv(self.rtilde)
-        self.beta = np.real(self.op.domy.inner(self.r,self.rtilde))/self.innerProd        
+        self._aux = self.op.derivative()(self._d)
+        self._aux2 = self.op.domy.gram(self._aux)
+        self._alpha = self._innerProd / np.real(self.op.domy.inner(self._aux,self._aux2))
+        self._s2 += -self._alpha*self._aux2
+        self._rtilde = self.op.adjoint(self._s2)
+        self._r = self.op.domx.gram_inv(self._rtilde)
+        self._beta = np.real(self.op.domy.inner(self._r,self._rtilde))/self._innerProd        
 
     def next(self):
-        while np.sqrt(self.op.domx.inner(self.s2,self.s)) > self.rho * self.norms0 and self.k <= self.cgmaxit:
+        """Run a single Newton_CG iteration.
+
+        Returns
+        -------
+        bool
+            Always True, as the Newton_CG method never stops on its own.
+
+        """
+        while np.sqrt(self.op.domx.inner(self._s2,self._s)) > self.rho * self._norms0 and self._k <= self.cgmaxit:
             self.inner_update()
             
-            self.x_k += self.alpha * self.d
+            self._x_k += self._alpha * self._d
             
-            self.d = self.r + self.beta * self.d
-            self.k += 1
-        self.x += self.x_k
+            self._d = self._r + self._beta * self._d
+            self._k += 1
+        self.x += self._x_k
         self.outer_update()
         return True
