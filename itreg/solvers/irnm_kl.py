@@ -1,8 +1,10 @@
 import logging
 import numpy as np
-import scipy
+
+import setpath 
 
 from . import Solver
+from itreg.innersolvers import SQP
 #impoort inner solver sqp
 
 __all__ = ['IRNM_KL']
@@ -21,7 +23,8 @@ class IRNM_KL(Solver):
         # Parameter for the outer iteration (Newton method)
         self.k = 0   
         self.alpha_step = alpha_step
-        self.alpha = alpha0 * intensity
+        self.intensity = intensity
+        self.alpha = alpha0 * self.intensity
             
     def next(self):
         """Run a single IRGNM_CG iteration.
@@ -32,7 +35,8 @@ class IRNM_KL(Solver):
             Always True, as the IRGNM_CG method never stops on its own.
 
         """
-        self.x = sqp(self.op, self.data, self.init, self.x, self.y, self.alpha, self.k)
+        self.sqp = SQP(self.op, self.data, self.init, self.x, self.y, self.alpha, self.k, self.intensity)
+        self.x = self.sqp.run()
         self.k += 1
         self.y = self.op(self.x)
         self.alpha *= self.alpha_step
