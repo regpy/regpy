@@ -1,7 +1,9 @@
 import numpy as np
+import numpy.linalg as LA
 
 
-__all__ = ['CGNE_reg']
+__all__ = ['cg_methods'
+           ]
 
 def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2):
     ''' function CGNE_reg, which solves 
@@ -42,3 +44,23 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2):
         
         cg_step += 1
     return h
+    
+def CG(fun, b, init, eps, maxit):
+    n = 0
+    y = fun(init)
+    r = b - y
+    d = np.copy(r)
+    x = init
+    q = LA.norm(r)
+    q0 = np.copy(q)
+    while q/q0>eps and n < maxit:
+        n += 1
+        y = fun(d)
+        alpha = q**2/np.dot(d,y)
+        x = x + alpha * d
+        r = r - alpha * y
+        q1 = LA.norm(r)
+        beta = q1**2/q**2
+        d = r + beta*d
+        q = q1
+    return x

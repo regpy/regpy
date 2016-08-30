@@ -1,10 +1,6 @@
-IRMN_KL inner solver  --> CGNE_reg müssen wir noch machen, 
-
 kommentare fixen, µ-fast überall, diese sind schon erledigt (fast):
 newton_cg.py, landweber.py
 
 variablennamen fixen, diese sind schon erledigt:
 newton_cg.py, landweber.py
-
-jonuts noch pushen
 

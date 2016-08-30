@@ -4,7 +4,7 @@ import setpath  # NOQA
 
 from itreg.operators import Volterra
 from itreg.spaces import L2
-from itreg.solvers import IRNM_KL
+from itreg.solvers import IRNM_KL_Newton
 import itreg.stoprules as rules
 
 import numpy as np
@@ -27,15 +27,17 @@ data = exact_data + noise
 
 noiselevel = op.domy.norm(noise)
 
+irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(xs.shape), alpha0 = 2e-6, alpha_step = 0.1, intensity = 1, scaling = 1, offset = 1e-4, offset_step = 0.8, inner_res = 1e-10, inner_it = 10, cgmaxit = 50)
 stoprule = rules.CombineRules(
-    [rules.CountIterations(100),
+    [rules.CountIterations(2),
      rules.Discrepancy(op, data, noiselevel, tau=1.1)],
     op=op)
 
-irnm_kl = IRNM_KL(op, data, np.zeros(xs.shape), alpha0 = 5e-6, alpha_step = 0.92, intensity = 0.08)
-
 plt.plot(xs, exact_solution)
 plt.plot(xs, exact_data)
-plt.plot(xs, np.real(irnm_kl.run(stoprule)))
+plt.plot(xs, irnm_kl_newton.run(stoprule))
+#irnm_kl_newton.run(stoprule)
+
 plt.plot(xs, data)
 plt.show()
+#GGWP
