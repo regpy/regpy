@@ -10,7 +10,7 @@ __all__ = ['IRGNM_L1_fid']
 class IRGNM_L1_fid(Solver):
     """The IRGNM_CG method.
 
-    noch ausfüllen -------------------------
+    noch ausfüllen ----------LOL---------------
 
     Parameters
     ----------
