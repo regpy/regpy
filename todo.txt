@@ -4,3 +4,11 @@ newton_cg.py, landweber.py
 variablennamen fixen, diese sind schon erledigt:
 newton_cg.py, landweber.py
 
+
+
+
+
+
+falls sphinx meckert, tabs durch spaces ersetzen . 1 tab = 4 spaces
+
+

@@ -7,8 +7,7 @@ __all__ = ['Newton_CG']
 
 
 class Newton_CG(Solver):
-    """The Newton-CG method. 
-    
+    """The Newton-CG method.
     
     Solves the potentially non-linear, ill-posed equation ::
 
@@ -56,11 +55,13 @@ class Newton_CG(Solver):
     """
     
     def __init__(self, op, data, init, cgmaxit = 50, rho = 0.8):
-        super().__init__(logging.getLogger(__name__)) # noch verstehen
+        super().__init__(logging.getLogger(__name__))
         self.op = op
         self.data = data
         self.x = init
-        self.outer_update()                        # initialize certain variables
+        
+        # asdfasdfasdfsd
+        self.outer_update()
         
         # parameters for exiting the inner iteration (CG method)
         self.rho = rho

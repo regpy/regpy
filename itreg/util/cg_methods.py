@@ -2,10 +2,12 @@ import numpy as np
 import numpy.linalg as LA
 
 
-__all__ = ['cg_methods'
+__all__ = ['CGNE_reg',
+           'CG'
            ]
 
-def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2):
+           
+def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2): 
     ''' function CGNE_reg, which solves 
 
      A h = b by CGNE with
@@ -45,7 +47,10 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2):
         cg_step += 1
     return h
     
+  
 def CG(fun, b, init, eps, maxit):
+    
+    
     n = 0
     y = fun(init)
     r = b - y
