@@ -73,6 +73,7 @@ class Operator(object):
             The derivative.
 
         """
+        
         raise NotImplementedError()
 
 
@@ -171,9 +172,11 @@ class LinearOperator(Operator):
 
 
 from .volterra import Volterra  # NOQA
+from .weightedop import WeightedOp
 
 __all__ = [
     'LinearOperator',
     'Operator',
-    'Volterra'
+    'Volterra',
+    'WeightedOp'
 ]
