@@ -7,13 +7,14 @@ __all__ = ['Newton_CG']
 
 
 class Newton_CG(Solver):
-    """The Newton-CG method.
+    """The Newton-CG method. 
+    
     
     Solves the potentially non-linear, ill-posed equation ::
 
         T(x) = y,
 
-    where T is a Frechet-differentiable operator. The number of iterations is
+    where `T` is a Frechet-differentiable operator. The number of iterations is
     effectively the regularization parameter and needs to be picked carefully.
 
     The Newton equations are solved by the conjugate gradient
@@ -55,13 +56,11 @@ class Newton_CG(Solver):
     """
     
     def __init__(self, op, data, init, cgmaxit = 50, rho = 0.8):
-        super().__init__(logging.getLogger(__name__))
+        super().__init__(logging.getLogger(__name__)) # noch verstehen
         self.op = op
         self.data = data
         self.x = init
-        
-        # asdfasdfasdfsd
-        self.outer_update()
+        self.outer_update()                        # initialize certain variables
         
         # parameters for exiting the inner iteration (CG method)
         self.rho = rho

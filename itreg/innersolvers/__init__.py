@@ -9,12 +9,18 @@ class Inner_Solver(object):
 
     """
 
-    def __init__(self,solver = None,log=logging.getLogger()):
+    def __init__(self,solver = landweber,log=logging.getLogger()):
         self.solver = solver
+        self.op = solver.op
+        self.
+        
+        
+        
+        
         self.log = log
         self.x = None
         self.y = None
-
+        self.solver_param= solver.param
     def next(self):
         """Perform a single iteration.
 
@@ -65,9 +71,13 @@ class Inner_Solver(object):
         return x
 
 
-from .sqp import SQP
-
-__all__ = [
-    'Inner_Solver',
-    'SQP'
-]
+#from .landweber import Landweber  # NOQA
+#from .newton_cg import Newton_CG
+#from .irgnm_cg import IRGNM_CG
+#
+#__all__ = [
+#    'Landweber',
+#    'Newton_CG',
+#    'IRGNM_CG',
+#    'Solver'
+#]

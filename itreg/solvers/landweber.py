@@ -13,7 +13,7 @@ class Landweber(Solver):
 
         T(x) = y,
 
-    where "T" is a Frechet-differentiable operator. The number of iterations is
+    where `T` is a Frechet-differentiable operator. The number of iterations is
     effectively the regularization parameter and needs to be picked carefully.
 
     Parameters
