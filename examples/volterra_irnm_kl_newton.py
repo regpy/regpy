@@ -27,17 +27,17 @@ data = exact_data + noise
 
 noiselevel = op.domy.norm(noise)
 
-irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(xs.shape), alpha0 = 2e-6, alpha_step = 0.1, intensity = 1, scaling = 1, offset = 1e-4, offset_step = 0.8, inner_res = 1e-10, inner_it = 10, cgmaxit = 50)
+irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(xs.shape), \
+        alpha0 = 1e-0, alpha_step = 0.3, intensity = 1,\
+        scaling = 1, offset = 1e-4, offset_step = 1, inner_res = 1e-10, \
+        inner_it = 100, cgmaxit = 100)
 stoprule = rules.CombineRules(
-    [rules.CountIterations(2),
+    [rules.CountIterations(3),
      rules.Discrepancy(op, data, noiselevel, tau=1.1)],
     op=op)
 
 plt.plot(xs, exact_solution)
 plt.plot(xs, exact_data)
 plt.plot(xs, irnm_kl_newton.run(stoprule))
-#irnm_kl_newton.run(stoprule)
-
 plt.plot(xs, data)
 plt.show()
-#GGWP
