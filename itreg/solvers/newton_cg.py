@@ -13,7 +13,7 @@ class Newton_CG(Solver):
 
         T(x) = y,
 
-    where `T` is a Frechet-differentiable operator. The number of iterations is
+    where T is a Frechet-differentiable operator. The number of iterations is
     effectively the regularization parameter and needs to be picked carefully.
 
     The Newton equations are solved by the conjugate gradient
