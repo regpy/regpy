@@ -9,7 +9,16 @@ __all__ = ['IRGNM_CG']
 class IRGNM_CG(Solver):
     """The IRGNM_CG method.
 
-    noch ausfüllen -------------------------
+    Solves the potentially non-linear, ill-posed equation ::
+
+        T(x) = y,
+
+    where `T` is a Frechet-differentiable operator. The number of iterations is
+    effectively the regularization parameter and needs to be picked carefully.
+    
+
+    The regularized Newton equations are solved by the conjugate gradient
+    method applied to the normal equation.
 
     Parameters
     ----------
@@ -37,6 +46,20 @@ class IRGNM_CG(Solver):
         The forward operator.
     data : array
         The right hand side.
+        init : array_
+        The initial guess.
+    k : int
+        Parameter for the outer iteration (Newton method)
+    cgmaxit : int, optional
+        Maximum number of CG iterations.
+    alpha0, alpha_step : float, optional
+        With these we compute the regulization parameter for the k-th Newton step
+        by alpha0*alpha_step^k.
+    cgtol : list of float, optional
+        Contains three tolerances:
+        The first entry controls the relative accuracy of the Newton update in preimage,
+        the second entry controls the relative accuracy of the Newton update in data space,
+        the third entry controls the reduction of the residual.
     x : array
         The current point.
     y : array
@@ -49,6 +72,7 @@ class IRGNM_CG(Solver):
         self.data = data
         self.init = init
         self.x = self.init
+        
         # Parameter for the outer iteration (Newton method)
         self.k = 0
         
@@ -61,57 +85,68 @@ class IRGNM_CG(Solver):
         # Initialization of the first step
         self.outer_update()
         
+        """
+        solves A h = b by CGNE with
+        A := G_X^{-1} F'* G_Y F' + regpar I
+        b := G_X^{-1}F'^* G_Y y + regpar xref
+        A is self-adjoint with respect to the inner product <u,v> = u'G_X v
 
+        G_X, G_Y -> F.applyGramX, F.applyGramY
+        G_X^{-1} -> F.applyGramX_inv
+        F'       -> F.derivative
+        F'*      -> F.adjoint
+        
+        ########SO WIRD CGNE_reg IN MATLAB BESCHRIEBEN!!!! UEBERNEHMEN?!?!?
+        
+        """      
+        
+        
+        
     def outer_update(self):
-        """
-        hier beschreibung einfuegen
-        
-        """
-        
         self.y = self.op(self.x)
         self._residual = self.data - self.y
-        self.xref = self.init - self.x
+        self._xref = self.init - self.x
         self.k += 1
-        self.regpar = self.alpha0 * self.alpha_step**self.k
-        self.cgstep = 0
-        self.kappa = 1
-        self.ztilde = self.op.domy.gram(self._residual)
-        self.stilde = self.op.adjoint(self.ztilde) + self.regpar * self.op.domx.gram(self.xref)
-        self.s = self.op.domx.gram_inv(self.stilde)
-        self.d = self.s
-        self.dtilde = self.stilde
-        self.norm_s = np.real(self.op.domx.inner(self.stilde, self.s))
-        self.norm_s0 = self.norm_s
-        self.norm_h = 0
+        self._regpar = self.alpha0 * self.alpha_step**self.k
+        self._cgstep = 0
+        self._kappa = 1
+        self._ztilde = self.op.domy.gram(self._residual)
+        self._stilde = self.op.adjoint(self._ztilde) + self._regpar * self.op.domx.gram(self._xref)
+        self._s = self.op.domx.gram_inv(self._stilde)
+        self._d = self._s
+        self._dtilde = self._stilde
+        self._norm_s = np.real(self.op.domx.inner(self._stilde, self._s))
+        self._norm_s0 = self._norm_s
+        self._norm_h = 0
         
-        self.h = np.zeros(np.shape(self.s))
-        self.Th = np.zeros(np.shape(self._residual))
-        self.Thtilde = self.Th
+        self._h = np.zeros(np.shape(self._s))
+        self._Th = np.zeros(np.shape(self._residual))
+        self._Thtilde = self._Th
         
         #prepare the parameters for the first inner iteration (CG method)
-        self.z = self.op.derivative()(self.d)
-        self.ztilde = self.op.domy.gram(self.z)
-        self.gamma = self.norm_s / \
-            np.real(self.regpar*self.op.domx.inner(self.dtilde,self.d)+self.op.domx.inner(self.ztilde,self.z))
+        self._z = self.op.derivative()(self._d)
+        self._ztilde = self.op.domy.gram(self._z)
+        self._gamma = self._norm_s / \
+            np.real(self._regpar*self.op.domx.inner(self._dtilde,self._d)+self.op.domx.inner(self._ztilde,self._z))
         
     def inner_update(self):
-        self.Th = self.Th + self.gamma * self.z
-        self.Thtilde = self.Thtilde + self.gamma * self.ztilde
-        self.stilde += -self.gamma*(self.op.adjoint(self.ztilde) + self.regpar * self.dtilde)
-        self.s = self.op.domx.gram_inv(self.stilde)
-        self.norm_s_old = self.norm_s
-        self.norm_s = np.real(self.op.domx.inner(self.stilde, self.s))
-        self.beta = self.norm_s / self.norm_s_old
-        self.d = self.s + self.beta * self.d
-        self.dtilde = self.stilde + self.beta * self.dtilde
-        self.norm_h = self.op.domx.inner(self.h, self.op.domx.gram(self.h))
-        self.kappa = 1 + self.beta * self.kappa
-        self.cgstep += 1
+        self._Th = self._Th + self._gamma * self._z
+        self._Thtilde = self._Thtilde + self._gamma * self._ztilde
+        self._stilde += -self._gamma*(self.op.adjoint(self._ztilde) + self._regpar * self._dtilde)
+        self._s = self.op.domx.gram_inv(self._stilde)
+        self._norm_s_old = self._norm_s
+        self._norm_s = np.real(self.op.domx.inner(self._stilde, self._s))
+        self._beta = self._norm_s / self._norm_s_old
+        self._d = self._s + self._beta * self._d
+        self._dtilde = self._stilde + self._beta * self._dtilde
+        self._norm_h = self.op.domx.inner(self._h, self.op.domx.gram(self._h))
+        self._kappa = 1 + self._beta * self._kappa
+        self._cgstep += 1
         
-        self.z = self.op.derivative()(self.d)
-        self.ztilde = self.op.domy.gram(self.z)
-        self.gamma = self.norm_s / \
-            np.real(self.regpar*self.op.domx.inner(self.dtilde,self.d)+self.op.domx.inner(self.ztilde,self.z))
+        self._z = self.op.derivative()(self._d)
+        self._ztilde = self.op.domy.gram(self._z)
+        self._gamma = self._norm_s / \
+            np.real(self._regpar*self.op.domx.inner(self._dtilde,self._d)+self.op.domx.inner(self._ztilde,self._z))
         
     def next(self):
         """Run a single IRGNM_CG iteration.
@@ -122,11 +157,11 @@ class IRGNM_CG(Solver):
             Always True, as the IRGNM_CG method never stops on its own.
 
         """
-        while np.sqrt(np.float64(self.norm_s)/self.norm_h/self.kappa)/self.regpar > self.cgtol[0]/(1 + self.cgtol[0]) and \
-              np.sqrt(np.float64(self.norm_s)/np.real(self.op.domx.inner(self.Thtilde,self.Th))/self.kappa/self.regpar) > self.cgtol[1]/(1 + self.cgtol[1]) and \
-              np.sqrt(np.float64(self.norm_s)/self.norm_s0/self.kappa) > self.cgtol[2] and self.cgstep <= self.cgmaxit:
-            self.h = self.h + self.gamma * self.d
-            self.x += self.h
+        while np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)/self._regpar > self.cgtol[0]/(1 + self.cgtol[0]) and \
+              np.sqrt(np.float64(self._norm_s)/np.real(self.op.domx.inner(self._Thtilde,self._Th))/self._kappa/self._regpar) > self.cgtol[1]/(1 + self.cgtol[1]) and \
+              np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) > self.cgtol[2] and self._cgstep <= self.cgmaxit:
+            self._h = self._h + self._gamma * self._d
+            self.x += self._h
             self.inner_update()        
         self.outer_update()        
         return True

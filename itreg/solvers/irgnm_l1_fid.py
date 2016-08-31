@@ -8,9 +8,17 @@ __all__ = ['IRGNM_L1_fid']
 
 
 class IRGNM_L1_fid(Solver):
-    """The IRGNM_CG method.
+    """The IRGNM_L1 (iteratively regularized Gauss Newton method) method.
 
-    noch ausfüllen -------------------------
+    Solves the potentially non-linear, ill-posed equation ::
+
+        T(x) = y,
+
+    where `T` is a Frechet-differentiable operator. The number of iterations is
+    effectively the regularization parameter and needs to be picked carefully.
+    
+    The regularized Newton equations are solved by the conjugate gradient
+    method applied to the normal equation
 
     Parameters
     ----------
@@ -20,11 +28,10 @@ class IRGNM_L1_fid(Solver):
         The right hand side.
     init : array_
         The initial guess.
-    cgmaxit : int, optional
-        Maximum number of CG iterations.
-    alpha0, alpha_step : float, optional
+    alpha0, alpha_step, alpha_l1 : float, optional
         With these we compute the regulization parameter for the k-th Newton step
         by alpha0*alpha_step^k.
+    
     cgtol : list of float, optional
         Contains three tolerances:
         The first entry controls the relative accuracy of the Newton update in preimage,
@@ -38,6 +45,16 @@ class IRGNM_L1_fid(Solver):
         The forward operator.
     data : array
         The right hand side.
+    init : array_
+        The initial guess.
+    alpha0, alpha_step, alpha_l1 : float, optional
+        With these we compute the regulization parameter for the k-th Newton step
+        by alpha0*alpha_step^k.
+     cgtol : list of float, optional
+        Contains three tolerances:
+        The first entry controls the relative accuracy of the Newton update in preimage,
+        the second entry controls the relative accuracy of the Newton update in data space,
+        the third entry controls the reduction of the residual.
     x : array
         The current point.
     y : array
