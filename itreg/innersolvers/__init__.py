@@ -1,15 +1,28 @@
-"""Solver classes."""
+"""Inner solver classes."""
 
 import logging
 
 
 class Inner_Solver(object):
     """Abstract base class for inner solvers (for example SQP method).
+    
+    Parameters
+    ----------
+    log : :class:`logging.Logger`, optional
+        The logger to be used. Defaults to the root logger.
 
+    Attributes
+    ----------
+    x : array
+        The current iterate.
+    y : array or `None`
+        The value at the current iterate. May be needed by stopping rules, but
+        callers should handle the case when it is not available.
+    log : :class:`logging.Logger`
+        The logger in use.
 
     """
-
-    def __init__(self,solver = None,log=logging.getLogger()):
+    def __init__(self, solver = None, log=logging.getLogger()):
         self.solver = solver
         self.log = log
         self.x = None
@@ -31,24 +44,24 @@ class Inner_Solver(object):
         raise NotImplementedError()
 
     def __iter__(self):
-        """Return and iterator on the iterates of the solver.
+        """Return and iterator on the iterates of the inner solver.
 
         Yields
         ------
         tuple of array
             The (x, y) pair of the current iteration. Callers should not expect
-            arrays from previous iterations to be valid, as the solver might
-            modify them in-place.
+            arrays from previous iterations to be valid, as the inner solver 
+            might modify them in-place.
 
         """
         while self.next():
             yield (self.x, self.y)
 
     def run(self, stoprule=None):
-        """Run the solver with the given stopping rule.
+        """Run the inner solver with the given stopping rule.
 
         This is convenience method that implements a simple loop running the
-        solver until it either converges or the stopping rule triggers.
+        inner solver until it either converges or the stopping rule triggers.
 
         Parameters
         ----------

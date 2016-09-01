@@ -1,20 +1,85 @@
+"""SQP inner solver"""
+
+
 import logging
 import numpy as np
 import scipy
+
 import setpath
 from itreg.util import CGNE_reg
 from itreg.operators import WeightedOp
-
 from . import Inner_Solver
 
 __all__ = ['SQP']
 
 
 class SQP(Inner_Solver):
+    """ The SQP method. 
+    
+    Solves the inner problem
+    
+    argmin of S(F(x_in) + F'(x_in)(h); y_obs) + regpar R(x_in + h - x0)
+    
+    iteratively. 
+    
+    S is replaced by the second order Taylor-Approximation and 
+    then the corresponding quadratic problem is solved. This is repeated 
+    iteratively until the update is small enough.
+    
+    The following parameters are fixed:
+         - maximum number of CG iterations:
+             N_CG = 50
+         - replace KL(a,b) by KL(a+_offset, b+_offset):
+             offset0 =2e-6
+         - offset is reduced in each Newton step by a factor offset_step:
+             offset_step = 0.8
+         - relative tolerance value for termination of inner iteration:
+             update_ratio = 0.01
+         - max number of inner iterations to minimize the KL-functional:
+             inner_kl_it = 10    
+    
+    Parameters
+    ----------
+    op : :class:`Operator <itreg.operators.Operator>`
+        The forward operator.
+    data : array
+        The right hand side.
+    init : array
+        The initial guess.
+    x_input : array        
+    y_input : array    
+    alpha : float
+        Parameter for the CG method.
+    it : integer
+        Number of outer iterations.
+    intensity : float
+        Intensity of the operator.    
 
-
-    def __init__(self, op, data, init, x_input, y_input, alpha, it, intensity = 1):
+    Attributes
+    ----------
+    op : :class:`Operator <itreg.operators.Operator>`
+        The forward operator.
+    data : array
+        The right hand side.
+    x : array
+        The current point.       
+    y : array
+        The value at the current point.
+    alpha : float
+        Parameter for the CG method.
+    it : integer
+        Number of outer iterations.
+    intensity : float
+        Intensity of the operator.
+    
+    """
+    
+    def __init__(self, op, data, init, x_input, y_input,
+                 alpha, it, intensity = 1):
+        """Initialization of parameters """
+        
         super().__init__(logging.getLogger(__name__))
+                
         self.op = op
         self.data = data
         self.init = init
@@ -24,60 +89,83 @@ class SQP(Inner_Solver):
         self.it = it
         self.intensity = intensity
         
-        #some parameters
+        
         # maximum number of CG iterations
-        self.N_CG = 50
-        # replace KL(a,b) by KL(a+offset, b+offset)
-        self.offset0 =2e-6
-        # offset is reduced in each Newton step by a factor offset_step
-        self.offset_step = 0.8
+        self._N_CG = 50
+        # replace KL(a,b) by KL(a+_offset, b+_offset)
+        self._offset0 =2e-6
+        # offset is reduced in each Newton step by a factor _offset_step
+        self._offset_step = 0.8
         # relative tolerance value for termination of inner iteration
-        self.update_ratio = 0.01
+        self._update_ratio = 0.01
         # max number of inner iterations to minimize the KL-functional
-        self.inner_kl_it = 10
+        self._inner_kl_it = 10
         
         self.preparations()
         
     def preparations(self):
-        self.offset = self.offset0 * self.intensity * self.offset_step **(self.it - 1) 
-        self.chi = self.data != -self.offset
-        self.smb = scipy.logical_not(self.chi)
-        self.h = np.zeros(len(self.x)) + 0j
-        self.y_kl = self.y +0j
-        self.first = 1
-        self.norm_update = self.update_ratio + 1
-        self.l = 1
-        self.mu = 1
+        """Defines some more parameters."""
+            
+        self._offset = (self._offset0 * self.intensity 
+                        * self._offset_step**(self.it - 1))
+        self._chi = self.data != -self._offset
+        self._smb = scipy.logical_not(self._chi)
+        self._h = np.zeros(len(self.x)) + 0j
+        self._y_kl = self.y +0j
+        self._first = 1
+        self._norm_update = self._update_ratio + 1
+        self._l = 1
+        self._mu = 1
         
     def next(self):
-        self.cont = (self.norm_update > self.update_ratio * self.first and self.l <= self.inner_kl_it and self.mu > 0)
-        self.til_y_kl = self.y_kl
-        self.weight = (self.chi * (self.data + self.offset + 0j)**0.5/(np.sqrt(2.)*(self.til_y_kl + self.offset)))
-        self.b = (1/np.sqrt(2))*self.chi/np.sqrt(self.data+self.offset + 0j) * (self.data - self.til_y_kl) - 0.5*self.smb
-        self.opw = WeightedOp(self.op, self.weight)
+        """Run a single SQP iteration.
+
+        Returns
+        -------
+        bool
+            True: if _norm_update > _update_ratio * _first 
+                    and _l <= _inner_kl_it 
+                    and _mu > 0.
+            False: otherwise.
+            
+        """
         
-        self.hl = CGNE_reg(op = self.opw, y = self.b, xref = self.init - self.x - self.h, regpar = self.alpha, cgmaxit = self.N_CG)
+        self._cont = (self._norm_update > self._update_ratio * self._first and
+                      self._l <= self._inner_kl_it and 
+                      self._mu > 0)
+        self._til_y_kl = self._y_kl
+        self._weight = (self._chi * (self.data + self._offset + 0j)**0.5 / 
+                        (np.sqrt(2.)*(self._til_y_kl + self._offset)))
+        self._b = ((1/np.sqrt(2)) * self._chi 
+                   / np.sqrt(self.data + self._offset + 0j) 
+                   * (self.data - self._til_y_kl) - 0.5*self._smb)
+        self._opw = WeightedOp(self.op, self._weight)
         
-        self.y_kl_update = self.op.derivative()(self.hl)
-        self.mask = self.y_kl_update < 0
-        self.tmp1 = -0.9 * self.offset - self.y_kl
-        self.tmp2 = self.tmp1[self.mask]
-        self.tmp3 = self.y_kl_update[self.mask]
+        self._hl = CGNE_reg(op=self._opw, y=self._b, 
+                            xref=self.init - self.x - self._h,
+                            regpar=self.alpha, cgmaxit=self._N_CG)
+        
+        self._y_kl_update = self.op.derivative()(self._hl)
+        self._mask = self._y_kl_update < 0
+        self._tmp1 = -0.9 * self._offset - self._y_kl
+        self._tmp2 = self._tmp1[self._mask]
+        self._tmp3 = self._y_kl_update[self._mask]
+
         #stepsize control
-        if not np.any(self.mask):
-            self.mu = 1
+        if not np.any(self._mask):
+            self._mu = 1
         else:
-            self.mu = min(np.min(self.tmp2/self.tmp3),1)
-        self.h += self.mu * self.hl
-        self.y_kl += self.mu * self.y_kl_update
-        self.norm_update = self.mu * self.op.domx.norm(self.hl)
-        if self.l == 1:
-            self.first = self.norm_update
-        self.l += 1
+            self._mu = min(np.min(self._tmp2/self._tmp3),1)
+        self._h += self._mu * self._hl
+        self._y_kl += self._mu * self._y_kl_update
+        self._norm_update = self._mu * self.op.domx.norm(self._hl)
+        if self._l == 1:
+            self._first = self._norm_update
+        self._l += 1
         
-        if not self.cont:
-            self.x += self.h
+        if not self._cont:
+            self.x += self._h
             self.it += 1
-        return self.cont    
+        return self._cont    
         
       
