@@ -45,7 +45,9 @@ class Landweber(Solver):
 
     """
 
+    
     def __init__(self, op, data, init, stepsize=None):
+        """Initialization of parameters"""
         super().__init__(logging.getLogger(__name__))
         self.op = op
         self.data = data
@@ -80,7 +82,7 @@ class Landweber(Solver):
             Always True, as the Landweber method never stops on its own.
 
         """
-        self.x -= self.stepsize * self.op.domx.gram_inv(
+        self.x -= self.stepsize*self.op.domx.gram_inv(
             self.deriv.adjoint(self._gy_residual))
         self.setx(self.x)
 
