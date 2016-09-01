@@ -112,7 +112,7 @@ class IRGNM_CG(Solver):
         # Preparations for the CG method
         self._ztilde = self.op.domy.gram(self._residual)
         self._stilde = (self.op.adjoint(self._ztilde) 
-                       + self._regpar*self.op.domx.gram(self._xref))
+                        + self._regpar*self.op.domx.gram(self._xref))
         self._s = self.op.domx.gram_inv(self._stilde)
         self._d = self._s
         self._dtilde = self._stilde
@@ -130,17 +130,18 @@ class IRGNM_CG(Solver):
         In this function all variables in each CG iteration , after ``self.x``
         was updated, are updated. Its only purpose is to improve tidiness.
         """
-        self._Th = self._Th + self._gamma * self._z
-        self._Thtilde = self._Thtilde + self._gamma * self._ztilde
-        self._stilde += -self._gamma*(self.op.adjoint(self._ztilde) + self._regpar * self._dtilde)
+        self._Th = self._Th + self._gamma*self._z
+        self._Thtilde = self._Thtilde + self._gamma*self._ztilde
+        self._stilde += (- self._gamma*(self.op.adjoint(self._ztilde) 
+                         + self._regpar*self._dtilde))
         self._s = self.op.domx.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.op.domx.inner(self._stilde, self._s))
         self._beta = self._norm_s / self._norm_s_old
-        self._d = self._s + self._beta * self._d
-        self._dtilde = self._stilde + self._beta * self._dtilde
+        self._d = self._s + self._beta*self._d
+        self._dtilde = self._stilde + self._beta*self._dtilde
         self._norm_h = self.op.domx.inner(self._h, self.op.domx.gram(self._h))
-        self._kappa = 1 + self._beta * self._kappa
+        self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
 
     def next(self):
@@ -174,12 +175,12 @@ class IRGNM_CG(Solver):
         while (
               # First condition
               np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
-              /self._regpar > self.cgtol[0]/(1 + self.cgtol[0]) and
+              /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
               /np.real(self.op.domx.inner(self._Thtilde,self._Th))
               /self._kappa/self._regpar)
-              > self.cgtol[1]/(1 + self.cgtol[1]) and
+              > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
               np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
               > self.cgtol[2] and 
@@ -189,9 +190,13 @@ class IRGNM_CG(Solver):
             # Computations and updates of variables
             self._z = self.op.derivative()(self._d)
             self._ztilde = self.op.domy.gram(self._z)
-            self._gamma = self._norm_s / \
-            np.real(self._regpar*self.op.domx.inner(self._dtilde,self._d)+self.op.domx.inner(self._ztilde,self._z))
-            self._h = self._h + self._gamma * self._d
+            self._gamma = (self._norm_s
+                           / np.real(self._regpar
+                                     *self.op.domx.inner(self._dtilde,self._d)
+                                     + self.op.domx.inner(self._ztilde,self._z)
+                                     )
+                           )
+            self._h = self._h + self._gamma*self._d
             
             # Updating ``self.x`` 
             self.x += self._h
