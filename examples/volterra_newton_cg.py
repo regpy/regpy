@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import setpath  # NOQA
 
 from itreg.operators import Volterra
