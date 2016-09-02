@@ -9,6 +9,7 @@ Modules
    :toctree: autotoc
    :template: module.rst
 
+   innersolvers
    operators
    solvers
    spaces

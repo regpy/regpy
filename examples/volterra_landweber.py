@@ -31,10 +31,11 @@ data = exact_data + noise
 noiselevel = op.domy.norm(noise)
 
 landweber = Landweber(op, data, np.zeros(xs.shape), stepsize=0.1)
-stoprule = rules.CombineRules(
-    [rules.CountIterations(100),
-     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
-    op=op)
+#stoprule = rules.CombineRules(
+#    [rules.CountIterations(100),
+#     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
+#    op=op)
+stoprule = rules.CountIterations(100)
 
 plt.plot(xs, exact_solution)
 plt.plot(xs, exact_data)
