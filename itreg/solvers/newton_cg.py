@@ -1,3 +1,5 @@
+"""Newton_CG solver """
+
 import logging
 import numpy as np
 
@@ -7,22 +9,23 @@ __all__ = ['Newton_CG']
 
 
 class Newton_CG(Solver): 
+
     """The Newton-CG method.
     
-    Solves the potentially non-linear, ill-posed equation ::
+    Solves the potentially non-linear, ill-posed equation:
 
         T(x) = y,
 
     where T is a Frechet-differentiable operator. The number of iterations is
     effectively the regularization parameter and needs to be picked carefully.
 
-    The Newton equations are solved by the conjugate gradient
-    method applied to the normal equation (CGNE)
-    using the regularizing properties of CGNE with early stopping
-    (see Hanke 1997).
+    The Newton equations are solved by the conjugate gradient method applied to
+    the normal equation (CGNE) using the regularizing properties of CGNE with 
+    early stopping (see Hanke 1997).
+    The "outer iteration" and the "inner iteration" are referred to as the 
+    Newton iteration and the CG iteration, respectively. The CG method with all
+    its iterations is run in each Newton iteration.
 
-        
-    
     Parameters
     ----------
     op : :class:`Operator <itreg.operators.Operator>`
@@ -32,7 +35,7 @@ class Newton_CG(Solver):
     init : array
         The initial guess.
     cgmaxit : int, optional
-        Maximum iterations for the inner iteration (which is the CG method).
+        Maximum iterations for the inner iteration (where the CG method is run).
     rho : float, optional
         A factor considered for stopping the inner iteration (which is the 
         CG method).
@@ -54,10 +57,7 @@ class Newton_CG(Solver):
         The current point.
     y : array
         The value at the current point.
-    
-    
     """
-    
     
     def __init__(self, op, data, init, cgmaxit=50, rho=0.8):
         """Initialization of parameters"""
@@ -75,12 +75,7 @@ class Newton_CG(Solver):
         self.cgmaxit = cgmaxit
         
     def outer_update(self):
-        """This function does two things:
-            1. Initialization of the needed variables in the outer iteration 
-            with the input init.
-            2. Straight forward computations for the outer iteration. The input
-            for this purpose is actually not needed.   
-        """
+        """Initialize and update variables in the Newton iteration."""
         
         self._x_k = np.zeros(np.shape(self.x))       
         self.y = self.op(self.x)                   
@@ -95,19 +90,17 @@ class Newton_CG(Solver):
         self._k = 1
      
     def inner_update(self):
-        """This function does straight forward computations of variables only.
-        Its whole purpose is to increase readability.
+        """Compute variables in each CG iteration."""
         
-        """
         self._aux = self.op.derivative()(self._d)
         self._aux2 = self.op.domy.gram(self._aux)
-        self._alpha = self._innerProd / \
-                    np.real(self.op.domy.inner(self._aux,self._aux2))
+        self._alpha = (self._innerProd
+                       / np.real(self.op.domy.inner(self._aux,self._aux2)))
         self._s2 += -self._alpha*self._aux2
         self._rtilde = self.op.adjoint(self._s2)
         self._r = self.op.domx.gram_inv(self._rtilde)
-        self._beta = np.real(self.op.domy.inner(self._r,self._rtilde))/\
-                    self._innerProd        
+        self._beta = (np.real(self.op.domy.inner(self._r,self._rtilde))
+                      / self._innerProd)  
 
     def next(self):
         """Run a single Newton_CG iteration.
@@ -122,11 +115,11 @@ class Newton_CG(Solver):
                > self.rho*self._norms0 and
                self._k <= self.cgmaxit):
             self.inner_update()
-            
-            self._x_k += self._alpha*self._d
-            
+            self._x_k += self._alpha*self._d       
             self._d = self._r + self._beta*self._d
             self._k += 1
+        
+        # Updating ``self.x``
         self.x += self._x_k
         self.outer_update()
         return True

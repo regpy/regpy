@@ -4,10 +4,10 @@ __all__ = ['WeightedOp']
 
 
 class WeightedOp(LinearOperator):  
-    """The Weighted operator.
+    """Weight the given linear operator in a certain way.
     
-    Constructs an operator with weighted adjoint and derivative.
-    
+    This operator is used by the inner solver ``sqp.py``, which is used by the
+    solver ``irnm_kl.py``.
 
     Parameters
     ----------
@@ -29,7 +29,11 @@ class WeightedOp(LinearOperator):
 
         
     def __call__(self, x):
+        """Weight the call function."""
+        
         return self.weight * self.op(x)
 
     def adjoint(self, x):
+        """Weight the adjoint function."""
+        
         return self.op.adjoint(self.weight*x)

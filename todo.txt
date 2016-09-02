@@ -26,4 +26,3 @@ irnm_kl.py --> mariko // inner_solver
 irgnm dinger // cg_methods --> jonas
 
 landweber + newton_cg --> henrik
-

@@ -1,3 +1,5 @@
+"""IRGNM_CG solver """
+
 import logging
 import numpy as np
 
@@ -9,7 +11,7 @@ __all__ = ['IRGNM_CG']
 class IRGNM_CG(Solver):
     """The IRGNM_CG method.
 
-    Solves the potentially non-linear, ill-posed equation ::
+    Solves the potentially non-linear, ill-posed equation:
 
         T(x) = y,
 

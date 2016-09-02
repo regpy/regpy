@@ -1,3 +1,5 @@
+"""IRGNM_L1_fid solver """
+
 import logging
 import numpy as np
 import scipy
@@ -10,7 +12,7 @@ __all__ = ['IRGNM_L1_fid']
 class IRGNM_L1_fid(Solver):
     """The IRGNM_L1_fid method.
     
-    Solves the potentially non-linear, ill-posed equation ::
+    Solves the potentially non-linear, ill-posed equation:
 
         T(x) = y,
 
@@ -67,7 +69,7 @@ class IRGNM_L1_fid(Solver):
 
     def __init__(self, op, data, init, 
                  alpha0=1, alpha_step=0.9, alpha_l1=1e-4):
-        """Initialization of parameters."""
+        """Initialize parameters."""
         
         super().__init__(logging.getLogger(__name__))
         self.op = op
@@ -90,7 +92,7 @@ class IRGNM_L1_fid(Solver):
         self._maxiter = 10000
 
     def update(self):
-        """Computes and updates variables for each iteration.
+        """Compute and update variables for each iteration.
         
         Uses the scipy function ``scipy.optimize.minimize`` to minimize the 
         functional ``self._func`` with ``self._iter`` number of iterations. If
@@ -130,9 +132,9 @@ class IRGNM_L1_fid(Solver):
             self._iter *= 2
         
     def _func(self, x):
-        """Functional for the ` scipy.optimize.minimize``"""
+        """Define the functional for ``scipy.optimize.minimize``."""
         
-        return 0.5 * np.dot(x.T,np.dot(self._Hess,x)) - np.dot(self._rhs.T,x)            
+        return 0.5*np.dot(x.T,np.dot(self._Hess,x)) - np.dot(self._rhs.T,x)            
             
     def next(self):
         """Run a single IRGNM_L1_fid iteration.
@@ -147,6 +149,7 @@ class IRGNM_L1_fid(Solver):
 
         """
         self.update()
-        self.x = self.init + self.op.domx.gram_inv(np.dot(self._DF.T,self._updateY))
+        self.x = (self.init
+                  + self.op.domx.gram_inv(np.dot(self._DF.T,self._updateY)))
         self.y = self.op(self.x)
         return True

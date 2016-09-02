@@ -1,3 +1,5 @@
+"""Landweber solver """
+
 import logging
 import numpy as np
 
@@ -9,7 +11,7 @@ __all__ = ['Landweber']
 class Landweber(Solver):
     """The Landweber method.
 
-    Solves the potentially non-linear, ill-posed equation ::
+    Solves the potentially non-linear, ill-posed equation:
 
         T(x) = y,
 
