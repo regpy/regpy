@@ -1,3 +1,8 @@
+"""Example:
+    Solver: Newton_CG
+    Operator: Volterra
+"""
+
 import setpath  # NOQA
 
 from itreg.operators import Volterra

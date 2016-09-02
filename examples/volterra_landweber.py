@@ -1,3 +1,8 @@
+"""Example:
+    Solver: Landweber
+    Operator: Volterra
+"""
+
 import setpath  # NOQA
 
 from itreg.operators import Volterra
