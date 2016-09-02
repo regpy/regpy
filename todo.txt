@@ -1,35 +1,6 @@
-kommentare fixen, µ-fast überall, diese sind schon erledigt (fast):
-newton_cg.py, landweber.py
-
-variablennamen fixen, diese sind schon erledigt:
-newton_cg.py, landweber.py
-
-
-
-
-
-
 falls sphinx meckert, tabs durch spaces ersetzen . 1 tab = 4 spaces
-
- Imports should be grouped in the following order:
-
-    standard library imports
-    related third party imports
-    local application/library specific imports
-
-You should put a blank line between each group of imports. 
-
-
-aufteilen der algorithmen:
-irnm_kl.py --> mariko // inner_solver 
-
-irgnm dinger // cg_methods --> jonas
-
-landweber + newton_cg --> henrik
-
-
-
+doc schreiben! wuhuu
 _____
-git reset durch:
+git reset durch (vorher grün machen (git add -A)):
 git reset --hard origin/master
 git pull origin master
