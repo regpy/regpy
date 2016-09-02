@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import scipy
 
-import setpath
+import setpath #noqa
 from itreg.util import CGNE_reg
 from itreg.operators import WeightedOp
 from . import Inner_Solver
@@ -14,6 +14,7 @@ __all__ = ['SQP']
 
 
 class SQP(Inner_Solver):
+    
     """ The SQP method. 
     
     Solves the inner problem
@@ -22,9 +23,9 @@ class SQP(Inner_Solver):
     
     iteratively. 
     
-    S is replaced by the second order Taylor-Approximation and 
-    then the corresponding quadratic problem is solved. This is repeated 
-    iteratively until the update is small enough.
+    S is replaced by the second order Taylor-Approximation and then the 
+    corresponding quadratic problem is solved. This is repeated iteratively
+    until the update is small enough.
     
     The following parameters are fixed:
          - maximum number of CG iterations:
@@ -76,7 +77,7 @@ class SQP(Inner_Solver):
     
     def __init__(self, op, data, init, x_input, y_input,
                  alpha, it, intensity = 1):
-        """Initialization of parameters """
+        """Initialize parameters """
         
         super().__init__(logging.getLogger(__name__))
                 
@@ -104,7 +105,7 @@ class SQP(Inner_Solver):
         self.preparations()
         
     def preparations(self):
-        """Defines some more parameters."""
+        """Define some more parameters."""
             
         self._offset = (self._offset0 * self.intensity 
                         * self._offset_step**(self.it - 1))
@@ -115,6 +116,7 @@ class SQP(Inner_Solver):
         self._first = 1
         self._norm_update = self._update_ratio + 1
         self._l = 1
+        # step size
         self._mu = 1
         
     def next(self):

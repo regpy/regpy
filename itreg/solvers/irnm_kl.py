@@ -1,9 +1,9 @@
 """IRNM_KL Solver """
 
 import logging
-import numpy as np
+import numpy as np # noqa
 
-import setpath
+import setpath # noqa
 from . import Solver
 from itreg.innersolvers import SQP
 
@@ -12,6 +12,7 @@ __all__ = ['IRNM_KL']
 
 
 class IRNM_KL(Solver):
+    
     """The iteratively regularized Newton method with shifted Kullback-Leibler
     divergence
 
@@ -60,7 +61,7 @@ class IRNM_KL(Solver):
 
     def __init__(self, op, data, init, alpha0=5e-6, alpha_step=2/3.,
                  intensity=1):
-        """Initialization of parameters """
+        """Initialize parameters """
         
         super().__init__(logging.getLogger(__name__))
         self.op = op
@@ -90,6 +91,7 @@ class IRNM_KL(Solver):
         self.x = self._sqp.run()
         self.k += 1
         self.y = self.op(self.x)
+        # prepare next step
         self.alpha *= self.alpha_step
         
         return True

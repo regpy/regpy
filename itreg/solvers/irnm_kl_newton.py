@@ -13,6 +13,7 @@ __all__ = ['IRNM_KL_Newton']
 
 
 class IRNM_KL_Newton(Solver):
+    
     """The iteratively regularized Newton method with quadratic approximation
     of KL (Kullback-Leibler) divergence as data misfit term 
     The regularization parameter in k-th Newton step is alpha0 * alpha_step^k.
@@ -66,7 +67,7 @@ class IRNM_KL_Newton(Solver):
     inner_res : float
     inner_it : int
         Max. number of inner iterations.
-    cgmaxit : int
+    cgmaxit : intIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
         Max number of CG iterations.
     k : int
         Number of iterations.
@@ -75,7 +76,7 @@ class IRNM_KL_Newton(Solver):
     def __init__(self, op, data, init, alpha0 =2e-6, alpha_step=2/3.,
                  intensity=1, scaling=1, offset=1e-4, offset_step=0.8,
                  inner_res=1e-10, inner_it=10, cgmaxit=50):
-        """Initializing parameters """
+        """Initialize parameters """
         
         super().__init__(logging.getLogger(__name__))
         self.op = op
@@ -137,14 +138,15 @@ class IRNM_KL_Newton(Solver):
             
             self._n += 1
         
-        self._h = self._h_n        
+        self._h = self._h_n   
+        # update
         self.x += self._h
         self.y = self.op(self.x)
         self.alpha = self.alpha * self.alpha_step
         self.offset = self.offset * self.offset_step
         return True
         
-    #define some helpfunctions 
+    #define some help functions 
     def _frakF(self, x):
         return np.log(self.op(x) + self.offset)
     

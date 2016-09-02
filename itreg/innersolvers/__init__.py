@@ -4,6 +4,7 @@ import logging
 
 
 class Inner_Solver(object):
+    
     """Abstract base class for inner solvers (for example SQP method).
     
     Parameters
