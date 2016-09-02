@@ -1,3 +1,5 @@
+"""Collection of CG methods."""
+
 import numpy as np
 import numpy.linalg as LA
 
@@ -7,19 +9,43 @@ __all__ = ['CGNE_reg',
            ]
 
            
-def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2): 
-    ''' function CGNE_reg, which solves 
-
-     A h = b by CGNE with
-        A := G_X^{-1} F'* G_Y F' + regpar I
-        b := G_X^{-1}F'^* G_Y y + regpar xref
-     A is self-adjoint with respect to the inner product <u,v> = u'G_X v
+def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2): 
+    """CGNE method.        
     
-     G_X, G_Y -> op.domx.gram, op.domy.gram
-     G_X^{-1} -> op.domx.gram_inv
-     F'*      -> F.adjoint
-    '''   
-    #compute rtilde=G_X b
+    Used by the inner solver ``sqp.py``.
+    
+    The CG method solves by CGNE
+    
+        A h = b,
+        
+    with
+        A := G_X^{-1} F'* G_Y F' + regpar I
+        b := G_X^{-1} F'* G_Y y + regpar xref
+    where
+        F           -> self.op
+        G_X, G_Y    -> self.op.domx.gram, self.op.domy.gram
+        G_X^{-1}    -> self.op.domx.gram_inv
+        F'          -> self.op.derivative()
+        F'*         -> self.op.derivative().adjoint
+        
+    Parameters
+    ----------
+    op : :class:`Operator <itreg.operators.Operator>`
+        The forward operator.
+    y : array
+        The right hand side.
+    xref : array
+        The difference between the starting point and the current point (of the
+        solver using the CGNE_reg method).
+    regpar : float
+        A factor considered for stopping the inner iteration (where the CG
+        method is run).
+    cgmaxit : int, optional
+        Maximum iterations for the inner iteration (where the CG method is run).
+    cg_eps : float, optional
+        Tolerance used by the while loop.
+    """ 
+    
     auxy = op.domy.gram(y)
     rtilde = op.adjoint(auxy)
     rtilde += regpar * op.domx.gram(xref)
@@ -49,7 +75,23 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit = 1000, cg_eps = 1e-2):
     
   
 def CG(fun, b, init, eps, maxit):
+    """CG method.
     
+    Used by the solver ``irnm_kl_newton.py``.
+    
+    Parameters
+    ----------
+    fun : function
+        Function used by CG, it should have one input argument of type array.
+    b : array
+        Right hand side.
+    init : array
+        Initial guess.
+    eps: float
+        Tolerance.
+    maxit : int
+        Maximum number of iterations.
+    """
     
     n = 0
     y = fun(init)
