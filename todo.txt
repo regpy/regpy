@@ -1,5 +1,20 @@
-falls sphinx meckert, tabs durch spaces ersetzen . 1 tab = 4 spaces
-doc schreiben! wuhuu
+festhalten: wir haben manuelle pfade fuer solvers und innersolvers hinzugefuegt
+und autodoc rauskommentiert. vorher hat sphinx diese nicht erkannt.
+
+bei submodules in README.rst wuerden wir noch alle submodules einzeln kommentie
+ren mal mehr mal weniger ausfuehrlich.
+ansonsten fehlt noch die latex umgebung, in der wir alle unterschiede zu matlab
+festhalten.. (nicht alle aber die tollsten). das beinhaltet:
+- weighted op monkey patching
+- aeußere while-schleife ersetzt durch next() und iter()
+- logging ersetzt alle infomeldungen, haben wir jedoch noch nicht implementiert
+- quadprogreg ersetzt durch scipy.optimize.minimize
+
+
+
+
+
+
 _____
 git reset durch (vorher grün machen (git add -A)):
 git reset --hard origin/master

@@ -108,7 +108,7 @@ Most diagnostic messages, i.e. status information about solver iterations, are
 emitted at log level :const:`logging.INFO`.
 
 So far this feature is only implemented in 
-:class:`Landweber <itreg.operators.Landweber>`.
+:class:`Landweber <itreg.solvers.Landweber>`.
 
 Coding style
 ------------

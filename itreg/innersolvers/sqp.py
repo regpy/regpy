@@ -124,14 +124,12 @@ class SQP(Inner_Solver):
 
         Returns
         -------
-        bool
-            True: if _norm_update > _update_ratio * _first 
-                    and _l <= _inner_kl_it 
-                    and _mu > 0.
-            False: otherwise.
-            
-        """
         
+        bool
+            Since next() may return False, this algorithm can stop on its own
+            without using a stoprule.
+
+        """
         self._cont = (self._norm_update > self._update_ratio * self._first and
                       self._l <= self._inner_kl_it and 
                       self._mu > 0)
