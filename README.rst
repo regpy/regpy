@@ -25,7 +25,7 @@ matrices  :math:`G_X` and  :math:`G_Y`:
 
 and
 
-.. math :: \langle y_1,y_2 \rangle_Y = y_1^\ast G_Y y_2
+.. math :: \langle y_1,y_2 \rangle_Y = y_1^\ast G_Y y_2.
 
 
 Usage
@@ -113,7 +113,8 @@ So far this feature is only implemented in
 Coding style
 ------------
 
-Please follow the `Official NumPy documentation guidelines`_, with the follwing deviations:
+Please follow the `Official NumPy documentation guidelines`_, with the follwing
+deviations:
 
 - Write the constructor documentation in the `__init__` docstring, not in the
   class docstring.
@@ -122,4 +123,5 @@ http://docutils.sourceforge.net/docs/user/rst/demo.txt
 https://www.python.org/dev/peps/pep-0008/
 
 
-.. _Official NumPy documentation guidelines: https://github.com/numpy/numpy/blob/master/doc/HOWTO_DOCUMENT.rst.txt
+.. _Official NumPy documentation guidelines: 
+https://github.com/numpy/numpy/blob/master/doc/HOWTO_DOCUMENT.rst.txt
