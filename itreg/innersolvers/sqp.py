@@ -19,8 +19,9 @@ class SQP(Inner_Solver):
     
     Solves the inner problem
     
-    argmin of S(F(x_in) + F'(x_in)(h); y_obs) + regpar R(x_in + h - x0)
-    
+    .. math ::  \operatorname{argmin} ~ \operatorname{S}(F(x_in) +
+                F'(x_in)(h); y_{obs}) + \mbox{regpar}~ R(x_in + h - x_0)
+   
     iteratively. 
     
     S is replaced by the second order Taylor-Approximation and then the 

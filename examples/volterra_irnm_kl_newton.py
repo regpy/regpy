@@ -1,4 +1,7 @@
-#!/usr/bin/python3
+"""Example:
+    Solver: IRNM_KL_Newton
+    Operator: Volterra
+"""
 
 import setpath  # NOQA
 

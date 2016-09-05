@@ -8,7 +8,7 @@ __all__ = ['CountIterations']
 class CountIterations(StopRule):
     """Stopping rule based on number of iterations.
 
-    Each call to :meth:`stop` increments the iteration count by 1.
+    Each call to :attr:`stop` increments the iteration count by 1.
 
     Parameters
     ----------

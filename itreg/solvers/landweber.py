@@ -13,9 +13,9 @@ class Landweber(Solver):
 
     Solves the potentially non-linear, ill-posed equation:
 
-        T(x) = y,
+        .. math:: T(x) = y,
 
-    where "T" is a Frechet-differentiable operator. The number of iterations is
+    where :math:`T` is a Frechet-differentiable operator. The number of iterations is
     effectively the regularization parameter and needs to be picked carefully.
 
     Parameters

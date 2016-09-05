@@ -1,5 +1,7 @@
-#!/usr/bin/python3
-
+"""Example:
+    Solver: IRNM_KL
+    Operator: Volterra
+"""
 import setpath  # NOQA
 
 from itreg.operators import Volterra

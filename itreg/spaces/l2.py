@@ -6,7 +6,7 @@ __all__ = ['L2']
 
 
 class L2(Space):
-    """Space with default L^2 inner product.
+    """Space with default :math:`L^2` inner product.
 
     The Gram matrix is the identity.
 
