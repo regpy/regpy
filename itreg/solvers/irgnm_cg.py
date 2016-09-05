@@ -13,10 +13,11 @@ class IRGNM_CG(Solver):
 
     Solves the potentially non-linear, ill-posed equation:
 
-        T(x) = y,
+       .. math:: T(x) = y,
 
-    where "T" is a Frechet-differentiable operator. The number of iterations is
-    effectively the regularization parameter and needs to be picked carefully.
+    where   :math:`T` is a Frechet-differentiable operator. The number of 
+    iterations is effectively the regularization parameter and needs to be
+    picked carefully.
     
     IRGNM stands for Iteratively Regularized Gauss Newton Method. CG stands for
     the Conjugate Gradient method. The regularized Newton equations are solved

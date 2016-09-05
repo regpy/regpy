@@ -14,14 +14,15 @@ class IRGNM_L1_fid(Solver):
     
     Solves the potentially non-linear, ill-posed equation:
 
-        T(x) = y,
+      .. math::  T(x) = y,
 
-    where "T" is a Frechet-differentiable operator. The number of iterations is
-    effectively the regularization parameter and needs to be picked carefully.
+    where :math:`T` is a Frechet-differentiable operator. The number of
+    iterations is effectively the regularization parameter and needs to be
+    picked carefully.
     
     IRGNM stands for Iteratively Regularized Gauss Newton Method. The L1 means 
-    that this algorithm includes some kind of L^1 regularization term. The fid 
-    stands for fidelity, as we include some kind of fidelity term.
+    that this algorithm includes some kind of :math:`L^1` regularization term.
+    The fid stands for fidelity, as we include some kind of fidelity term.
     
     In this algorithm the function ``scipy.optimize.minimize`` is used to solve
     a nonlinear functional. In our case this is ``self._func``. For more

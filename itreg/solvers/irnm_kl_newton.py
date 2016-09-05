@@ -67,7 +67,7 @@ class IRNM_KL_Newton(Solver):
     inner_res : float
     inner_it : int
         Max. number of inner iterations.
-    cgmaxit : intIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+    cgmaxit : int
         Max number of CG iterations.
     k : int
         Number of iterations.

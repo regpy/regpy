@@ -18,9 +18,9 @@ class IRNM_KL(Solver):
 
     Solves the potentially non-linear, ill-posed equation:
 
-        T(x) = y,
+       .. math:: T(x) = y,
 
-    where 'T' is a Frechet-differentiable operator. 
+    where :math:`T` is a Frechet-differentiable operator. 
     
     The penalty is determined by self.op.domx.gram(X).
 
