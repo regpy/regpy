@@ -60,8 +60,8 @@ $$\langle x_1,x_2 \rangle_X = x_1^\ast G_X x_2$$
 and
 $$\langle y_1,y_2 \rangle_Y = y_1^\ast G_Y y_2.$$
 \section{Structure: Python versus Matlab}
-\subsection{Structure of the functional}
-In Matlab, the functional $T$ with all its attributes was given by a certain structure. This structure also contained the spaces $X$ and $Y$ with the respective inner products and other attributes. In Python, this structure is divided in classes. We have the classes \texttt{Space}, \texttt{Operator} and \texttt{Solver}. Using objects of class \texttt{Space}, objects from class \texttt{Operator} are comparable to the structure of the functional in Matlab.
+\subsection{Structure of the operator}
+In Matlab, the operator $T$ with all its attributes was given by a certain structure. This structure also contained the spaces $X$ and $Y$ with the respective inner products and other attributes. In Python, this structure is divided in classes. We have the classes \texttt{Space}, \texttt{Operator} and \texttt{Solver}. Using objects of class \texttt{Space}, objects from class \texttt{Operator} are comparable to the structure of the operator in Matlab.
 \subsection{Structure of the solvers}
 An object from class \texttt{Solver} in Python is equivalent to the respective solver in Matlab. As the name of the package implies, all algorithms are iterative procedures. Thus in Matlab every solver contains at least one while loop. This fact is used in the Python code. We use the built-in Python functions \texttt{\_\_iter\_\_} and \texttt{next} to replace the outer while loop. \texttt{next} contains all computations that the outer while loop contains in the respective Matlab algorithm. If an algorithm has additional while loops, they are implemented in Python as while loops, too.
 \subsection{Usage of the solvers}
