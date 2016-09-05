@@ -11,8 +11,9 @@
 \thispagestyle{empty}
 %Head
 \begin{center}
-\Large{Georg-August-University Göttingen}\\
-\Large{Faculty for mathematics}
+\Large{Georg-August-Universität Göttingen}\\
+\Large{Fakultät für Mathematik und Informatik}\\
+\Large{Institut für Numerische und Angewandte Mathematik}
 \end{center}
 %vertical space 3cm
 \vspace*{3cm}
@@ -60,39 +61,39 @@ and
 $$\langle y_1,y_2 \rangle_Y = y_1^\ast G_Y y_2.$$
 \section{Structure: Python versus Matlab}
 \subsection{Structure of the functional}
-In Matlab, the functional $T$ with all its attributes was given by a certain structure. This structure also contained the spaces $X$ and $Y$ with the respective inner products and other attributes. In Python, this structure is divided in classes. We have the classes Space, Operator and Solver. Using objects of class Space, objects from class Operator are comparable to the structure of the functional in Matlab.
+In Matlab, the functional $T$ with all its attributes was given by a certain structure. This structure also contained the spaces $X$ and $Y$ with the respective inner products and other attributes. In Python, this structure is divided in classes. We have the classes \texttt{Space}, \texttt{Operator} and \texttt{Solver}. Using objects of class \texttt{Space}, objects from class \texttt{Operator} are comparable to the structure of the functional in Matlab.
 \subsection{Structure of the solvers}
-An object from class Solver in Python is equivalent to the respective solver in Matlab. As the name of the package implies, all algorithms are iterative procedures. Thus in Matlab every solver contains at least one while loop. This fact is used in the Python code. We use the built-in Python functions \texttt{\_\_iter\_\_} and \texttt{next} to replace the outer while loop. \texttt{next} contains all computations that the outer while loop contains in the respective Matlab algorithm. If an algorithm has additional while loops, they are implemented in Python as while loops, too.
+An object from class \texttt{Solver} in Python is equivalent to the respective solver in Matlab. As the name of the package implies, all algorithms are iterative procedures. Thus in Matlab every solver contains at least one while loop. This fact is used in the Python code. We use the built-in Python functions \texttt{\_\_iter\_\_} and \texttt{next} to replace the outer while loop. \texttt{next} contains all computations that the outer while loop contains in the respective Matlab algorithm. If an algorithm has additional while loops, they are implemented in Python as while loops, too.
 \subsection{Usage of the solvers}
-To execute an algorithm in Matlab, one has to call the algorithm directly with suiting input, immediately beginning to compute and giving an output. Since in Python a solver is a class, one has to define a variable, e.g. \texttt{mysolver}, as an object of class Solver, for example Landweber. One would write\\
+To execute an algorithm in Matlab, one has to call the algorithm directly with suiting input, immediately beginning to compute and giving an output. Since in Python a solver is a class, one has to define a variable, e.g. \texttt{mysolver}, as an object of class \texttt{Solver}, for example \texttt{Landweber}. One would write\\
 \texttt{mysolver = Landweber(input)}.\\
-Nothing was computed yet, as it was just a definition. The execution of the solver is then accomplished by using the attribute \texttt{run}. This function is the same for all algorithms defined so far, so that it only takes a stoprule as an argument.\\
-In Matlab, stoprules are given through parameters to the function. In Python, there exists the class Stoprule. Thus, one defines a stoprule \texttt{mystoprule} which is then given as an argument:\\
+Nothing is computed yet, as it was just a definition. The execution of the solver is then accomplished by using the attribute \texttt{run}. This function is the same for all algorithms defined so far, so that it only takes an object of class \texttt{Stoprule} as an argument.\\
+In Matlab, stoprules are given through parameters to the function. In Python, there exists the class \texttt{Stoprule}. Thus, one defines a stoprule \texttt{mystoprule} which is then given as an argument:\\
 \texttt{x = mysolver.run(stoprule = mystoprule)}.\\
 Then the solution for the input \texttt{input}, using the solver \texttt{mysolver}, is given in \texttt{x}.
 \subsection{Inner solvers}
-Inner solvers are implemented as a class Inner\_Solver, analogously to the class Solver. Since all inner solvers have as well as solvers at least one while loop, we use the same structure with \texttt{\_\_iter\_\_} and \texttt{next}. Inner solvers are only used inside solvers and thus are in general not explicitly called by the user.
+Inner solvers are implemented as a class \texttt{Inner\_Solver}, analogously to the class \texttt{Solver}. Since all inner solvers as well as solvers have  at least one while loop, we use the same structure with \texttt{\_\_iter\_\_} and \texttt{next}. Inner solvers are only used inside solvers and thus are in general not explicitly called by the user.
 \subsection{Parameter structure}
-To give parameters like tolerances or maximal number of iterations to an algorithm in Matlab, one has to define all parameters inside a certain parameter structure. There are also pre-set parameters given in a file. In Python, all those parameters have to be given as arguments to the function that constructs an object of class Solver, e.g. Landweber. These are mostly optional arguments, as there are pre-set values for each parameter as well.
+To give parameters like tolerances or maximal number of iterations to an algorithm in Matlab, one has to define all parameters inside a certain parameter structure. There are also pre-set parameters given in a file. In Python, all those parameters have to be given as arguments to the function that constructs an object of class \texttt{Solver}, e.g. \texttt{Landweber}. These are mostly optional arguments, as there are pre-set values for each parameter as well.
 \subsection{Utilities}
 The \texttt{utilities} folder in the Matlab package corresponds to the \texttt{util} folder in the Python package. All utilities that are needed so far in Python, are saved here as methods.
 \subsection{Logging}
-For diagnostic messages, in Matlab the algorithms print the messages directly in the console. In Python, we want to use the standard \texttt{logging} framework. But so far, this is only implemented in the Landweber algorithm.
+For diagnostic messages in Matlab, the algorithms print the messages directly in the console. In Python, we want to use the standard \texttt{logging} framework. But so far, this is only implemented in the \texttt{Landweber} algorithm.
 \section{Details}
 In this section, some details of differences between the Python and the Matlab package are discussed.
 \subsection{WeightedOp}
-In Matlab in the inner solver SQP, which is used by IRNM\_KL, there is a new operator $T$ defined by weighting the adjoint and the derivative method of the old operator $F$.
-code hinzufügen?
+In Matlab in the inner solver \texttt{SQP}, which is used by \texttt{IRNM\_KL}, there is defined a new operator $T$ by weighting the \texttt{adjoint} and the \texttt{derivative} method of the old operator $F$. These definitions are written directly as commands in the Matlab code.\\
+In Python, copying this style is called monkey patching, since we would replace attributes of functions at runtime. To solve this issue, a new class \texttt{WeightedOp} of class \texttt{Operator} is created, that takes an operator and a weight as input and returns the desired weighted operator.
 \subsection{Quadprogreg}
-asdfasdf
-
-
-
-
-
-
-
-
-
-
+In Matlab in the solver \texttt{IRGNM\_L1\_fid}, the built-in function \texttt{quadprogreg} is used to minimize the term for $x\in\mathbb{K}^n$:
+$$\frac{1}{2}x^THx+f^Tx,$$
+such that
+$$L\leq x\leq R,$$
+where $H\in\mathbb{K}^{n\times n}$ and $f,L,R\in\mathbb{K}^n$ are given parameters.\\
+In Python, this built-in function does not exist. Therefore we used a function from the SciPy package:\\
+\texttt{scipy.optimize.minimize}.\\
+It takes a function 
+$$f:~\mathbb{K}^n\rightarrow\mathbb{R}$$
+and boundaries $L,R\in\mathbb{K}^n$ as an input and minimizes
+$$f(x),\quad x\in\mathbb{K}^n,~L\leq x\leq R.$$
 \end{document}
