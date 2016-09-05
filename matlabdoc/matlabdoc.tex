@@ -1,0 +1,98 @@
+\documentclass[12pt]{scrartcl}
+%packages used:
+\usepackage[utf8]{inputenc} % Kodierung
+%\usepackage[ngerman]{babel} % Sprache
+\usepackage[english]{babel}
+\usepackage{lmodern}
+%\renewcommand*\familydefault{\sfdefault}
+\usepackage{amsfonts}
+
+\begin{document}
+\thispagestyle{empty}
+%Head
+\begin{center}
+\Large{Georg-August-University Göttingen}\\
+\Large{Faculty for mathematics}
+\end{center}
+%vertical space 3cm
+\vspace*{3cm}
+%middle part
+\begin{center}
+\textbf{Python package:}\\
+~\\
+\textbf{\texttt{\Huge{itreg}}}\\
+~\\
+Iterative solvers for ill-posed problems\\
+-\\
+Documentation of the differences between Matlab and Python\\
+\end{center}
+%vertical space 8cm
+\vspace*{8cm}
+%bottom part
+\begin{flushleft}
+\begin{tabular}{llll}
+\textbf{Authors:} & & Jonas Lueg&\\
+& & Mariko Müller & \\
+& & Henrik Wiechers & \\
+& & \\
+\textbf{Date:} & & \today &\\
+\end{tabular}
+\end{flushleft}
+
+%table of contents
+\newpage
+\thispagestyle{empty}
+\tableofcontents
+
+%first page
+\newpage
+\pagenumbering{arabic}
+\section{Introduction}
+The toolbox provides methods to solve ill-conditioned non-linear systems of equations
+$$T(x) = y.$$
+Here  $T:~X \rightarrow Y$ is a non-linear mapping between finite dimensional spaces 
+$$X = \mathbb{K}^n$$
+and
+$$Y = \mathbb{K}^m$$
+where  $\mathbb{K}=\mathbb{R}$ or  $\mathbb{K}=\mathbb{C}$. $X$ and  $Y$ are equipped with inner products described by Gram matrices  $G_X$ and  $G_Y$:
+$$\langle x_1,x_2 \rangle_X = x_1^\ast G_X x_2$$
+and
+$$\langle y_1,y_2 \rangle_Y = y_1^\ast G_Y y_2.$$
+\section{Structure: Python versus Matlab}
+\subsection{Structure of the functional}
+In Matlab, the functional $T$ with all its attributes was given by a certain structure. This structure also contained the spaces $X$ and $Y$ with the respective inner products and other attributes. In Python, this structure is divided in classes. We have the classes Space, Operator and Solver. Using objects of class Space, objects from class Operator are comparable to the structure of the functional in Matlab.
+\subsection{Structure of the solvers}
+An object from class Solver in Python is equivalent to the respective solver in Matlab. As the name of the package implies, all algorithms are iterative procedures. Thus in Matlab every solver contains at least one while loop. This fact is used in the Python code. We use the built-in Python functions \texttt{\_\_iter\_\_} and \texttt{next} to replace the outer while loop. \texttt{next} contains all computations that the outer while loop contains in the respective Matlab algorithm. If an algorithm has additional while loops, they are implemented in Python as while loops, too.
+\subsection{Usage of the solvers}
+To execute an algorithm in Matlab, one has to call the algorithm directly with suiting input, immediately beginning to compute and giving an output. Since in Python a solver is a class, one has to define a variable, e.g. \texttt{mysolver}, as an object of class Solver, for example Landweber. One would write\\
+\texttt{mysolver = Landweber(input)}.\\
+Nothing was computed yet, as it was just a definition. The execution of the solver is then accomplished by using the attribute \texttt{run}. This function is the same for all algorithms defined so far, so that it only takes a stoprule as an argument.\\
+In Matlab, stoprules are given through parameters to the function. In Python, there exists the class Stoprule. Thus, one defines a stoprule \texttt{mystoprule} which is then given as an argument:\\
+\texttt{x = mysolver.run(stoprule = mystoprule)}.\\
+Then the solution for the input \texttt{input}, using the solver \texttt{mysolver}, is given in \texttt{x}.
+\subsection{Inner solvers}
+Inner solvers are implemented as a class Inner\_Solver, analogously to the class Solver. Since all inner solvers have as well as solvers at least one while loop, we use the same structure with \texttt{\_\_iter\_\_} and \texttt{next}. Inner solvers are only used inside solvers and thus are in general not explicitly called by the user.
+\subsection{Parameter structure}
+To give parameters like tolerances or maximal number of iterations to an algorithm in Matlab, one has to define all parameters inside a certain parameter structure. There are also pre-set parameters given in a file. In Python, all those parameters have to be given as arguments to the function that constructs an object of class Solver, e.g. Landweber. These are mostly optional arguments, as there are pre-set values for each parameter as well.
+\subsection{Utilities}
+The \texttt{utilities} folder in the Matlab package corresponds to the \texttt{util} folder in the Python package. All utilities that are needed so far in Python, are saved here as methods.
+\subsection{Logging}
+For diagnostic messages, in Matlab the algorithms print the messages directly in the console. In Python, we want to use the standard \texttt{logging} framework. But so far, this is only implemented in the Landweber algorithm.
+\section{Details}
+In this section, some details of differences between the Python and the Matlab package are discussed.
+\subsection{WeightedOp}
+In Matlab in the inner solver SQP, which is used by IRNM\_KL, there is a new operator $T$ defined by weighting the adjoint and the derivative method of the old operator $F$.
+code hinzufügen?
+\subsection{Quadprogreg}
+asdfasdf
+
+
+
+
+
+
+
+
+
+
+\end{document}
