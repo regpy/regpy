@@ -65,5 +65,6 @@ from .discrepancy import Discrepancy  # NOQA
 __all__ = [
     'CombineRules',
     'CountIterations',
-    'Discrepancy'
+    'Discrepancy',
+    'StopRule'
 ]

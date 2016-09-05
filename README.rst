@@ -65,7 +65,7 @@ Solver: :class:`Solver <itreg.solvers.Solver>`
     :attr:`run <itreg.solvers.Solver.run>` to
     compute the solution.
     
-Stoprule: :class:`Stoprule <itreg.stoprules.Stoprule>`
+Stoprule: :class:`StopRule <itreg.stoprules.StopRule>`
     Some solvers cannot stop on their own and need stoprules as arguments in
     Solver.run(stoprule=stoprule).
     
@@ -74,45 +74,51 @@ For detailed examples for every solver see the examples in
 
 Submodules
 ~~~~~~~~~~
-Solvers of class :class:`Solver <itreg.solvers.Solver>`:
+**Solvers** (:class:`Solver <itreg.solvers.Solver>`):
     :class:`Landweber <itreg.solvers.Landweber>`,
     :class:`IRGNM_CG <itreg.solvers.IRGNM_CG>`,
     :class:`IRGNM_L1_fid <itreg.solvers.IRGNM_L1_fid>`,
     :class:`IRNM_KL <itreg.solvers.IRNM_KL>`,
     :class:`IRNM_KL_Newton <itreg.solvers.IRNM_KL_Newton>`,
     :class:`Newton_CG <itreg.solvers.Newton_CG>`.
-    The solvers of this package.
 
-Spaces of class :class:`Space <itreg.spaces.Space>`:
+The solvers of this package.
+
+**Spaces** (:class:`Space <itreg.spaces.Space>`):
     :class:`L2 <itreg.spaces.L2>`.
-    The spaces of this package.
+    
+The spaces of this package.
 
-Operators of class :class:`Operator <itreg.operators.Operator>`:
+**Operators** (:class:`Operator <itreg.operators.Operator>`):
     :class:`Volterra <itreg.operators.Volterra>`,
     :class:`WeightedOp <itreg.operators.WeightedOp>`.
-    The operators of this package.
+    
+The operators of this package.
 
-Inner Solvers of class :class:`Inner Solver <itreg.innersolvers.Inner_Solver>`:
+**Inner Solvers** (:class:`Inner Solver <itreg.innersolvers.Inner_Solver>`):
     :class:`SQP <itreg.innersolvers.SQP>`.
-    Inner solvers are used by some solvers. They are defined analogously to 
-    the :class:`Solver <itreg.solvers.Solver>` class and are in general not
-    called by the user of this package.
+    
+Inner solvers are used by some solvers. They are defined analogously to 
+the :class:`Solver <itreg.solvers.Solver>` class and are in general not
+called by the user of this package.
 
-Stoprules of class :class:`StopRule <itreg.stoprules.StopRule>`:
+**Stoprules** (:class:`StopRule <itreg.stoprules.StopRule>`):
     :class:`CountIterations <itreg.stoprules.CountIterations>`,
     :class:`Discrepancy <itreg.stoprules.Discrepancy>`.
     :class:`CombineRules <itreg.stoprules.CombineRules>`.
-    Stoprules are given as an argument to the attribute 
-    :attr:`run <itreg.solvers.Solver.run>` of a solver. They determine when the
-    solver stops running.
+    
+Stoprules are given as an argument to the attribute 
+:attr:`run <itreg.solvers.Solver.run>` of a solver. They determine when the
+solver stops running.
 
-Utilities:
+**Utilities**:
     :class:`CGNE_reg <itreg.util.CGNE_reg>`,
     :class:`CG <itreg.util.CG>`,
     :class:`test_adjoint <itreg.util.test_adjoint>`.
-    As the name of this paragraph implies, :meth:`CG <itreg.util.CG>` and 
-    :meth:`CGNE_reg <itreg.util.CGNE_reg>` are utility functions used by some 
-    algorithms.
+    
+As the name of this paragraph implies, :meth:`CG <itreg.util.CG>` and 
+:meth:`CGNE_reg <itreg.util.CGNE_reg>` are utility functions used by some 
+algorithms.
 
 Logging
 ~~~~~~~
