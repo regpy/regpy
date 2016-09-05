@@ -6,6 +6,9 @@
 \usepackage{lmodern}
 %\renewcommand*\familydefault{\sfdefault}
 \usepackage{amsfonts}
+\usepackage{graphicx}
+
+
 
 \begin{document}
 \thispagestyle{empty}
@@ -16,8 +19,12 @@
 \Large{Institut für Numerische und Angewandte Mathematik}
 \end{center}
 %vertical space 3cm
-\vspace*{3cm}
+\vspace*{1.5cm}
+\begin{center}
+\includegraphics[scale=0.5]{siegel.png}
+\end{center}
 %middle part
+\vspace*{1.5cm}
 \begin{center}
 \textbf{Python package:}\\
 ~\\
@@ -28,7 +35,7 @@ Iterative solvers for ill-posed problems\\
 Documentation of the differences between Matlab and Python\\
 \end{center}
 %vertical space 8cm
-\vspace*{8cm}
+\vspace*{2.5cm}
 %bottom part
 \begin{flushleft}
 \begin{tabular}{llll}
@@ -70,7 +77,7 @@ To execute an algorithm in Matlab, one has to call the algorithm directly with s
 Nothing is computed yet, as it was just a definition. The execution of the solver is then accomplished by using the attribute \texttt{run}. This function is the same for all algorithms defined so far, so that it only takes an object of class \texttt{Stoprule} as an argument.\\
 In Matlab, stoprules are given through parameters to the function. In Python, there exists the class \texttt{Stoprule}. Thus, one defines a stoprule \texttt{mystoprule} which is then given as an argument:\\
 \texttt{x = mysolver.run(stoprule = mystoprule)}.\\
-Then the solution for the input \texttt{input}, using the solver \texttt{mysolver}, is given in \texttt{x}.
+Then the solution for the input \texttt{input}, using the solver \texttt{mysolver}, is given by \texttt{x}.
 \subsection{Inner solvers}
 Inner solvers are implemented as a class \texttt{Inner\_Solver}, analogously to the class \texttt{Solver}. Since all inner solvers as well as solvers have  at least one while loop, we use the same structure with \texttt{\_\_iter\_\_} and \texttt{next}. Inner solvers are only used inside solvers and thus are in general not explicitly called by the user.
 \subsection{Parameter structure}
@@ -96,4 +103,7 @@ It takes a function
 $$f:~\mathbb{K}^n\rightarrow\mathbb{R}$$
 and boundaries $L,R\in\mathbb{K}^n$ as an input and minimizes
 $$f(x),\quad x\in\mathbb{K}^n,~L\leq x\leq R.$$
+\subsection{Plots}
+In contrast to the Matlab package, no plots are included in the Python code.
+
 \end{document}

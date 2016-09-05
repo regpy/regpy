@@ -157,17 +157,28 @@ class IRGNM_CG(Solver):
         
         The CG method solves by CGNE
         
-            A h = b,
+
+        .. math:: A h = b,
         
         with
-            A := G_X^{-1} F'* G_Y F' + regpar I
-            b := G_X^{-1} F'* G_Y y + regpar xref
+        
+        .. math:: A := G_X^{-1} F^{' *} G_Y F' + \mbox{regpar} ~I
+        .. math:: b := G_X^{-1} F^{' *} G_Y y + \mbox{regpar}~ \mbox{xref}
+        
         where
-            F           -> self.op
-            G_X, G_Y    -> self.op.domx.gram, self.op.domy.gram
-            G_X^{-1}    -> self.op.domx.gram_inv
-            F'          -> self.op.derivative()
-            F'*         -> self.op.derivative().adjoint
+        
+        +--------------------+-------------------------------------+ 
+        | :math:`F`          | self.op                             | 
+        +--------------------+-------------------------------------+ 
+        | :math:`G_X,~ G_Y`  | self.opdomx.gram, self.op.domy.gram | 
+        +--------------------+-------------------------------------+
+        | :math:`G_X^{-1}`   | self.op.domx.gram_inv               |
+        +--------------------+-------------------------------------+                  
+        | :math:`F'`         | self.op.derivative()                |
+        +--------------------+-------------------------------------+ 
+        | :math:`F'*`        | self.op.derivative().adjoint        | 
+        +--------------------+-------------------------------------+
+
 
         Returns
         -------

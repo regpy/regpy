@@ -99,12 +99,12 @@ class IRNM_KL_Newton(Solver):
         self.cgmaxit = cgmaxit
             
     def next(self):
-        """Run a single IRNM_KL_NEWTON iteration.
+        """Run a single IRNM_KL_Newton iteration.
 
         Returns
         -------
         bool
-            Always True, as the IRNM_KL_NEWTON method never stops on its own.
+            Always True, as the IRNM_KL_Newton method never stops on its own.
 
         """
 
@@ -116,7 +116,7 @@ class IRNM_KL_Newton(Solver):
         self._n = 1
         self._res = self.op.domx.norm(self._rhs)
         
-        """ Minimize 
+        """Minimize 
         
         int(exp(frakF(x) + frakF'(x;h))-(frakF(x) +  frakF'(x;h))*data)
             + alpha ||x + h - init||^2 
