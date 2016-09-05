@@ -61,7 +61,8 @@ Solver: :class:`Solver <itreg.solvers.Solver>`
     An object of type Solver is used to solve the above equation in the
     introduction. To solve such an equation, one has to define several things:
     One has to define the object of type :class:`Solver <itreg.solvers.Solver>`
-    with all its parameters. Then one can use the attribute :attr:`run` to
+    with all its parameters. Then one can use the attribute 
+    :attr:`run <itreg.solvers.Solver.run>` to
     compute the solution.
     
 Stoprule: :class:`Stoprule <itreg.stoprules.Stoprule>`
@@ -80,26 +81,38 @@ Solvers of class :class:`Solver <itreg.solvers.Solver>`:
     :class:`IRNM_KL <itreg.solvers.IRNM_KL>`,
     :class:`IRNM_KL_Newton <itreg.solvers.IRNM_KL_Newton>`,
     :class:`Newton_CG <itreg.solvers.Newton_CG>`.
+    The solvers of this package.
 
 Spaces of class :class:`Space <itreg.spaces.Space>`:
     :class:`L2 <itreg.spaces.L2>`.
+    The spaces of this package.
 
 Operators of class :class:`Operator <itreg.operators.Operator>`:
     :class:`Volterra <itreg.operators.Volterra>`,
     :class:`WeightedOp <itreg.operators.WeightedOp>`.
+    The operators of this package.
 
 Inner Solvers of class :class:`Inner Solver <itreg.innersolvers.Inner_Solver>`:
     :class:`SQP <itreg.innersolvers.SQP>`.
+    Inner solvers are used by some solvers. They are defined analogously to 
+    the :class:`Solver <itreg.solvers.Solver>` class and are in general not
+    called by the user of this package.
 
 Stoprules of class :class:`StopRule <itreg.stoprules.StopRule>`:
     :class:`CountIterations <itreg.stoprules.CountIterations>`,
     :class:`Discrepancy <itreg.stoprules.Discrepancy>`.
     :class:`CombineRules <itreg.stoprules.CombineRules>`.
+    Stoprules are given as an argument to the attribute 
+    :attr:`run <itreg.solvers.Solver.run>` of a solver. They determine when the
+    solver stops running.
 
 Utilities:
     :class:`CGNE_reg <itreg.util.CGNE_reg>`,
     :class:`CG <itreg.util.CG>`,
     :class:`test_adjoint <itreg.util.test_adjoint>`.
+    As the name of this paragraph implies, :meth:`CG <itreg.util.CG>` and 
+    :meth:`CGNE_reg <itreg.util.CGNE_reg>` are utility functions used by some 
+    algorithms.
 
 Logging
 ~~~~~~~
