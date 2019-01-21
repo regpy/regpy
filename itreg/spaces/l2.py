@@ -1,8 +1,4 @@
-import logging
-
 from . import Space
-
-__all__ = ['L2']
 
 
 class L2(Space):
@@ -17,7 +13,7 @@ class L2(Space):
     """
 
     def __init__(self, *shape):
-        super().__init__(shape, logging.getLogger(__name__))
+        super().__init__(shape)
 
     def gram(self, x):
         return x

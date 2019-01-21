@@ -7,7 +7,7 @@ import scipy
 
 import setpath #noqa
 from itreg.util import CGNE_reg
-from itreg.operators import WeightedOp
+from itreg.operators import Weighted
 from . import Inner_Solver
 
 __all__ = ['SQP']

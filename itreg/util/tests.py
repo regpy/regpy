@@ -17,7 +17,7 @@ def test_adjoint(op, tolerance=1e-10, iterations=10, log=log):
 
     Parameters
     ----------
-    op : :class:`LinearOperator <itreg.operators.LinearOperator>`
+    op : :class:`~itreg.operators.LinearOperator`
         The operator.
     tolerance : float, optional
         The maximum allowed difference between the inner products. Defaults to
@@ -31,13 +31,12 @@ def test_adjoint(op, tolerance=1e-10, iterations=10, log=log):
     ------
     AssertionError
         If any test fails.
-
     """
     for i in range(iterations):
-        x = np.random.rand(*op.domx.shape)
+        x = np.random.rand(*op.domain.shape)
         fx = op(x)
-        y = np.random.rand(*op.domy.shape)
+        y = np.random.rand(*op.range.shape)
         fty = op.adjoint(y)
-        err = np.abs(np.vdot(y[:], fx[:]) - np.vdot(fty[:], x[:]))
+        err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
         log.info('err = {}'.format(err))
-        assert(err < tolerance)
+        assert err < tolerance

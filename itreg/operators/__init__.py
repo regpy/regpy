@@ -1,182 +1,155 @@
-"""Forward operators."""
+from itreg.util import emptycontext, classlogger
 
-import logging
+from copy import deepcopy
 import numpy as np
 
 
-class Operator(object):
-    """Abstract base class for operators.
+class OperatorImplementation:
+    log = classlogger
 
-    Parameters
-    ----------
-    domx : :class:`Space <itreg.spaces.Space>`
-        The domain on which the operator is defined.
-    domy : :class:`Space <itreg.spaces.Space>`, optional
-        The operator's codomain. Defaults to `domx`.
-    log : :class:`logging.Logger`, optional
-        The logger to be used. Defaults to the root logger.
+    def eval(self, params, x, *kwargs):
+        raise NotImplementedError
+
+    def adjoint(self, params, y, *kwargs):
+        raise NotImplementedError
+
+    def abs_squared(self, params, x, *kwargs):
+        aux = self.eval(params, x, **kwargs)
+        aux = params.range.gram(aux)
+        aux = self.adjoint(params, aux, **kwargs)
+        return params.domain.gram_inv(aux)
 
 
-    Attributes
-    ----------
-    domx : :class:`Space <itreg.spaces.Space>`
-        The domain.
-    domy : :class:`Space <itreg.spaces.Space>`
-        The codomain.
-    log : :class:`logging.Logger`
-        The logger in use.
+class Params:
+    def __init__(self, domain, range, **kwargs):
+        self.domain = domain
+        self.range = range
+        self.__dict__.update(kwargs)
 
-    """
 
-    def __init__(self, domx, domy=None, log=logging.getLogger()):
-        self.domx = domx
-        self.domy = domy or domx
-        self.log = log
+class GenericData:
+    def __init__(self, params):
+        pass
+
+
+class RevokedError(Exception):
+    pass
+
+
+class Revocable:
+    def __init__(self, val):
+        self.__val = val
+
+    @classmethod
+    def take(cls, other):
+        return cls(other.revoke())
+
+    def __enter__(self):
+        if self.__val is None:
+            raise RevokedError
+        return self.__val
+
+    def __exit__(self, *args):
+        pass
+
+    def revoke(self):
+        with self as val:
+            self.__val = None
+            return val
+
+
+class BaseOperator:
+    nocopy = {'params'}
+
+    def __init__(self, params):
+        self.params = params
+
+    def __deepcopy__(self, memo):
+        cls = type(self)
+        result = cls.__new__(cls)
+        memo[id(result)] = result
+        for k, v in self.__dict__.items():
+            if k not in self.nocopy:
+                v = deepcopy(v, memo)
+            setattr(result, k, v)
+        return result
+
+    def __str__(self):
+        return 'Operator({}, {})'.format(
+            type(self.operator).__qualname__, self.params)
+
+    @property
+    def domain(self):
+        return self.params.domain
+
+    @property
+    def range(self):
+        return self.params.range
+
+
+class NonlinearOperator(BaseOperator):
+    Data = GenericData
+
+    def __init__(self, params):
+        super().__init__(params)
+        self.__owned_data = None
+        self.__shared_data = None
 
     def __call__(self, x):
-        """Evaluate the operator.
+        self.__owned_data = self.__owned_data or self.Data(self.params)
+        return self.operator.eval(
+            self.params, x, data=self.__owned_data, differentiate=False)
 
-        This is an abstract method. Child classes should override it.
-
-        The class should memorize the point as its "current point". Subsequent
-        calls to :meth:`derivative` should be evaluated at this point.
-
-        Parameters
-        ----------
-        x : array
-            The point at which to evaluate.
-
-        Returns
-        -------
-        array
-            The value.
-
-        """
-        raise NotImplementedError()
-
-    def derivative(self):
-        """Compute the derivative as a :class:`LinearOperator`.
-
-        This is an abstract method. Child classes should override it.
-
-        The returned operator should evaluate the derivative at the "current
-        point".
-
-        For efficiency, the derivative may share data with the operator. Callers
-        should *not* assume the derivative to be valid after the operator has
-        been evaluated at a different point, or modified its state in any other
-        way.
-
-        Returns
-        -------
-        :class:`LinearOperator`
-            The derivative.
-
-        """
-        
-        raise NotImplementedError()
+    def linearize(self, x):
+        if self.__shared_data is None:
+            self.__shared_data = Revocable(self.Data(self.params))
+        else:
+            self.__shared_data = Revocable.take(self.__shared_data)
+        with self.__shared_data as data:
+            y = self.operator.eval(
+                self.params, x, data=data, differentiate=True)
+        deriv = Derivative(self.derivative, self.params, self.__shared_data)
+        return y, deriv
 
 
-class LinearOperator(Operator):
-    """Abstract base class for linear operators.
+class LinearOperator(BaseOperator):
+    handle = emptycontext
 
-    This class contains some methods that are only applicable to linear
-    operators.
-
-    """
+    def __call__(self, x):
+        with self.handle as data:
+            return self.operator.eval(self.params, x, data=data)
 
     def adjoint(self, x):
-        """Evaluate the adjoint of the operator.
-
-        This is an abstract method. Child classes should override it.
-
-        The adjoint should be with respect to the standard :math:`L^2` inner
-        product, not the inner products in :attr:`domx` and :attr:`domy`.
-
-        Parameters
-        ----------
-        x : array
-            The point at which to evaluate.
-
-        Returns
-        -------
-        array
-            The value.
-
-        """
-        raise NotImplementedError()
-
-    def derivative(self):
-        """Default derivative implementation for linear operators.
-
-        Linear operators are their own derivative.
-
-        Returns
-        -------
-        :class:`LinearOperator`
-            `self`
-        """
-        return self
+        with self.handle as data:
+            return self.operator.adjoint(self.params, x, data=data)
 
     def abs_squared(self, x):
-        """Evaluate the absolute-squared of the operator.
+        with self.handle as data:
+            return self.operator.abs_squared(self.params, x, data=data)
 
-        Here, the adjoint is taken with respect to the inner products in
-        :attr:`domx` and :attr:`domy`, i.e. this method evaluates
+    def linearize(self, x):
+        return self(x), self
 
-        .. math:: G_X^{-1} T^* G_Y T.
-
-        The method can be overridden by child classes if more efficient
-        implementations are available.
-
-        Parameters
-        ----------
-        x : array
-            The point at which to evaluate.
-
-        Returns
-        -------
-        array
-            The value.
-
-        """
-        z = self(x)
-        z = self.domy.gram(z)
-        z = self.adjoint(z)
-        z = self.domx.gram_inv(z)
-        return z
+    @property
+    def derivative(self):
+        return self.operator
 
     def norm(self, iterations=10):
-        """Estimate the operator norm using the power method.
-
-        The norm is taken between the spaces :attr:`domx` and :attr:`domy`.
-
-        Parameters
-        ----------
-        iterations : int
-            The number of power iterations. Defaults to 10.
-
-        Returns
-        -------
-        float
-            An estimate for the operator norm.
-
-        """
-        h = np.random.rand(*self.domx.shape)
-        nrm = np.sqrt(np.sum(h**2))
+        h = self.domain.rand()
+        norm = np.sqrt(np.real(np.vdot(h, h)))
         for i in range(iterations):
-            h = h / nrm
+            h = h / norm
             h = self.abs_squared(h)
-            nrm = np.sqrt(np.sum(h**2))
-        return np.sqrt(nrm)
+            norm = np.sqrt(np.real(np.vdot(h, h)))
+        return np.sqrt(norm)
 
 
-from .volterra import Volterra  # NOQA
-from .weightedop import WeightedOp
+class Derivative(LinearOperator):
+    def __init__(self, operator, params, handle):
+        super().__init__(params)
+        self.operator = operator
+        self.handle = handle
 
-__all__ = [
-    'LinearOperator',
-    'Operator',
-    'Volterra',
-    'WeightedOp'
-]
+
+from .volterra import Volterra
+from .weighted import Weighted

@@ -1,9 +1,6 @@
-"""Example:
-    Solver: Landweber
-    Operator: Volterra
-"""
+#!/usr/bin/env python
 
-import setpath  # NOQA
+import setpath
 
 from itreg.operators import Volterra
 from itreg.spaces import L2
@@ -28,16 +25,19 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=xs.shape)
 data = exact_data + noise
 
-noiselevel = op.domy.norm(noise)
+noiselevel = op.range.norm(noise)
 
 landweber = Landweber(op, data, np.zeros(xs.shape), stepsize=0.1)
-stoprule = rules.CombineRules(
-    [rules.CountIterations(100),
-     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
-    op=op)
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
 
-plt.plot(xs, exact_solution)
-plt.plot(xs, exact_data)
-plt.plot(xs, landweber.run(stoprule))
-plt.plot(xs, data)
+reco, reco_data = landweber.run(stoprule)
+
+plt.plot(xs, exact_solution, label='exact solution')
+plt.plot(xs, reco, label='reco')
+plt.plot(xs, exact_data, label='exact data')
+plt.plot(xs, data, label='data')
+plt.plot(xs, reco_data, label='reco data')
+plt.legend()
 plt.show()

@@ -1,8 +1,4 @@
-import logging
-
-from . import StopRule
-
-__all__ = ['CombineRules']
+from . import StopRule, MissingValueError
 
 
 class CombineRules(StopRule):
@@ -11,44 +7,51 @@ class CombineRules(StopRule):
     The resulting rule triggers when any of the given rules triggers and
     delegates selecting the solution to the active rule.
 
-    It tries to handle the case when any rule :attr:`needs_y` appropriately.
-
     Parameters
     ----------
     rules : list of :class:`StopRule`
         The rules to be combined.
-    op : :class:`Operator <itreg.operators.Operator>`, optional
-        If any rule :attr:`needs_y` and none is given to :meth:`stop`, the
-        operator is used to compute the value in advance.
+    op : :class:`~itreg.operators.Operator`, optional
+        If any rule needs the operator value and none is given to :meth:`stop`,
+        the operator is used to compute it.
 
     Attributes
     ----------
     rules : list of :class:`StopRule`
         The combined rules.
-    op : :class:`Operator <itreg.operators.Operator>` or `None`
+    op : :class:`~itreg.operators.Operator` or `None`
         The forward operator.
     active_rule : :class:`StopRule` or `None`
         The rule that triggered.
-
     """
 
     def __init__(self, rules, op=None):
-        super().__init__(logging.getLogger(__name__))
-        self.rules = rules
-        self.needs_y = any([rule.needs_y for rule in self.rules])
+        super().__init__()
+        self.rules = []
+        for rule in rules:
+            if type(rule) is type(self) and rule.op is self.op:
+                self.rules.extend(rule.rules)
+            else:
+                self.rules.append(rule)
         self.op = op
         self.active_rule = None
 
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
 
-    def stop(self, x, y=None):
-        if y is None and self.needs_y and self.op is not None:
-            y = self.op(x)
+    def _stop(self, x, y=None):
         for rule in self.rules:
-            if rule.stop(x, y):
+            try:
+                triggered = rule.stop(x, y)
+            except MissingValueError:
+                if self.op is None or y is not None:
+                    raise
+                y = self.op(x)
+                triggered = rule.stop(x, y)
+            if triggered:
                 self.log.info('Rule {} triggered.'.format(rule))
                 self.active_rule = rule
                 self.x = rule.x
+                self.y = rule.y
                 return True
         return False

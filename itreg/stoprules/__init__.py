@@ -1,44 +1,34 @@
-"""Implementations of various stopping rules."""
-
-import logging
+from itreg.util import classlogger
 
 
-class StopRule(object):
+class MissingValueError(Exception):
+    pass
+
+
+class StopRule:
     """Abstract base class for stopping rules.
-
-    Parameters
-    ----------
-    log : :class:`logging.Logger`, optional
-        The logger to be used. Defaults to the root logger.
 
     Attributes
     ----------
-    log : :class:`logging.Logger`
-        The logger in use.
-    x : array or `None`
-        The final solution. Stopping rules may decide to yield a result
+    x, y : arrays or `None`
+        The chosen solution. Stopping rules may decide to yield a result
         different from the last iterate. Therefore, after :meth:`stop` has
-        triggered, it should store the solution in this attribute.
-
-        Callers should not assume this attribute to contain any useful
-        information before :meth:`stop` has triggered.
-    needs_y : bool
-        Should be set to `True` by child classes if the stopping rule needs the
-        operator value at the current point. This can be used by callers to pass
-        in the value if it is available, avoiding recomputation. Defaults to
-        `False`.
-
+        triggered, it should store the solution in this attribute. Before
+        triggering, these attributes contain the iterates passed to
+        :meth:`stop`.
+    triggered: bool
+        Whether the stopping rule decided to stop.
     """
 
-    def __init__(self, log=logging.getLogger()):
-        self.log = log
+    log = classlogger
+
+    def __init__(self):
         self.x = None
-        self.needs_y = False
+        self.y = None
+        self.triggered = False
 
     def stop(self, x, y=None):
         """Check whether to stop iterations.
-
-        This is an abstract method. Child classes should override it.
 
         Parameters
         ----------
@@ -46,25 +36,39 @@ class StopRule(object):
             The current iterate.
         y : array, optional
             The operator value at the current iterate. Can be omitted if
-            unavailable.
+            unavailable, but some implementations may need it.
 
         Returns
         -------
         bool
-            `True` if iterations should be stopped. The solution can be obtained
-            from the :meth:`select` method in that case.
-
+            `True` if iterations should be stopped.
         """
-        raise NotImplementedError()
+        if self.triggered:
+            return True
+        self.x = x
+        self.y = y
+        self.triggered = self._stop(x, y)
+        return self.triggered
+
+    def _stop(self, x, y=None):
+        """Check whether to stop iterations.
+
+        This is an abstract method. Child classes should override it.
+
+        Parameters and return values are the same as for the public interface
+        method :meth:`stop`.
+
+        This method will not be called again after returning `True`.
+
+        Child classes that need `y` should raise :class:`MissingValueError` if
+        called with `y=None`.
+        """
+        raise NotImplementedError
+
+    def __add__(self, other):
+        return CombineRules([self, other])
 
 
-from .combine_rules import CombineRules  # NOQA
-from .count_iterations import CountIterations  # NOQA
-from .discrepancy import Discrepancy  # NOQA
-
-__all__ = [
-    'CombineRules',
-    'CountIterations',
-    'Discrepancy',
-    'StopRule'
-]
+from .combine_rules import CombineRules
+from .count_iterations import CountIterations
+from .discrepancy import Discrepancy

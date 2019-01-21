@@ -1,8 +1,4 @@
-import logging
-
-from . import StopRule
-
-__all__ = ['Discrepancy']
+from . import StopRule, MissingValueError
 
 
 class Discrepancy(StopRule):
@@ -11,43 +7,37 @@ class Discrepancy(StopRule):
     Stops at the first iterate at which the residual is smaller than a
     pre-determined multiple of the noise level::
 
-        norm(y - data) < tau * noiselevel
-
-    This rule (obviously) :attr:`needs_y`.
+        ||y - data|| < tau * noiselevel
 
     Parameters
     ----------
-    op : :class:`Operator <itreg.operators.Operator>`
-        The forward operator.
+    norm : callable
+        The norm with respect to which the discrepancy should be measured.
+        Usually this will be the `norm` method of some :class:`~itreg.spaces.Space`.
     data : array
         The right hand side (noisy data).
     noiselevel : float
-        An estimate of the distance from the noisy data to the exact data,
-        measured in the norm of `op.domy`.
+        An estimate of the distance from the noisy data to the exact data.
     tau : float, optional
         The multiplier; must be larger than 1. Defaults to 2.
-
     """
 
-    def __init__(self, op, data, noiselevel, tau=2):
-        super().__init__(logging.getLogger(__name__))
-        self.op = op
+    def __init__(self, norm, data, noiselevel, tau=2):
+        super().__init__()
+        self.norm = norm
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
-        self.needs_y = True
 
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
 
-    def stop(self, x, y=None):
-        self.x = x
+    def _stop(self, x, y=None):
         if y is None:
-            y = self.op(x)
+            raise MissingValueError
         residual = self.data - y
-        discrepancy = self.op.domy.norm(residual)
-        self.log.info(
-            'discrepancy = {}, noiselevel = {}, tau = {}'
-            .format(discrepancy, self.noiselevel, self.tau))
+        discrepancy = self.norm(residual)
+        self.log.info('discrepancy = {}, noiselevel = {}, tau = {}'.format(
+            discrepancy, self.noiselevel, self.tau))
         return discrepancy < self.noiselevel * self.tau
