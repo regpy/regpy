@@ -59,7 +59,7 @@ class Revocable:
 
 
 class BaseOperator:
-    nocopy = {'params'}
+    nocopy = frozenset(['params'])
 
     def __init__(self, params):
         self.params = params
