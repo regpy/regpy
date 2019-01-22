@@ -151,5 +151,5 @@ class Derivative(LinearOperator):
         self.handle = handle
 
 
-from .volterra import Volterra
+from .volterra import Volterra, NonlinearVolterra
 from .weighted import Weighted

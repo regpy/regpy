@@ -69,7 +69,7 @@ class NonlinearVolterra(NonlinearOperator):
 
     def __init__(self, domain, exponent, range=None, spacing=1):
         range = range or domain
-        assert domain.ndim == 1
+        assert len(domain.shape) == 1
         assert domain.shape == range.shape
         super().__init__(
             Params(domain, range, exponent=exponent, spacing=spacing))

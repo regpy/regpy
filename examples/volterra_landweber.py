@@ -2,9 +2,10 @@
 
 import setpath
 
-from itreg.operators import Volterra
+from itreg.operators import NonlinearVolterra
 from itreg.spaces import L2
 from itreg.solvers import Landweber
+from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
 import numpy as np
@@ -18,18 +19,23 @@ logging.basicConfig(
 xs = np.linspace(0, 2 * np.pi, 200)
 spacing = xs[1] - xs[0]
 
-op = Volterra(L2(len(xs)), spacing=spacing)
+op = NonlinearVolterra(L2(len(xs)), exponent=3, spacing=spacing)
 
 exact_solution = np.sin(xs)
 exact_data = op(exact_solution)
-noise = 0.1 * np.random.normal(size=xs.shape)
+noise = 0.03 * op.domain.rand(np.random.randn)
 data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-landweber = Landweber(op, data, np.zeros(xs.shape), stepsize=0.1)
+init = op.domain.one()
+
+_, deriv = op.linearize(init)
+test_adjoint(deriv)
+
+landweber = Landweber(op, data, init, stepsize=0.01)
 stoprule = (
-    rules.CountIterations(100) +
+    rules.CountIterations(1000) +
     rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
