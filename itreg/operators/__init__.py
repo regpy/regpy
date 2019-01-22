@@ -7,13 +7,13 @@ import numpy as np
 class OperatorImplementation:
     log = classlogger
 
-    def eval(self, params, x, *kwargs):
+    def eval(self, params, x, **kwargs):
         raise NotImplementedError
 
-    def adjoint(self, params, y, *kwargs):
+    def adjoint(self, params, y, **kwargs):
         raise NotImplementedError
 
-    def abs_squared(self, params, x, *kwargs):
+    def abs_squared(self, params, x, **kwargs):
         aux = self.eval(params, x, **kwargs)
         aux = params.range.gram(aux)
         aux = self.adjoint(params, aux, **kwargs)
