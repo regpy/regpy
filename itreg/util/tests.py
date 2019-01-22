@@ -1,12 +1,8 @@
 import logging
 import numpy as np
 
-__all__ = ['test_adjoint']
 
-log = logging.getLogger(__name__)
-
-
-def test_adjoint(op, tolerance=1e-10, iterations=10, log=log):
+def test_adjoint(op, tolerance=1e-10, iterations=10):
     """Numerically test validity of :meth:`adjoint` method.
 
     Checks if ::
@@ -24,18 +20,18 @@ def test_adjoint(op, tolerance=1e-10, iterations=10, log=log):
         1e-10.
     iterations : int, optional
         How often to repeat the test. Defaults to 10.
-    log : :class:`logging.Logger`, optional
-        The logger to which status info should be written.
 
     Raises
     ------
     AssertionError
         If any test fails.
     """
+    log = logging.getLogger(__name__)
+
     for i in range(iterations):
-        x = np.random.rand(*op.domain.shape)
+        x = op.domain.rand()
         fx = op(x)
-        y = np.random.rand(*op.range.shape)
+        y = op.range.rand()
         fty = op.adjoint(y)
         err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
         log.info('err = {}'.format(err))

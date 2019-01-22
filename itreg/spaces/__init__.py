@@ -18,6 +18,8 @@ class Space:
     ----------
     shape : tuple of int
         Shape of array elements of the space.
+    dtype : type
+        The dtype of the elements of the space. Usually `complex` or `float`.
 
     Attributes
     ----------
@@ -27,8 +29,9 @@ class Space:
 
     log = classlogger
 
-    def __init__(self, shape):
+    def __init__(self, shape, dtype=float):
         self.shape = shape
+        self.dtype = np.dtype(dtype)
 
     def gram(self, x):
         """Evaluate the Gram matrix.
@@ -100,6 +103,46 @@ class Space:
             The norm.
         """
         return np.sqrt(np.real(self.inner(x, x)))
+
+    def zero(self):
+        """Return the zero element of the space.
+        """
+        return np.zeros(self.shape, self.dtype)
+
+    def one(self):
+        """Return an element of the space initalized to 1.
+        """
+        return np.ones(self.shape, self.dtype)
+
+    def empty(self):
+        """Return an uninitalized element of the space.
+        """
+        return np.empty(self.shape, self.dtype)
+
+    def rand(self, rand=np.random.rand):
+        """Return a random element of the space.
+
+        The random generator can be passed as argument. For complex dtypes,
+        real and imaginary parts are generated independently.
+
+        Parameters
+        ----------
+        rand : callable
+            The random function to use. Should accept the shape as integer
+            parameters and return a real array of that shape. The functions in
+            :mod:`numpy.random` conform to this.
+        """
+        r = rand(*self.shape)
+        if self.dtype == r.dtype:
+            return r
+        # Copy if dtypes don't match
+        x = self.empty()
+        if self.dtype.kind == 'c':
+            x.real[:] = r
+            x.imag[:] = rand(*self.shape)
+            x /= np.sqrt(2)
+        else:
+            x[:] = r
 
 
 from .l2 import L2
