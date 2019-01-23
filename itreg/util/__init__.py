@@ -9,11 +9,12 @@ from logging import getLogger
 
 @property
 def classlogger(self):
+    cls = type(self)
     try:
-        return self.__logger
+        return cls.__logger
     except AttributeError:
-        self.__logger = getLogger(type(self).__qualname__)
-        return self.__logger
+        cls.__logger = getLogger(cls.__qualname__)
+        return cls.__logger
 
 
 def instantiate(cls):
