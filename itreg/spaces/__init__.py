@@ -29,8 +29,9 @@ class Space:
 
     log = classlogger
 
-    def __init__(self, shape, dtype=float):
+    def __init__(self, shape, coords, dtype=float):
         self.shape = shape
+        self.coords=coords
         self.dtype = np.dtype(dtype)
 
     def gram(self, x):
@@ -132,17 +133,19 @@ class Space:
             parameters and return a real array of that shape. The functions in
             :mod:`numpy.random` conform to this.
         """
-        r = rand(*self.shape)
+        r = rand(self.shape)
         if self.dtype == r.dtype:
             return r
         # Copy if dtypes don't match
         x = self.empty()
         if self.dtype.kind == 'c':
             x.real[:] = r
-            x.imag[:] = rand(*self.shape)
+            x.imag[:] = rand(self.shape)
             x /= np.sqrt(2)
         else:
             x[:] = r
+        
 
 
-from .l2 import L2
+from .l2 import L2, parameters_domain_l2
+from .sobolev import Sobolev, parameters_domain_sobolev
