@@ -19,7 +19,7 @@ logging.basicConfig(
 xs = np.linspace(0, 2 * np.pi, 200)
 spacing = xs[1] - xs[0]
 
-op = NonlinearVolterra(L2(len(xs)), exponent=3, spacing=spacing)
+op = NonlinearVolterra(L2(xs), exponent=3, spacing=spacing)
 
 exact_solution = np.sin(xs)
 exact_data = op(exact_solution)

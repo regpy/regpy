@@ -5,7 +5,7 @@ import setpath
 from itreg.operators.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev
 from itreg.spaces import L2
-from itreg.grids import Square
+from itreg.grids import Square_2D
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
@@ -23,7 +23,7 @@ N=(32, 32)
 rho=1
 sobo_index=0
 
-grid=Square(N, 0, 4*rho/N[0])
+grid=Square_2D(N, 0, 4*rho/N[0])
 grid.support_circle(rho)
 
 #x_coo=(4*rho/N[0])*np.arange(-N[0]/2, (N[0]-1)/2, 1)
@@ -48,7 +48,7 @@ data=exact_data
 
 #init=op.initguess_func
 
-init=np.ones(length_exact_solution)+0j
+init=(1+0j)*np.ones((length_exact_solution, 1))
 init_data=op(init)
 
 _, deriv=op.linearize(init)
@@ -56,7 +56,7 @@ _, deriv=op.linearize(init)
 
 landweber= Landweber(op, data, init, stepsize=0.01)
 stoprule=(
-    rules.CountIterations(10)+
+    rules.CountIterations(100)+
     rules.Discrepancy(op.range.norm, data, noiselevel=1, tau=2))
 
 reco, reco_data=landweber.run(stoprule)
