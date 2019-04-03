@@ -9,6 +9,7 @@ import scipy.sparse.linalg as scsla
 from scipy import *
 
 from . import Scattering2D
+from . import Scattering3D
 from . import MediumScatteringBase
 #from Scattering2D import Scattering2D
 #from MediumScatteringBase import ComplexDataToData, ComplexDataToData_derivative, ComplexDataToData_adjoint, SolveTwoGrid, AdjointSolveTwoGrid, LippmannSchwingerOp, AdjointLippmannSchwingerOp
@@ -45,7 +46,7 @@ class MediumScattering(NonlinearOperator):
     meas_directions: directions of measured plane waves
     """
 
-    def __init__(self, domain, range=None):
+    def __init__(self, domain, dim, range=None):
 #        range=domain or range
         op_name='acousticMedBase'
         syntheticdata_flag=True
@@ -68,16 +69,21 @@ class MediumScattering(NonlinearOperator):
         gmres_tol=1e-14
         gmres_maxit=100
         verbose=1
+        sobo_index=0
         #N=domain.parameters_domain.N
             
         #ind_support=domain.parameters_domain.ind_support
 
         #Fourierweights=domain.parameters_domain.Fourierweights
         
-        (Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering2D.Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)        
+        #(Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering2D.Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)    
+        if dim==3:
+            (Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering3D.Scattering3D(domain, amplitude_data, rho, kappa, ampl_vector_length)
+        if dim==2: 
+            (Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering2D.Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)
         range=L2(np.linspace(0, 2*Ninc*Nmeas, 2*Ninc*Nmeas))
         super().__init__(Params(domain, range,
-            op_name=op_name, syntheticdata_flag=syntheticdata_flag, noiselevel=noiselevel, Xdim=Xdim, Ydim=Ydim,
+            dim=dim, op_name=op_name, syntheticdata_flag=syntheticdata_flag, noiselevel=noiselevel, Xdim=Xdim, Ydim=Ydim,
             NrTwoGridIterations=NrTwoGridIterations, kappa=kappa, rho=rho, inc_directions=inc_directions,
             meas_directions=meas_directions, sobo_index=domain.parameters_domain.sobo_index, xdag=xdag, xdag_rcoeff=xdag_rcoeff,
             xdag_icoeff=xdag_icoeff, init_guess=init_guess, initguess_fct=initguess_fct, amplitude_data=amplitude_data,
@@ -101,7 +107,10 @@ class MediumScattering(NonlinearOperator):
             if params.N_coarse:
                 Nfac = np.prod(params.N_coarse)/np.prod(params.N)
                 contrast_hat = np.fft.fftn(np.reshape(data.contrast,params.N, order='F'))
-                data.contrast_coarse = Nfac*np.fft.ifftn(contrast_hat[params.dual_x_coarse.astype(int),:][:,params.dual_y_coarse.astype(int)])
+                if params.dim==2:
+                    data.contrast_coarse = Nfac*np.fft.ifftn(contrast_hat[params.dual_x_coarse.astype(int),:][:,params.dual_y_coarse.astype(int)])
+                if params.dim==3:
+                    data.contrast_coarse = Nfac*np.fft.ifftn(contrast_hat[params.dual_x_coarse.astype(int),:, :][:,params.dual_y_coarse.astype(int),:][:, :, params.dual_z_coarse.astype(int)])
             u_total=1j*np.zeros((params.Xdim, params.Ninc))
             u_inf=1j*np.zeros((params.Nmeas, params.Ninc))
             #The following needs to be in parallel code

@@ -21,24 +21,26 @@ logging.basicConfig(
 xs = np.linspace(0, 2 * np.pi, 200)
 spacing = xs[1] - xs[0]
 
-op = Volterra(L2(len(xs)), spacing=spacing)
+op = Volterra(L2(xs), spacing=spacing)
 
 exact_solution = np.sin(xs)
 exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=xs.shape)
 data = exact_data + noise
 
-noiselevel = op.domy.norm(noise)
+noiselevel = op.range.norm(noise)
 
 irgnm_l1_fid = IRGNM_L1_fid(op, data, np.zeros(xs.shape), alpha0 = 1, alpha_step = 2/3., alpha_l1 = 1e-4)
-stoprule = rules.CombineRules(
-    [rules.CountIterations(100),
-     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
-    op=op)
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
 
+reco, reco_data = irgnm_l1_fid.run(stoprule)
 plt.plot(xs, exact_solution)
+plt.plot(xs, reco)
+
 plt.plot(xs, exact_data)
-plt.plot(xs, irgnm_l1_fid.run(stoprule))
+plt.plot(xs, reco_data)
 plt.plot(xs, data)
 plt.show()
 #GGWP

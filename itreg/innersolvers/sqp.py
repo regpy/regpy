@@ -140,13 +140,13 @@ class SQP(Inner_Solver):
         self._b = ((1/np.sqrt(2)) * self._chi 
                    / np.sqrt(self.data + self._offset + 0j) 
                    * (self.data - self._til_y_kl) - 0.5*self._smb)
-        self._opw = WeightedOp(self.op, self._weight)
+        self._opw = Weighted(self.op, self._weight)
         
         self._hl = CGNE_reg(op=self._opw, y=self._b, 
                             xref=self.init - self.x - self._h,
                             regpar=self.alpha, cgmaxit=self._N_CG)
         
-        self._y_kl_update = self.op.derivative()(self._hl)
+        self._y_kl_update = self.op.derivative.eval(self.op.params, self._hl)
         self._mask = self._y_kl_update < 0
         self._tmp1 = -0.9 * self._offset - self._y_kl
         self._tmp2 = self._tmp1[self._mask]
@@ -159,7 +159,7 @@ class SQP(Inner_Solver):
             self._mu = min(np.min(self._tmp2/self._tmp3),1)
         self._h += self._mu * self._hl
         self._y_kl += self._mu * self._y_kl_update
-        self._norm_update = self._mu * self.op.domx.norm(self._hl)
+        self._norm_update = self._mu * self.op.domain.norm(self._hl)
         if self._l == 1:
             self._first = self._norm_update
         self._l += 1

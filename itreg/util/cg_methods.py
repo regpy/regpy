@@ -28,9 +28,9 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
     +--------------------+-------------------------------------+ 
     | :math:`F`          | self.op                             | 
     +--------------------+-------------------------------------+ 
-    | :math:`G_X,~ G_Y`  | self.opdomx.gram, self.op.domy.gram | 
+    | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.range.gram | 
     +--------------------+-------------------------------------+
-    | :math:`G_X^{-1}`   | self.op.domx.gram_inv               |
+    | :math:`G_X^{-1}`   | self.op.domain.gram_inv               |
     +--------------------+-------------------------------------+                  
     | :math:`F'`         | self.op.derivative()                |
     +--------------------+-------------------------------------+ 
@@ -56,10 +56,10 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
         Tolerance used by the while loop.
     """ 
     
-    auxy = op.domy.gram(y)
+    auxy = op.range.gram(y)
     rtilde = op.adjoint(auxy)
-    rtilde += regpar * op.domx.gram(xref)
-    r = op.domx.gram_inv(rtilde)
+    rtilde += regpar * op.domain.gram(xref)
+    r = op.domain.gram_inv(rtilde)
     d = np.copy(r)  
     norm_r = np.real(np.dot(rtilde , r))
     norm_r0 = np.copy(norm_r)
@@ -67,14 +67,14 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
     cg_step = 1
     
     while np.sqrt(norm_r/norm_r0) > cg_eps and cg_step <= cgmaxit:
-        auxY = op.domy.gram(op(d))
-        adtilde = op.adjoint(auxY) + regpar * op.domx.gram(d)
+        auxY = op.range.gram(op(d))
+        adtilde = op.adjoint(auxY) + regpar * op.domain.gram(d)
         
         ada = np.real(np.dot(adtilde, d))
         alpha = norm_r / ada
         h += alpha * d
         rtilde -= alpha * adtilde
-        r = op.domx.gram_inv(rtilde)
+        r = op.domain.gram_inv(rtilde)
         norm_r_old = np.copy(norm_r)
         norm_r = np.real(np.dot(rtilde, r))
         beta = norm_r / norm_r_old

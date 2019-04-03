@@ -34,8 +34,8 @@ class Volterra(LinearOperator):
 
     def __init__(self, domain, range=None, spacing=1):
         range = range or domain
-        assert len(domain.shape) == 1
-        assert domain.shape == range.shape
+        #assert len(domain.shape) == 1
+        #assert domain.shape == range.shape
         super().__init__(Params(domain, range, spacing=spacing))
 
     @instantiate

@@ -14,16 +14,28 @@ def SolveTwoGrid(params, data, rhs):
     if params.verbose>=3: print('residuals two-grid its: ')
     for counter in range(0, params.NrTwoGridIterations):
         if counter>0:
-            rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.K_hat_coarse*v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
-            if params.verbose>=3: 
-                vold=v
-            v = rhs- np.fft.fftn(np.reshape(data.contrast,params.N, order='F')*np.fft.ifftn(params.K_hat*v))
-            if params.verbose>=3:
-                print(np.linalg.norm(v[:]-vold[:]))
-            rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
+            if params.dim==2:
+                rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.K_hat_coarse*v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
+                if params.verbose>=3: 
+                    vold=v
+                v = rhs- np.fft.fftn(np.reshape(data.contrast,params.N, order='F')*np.fft.ifftn(params.K_hat*v))
+                if params.verbose>=3:
+                    print(np.linalg.norm(v[:]-vold[:]))
+                rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
+            if params.dim==3:
+                rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.K_hat_coarse*v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
+                if params.verbose>=3: 
+                    vold=v
+                v = rhs- np.fft.fftn(np.reshape(data.contrast,params.N, order='F')*np.fft.ifftn(params.K_hat*v))
+                if params.verbose>=3:
+                    print(np.linalg.norm(v[:]-vold[:]))
+                rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
             
         else:
-            rhs_coarse=rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
+            if params.dim==2:
+                rhs_coarse=rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
+            if params.dim==3:
+                rhs_coarse=rhs[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]
 
         
         LippmannSchwingerOperatorCoarse=scsla.LinearOperator((np.prod(params.N_coarse), np.prod(params.N_coarse)), matvec=(partial(LippmannSchwingerOpCoarse, params=params, data=data)))
@@ -31,9 +43,15 @@ def SolveTwoGrid(params, data, rhs):
         if not flag==0:
             print('warning! Convergence problem in GMRES on coarse grid: Flag ', flag)
 
-        for x in range(0, np.size(xhat_coarse)):
-            for y in range(0, np.size(yhat_coarse)):
-                v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.N_coarse, order='F')[int(x), int(y)]
+        if params.dim==2:
+            for x in range(0, np.size(xhat_coarse)):
+                for y in range(0, np.size(yhat_coarse)):
+                    v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.N_coarse, order='F')[int(x), int(y)]
+        if params.dim==3:
+            for x in range(0, np.size(xhat_coarse)):
+                for y in range(0, np.size(yhat_coarse)):
+                    for z in range(0, np.size(zhat_coarse)):
+                        v[int(xhat_coarse[x]), int(yhat_coarse[y]), int(zhat_coarse[z])]=np.reshape(v_coarse, params.N_coarse, order='F')[int(x), int(y), int(z)]
      
 
 
@@ -50,18 +68,32 @@ def AdjointSolveTwoGrid(params, data, rhs):
     v=1j*np.zeros(rhs.shape)
     for counter in range(0, params.NrTwoGridIterations):
         if counter>0:
-            rhs_coarse = params.K_hat_coarse*np.fft.fftn(data.contrast_coarse*np.fft.ifftn(v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
-            v=rhs-params.K_hat*np.fft.fftn(np.reshape(data.contrast, params.N, order='F')*np.fft.ifftn(v))
-            rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse 
+            if params.dim==2:
+                rhs_coarse = params.K_hat_coarse*np.fft.fftn(data.contrast_coarse*np.fft.ifftn(v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
+                v=rhs-params.K_hat*np.fft.fftn(np.reshape(data.contrast, params.N, order='F')*np.fft.ifftn(v))
+                rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
+            if params.dim==3:
+                rhs_coarse = params.K_hat_coarse*np.fft.fftn(data.contrast_coarse*np.fft.ifftn(v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
+                v=rhs-params.K_hat*np.fft.fftn(np.reshape(data.contrast, params.N, order='F')*np.fft.ifftn(v))
+                rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
         else:
-            rhs_coarse = rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
+            if params.dim==2:
+                rhs_coarse = rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
+            if params.dim==3:
+                rhs_coarse = rhs[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]
         AdjointLippmannSchwingerOperatorCoarse=scsla.LinearOperator((np.prod(params.N_coarse), np.prod(params.N_coarse)), matvec=(lambda x: AdjointLippmannSchwingerOpCoarse(params, data, x)))
         [v_coarse,flag] =scsla.gmres(AdjointLippmannSchwingerOperatorCoarse, rhs_coarse.reshape(np.prod(params.N_coarse), order='F'), restart=params.gmres_restart, tol=params.gmres_tol, maxiter=params.gmres_maxit)
         if not flag==0:
             print('warning! Convergence problem in GMRES on coarse grid: Flag ',flag)
-        for x in range(0, np.size(xhat_coarse)):
-            for y in range(0, np.size(yhat_coarse)):
-                v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.N_coarse, order='F')[x, y]
+        if params.dim==2:
+            for x in range(0, np.size(xhat_coarse)):
+                for y in range(0, np.size(yhat_coarse)):
+                    v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.N_coarse, order='F')[x, y]
+        if params.dim==3:
+             for x in range(0, np.size(xhat_coarse)):
+                for y in range(0, np.size(yhat_coarse)):
+                    for z in range(0, np.size(zhat_coarse)):
+                        v[int(xhat_coarse[x]), int(yhat_coarse[y]), int(zhat_coarse[z])]=np.reshape(v_coarse, params.N_coarse, order='F')[x, y, z]
     return v
         
 

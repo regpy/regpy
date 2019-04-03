@@ -26,4 +26,5 @@ class Square_3D(Grid):
         y_coo=spacing*np.arange(-shape[1]/2+center, (shape[1]-1)/2+center, 1)
         z_coo=spacing*np.arange(-shape[2]/2+center, (shape[2]-1)/2+center, 1)
         super().__init__(np.array([x_coo, y_coo, z_coo]), shape) 
+
         

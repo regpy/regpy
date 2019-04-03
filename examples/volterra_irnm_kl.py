@@ -20,24 +20,26 @@ logging.basicConfig(
 xs = np.linspace(0, 2 * np.pi, 200)
 spacing = xs[1] - xs[0]
 
-op = Volterra(L2(len(xs)), spacing=spacing)
+op = Volterra(L2(xs), spacing=spacing)
 
 exact_solution = np.sin(xs)
 exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=xs.shape)
 data = exact_data + noise
 
-noiselevel = op.domy.norm(noise)
-
-stoprule = rules.CombineRules(
-    [rules.CountIterations(100),
-     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
-    op=op)
+noiselevel = op.range.norm(noise)
 
 irnm_kl = IRNM_KL(op, data, np.zeros(xs.shape), alpha0 = 5e-6, alpha_step = 0.92, intensity = 0.08)
 
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+
+reco, reco_data = irnm_kl.run(stoprule)
 plt.plot(xs, exact_solution)
+plt.plot(xs, reco)
+
 plt.plot(xs, exact_data)
-plt.plot(xs, np.real(irnm_kl.run(stoprule)))
+plt.plot(xs, reco_data)
 plt.plot(xs, data)
 plt.show()

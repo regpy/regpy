@@ -22,7 +22,7 @@ class IRNM_KL(Solver):
 
     where :math:`T` is a Frechet-differentiable operator. 
     
-    The penalty is determined by self.op.domx.gram(X).
+    The penalty is determined by self.op.domain.gram(X).
 
     Parameters
     ----------
@@ -63,7 +63,7 @@ class IRNM_KL(Solver):
                  intensity=1):
         """Initialize parameters """
         
-        super().__init__(logging.getLogger(__name__))
+        super().__init__()
         self.op = op
         self.data = data
         self.init = init

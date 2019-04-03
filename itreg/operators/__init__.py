@@ -132,6 +132,8 @@ class LinearOperator(BaseOperator):
 
     @property
     def derivative(self):
+#        with self.handle as data:
+#            return self.operator.eval(self.params, x, data=data)
         return self.operator
 
     def norm(self, iterations=10):

@@ -78,7 +78,7 @@ class IRNM_KL_Newton(Solver):
                  inner_res=1e-10, inner_it=10, cgmaxit=50):
         """Initialize parameters """
         
-        super().__init__(logging.getLogger(__name__))
+        super().__init__()
         self.op = op
         self.data = data
         self.init = init
@@ -114,7 +114,7 @@ class IRNM_KL_Newton(Solver):
         self._rhs = -self._grad(self._h_n)
 
         self._n = 1
-        self._res = self.op.domx.norm(self._rhs)
+        self._res = self.op.domain.norm(self._rhs)
         
         """Minimize 
         
@@ -151,7 +151,7 @@ class IRNM_KL_Newton(Solver):
         return np.log(self.op(x) + self.offset)
     
     def _A(self, h): 
-        return self.op.derivative()(h)/(self.y + self.offset)
+        return self.op.derivative.eval(self.op.params, h/(self.y + self.offset))
     
     def _Ast(self, h):
         return self.op.adjoint(h/(self.y + self.offset))
@@ -159,11 +159,11 @@ class IRNM_KL_Newton(Solver):
     def _grad(self, h):
         return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
                 - self.data - self.offset) 
-                + 2 * self.alpha * self.op.domx.gram(self.x + h - self.init))
+                + 2 * self.alpha * self.op.domain.gram(self.x + h - self.init))
         
     def _Dgrad(self, h, eta):
         return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
-                * self._A(eta)) + 2 * self.alpha * self.op.domx.gram(eta))
+                * self._A(eta)) + 2 * self.alpha * self.op.domain.gram(eta))
         
     def _Ax(self, eta):
         return self._Dgrad(self._h_n, eta)

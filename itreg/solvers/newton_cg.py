@@ -62,7 +62,7 @@ class Newton_CG(Solver):
     def __init__(self, op, data, init, cgmaxit=50, rho=0.8):
         """Initialization of parameters"""
         
-        super().__init__(logging.getLogger(__name__))
+        super().__init__()
         self.op = op
         self.data = data
         self.x = init
@@ -80,26 +80,26 @@ class Newton_CG(Solver):
         self._x_k = np.zeros(np.shape(self.x))       
         self.y = self.op(self.x)                   
         self._residual = self.data - self.y
-        self._s = self._residual - self.op.derivative()(self._x_k)
-        self._s2 = self.op.domy.gram(self._s)
+        self._s = self._residual - self.op.derivative.eval(self.op.params, self._x_k)
+        self._s2 = self.op.range.gram(self._s)
         self._rtilde = self.op.adjoint(self._s2)
-        self._r = self.op.domx.gram_inv(self._rtilde)
+        self._r = self.op.domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._innerProd = self.op.domx.inner(self._r,self._rtilde)
-        self._norms0 = np.sqrt(np.real(self.op.domx.inner(self._s2,self._s)))
+        self._innerProd = self.op.domain.inner(self._r,self._rtilde)
+        self._norms0 = np.sqrt(np.real(self.op.domain.inner(self._s2,self._s)))
         self._k = 1
      
     def inner_update(self):
         """Compute variables in each CG iteration."""
         
-        self._aux = self.op.derivative()(self._d)
-        self._aux2 = self.op.domy.gram(self._aux)
+        self._aux = self.op.derivative.eval(self.op.params, self._d)
+        self._aux2 = self.op.range.gram(self._aux)
         self._alpha = (self._innerProd
-                       / np.real(self.op.domy.inner(self._aux,self._aux2)))
+                       / np.real(self.op.range.inner(self._aux,self._aux2)))
         self._s2 += -self._alpha*self._aux2
         self._rtilde = self.op.adjoint(self._s2)
-        self._r = self.op.domx.gram_inv(self._rtilde)
-        self._beta = (np.real(self.op.domy.inner(self._r,self._rtilde))
+        self._r = self.op.domain.gram_inv(self._rtilde)
+        self._beta = (np.real(self.op.range.inner(self._r,self._rtilde))
                       / self._innerProd)  
 
     def next(self):
@@ -111,7 +111,7 @@ class Newton_CG(Solver):
             Always True, as the Newton_CG method never stops on its own.
 
         """
-        while (np.sqrt(self.op.domx.inner(self._s2,self._s)) 
+        while (np.sqrt(self.op.domain.inner(self._s2,self._s)) 
                > self.rho*self._norms0 and
                self._k <= self.cgmaxit):
             self.inner_update()

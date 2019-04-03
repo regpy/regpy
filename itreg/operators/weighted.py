@@ -15,7 +15,7 @@ class Weighted(LinearOperator):
 
     def __init__(self, op, weight):
         super().__init__(
-            Params(op.params.domain, op.params.range, op, weight=weight))
+            Params(op.params.domain, op.params.range, op=op, weight=weight))
 
     @instantiate
     class operator:

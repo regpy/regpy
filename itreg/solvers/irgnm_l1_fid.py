@@ -3,6 +3,7 @@
 import logging
 import numpy as np
 import scipy
+import scipy.optimize
 
 from . import Solver
 
@@ -72,7 +73,8 @@ class IRGNM_L1_fid(Solver):
                  alpha0=1, alpha_step=0.9, alpha_l1=1e-4):
         """Initialize parameters."""
         
-        super().__init__(logging.getLogger(__name__))
+        #super().__init__(logging.getLogger(__name__))
+        super().__init__()
         self.op = op
         self.data = data
         self.init = init
@@ -86,9 +88,9 @@ class IRGNM_L1_fid(Solver):
         self.alpha_l1 = alpha_l1
         
         # Computation of some parameters for the iteration
-        self._GramX = self.op.domx.gram(np.eye(len(self.x)))
+        self._GramX = self.op.domain.gram(np.eye(len(self.x)))
         self._GramX = 0.5 * (self._GramX+self._GramX.T)
-        self._GramY = self.op.domy.gram(np.eye(len(self.y)))
+        self._GramY = self.op.range.gram(np.eye(len(self.y)))
         self._GramY = 0.5 * (self._GramY+self._GramY.T)     
         self._maxiter = 10000
 
@@ -106,12 +108,13 @@ class IRGNM_L1_fid(Solver):
         self._regpar = self.alpha0 * self.alpha_step**self.k
         self._DF = np.eye(len(self.y), len(self.x))
         for i in range(len(self.x)):
-            self._DF[:,i] = self.op.derivative()(self._DF[:,i])
+            self._DF[:,i] = self.op.derivative.eval(self.op.params, self._DF[:,i])
         self._Hess = (np.dot(self._DF,np.linalg.solve(self._GramX, self._DF.T))
                       + self._regpar*np.linalg.inv(self._GramY))
         self._Hess = 0.5 * (self._Hess+self._Hess.T)
         self._rhs = self.data - self.y - np.dot(self._DF, self.init - self.x)
-        self.alpha_l1 = np.max(self._regpar, self.alpha_l1)
+#        self.alpha_l1 = np.max(self._regpar, self.alpha_l1)
+        self.alpha_l1=np.asarray([self._regpar, self.alpha_l1]).max()
         
         # Parameters for the minimization procedure
         self._iter = 100
@@ -151,6 +154,6 @@ class IRGNM_L1_fid(Solver):
         """
         self.update()
         self.x = (self.init
-                  + self.op.domx.gram_inv(np.dot(self._DF.T,self._updateY)))
+                  + self.op.domain.gram_inv(np.dot(self._DF.T,self._updateY)))
         self.y = self.op(self.x)
         return True
