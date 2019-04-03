@@ -26,7 +26,7 @@ class Sobolev(Space):
          v=np.zeros(self.parameters_domain.N)
          np.put(v, self.parameters_domain.ind_support, x)        
          v=np.fft.ifftn(np.fft.fftn(v)/self.parameters_domain.Fourierweights) 
-         v=np.reshape(v, (np.prod.parameters_domain.N, 1), order='F')         
+         v=np.reshape(v, (np.prod(self.parameters_domain.N), 1), order='F')         
          return v[self.parameters_domain.ind_support]
      
 class parameters_domain_sobolev:
