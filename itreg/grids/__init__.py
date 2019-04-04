@@ -72,4 +72,4 @@ class Grid:
         self.ind_support=np.asarray(np.reshape(self.X, np.prod(self.shape), order='F')**2+np.reshape(self.Y, np.prod(self.shape), order='F')**2+np.reshape(self.Z, np.prod(self.shape), order='F')**2<=rho**2).nonzero()
         return
     
-from .grids import Square_1D, Square_2D, Square_3D
+from .grids import User_Defined, Square_1D, Square_2D, Square_3D

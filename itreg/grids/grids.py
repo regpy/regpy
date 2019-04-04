@@ -9,6 +9,10 @@ import numpy as np
 
 from . import Grid
 
+class User_Defined(Grid):
+    def __init__(self, coords, shape):
+        super().__init__(coords, shape)
+
 class Square_1D(Grid):
     def __init__(self, shape, center, spacing):
         x_coo=spacing*np.arange(-shape[0]/2+center, (shape[0]-1)/2+center, 1)

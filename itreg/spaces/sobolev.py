@@ -13,7 +13,7 @@ class Sobolev(Space):
 
      def __init__(self, grid, sobo_index):
          self.parameters_domain=start_sobolev(grid, sobo_index)
-         super().__init__(np.size(grid.ind_support), grid.coords)
+         super().__init__(grid.shape, np.size(grid.ind_support), grid.coords)
 
      def gram(self, x):
          v=np.zeros(self.parameters_domain.N)
@@ -40,8 +40,15 @@ def start_sobolev(grid, sobo_index):
      par_dom.N=grid.shape
      par_dom.x_coo=grid.x_coo
      par_dom.y_coo=grid.y_coo
+     if dimension==3:
+         par_dom.z_coo=grid.z_coo
      par_dom.Y, par_dom.X=grid.Y, grid.X
+     if dimension==3:
+         par_dom.Z=grid.Z
      rho=grid.rho
      par_dom.ind_support=grid.ind_support
-     par_dom.Fourierweights=np.fft.fftshift((1+(4*grid.rho/grid.shape[0])**2*grid.X*grid.X+(4*grid.rho/grid.shape[1])**2*grid.Y*grid.Y)**(sobo_index))
+     if dimension==2:
+         par_dom.Fourierweights=np.fft.fftshift((1+(4*grid.rho/grid.shape[0])**2*grid.X*grid.X+(4*grid.rho/grid.shape[1])**2*grid.Y*grid.Y)**(sobo_index))
+     if dimension==3:
+         par_dom.Fourierweights=np.fft.fftshift((1+(4*grid.rho/grid.shape[0])**2*grid.X*grid.X+(4*grid.rho/grid.shape[1])**2*grid.Y*grid.Y+(4*grid.rho/grid.shape[2])**2*grid.Z*grid.Z)**(sobo_index))
      return par_dom

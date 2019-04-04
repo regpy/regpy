@@ -13,9 +13,9 @@ class L2(Space):
         Shape of array elements of the space.
     """
 
-    def __init__(self, coords):
-        self.parameters_domain=start_l2(coords)
-        super().__init__(np.size(coords), coords)
+    def __init__(self, grid):
+        self.parameters_domain=start_l2(grid)
+        super().__init__(grid.shape, np.size(grid.ind_support), grid.coords)
 
 
     def gram(self, x):

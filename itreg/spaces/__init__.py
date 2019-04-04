@@ -29,8 +29,9 @@ class Space:
 
     log = classlogger
 
-    def __init__(self, shape, coords, dtype=float):
-        self.shape = shape
+    def __init__(self, shape, size_support, coords, dtype=float):
+        self.shape=shape
+        self.size_support = size_support
         self.coords=coords
         self.dtype = np.dtype(dtype)
 
