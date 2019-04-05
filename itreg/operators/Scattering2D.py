@@ -7,8 +7,8 @@ class Scattering2D:
         #define default values and merge with parameters given
         self.N=domain.parameters_domain.N
         self.N_coarse=(32, 32)
-        self.Ninc=1
-        self.Nmeas=2
+        self.Ninc=16
+        self.Nmeas=16
         self.inc_directions=np.array([np.cos(2*np.pi*np.linspace(1, self.Ninc, self.Ninc)/self.Ninc), np.sin(2*np.pi*np.linspace(1, self.Ninc, self.Ninc)/self.Ninc)])
         self.meas_directions=np.array([np.cos(2*np.pi*np.linspace(1, self.Nmeas, self.Nmeas)/self.Nmeas), np.sin(2*np.pi*np.linspace(1, self.Nmeas, self.Nmeas)/self.Nmeas)])
         

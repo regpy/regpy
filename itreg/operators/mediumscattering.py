@@ -179,7 +179,7 @@ class MediumScattering(NonlinearOperator):
             d_u_inf_mat=np.reshape(MediumScatteringBase.ComplexDataToData_adjoint(params, data, x), (params.scattering.Nmeas, params.scattering.Ninc), order='F')
             for j in range(0, params.scattering.Ninc):
                 rhs=complex(0,1)*np.zeros(np.prod(params.scattering.N))
-                np.put(rhs, params.ind_support, np.dot(params.scattering.prec.farfieldMatrix.transpose(), d_u_inf_mat[:, j]))
+                np.put(rhs, params.ind_support, np.dot(params.scattering.prec.farfieldMatrix.conj().T, d_u_inf_mat[:, j]))
                 rhs=np.reshape(rhs, params.scattering.N, order='F')
                 
                 if not params.scattering.N_coarse:
