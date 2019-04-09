@@ -7,6 +7,7 @@ Created on Thu Feb 14 13:49:36 2019
 from . import LinearOperator, NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 from itreg.spaces import L2
+from itreg.grids import User_Defined
 
 import numpy as np
 import scipy as scp
@@ -41,7 +42,9 @@ class parallel_MRI(NonlinearOperator):
             samplingIndx = np.nonzero(np.reshape(P, (Nx*Ny, 1), order='F'))[0]
         
         if range is None:
-            range=L2(nr_coils*len(samplingIndx))
+            coords_range=np.ones(nr_coils*len(samplingIndx))
+            grid_range=User_Defined(coords_range, coords_range.shape)
+            range=L2(grid_range)
         
             
         if Fourier_weights is None:
@@ -77,6 +80,7 @@ class parallel_MRI(NonlinearOperator):
     @instantiate
     class operator(OperatorImplementation):
         def eval(self, params, rho_and_coils, data, **kwargs):
+            rho_and_coils=rho_and_coils+1j*np.zeros(rho_and_coils.shape)
             nr_coils = params.nr_coils
             samplingIndx = params.samplingIndx
             N = params.Nx*params.Ny
@@ -95,7 +99,7 @@ class parallel_MRI(NonlinearOperator):
                 data.coils[:,:,j] = myifft(data.coils[:,:,j])
                 aux = myfft(data.rho * data.coils[:,:,j])
                 data_mes[:,j] = np.reshape(aux, N, order='F')[samplingIndx]
-            return data_mes
+            return data_mes.reshape(len(samplingIndx)*nr_coils, order='F')
         
         
         
