@@ -155,7 +155,4 @@ class Derivative(LinearOperator):
 
 from .volterra import Volterra, NonlinearVolterra
 from .weighted import Weighted
-from .mediumscattering import MediumScattering
-from .Scattering2D import Scattering2D
-from .Scattering3D import Scattering3D
-from .MediumScatteringBase import MediumScatteringBase
+import MediumScattering

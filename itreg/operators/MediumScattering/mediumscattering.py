@@ -1,4 +1,4 @@
-from . import LinearOperator, NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 from itreg.spaces import L2
 from itreg.grids import Square_1D

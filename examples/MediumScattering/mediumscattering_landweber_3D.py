@@ -5,7 +5,7 @@ Created on Wed Apr  3 20:37:38 2019
 @author: hendr
 """
 
-import setpath
+from . import setpath
 
 from itreg.operators.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev
