@@ -18,7 +18,7 @@ class MediumScatteringBase:
         if params.verbose>=3: print('residuals two-grid its: ')
         for counter in range(0, params.NrTwoGridIterations):
             if counter>0:
-                if params.dim==2:
+                if params.domain.dim==2:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
                     if params.verbose>=3: 
                         vold=v
@@ -26,7 +26,7 @@ class MediumScatteringBase:
                     if params.verbose>=3:
                         print(np.linalg.norm(v[:]-vold[:]))
                     rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
-                if params.dim==3:
+                if params.domain.dim==3:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
                     if params.verbose>=3: 
                         vold=v
@@ -36,9 +36,9 @@ class MediumScatteringBase:
                     rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
             
             else:
-                if params.dim==2:
+                if params.domain.dim==2:
                     rhs_coarse=rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
-                if params.dim==3:
+                if params.domain.dim==3:
                     rhs_coarse=rhs[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]
 
         
@@ -47,11 +47,11 @@ class MediumScatteringBase:
             if not flag==0:
                 print('warning! Convergence problem in GMRES on coarse grid: Flag ', flag)
 
-            if params.dim==2:
+            if params.domain.dim==2:
                 for x in range(0, np.size(xhat_coarse)):
                     for y in range(0, np.size(yhat_coarse)):
                         v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.scattering.N_coarse, order='F')[int(x), int(y)]
-            if params.dim==3:
+            if params.domain.dim==3:
                 for x in range(0, np.size(xhat_coarse)):
                     for y in range(0, np.size(yhat_coarse)):
                         for z in range(0, np.size(zhat_coarse)):
@@ -72,28 +72,28 @@ class MediumScatteringBase:
         v=1j*np.zeros(rhs.shape)
         for counter in range(0, params.NrTwoGridIterations):
             if counter>0:
-                if params.dim==2:
+                if params.domain.dim==2:
                     rhs_coarse = params.scattering.prec.K_hat_coarse*np.fft.fftn(data.contrast_coarse*np.fft.ifftn(v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
                     v=rhs-params.scattering.prec.K_hat*np.fft.fftn(np.reshape(data.contrast, params.scattering.N, order='F')*np.fft.ifftn(v))
                     rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
-                if params.dim==3:
+                if params.domain.dim==3:
                     rhs_coarse = params.scattering.prec.K_hat_coarse*np.fft.fftn(data.contrast_coarse*np.fft.ifftn(v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
                     v=rhs-params.scattering.prec.K_hat*np.fft.fftn(np.reshape(data.contrast, params.scattering.N, order='F')*np.fft.ifftn(v))
                     rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
             else:
-                if params.dim==2:
+                if params.domain.dim==2:
                     rhs_coarse = rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
-                if params.dim==3:
+                if params.domain.dim==3:
                     rhs_coarse = rhs[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]
             AdjointLippmannSchwingerOperatorCoarse=scsla.LinearOperator((np.prod(params.scattering.N_coarse), np.prod(params.scattering.N_coarse)), matvec=(lambda x: MediumScatteringBase.AdjointLippmannSchwingerOpCoarse(params, data, x)))
             [v_coarse,flag] =scsla.gmres(AdjointLippmannSchwingerOperatorCoarse, rhs_coarse.reshape(np.prod(params.scattering.N_coarse), order='F'), restart=params.gmres_prop.gmres_restart, tol=params.gmres_prop.gmres_tol, maxiter=params.gmres_prop.gmres_maxit)
             if not flag==0:
                 print('warning! Convergence problem in GMRES on coarse grid: Flag ',flag)
-            if params.dim==2:
+            if params.domain.dim==2:
                 for x in range(0, np.size(xhat_coarse)):
                     for y in range(0, np.size(yhat_coarse)):
                         v[int(xhat_coarse[x]), int(yhat_coarse[y])]=np.reshape(v_coarse, params.scattering.N_coarse, order='F')[x, y]
-            if params.dim==3:
+            if params.domain.dim==3:
                 for x in range(0, np.size(xhat_coarse)):
                     for y in range(0, np.size(yhat_coarse)):
                         for z in range(0, np.size(zhat_coarse)):
@@ -103,7 +103,7 @@ class MediumScatteringBase:
 
     def ComplexDataToData(params, data, complexdata):
         n = np.size(complexdata)
-        res = np.zeros(2*n,)
+        res = np.zeros(2*n,dtype=float)
         np.put(res, np.arange(0, 2*n, 2), np.real(complexdata))
         np.put(res, np.arange(1, 2*n, 2), np.imag(complexdata))
         if params.ampl_vector_length>1:
@@ -114,7 +114,7 @@ class MediumScatteringBase:
 
     def ComplexDataToData_derivative(params, data, complex_h):
         n = np.size(complex_h)
-        res = np.zeros(2*n,)
+        res = np.zeros(2*n,dtype=float)
         np.put(res, np.arange(0, 2*n, 2), np.real(complex_h))
         np.put(res, np.arange(1, 2*n, 2), np.imag(complex_h))
         if params.ampl_vector_length>1:

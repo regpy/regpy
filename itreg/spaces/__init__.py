@@ -31,6 +31,7 @@ class Space:
 
     def __init__(self, shape, size_support, coords, dtype=float):
         self.shape=shape
+        self.dim=np.size(shape)
         self.size_support = size_support
         self.coords=coords
         self.dtype = np.dtype(dtype)

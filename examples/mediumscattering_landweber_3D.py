@@ -36,7 +36,7 @@ grid.support_sphere(rho)
 #coords=np.array([x_coo, y_coo])
 
 domain=Sobolev(grid, sobo_index)
-op = MediumScattering(domain, dim=3)
+op = MediumScattering(domain)
 
 length_exact_solution=np.size(domain.parameters_domain.ind_support)
 exact_solution=np.linspace(1, length_exact_solution, num=length_exact_solution)

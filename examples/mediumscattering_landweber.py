@@ -33,7 +33,7 @@ grid.support_circle(rho)
 #coords=np.array([x_coo, y_coo])
 
 domain=Sobolev(grid, sobo_index)
-op = MediumScattering(domain, dim=2)
+op = MediumScattering(domain)
 
 length_exact_solution=np.size(domain.parameters_domain.ind_support)
 #exact_solution=np.linspace(1, length_exact_solution, num=length_exact_solution)
@@ -53,13 +53,14 @@ data=exact_data
 #print(noiselevel)
 #init=op.initguess_func
 
-init=(1.1+0j)*np.ones((length_exact_solution, 1))
+init=1.1*np.ones((length_exact_solution, 1), dtype=complex)
 #init=(1+0j)*np.ones(length_exact_solution)
 init_data=op(init)
 
-#_, deriv=op.linearize(init)
+_, deriv=op.linearize(init)
 #_, deriv=op.linearize(exact_solution)
 
+testderivative=deriv(init)
 #testderivative=deriv(np.reshape(np.linspace(1, 13, num=13), (1, 13)))
 #testderivative=deriv(np.reshape(init, (1, 197)))
 #testadjoint=deriv.adjoint(np.reshape(np.array([1, 2, 3, 4]),(4,1)))

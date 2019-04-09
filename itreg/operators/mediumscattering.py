@@ -9,7 +9,7 @@ import scipy.sparse.linalg as scsla
 from scipy import *
 
 from .Scattering2D import Scattering2D
-#from . import Scattering3D
+from .Scattering3D import Scattering3D
 from .MediumScatteringBase import MediumScatteringBase
  
 
@@ -45,7 +45,7 @@ class MediumScattering(NonlinearOperator):
     meas_directions: directions of measured plane waves
     """
 
-    def __init__(self, domain, dim, range=None):
+    def __init__(self, domain, range=None):
         gmres=gmres_prop
         gmres.gmres_restart=10
         gmres.gmres_tol=1e-14
@@ -73,30 +73,19 @@ class MediumScattering(NonlinearOperator):
 
 
         verbose=1
-        sobo_index=0
         
-        #med=MediumScatteringBase
-        #N=domain.parameters_domain.N
-            
-        #ind_support=domain.parameters_domain.ind_support
-
-        #Fourierweights=domain.parameters_domain.Fourierweights
         
-        #(Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering2D.Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)    
-        if dim==3:
-            (Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering3D.Scattering3D(domain, amplitude_data, rho, kappa, ampl_vector_length)
-        if dim==2: 
-#            (Xdim, Ydim, inc_directions, meas_directions, xdag, init_guess, N, N_coarse, Ninc, Nmeas, K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)=Scattering2D.Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)
+        if domain.dim==3:
+            Scattering_prop=Scattering3D(domain, amplitude_data, rho, kappa, ampl_vector_length)            
+        if domain.dim==2: 
             Scattering_prop=Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)
         range=L2(Square_1D((1, 2*Scattering_prop.Ninc*Scattering_prop.Nmeas), 3, 1))
-        super().__init__(Params(domain, range,
-            dim=dim, syntheticdata_flag=syntheticdata_flag, noiselevel=noiselevel, 
+        super().__init__(Params(domain, range, syntheticdata_flag=syntheticdata_flag, noiselevel=noiselevel, 
             NrTwoGridIterations=NrTwoGridIterations, kappa=kappa, rho=rho,
-            sobo_index=domain.parameters_domain.sobo_index, xdag_rcoeff=xdag_rcoeff,
+            xdag_rcoeff=xdag_rcoeff,
             xdag_icoeff=xdag_icoeff, amplitude_data=amplitude_data,
             intensity=intensity, ampl_vector_length=ampl_vector_length, gmres_prop=gmres, verbose=verbose,
-            ind_support=domain.parameters_domain.ind_support, 
-            Fourierweights=domain.parameters_domain.Fourierweights, scattering=Scattering_prop))
+            scattering=Scattering_prop))
 
 
 
@@ -108,13 +97,13 @@ class MediumScattering(NonlinearOperator):
     class  operator(OperatorImplementation):
         def eval(self, params, x, data, differentiate, **kwargs):
             data.contrast=1j*np.zeros((np.prod(params.scattering.N)))
-            np.put(data.contrast, params.ind_support, x)
+            np.put(data.contrast, params.domain.parameters_domain.ind_support, x)
             if params.scattering.N_coarse:
                 Nfac = np.prod(params.scattering.N_coarse)/np.prod(params.scattering.N)
                 contrast_hat = np.fft.fftn(np.reshape(data.contrast,params.scattering.N, order='F'))
-                if params.dim==2:
+                if params.domain.dim==2:
                     data.contrast_coarse = Nfac*np.fft.ifftn(contrast_hat[params.scattering.prec.dual_x_coarse.astype(int),:][:,params.scattering.prec.dual_y_coarse.astype(int)])
-                if params.dim==3:
+                if params.domain.dim==3:
                     data.contrast_coarse = Nfac*np.fft.ifftn(contrast_hat[params.scattering.prec.dual_x_coarse.astype(int),:, :][:,params.scattering.prec.dual_y_coarse.astype(int),:][:, :, params.scattering.prec.dual_z_coarse.astype(int)])
             u_total=1j*np.zeros((params.scattering.Xdim, params.scattering.Ninc))
             u_inf=1j*np.zeros((params.scattering.Nmeas, params.scattering.Ninc))
@@ -124,13 +113,13 @@ class MediumScattering(NonlinearOperator):
                 #for the unknown v = a u_total. The Fourier coefficients of the periodic
                 #convolution kernel k are precomputed
                 rhs=complex(0,1)*np.zeros(np.prod(params.scattering.N))
-                np.put(rhs, params.ind_support, x*params.scattering.prec.incMatrix[:, j])
+                np.put(rhs, params.domain.parameters_domain.ind_support, x*params.scattering.prec.incMatrix[:, j])
                 rhs=np.reshape(rhs, params.scattering.N, order='F')
             
 
                 if not params.scattering.N_coarse:
                     LippmannSchwingerOperator=scsla.LinearOperator((np.prod(params.scattering.N), np.prod(params.scattering.N)), matvec=(lambda x: MediumScatteringBase.LippmannSchwingerOp(params, data, x)))
-                    [v,flag] = scsla.gmres(LippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres_restart, tol=params.gmres_tol, maxiter=params.gmres_maxit)
+                    [v,flag] = scsla.gmres(LippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres.gmres_restart, tol=params.gmres.gmres_tol, maxiter=params.gmres.gmres_maxit)
                     if not flag==0:
                         print('Convergence problem')
                     else:
@@ -139,13 +128,13 @@ class MediumScattering(NonlinearOperator):
                     rhs=np.fft.fftn(rhs)
                     v=MediumScatteringBase.SolveTwoGrid(params, data, rhs)
                 #compute far field pattern
-                u_inf[:,j]=np.dot(params.scattering.prec.farfieldMatrix, v.reshape(np.prod(params.scattering.N), order='F')[params.ind_support])
+                u_inf[:,j]=np.dot(params.scattering.prec.farfieldMatrix, v.reshape(np.prod(params.scattering.N), order='F')[params.domain.parameters_domain.ind_support])
 
                 #The total field can be recovered from v in a stable manner by the formula
                 #u_total=ui-k*v
                 if differentiate:
                     aux=np.fft.ifftn(params.scattering.prec.K_hat*np.fft.fftn(np.reshape(v, params.scattering.N, order='F')))
-                    u_total[:,j]=params.scattering.prec.incMatrix[:, j]-np.take(aux.T, params.ind_support)
+                    u_total[:,j]=params.scattering.prec.incMatrix[:, j]-np.take(aux.T, params.domain.parameters_domain.ind_support)
 
             if differentiate:
                 data.u_total=u_total.copy()
@@ -160,18 +149,18 @@ class MediumScattering(NonlinearOperator):
             #need to be computed parallel
             for j in range(0, params.scattering.Ninc):
                 rhs=complex(0,1)*np.zeros(np.prod(params.scattering.N))
-                np.put(rhs, params.ind_support, x*data.u_total[:, j])
+                np.put(rhs, params.domain.parameters_domain.ind_support, x*data.u_total[:, j])
                 rhs=rhs.reshape(params.scattering.N, order='F')
 
                 if not params.scattering.N_coarse:
                     LippmannSchwingerOperator=scsla.LinearOperator((np.prod(params.scattering.N), np.prod(params.scattering.N)), matvec=(lambda x: MediumScatteringBase.LippmannSchwingerOp(params, data, x)))
-                    [v,flag] = scsla.gmres(LippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres_restart, tol=params.gmres_tol, maxiter=params.gmres_maxit)
+                    [v,flag] = scsla.gmres(LippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres.gmres_restart, tol=params.gmres.gmres_tol, maxiter=params.gmres.gmres_maxit)
                     if not flag==0:
                         print('Convergence problem')
                 else:
                     rhs=np.fft.fftn(rhs)
                     v=MediumScatteringBase.SolveTwoGrid(params, data, rhs)
-                d_u_inf[:,j]=np.dot(params.scattering.prec.farfieldMatrix, v.reshape(np.prod(params.scattering.N), order='F')[params.ind_support])
+                d_u_inf[:,j]=np.dot(params.scattering.prec.farfieldMatrix, v.reshape(np.prod(params.scattering.N), order='F')[params.domain.parameters_domain.ind_support])
             return MediumScatteringBase.ComplexDataToData_derivative(params, data, d_u_inf.reshape(params.scattering.Nmeas*params.scattering.Ninc, order='F'))
         
         def adjoint(self, params, x, data, **kwargs):
@@ -179,19 +168,19 @@ class MediumScattering(NonlinearOperator):
             d_u_inf_mat=np.reshape(MediumScatteringBase.ComplexDataToData_adjoint(params, data, x), (params.scattering.Nmeas, params.scattering.Ninc), order='F')
             for j in range(0, params.scattering.Ninc):
                 rhs=complex(0,1)*np.zeros(np.prod(params.scattering.N))
-                np.put(rhs, params.ind_support, np.dot(params.scattering.prec.farfieldMatrix.conj().T, d_u_inf_mat[:, j]))
+                np.put(rhs, params.domain.parameters_domain.ind_support, np.dot(params.scattering.prec.farfieldMatrix.conj().T, d_u_inf_mat[:, j]))
                 rhs=np.reshape(rhs, params.scattering.N, order='F')
                 
                 if not params.scattering.N_coarse:
                     AdjointLippmannSchwingerOperator=scsla.LinearOperator((np.prod(params.scattering.N), np.prod(params.scattering.N)), matvec=(lambda x: MediumScatteringBase.AdjointLippmannSchwingerOp(params, data, x)))
-                    [v,flag] = scsla.gmres(AdjointLippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres_restart, tol=params.gmres_tol, maxiter=params.gmres_maxit)
+                    [v,flag] = scsla.gmres(AdjointLippmannSchwingerOperator, rhs.reshape(np.prod(params.scattering.N), order='F'), restart=params.gmres.gmres_restart, tol=params.gmres.gmres_tol, maxiter=params.gmres.gmres_maxit)
                     if not flag==0:
                         print('Convergence problem')
                 else:
                     v=MediumScatteringBase.AdjointSolveTwoGrid(params, data, rhs)
                     v=np.fft.ifftn(v)
 
-                d_contrast=d_contrast + np.conj(data.u_total[:,j]) * np.take(v.reshape(np.prod(params.scattering.N), order='F'), params.ind_support)
+                d_contrast=d_contrast + np.conj(data.u_total[:,j]) * np.take(v.reshape(np.prod(params.scattering.N), order='F'), params.domain.parameters_domain.ind_support)
             return d_contrast
         
 class gmres_prop:
