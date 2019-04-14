@@ -5,7 +5,7 @@ Created on Wed Apr  3 21:05:59 2019
 @author: Hendrik Müller
 """
 
-from . import NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 
 import numpy as np

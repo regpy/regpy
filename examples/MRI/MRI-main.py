@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 14 16:27:43 2019
-
-@author: Hendrik Müller
-"""
 
 import setpath
 
@@ -11,7 +5,7 @@ import setpath
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
-from itreg.operators.MRI import parallel_MRI
+from itreg.operators.MRI.MRI import parallel_MRI
 import itreg.stoprules as rules
 from itreg.grids import Square_2D, User_Defined
 

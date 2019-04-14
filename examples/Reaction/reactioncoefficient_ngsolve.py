@@ -7,7 +7,7 @@ Created on Thu Apr  4 14:43:53 2019
 
 import setpath
 
-from itreg.operators.ReactionCoefficient_NGsolve import ReactionCoefficient_2D
+from itreg.operators.Reaction.ReactionCoefficient_NGsolve import ReactionCoefficient_2D
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
@@ -27,7 +27,8 @@ ycoo=np.linspace(0, 1, 10)
 spacing = xcoo[1] - xcoo[0]
 
 rhs=np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
-op = ReactionCoefficient_2D(L2(np.asarray([xcoo, ycoo])), rhs, spacing=spacing)
+grid=User_Defined(np.asarray([xcoo, ycoo]), (10, 10))
+op = ReactionCoefficient_2D(L2(grid), rhs, spacing=spacing)
 
 #exact_solution = np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
 exact_solution=np.ones((N, N))

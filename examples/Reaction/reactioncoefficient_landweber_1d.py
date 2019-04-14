@@ -7,8 +7,9 @@ Created on Mon Apr  8 16:35:41 2019
 
 import setpath
 
-from itreg.operators.ReactionCoefficient_1D import ReactionCoefficient
+from itreg.operators.Reaction.ReactionCoefficient_1D import ReactionCoefficient
 from itreg.spaces import L2
+from itreg.grids import User_Defined
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
@@ -24,7 +25,9 @@ logging.basicConfig(
 xs = np.linspace(0, 1, 200)
 spacing = xs[1] - xs[0]
 
-op = ReactionCoefficient(L2(xs), rhs=np.ones(200), spacing=spacing)
+grid=User_Defined(xs, xs.shape)
+
+op = ReactionCoefficient(L2(grid), rhs=np.ones(200), spacing=spacing)
 
 exact_solution = np.ones(200)
 exact_data = op(exact_solution)

@@ -1,10 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 14 13:49:36 2019
 
-@author: Hendrik Müller
-"""
-from . import LinearOperator, NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 from itreg.spaces import L2
 from itreg.grids import User_Defined

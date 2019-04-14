@@ -4,7 +4,7 @@
 """
 import setpath  # NOQA
 
-from itreg.operators import Volterra
+from itreg.operators.Volterra.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import IRNM_KL
@@ -32,7 +32,7 @@ data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-irnm_kl = IRNM_KL(op, data, np.zeros(xs.shape), alpha0 = 5e-6, alpha_step = 0.92, intensity = 0.08)
+irnm_kl = IRNM_KL(op, data, np.zeros(grid.shape), alpha0 = 5e-6, alpha_step = 0.92, intensity = 0.08)
 
 stoprule = (
     rules.CountIterations(100) +

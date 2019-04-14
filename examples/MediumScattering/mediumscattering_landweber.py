@@ -1,6 +1,6 @@
-#! /usr/bin/env python
-
 import setpath
+
+import itreg
 
 from itreg.operators.MediumScattering.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev

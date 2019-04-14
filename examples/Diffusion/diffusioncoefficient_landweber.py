@@ -1,13 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr  3 21:04:19 2019
-
-@author: Hendrik Müller
-"""
 
 import setpath
 
-from itreg.operators.DiffusionCoefficient import DiffusionCoefficient
+import itreg
+from itreg.operators.Diffusion.DiffusionCoefficient import DiffusionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint

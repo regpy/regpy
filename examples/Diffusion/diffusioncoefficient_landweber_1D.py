@@ -7,7 +7,7 @@ Created on Mon Apr  8 15:30:00 2019
 
 import setpath
 
-from itreg.operators.DiffusionCoefficient_1D import DiffusionCoefficient
+from itreg.operators.Diffusion.DiffusionCoefficient_1D import DiffusionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint

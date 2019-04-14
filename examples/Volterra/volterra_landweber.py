@@ -2,7 +2,7 @@
 
 import setpath
 
-from itreg.operators import NonlinearVolterra
+from itreg.operators.Volterra.volterra import NonlinearVolterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import Landweber

@@ -5,7 +5,7 @@
 
 import setpath  # NOQA
 
-from itreg.operators import Volterra
+from itreg.operators.Volterra.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import IRGNM_L1_fid
@@ -33,7 +33,7 @@ data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-irgnm_l1_fid = IRGNM_L1_fid(op, data, np.zeros(xs.shape), alpha0 = 1, alpha_step = 2/3., alpha_l1 = 1e-4)
+irgnm_l1_fid = IRGNM_L1_fid(op, data, np.zeros(grid.shape), alpha0 = 1, alpha_step = 2/3., alpha_l1 = 1e-4)
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))

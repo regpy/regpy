@@ -5,7 +5,7 @@
 
 import setpath  # NOQA
 
-from itreg.operators import Volterra
+from itreg.operators.Volterra.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import Newton_CG
@@ -28,12 +28,12 @@ op = Volterra(L2(grid), spacing=spacing)
 
 exact_solution = np.cos(grid.coords)
 exact_data = op(exact_solution)
-noise = 0.1 * np.random.normal(size=xs.shape)
+noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-newton_cg = Newton_CG(op, data, np.zeros(xs.shape), cgmaxit = 100, rho = 0.98)
+newton_cg = Newton_CG(op, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))

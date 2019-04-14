@@ -5,7 +5,7 @@
 
 import setpath  # NOQA
 
-from itreg.operators import Volterra
+from itreg.operators.Volterra.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import IRNM_KL_Newton
@@ -34,7 +34,7 @@ data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(xs.shape), \
+irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(grid.shape), \
         alpha0 = 1e-0, alpha_step = 0.3, intensity = 1,\
         scaling = 1, offset = 1e-4, offset_step = 1, inner_res = 1e-10, \
         inner_it = 100, cgmaxit = 100)

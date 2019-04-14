@@ -5,7 +5,7 @@
 
 import setpath  # NOQA
 
-from itreg.operators import Volterra
+from itreg.operators.Volterra.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import IRGNM_CG
@@ -33,7 +33,7 @@ data = exact_data + noise
 
 noiselevel = op.range.norm(noise)
 
-irgnm_cg = IRGNM_CG(op, data, np.zeros(xs.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
+irgnm_cg = IRGNM_CG(op, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 #stoprule = rules.CombineRules(
 #    [rules.CountIterations(100),
 #     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
