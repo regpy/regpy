@@ -7,7 +7,7 @@ Created on Thu Apr  4 14:43:53 2019
 
 import setpath
 
-from itreg.operators.ReactionCoefficient_2D import ReactionCoefficient
+from itreg.operators.Reaction.ReactionCoefficient_2D import ReactionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
@@ -44,7 +44,6 @@ exact_data = op(exact_solution)
 
 #init = op.domain.one()
 init=1.1*np.ones((N, N))
-vec=np.ones((N, N))
 
 #_, deriv = op.linearize(init)
 #test_adjoint(deriv)

@@ -5,7 +5,7 @@ Created on Mon Apr  8 16:29:40 2019
 @author: Hendrik Müller
 """
 
-from . import NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 
 import numpy as np
@@ -127,7 +127,7 @@ def FunctoSymbolic(params, func):
 
            
 def SymbolictoFunc(params, Symfunc):
-    N=params.domain.coords.shape[0]
+    N=params.domain.size_support
     Symfunc=CoefficientFunction(Symfunc)
     func=np.zeros(N)
     for i in range(0, N):
@@ -143,7 +143,7 @@ def rc(params, c):
 
 
 def mylaplace(params, func):
-    N=params.domain.shape[0]
+    N=params.domain.size_support
     der=np.zeros(N)
     for i in range(1, N-1):
         der[i]=(func[i+1]+func[i-1]-2*func[i])/(1/N**2)
