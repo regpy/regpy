@@ -7,8 +7,9 @@ Created on Mon Apr  8 16:35:41 2019
 
 import setpath
 
-from itreg.operators.ReactionCoefficient_1D import ReactionCoefficient
+from itreg.operators.Reaction.ReactionCoefficient_1D import ReactionCoefficient
 from itreg.spaces import L2
+from itreg.grids import User_Defined
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules

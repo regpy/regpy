@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr  4 23:32:23 2019
+Created on Tue Apr  9 14:54:23 2019
 
 @author: Hendrik Müller
 """
 
-from . import NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 
 import numpy as np
@@ -15,14 +15,18 @@ import scipy.ndimage
 import netgen.gui
 from ngsolve import *
 from netgen.geom2d import unit_square
+from ngsolve.meshes import Make1DMesh
 import matplotlib.pyplot as plt
+import netgen.gui
+import ngsolve
+from netgen.meshing import *
 
 
-class DiffusionCoefficient_2D(NonlinearOperator):
+
+class DiffusionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, bc_top=None, bc_bottom=None, bc_left=None, bc_right=None, range=None, spacing=1):
-        range = range or domain
+    def __init__(self, domain, rhs, bc_left=None, bc_right=None, bc_bottom=None, bc_top=None, range=None, spacing=1):
         if bc_top is None:
             bc_top=rhs[0, :]
         if bc_bottom is None:
@@ -30,23 +34,28 @@ class DiffusionCoefficient_2D(NonlinearOperator):
         if bc_left is None:
             bc_left=rhs[:, 0]
         if bc_right is None:
-            bc_right=rhs[:, -1]
-        mesh = Mesh(unit_square.GenerateMesh(maxh=0.1))
-        mesh.GetBoundaries()
-        #assert len(domain.shape) == 1
-        #assert domain.shape == range.shape
-        super().__init__(Params(domain, range, rhs=rhs, bc_top=bc_top, bc_bottom=bc_bottom, bc_left=bc_left, bc_right=bc_right, mesh=mesh, spacing=spacing))
+            bc_right=rhs[:, -1]   
+        
+        
+        N=rhs.shape[0]-1
+        mesh=construct_mesh(N)
+        
+        range = range or domain
+        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_top=bc_top, bc_bottom=bc_bottom, mesh=mesh, spacing=spacing))
         
     @instantiate
     class operator(OperatorImplementation):
         def eval(self, params, diff, data, differentiate, **kwargs):
 #            B=B_builder(params, c)
             r_diff=rdiff(params, diff)
-#            print(r_diff.shape)
+#            print(r_diff)
 #            rhs=rhs_builder(params, r_c)
             rhs=FunctoSymbolic(params, r_diff)
+            #mip=params.mesh(1, 0.5)
+            #print(rhs(mip))
 #            coeff= np.linalg.solve(B, rhs)
             myfunc=FunctoSymbolic(params, diff)
+
             fes = H1(params.mesh, order=2, dirichlet="bottom|right|top|left")
 
 
@@ -62,7 +71,12 @@ class DiffusionCoefficient_2D(NonlinearOperator):
             f += SymbolicLFI(rhs*v)
             f.Assemble()
             #solve the system
-            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
+            pre = Preconditioner(a, 'local')
+            a.Assemble()
+            inv = CGSolver(a.mat, pre.mat, maxsteps=1000)
+            gfu.vec.data = inv * f.vec
+            #gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
+            
 
             if differentiate:
                 data.u=SymbolictoFunc(params, gfu)+tilde_g_builder(params)
@@ -92,7 +106,11 @@ class DiffusionCoefficient_2D(NonlinearOperator):
             f += SymbolicLFI(rhs*v)
             f.Assemble()
             #solve the system
-            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
+            pre = Preconditioner(a, 'local')
+            a.Assemble()
+            inv = CGSolver(a.mat, pre.mat, maxsteps=1000)
+            gfu.vec.data = inv * f.vec
+            #gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
             return -SymbolictoFunc(params, gfu)
             
 
@@ -115,9 +133,12 @@ class DiffusionCoefficient_2D(NonlinearOperator):
             f += SymbolicLFI(rhs*v)
             f.Assemble()
             #solve the system
-            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
-            
-            return mygradient(data.u)[0]*mygradient(SymbolictoFunc(gfu))[0]+mygradient(data.u)[1]*mygradient(SymbolictoFunc(gfu))[1]
+            pre = Preconditioner(a, 'local')
+            a.Assemble()
+            inv = CGSolver(a.mat, pre.mat, maxsteps=1000)
+            gfu.vec.data = inv * f.vec
+            #gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
+            return mygradient(params, data.u)[:, :, 0]*mygradient(params, SymbolictoFunc(params, gfu))[:, :, 0]+mygradient(params, data.u)[:, :, 1]*mygradient(params, SymbolictoFunc(params, gfu))[:, :, 1]
             
             
             
@@ -130,40 +151,33 @@ def tilde_g_builder(params):
     for i in range(1, params.domain.coords.shape[1]-1):
         tilde_g[:, i]=np.interp(params.domain.coords[1, :], np.asarray([params.domain.coords[1, 0], params.domain.coords[1, -1]]), np.asarray([params.bc_top[i], params.bc_bottom[i]]))
     v_star=tilde_g
-    return v_star    
+    return v_star     
 
 
-def basisfunc(params, i, j):
-    return np.dot((np.sin((i+1)*mt.pi*params.domain.coords[0, :])).reshape((params.domain.coords.shape[1], 1)), (np.sin((j+1)*mt.pi*params.domain.coords[1, :])).reshape((1, params.domain.coords.shape[1])))  
 
 def FunctoSymbolic(params, func):
-#    print(func.shape)
-    coeff=np.zeros((params.domain.coords.shape[1], params.domain.coords.shape[1]))
-    for i in range(0, params.domain.coords.shape[1]):
-        for j in range(0, params.domain.coords.shape[1]):
-            coeff[i, j]=np.trapz(np.trapz(func*basisfunc(params, i, j), params.domain.coords[0, :], axis=1), params.domain.coords[1, :])
-    Symfunc=0
-    for i in range(0, params.domain.coords.shape[1]):
-        for j in range(0, params.domain.coords.shape[1]):
-            Symfunc=Symfunc+coeff[i, j]*sin((i+1)*mt.pi*x)*sin((j+1)*mt.pi*y)
-    return Symfunc
-            
-def basisfuncSym(params, i, j):
-    return sin((i+1)*mt.pi*x)*sin((j+1)*mt.pi*y)
+        V = H1(params.mesh, order=1, dirichlet="left|right")
+        u = GridFunction(V)
+        N=params.domain.coords.shape[1]
+        for i in range(0, N):
+            for j in range(0, N):
+                u.vec[i+N*j]=func[i, j]           
+        return CoefficientFunction(u)
+    
+    
 
-#We have to define the mesh            
-def SymbolictoFunc(params, Symfunc):
-    coeff=np.zeros((params.domain.coords.shape[1], params.domain.coords.shape[1])) 
-    for i in range(0, params.domain.coords.shape[1]):
-        for j in range(0, params.domain.coords.shape[1]):
-            coeff[i, j]=Integrate(basisfuncSym(params, i, j), params.mesh)
-    func=0
-    for i in range(0, params.domain.coords.shape[1]):
-        for j in range(0, params.domain.coords.shape[1]):
-            func=func+coeff[i, j]*basisfunc(params, i, j)
-    return func
            
- 
+def SymbolictoFunc(params, Symfunc):
+    N=params.domain.coords.shape[1]
+    Symfunc=CoefficientFunction(Symfunc)
+    func=np.zeros((N, N))
+    for i in range(0, N):
+        for j in range(0, N):
+            mip=params.mesh(params.domain.coords[0, i], params.domain.coords[1, j])
+            func[i, j]=Symfunc(mip)
+    
+    return func
+        
 
 def rdiff(params, diff):
     N=params.domain.coords.shape[1]
@@ -174,7 +188,7 @@ def rdiff(params, diff):
     prod[:, :, 1]=diff*prod[:, :, 1]
     res=mydiv(params, prod)
 #    print(type(res))
-    return params.rhs+res    
+    return params.rhs+res      
 
 
 def mygradient(params, func):
@@ -192,3 +206,35 @@ def mydiv(params, func):
         der[i, :]=der[i, :]+np.gradient(func[i, :, 0])*N
         der[:, i]=der[:, i]+np.gradient(func[:, i, 1])*N
     return der
+
+def construct_mesh(N):
+    ngmesh = Mesh()
+    ngmesh.SetGeometry(unit_square)
+    ngmesh.dim = 2
+    pnums = []
+    for i in range(N + 1):
+        for j in range(N + 1):
+            pnums.append(ngmesh.Add(MeshPoint(Pnt(i / N, j / N, 0))))
+            
+    ngmesh.Add (FaceDescriptor(surfnr=1,domin=1,bc=1))
+    ngmesh.SetMaterial(1, "mat")
+    for j in range(N):
+        for i in range(N):
+            ngmesh.Add(Element2D(1, [pnums[i + j * (N + 1)],
+                                   pnums[i + (j + 1) * (N + 1)],
+                                   pnums[i + 1 + (j + 1) * (N + 1)],
+                                   pnums[i + 1 + j * (N + 1)]]))
+        
+    for i in range(N):
+       ngmesh.Add(Element1D([pnums[N + i * (N + 1)],
+                           pnums[N + (i + 1) * (N + 1)]], index=1))
+       ngmesh.Add(Element1D([pnums[0 + i * (N + 1)], pnums[0 + (i + 1) * (N + 1)]], index=1))
+    
+    # vertical boundaries
+    for i in range(N):
+       ngmesh.Add(Element1D([pnums[i], pnums[i + 1]], index=2))
+       ngmesh.Add(Element1D([pnums[i + N * (N + 1)], pnums[i + 1 + N * (N + 1)]], index=2))
+       
+    mesh = ngsolve.Mesh(ngmesh)
+    return mesh
+

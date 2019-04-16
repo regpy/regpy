@@ -1,10 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 14 13:49:36 2019
 
-@author: Hendrik Müller
-"""
-from . import LinearOperator, NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 from itreg.spaces import L2
 from itreg.grids import User_Defined
@@ -18,9 +13,9 @@ class parallel_MRI(NonlinearOperator):
                  domain,
                  range=None,
                 noiselevel=0,
-                nr_coils=12, 
-                Nx=128, 
-                Ny=96,
+                nr_coils=20, 
+                Nx=200, 
+                Ny=20,
                 samplingIndx=None,
                 init_guess=None,
                 Fourier_weights=None,

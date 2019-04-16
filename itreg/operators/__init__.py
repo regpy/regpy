@@ -153,9 +153,10 @@ class Derivative(LinearOperator):
         self.handle = handle
 
 
-from .volterra import Volterra, NonlinearVolterra
+#from .volterra import Volterra, NonlinearVolterra
 from .weighted import Weighted
-from .mediumscattering import MediumScattering
-from .Scattering2D import Scattering2D
-from .Scattering3D import Scattering3D
-from .MediumScatteringBase import MediumScatteringBase
+from . import Volterra
+from . import MediumScattering
+from . import MRI
+from . import Diffusion
+from . import Reaction

@@ -1,8 +1,8 @@
-#! /usr/bin/env python
-
 import setpath
 
-from itreg.operators.mediumscattering import MediumScattering
+import itreg
+
+from itreg.operators.MediumScattering.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev
 from itreg.spaces import L2
 from itreg.grids import Square_2D

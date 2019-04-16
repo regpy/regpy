@@ -1,4 +1,4 @@
-from . import LinearOperator, NonlinearOperator, OperatorImplementation, Params
+from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 
 import numpy as np
