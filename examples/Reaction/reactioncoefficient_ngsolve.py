@@ -7,10 +7,11 @@ Created on Thu Apr  4 14:43:53 2019
 
 import setpath
 
-from itreg.operators.Reaction.ReactionCoefficient_NGsolve import ReactionCoefficient_2D
+from itreg.operators.Reaction.ReactionCoefficient_2D import ReactionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
+from itreg.grids import User_Defined
 import itreg.stoprules as rules
 
 import numpy as np
@@ -26,9 +27,12 @@ xcoo=np.linspace(0, 1, 10)
 ycoo=np.linspace(0, 1, 10)
 spacing = xcoo[1] - xcoo[0]
 
-rhs=np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
-grid=User_Defined(np.asarray([xcoo, ycoo]), (10, 10))
-op = ReactionCoefficient_2D(L2(grid), rhs, spacing=spacing)
+#rhs=np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
+rhs=np.ones((N,N))
+
+coords=np.asarray([xcoo, ycoo])
+grid=User_Defined(coords, (10, 10))
+op = ReactionCoefficient(L2(grid), rhs, spacing=spacing)
 
 #exact_solution = np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
 exact_solution=np.ones((N, N))
@@ -38,19 +42,19 @@ exact_data = op(exact_solution)
 
 #noiselevel = op.range.norm(noise)
 
-#init = op.domain.one()
-init=np.zeros((N, N))
-vec=np.ones((N, N))
-
-_, deriv = op.linearize(init)
-test_adjoint(deriv)
-deriv(vec)
+init = 1.1*np.ones((N,N))
+#init=np.zeros((N, N))
 
 
-landweber = Landweber(op, data, init, stepsize=0.01)
+#_, deriv = op.linearize(init)
+#test_adjoint(deriv)
+#deriv(init)
+
+
+landweber = Landweber(op, exact_data, init, stepsize=0.01)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.CountIterations(1000) +
+    rules.Discrepancy(op.range.norm, exact_data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 

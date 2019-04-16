@@ -45,7 +45,7 @@ init = op.domain.zero()
 
 landweber = Landweber(op, data, init, stepsize=0.1)
 stoprule = (
-    rules.CountIterations(10**5) +
+    rules.CountIterations(1000) +
     rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
