@@ -11,7 +11,7 @@ from itreg.operators.DiffusionCoefficient_1D import DiffusionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
-import itreg.stoprules as rule
+import itreg.stoprules as rules
 from itreg.grids import User_Defined
 
 import numpy as np
@@ -31,8 +31,8 @@ op = DiffusionCoefficient(L2(grid), rhs=np.ones(200), spacing=spacing)
 
 exact_solution = np.ones(200)
 exact_data = op(exact_solution)
-#noise = 0.03 * op.domain.rand(np.random.randn)
-data = exact_data
+noise = 0.03 * op.domain.rand(np.random.randn)
+data = exact_data+noise
 
 #noiselevel = op.range.norm(noise)
 

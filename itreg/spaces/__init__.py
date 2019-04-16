@@ -135,7 +135,7 @@ class Space:
             parameters and return a real array of that shape. The functions in
             :mod:`numpy.random` conform to this.
         """
-        r = rand(self.shape)
+        r = rand(self.size_support)
         if self.dtype == r.dtype:
             return r
         # Copy if dtypes don't match

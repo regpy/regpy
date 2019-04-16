@@ -12,6 +12,7 @@ from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
+from itreg.grids import User_Defined
 
 import numpy as np
 import logging
@@ -24,7 +25,9 @@ logging.basicConfig(
 xs = np.linspace(0, 1, 200)
 spacing = xs[1] - xs[0]
 
-op = ReactionCoefficient(L2(xs), rhs=np.ones(200), spacing=spacing)
+grid=User_Defined(xs, xs.shape)
+
+op = ReactionCoefficient(L2(grid), rhs=np.ones(200), spacing=spacing)
 
 exact_solution = np.ones(200)
 exact_data = op(exact_solution)
@@ -42,7 +45,7 @@ init = op.domain.zero()
 
 landweber = Landweber(op, data, init, stepsize=0.1)
 stoprule = (
-    rules.CountIterations(10**5) +
+    rules.CountIterations(1000) +
     rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)

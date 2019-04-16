@@ -181,14 +181,14 @@ def mygradient(params, func):
     N=params.domain.coords.shape[1]
     der=np.zeros((N, N, 2))
     for i in range(0, N):
-        der[i, :, 0]=np.gradient(func[i, :])*N**2
-        der[:, i, 1]=np.gradient(func[:, i])*N**2
+        der[i, :, 0]=np.gradient(func[i, :])*N
+        der[:, i, 1]=np.gradient(func[:, i])*N
     return der
 
 def mydiv(params, func): 
     N=params.domain.coords.shape[1]
     der=np.zeros((N, N))
     for i in range(0, N):
-        der[i, :]=der[i, :]+np.gradient(func[i, :, 0])*N**2
-        der[:, i]=der[:, i]+np.gradient(func[:, i, 1])*N**2
+        der[i, :]=der[i, :]+np.gradient(func[i, :, 0])*N
+        der[:, i]=der[:, i]+np.gradient(func[:, i, 1])*N
     return der

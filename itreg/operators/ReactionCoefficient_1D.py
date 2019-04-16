@@ -143,7 +143,7 @@ def rc(params, c):
 
 
 def mylaplace(params, func):
-    N=params.domain.shape
+    N=params.domain.shape[0]
     der=np.zeros(N)
     for i in range(1, N-1):
         der[i]=(func[i+1]+func[i-1]-2*func[i])/(1/N**2)

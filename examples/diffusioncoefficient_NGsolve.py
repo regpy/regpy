@@ -7,11 +7,12 @@ Created on Thu Apr  4 23:46:25 2019
 
 import setpath
 
-from itreg.operators.DiffusionCoefficient_NGsolve import DiffusionCoefficient_2D
+from itreg.operators.DiffusionCoefficient_2D import DiffusionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
+from itreg.grids import User_Defined
 
 import numpy as np
 import logging
@@ -27,29 +28,33 @@ ycoo=np.linspace(0, 1, 10)
 spacing = xcoo[1] - xcoo[0]
 
 rhs=np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
-op = DiffusionCoefficient_2D(L2(np.asarray([xcoo, ycoo])), rhs, spacing=spacing)
+
+coords=np.asarray([xcoo, ycoo])
+grid=User_Defined(coords, (10, 10))
+op = DiffusionCoefficient(L2(grid), rhs, spacing=spacing)
 
 #exact_solution = np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
 exact_solution=np.ones((N, N))
 exact_data = op(exact_solution)
-#noise = 0.03 * op.domain.rand(np.random.randn)
-#data = exact_data + noise
+noise = 0.03 * op.domain.rand(np.random.randn)
+noise=noise.reshape((N, N))
+data = exact_data+noise
 
-#noiselevel = op.range.norm(noise)
+noiselevel = op.range.norm(noise)
 
-#init = op.domain.one()
-init=np.zeros((N, N))
-vec=np.ones((N, N))
+init = 1.1*op.domain.one()
 
-_, deriv = op.linearize(init)
+#vec=np.ones((N, N))
+
+#_, deriv = op.linearize(init)
 #test_adjoint(deriv)
-deriv(vec)
+#deriv(vec)
 
 
-landweber = Landweber(op, data, init, stepsize=0.01)
+landweber = Landweber(op, exact_data, init, stepsize=0.1)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.range.norm, exact_data, noiselevel, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
