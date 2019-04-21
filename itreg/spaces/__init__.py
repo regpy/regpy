@@ -29,10 +29,8 @@ class Space:
 
     log = classlogger
 
-    def __init__(self, shape, size_support, coords, dtype=float):
-        self.shape=shape
-        self.size_support = size_support
-        self.coords=coords
+    def __init__(self, shape, dtype=float):
+        self.shape = shape
         self.dtype = np.dtype(dtype)
 
     def gram(self, x):
@@ -134,7 +132,7 @@ class Space:
             parameters and return a real array of that shape. The functions in
             :mod:`numpy.random` conform to this.
         """
-        r = rand(self.shape)
+        r = rand(*self.shape)
         if self.dtype == r.dtype:
             return r
         # Copy if dtypes don't match
