@@ -35,6 +35,10 @@ class BaseOperator:
 
     def __init__(self, params):
         self.params = params
+        self._alloc(params)
+
+    def _alloc(self, params):
+        pass
 
     @property
     def domain(self):
@@ -48,6 +52,7 @@ class BaseOperator:
         cls = type(self)
         instance = cls.__new__(cls)
         instance.params = self.params
+        instance._alloc(instance.params)
         return instance
 
     def __call__(self, x):
