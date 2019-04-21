@@ -1,10 +1,8 @@
-#!/usr/bin/env python
-
 import setpath
 
-from itreg.operators import NonlinearVolterra
-from itreg.spaces import L2
-from itreg.solvers import Landweber
+from itreg.operators.volterra import NonlinearVolterra
+from itreg.spaces.l2 import L2
+from itreg.solvers.landweber import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
 

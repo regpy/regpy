@@ -145,8 +145,3 @@ class Space:
             x /= np.sqrt(2)
         else:
             x[:] = r
-        
-
-
-from .l2 import L2, parameters_domain_l2
-from .sobolev import Sobolev, parameters_domain_sobolev
