@@ -1,3 +1,5 @@
+import numpy as np
+
 from itreg.util import classlogger, memoized_property
 
 
@@ -108,9 +110,14 @@ class LinearOperator(BaseOperator):
         # return self.domain.gram_inv * self.adjoint * self.range.gram
         return self.domain.gram_inv(self.adjoint(self.range.gram(y)))
 
-    def norm(self):
-        # TODO
-        pass
+    def norm(self, iterations=10):
+        h = self.domain.rand()
+        norm = np.sqrt(np.real(np.vdot(h, h)))
+        for i in range(iterations):
+            h = h / norm
+            h = self.hermitian(self(h))
+            norm = np.sqrt(np.real(np.vdot(h, h)))
+        return np.sqrt(norm)
 
     def _eval(self, params, x):
         raise NotImplementedError
