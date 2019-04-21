@@ -1,17 +1,11 @@
+from itreg.util import classlogger, memoized_property
+
+
 class Params:
     def __init__(self, domain, range, **kwargs):
         self.domain = domain
         self.range = range
-        self.__dict__.update(kwargs)
-
-
-class GenericData:
-    def __init__(self, params):
-        pass
-
-
-class RevokedError(Exception):
-    pass
+        self.__dict__.update(**kwargs)
 
 
 class Revocable:
@@ -22,71 +16,23 @@ class Revocable:
     def take(cls, other):
         return cls(other.revoke())
 
-    def __enter__(self):
-        if self.__val is None:
-            raise RevokedError
-        return self.__val
-
-    def __exit__(self, *args):
-        pass
+    def get(self):
+        try:
+            return self.__val
+        except AttributeError:
+            raise RuntimeError('Attempted to use revoked reference')
 
     def revoke(self):
-        with self as val:
-            self.__val = None
-            return val
+        val = self.get()
+        del self.__val
+        return val
 
 
-class NotImplemented:
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError
-
-
-class Operator:
-    from itreg.util import classlogger as log
-
-    Data = GenericData
-    Derivative = NotImplemented
-    nocopy = frozenset(['params'])
-    reuse_data = True
+class BaseOperator:
+    log = classlogger
 
     def __init__(self, params):
         self.params = params
-
-    def __call__(self, x):
-        if self.reuse_data:
-            if not hasattr(self, '_owned_data'):
-                self._owned_data = self.Data(self.params)
-            data = self._owned_data
-        else:
-            data = self.Data(self.params)
-        return self._eval(x, data=data, differentiate=False)
-
-    def _eval(self, x, data, differentiate=False, **kwargs):
-        raise NotImplementedError
-
-    def linearize(self, x):
-        try:
-            self._shared_data = Revocable.take(self._shared_data)
-        except AttributeError:
-            self._shared_data = Revocable(self.Data(self.params))
-        with self._shared_data as data:
-            y = self._eval(x, data=data, differentiate=True)
-        deriv = self.Derivative(self.params, self._shared_data)
-        return y, deriv
-
-    def __deepcopy__(self, memo):
-        from copy import deepcopy
-        cls = type(self)
-        result = cls.__new__(cls)
-        memo[id(result)] = result
-        for k, v in self.__dict__.items():
-            if k not in self.nocopy:
-                v = deepcopy(v, memo)
-            setattr(result, k, v)
-        return result
-
-    def __str__(self):
-        return 'Operator({}, {})'.format(type(self).__qualname__, self.params)
 
     @property
     def domain(self):
@@ -96,64 +42,94 @@ class Operator:
     def range(self):
         return self.params.range
 
-
-class LinearOperator(Operator):
-    Data = NotImplemented
-
-    @property
-    def Derivative(self):
-        return type(self)
-
-    def __init__(self, params, context=None):
-        super().__init__(params)
-        self.context = context
+    def clone(self):
+        cls = type(self)
+        instance = cls.__new__(cls)
+        instance.params = self.params
+        return instance
 
     def __call__(self, x):
-        if self.context is not None:
-            with self.context as data:
-                return self._eval(x, data=data)
-        else:
-            return self._eval(x)
-
-    def adjoint(self, y):
-        if self.context is not None:
-            with self.context as data:
-                return self._adjoint(y, data=data)
-        else:
-            return self._adjoint(y)
-
-    def hermitian(self, y):
-        return self.domain.gram_inv(self.adjoint(self.range.gram(y)))
-
-    def _eval(self, x, data=None, **kwargs):
         raise NotImplementedError
 
-    def _adjoint(self, x, data=None, **kwargs):
+    def linearize(self, x):
         raise NotImplementedError
+
+
+class NonlinearOperator(BaseOperator):
+    def __call__(self, x):
+        self.__revoke()
+        return self._eval(self.params, x, differentiate=False)
+
+    def linearize(self, x):
+        self.__revoke()
+        y = self._eval(self.params, x, differentiate=True)
+        deriv = Derivative(self.__get_handle())
+        return y, deriv
+
+    def __revoke(self):
+        try:
+            self.__handle = Revocable.take(self.__handle)
+            self.log.info('revoked')
+        except AttributeError:
+            pass
+
+    def __get_handle(self):
+        try:
+            return self.__handle
+        except AttributeError:
+            self.__handle = Revocable(self)
+            return self.__handle
+
+    def _eval(self, params, x, differentiate=False):
+        raise NotImplementedError
+
+    def _deriv(self, params, x):
+        raise NotImplementedError
+
+    def _adjoint(self, params, y):
+        raise NotImplementedError
+
+
+class LinearOperator(BaseOperator):
+    def __call__(self, x):
+        return self._eval(self.params, x)
 
     def linearize(self, x):
         return self(x), self
 
-    def norm(self, iterations=10):
-        import numpy as np
-        h = self.domain.rand()
-        norm = np.sqrt(np.real(np.vdot(h, h)))
-        for i in range(iterations):
-            h = h / norm
-            h = self.hermitian(self(h))
-            norm = np.sqrt(np.real(np.vdot(h, h)))
-        return np.sqrt(norm)
+    @memoized_property
+    def adjoint(self):
+        return Adjoint(self)
+
+    def hermitian(self, y):
+        # TODO Once gram matrices are turned into operators and operator
+        # composition works, this can be made into a memoized property that
+        # returns a composed operator instance.
+        # return self.domain.gram_inv * self.adjoint * self.range.gram
+        return self.domain.gram_inv(self.adjoint(self.range.gram(y)))
+
+    def norm(self):
+        # TODO
+        pass
+
+    def _eval(self, params, x):
+        raise NotImplementedError
+
+    def _adjoint(self, params, x):
+        raise NotImplementedError
 
 
 class Adjoint(LinearOperator):
     def __init__(self, op):
-        self.op = op
+        self.__op = op
+        super().__init__(self.op.params)
 
-    def _eval(self, y, **kwargs):
-        return self.op._adjoint(self, y)
-
-    def _adjoint(self, y, **kwargs):
-        return self.op._eval(self, y)
+    @property
+    def op(self):
+        if isinstance(self.__op, Revocable):
+            return self.__op.get()
+        else:
+            return self.__op
 
     @property
     def domain(self):
@@ -162,3 +138,32 @@ class Adjoint(LinearOperator):
     @property
     def range(self):
         return self.op.domain
+
+    def _eval(self, params, y):
+        return self.op._adjoint(params, y)
+
+    def _adjoint(self, params, x):
+        return self.op._eval(params, x)
+
+    @property
+    def adjoint(self):
+        return self.op
+
+
+class Derivative(LinearOperator):
+    def __init__(self, op):
+        self.__op = op
+        super().__init__(self.op.params)
+
+    @property
+    def op(self):
+        if isinstance(self.__op, Revocable):
+            return self.__op.get()
+        else:
+            return self.__op
+
+    def _eval(self, params, x):
+        return self.op._deriv(params, x)
+
+    def _adjoint(self, params, x):
+        return self.op._adjoint(params, x)
