@@ -37,11 +37,11 @@ class Volterra(LinearOperator):
         assert domain.shape == range.shape
         super().__init__(Params(domain, range, spacing=spacing))
 
-    def _eval(self, params, x):
-        return params.spacing * np.cumsum(x)
+    def _eval(self, x):
+        return self.params.spacing * np.cumsum(x)
 
-    def _adjoint(self, params, y):
-        return params.spacing * np.flipud(np.cumsum(np.flipud(y)))
+    def _adjoint(self, y):
+        return self.params.spacing * np.flipud(np.cumsum(np.flipud(y)))
 
 
 class NonlinearVolterra(NonlinearOperator):
@@ -71,14 +71,14 @@ class NonlinearVolterra(NonlinearOperator):
         super().__init__(
             Params(domain, range, exponent=exponent, spacing=spacing))
 
-    def _eval(self, params, x, differentiate=False):
+    def _eval(self, x, differentiate=False):
         if differentiate:
-            self.factor = params.exponent * x**(params.exponent - 1)
-        return params.spacing * np.cumsum(x**params.exponent)
+            self.factor = self.params.exponent * x**(self.params.exponent - 1)
+        return self.params.spacing * np.cumsum(x**self.params.exponent)
 
-    def _deriv(self, params, x):
-        return params.spacing * np.cumsum(self.factor * x)
+    def _derivative(self, x):
+        return self.params.spacing * np.cumsum(self.factor * x)
 
-    def _adjoint(self, params, y):
-        return params.spacing * np.flipud(np.cumsum(np.flipud(
+    def _adjoint(self, y):
+        return self.params.spacing * np.flipud(np.cumsum(np.flipud(
             self.factor * y)))

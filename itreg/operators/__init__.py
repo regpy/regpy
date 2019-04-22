@@ -51,8 +51,7 @@ class BaseOperator:
     def clone(self):
         cls = type(self)
         instance = cls.__new__(cls)
-        instance.params = self.params
-        instance._alloc(instance.params)
+        BaseOperator.__init__(instance, self.params)
         return instance
 
     def __call__(self, x):
@@ -65,11 +64,11 @@ class BaseOperator:
 class NonlinearOperator(BaseOperator):
     def __call__(self, x):
         self.__revoke()
-        return self._eval(self.params, x, differentiate=False)
+        return self._eval(x, differentiate=False)
 
     def linearize(self, x):
         self.__revoke()
-        y = self._eval(self.params, x, differentiate=True)
+        y = self._eval(x, differentiate=True)
         deriv = Derivative(self.__get_handle())
         return y, deriv
 
@@ -86,19 +85,19 @@ class NonlinearOperator(BaseOperator):
             self.__handle = Revocable(self)
             return self.__handle
 
-    def _eval(self, params, x, differentiate=False):
+    def _eval(self, x, differentiate=False):
         raise NotImplementedError
 
-    def _deriv(self, params, x):
+    def _derivative(self, x):
         raise NotImplementedError
 
-    def _adjoint(self, params, y):
+    def _adjoint(self, y):
         raise NotImplementedError
 
 
 class LinearOperator(BaseOperator):
     def __call__(self, x):
-        return self._eval(self.params, x)
+        return self._eval(x)
 
     def linearize(self, x):
         return self(x), self
@@ -123,58 +122,38 @@ class LinearOperator(BaseOperator):
             norm = np.sqrt(np.real(np.vdot(h, h)))
         return np.sqrt(norm)
 
-    def _eval(self, params, x):
+    def _eval(self, x):
         raise NotImplementedError
 
-    def _adjoint(self, params, x):
+    def _adjoint(self, x):
         raise NotImplementedError
 
 
 class Adjoint(LinearOperator):
     def __init__(self, op):
-        self.__op = op
-        super().__init__(self.op.params)
+        super().__init__(Params(op.range, op.domain, op=op))
 
-    @property
-    def op(self):
-        if isinstance(self.__op, Revocable):
-            return self.__op.get()
-        else:
-            return self.__op
+    def _eval(self, x):
+        return self.params.op._adjoint(x)
 
-    @property
-    def domain(self):
-        return self.op.range
-
-    @property
-    def range(self):
-        return self.op.domain
-
-    def _eval(self, params, y):
-        return self.op._adjoint(params, y)
-
-    def _adjoint(self, params, x):
-        return self.op._eval(params, x)
+    def _adjoint(self, x):
+        return self.params.op._eval(x)
 
     @property
     def adjoint(self):
-        return self.op
+        return self.params.op
 
 
 class Derivative(LinearOperator):
     def __init__(self, op):
-        self.__op = op
-        super().__init__(self.op.params)
+        if not isinstance(op, Revocable):
+            # Wrap plain operators in a Revocable that will never be revoked to
+            # avoid case distinctions below.
+            op = Revocable(op)
+        super().__init__(Params(op.get().domain, op.get().range, op=op))
 
-    @property
-    def op(self):
-        if isinstance(self.__op, Revocable):
-            return self.__op.get()
-        else:
-            return self.__op
+    def _eval(self, x):
+        return self.params.op.get()._derivative(x)
 
-    def _eval(self, params, x):
-        return self.op._deriv(params, x)
-
-    def _adjoint(self, params, x):
-        return self.op._adjoint(params, x)
+    def _adjoint(self, x):
+        return self.params.op.get()._adjoint(x)
