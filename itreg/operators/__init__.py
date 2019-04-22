@@ -76,7 +76,6 @@ class NonlinearOperator(BaseOperator):
     def __revoke(self):
         try:
             self.__handle = Revocable.take(self.__handle)
-            self.log.info('revoked')
         except AttributeError:
             pass
 
