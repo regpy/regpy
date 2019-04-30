@@ -151,3 +151,4 @@ class Space:
 
 from .l2 import L2, parameters_domain_l2
 from .sobolev import Sobolev, parameters_domain_sobolev
+from .h1_ngsolve import H1_NGSolve, parameters_domain_sobolev_ngsolve
