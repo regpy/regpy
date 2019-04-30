@@ -37,8 +37,8 @@ op = ReactionCoefficient(L2(grid), rhs, spacing=spacing)
 #exact_solution = np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
 exact_solution=np.ones((N, N))
 exact_data = op(exact_solution)
-#noise = 0.03 * op.domain.rand(np.random.randn)
-#data = exact_data + noise
+noise = 0.03 * op.domain.rand(np.random.randn).reshape((10, 10))
+data = exact_data + noise
 
 #noiselevel = op.range.norm(noise)
 
@@ -57,10 +57,12 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-plt.plot(xs, exact_solution, label='exact solution')
-plt.plot(xs, reco, label='reco')
-plt.plot(xs, exact_data, label='exact data')
-plt.plot(xs, data, label='data')
-plt.plot(xs, reco_data, label='reco data')
+xs=np.linspace(1, 100, 100)
+
+plt.plot(xs, exact_solution.reshape((100, 1)), label='exact solution')
+plt.plot(xs, reco.reshape((100, 1)), label='reco')
+plt.plot(xs, exact_data.reshape((100, 1)), label='exact data')
+plt.plot(xs, data.reshape((100,1)), label='data')
+plt.plot(xs, reco_data.reshape((100,1)), label='reco data')
 plt.legend()
 plt.show()
