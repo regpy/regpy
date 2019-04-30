@@ -1,13 +1,6 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr  3 20:37:38 2019
+import setpath
 
-@author: hendr
-"""
-
-from . import setpath
-
-from itreg.operators.mediumscattering import MediumScattering
+from itreg.operators.MediumScattering.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev
 from itreg.spaces import L2
 from itreg.grids import Square_3D
