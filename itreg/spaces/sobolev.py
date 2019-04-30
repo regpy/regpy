@@ -45,7 +45,8 @@ def start_sobolev(grid, sobo_index):
      par_dom.Y, par_dom.X=grid.Y, grid.X
      if dimension==3:
          par_dom.Z=grid.Z
-     rho=grid.rho
+     if grid.rho:
+         par_dom.rho=grid.rho
      par_dom.ind_support=grid.ind_support
      if dimension==2:
          par_dom.Fourierweights=np.fft.fftshift((1+(4*grid.rho/grid.shape[0])**2*grid.X*grid.X+(4*grid.rho/grid.shape[1])**2*grid.Y*grid.Y)**(sobo_index))
