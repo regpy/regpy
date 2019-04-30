@@ -43,6 +43,7 @@ data = exact_data+noise
 noiselevel = op.range.norm(noise)
 
 init = 1.1*op.domain.one()
+init_data=op(init)
 
 #vec=np.ones((N, N))
 
@@ -53,15 +54,17 @@ init = 1.1*op.domain.one()
 
 landweber = Landweber(op, exact_data, init, stepsize=0.1)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, exact_data, noiselevel, tau=1.1))
+    rules.CountIterations(1000) +
+    rules.Discrepancy(op.range.norm, exact_data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
-plt.plot(xs, exact_solution, label='exact solution')
-plt.plot(xs, reco, label='reco')
-plt.plot(xs, exact_data, label='exact data')
-plt.plot(xs, data, label='data')
-plt.plot(xs, reco_data, label='reco data')
+xs=np.linspace(1, 100, 100)
+
+plt.plot(xs, exact_solution.reshape(100), label='exact solution')
+plt.plot(xs, reco.reshape(100), label='reco')
+plt.plot(xs, exact_data.reshape(100), label='exact data')
+plt.plot(xs, data.reshape(100), label='data')
+plt.plot(xs, reco_data.reshape(100), label='reco data')
 plt.legend()
 plt.show()
