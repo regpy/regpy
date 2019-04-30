@@ -3,7 +3,7 @@ import scipy.special as scsp
 import matplotlib.pyplot as plt
 
 class Scattering2D:
-    def __init__(self, domain, amplitude_data, rho, kappa, ampl_vector_length):        
+    def __init__(self, domain, amplitude, kappa):        
         #define default values and merge with parameters given
         self.N=domain.parameters_domain.N
         self.N_coarse=(32, 32)
@@ -20,8 +20,8 @@ class Scattering2D:
                 print('Error: Coarse Grid not coarser than fine grid')
         if np.mod(self.N[0], 2)==1 or np.mod(self.N[1], 2)==1:
             print('Error: N must be even')
-        if amplitude_data:  
-            ampl_vector_length=2
+        if amplitude.amplitude_data:  
+            amplitude.ampl_vector_length=2
             Y_weight=Y_weight**2
             
         Y_weight=(2*np.pi)**2/(self.Ninc*self.Nmeas)
@@ -39,11 +39,11 @@ class Scattering2D:
         self.init_guess=0
         self.xdag=0
 
-        K_hat=self.ComputeFKConvolutionKernel(self.N, rho, kappa)
+        K_hat=self.ComputeFKConvolutionKernel(self.N, domain.parameters_domain.rho, kappa)
         if self.N_coarse:
-            K_hat_coarse=self.ComputeFKConvolutionKernel(self.N_coarse, rho, kappa)
-            x_coo_coarse=(4*rho/self.N[0])*np.arange(self.N_coarse[0]/2, (self.N_coarse[0]-1)/2, 1)
-            y_coo_coarse=(4*rho/self.N[1])*np.arange(self.N_coarse[1]/2, (self.N_coarse[1]-1)/2, 1)
+            K_hat_coarse=self.ComputeFKConvolutionKernel(self.N_coarse, domain.parameters_domain.rho, kappa)
+            x_coo_coarse=(4*domain.parameters_domain.rho/self.N[0])*np.arange(self.N_coarse[0]/2, (self.N_coarse[0]-1)/2, 1)
+            y_coo_coarse=(4*domain.parameters_domain.rho/self.N[1])*np.arange(self.N_coarse[1]/2, (self.N_coarse[1]-1)/2, 1)
             Y_coarse, X_coarse=np.meshgrid(y_coo_coarse, x_coo_coarse)
             dual_x_coarse=np.append(np.linspace(0, int(self.N_coarse[0]/2-1), num=int(self.N_coarse[0]/2)), np.linspace(int(self.N[0]-self.N_coarse[0]/2), int(self.N[0]-1), num=int(self.N_coarse[0]/2)))
             dual_y_coarse=np.append(np.linspace(0, int(self.N_coarse[1]/2-1), num=int(self.N_coarse[1]/2)), np.linspace(int(self.N[1]-self.N_coarse[1]/2), int(self.N[1]-1), num=int(self.N_coarse[1]/2)))
@@ -54,7 +54,7 @@ class Scattering2D:
         #set up far field matrix
         farfieldMatrix=1j*np.zeros((self.Nmeas, np.size(domain.parameters_domain.ind_support)))
         for j in range(0, self.Nmeas):
-            aux=(kappa**2*(4*rho)**2/np.prod(self.N))*np.exp(-np.complex(0,1)*kappa*self.meas_directions[0, j]*X-np.complex(0,1)*kappa*self.meas_directions[1, j] * Y)
+            aux=(kappa**2*(4*domain.parameters_domain.rho)**2/np.prod(self.N))*np.exp(-np.complex(0,1)*kappa*self.meas_directions[0, j]*X-np.complex(0,1)*kappa*self.meas_directions[1, j] * Y)
             farfieldMatrix[j,:]=aux.reshape(np.prod(self.N), order='F')[domain.parameters_domain.ind_support]
         incMatrix=1j*np.zeros((np.size(domain.parameters_domain.ind_support), self.Ninc))
         for j in range(0, self.Ninc):
@@ -63,9 +63,9 @@ class Scattering2D:
 
         #setup interface
         self.Xdim=np.size(domain.parameters_domain.ind_support)
-        self.Ydim=2*self.Ninc*self.Nmeas/ampl_vector_length
+        self.Ydim=2*self.Ninc*self.Nmeas/amplitude.ampl_vector_length
         self.prec=Scattering_prec(K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)
-        self.plotting=plotting_prop(domain, rho)
+        self.plotting=plotting_prop(domain)
         return
 
     def ComputeFKConvolutionKernel(self, N, rho, kappa):
@@ -105,9 +105,9 @@ class Scattering_prec:
         return
     
 class plotting_prop:
-    def __init__(self, grid, rho):
-        self.xplot_ind=np.where(np.abs(grid.coords[0,:])<=rho)[0]
-        self.yplot_ind=np.where(np.abs(grid.coords[1,:])<=rho)[0]
+    def __init__(self, domain):
+        self.xplot_ind=np.where(np.abs(domain.coords[0,:])<=domain.parameters_domain.rho)[0]
+        self.yplot_ind=np.where(np.abs(domain.coords[1,:])<=domain.parameters_domain.rho)[0]
         return
             
 

@@ -15,23 +15,23 @@ class MediumScatteringBase:
         yhat_coarse=params.scattering.prec.dual_y_coarse.copy()
         zhat_coarse=params.scattering.prec.dual_z_coarse
         v=1j*np.zeros(rhs.shape)
-        if params.verbose>=3: print('residuals two-grid its: ')
+        if params.printing.verbose>=3: print('residuals two-grid its: ')
         for counter in range(0, params.NrTwoGridIterations):
             if counter>0:
                 if params.domain.dim==2:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
-                    if params.verbose>=3: 
+                    if params.printing.verbose>=3: 
                         vold=v
                     v = rhs- np.fft.fftn(np.reshape(data.contrast,params.scattering.N, order='F')*np.fft.ifftn(params.scattering.prec.K_hat*v))
-                    if params.verbose>=3:
+                    if params.printing.verbose>=3:
                         print(np.linalg.norm(v[:]-vold[:]))
                     rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
                 if params.domain.dim==3:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
-                    if params.verbose>=3: 
+                    if params.printing.verbose>=3: 
                         vold=v
                     v = rhs- np.fft.fftn(np.reshape(data.contrast,params.scattering.N, order='F')*np.fft.ifftn(params.scattering.prec.K_hat*v))
-                    if params.verbose>=3:
+                    if params.printing.verbose>=3:
                         print(np.linalg.norm(v[:]-vold[:]))
                     rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
             
@@ -59,7 +59,7 @@ class MediumScatteringBase:
      
 
 
-        if params.verbose>=3: print('\n')
+        if params.printing.verbose>=3: print('\n')
         v=np.fft.ifftn(v)
         return v
 
@@ -106,8 +106,8 @@ class MediumScatteringBase:
         res = np.zeros(2*n,dtype=float)
         np.put(res, np.arange(0, 2*n, 2), np.real(complexdata))
         np.put(res, np.arange(1, 2*n, 2), np.imag(complexdata))
-        if params.ampl_vector_length>1:
-            data.real_data = np.reshape(res, (int(params.ampl_vector_length),int(2*n/params.ampl_vector_length)), order='F')
+        if params.amplitude.ampl_vector_length>1:
+            data.real_data = np.reshape(res, (int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F')
             res = np.sum(data.real_data*data.real_data,1)
         return res
         
@@ -117,16 +117,16 @@ class MediumScatteringBase:
         res = np.zeros(2*n,dtype=float)
         np.put(res, np.arange(0, 2*n, 2), np.real(complex_h))
         np.put(res, np.arange(1, 2*n, 2), np.imag(complex_h))
-        if params.ampl_vector_length>1:
-            data.real_data=np.reshape(res,(int(params.ampl_vector_length),int(2*n/params.ampl_vector_length)), order='F')
-            res = 2*np.sum(data.real_data*np.reshape(res, (int(params.ampl_vector_length),int(2*n/params.ampl_vector_length)), order='F'),1)
+        if params.amplitude.ampl_vector_length>1:
+            data.real_data=np.reshape(res,(int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F')
+            res = 2*np.sum(data.real_data*np.reshape(res, (int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F'),1)
         return res     
         
 
     def ComplexDataToData_adjoint(params, data, g):
         m=np.size(g)
-        d=params.ampl_vector_length
-        if params.ampl_vector_length>1:
+        d=params.amplitude.ampl_vector_length
+        if params.amplitude.ampl_vector_length>1:
             g = np.reshape(2*np.tile(g,(d,1))*data.real_data, (m*d,1), order='F')
         return g[np.arange(0, m*d, 2)]+1j*g[np.arange(1, m*d, 2)]
 

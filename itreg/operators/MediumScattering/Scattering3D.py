@@ -11,7 +11,7 @@ import numpy.matlib
 import matplotlib.pyplot as plt
 
 class Scattering3D:
-    def __init__(self, domain, amplitude_data, rho, kappa, ampl_vector_length):        
+    def __init__(self, domain, amplitude, kappa):        
         #define default values and merge with parameters given
         self.N=domain.parameters_domain.N
         self.N_coarse=(4, 4, 4)
@@ -68,9 +68,9 @@ class Scattering3D:
     # number of measurement points
         self.Nmeas = np.size(self.meas_directions[1, :])
     # x, y and z coordinates of grid points in computational domain
-        x_coo = (4*rho/self.N[0]*np.arange(-self.N[0]/2, (self.N[0]-1)/2, step=1))
-        y_coo = (4*rho/self.N[1]*np.arange(-self.N[1]/2, (self.N[1]-1)/2, step=1))
-        z_coo = (4*rho/self.N[2]*np.arange(-self.N[2]/2, (self.N[1]-1)/2, step=1))
+        x_coo = (4*domain.parameters_domain.rho/self.N[0]*np.arange(-self.N[0]/2, (self.N[0]-1)/2, step=1))
+        y_coo = (4*domain.parameters_domain.rho/self.N[1]*np.arange(-self.N[1]/2, (self.N[1]-1)/2, step=1))
+        z_coo = (4*domain.parameters_domain.rho/self.N[2]*np.arange(-self.N[2]/2, (self.N[1]-1)/2, step=1))
         [X, Y, Z] = np.meshgrid(x_coo, y_coo, z_coo)
     #ind_support=np.asarray(np.reshape(X, np.prod(N), order='F')**2+np.reshape(Y, np.prod(N), order='F')**2+np.reshape(Z, np.prod(N))<=rho**2).nonzero()
     
@@ -84,16 +84,16 @@ class Scattering3D:
         self.xdag=0
         self.init_guess=0
     
-        K_hat = self.ComputeFKConvolutionKernel(self.N, rho, kappa)
+        K_hat = self.ComputeFKConvolutionKernel(self.N, domain.parameters_domain.rho, kappa)
     
     
         if self.N_coarse:
-            K_hat_coarse = self.ComputeFKConvolutionKernel(self.N_coarse, rho, kappa)
-            x_coo_coarse = (4*rho/self.N[0])*np.arange(-self.N_coarse[0]/2, (self.N_coarse[0]-1)/2, step=1)
-            y_coo_coarse = (4*rho/self.N[1])*np.arange(-self.N_coarse[1]/2, (self.N_coarse[1]-1)/2, step=1)
-            z_coo_coarse = (4*rho/self.N[2])*np.arange(-self.N_coarse[2]/2, (self.N_coarse[2]-1)/2, step=1)
+            K_hat_coarse = self.ComputeFKConvolutionKernel(self.N_coarse, domain.parameters_domain.rho, kappa)
+            x_coo_coarse = (4*domain.parameters_domain.rho/self.N[0])*np.arange(-self.N_coarse[0]/2, (self.N_coarse[0]-1)/2, step=1)
+            y_coo_coarse = (4*domain.parameters_domain.rho/self.N[1])*np.arange(-self.N_coarse[1]/2, (self.N_coarse[1]-1)/2, step=1)
+            z_coo_coarse = (4*domain.parameters_domain.rho/self.N[2])*np.arange(-self.N_coarse[2]/2, (self.N_coarse[2]-1)/2, step=1)
             [X_coarse,Y_coarse,Z_coarse] = np.meshgrid(x_coo_coarse,y_coo_coarse,z_coo_coarse)
-            ind_support_coarse = np.asarray(np.reshape(X_coarse, np.prod(self.N_coarse), order='F')**2+np.reshape(Y_coarse, np.prod(self.N_coarse), order='F')**2+np.reshape(Z_coarse, np.prod(self.N_coarse))<=rho**2).nonzero()
+            #ind_support_coarse = np.asarray(np.reshape(X_coarse, np.prod(self.N_coarse), order='F')**2+np.reshape(Y_coarse, np.prod(self.N_coarse), order='F')**2+np.reshape(Z_coarse, np.prod(self.N_coarse))<=domain.parameters_domain.rho**2).nonzero()
             dual_x_coarse=np.append(np.linspace(0, int(self.N_coarse[0]/2-1), num=int(self.N_coarse[0]/2)), np.linspace(int(self.N[0]-self.N_coarse[0]/2), int(self.N[0]-1), num=int(self.N_coarse[0]/2)))
             dual_y_coarse=np.append(np.linspace(0, int(self.N_coarse[1]/2-1), num=int(self.N_coarse[1]/2)), np.linspace(int(self.N[1]-self.N_coarse[1]/2), int(self.N[1]-1), num=int(self.N_coarse[1]/2)))
             dual_z_coarse=np.append(np.linspace(0, int(self.N_coarse[2]/2-1), num=int(self.N_coarse[2]/2)), np.linspace(int(self.N[2]-self.N_coarse[2]/2), int(self.N[2]-1), num=int(self.N_coarse[2]/2)))
@@ -103,7 +103,7 @@ class Scattering3D:
     # set up far field matrix
         farfieldMatrix = 1j*np.zeros((self.Nmeas, np.size(domain.parameters_domain.ind_support)))
         for j in range(0, self.Nmeas):
-            aux=(kappa**2*(4*rho)**3/np.prod(self.N))/(4* np.pi)*np.exp(-np.complex(0,1)*kappa*self.meas_directions[0, j]*X-np.complex(0,1)*kappa*self.meas_directions[1, j] * Y, np.complex(0,1)*kappa*self.meas_directions[2, j] * Z)
+            aux=(kappa**2*(4*domain.parameters_domain.rho)**3/np.prod(self.N))/(4* np.pi)*np.exp(-np.complex(0,1)*kappa*self.meas_directions[0, j]*X-np.complex(0,1)*kappa*self.meas_directions[1, j] * Y, np.complex(0,1)*kappa*self.meas_directions[2, j] * Z)
             farfieldMatrix[j,:]=aux.reshape(np.prod(self.N), order='F')[domain.parameters_domain.ind_support]
         
        
@@ -124,9 +124,9 @@ class Scattering3D:
             
 ##setup interface
         self.Xdim = np.size(domain.parameters_domain.ind_support)
-        self.Ydim = 2*self.Ninc*self.Nmeas/ampl_vector_length
+        self.Ydim = 2*self.Ninc*self.Nmeas/amplitude.ampl_vector_length
         self.prec=Scattering_prec(K_hat, K_hat_coarse, farfieldMatrix, incMatrix, dual_x_coarse, dual_y_coarse, dual_z_coarse)
-        self.plotting=plotting_prop(domain, rho)        
+        self.plotting=plotting_prop(domain)        
         return         
     
    
@@ -162,10 +162,10 @@ class Scattering_prec:
         return
     
 class plotting_prop:
-    def __init__(self, grid, rho):
-        self.xplot_ind=np.where(np.abs(grid.coords[0,:])<=rho)[0]
-        self.yplot_ind=np.where(np.abs(grid.coords[1,:])<=rho)[0]
-        self.zplot_ind=np.where(np.abs(grid.coords[2,:])<=rho)[0]        
+    def __init__(self, domain):
+        self.xplot_ind=np.where(np.abs(domain.coords[0,:])<=domain.parameters_domain.rho)[0]
+        self.yplot_ind=np.where(np.abs(domain.coords[1,:])<=domain.parameters_domain.rho)[0]
+        self.zplot_ind=np.where(np.abs(domain.coords[2,:])<=domain.parameters_domain.rho)[0]        
         return
     
    

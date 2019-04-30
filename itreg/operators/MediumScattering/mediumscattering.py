@@ -55,36 +55,37 @@ class MediumScattering(NonlinearOperator):
 #        plotting.xplot_ind=np.linspace(0, len(domain.parameters_domain.x_coo)-1, len(domain.parameters_domain.x_coo), dtype=int)
 #        plotting.yplot_ind=np.linspace(0, len(domain.parameters_domain.y_coo)-1, len(domain.parameters_domain.y_coo), dtype=int)
 #        range=domain or range
+        
         syntheticdata_flag=True
         noiselevel=0
 
         NrTwoGridIterations=3
         kappa=3
-        rho=1
+        #rho=1
         #sobo_index=domain.parameters_domain.sobo_index
         xdag_rcoeff=1
         xdag_icoeff=0.5
         #init_guess
         #initguess_fct='zerofct'
 
-        amplitude_data=False
-        intensity=1
-        ampl_vector_length=1
+        amplitude=amplitude_prop
+        amplitude.amplitude_data=False
+        amplitude.intensity=1
+        amplitude.ampl_vector_length=1
 
-
-        verbose=1
+        printing=printing_prop
+        printing.verbose=1
         
         
         if domain.dim==3:
-            Scattering_prop=Scattering3D(domain, amplitude_data, rho, kappa, ampl_vector_length)            
+            Scattering_prop=Scattering3D(domain, amplitude, kappa)            
         if domain.dim==2: 
-            Scattering_prop=Scattering2D(domain, amplitude_data, rho, kappa, ampl_vector_length)
+            Scattering_prop=Scattering2D(domain, amplitude, kappa)
         range=L2(Square_1D((1, 2*Scattering_prop.Ninc*Scattering_prop.Nmeas), 3, 1))
         super().__init__(Params(domain, range, syntheticdata_flag=syntheticdata_flag, noiselevel=noiselevel, 
-            NrTwoGridIterations=NrTwoGridIterations, kappa=kappa, rho=rho,
+            NrTwoGridIterations=NrTwoGridIterations, kappa=kappa,
             xdag_rcoeff=xdag_rcoeff,
-            xdag_icoeff=xdag_icoeff, amplitude_data=amplitude_data,
-            intensity=intensity, ampl_vector_length=ampl_vector_length, gmres_prop=gmres, verbose=verbose,
+            xdag_icoeff=xdag_icoeff, amplitude=amplitude, gmres_prop=gmres, printing=printing,
             scattering=Scattering_prop))
 
 
@@ -187,7 +188,11 @@ class gmres_prop:
     def __init__(self):
         return
     
-class plotting_prop:
+class printing_prop:
+    def __init__(self):
+        return
+    
+class amplitude_prop:
     def __init__(self):
         return
 
