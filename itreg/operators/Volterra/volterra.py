@@ -1,5 +1,4 @@
-from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
-from itreg.util import instantiate
+from . import LinearOperator, NonlinearOperator, Params
 
 import numpy as np
 
@@ -34,17 +33,15 @@ class Volterra(LinearOperator):
 
     def __init__(self, domain, range=None, spacing=1):
         range = range or domain
-        #assert len(domain.shape) == 1
-        #assert domain.shape == range.shape
+        assert len(domain.shape) == 1
+        assert domain.shape == range.shape
         super().__init__(Params(domain, range, spacing=spacing))
 
-    @instantiate
-    class operator(OperatorImplementation):
-        def eval(self, params, x, **kwargs):
-            return params.spacing * np.cumsum(x)
+    def _eval(self, x):
+        return self.params.spacing * np.cumsum(x)
 
-        def adjoint(self, params, y, **kwargs):
-            return params.spacing * np.flipud(np.cumsum(np.flipud(y)))
+    def _adjoint(self, y):
+        return self.params.spacing * np.flipud(np.cumsum(np.flipud(y)))
 
 
 class NonlinearVolterra(NonlinearOperator):
@@ -69,23 +66,19 @@ class NonlinearVolterra(NonlinearOperator):
 
     def __init__(self, domain, exponent, range=None, spacing=1):
         range = range or domain
-#        assert len(domain.shape) == 1
+        assert len(domain.shape) == 1
         assert domain.shape == range.shape
         super().__init__(
             Params(domain, range, exponent=exponent, spacing=spacing))
 
-    @instantiate
-    class operator(OperatorImplementation):
-        def eval(self, params, x, data, differentiate, **kwargs):
-            if differentiate:
-                data.factor = params.exponent * x**(params.exponent - 1)
-            return params.spacing * np.cumsum(x**params.exponent)
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            self.factor = self.params.exponent * x**(self.params.exponent - 1)
+        return self.params.spacing * np.cumsum(x**self.params.exponent)
 
-    @instantiate
-    class derivative(OperatorImplementation):
-        def eval(self, params, x, data, **kwargs):
-            return params.spacing * np.cumsum(data.factor * x)
+    def _derivative(self, x):
+        return self.params.spacing * np.cumsum(self.factor * x)
 
-        def adjoint(self, params, y, data, **kwargs):
-            return params.spacing * np.flipud(
-                np.cumsum(np.flipud(data.factor * y)))
+    def _adjoint(self, y):
+        return self.params.spacing * np.flipud(np.cumsum(np.flipud(
+            self.factor * y)))

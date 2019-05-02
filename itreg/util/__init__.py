@@ -4,27 +4,25 @@ from .tests import test_adjoint
 from .cg_methods import CGNE_reg
 from .cg_methods import CG
 
+from functools import wraps
 from logging import getLogger
 
 
 @property
 def classlogger(self):
-    cls = type(self)
-    try:
-        return cls.__logger
-    except AttributeError:
-        cls.__logger = getLogger(cls.__qualname__)
-        return cls.__logger
+    return getLogger(type(self).__qualname__)
 
 
-def instantiate(cls):
-    return cls()
+def memoized_property(prop):
+    attr = '__memoized_' + prop.__qualname__
 
+    @property
+    @wraps(prop)
+    def mprop(self):
+        try:
+            return getattr(self, attr)
+        except AttributeError:
+            setattr(self, attr, prop(self))
+            return getattr(self, attr)
 
-@instantiate
-class emptycontext:
-    def __enter__(self):
-        pass
-
-    def __exit__(self, *args):
-        pass
+    return mprop

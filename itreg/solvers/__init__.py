@@ -103,11 +103,3 @@ class Solver:
         for x, y in self.until(stoprule):
             pass
         return x, y
-
-
-from .landweber import Landweber
-from .newton_cg import Newton_CG
-from .irgnm_cg import IRGNM_CG
-from .irgnm_l1_fid import IRGNM_L1_fid
-from .irnm_kl import IRNM_KL
-from .irnm_kl_newton import IRNM_KL_Newton

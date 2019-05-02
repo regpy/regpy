@@ -29,11 +29,8 @@ class Space:
 
     log = classlogger
 
-    def __init__(self, shape, size_support, coords, dtype=float):
-        self.shape=shape
-        self.dim=np.size(shape)
-        self.size_support = size_support
-        self.coords=coords
+    def __init__(self, shape, dtype=float):
+        self.shape = shape
         self.dtype = np.dtype(dtype)
 
     def gram(self, x):
@@ -135,7 +132,7 @@ class Space:
             parameters and return a real array of that shape. The functions in
             :mod:`numpy.random` conform to this.
         """
-        r = rand(self.size_support)
+        r = rand(self.shape)
         if self.dtype == r.dtype:
             return r
         # Copy if dtypes don't match
@@ -146,9 +143,3 @@ class Space:
             x /= np.sqrt(2)
         else:
             x[:] = r
-        
-
-
-from .l2 import L2, parameters_domain_l2
-from .sobolev import Sobolev, parameters_domain_sobolev
-from .h1_ngsolve import H1_NGSolve, parameters_domain_sobolev_ngsolve
