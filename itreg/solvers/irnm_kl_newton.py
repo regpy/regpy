@@ -132,16 +132,20 @@ class IRNM_KL_Newton(Solver):
                            np.zeros(np.shape(self._eta)), 1e-2, self.cgmaxit)
             #renormalize solution
             self._eta = self._res * self._eta
-            self._h_n += self._eta
+#            print('res', np.mean(self._res))
+#            self._h_n+=self._eta
+#            print(np.mean(self._rhs))
+            self._h_n += self._eta.real
             self._rhs = -self._grad(self._h_n)
             self._res = LA.norm(self._rhs)
             
             self._n += 1
-        
+#        print(np.mean(self._grad(self._h_n)))
         self._h = self._h_n   
         # update
         self.x += self._h
         self.y = self.op(self.x)
+#        print(self.y)
         self.alpha = self.alpha * self.alpha_step
         self.offset = self.offset * self.offset_step
         return True
@@ -150,19 +154,33 @@ class IRNM_KL_Newton(Solver):
     def _frakF(self, x):
         return np.log(self.op(x) + self.offset)
     
+#    def _A(self, h): 
+#        return self.op.derivative.eval(self.op.params, h/(self.y + self.offset))
+        
     def _A(self, h): 
-        return self.op.derivative.eval(self.op.params, h/(self.y + self.offset))
+        _, deriv=self.op.linearize(self.x)
+        return deriv( h)/(self.y + self.offset)
     
+#    def _Ast(self, h):
+#        return self.op.adjoint(h/(self.y + self.offset))
+        
     def _Ast(self, h):
-        return self.op.adjoint(h/(self.y + self.offset))
+        _, deriv=self.op.linearize(self.x)
+        return deriv.adjoint(h)
 
     def _grad(self, h):
-        return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
-                - self.data - self.offset) 
+#        print(self._A(h))
+#        return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
+#                - self.data - self.offset) 
+#                + 2 * self.alpha * self.op.domain.gram(self.x + h - self.init))
+        return (self._Ast( np.exp(self._A(h)) 
+                - (self.data - self.offset)/(self.y+self.offset)) 
                 + 2 * self.alpha * self.op.domain.gram(self.x + h - self.init))
         
     def _Dgrad(self, h, eta):
-        return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
+#        return (self._Ast((self.y + self.offset) * np.exp(self._A(h)) 
+#                * self._A(eta)) + 2 * self.alpha * self.op.domain.gram(eta))
+         return (self._Ast(np.exp(self._A(h)) 
                 * self._A(eta)) + 2 * self.alpha * self.op.domain.gram(eta))
         
     def _Ax(self, eta):

@@ -105,7 +105,7 @@ class IRGNM_CG(Solver):
         prepared.
         """
         
-        self.y = self.op(self.x)
+        self.y, deriv = self.op.linearize(self.x)
         self._residual = self.data - self.y
         self._xref = self.init - self.x
         self.k += 1
@@ -115,7 +115,7 @@ class IRGNM_CG(Solver):
         
         # Preparations for the CG method
         self._ztilde = self.op.range.gram(self._residual)
-        self._stilde = (self.op.adjoint(self._ztilde) 
+        self._stilde = (deriv.adjoint(self._ztilde) 
                         + self._regpar*self.op.domain.gram(self._xref))
         self._s = self.op.domain.gram_inv(self._stilde)
         self._d = self._s
@@ -136,8 +136,9 @@ class IRGNM_CG(Solver):
         """
         self._Th = self._Th + self._gamma*self._z
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
-        self._stilde += (- self._gamma*(self.op.adjoint(self._ztilde) 
-                         + self._regpar*self._dtilde))
+        _, deriv=self.op.linearize(self.x)
+        self._stilde += (- self._gamma*(deriv(self._ztilde) 
+                         + self._regpar*self._dtilde)).real
         self._s = self.op.domain.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
@@ -203,7 +204,8 @@ class IRGNM_CG(Solver):
               self._cgstep <= self.cgmaxit):
                   
             # Computations and updates of variables
-            self._z = self.op.derivative.eval(self.op.params, self._d)
+            _, deriv=self.op.linearize(self.x)
+            self._z = deriv(self._d)
             self._ztilde = self.op.range.gram(self._z)
             self._gamma = (self._norm_s
                            / np.real(self._regpar
@@ -212,13 +214,14 @@ class IRGNM_CG(Solver):
                                      )
                            )
             self._h = self._h + self._gamma*self._d
-            
+#            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
             # Updating ``self.x`` 
-            self.x += self._h
+ #           self.x += self._h
             
             self.inner_update()
         # End of the CG method. ``self.outer_update()`` does all computations
         # of the current Newton iteration.
+        self.x+=self._h
         self.outer_update()
         return True
 

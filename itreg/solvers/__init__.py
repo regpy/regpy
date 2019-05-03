@@ -111,3 +111,4 @@ from .irgnm_cg import IRGNM_CG
 from .irgnm_l1_fid import IRGNM_L1_fid
 from .irnm_kl import IRNM_KL
 from .irnm_kl_newton import IRNM_KL_Newton
+from .newton_cg_frozen import Newton_CG_Frozen
