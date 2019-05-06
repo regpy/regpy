@@ -105,6 +105,7 @@ class Monte_Carlo:
     def __init__(self):
         self.sigma=None
         self.mu=None
+        self.num=0
         
     def random_samples(self):
         R=np.random.normal(0, 1, self.gamma_post_half.shape[0]) 

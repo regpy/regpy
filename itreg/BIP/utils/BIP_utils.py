@@ -140,7 +140,13 @@ class Monte_Carlo_evaluation(Monte_Carlo):
             for i in range(0, N):
                 self.mu[i]=np.mean(vec[i, 0:hits])
                 self.sigma[i]=np.std(vec[i, 0:hits])
-            
+                
+        def MC(self, maxhits):
+            vec=np.zeros((self.m_0.shape[0], maxhits))
+            for i in range(0, maxhits):
+                _, vec[:, i]=self.random_samples()
+            return vec
+                
                 
             
         

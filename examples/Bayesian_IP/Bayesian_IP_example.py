@@ -35,3 +35,5 @@ data = exact_data + noise
 noiselevel = op.range.norm(noise)
 
 bip = BayesianIP(op, 'gaussian', 'gaussian', data, exact_data+0.1*np.ones(exact_data.shape), gamma_prior=np.eye(200), gamma_d=np.eye(200))
+
+bip.plotting(3)

@@ -5,7 +5,7 @@ Created on Mon Apr 29 20:02:45 2019
 @author: Hendrik Müller
 """
 
-from . import Solver_Notiter
+from . import Solver_BIP
 from itreg.BIP.utils.BIP_utils import prior_distribution
 from itreg.BIP.utils.BIP_utils import likelihood_distribution
 from itreg.BIP.utils.BIP_utils import Monte_Carlo_evaluation
@@ -16,8 +16,9 @@ import numpy as np
 import scipy.sparse.linalg as scsla
 import scipy.optimize
 import random as rd
+import matplotlib.pyplot as plt
 
-class BayesianIP(Solver_Notiter):
+class BayesianIP(Solver_BIP):
    
 
 
@@ -75,27 +76,25 @@ class BayesianIP(Solver_Notiter):
         self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
         self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.gamma_prior.shape[0])))
 #define prior, posterior sampling
-        self.evaluation=Monte_Carlo_evaluation(op, self.distribution, self.gamma_post_half, self.m_0, self.m_MAP,  maxnum, maxhits, self.gamma_prior_half)
+        self.evaluation=Monte_Carlo_evaluation(op, self.distribution, self.gamma_post_half, self.m_0, self.m_MAP,  maxnum=self.maxnum, maxhits=self.maxhits, gamma_prior_half=self.gamma_prior_half)
         self.m_prior, self.m_post=self.evaluation.random_samples()
         
         
         
-    def _next(self):
-        self.gamma_prior=self.stepsize*self.gamma_prior
-        self.gamma_prior_half=np.sqrt(self.stepsize)*self.gamma_prior_half
-        res=scipy.optimize.minimize(lambda x: chi(self, x), self.m_0)
-        self.m_MAP=res.x
-        self.x=self.m_MAP
-        self.y=self.op(self.x)
         
-        self.Hessian_prior=self.stepsize*self.Hessian_prior
-        self.L=self.stepsize*self.L
+        
+    def plotting(self, number):
+        vec=self.MC(maxhits=number)
+        for i in range(0, number):
+            plt.plot(vec[:, i])
+        
+        
+        
+        
+        
+        
+        
 
-#define gamma_post
-        self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
-        self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.gamma_prior.shape[0])))
-#define prior, posterior sampling
-        self.m_prior, self.m_post=random_samples(self)
         
         
         
