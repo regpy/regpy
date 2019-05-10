@@ -1,15 +1,9 @@
-#This file contains base functions
-
-
 import numpy as np
 import scipy.sparse.linalg as scsla
 from functools import partial
-    
+
 
 class MediumScatteringBase:
-    def __init__(self):
-        return
-    
     def SolveTwoGrid(params, data, rhs):
         xhat_coarse=params.scattering.prec.dual_x_coarse.copy()
         yhat_coarse=params.scattering.prec.dual_y_coarse.copy()
@@ -20,7 +14,7 @@ class MediumScatteringBase:
             if counter>0:
                 if params.domain.dim==2:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]))
-                    if params.printing.verbose>=3: 
+                    if params.printing.verbose>=3:
                         vold=v
                     v = rhs- np.fft.fftn(np.reshape(data.contrast,params.scattering.N, order='F')*np.fft.ifftn(params.scattering.prec.K_hat*v))
                     if params.printing.verbose>=3:
@@ -28,20 +22,20 @@ class MediumScatteringBase:
                     rhs_coarse = v[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)] + rhs_coarse
                 if params.domain.dim==3:
                     rhs_coarse = np.fft.fftn(data.contrast_coarse*np.fft.ifftn(params.scattering.prec.K_hat_coarse*v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]))
-                    if params.printing.verbose>=3: 
+                    if params.printing.verbose>=3:
                         vold=v
                     v = rhs- np.fft.fftn(np.reshape(data.contrast,params.scattering.N, order='F')*np.fft.ifftn(params.scattering.prec.K_hat*v))
                     if params.printing.verbose>=3:
                         print(np.linalg.norm(v[:]-vold[:]))
                     rhs_coarse = v[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)] + rhs_coarse
-            
+
             else:
                 if params.domain.dim==2:
                     rhs_coarse=rhs[xhat_coarse.astype(int),:][:,yhat_coarse.astype(int)]
                 if params.domain.dim==3:
                     rhs_coarse=rhs[xhat_coarse.astype(int),:, :][:,yhat_coarse.astype(int), :][:, :, zhat_coarse.astype(int)]
 
-        
+
             LippmannSchwingerOperatorCoarse=scsla.LinearOperator((np.prod(params.scattering.N_coarse), np.prod(params.scattering.N_coarse)), matvec=(partial(MediumScatteringBase.LippmannSchwingerOpCoarse, params=params, data=data)))
             [v_coarse,flag] = scsla.gmres(LippmannSchwingerOperatorCoarse, np.reshape(rhs_coarse, np.prod(params.scattering.N_coarse), order='F'), restart=params.gmres_prop.gmres_restart, tol=params.gmres_prop.gmres_tol, maxiter=params.gmres_prop.gmres_maxit)
             if not flag==0:
@@ -56,7 +50,7 @@ class MediumScatteringBase:
                     for y in range(0, np.size(yhat_coarse)):
                         for z in range(0, np.size(zhat_coarse)):
                             v[int(xhat_coarse[x]), int(yhat_coarse[y]), int(zhat_coarse[z])]=np.reshape(v_coarse, params.scattering.N_coarse, order='F')[int(x), int(y), int(z)]
-     
+
 
 
         if params.printing.verbose>=3: print('\n')
@@ -99,7 +93,7 @@ class MediumScatteringBase:
                         for z in range(0, np.size(zhat_coarse)):
                             v[int(xhat_coarse[x]), int(yhat_coarse[y]), int(zhat_coarse[z])]=np.reshape(v_coarse, params.scattering.N_coarse, order='F')[x, y, z]
         return v
-        
+
 
     def ComplexDataToData(params, data, complexdata):
         n = np.size(complexdata)
@@ -110,7 +104,7 @@ class MediumScatteringBase:
             data.real_data = np.reshape(res, (int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F')
             res = np.sum(data.real_data*data.real_data,1)
         return res
-        
+
 
     def ComplexDataToData_derivative(params, data, complex_h):
         n = np.size(complex_h)
@@ -120,8 +114,8 @@ class MediumScatteringBase:
         if params.amplitude.ampl_vector_length>1:
             data.real_data=np.reshape(res,(int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F')
             res = 2*np.sum(data.real_data*np.reshape(res, (int(params.amplitude.ampl_vector_length),int(2*n/params.amplitude.ampl_vector_length)), order='F'),1)
-        return res     
-        
+        return res
+
 
     def ComplexDataToData_adjoint(params, data, g):
         m=np.size(g)
@@ -151,7 +145,7 @@ class MediumScatteringBase:
         v_mat=np.zeros(params.scattering.N_coarse)
         v_mat = np.reshape(v,params.scattering.N_coarse, order='F')
         v_mat = np.fft.fftn(data.contrast_coarse* np.fft.ifftn(params.scattering.prec.K_hat_coarse*v_mat))
-        return v+ np.reshape(v_mat, np.prod(params.scattering.N_coarse), order='F') 
+        return v+ np.reshape(v_mat, np.prod(params.scattering.N_coarse), order='F')
 
 
     def AdjointLippmannSchwingerOpCoarse(params, data, v):
@@ -159,4 +153,3 @@ class MediumScatteringBase:
         v_mat = np.reshape(v, params.scattering.N_coarse, order='F')
         v_mat = np.conj(params.scattering.prec.K_hat_coarse)* np.fft.fftn(np.conj(data.contrast_coarse)*np.fft.ifftn(v_mat))
         return v +  np.reshape(v_mat, np.prod(params.scattering.N_coarse), order='F')
-        

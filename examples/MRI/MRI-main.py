@@ -1,10 +1,6 @@
-
-import setpath
-
-
-from itreg.spaces import L2
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+from itreg.spaces.l2 import L2
+from itreg.solvers.landweber import Landweber
+# from itreg.util import test_adjoint
 from itreg.operators.MRI.MRI import parallel_MRI
 import itreg.stoprules as rules
 from itreg.grids import Square_2D, User_Defined

@@ -1,8 +1,7 @@
-from . import Space
-import numpy as np
+from . import HilbertSpace
 
 
-class L2(Space):
+class L2(HilbertSpace):
     """Space with default :math:`L^2` inner product.
 
     The Gram matrix is the identity.
@@ -16,8 +15,10 @@ class L2(Space):
     def __init__(self, *shape):
         super().__init__(shape)
 
-    def gram(self, x):
-        return x
+    @property
+    def gram(self):
+        return self.identity
 
-    def gram_inv(self, x):
-        return x
+    @property
+    def gram_inv(self):
+        return self.identity

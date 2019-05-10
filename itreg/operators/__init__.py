@@ -63,12 +63,17 @@ class BaseOperator:
 
 class NonlinearOperator(BaseOperator):
     def __call__(self, x):
+        assert x in self.domain
         self.__revoke()
-        return self._eval(x, differentiate=False)
+        y = self._eval(x, differentiate=False)
+        assert y in self.range
+        return y
 
     def linearize(self, x):
+        assert x in self.domain
         self.__revoke()
         y = self._eval(x, differentiate=True)
+        assert y in self.range
         deriv = Derivative(self.__get_handle())
         return y, deriv
 
@@ -97,7 +102,10 @@ class NonlinearOperator(BaseOperator):
 
 class LinearOperator(BaseOperator):
     def __call__(self, x):
-        return self._eval(x)
+        assert x in self.domain
+        y = self._eval(x)
+        assert y in self.range
+        return y
 
     def linearize(self, x):
         return self(x), self
@@ -152,8 +160,22 @@ class Derivative(LinearOperator):
             op = Revocable(op)
         super().__init__(Params(op.get().domain, op.get().range, op=op))
 
+    def clone(self):
+        raise RuntimeError("Derivatives can't be cloned")
+
     def _eval(self, x):
         return self.params.op.get()._derivative(x)
 
     def _adjoint(self, x):
         return self.params.op.get()._adjoint(x)
+
+
+class Identity(LinearOperator):
+    def __init__(self, domain):
+        super().__init__(Params(domain, domain))
+
+    def _eval(self, x):
+        return x
+
+    def _adjoint(self, x):
+        return x
