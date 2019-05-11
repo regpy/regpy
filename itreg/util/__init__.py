@@ -99,3 +99,10 @@ def is_uniform(x):
     assert x.ndim == 1
     diffs = x[1:] - x[:-1]
     return np.allclose(diffs, diffs[0])
+
+
+def linspace_circle(num, *, start=0, stop=None, endpoint=False):
+    if not stop:
+        stop = start + 2*np.pi
+    angles = np.linspace(start, stop, num, endpoint)
+    return np.stack((np.cos(angles), np.sin(angles)), axis=1)

@@ -128,16 +128,17 @@ class Grid(GenericDiscretization):
 
         axes = []
         extents = []
-        for i in self.ndim:
+        for i in range(self.ndim):
             slc = [0] * self.ndim
             slc[i] = slice(None)
-            axis = coords[i][tuple(slc)]
+            axis = self.coords[i][tuple(slc)]
             axes.append(axis)
-            extents.append(abs(axis[-1] - axis[0]))
+            extents.append(abs(axis[1] - axis[0]))
         # self.axes = named(names, *axes)
         self.axes = np.asarray(axes)
         # self.extents = named(names, *extents)
         self.extents = np.asarray(extents)
+        self.volume_elem = np.prod(self.extents)
 
         if axisdata is not None:
             self.axisdata = named(names, *axisdata)
@@ -165,16 +166,16 @@ class UniformGrid(Grid):
 class Space:
     __registry = []
 
-    Discretization = GenericDiscretization
-
-    @classmethod
     def __init_subclass__(cls):
+        try:
+            Discr = cls.Discretization
+        except AttributeError:
+            return
         for base in cls.__bases__:
             try:
-                Basediscr = base.Discretization
+                assert issubclass(Discr, base.Discretization)
             except AttributeError:
-                continue
-            assert issubclass(cls.Discretization, Basediscr)
+                pass
         Space.__registry.append(cls)
 
     @classmethod
@@ -203,7 +204,15 @@ class Space:
     def on(cls, discr, *args, **kwargs):
         return cls.class_on(discr)(discr, *args, **kwargs)
 
+    def __new__(cls, discr, *args, **kwargs):
+        if hasattr(cls, 'Discretization'):
+            return super().__new__(cls)
+        else:
+            c = cls.class_on(discr)
+            return c.__new__(c, discr, *args, **kwargs)
+
     def __init__(self, discr):
+        assert hasattr(self, 'Discretization')
         assert isinstance(discr, self.Discretization)
         self.discr = discr
 
@@ -257,6 +266,8 @@ class HilbertSpace(Space):
 
 
 class L2(HilbertSpace):
+    Discretization = GenericDiscretization
+
     @property
     def gram(self):
         return self.discr.identity
@@ -267,6 +278,8 @@ class L2(HilbertSpace):
 
 
 class HilbertPullBack(HilbertSpace):
+    Discretization = GenericDiscretization
+
     def __init__(self, op, space):
         assert isinstance(space, HilbertSpace)
         assert isinstance(op, LinearOperator)
