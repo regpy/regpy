@@ -3,6 +3,7 @@ from itreg.spaces import UniformGrid
 from itreg.util import set_defaults
 
 from functools import partial
+import logging
 import numpy as np
 from numpy.fft import fftn, ifftn, fftshift
 import scipy.sparse.linalg as spla
@@ -27,7 +28,7 @@ class MediumScattering(NonlinearOperator):
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
                  meas_directions, support=None, amplitude=False,
-                 coarseshape=None, gmres_args={}):
+                 coarseshape=None, coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) and s % 2 == 0 for s in gridshape)
         grid = UniformGrid(*(np.linspace(-2*radius, 2*radius, s, endpoint=False)
@@ -61,9 +62,6 @@ class MediumScattering(NonlinearOperator):
             # TODO The sign appears to be wrong
             farfield_matrix *= wave_number**2 * grid.volume_elem / (4*np.pi)
             compute_kernel = partial(_compute_kernel_3D, 2 * wave_number * radius)
-        else:
-            # Make linters happy
-            raise RuntimeError('unreachable')
 
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
@@ -74,7 +72,8 @@ class MediumScattering(NonlinearOperator):
             coarse = dict(
                 grid=coarsegrid,
                 kernel=compute_kernel(coarsegrid.shape),
-                dualcoords=np.ix_(*(fftshift(np.arange(-c//2, c//2)) for c in coarseshape)))
+                dualcoords=np.ix_(*(fftshift(np.arange(-c//2, c//2)) for c in coarseshape)),
+                iterations=coarseiterations)
         else:
             coarse = None
 
@@ -95,7 +94,8 @@ class MediumScattering(NonlinearOperator):
             kernel=compute_kernel(grid.shape)))
 
     def _alloc(self, params):
-        self._totalfield = np.empty((np.sum(self.params.support), self.range.shape.inc,), dtype=complex)
+        self._totalfield = np.empty((np.sum(self.params.support), self.range.shape.inc,),
+                                    dtype=complex)
         # These belong to self, not params, since they implicitly depend on
         # self._contrast
         self._lippmann_schwinger = spla.LinearOperator(
@@ -128,7 +128,7 @@ class MediumScattering(NonlinearOperator):
             rhs[self.params.support] = self.params.inc_matrix[:, j] * contrast[self.params.support]
 
             if self.params.coarse:
-                v = self._solve_two_grid(fftn(rhs))
+                v = self._solve_two_grid(rhs)
             else:
                 v, info = spla.gmres(self._lippmann_schwinger, rhs.ravel(),
                                      **self.params.gmres_args)
@@ -164,7 +164,7 @@ class MediumScattering(NonlinearOperator):
 
             # TODO move to separate method, at least the logging stuff
             if self.params.coarse:
-                v = self._solve_two_grid(fftn(rhs))
+                v = self._solve_two_grid(rhs)
             else:
                 v, info = spla.gmres(self._lippmann_schwinger, rhs.ravel(),
                                      **self.params.gmres_args)
@@ -213,8 +213,33 @@ class MediumScattering(NonlinearOperator):
 
         return contrast
 
-    def _solve_two_grid(self):
-        raise NotImplementedError
+    def _solve_two_grid(self, rhs):
+        rhs = fftn(rhs)
+        v = self.domain.zeros(dtype=complex)
+        rhs_coarse = rhs[self.coarse.dualcoords]
+        verbose = self.log.isEnabledFor(logging.INFO)
+        for iter in range(self.params.coarse.iterations):
+            if iter > 0:
+                rhs_coarse = fftn(self._coarse_contrast * ifftn(
+                    self.params.coarse.kernel * v[self.params.coarse.dualcoords]))
+                if verbose:
+                    vold = v
+                v = rhs - fftn(self._contrast * ifftn(self.params.kernel * v))
+                if verbose:
+                    self.log.info('|v - vold| = {}'.format(np.linalg.norm(v - vold)))
+                rhs_coarse += v[self.params.coarse.dualcoords]
+
+            v_coarse, info = spla.gmres(self._lippmann_schwinger_coarse, rhs_coarse.ravel(),
+                                        **self.params.gmres_args)
+            v_coarse = v.reshape(self.params.coarse.grid.shape)
+            if info > 0:
+                self.log.warn('Gmres failed to converge')
+            elif info < 0:
+                self.log.warn('Illegal Gmres input or breakdown')
+            else:
+                self.log.info('Gmres converged')
+            v[self.params.coarse.dualcoords] = v_coarse
+        v = ifftn(v)
 
     def _solve_two_grid_adjoint(self):
         raise NotImplementedError
