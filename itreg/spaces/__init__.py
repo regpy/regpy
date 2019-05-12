@@ -3,11 +3,12 @@ from ..util import (classlogger, memoized_property, named, is_real_dtype,
 from ..operators import Identity, LinearOperator
 
 import numpy as np
-from itertools import chain
+from functools import singledispatch
 
 
 class GenericDiscretization:
-    """Abstract base class for discretizations.
+    """Discrete space R^shape or C^shape (viewed as a real space) without any
+    additional structure.
     """
 
     log = classlogger
@@ -163,61 +164,7 @@ class UniformGrid(Grid):
     # maybe also add fft methods directly
 
 
-class Space:
-    __registry = []
-
-    def __init_subclass__(cls):
-        try:
-            Discr = cls.Discretization
-        except AttributeError:
-            return
-        for base in cls.__bases__:
-            try:
-                assert issubclass(Discr, base.Discretization)
-            except AttributeError:
-                pass
-        Space.__registry.append(cls)
-
-    @classmethod
-    def class_on(cls, discr):
-        candidates = [space for space in Space.__registry
-                      if issubclass(space, cls)
-                      and isinstance(discr, space.Discretization)]
-        if not candidates:
-            raise RuntimeError('No space of type {} found on discretization {}'
-                               .format(cls, discr))
-        if len(candidates) > 1:
-            # Omit all spaces that are (direct or indirect) base classes of another
-            # space, i.e. retain only most specialized spaces
-            bases = set(chain.from_iterable(space.mro()[1:] for space in candidates))
-            candidates = [space for space in candidates if space not in bases]
-        if len(candidates) > 1:
-            # Retain only most specialized discretizations
-            bases = set(chain.from_iterable(space.Discretization.mro()[1:] for space in candidates))
-            candidates = [space for space in candidates if space.Discretization not in bases]
-        if len(candidates) > 1:
-            raise RuntimeError('Multiple possible spaces of type {} found on discretization {}'
-                               .format(cls, discr))
-        return candidates[0]
-
-    @classmethod
-    def on(cls, discr, *args, **kwargs):
-        return cls.class_on(discr)(discr, *args, **kwargs)
-
-    def __new__(cls, discr, *args, **kwargs):
-        if hasattr(cls, 'Discretization'):
-            return super().__new__(cls)
-        else:
-            c = cls.class_on(discr)
-            return c.__new__(c, discr, *args, **kwargs)
-
-    def __init__(self, discr):
-        assert hasattr(self, 'Discretization')
-        assert isinstance(discr, self.Discretization)
-        self.discr = discr
-
-
-class HilbertSpace(Space):
+class HilbertSpace:
     @property
     def gram(self):
         """The gram matrix as a LinearOperator
@@ -265,8 +212,14 @@ class HilbertSpace(Space):
         return np.sqrt(self.inner(x, x))
 
 
+def spacetype(*args, **kwargs):
+    return singledispatch(*args, **kwargs)
+
+
+@spacetype
 class L2(HilbertSpace):
-    Discretization = GenericDiscretization
+    def __init__(self, discr):
+        self.discr = discr
 
     @property
     def gram(self):
@@ -277,16 +230,29 @@ class L2(HilbertSpace):
         return self.discr.identity
 
 
-class HilbertPullBack(HilbertSpace):
-    Discretization = GenericDiscretization
+@spacetype
+def H1(discr, index=1):
+    raise NotImplementedError(
+        'H1 not implemented on {}'.format(type(discr).__qualname__))
 
+
+@H1.register(UniformGrid)
+class H1UniformGrid(HilbertSpace):
+    def __init__(self, discr, index=1):
+        self.discr = discr
+        self.index = index
+
+    # TODO
+
+
+class HilbertPullBack(HilbertSpace):
     def __init__(self, op, space):
         assert isinstance(space, HilbertSpace)
         assert isinstance(op, LinearOperator)
         assert op.range == space.discr
-        super().__init__(op.domain)
         self.op = op
         self.space = space
+        self.discr = op.domain
 
     @memoized_property
     def gram(self):
