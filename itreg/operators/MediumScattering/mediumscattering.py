@@ -130,16 +130,9 @@ class MediumScattering(NonlinearOperator):
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
             else:
-                v, info = spla.gmres(self._lippmann_schwinger, rhs.ravel(),
-                                     **self.params.gmres_args)
-                v = v.reshape(self.domain.shape)
-                if info > 0:
-                    self.log.warn('Gmres failed to converge')
-                elif info < 0:
-                    self.log.warn('Illegal Gmres input or breakdown')
-                else:
-                    self.log.info('Gmres converged')
-
+                v = (self
+                     ._gmres(self._lippmann_schwinger, rhs)
+                     .reshape(self.domain.shape))
             farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
 
             # The total field can be recovered from v in a stable manner by the formula
@@ -166,16 +159,9 @@ class MediumScattering(NonlinearOperator):
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
             else:
-                v, info = spla.gmres(self._lippmann_schwinger, rhs.ravel(),
-                                     **self.params.gmres_args)
-                v = v.reshape(self.domain.shape)
-                if info > 0:
-                    self.log.warn('Gmres failed to converge')
-                elif info < 0:
-                    self.log.warn('Illegal Gmres input or breakdown')
-                else:
-                    self.log.info('Gmres converged')
-
+                v, info = (self
+                           ._gmres(self._lippmann_schwinger, rhs)
+                           .reshape(self.domain.shape))
             farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
 
         if self.params.amplitude:
@@ -198,16 +184,9 @@ class MediumScattering(NonlinearOperator):
             if self.params.coarse:
                 rhs = ifftn(self._solve_two_grid_adjoint(v))
             else:
-                rhs, info = spla.gmres(self._lippmann_schwinger.adjoint(), v.ravel(),
-                                       **self.params.gmres_args)
-                rhs = rhs.reshape(self.domain.shape)
-                if info > 0:
-                    self.log.warn('Gmres failed to converge')
-                elif info < 0:
-                    self.log.warn('Illegal Gmres input or breakdown')
-                else:
-                    self.log.info('Gmres converged')
-
+                rhs = (self
+                       ._gmres(self._lippmann_schwinger.adjoint(), v)
+                       .reshape(self.domain.shape))
             contrast[self.params.support] += (
                 self._totalfield[:, j].conj() * rhs[self.params.support])
 
@@ -228,21 +207,23 @@ class MediumScattering(NonlinearOperator):
                 if verbose:
                     self.log.info('|v - vold| = {}'.format(np.linalg.norm(v - vold)))
                 rhs_coarse += v[self.params.coarse.dualcoords]
-
-            v_coarse, info = spla.gmres(self._lippmann_schwinger_coarse, rhs_coarse.ravel(),
-                                        **self.params.gmres_args)
-            v_coarse = v.reshape(self.params.coarse.grid.shape)
-            if info > 0:
-                self.log.warn('Gmres failed to converge')
-            elif info < 0:
-                self.log.warn('Illegal Gmres input or breakdown')
-            else:
-                self.log.info('Gmres converged')
+            v_coarse = (self
+                        ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
+                        .reshape(self.params.coarse.grid.shape))
             v[self.params.coarse.dualcoords] = v_coarse
         v = ifftn(v)
 
     def _solve_two_grid_adjoint(self):
         raise NotImplementedError
+    def _gmres(self, op, rhs):
+        result, info = spla.gmres(op, rhs.ravel(), **self.params.gmres_args)
+        if info > 0:
+            self.log.warn('Gmres failed to converge')
+        elif info < 0:
+            self.log.warn('Illegal Gmres input or breakdown')
+        else:
+            self.log.info('Gmres converged')
+        return result
 
     def _lippmann_schwinger_op(self, v):
         """Lippmann-Schwinger operator in spatial domain on fine grid
