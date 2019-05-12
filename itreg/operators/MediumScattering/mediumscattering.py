@@ -168,7 +168,7 @@ class MediumScattering(NonlinearOperator):
         for j in range(self.range.shape.inc):
             v[self.params.support] = farfield_matrix_H @ farfield[:, j]
             if self.params.coarse:
-                rhs = ifftn(self._solve_two_grid_adjoint(v))
+                rhs = self._solve_two_grid_adjoint(v)
             else:
                 rhs = (self
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
@@ -181,20 +181,34 @@ class MediumScattering(NonlinearOperator):
         rhs = fftn(rhs)
         v = self.domain.zeros(dtype=complex)
         rhs_coarse = rhs[self.coarse.dualcoords]
-        for iter in range(self.params.coarse.iterations):
-            if iter > 0:
-                rhs_coarse = fftn(self._coarse_contrast * ifftn(
-                    self.params.coarse.kernel * v[self.params.coarse.dualcoords]))
-                v = rhs - fftn(self._contrast * ifftn(self.params.kernel * v))
-                rhs_coarse += v[self.params.coarse.dualcoords]
+        for remaining_iters in range(self.params.coarse.iterations, 0, -1):
             v_coarse = (self
                         ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
                         .reshape(self.params.coarse.grid.shape))
             v[self.params.coarse.dualcoords] = v_coarse
-        v = ifftn(v)
+            if remaining_iters > 0:
+                rhs_coarse = fftn(self._coarse_contrast * ifftn(
+                    self.params.coarse.kernel * v_coarse))
+                v = rhs - fftn(self._contrast * ifftn(self.params.kernel * v))
+                rhs_coarse += v[self.params.coarse.dualcoords]
+        return ifftn(v)
 
-    def _solve_two_grid_adjoint(self):
-        raise NotImplementedError
+    def _solve_two_grid_adjoint(self, v):
+        v = fftn(v)
+        rhs = self.domain.zeros(dtype=complex)
+        v_coarse = v[self.params.coarse.dualcoords]
+        for remaining_iters in range(self.params.coarse.iterations, 0, -1):
+            rhs_coarse = (self
+                          ._gmres(self._lippmann_schwinger_coarse.adjoint(), v_coarse)
+                          .reshape(self.params.coarse.grid.shape))
+            rhs[self.params.coarse.dualcoords] = rhs_coarse
+            if remaining_iters > 0:
+                v_coarse = self.params.coarse.kernel * fftn(
+                    self._coarse_contrast * ifftn(rhs_coarse))
+                rhs = v - self.params.kernel * fftn(self._contrast * ifftn(rhs))
+                v_coarse += rhs[self.params.coarse.dualcoords]
+        return ifftn(rhs)
+
     def _gmres(self, op, rhs):
         result, info = spla.gmres(op, rhs.ravel(), **self.params.gmres_args)
         if info > 0:
