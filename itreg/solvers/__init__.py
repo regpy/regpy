@@ -1,4 +1,5 @@
-from itreg.util import classlogger
+from ..util import classlogger
+from ..spaces import HilbertSpace
 
 
 class Solver:
@@ -107,19 +108,15 @@ class Solver:
 
 class HilbertSpaceSetting:
     def __init__(self, op, domain, codomain):
-        if callable(domain):
+        if not isinstance(domain, HilbertSpace) and callable(domain):
             domain = domain(op.domain)
-        try:
-            assert domain.discr == op.domain
-        except AttributeError:
-            pass
+        assert isinstance(domain, HilbertSpace)
+        assert domain.discr == op.domain
 
-        if callable(codomain):
+        if not isinstance(codomain, HilbertSpace) and callable(codomain):
             codomain = codomain(op.range)
-        try:
-            assert codomain.discr == op.range
-        except AttributeError:
-            pass
+        assert isinstance(codomain, HilbertSpace)
+        assert codomain.discr == op.range
 
         self.op = op
         self.domain = domain
