@@ -110,23 +110,18 @@ class MediumScattering(NonlinearOperator):
     def _eval(self, contrast, differentiate=False):
         contrast[~self.params.support] = 0
         self._contrast = contrast
-
         if self.params.coarse:
             self._coarse_contrast = (
                 (self.params.coarse.grid.size / self.domain.size) *
                 ifftn(fftn(self._contrast)[self.params.coarse.dualcoords]))
-
         farfield = np.empty((self.range.shape.meas, self.range.shape.inc), dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
-
         # TODO parallelize
         for j in range(self.range.shape.inc):
             # Solve Lippmann-Schwinger equation v + a(k*v) = a*u_inc for the
             # unknown v = a u_total. The Fourier coefficients of the periodic
             # convolution kernel k are precomputed.
-
             rhs[self.params.support] = self.params.inc_matrix[:, j] * contrast[self.params.support]
-
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
             else:
@@ -134,13 +129,11 @@ class MediumScattering(NonlinearOperator):
                      ._gmres(self._lippmann_schwinger, rhs)
                      .reshape(self.domain.shape))
             farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
-
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = ui - k*v
             if differentiate:
                 self._totalfield[:, j] = (self.params.inc_matrix[:, j] -
                                           ifftn(self.params.kernel * fftn(v))[self.params.support])
-
         if self.params.amplitude:
             self._farfield = farfield
             return np.abs(farfield)**2
@@ -151,11 +144,8 @@ class MediumScattering(NonlinearOperator):
         contrast = contrast[self.params.support]
         farfield = np.empty((self.range.shape.meas, self.range.shape.inc), dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
-
         for j in range(self.range.shape.inc):
             rhs[self.params.support] = self._totalfield[:, j] * contrast
-
-            # TODO move to separate method, at least the logging stuff
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
             else:
@@ -163,7 +153,6 @@ class MediumScattering(NonlinearOperator):
                            ._gmres(self._lippmann_schwinger, rhs)
                            .reshape(self.domain.shape))
             farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
-
         if self.params.amplitude:
             return 2 * (self._farfield.real * farfield.real +
                         self._farfield.imag * farfield.imag)
@@ -173,14 +162,11 @@ class MediumScattering(NonlinearOperator):
     def _adjoint(self, farfield):
         if self.params.amplitude:
             farfield = 2 * self._farfield * farfield
-
         v = self.domain.zeros(dtype=complex)
         farfield_matrix_H = self.params.farfield_matrix.conj().T
         contrast = self.domain.zeros(dtype=complex)
-
         for j in range(self.range.shape.inc):
             v[self.params.support] = farfield_matrix_H @ farfield[:, j]
-
             if self.params.coarse:
                 rhs = ifftn(self._solve_two_grid_adjoint(v))
             else:
@@ -189,23 +175,17 @@ class MediumScattering(NonlinearOperator):
                        .reshape(self.domain.shape))
             contrast[self.params.support] += (
                 self._totalfield[:, j].conj() * rhs[self.params.support])
-
         return contrast
 
     def _solve_two_grid(self, rhs):
         rhs = fftn(rhs)
         v = self.domain.zeros(dtype=complex)
         rhs_coarse = rhs[self.coarse.dualcoords]
-        verbose = self.log.isEnabledFor(logging.INFO)
         for iter in range(self.params.coarse.iterations):
             if iter > 0:
                 rhs_coarse = fftn(self._coarse_contrast * ifftn(
                     self.params.coarse.kernel * v[self.params.coarse.dualcoords]))
-                if verbose:
-                    vold = v
                 v = rhs - fftn(self._contrast * ifftn(self.params.kernel * v))
-                if verbose:
-                    self.log.info('|v - vold| = {}'.format(np.linalg.norm(v - vold)))
                 rhs_coarse += v[self.params.coarse.dualcoords]
             v_coarse = (self
                         ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
