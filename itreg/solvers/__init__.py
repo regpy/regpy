@@ -103,3 +103,24 @@ class Solver:
         for x, y in self.until(stoprule):
             pass
         return x, y
+
+
+class HilbertSpaceSetting:
+    def __init__(self, op, domain, codomain):
+        if callable(domain):
+            domain = domain(op.domain)
+        try:
+            assert domain.discr == op.domain
+        except AttributeError:
+            pass
+
+        if callable(codomain):
+            codomain = codomain(op.range)
+        try:
+            assert codomain.discr == op.range
+        except AttributeError:
+            pass
+
+        self.op = op
+        self.domain = domain
+        self.codomain = codomain

@@ -37,9 +37,10 @@ class Landweber(Solver):
         The step length to be used in the next step.
     """
 
-    def __init__(self, op, rhs, init, stepsize=None):
+    def __init__(self, setting, rhs, init, stepsize=None):
         super().__init__()
-        self.op = op
+        self.op = setting.op
+        self.setting = setting
         self.rhs = rhs
         self.x = init
         self.y, self.deriv = self.op.linearize(self.x)
@@ -47,8 +48,8 @@ class Landweber(Solver):
 
     def _next(self):
         residual = self.y - self.rhs
-        gy_residual = self.op.range.gram(residual)
-        self.x -= self.stepsize * self.op.domain.gram_inv(self.deriv.adjoint(gy_residual))
+        gy_residual = self.setting.codomain.gram(residual)
+        self.x -= self.stepsize * self.setting.domain.gram_inv(self.deriv.adjoint(gy_residual))
         self.y, self.deriv = self.op.linearize(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
