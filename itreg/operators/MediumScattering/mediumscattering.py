@@ -95,9 +95,9 @@ class MediumScattering(NonlinearOperator):
             kernel=compute_kernel(grid.shape)))
 
     def _alloc(self, params):
-        self._totalfield = np.empty(self.domain.shape + (self.range.shape.inc,), dtype=complex)
+        self._totalfield = np.empty((np.sum(self.params.support), self.range.shape.inc,), dtype=complex)
         # These belong to self, not params, since they implicitly depend on
-        # self.contrast
+        # self._contrast
         self._lippmann_schwinger = spla.LinearOperator(
             (self.domain.size,) * 2,
             matvec=self._lippmann_schwinger_op,
@@ -149,14 +149,74 @@ class MediumScattering(NonlinearOperator):
                                           ifftn(self.params.kernel * fftn(v))[self.params.support])
 
         if self.params.amplitude:
+            self._farfield = farfield
             return np.abs(farfield)**2
         else:
             return farfield
 
-    def _derivative(self, x):
+    def _derivative(self, contrast):
+        contrast = contrast[self.params.support]
+        farfield = np.empty((self.range.shape.meas, self.range.shape.inc), dtype=complex)
+        rhs = self.domain.zeros(dtype=complex)
+
+        for j in range(self.range.shape.inc):
+            rhs[self.params.support] = self._totalfield[:, j] * contrast
+
+            # TODO move to separate method, at least the logging stuff
+            if self.params.coarse:
+                v = self._solve_two_grid(fftn(rhs))
+            else:
+                v, info = spla.gmres(self._lippmann_schwinger, rhs.ravel(),
+                                     **self.params.gmres_args)
+                v = v.reshape(self.domain.shape)
+                if info > 0:
+                    self.log.warn('Gmres failed to converge')
+                elif info < 0:
+                    self.log.warn('Illegal Gmres input or breakdown')
+                else:
+                    self.log.info('Gmres converged')
+
+            farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
+
+        if self.params.amplitude:
+            return 2 * (self._farfield.real * farfield.real +
+                        self._farfield.imag * farfield.imag)
+        else:
+            return farfield
+
+    def _adjoint(self, farfield):
+        if self.params.amplitude:
+            farfield = 2 * self._farfield * farfield
+
+        v = self.domain.zeros(dtype=complex)
+        farfield_matrix_H = self.params.farfield_matrix.conj().T
+        contrast = self.domain.zeros(dtype=complex)
+
+        for j in range(self.range.shape.inc):
+            v[self.params.support] = farfield_matrix_H @ farfield[:, j]
+
+            if self.params.coarse:
+                rhs = ifftn(self._solve_two_grid_adjoint(v))
+            else:
+                rhs, info = spla.gmres(self._lippmann_schwinger.adjoint(), v.ravel(),
+                                       **self.params.gmres_args)
+                rhs = rhs.reshape(self.domain.shape)
+                if info > 0:
+                    self.log.warn('Gmres failed to converge')
+                elif info < 0:
+                    self.log.warn('Illegal Gmres input or breakdown')
+                else:
+                    self.log.info('Gmres converged')
+
+            contrast[self.params.support] += (
+                self._totalfield[:, j].conj() * rhs[self.params.support])
+
+        return contrast
+
+    def _solve_two_grid(self):
         raise NotImplementedError
 
-    def _adjoint(self, x):
+    def _solve_two_grid_adjoint(self):
         raise NotImplementedError
 
     def _lippmann_schwinger_op(self, v):
@@ -186,9 +246,6 @@ class MediumScattering(NonlinearOperator):
         v = v.reshape(self.params.coarse.grid.shape)
         v += np.conj(self.params.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
         return v.ravel()
-
-    def _solve_two_grid(self):
-        raise NotImplementedError
 
 
 def _compute_kernel_2D(R, shape):
