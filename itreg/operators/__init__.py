@@ -1,6 +1,6 @@
 import numpy as np
 
-from itreg.util import classlogger, memoized_property
+from .. import util
 
 
 class Params:
@@ -31,7 +31,7 @@ class Revocable:
 
 
 class BaseOperator:
-    log = classlogger
+    log = util.classlogger
 
     def __init__(self, params):
         self.params = params
@@ -110,16 +110,9 @@ class LinearOperator(BaseOperator):
     def linearize(self, x):
         return self(x), self
 
-    @memoized_property
+    @util.memoized_property
     def adjoint(self):
         return Adjoint(self)
-
-    def hermitian(self, y):
-        # TODO Once gram matrices are turned into operators and operator
-        # composition works, this can be made into a memoized property that
-        # returns a composed operator instance.
-        # return self.domain.gram_inv * self.adjoint * self.range.gram
-        return self.domain.gram_inv(self.adjoint(self.range.gram(y)))
 
     def norm(self, iterations=10):
         h = self.domain.rand()
@@ -179,3 +172,7 @@ class Identity(LinearOperator):
 
     def _adjoint(self, x):
         return x
+
+
+from .mediumscattering import MediumScattering
+from .volterra import Volterra, NonlinearVolterra

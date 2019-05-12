@@ -1,13 +1,12 @@
-from itreg.operators import NonlinearOperator, Params
-from itreg.spaces import UniformGrid
-from itreg.util import set_defaults
-
 from functools import partial
-import logging
 import numpy as np
 from numpy.fft import fftn, ifftn, fftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
+
+from . import NonlinearOperator, Params
+from .. import spaces
+from .. import util
 
 
 class MediumScattering(NonlinearOperator):
@@ -31,8 +30,8 @@ class MediumScattering(NonlinearOperator):
                  coarseshape=None, coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) and s % 2 == 0 for s in gridshape)
-        grid = UniformGrid(*(np.linspace(-2*radius, 2*radius, s, endpoint=False)
-                             for s in gridshape))
+        grid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, s, endpoint=False)
+                                    for s in gridshape))
 
         if support is None:
             support = (np.linalg.norm(grid.coords, axis=0) <= radius)
@@ -57,11 +56,11 @@ class MediumScattering(NonlinearOperator):
         if grid.ndim == 2:
             # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
             farfield_matrix *= wave_number**2 * grid.volume_elem
-            compute_kernel = partial(_compute_kernel_2D, 2 * wave_number * radius)
+            compute_kernel = partial(compute_kernel_2D, 2 * wave_number * radius)
         elif grid.ndim == 3:
             # TODO The sign appears to be wrong
             farfield_matrix *= wave_number**2 * grid.volume_elem / (4*np.pi)
-            compute_kernel = partial(_compute_kernel_3D, 2 * wave_number * radius)
+            compute_kernel = partial(compute_kernel_3D, 2 * wave_number * radius)
 
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
@@ -77,7 +76,7 @@ class MediumScattering(NonlinearOperator):
         else:
             coarse = None
 
-        gmres_args = set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
+        gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
 
         super().__init__(Params(
             domain=grid,
@@ -248,7 +247,7 @@ class MediumScattering(NonlinearOperator):
         return v.ravel()
 
 
-def _compute_kernel_2D(R, shape):
+def compute_kernel_2D(R, shape):
     J = np.mgrid[[slice(-s//2, s//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     midpoint = tuple(s//2 for s in shape)
@@ -263,7 +262,7 @@ def _compute_kernel_2D(R, shape):
     return 2 * R * np.fft.fftshift(K_hat)
 
 
-def _compute_kernel_3D(R, shape):
+def compute_kernel_3D(R, shape):
     J = np.mgrid[[slice(-s//2, s//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     midpoint = tuple(s//2 for s in shape)

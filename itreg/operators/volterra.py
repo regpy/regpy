@@ -1,6 +1,6 @@
-from . import LinearOperator, NonlinearOperator, Params
-
 import numpy as np
+
+from . import LinearOperator, NonlinearOperator, Params
 
 
 class Volterra(LinearOperator):

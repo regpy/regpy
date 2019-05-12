@@ -1,9 +1,8 @@
-from ..util import (classlogger, memoized_property, named, is_real_dtype,
-                    is_complex_dtype, realdot, is_uniform)
-from ..operators import Identity, LinearOperator
-
 import numpy as np
 from functools import singledispatch
+
+from .. import util
+from .. import operators
 
 
 class GenericDiscretization:
@@ -11,7 +10,7 @@ class GenericDiscretization:
     additional structure.
     """
 
-    log = classlogger
+    log = util.classlogger
 
     def __init__(self, shape, names=None, dtype=float):
         # Upcast dtype to represent at least (single-precision) floats, no
@@ -20,7 +19,7 @@ class GenericDiscretization:
         # Disallow objects, strings, times or other fancy dtypes
         assert dtype.kind in 'fc'
         self.dtype = dtype
-        self.shape = named(names, *shape)
+        self.shape = util.named(names, *shape)
         self.names = names
 
     def zero(self, dtype=None):
@@ -56,7 +55,7 @@ class GenericDiscretization:
         if not np.can_cast(r.dtype, dtype):
             raise ValueError(
                 'random generator {} can not produce values of dtype {}'.format(rand, dtype))
-        if is_complex_dtype(dtype) and not is_complex_dtype(r.dtype):
+        if util.is_complex_dtype(dtype) and not util.is_complex_dtype(r.dtype):
             c = np.empty(self.shape, dtype=dtype)
             c.real = r
             c.imag = rand(self.shape)
@@ -66,7 +65,7 @@ class GenericDiscretization:
 
     @property
     def is_complex(self):
-        return is_complex_dtype(self.dtype)
+        return util.is_complex_dtype(self.dtype)
 
     @property
     def dim(self):
@@ -83,16 +82,16 @@ class GenericDiscretization:
     def size(self):
         return np.prod(self.shape)
 
-    @memoized_property
+    @util.memoized_property
     def identity(self):
-        return Identity(self)
+        return operators.Identity(self)
 
     def __contains__(self, x):
         if x.shape != self.shape:
             return False
-        elif is_complex_dtype(x.dtype):
+        elif util.is_complex_dtype(x.dtype):
             return self.is_complex()
-        elif is_real_dtype(x.dtype):
+        elif util.is_real_dtype(x.dtype):
             return True
         else:
             return False
@@ -142,7 +141,7 @@ class Grid(GenericDiscretization):
         self.volume_elem = np.prod(self.extents)
 
         if axisdata is not None:
-            self.axisdata = named(names, *axisdata)
+            self.axisdata = util.named(names, *axisdata)
             assert len(self.axisdata) == len(self.coords)
             for i in range(len(self.axisdata)):
                 assert self.shape[i] == self.axisdata[i].shape[0]
@@ -153,9 +152,9 @@ class UniformGrid(Grid):
         super().__init__(*args, **kwargs)
         spacing = []
         for axis in self.axes:
-            assert is_uniform(axis)
+            assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
-        self.spacing = named(self.names, *spacing)
+        self.spacing = util.named(self.names, *spacing)
 
     # TODO
     # @memoized_property
@@ -192,7 +191,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return realdot(x, self.gram(y))
+        return util.realdot(x, self.gram(y))
 
     def norm(self, x):
         """Compute the norm of an element.
@@ -212,11 +211,11 @@ class HilbertSpace:
         return np.sqrt(self.inner(x, x))
 
 
-def spacetype(*args, **kwargs):
+def genericspace(*args, **kwargs):
     return singledispatch(*args, **kwargs)
 
 
-@spacetype
+@genericspace
 class L2(HilbertSpace):
     def __init__(self, discr):
         self.discr = discr
@@ -230,7 +229,7 @@ class L2(HilbertSpace):
         return self.discr.identity
 
 
-@spacetype
+@genericspace
 def H1(discr, index=1):
     raise NotImplementedError(
         'H1 not implemented on {}'.format(type(discr).__qualname__))
@@ -248,17 +247,17 @@ class H1UniformGrid(HilbertSpace):
 class HilbertPullBack(HilbertSpace):
     def __init__(self, op, space):
         assert isinstance(space, HilbertSpace)
-        assert isinstance(op, LinearOperator)
+        assert isinstance(op, operators.LinearOperator)
         assert op.range == space.discr
         self.op = op
         self.space = space
         self.discr = op.domain
 
-    @memoized_property
+    @util.memoized_property
     def gram(self):
         return self.op.adjoint * self.space.gram * self.op
 
-    @memoized_property
+    @util.memoized_property
     def gram_inv(self):
         # TODO This is not the inverse of gram!
         return self.op.adjoint * self.space.gram_inv * self.op
