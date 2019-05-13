@@ -121,3 +121,6 @@ class HilbertSpaceSetting:
         self.op = op
         self.domain = domain
         self.codomain = codomain
+
+
+from .landweber import Landweber

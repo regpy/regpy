@@ -1,6 +1,6 @@
 from functools import partial
 import numpy as np
-from numpy.fft import fftn, ifftn, fftshift
+from numpy.fft import fftn, ifftn, fftshift, ifftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
@@ -29,7 +29,8 @@ class MediumScattering(NonlinearOperator):
                  meas_directions, support=None, amplitude=False,
                  coarseshape=None, coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
-        assert all(isinstance(s, int) and s % 2 == 0 for s in gridshape)
+        assert all(isinstance(s, int) for s in gridshape)
+        # TODO should this be a complex space?
         grid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, s, endpoint=False)
                                     for s in gridshape))
 
@@ -65,13 +66,13 @@ class MediumScattering(NonlinearOperator):
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
                 raise ValueError('coarse grid is not coarser than fine grid')
-            assert all(isinstance(c, int) and c % 2 == 0 for c in coarseshape)
-            coarsegrid = UniformGrid(*(np.linspace(-2*radius, 2*radius, c, endpoint=False)
-                                       for c in coarseshape)),
+            assert all(isinstance(c, int) for c in coarseshape)
+            coarsegrid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, c, endpoint=False)
+                                              for c in coarseshape)),
             coarse = dict(
                 grid=coarsegrid,
                 kernel=compute_kernel(coarsegrid.shape),
-                dualcoords=np.ix_(*(fftshift(np.arange(-c//2, c//2)) for c in coarseshape)),
+                dualcoords=np.ix_(*(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)),
                 iterations=coarseiterations)
         else:
             coarse = None
@@ -80,9 +81,9 @@ class MediumScattering(NonlinearOperator):
 
         super().__init__(Params(
             domain=grid,
-            range=UniformGrid(axisdata=(meas_directions, inc_directions),
-                              names=('meas', 'inc'),
-                              dtype=float if amplitude else complex),
+            range=spaces.UniformGrid(axisdata=(meas_directions, inc_directions),
+                                     names=('meas', 'inc'),
+                                     dtype=float if amplitude else complex),
             inc_matrix=inc_matrix,
             farfield_matrix=farfield_matrix,
             wave_number=wave_number,
@@ -92,7 +93,7 @@ class MediumScattering(NonlinearOperator):
             gmres_args=gmres_args,
             kernel=compute_kernel(grid.shape)))
 
-    def _alloc(self, params):
+    def _alloc(self):
         self._totalfield = np.empty((np.sum(self.params.support), self.range.shape.inc,),
                                     dtype=complex)
         # These belong to self, not params, since they implicitly depend on
@@ -100,27 +101,34 @@ class MediumScattering(NonlinearOperator):
         self._lippmann_schwinger = spla.LinearOperator(
             (self.domain.size,) * 2,
             matvec=self._lippmann_schwinger_op,
-            rmatvec=self._lippmann_schwinger_adjoint)
-        self._lippmann_schwinger_coarse = spla.LinearOperator(
-            (self.params.coarse.grid.size,) * 2,
-            matvec=self._lippmann_schwinger_coarse_op,
-            rmatevec=self._lippmann_schwinger_coarse_adjoint)
+            rmatvec=self._lippmann_schwinger_adjoint,
+            dtype=complex)
+        if self.params.coarse:
+            self._lippmann_schwinger_coarse = spla.LinearOperator(
+                (self.params.coarse.grid.size,) * 2,
+                matvec=self._lippmann_schwinger_coarse_op,
+                rmatevec=self._lippmann_schwinger_coarse_adjoint,
+                dtype=complex)
 
     def _eval(self, contrast, differentiate=False):
         contrast[~self.params.support] = 0
         self._contrast = contrast
         if self.params.coarse:
+            # TODO take real part? what about even case? for 1d, highest
+            # fourier coeff must be real then, which is not guaranteed by
+            # subsampling here.
+            aux = fftn(self._contrast)[self.params.coarse.dualcoords]
             self._coarse_contrast = (
                 (self.params.coarse.grid.size / self.domain.size) *
-                ifftn(fftn(self._contrast)[self.params.coarse.dualcoords]))
-        farfield = np.empty((self.range.shape.meas, self.range.shape.inc), dtype=complex)
+                ifftn(aux))
+        farfield = self.range.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         # TODO parallelize
         for j in range(self.range.shape.inc):
             # Solve Lippmann-Schwinger equation v + a(k*v) = a*u_inc for the
             # unknown v = a u_total. The Fourier coefficients of the periodic
             # convolution kernel k are precomputed.
-            rhs[self.params.support] = self.params.inc_matrix[:, j] * contrast[self.params.support]
+            rhs[self.params.support] = self.params.inc_matrix[j, :] * contrast[self.params.support]
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
             else:
@@ -131,7 +139,7 @@ class MediumScattering(NonlinearOperator):
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = ui - k*v
             if differentiate:
-                self._totalfield[:, j] = (self.params.inc_matrix[:, j] -
+                self._totalfield[:, j] = (self.params.inc_matrix[j, :] -
                                           ifftn(self.params.kernel * fftn(v))[self.params.support])
         if self.params.amplitude:
             self._farfield = farfield
@@ -141,7 +149,7 @@ class MediumScattering(NonlinearOperator):
 
     def _derivative(self, contrast):
         contrast = contrast[self.params.support]
-        farfield = np.empty((self.range.shape.meas, self.range.shape.inc), dtype=complex)
+        farfield = self.range.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         for j in range(self.range.shape.inc):
             rhs[self.params.support] = self._totalfield[:, j] * contrast
@@ -163,7 +171,7 @@ class MediumScattering(NonlinearOperator):
             farfield = 2 * self._farfield * farfield
         v = self.domain.zeros(dtype=complex)
         farfield_matrix_H = self.params.farfield_matrix.conj().T
-        contrast = self.domain.zeros(dtype=complex)
+        contrast = self.domain.zeros()
         for j in range(self.range.shape.inc):
             v[self.params.support] = farfield_matrix_H @ farfield[:, j]
             if self.params.coarse:
@@ -172,8 +180,10 @@ class MediumScattering(NonlinearOperator):
                 rhs = (self
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
                        .reshape(self.domain.shape))
+            rhs_supp = rhs[self.params.support]
             contrast[self.params.support] += (
-                self._totalfield[:, j].conj() * rhs[self.params.support])
+                self._totalfield[:, j].real * rhs_supp.real +
+                self._totalfield[:, j].imag * rhs_supp.imag)
         return contrast
 
     def _solve_two_grid(self, rhs):
@@ -248,27 +258,27 @@ class MediumScattering(NonlinearOperator):
 
 
 def compute_kernel_2D(R, shape):
-    J = np.mgrid[[slice(-s//2, s//2) for s in shape]]
+    J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
-    midpoint = tuple(s//2 for s in shape)
+    Jzero = tuple(s//2 for s in shape)
 
     K_hat = (2*R)**(-1) * R**2 / (piabsJ**2 - R**2) * (
         1 + 1j*np.pi/2 * (
             piabsJ * besselj(1, piabsJ) * hankel1(0, R) -
             R * besselj(0, piabsJ) * hankel1(1, R)))
-    K_hat[midpoint] = -1/(2*R) + 1j*np.pi/4 * hankel1(1, R)
+    K_hat[Jzero] = -1/(2*R) + 1j*np.pi/4 * hankel1(1, R)
     K_hat[piabsJ == R] = 1j*np.pi*R/8 * (
         besselj(0, R) * hankel1(0, R) + besselj(1, R) * hankel1(1, R))
     return 2 * R * np.fft.fftshift(K_hat)
 
 
 def compute_kernel_3D(R, shape):
-    J = np.mgrid[[slice(-s//2, s//2) for s in shape]]
+    J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
-    midpoint = tuple(s//2 for s in shape)
+    Jzero = tuple(s//2 for s in shape)
 
     K_hat = (2*R)**(-3/2) * R**2 / (piabsJ**2 - R**2) * (
         1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sin(piabsJ) / piabsJ))
-    K_hat[midpoint] = -(2*R)**(-1.5) * (1 - np.exp(1j*R) * (1 - 1j*R))
+    K_hat[Jzero] = -(2*R)**(-1.5) * (1 - np.exp(1j*R) * (1 - 1j*R))
     K_hat[piabsJ == R] = -1j/4 * (2*R)**(-1/2) * (1 - np.exp(1j*R) * np.sin(R) / R)
     return 2 * R * np.fft.fftshift(K_hat)

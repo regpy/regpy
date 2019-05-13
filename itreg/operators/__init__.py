@@ -35,9 +35,9 @@ class BaseOperator:
 
     def __init__(self, params):
         self.params = params
-        self._alloc(params)
+        self._alloc()
 
-    def _alloc(self, params):
+    def _alloc(self):
         pass
 
     @property

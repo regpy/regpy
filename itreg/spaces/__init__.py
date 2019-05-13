@@ -22,12 +22,12 @@ class GenericDiscretization:
         self.shape = util.named(names, *shape)
         self.names = names
 
-    def zero(self, dtype=None):
+    def zeros(self, dtype=None):
         """Return the zero element of the space.
         """
         return np.zeros(self.shape, dtype=dtype or self.dtype)
 
-    def one(self, dtype=None):
+    def ones(self, dtype=None):
         """Return an element of the space initalized to 1.
         """
         return np.ones(self.shape, dtype=dtype or self.dtype)
@@ -51,14 +51,14 @@ class GenericDiscretization:
             :mod:`numpy.random` conform to this.
         """
         dtype = dtype or self.dtype
-        r = rand(self.shape)
+        r = rand(*self.shape)
         if not np.can_cast(r.dtype, dtype):
             raise ValueError(
                 'random generator {} can not produce values of dtype {}'.format(rand, dtype))
         if util.is_complex_dtype(dtype) and not util.is_complex_dtype(r.dtype):
             c = np.empty(self.shape, dtype=dtype)
             c.real = r
-            c.imag = rand(self.shape)
+            c.imag = rand(*self.shape)
             return c
         else:
             return np.asarray(r, dtype=dtype)
@@ -90,7 +90,7 @@ class GenericDiscretization:
         if x.shape != self.shape:
             return False
         elif util.is_complex_dtype(x.dtype):
-            return self.is_complex()
+            return self.is_complex
         elif util.is_real_dtype(x.dtype):
             return True
         else:
@@ -104,27 +104,31 @@ class GenericDiscretization:
 
 
 class Grid(GenericDiscretization):
-    def __init__(self, *coords, names=None, axisdata=None):
+    def __init__(self, *coords, names=None, axisdata=None, dtype=float):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
         for n, c in enumerate(coords):
             if isinstance(c, int):
-                s = [1] * len(coords)
-                s[n] = -1
-                v = np.arange(c).reshape(s)
+                v = np.arange(c)
             else:
                 v = np.asarray(c).view()
+            if 1 == v.ndim < len(coords):
+                s = [1] * len(coords)
+                s[n] = -1
+                v = v.reshape(s)
+            # TODO is this really necessary given that we probably perform a
+            # copy using asarray anyway?
             v.flags.writeable = False
             views.append(v)
         # TODO Names would be nice, but providing an ndarray is more important.
         # Maybe add a "namedarray" class?
         # self.coords = named(names, *np.broadcast_arrays(*views))
-        self.coords = np.broadcast_arrays(*views)
+        self.coords = np.asarray(np.broadcast_arrays(*views))
         assert self.coords[0].ndim == len(self.coords)
         # TODO ensure coords are ascending?
 
-        super().__init__(self.coords[0].shape, names)
+        super().__init__(self.coords[0].shape, names, dtype)
 
         axes = []
         extents = []
@@ -212,11 +216,19 @@ class HilbertSpace:
 
 
 def genericspace(*args, **kwargs):
-    return singledispatch(*args, **kwargs)
+    dispatcher = singledispatch(*args, **kwargs)
+    dispatcher.base = dispatcher.dispatch(object)
+    return dispatcher
 
 
 @genericspace
-class L2(HilbertSpace):
+def L2(discr, index=1):
+    raise NotImplementedError(
+        'L2 not implemented on {}'.format(type(discr).__qualname__))
+
+
+@L2.register(GenericDiscretization)
+class L2Generic(HilbertSpace):
     def __init__(self, discr):
         self.discr = discr
 
