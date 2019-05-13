@@ -106,21 +106,18 @@ class Solver:
         return x, y
 
 
-class HilbertSpaceSetting:
-    def __init__(self, op, domain, codomain):
-        if not isinstance(domain, HilbertSpace) and callable(domain):
-            domain = domain(op.domain)
-        assert isinstance(domain, HilbertSpace)
-        assert domain.discr == op.domain
+def verify_hilbertspace_setting(self, op, domain, codomain):
+    if not isinstance(domain, HilbertSpace) and callable(domain):
+        domain = domain(op.domain)
+    assert isinstance(domain, HilbertSpace)
+    assert domain.discr == op.domain
 
-        if not isinstance(codomain, HilbertSpace) and callable(codomain):
-            codomain = codomain(op.codomain)
-        assert isinstance(codomain, HilbertSpace)
-        assert codomain.discr == op.codomain
+    if not isinstance(codomain, HilbertSpace) and callable(codomain):
+        codomain = codomain(op.codomain)
+    assert isinstance(codomain, HilbertSpace)
+    assert codomain.discr == op.codomain
 
-        self.op = op
-        self.domain = domain
-        self.codomain = codomain
+    return domain, codomain
 
 
 from .landweber import Landweber

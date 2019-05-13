@@ -5,7 +5,7 @@ import itreg
 from itreg.operators import MediumScattering
 # TODO from itreg.spaces import Sobolev
 from itreg.spaces import L2
-from itreg.solvers import Landweber, HilbertSpaceSetting
+from itreg.solvers import Landweber
 # TODO from itreg.util import test_adjoint
 import itreg.stoprules as rules
 import itreg.util as util
@@ -34,14 +34,12 @@ data = exact_data + noise
 noiselevel = np.linalg.norm(noise)
 init = 1.1 * op.domain.ones()
 
-setting = HilbertSpaceSetting(
-    op=op,
-    domain=L2,
-    codomain=L2)
+domain = L2(op.domain)
+codomain = L2(op.codomain)
 
-landweber = Landweber(setting, data, init, stepsize=0.01)
+landweber = Landweber(op, domain, codomain, data, init, stepsize=0.01)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.1, tau=1))
+    rules.Discrepancy(codomain.norm, data, noiselevel=0.1, tau=1))
 
 reco, reco_data = landweber.run(stoprule)
