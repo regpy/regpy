@@ -90,7 +90,7 @@ class IRGNM_L1_fid(Solver):
         # Computation of some parameters for the iteration
         self._GramX = self.op.domain.gram(np.eye(len(self.x)))
         self._GramX = 0.5 * (self._GramX+self._GramX.T)
-        self._GramY = self.op.range.gram(np.eye(len(self.y)))
+        self._GramY = self.op.codomain.gram(np.eye(len(self.y)))
         self._GramY = 0.5 * (self._GramY+self._GramY.T)     
         self._maxiter = 10000
 

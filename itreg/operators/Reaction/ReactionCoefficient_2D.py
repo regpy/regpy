@@ -26,8 +26,8 @@ from netgen.meshing import *
 class ReactionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, bc_top=None, bc_bottom=None, bc_left=None, bc_right=None, range=None, spacing=1):
-        range = range or domain
+    def __init__(self, domain, rhs, bc_top=None, bc_bottom=None, bc_left=None, bc_right=None, codomain=None, spacing=1):
+        codomain = codomain or domain
         if bc_top is None:
             bc_top=rhs[0, :]
         if bc_bottom is None:
@@ -43,7 +43,7 @@ class ReactionCoefficient(NonlinearOperator):
         v = fes.TestFunction()   # symbolic object        
         Base=Reaction_Base_2D()
         v_star=Base.tilde_g_builder(domain, bc_top, bc_bottom, bc_left, bc_right)
-        super().__init__(Params(domain, range, rhs=rhs, bc_top=bc_top, bc_bottom=bc_bottom, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, u=u, v=v, spacing=spacing, Base=Base, v_star=v_star))
+        super().__init__(Params(domain, codomain, rhs=rhs, bc_top=bc_top, bc_bottom=bc_bottom, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, u=u, v=v, spacing=spacing, Base=Base, v_star=v_star))
         
     @instantiate
     class operator(OperatorImplementation):

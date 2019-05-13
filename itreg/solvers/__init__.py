@@ -114,9 +114,9 @@ class HilbertSpaceSetting:
         assert domain.discr == op.domain
 
         if not isinstance(codomain, HilbertSpace) and callable(codomain):
-            codomain = codomain(op.range)
+            codomain = codomain(op.codomain)
         assert isinstance(codomain, HilbertSpace)
-        assert codomain.discr == op.range
+        assert codomain.discr == op.codomain
 
         self.op = op
         self.domain = domain

@@ -81,9 +81,9 @@ class MediumScattering(NonlinearOperator):
 
         super().__init__(Params(
             domain=grid,
-            range=spaces.UniformGrid(axisdata=(meas_directions, inc_directions),
-                                     names=('meas', 'inc'),
-                                     dtype=float if amplitude else complex),
+            codomain=spaces.UniformGrid(axisdata=(meas_directions, inc_directions),
+                                        names=('meas', 'inc'),
+                                        dtype=float if amplitude else complex),
             inc_matrix=inc_matrix,
             farfield_matrix=farfield_matrix,
             wave_number=wave_number,
@@ -94,7 +94,7 @@ class MediumScattering(NonlinearOperator):
             kernel=compute_kernel(grid.shape)))
 
     def _alloc(self):
-        self._totalfield = np.empty((np.sum(self.params.support), self.range.shape.inc,),
+        self._totalfield = np.empty((np.sum(self.params.support), self.codomain.shape.inc,),
                                     dtype=complex)
         # These belong to self, not params, since they implicitly depend on
         # self._contrast
@@ -121,10 +121,10 @@ class MediumScattering(NonlinearOperator):
             self._coarse_contrast = (
                 (self.params.coarse.grid.size / self.domain.size) *
                 ifftn(aux))
-        farfield = self.range.empty(dtype=complex)
+        farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         # TODO parallelize
-        for j in range(self.range.shape.inc):
+        for j in range(self.codomain.shape.inc):
             # Solve Lippmann-Schwinger equation v + a(k*v) = a*u_inc for the
             # unknown v = a u_total. The Fourier coefficients of the periodic
             # convolution kernel k are precomputed.
@@ -149,9 +149,9 @@ class MediumScattering(NonlinearOperator):
 
     def _derivative(self, contrast):
         contrast = contrast[self.params.support]
-        farfield = self.range.empty(dtype=complex)
+        farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
-        for j in range(self.range.shape.inc):
+        for j in range(self.codomain.shape.inc):
             rhs[self.params.support] = self._totalfield[:, j] * contrast
             if self.params.coarse:
                 v = self._solve_two_grid(rhs)
@@ -172,7 +172,7 @@ class MediumScattering(NonlinearOperator):
         v = self.domain.zeros(dtype=complex)
         farfield_matrix_H = self.params.farfield_matrix.conj().T
         contrast = self.domain.zeros()
-        for j in range(self.range.shape.inc):
+        for j in range(self.codomain.shape.inc):
             v[self.params.support] = farfield_matrix_H @ farfield[:, j]
             if self.params.coarse:
                 rhs = self._solve_two_grid_adjoint(v)

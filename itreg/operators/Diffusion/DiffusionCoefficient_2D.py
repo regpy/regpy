@@ -27,7 +27,7 @@ from netgen.meshing import *
 class DiffusionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, bc_left=None, bc_right=None, bc_bottom=None, bc_top=None, range=None, spacing=1):
+    def __init__(self, domain, rhs, bc_left=None, bc_right=None, bc_bottom=None, bc_top=None, codomain=None, spacing=1):
         if bc_top is None:
             bc_top=rhs[0, :]
         if bc_bottom is None:
@@ -46,8 +46,8 @@ class DiffusionCoefficient(NonlinearOperator):
         Base=Diffusion_Base_2D()
         v_star=Base.tilde_g_builder(domain, bc_top, bc_bottom, bc_left, bc_right)
         
-        range = range or domain
-        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_top=bc_top, bc_bottom=bc_bottom, mesh=mesh, spacing=spacing, fes=fes, u=u, v=v, Base=Base, v_star=v_star))
+        codomain = codomain or domain
+        super().__init__(Params(domain, codomain, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_top=bc_top, bc_bottom=bc_bottom, mesh=mesh, spacing=spacing, fes=fes, u=u, v=v, Base=Base, v_star=v_star))
         
     @instantiate
     class operator(OperatorImplementation):

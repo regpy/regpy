@@ -48,13 +48,13 @@ init_data, deriv = op.linearize(init)
 
 #stoprule = (
 #    rules.CountIterations(100) +
-#    rules.Discrepancy(op.range.norm, data, noiselevel=0.1, tau=1.1))
+#    rules.Discrepancy(op.codomain.norm, data, noiselevel=0.1, tau=1.1))
 
 #reco, reco_data = irgnm_cg.run(stoprule)
 
 landweber= Landweber(op, data, init, stepsize=1/(Nx*Ny*(nr_coils+1)))
 stoprule=(
     rules.CountIterations(30)+
-    rules.Discrepancy(op.range.norm, data, noiselevel=0, tau=2))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=2))
 
 reco, reco_data=landweber.run(stoprule)

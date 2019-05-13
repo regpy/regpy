@@ -260,7 +260,7 @@ class HilbertPullBack(HilbertSpace):
     def __init__(self, op, space):
         assert isinstance(space, HilbertSpace)
         assert isinstance(op, operators.LinearOperator)
-        assert op.range == space.discr
+        assert op.codomain == space.discr
         self.op = op
         self.space = space
         self.discr = op.domain

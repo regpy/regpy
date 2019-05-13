@@ -28,7 +28,7 @@ exact_data = op(exact_solution)
 #noise = 0.03 * op.domain.rand(np.random.randn)
 data = exact_data 
 
-#noiselevel = op.range.norm(noise)
+#noiselevel = op.codomain.norm(noise)
 
 init = op.domain.one()
 
@@ -40,7 +40,7 @@ _, deriv = op.linearize(init)
 landweber = Landweber(op, data, init, stepsize=0.1)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel=0.1, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel=0.1, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 

@@ -13,7 +13,7 @@ class Volterra(LinearOperator):
     ----------
     domain : :class:`~itreg.spaces.Space`
         The domain on which the operator is defined.
-    range : :class:`~itreg.spaces.Space`, optional
+    codomain : :class:`~itreg.spaces.Space`, optional
         The operator's codomain. Defaults to `domain`.
     spacing : float, optional
         The grid spacing. Defaults to 1.
@@ -31,11 +31,12 @@ class Volterra(LinearOperator):
     where :math:`h` is the grid spacing.
     """
 
-    def __init__(self, domain, range=None, spacing=1):
-        range = range or domain
+    # TODO get rid of spacing
+    def __init__(self, domain, codomain=None, spacing=1):
+        codomain = codomain or domain
         assert len(domain.shape) == 1
-        assert domain.shape == range.shape
-        super().__init__(Params(domain, range, spacing=spacing))
+        assert domain.shape == codomain.shape
+        super().__init__(Params(domain, codomain, spacing=spacing))
 
     def _eval(self, x):
         return self.params.spacing * np.cumsum(x)
@@ -58,18 +59,18 @@ class NonlinearVolterra(NonlinearOperator):
         The domain on which the operator is defined.
     exponent : float
         The exponent.
-    range : :class:`~itreg.spaces.Space`, optional
-        The operator's range. Defaults to `domain`.
+    codomain : :class:`~itreg.spaces.Space`, optional
+        The operator's codomain. Defaults to `domain`.
     spacing : float, optional
         The grid spacing. Defaults to 1.
     """
 
-    def __init__(self, domain, exponent, range=None, spacing=1):
-        range = range or domain
+    def __init__(self, domain, exponent, codomain=None, spacing=1):
+        codomain = codomain or domain
         assert len(domain.shape) == 1
-        assert domain.shape == range.shape
+        assert domain.shape == codomain.shape
         super().__init__(
-            Params(domain, range, exponent=exponent, spacing=spacing))
+            Params(domain, codomain, exponent=exponent, spacing=spacing))
 
     def _eval(self, x, differentiate=False):
         if differentiate:

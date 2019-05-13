@@ -16,15 +16,15 @@ import matplotlib.pyplot as plt
 class DiffusionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, boundary_values=None, range=None, spacing=1):
-        range = range or domain
+    def __init__(self, domain, rhs, boundary_values=None, codomain=None, spacing=1):
+        codomain = codomain or domain
         if boundary_values is None:
             boundary_values=np.zeros(2)
             boundary_values[0]=rhs[0]
             boundary_values[-1]=rhs[-1]
         #assert len(domain.shape) == 1
-        #assert domain.shape == range.shape
-        super().__init__(Params(domain, range, rhs=rhs, boundary_values=boundary_values, spacing=spacing))
+        #assert domain.shape == codomain.shape
+        super().__init__(Params(domain, codomain, rhs=rhs, boundary_values=boundary_values, spacing=spacing))
         
     @instantiate
     class operator(OperatorImplementation):

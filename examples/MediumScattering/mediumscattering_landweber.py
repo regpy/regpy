@@ -29,7 +29,7 @@ op = MediumScattering(
 
 exact_solution = op.domain.ones()
 exact_data = op(exact_solution)
-noise = 0.03 * op.range.rand(np.random.randn)
+noise = 0.03 * op.codomain.rand(np.random.randn)
 data = exact_data + noise
 noiselevel = np.linalg.norm(noise)
 init = 1.1 * op.domain.ones()

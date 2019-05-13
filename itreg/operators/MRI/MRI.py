@@ -6,7 +6,7 @@ import numpy as np
 class parallel_MRI(NonlinearOperator):
     def __init__(self,
                  domain,
-                 range=None,
+                 codomain=None,
                 nr_coils=20,
                 Nx=200,
                 Ny=20,
@@ -23,10 +23,10 @@ class parallel_MRI(NonlinearOperator):
             P[:,int((Ny-nrcenterlines)/2):int((Ny+nrcenterlines)/2)] = 1
             samplingIndx = np.nonzero(np.reshape(P, (Nx*Ny, 1), order='F'))[0]
 
-        if range is None:
+        if codomain is None:
             coords_range=np.ones(nr_coils*len(samplingIndx))
             grid_range=User_Defined(coords_range, coords_range.shape)
-            range=L2(grid_range)
+            codomain=L2(grid_range)
 
 
         if Fourier_weights is None:
@@ -38,7 +38,7 @@ class parallel_MRI(NonlinearOperator):
 
         super().__init__(
             Params(domain,
-                range,
+                codomain,
                 samplingIndx=samplingIndx,
                 Fourier_weights=Fourier_weights,
                 nr_coils=nr_coils,

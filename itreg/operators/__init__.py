@@ -4,9 +4,9 @@ from .. import util
 
 
 class Params:
-    def __init__(self, domain, range, **kwargs):
+    def __init__(self, domain, codomain, **kwargs):
         self.domain = domain
-        self.range = range
+        self.codomain = codomain
         self.__dict__.update(**kwargs)
 
 
@@ -45,8 +45,8 @@ class BaseOperator:
         return self.params.domain
 
     @property
-    def range(self):
-        return self.params.range
+    def codomain(self):
+        return self.params.codomain
 
     def clone(self):
         cls = type(self)
@@ -66,14 +66,14 @@ class NonlinearOperator(BaseOperator):
         assert x in self.domain
         self.__revoke()
         y = self._eval(x, differentiate=False)
-        assert y in self.range
+        assert y in self.codomain
         return y
 
     def linearize(self, x):
         assert x in self.domain
         self.__revoke()
         y = self._eval(x, differentiate=True)
-        assert y in self.range
+        assert y in self.codomain
         deriv = Derivative(self.__get_handle())
         return y, deriv
 
@@ -104,7 +104,7 @@ class LinearOperator(BaseOperator):
     def __call__(self, x):
         assert x in self.domain
         y = self._eval(x)
-        assert y in self.range
+        assert y in self.codomain
         return y
 
     def linearize(self, x):
@@ -132,7 +132,7 @@ class LinearOperator(BaseOperator):
 
 class Adjoint(LinearOperator):
     def __init__(self, op):
-        super().__init__(Params(op.range, op.domain, op=op))
+        super().__init__(Params(op.codomain, op.domain, op=op))
 
     def _eval(self, x):
         return self.params.op._adjoint(x)
@@ -151,7 +151,7 @@ class Derivative(LinearOperator):
             # Wrap plain operators in a Revocable that will never be revoked to
             # avoid case distinctions below.
             op = Revocable(op)
-        super().__init__(Params(op.get().domain, op.get().range, op=op))
+        super().__init__(Params(op.get().domain, op.get().codomain, op=op))
 
     def clone(self):
         raise RuntimeError("Derivatives can't be cloned")

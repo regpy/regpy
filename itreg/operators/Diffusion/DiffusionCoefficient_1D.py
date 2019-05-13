@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 class DiffusionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, bc_left=None, bc_right=None, range=None, spacing=1):
-        range = range or domain
+    def __init__(self, domain, rhs, bc_left=None, bc_right=None, codomain=None, spacing=1):
+        codomain = codomain or domain
         if bc_left is None:
             bc_left=rhs[0]
         if bc_right is None:
@@ -28,7 +28,7 @@ class DiffusionCoefficient(NonlinearOperator):
         v = fes.TestFunction()   # symbolic object        
         Base=Diffusion_Base_1D()
         v_star=Base.tilde_g_builder(domain, bc_left, bc_right)
-        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, u=u, v=v, spacing=spacing, Base=Base, v_star=v_star))
+        super().__init__(Params(domain, codomain, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, u=u, v=v, spacing=spacing, Base=Base, v_star=v_star))
         
     @instantiate
     class operator(OperatorImplementation):

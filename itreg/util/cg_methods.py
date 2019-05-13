@@ -28,7 +28,7 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
     +--------------------+-------------------------------------+ 
     | :math:`F`          | self.op                             | 
     +--------------------+-------------------------------------+ 
-    | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.range.gram | 
+    | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.codomain.gram | 
     +--------------------+-------------------------------------+
     | :math:`G_X^{-1}`   | self.op.domain.gram_inv               |
     +--------------------+-------------------------------------+                  
@@ -56,7 +56,7 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
         Tolerance used by the while loop.
     """ 
     
-    auxy = op.range.gram(y)
+    auxy = op.codomain.gram(y)
     rtilde = op.adjoint(auxy)
     rtilde += regpar * op.domain.gram(xref)
     r = op.domain.gram_inv(rtilde)
@@ -67,7 +67,7 @@ def CGNE_reg(op, y, xref, regpar, cgmaxit=1000, cg_eps=1e-2):
     cg_step = 1
     
     while np.sqrt(norm_r/norm_r0) > cg_eps and cg_step <= cgmaxit:
-        auxY = op.range.gram(op(d))
+        auxY = op.codomain.gram(op(d))
         adtilde = op.adjoint(auxY) + regpar * op.domain.gram(d)
         
         ada = np.real(np.dot(adtilde, d))

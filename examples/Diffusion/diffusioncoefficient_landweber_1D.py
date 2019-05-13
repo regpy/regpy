@@ -38,7 +38,7 @@ exact_data = op(exact_solution)
 noise = 0.003 * op.domain.rand(np.random.randn)
 data = exact_data+noise
 
-#noiselevel = op.range.norm(noise)
+#noiselevel = op.codomain.norm(noise)
 
 init = 1.1*op.domain.one()
 init_data=op(init)
@@ -52,7 +52,7 @@ landweber = Landweber(op, data, init, stepsize=5)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(1000) +
-    rules.Discrepancy(op.range.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
