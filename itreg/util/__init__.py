@@ -74,43 +74,6 @@ def real2complex(x, axis=-1):
         return z
 
 
-def realdot(a, b):
-    if a.dtype.kind == b.dtype.kind == 'c':
-        if a.flags.c_contiguous and b.flags.c_contiguous:
-            # This is an optimization: iterating through contiguous memory once
-            # may be faster than twice, as done in the `else` branch.
-            return np.vdot(a.view(dtype=a.real.dtype), b.view(dtype=b.real.dtype))
-        else:
-            return np.vdot(a.real, b.real) + np.vdot(a.imag, b.imag)
-    else:
-        return np.vdot(a.real, b.real)
-
-
-def realmul(a, b):
-    """Elementwise product of complex arrays implicitly considered as real
-    arrays of double dimension:
-
-        realmut(complex(x1, y1), complex(x2, y2)) == complex(x1*x2, y1*y1)
-    """
-    a = np.asarray(a)
-    b = np.asarray(b)
-    if is_complex_dtype(a.dtype) and is_complex_dtype(b.dtype):
-        return a.real * b.real + 1j * a.imag * b.imag
-    else:
-        return a.real * b.real
-
-
-def getnamedtuple(*names):
-    names = tuple(names)
-    try:
-        return getnamedtuple._cache[names]
-    except KeyError:
-        cls = namedtuple('NamedTuple', *names)
-        getnamedtuple._cache[names] = cls
-        return cls
-getnamedtuple._cache = {}
-
-
 def is_real_dtype(dtype):
     return np.dtype(dtype).kind in 'biuf'
 

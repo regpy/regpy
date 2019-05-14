@@ -219,7 +219,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return util.realdot(x, self.gram(y))
+        return np.real(np.conj(x), self.gram(y))
 
     def norm(self, x):
         """Compute the norm of an element.

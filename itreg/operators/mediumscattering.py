@@ -161,8 +161,7 @@ class MediumScattering(NonlinearOperator):
                            .reshape(self.domain.shape))
             farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
         if self.params.amplitude:
-            return 2 * (self._farfield.real * farfield.real +
-                        self._farfield.imag * farfield.imag)
+            return 2 * np.real(self._farfield.conj() * farfield)
         else:
             return farfield
 
@@ -180,10 +179,8 @@ class MediumScattering(NonlinearOperator):
                 rhs = (self
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
                        .reshape(self.domain.shape))
-            rhs_supp = rhs[self.params.support]
-            contrast[self.params.support] += (
-                self._totalfield[:, j].real * rhs_supp.real +
-                self._totalfield[:, j].imag * rhs_supp.imag)
+            contrast[self.params.support] += np.real(
+                self._totalfield[:, j].conj() * rhs[self.params.support])
         return contrast
 
     def _solve_two_grid(self, rhs):
