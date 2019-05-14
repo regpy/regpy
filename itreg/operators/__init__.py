@@ -1,5 +1,7 @@
 import numpy as np
+from scipy.linalg import cho_factor, cho_solve
 
+from .. import spaces
 from .. import util
 
 
@@ -172,6 +174,43 @@ class Identity(LinearOperator):
 
     def _adjoint(self, x):
         return x
+
+
+class CholeskyInverse(LinearOperator):
+    def __init__(self, domain, matrix):
+        matrix = np.asarray(matrix)
+        assert matrix.shape == (domain.size,) * 2
+        assert util.is_real_dtype(matrix)
+        super().__init__(Params(
+            domain=domain,
+            codomain=domain,
+            factorization=cho_factor(matrix)))
+
+    def _eval(self, x):
+        return self.domain.fromflat(
+            cho_solve(self.params.factorization, self.domain.flatten(x)))
+
+    def _adjoint(self, x):
+        return self._eval(x)
+
+
+def CoordinateProjection(LinearOperator):
+    def __init__(self, domain, mask):
+        mask = np.asarray(mask)
+        assert mask.dtype == bool
+        assert mask.shape == domain.shape
+        super().__init__(Params(
+            domain=domain,
+            codomain=spaces.GenericDiscretization(np.sum(mask), dtype=domain.dtype),
+            mask=mask))
+
+    def _eval(self, x):
+        return x[self.params.mask]
+
+    def _adjoint(self, x):
+        y = self.domain.zeros()
+        y[self.params.mask] = x
+        return y
 
 
 from .mediumscattering import MediumScattering

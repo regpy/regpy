@@ -19,6 +19,8 @@ class GenericDiscretization:
         # Disallow objects, strings, times or other fancy dtypes
         assert dtype.kind in 'fc'
         self.dtype = dtype
+        if isinstance(shape, int):
+            shape = (shape,)
         self.shape = util.named(names, *shape)
         self.names = names
 
@@ -36,6 +38,16 @@ class GenericDiscretization:
         """Return an uninitalized element of the space.
         """
         return np.empty(self.shape, dtype=dtype or self.dtype)
+
+    def iter_basis(self):
+        elm = self.zeros()
+        for idx in np.ndindex(self.shape):
+            elm[idx] = 1
+            yield elm
+            if self.is_complex:
+                elm[idx] = 1j
+                yield elm
+            elm[idx] = 0
 
     def rand(self, rand=np.random.rand, dtype=None):
         """Return a random element of the space.
@@ -68,7 +80,7 @@ class GenericDiscretization:
         return util.is_complex_dtype(self.dtype)
 
     @property
-    def dim(self):
+    def size(self):
         if self.is_complex:
             return 2 * np.prod(self.shape)
         else:
@@ -77,10 +89,6 @@ class GenericDiscretization:
     @property
     def ndim(self):
         return len(self.shape)
-
-    @property
-    def size(self):
-        return np.prod(self.shape)
 
     @util.memoized_property
     def identity(self):
@@ -96,11 +104,27 @@ class GenericDiscretization:
         else:
             return False
 
-    # TODO
-    # def from1d(self, x):
-    #     pass
-    # def to1d(self, x):
-    #     pass
+    def flatten(self, x):
+        x = np.asarray(x)
+        assert self.shape == x.shape
+        if self.is_complex:
+            if util.is_complex_dtype(x.dtype):
+                return util.complex2real(x).ravel()
+            else:
+                aux = self.empty()
+                aux.real = x
+                return util.complex2real(aux).ravel()
+        elif util.is_complex_dtype(x.dtype):
+            raise TypeError('Real discretization can not handle complex vectors')
+        return x.ravel()
+
+    def fromflat(self, x):
+        x = np.asarray(x)
+        assert util.is_real_dtype(x.dtype)
+        if self.is_complex:
+            return util.real2complex(x.reshape(self.shape + (2,)))
+        else:
+            return x.reshape(self.shape)
 
 
 class Grid(GenericDiscretization):
@@ -257,19 +281,30 @@ class H1UniformGrid(HilbertSpace):
 
 
 class HilbertPullBack(HilbertSpace):
-    def __init__(self, op, space):
+
+    def __init__(self, op, space, inverse=None):
         assert isinstance(space, HilbertSpace)
         assert isinstance(op, operators.LinearOperator)
         assert op.codomain == space.discr
         self.op = op
         self.space = space
         self.discr = op.domain
+        if not inverse:
+            self.inverse = None
+        elif inverse == 'conjugate':
+            self.inverse = op.adjoint * space.gram_inv * op
+        elif inverse == 'cholesky':
+            G = np.empty((self.discr.size,) * 2, dtype=float)
+            for j, elm in self.discr.iter_basis():
+                G[j, :] = self.discr.flatten(self.gram(elm))
+            self.inverse = operators.CholeskyInverse(self.discr, G)
 
     @util.memoized_property
     def gram(self):
         return self.op.adjoint * self.space.gram * self.op
 
-    @util.memoized_property
+    @property
     def gram_inv(self):
-        # TODO This is not the inverse of gram!
-        return self.op.adjoint * self.space.gram_inv * self.op
+        if self.inverse:
+            return self.inverse
+        raise NotImplementedError

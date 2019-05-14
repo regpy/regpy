@@ -33,13 +33,24 @@ def named(names, *values):
         return getnamedtuple(names)(*values)
 
 
+def getnamedtuple(*names):
+    names = tuple(names)
+    try:
+        return getnamedtuple._cache[names]
+    except KeyError:
+        cls = namedtuple('NamedTuple', *names)
+        getnamedtuple._cache[names] = cls
+        return cls
+getnamedtuple._cache = {}
+
+
 def set_defaults(params, **defaults):
     defaults.update(params)
     return defaults
 
 
 def complex2real(z, axis=-1):
-    assert z.dtype.kind == 'c'
+    assert is_complex_dtype(z.dtype)
     if z.flags.c_contiguous:
         x = z.view(dtype=z.real.dtype).reshape(z.shape + (2,))
     else:
@@ -52,10 +63,10 @@ def complex2real(z, axis=-1):
 
 
 def real2complex(x, axis=-1):
-    assert x.dtype.kind != 'c'
+    assert is_real_dtype(x.dtype)
     assert x.shape[axis] == 2
     x = np.moveaxis(x, axis, -1)
-    if x.flags.c_contiguous:
+    if x.dtype.kind == 'f' and x.flags.c_contiguous:
         return x.view(dtype=np.result_type(1j, x))[..., 0]
     else:
         z = np.array(x[..., 0], dtype=np.result_type(1j, x))
