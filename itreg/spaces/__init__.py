@@ -281,10 +281,11 @@ class H1UniformGrid(HilbertSpace):
 
 
 class HilbertPullBack(HilbertSpace):
-
-    def __init__(self, op, space, inverse=None):
-        assert isinstance(space, HilbertSpace)
+    def __init__(self, space, op, inverse=None):
         assert isinstance(op, operators.LinearOperator)
+        if not isinstance(space, HilbertSpace) and callable(space):
+            space = space(op.codomain)
+        assert isinstance(space, HilbertSpace)
         assert op.codomain == space.discr
         self.op = op
         self.space = space
