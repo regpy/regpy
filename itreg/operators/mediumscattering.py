@@ -280,7 +280,7 @@ def compute_kernel_2D(R, shape):
     K_hat[Jzero] = -1/(2*R) + 1j*np.pi/4 * hankel1(1, R)
     K_hat[piabsJ == R] = 1j*np.pi*R/8 * (
         besselj(0, R) * hankel1(0, R) + besselj(1, R) * hankel1(1, R))
-    return 2 * R * np.fft.fftshift(K_hat)
+    return 2 * R * fftshift(K_hat)
 
 
 def compute_kernel_3D(R, shape):
@@ -292,4 +292,4 @@ def compute_kernel_3D(R, shape):
         1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sin(piabsJ) / piabsJ))
     K_hat[Jzero] = -(2*R)**(-1.5) * (1 - np.exp(1j*R) * (1 - 1j*R))
     K_hat[piabsJ == R] = -1j/4 * (2*R)**(-1/2) * (1 - np.exp(1j*R) * np.sin(R) / R)
-    return 2 * R * np.fft.fftshift(K_hat)
+    return 2 * R * fftshift(K_hat)
