@@ -29,8 +29,7 @@ scattering = MediumScattering(
 
 projection = CoordinateProjection(
     scattering.domain,
-    scattering.params.support,
-    inverse='cholesky')
+    scattering.params.support)
 embedding = projection.adjoint
 
 op = scattering * embedding
@@ -42,7 +41,7 @@ data = exact_data + noise
 noiselevel = np.linalg.norm(noise)
 init = 1.1 * op.domain.ones()
 
-domain = HilbertPullBack(L2, embedding)
+domain = HilbertPullBack(L2, embedding, inverse='cholesky')
 codomain = L2
 
 landweber = Landweber(op, domain, codomain, data, init, stepsize=0.01)
