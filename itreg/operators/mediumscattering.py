@@ -26,13 +26,15 @@ class MediumScattering(NonlinearOperator):
     """
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
-                 meas_directions, support=None, amplitude=False,
-                 coarseshape=None, coarseiterations=3, gmres_args={}):
+                 meas_directions, support=None, amplitude=False, refractive=True,
+                 absorptive=True, coarseshape=None, coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
-        # TODO should this be a complex space?
-        grid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, s, endpoint=False)
-                                    for s in gridshape))
+        assert refractive or absorptive
+        grid = spaces.UniformGrid(
+            *(np.linspace(-2*radius, 2*radius, s, endpoint=False)
+              for s in gridshape),
+            dtype=complex if refractive and absorptive else float)
 
         if support is None:
             support = (np.linalg.norm(grid.coords, axis=0) <= radius)
@@ -89,6 +91,8 @@ class MediumScattering(NonlinearOperator):
             wave_number=wave_number,
             support=support,
             amplitude=amplitude,
+            refractive=refractive,
+            absorptive=absorptive,
             coarse=coarse,
             gmres_args=gmres_args,
             kernel=compute_kernel(grid.shape)))
@@ -112,6 +116,8 @@ class MediumScattering(NonlinearOperator):
 
     def _eval(self, contrast, differentiate=False):
         contrast[~self.params.support] = 0
+        if self.params.absorptive and not self.params.refractive:
+            contrast = 1j * contrast
         self._contrast = contrast
         if self.params.coarse:
             # TODO take real part? what about even case? for 1d, highest
@@ -149,6 +155,8 @@ class MediumScattering(NonlinearOperator):
 
     def _derivative(self, contrast):
         contrast = contrast[self.params.support]
+        if self.params.absorptive and not self.params.refractive:
+            contrast = 1j * contrast
         farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         for j in range(self.codomain.shape.inc):
@@ -179,8 +187,14 @@ class MediumScattering(NonlinearOperator):
                 rhs = (self
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
                        .reshape(self.domain.shape))
-            contrast[self.params.support] += np.real(
-                self._totalfield[:, j].conj() * rhs[self.params.support])
+            aux = self._totalfield[:, j].conj() * rhs[self.params.support]
+            if self.params.refractive:
+                if self.params.absorptive:
+                    contrast[self.params.support] += aux
+                else:
+                    contrast[self.params.support] += np.real(aux)
+            else:
+                contrast[self.params.support] += np.imag(aux)
         return contrast
 
     def _solve_two_grid(self, rhs):
