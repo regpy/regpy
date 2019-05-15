@@ -19,7 +19,9 @@ class GenericDiscretization:
         # Disallow objects, strings, times or other fancy dtypes
         assert dtype.kind in 'fc'
         self.dtype = dtype
-        if isinstance(shape, int):
+        try:
+            iter(shape)
+        except TypeError:
             shape = (shape,)
         self.shape = util.named(names, *shape)
         self.names = names
@@ -74,6 +76,9 @@ class GenericDiscretization:
             return c
         else:
             return np.asarray(r, dtype=dtype)
+
+    def randn(self, dtype=None):
+        return self.rand(np.random.randn, dtype)
 
     @property
     def is_complex(self):
@@ -160,17 +165,20 @@ class Grid(GenericDiscretization):
 
         axes = []
         extents = []
+        spacing = []
         for i in range(self.ndim):
             slc = [0] * self.ndim
             slc[i] = slice(None)
             axis = self.coords[i][tuple(slc)]
             axes.append(axis)
-            extents.append(abs(axis[1] - axis[0]))
+            spacing.append(abs(axis[1] - axis[0]))
+            extents.append(abs(axis[-1] - axis[0]))
         # self.axes = named(names, *axes)
         self.axes = np.asarray(axes)
         # self.extents = named(names, *extents)
         self.extents = np.asarray(extents)
-        self.volume_elem = np.prod(self.extents)
+        self.spacing = np.asarray(spacing)
+        self.volume_elem = np.prod(self.spacing)
 
         if axisdata is not None:
             self.axisdata = util.named(names, *axisdata)
@@ -223,7 +231,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return np.real(np.conj(x), self.gram(y))
+        return np.real(np.vdot(np.conj(x), self.gram(y)))
 
     def norm(self, x):
         """Compute the norm of an element.
@@ -268,6 +276,8 @@ class L2Generic(HilbertSpace):
     def gram_inv(self):
         return self.discr.identity
 
+# TODO L2 for grids, with proper weights
+
 
 @genericspace
 def H1(discr, index=1):
@@ -300,7 +310,7 @@ class HilbertPullBack(HilbertSpace):
             self.inverse = op.adjoint * space.gram_inv * op
         elif inverse == 'cholesky':
             G = np.empty((self.discr.size,) * 2, dtype=float)
-            for j, elm in self.discr.iter_basis():
+            for j, elm in enumerate(self.discr.iter_basis()):
                 G[j, :] = self.discr.flatten(self.gram(elm))
             self.inverse = operators.CholeskyInverse(self.discr, G)
 

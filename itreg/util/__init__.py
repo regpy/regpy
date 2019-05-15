@@ -18,8 +18,9 @@ def memoized_property(prop):
         try:
             return getattr(self, attr)
         except AttributeError:
-            setattr(self, attr, prop(self))
-            return getattr(self, attr)
+            pass
+        setattr(self, attr, prop(self))
+        return getattr(self, attr)
 
     return mprop
 
@@ -74,12 +75,20 @@ def real2complex(x, axis=-1):
         return z
 
 
-def is_real_dtype(dtype):
-    return np.dtype(dtype).kind in 'biuf'
+def is_real_dtype(obj):
+    try:
+        dtype = obj.dtype
+    except AttributeError:
+        dtype = np.dtype(obj)
+    return dtype.kind in 'biuf'
 
 
-def is_complex_dtype(dtype):
-    return np.dtype(dtype).kind == 'c'
+def is_complex_dtype(obj):
+    try:
+        dtype = obj.dtype
+    except AttributeError:
+        dtype = np.dtype(obj)
+    return dtype.kind == 'c'
 
 
 def is_uniform(x):
