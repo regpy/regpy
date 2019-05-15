@@ -101,6 +101,18 @@ class NonlinearOperator(BaseOperator):
     def _adjoint(self, y):
         raise NotImplementedError
 
+    def __mul__(self, other):
+        if isinstance(other, BaseOperator):
+            return NonlinearOperatorComposition(self, other)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, BaseOperator):
+            return NonlinearOperatorComposition(other, self)
+        else:
+            return NotImplemented
+
 
 class LinearOperator(BaseOperator):
     def __call__(self, x):
@@ -130,6 +142,19 @@ class LinearOperator(BaseOperator):
 
     def _adjoint(self, x):
         raise NotImplementedError
+
+    def __mul__(self, other):
+        if isinstance(other, LinearOperator):
+            return LinearOperatorComposition(self, other)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, LinearOperator):
+            return LinearOperatorComposition(other, self)
+        else:
+            return NotImplemented
+
 
 
 class Adjoint(LinearOperator):
@@ -165,6 +190,40 @@ class Derivative(LinearOperator):
         return self.params.op.get()._adjoint(x)
 
 
+class NonlinearOperatorComposition(NonlinearOperator):
+    def __init__(self, f, g):
+        assert f.domain == g.codomain
+        super().__init__(Params(g.domain, f.codomain, f=f, g=g))
+
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            gx, dg_x = self.params.g.linearize(x)
+            y, df_gx = self.params.f.linearize(gx)
+            self._dg_x = dg_x
+            self._df_gx = df_gx
+            return y
+        else:
+            return self.params.f(self.params.g(x))
+
+    def _derivative(self, x):
+        return self._df_gx(self._dg_x(x))
+
+    def _adjoint(self, y):
+        return self._dg_x.adjoint(self._df_gx.adjoint(y))
+
+
+class LinearOperatorComposition(LinearOperator):
+    def __init__(self, f, g):
+        assert f.domain == g.codomain
+        super().__init__(Params(g.domain, f.codomain, f=f, g=g))
+
+    def _eval(self, x):
+        return self.params.f(self.params.g(x))
+
+    def _adjoint(self, y):
+        return self.params.g.adjoint(self.params.f.adjoint(y))
+
+
 class Identity(LinearOperator):
     def __init__(self, domain):
         super().__init__(Params(domain, domain))
@@ -194,7 +253,7 @@ class CholeskyInverse(LinearOperator):
         return self._eval(x)
 
 
-def CoordinateProjection(LinearOperator):
+class CoordinateProjection(LinearOperator):
     def __init__(self, domain, mask):
         mask = np.asarray(mask)
         assert mask.dtype == bool
