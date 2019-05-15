@@ -1,4 +1,4 @@
-from . import Solver, verify_hilbertspace_setting
+from . import Solver
 
 import logging
 import numpy as np
@@ -37,21 +37,19 @@ class Landweber(Solver):
         The step length to be used in the next step.
     """
 
-    def __init__(self, op, domain, codomain, rhs, init, stepsize=None):
+    def __init__(self, setting, rhs, init, stepsize=None):
         super().__init__()
-        self.op = op
-        self.domain, self.codomain = verify_hilbertspace_setting(
-            op, domain, codomain)
+        self.setting = setting
         self.rhs = rhs
         self.x = init
-        self.y, self.deriv = self.op.linearize(self.x)
+        self.y, self.deriv = self.setting.op.linearize(self.x)
         self.stepsize = stepsize or 1 / self.deriv.norm()
 
     def _next(self):
         residual = self.y - self.rhs
-        gy_residual = self.codomain.gram(residual)
-        self.x -= self.stepsize * self.domain.gram_inv(self.deriv.adjoint(gy_residual))
-        self.y, self.deriv = self.op.linearize(self.x)
+        gy_residual = self.setting.codomain.gram(residual)
+        self.x -= self.stepsize * self.setting.domain.gram_inv(self.deriv.adjoint(gy_residual))
+        self.y, self.deriv = self.setting.op.linearize(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
             norm_residual = np.sqrt(np.real(np.vdot(residual, gy_residual)))
