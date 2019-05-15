@@ -196,11 +196,23 @@ class UniformGrid(Grid):
             spacing.append(axis[1] - axis[0])
         self.spacing = util.named(self.names, *spacing)
 
-    # TODO
-    # @memoized_property
-    # def fft_dual_grid(self):
+    @util.memoized_property
+    def dualgrid(self):
+        # TODO check normalization
+        return UniformGrid(*(np.arange(-(s//2), (s+1)//2) / l
+                             for s, l in zip(self.shape, self.extents)),
+                           dtype=complex)
 
-    # maybe also add fft methods directly
+    def fft(self, x):
+        # TODO this ignores non-centered grids
+        return np.fft.fftshift(np.fft.fftn(x, norm='ortho'))
+
+    def ifft(self, x):
+        y = np.fft.ifftn(np.fft.ifftshift(x), norm='ortho')
+        if self.is_complex:
+            return y
+        else:
+            return np.real(y)
 
 
 class HilbertSpace:
@@ -287,11 +299,22 @@ def H1(discr, index=1):
 
 @H1.register(UniformGrid)
 class H1UniformGrid(HilbertSpace):
-    def __init__(self, discr, index=1):
+    def __init__(self, discr, index):
         self.discr = discr
         self.index = index
+        self.weights = (1 + np.linalg.norm(discr.dualgrid.coords, axis=0)**2) ** index
 
-    # TODO
+    @util.memoized_property
+    def gram(self):
+        ft = operators.FourierTransform(self.discr)
+        mul = operators.PointwiseMultiplication(self.discr.dualgrid, self.weights)
+        return ft.adjoint * mul * ft
+
+    @util.memoized_property
+    def gram_inv(self):
+        ft = operators.FourierTransform(self.discr)
+        mul = operators.PointwiseMultiplication(self.discr.dualgrid, 1/self.weights)
+        return ft.adjoint * mul * ft
 
 
 class HilbertPullBack(HilbertSpace):

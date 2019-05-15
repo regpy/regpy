@@ -272,5 +272,35 @@ class CoordinateProjection(LinearOperator):
         return y
 
 
+class PointwiseMultiplication(LinearOperator):
+    def __init__(self, domain, factor):
+        factor = np.asarray(factor)
+        # Check that factor can broadcast against domain elements without
+        # increasing their size.
+        assert factor.ndim <= domain.ndim
+        for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
+            assert sf == sd or sf == 1
+        assert domain.is_complex or not util.is_complex_dtype(factor)
+        super().__init__(Params(domain, domain, factor=factor))
+
+    def _eval(self, x):
+        return self.params.factor * x
+
+    def _adjoint(self, x):
+        return np.conj(self.params.factor) * x
+
+
+class FourierTransform(LinearOperator):
+    def __init__(self, domain):
+        assert isinstance(domain, spaces.UniformGrid)
+        super().__init__(Params(domain, domain.dualgrid))
+
+    def _eval(self, x):
+        return self.domain.fft(x)
+
+    def _adjoint(self, y):
+        return self.domain.ifft(y)
+
+
 from .mediumscattering import MediumScattering
 from .volterra import Volterra, NonlinearVolterra
