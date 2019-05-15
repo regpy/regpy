@@ -87,6 +87,10 @@ class GenericDiscretization:
             return np.prod(self.shape)
 
     @property
+    def csize(self):
+        return np.prod(self.shape)
+
+    @property
     def ndim(self):
         return len(self.shape)
 

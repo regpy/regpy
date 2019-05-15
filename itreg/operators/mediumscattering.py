@@ -103,13 +103,13 @@ class MediumScattering(NonlinearOperator):
         # These belong to self, not params, since they implicitly depend on
         # self._contrast
         self._lippmann_schwinger = spla.LinearOperator(
-            (self.domain.size,) * 2,
+            (self.domain.csize,) * 2,
             matvec=self._lippmann_schwinger_op,
             rmatvec=self._lippmann_schwinger_adjoint,
             dtype=complex)
         if self.params.coarse:
             self._lippmann_schwinger_coarse = spla.LinearOperator(
-                (self.params.coarse.grid.size,) * 2,
+                (self.params.coarse.grid.csize,) * 2,
                 matvec=self._lippmann_schwinger_coarse_op,
                 rmatevec=self._lippmann_schwinger_coarse_adjoint,
                 dtype=complex)
@@ -235,36 +235,34 @@ class MediumScattering(NonlinearOperator):
             self.log.warn('Gmres failed to converge')
         elif info < 0:
             self.log.warn('Illegal Gmres input or breakdown')
-        else:
-            self.log.info('Gmres converged')
         return result
 
     def _lippmann_schwinger_op(self, v):
         """Lippmann-Schwinger operator in spatial domain on fine grid
         """
         v = v.reshape(self.domain.shape)
-        v += self._contrast * ifftn(self.params.kernel * fftn(v))
+        v = v + self._contrast * ifftn(self.params.kernel * fftn(v))
         return v.ravel()
 
     def _lippmann_schwinger_adjoint(self, v):
         """Adjoint Lippmann-Schwinger operator in spatial domain on fine grid
         """
         v = v.reshape(self.domain.shape)
-        v += ifftn(np.conj(self.params.kernel) * fftn(np.conj(self._contrast) * v))
+        v = v + ifftn(np.conj(self.params.kernel) * fftn(np.conj(self._contrast) * v))
         return v.ravel()
 
     def _lippmann_schwinger_coarse_op(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
         v = v.reshape(self.params.coarse.grid.shape)
-        v += fftn(self._coarse_contrast * ifftn(self.params.coarse.kernel * v))
+        v = v + ftn(self._coarse_contrast * ifftn(self.params.coarse.kernel * v))
         return v.ravel()
 
     def _lippmann_schwinger_coarse_adjoint(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
         v = v.reshape(self.params.coarse.grid.shape)
-        v += np.conj(self.params.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
+        v = v + np.conj(self.params.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
         return v.ravel()
 
 
