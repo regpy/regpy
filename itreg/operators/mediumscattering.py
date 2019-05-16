@@ -70,8 +70,8 @@ class MediumScattering(NonlinearOperator):
                 raise ValueError('coarse grid is not coarser than fine grid')
             assert all(isinstance(c, int) for c in coarseshape)
             coarsegrid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, c, endpoint=False)
-                                              for c in coarseshape)),
-            coarse = dict(
+                                              for c in coarseshape))
+            coarse = Params(
                 grid=coarsegrid,
                 kernel=compute_kernel(coarsegrid.shape),
                 dualcoords=np.ix_(*(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)),
@@ -81,7 +81,7 @@ class MediumScattering(NonlinearOperator):
 
         gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
 
-        super().__init__(Params(
+        super().__init__(
             domain=grid,
             codomain=spaces.UniformGrid(axisdata=(meas_directions, inc_directions),
                                         names=('meas', 'inc'),
@@ -95,10 +95,10 @@ class MediumScattering(NonlinearOperator):
             absorptive=absorptive,
             coarse=coarse,
             gmres_args=gmres_args,
-            kernel=compute_kernel(grid.shape)))
+            kernel=compute_kernel(grid.shape))
 
     def _alloc(self):
-        self._totalfield = np.empty((np.sum(self.params.support), self.codomain.shape.inc,),
+        self._totalfield = np.empty((np.sum(self.support), self.codomain.shape.inc,),
                                     dtype=complex)
         # These belong to self, not params, since they implicitly depend on
         # self._contrast
@@ -107,25 +107,25 @@ class MediumScattering(NonlinearOperator):
             matvec=self._lippmann_schwinger_op,
             rmatvec=self._lippmann_schwinger_adjoint,
             dtype=complex)
-        if self.params.coarse:
+        if self.coarse:
             self._lippmann_schwinger_coarse = spla.LinearOperator(
-                (self.params.coarse.grid.csize,) * 2,
+                (self.coarse.grid.csize,) * 2,
                 matvec=self._lippmann_schwinger_coarse_op,
-                rmatevec=self._lippmann_schwinger_coarse_adjoint,
+                rmatvec=self._lippmann_schwinger_coarse_adjoint,
                 dtype=complex)
 
     def _eval(self, contrast, differentiate=False):
-        contrast[~self.params.support] = 0
-        if self.params.absorptive and not self.params.refractive:
+        contrast[~self.support] = 0
+        if self.absorptive and not self.refractive:
             contrast = 1j * contrast
         self._contrast = contrast
-        if self.params.coarse:
+        if self.coarse:
             # TODO take real part? what about even case? for 1d, highest
             # fourier coeff must be real then, which is not guaranteed by
             # subsampling here.
-            aux = fftn(self._contrast)[self.params.coarse.dualcoords]
+            aux = fftn(self._contrast)[self.coarse.dualcoords]
             self._coarse_contrast = (
-                (self.params.coarse.grid.size / self.domain.size) *
+                (self.coarse.grid.size / self.domain.size) *
                 ifftn(aux))
         farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
@@ -134,103 +134,103 @@ class MediumScattering(NonlinearOperator):
             # Solve Lippmann-Schwinger equation v + a(k*v) = a*u_inc for the
             # unknown v = a u_total. The Fourier coefficients of the periodic
             # convolution kernel k are precomputed.
-            rhs[self.params.support] = self.params.inc_matrix[j, :] * contrast[self.params.support]
-            if self.params.coarse:
+            rhs[self.support] = self.inc_matrix[j, :] * contrast[self.support]
+            if self.coarse:
                 v = self._solve_two_grid(rhs)
             else:
                 v = (self
                      ._gmres(self._lippmann_schwinger, rhs)
                      .reshape(self.domain.shape))
-            farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
+            farfield[:, j] = self.farfield_matrix @ v[self.support]
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = ui - k*v
             if differentiate:
-                self._totalfield[:, j] = (self.params.inc_matrix[j, :] -
-                                          ifftn(self.params.kernel * fftn(v))[self.params.support])
-        if self.params.amplitude:
+                self._totalfield[:, j] = (self.inc_matrix[j, :] -
+                                          ifftn(self.kernel * fftn(v))[self.support])
+        if self.amplitude:
             self._farfield = farfield
             return np.abs(farfield)**2
         else:
             return farfield
 
     def _derivative(self, contrast):
-        contrast = contrast[self.params.support]
-        if self.params.absorptive and not self.params.refractive:
+        contrast = contrast[self.support]
+        if self.absorptive and not self.refractive:
             contrast = 1j * contrast
         farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         for j in range(self.codomain.shape.inc):
-            rhs[self.params.support] = self._totalfield[:, j] * contrast
-            if self.params.coarse:
+            rhs[self.support] = self._totalfield[:, j] * contrast
+            if self.coarse:
                 v = self._solve_two_grid(rhs)
             else:
                 v, info = (self
                            ._gmres(self._lippmann_schwinger, rhs)
                            .reshape(self.domain.shape))
-            farfield[:, j] = self.params.farfield_matrix @ v[self.params.support]
-        if self.params.amplitude:
+            farfield[:, j] = self.farfield_matrix @ v[self.support]
+        if self.amplitude:
             return 2 * np.real(self._farfield.conj() * farfield)
         else:
             return farfield
 
     def _adjoint(self, farfield):
-        if self.params.amplitude:
+        if self.amplitude:
             farfield = 2 * self._farfield * farfield
         v = self.domain.zeros(dtype=complex)
-        farfield_matrix_H = self.params.farfield_matrix.conj().T
+        farfield_matrix_H = self.farfield_matrix.conj().T
         contrast = self.domain.zeros()
         for j in range(self.codomain.shape.inc):
-            v[self.params.support] = farfield_matrix_H @ farfield[:, j]
-            if self.params.coarse:
+            v[self.support] = farfield_matrix_H @ farfield[:, j]
+            if self.coarse:
                 rhs = self._solve_two_grid_adjoint(v)
             else:
                 rhs = (self
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
                        .reshape(self.domain.shape))
-            aux = self._totalfield[:, j].conj() * rhs[self.params.support]
-            if self.params.refractive:
-                if self.params.absorptive:
-                    contrast[self.params.support] += aux
+            aux = self._totalfield[:, j].conj() * rhs[self.support]
+            if self.refractive:
+                if self.absorptive:
+                    contrast[self.support] += aux
                 else:
-                    contrast[self.params.support] += np.real(aux)
+                    contrast[self.support] += np.real(aux)
             else:
-                contrast[self.params.support] += np.imag(aux)
+                contrast[self.support] += np.imag(aux)
         return contrast
 
     def _solve_two_grid(self, rhs):
         rhs = fftn(rhs)
         v = self.domain.zeros(dtype=complex)
         rhs_coarse = rhs[self.coarse.dualcoords]
-        for remaining_iters in range(self.params.coarse.iterations, 0, -1):
+        for remaining_iters in range(self.coarse.iterations, 0, -1):
             v_coarse = (self
                         ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
-                        .reshape(self.params.coarse.grid.shape))
-            v[self.params.coarse.dualcoords] = v_coarse
+                        .reshape(self.coarse.grid.shape))
+            v[self.coarse.dualcoords] = v_coarse
             if remaining_iters > 0:
                 rhs_coarse = fftn(self._coarse_contrast * ifftn(
-                    self.params.coarse.kernel * v_coarse))
-                v = rhs - fftn(self._contrast * ifftn(self.params.kernel * v))
-                rhs_coarse += v[self.params.coarse.dualcoords]
+                    self.coarse.kernel * v_coarse))
+                v = rhs - fftn(self._contrast * ifftn(self.kernel * v))
+                rhs_coarse += v[self.coarse.dualcoords]
         return ifftn(v)
 
     def _solve_two_grid_adjoint(self, v):
         v = fftn(v)
         rhs = self.domain.zeros(dtype=complex)
-        v_coarse = v[self.params.coarse.dualcoords]
-        for remaining_iters in range(self.params.coarse.iterations, 0, -1):
+        v_coarse = v[self.coarse.dualcoords]
+        for remaining_iters in range(self.coarse.iterations, 0, -1):
             rhs_coarse = (self
                           ._gmres(self._lippmann_schwinger_coarse.adjoint(), v_coarse)
-                          .reshape(self.params.coarse.grid.shape))
-            rhs[self.params.coarse.dualcoords] = rhs_coarse
+                          .reshape(self.coarse.grid.shape))
+            rhs[self.coarse.dualcoords] = rhs_coarse
             if remaining_iters > 0:
-                v_coarse = self.params.coarse.kernel * fftn(
+                v_coarse = self.coarse.kernel * fftn(
                     self._coarse_contrast * ifftn(rhs_coarse))
-                rhs = v - self.params.kernel * fftn(self._contrast * ifftn(rhs))
-                v_coarse += rhs[self.params.coarse.dualcoords]
+                rhs = v - self.kernel * fftn(self._contrast * ifftn(rhs))
+                v_coarse += rhs[self.coarse.dualcoords]
         return ifftn(rhs)
 
     def _gmres(self, op, rhs):
-        result, info = spla.gmres(op, rhs.ravel(), **self.params.gmres_args)
+        result, info = spla.gmres(op, rhs.ravel(), **self.gmres_args)
         if info > 0:
             self.log.warn('Gmres failed to converge')
         elif info < 0:
@@ -241,28 +241,28 @@ class MediumScattering(NonlinearOperator):
         """Lippmann-Schwinger operator in spatial domain on fine grid
         """
         v = v.reshape(self.domain.shape)
-        v = v + self._contrast * ifftn(self.params.kernel * fftn(v))
+        v = v + self._contrast * ifftn(self.kernel * fftn(v))
         return v.ravel()
 
     def _lippmann_schwinger_adjoint(self, v):
         """Adjoint Lippmann-Schwinger operator in spatial domain on fine grid
         """
         v = v.reshape(self.domain.shape)
-        v = v + ifftn(np.conj(self.params.kernel) * fftn(np.conj(self._contrast) * v))
+        v = v + ifftn(np.conj(self.kernel) * fftn(np.conj(self._contrast) * v))
         return v.ravel()
 
     def _lippmann_schwinger_coarse_op(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
-        v = v.reshape(self.params.coarse.grid.shape)
-        v = v + ftn(self._coarse_contrast * ifftn(self.params.coarse.kernel * v))
+        v = v.reshape(self.coarse.grid.shape)
+        v = v + fftn(self._coarse_contrast * ifftn(self.coarse.kernel * v))
         return v.ravel()
 
     def _lippmann_schwinger_coarse_adjoint(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
-        v = v.reshape(self.params.coarse.grid.shape)
-        v = v + np.conj(self.params.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
+        v = v.reshape(self.coarse.grid.shape)
+        v = v + np.conj(self.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
         return v.ravel()
 
 

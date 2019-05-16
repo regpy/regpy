@@ -6,9 +6,7 @@ from .. import util
 
 
 class Params:
-    def __init__(self, domain, codomain, **kwargs):
-        self.domain = domain
-        self.codomain = codomain
+    def __init__(self, **kwargs):
         self.__dict__.update(**kwargs)
 
 
@@ -35,25 +33,22 @@ class Revocable:
 class BaseOperator:
     log = util.classlogger
 
-    def __init__(self, params):
-        self.params = params
+    def __init__(self, domain, codomain, **kwargs):
+        self.__set_params(Params(domain=domain, codomain=codomain, **kwargs))
         self._alloc()
+
+    def __set_params(self, params):
+        self._params = params
+        self.__dict__.update(params.__dict__)
 
     def _alloc(self):
         pass
 
-    @property
-    def domain(self):
-        return self.params.domain
-
-    @property
-    def codomain(self):
-        return self.params.codomain
-
     def clone(self):
         cls = type(self)
         instance = cls.__new__(cls)
-        BaseOperator.__init__(instance, self.params)
+        instance.__set_params(self._params)
+        instance._alloc()
         return instance
 
     def __call__(self, x):
@@ -156,20 +151,19 @@ class LinearOperator(BaseOperator):
             return NotImplemented
 
 
-
 class Adjoint(LinearOperator):
     def __init__(self, op):
-        super().__init__(Params(op.codomain, op.domain, op=op))
+        super().__init__(op.codomain, op.domain, op=op)
 
     def _eval(self, x):
-        return self.params.op._adjoint(x)
+        return self.op._adjoint(x)
 
     def _adjoint(self, x):
-        return self.params.op._eval(x)
+        return self.op._eval(x)
 
     @property
     def adjoint(self):
-        return self.params.op
+        return self.op
 
 
 class Derivative(LinearOperator):
@@ -178,32 +172,32 @@ class Derivative(LinearOperator):
             # Wrap plain operators in a Revocable that will never be revoked to
             # avoid case distinctions below.
             op = Revocable(op)
-        super().__init__(Params(op.get().domain, op.get().codomain, op=op))
+        super().__init__(op.get().domain, op.get().codomain, op=op)
 
     def clone(self):
         raise RuntimeError("Derivatives can't be cloned")
 
     def _eval(self, x):
-        return self.params.op.get()._derivative(x)
+        return self.op.get()._derivative(x)
 
     def _adjoint(self, x):
-        return self.params.op.get()._adjoint(x)
+        return self.op.get()._adjoint(x)
 
 
 class NonlinearOperatorComposition(NonlinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
-        super().__init__(Params(g.domain, f.codomain, f=f, g=g))
+        super().__init__(g.domain, f.codomain, f=f, g=g)
 
     def _eval(self, x, differentiate=False):
         if differentiate:
-            gx, dg_x = self.params.g.linearize(x)
-            y, df_gx = self.params.f.linearize(gx)
+            gx, dg_x = self.g.linearize(x)
+            y, df_gx = self.f.linearize(gx)
             self._dg_x = dg_x
             self._df_gx = df_gx
             return y
         else:
-            return self.params.f(self.params.g(x))
+            return self.f(self.g(x))
 
     def _derivative(self, x):
         return self._df_gx(self._dg_x(x))
@@ -215,18 +209,18 @@ class NonlinearOperatorComposition(NonlinearOperator):
 class LinearOperatorComposition(LinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
-        super().__init__(Params(g.domain, f.codomain, f=f, g=g))
+        super().__init__(g.domain, f.codomain, f=f, g=g)
 
     def _eval(self, x):
-        return self.params.f(self.params.g(x))
+        return self.f(self.g(x))
 
     def _adjoint(self, y):
-        return self.params.g.adjoint(self.params.f.adjoint(y))
+        return self.g.adjoint(self.f.adjoint(y))
 
 
 class Identity(LinearOperator):
     def __init__(self, domain):
-        super().__init__(Params(domain, domain))
+        super().__init__(domain, domain)
 
     def _eval(self, x):
         return x
@@ -240,14 +234,14 @@ class CholeskyInverse(LinearOperator):
         matrix = np.asarray(matrix)
         assert matrix.shape == (domain.size,) * 2
         assert util.is_real_dtype(matrix)
-        super().__init__(Params(
+        super().__init__(
             domain=domain,
             codomain=domain,
-            factorization=cho_factor(matrix)))
+            factorization=cho_factor(matrix))
 
     def _eval(self, x):
         return self.domain.fromflat(
-            cho_solve(self.params.factorization, self.domain.flatten(x)))
+            cho_solve(self.factorization, self.domain.flatten(x)))
 
     def _adjoint(self, x):
         return self._eval(x)
@@ -258,17 +252,17 @@ class CoordinateProjection(LinearOperator):
         mask = np.asarray(mask)
         assert mask.dtype == bool
         assert mask.shape == domain.shape
-        super().__init__(Params(
+        super().__init__(
             domain=domain,
             codomain=spaces.GenericDiscretization(np.sum(mask), dtype=domain.dtype),
-            mask=mask))
+            mask=mask)
 
     def _eval(self, x):
-        return x[self.params.mask]
+        return x[self.mask]
 
     def _adjoint(self, x):
         y = self.domain.zeros()
-        y[self.params.mask] = x
+        y[self.mask] = x
         return y
 
 
@@ -281,19 +275,19 @@ class PointwiseMultiplication(LinearOperator):
         for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
             assert sf == sd or sf == 1
         assert domain.is_complex or not util.is_complex_dtype(factor)
-        super().__init__(Params(domain, domain, factor=factor))
+        super().__init__(domain, domain, factor=factor)
 
     def _eval(self, x):
-        return self.params.factor * x
+        return self.factor * x
 
     def _adjoint(self, x):
-        return np.conj(self.params.factor) * x
+        return np.conj(self.factor) * x
 
 
 class FourierTransform(LinearOperator):
     def __init__(self, domain):
         assert isinstance(domain, spaces.UniformGrid)
-        super().__init__(Params(domain, domain.dualgrid))
+        super().__init__(domain, domain.dualgrid)
 
     def _eval(self, x):
         return self.domain.fft(x)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import LinearOperator, NonlinearOperator, Params
+from . import LinearOperator, NonlinearOperator
 
 
 class Volterra(LinearOperator):
@@ -36,7 +36,7 @@ class Volterra(LinearOperator):
         codomain = codomain or domain
         assert len(domain.shape) == 1
         assert domain.shape == codomain.shape
-        super().__init__(Params(domain, codomain, spacing=spacing))
+        super().__init__(domain, codomain, spacing=spacing)
 
     def _eval(self, x):
         return self.params.spacing * np.cumsum(x)
@@ -70,7 +70,7 @@ class NonlinearVolterra(NonlinearOperator):
         assert len(domain.shape) == 1
         assert domain.shape == codomain.shape
         super().__init__(
-            Params(domain, codomain, exponent=exponent, spacing=spacing))
+            domain, codomain, exponent=exponent, spacing=spacing)
 
     def _eval(self, x, differentiate=False):
         if differentiate:

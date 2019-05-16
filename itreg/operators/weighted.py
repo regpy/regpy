@@ -1,4 +1,4 @@
-from . import LinearOperator, Params
+from . import LinearOperator
 from itreg.util import instantiate
 
 
@@ -15,7 +15,7 @@ class Weighted(LinearOperator):
 
     def __init__(self, op, weight):
         super().__init__(
-            Params(op.params.domain, op.params.codomain, op=op, weight=weight))
+            op.params.domain, op.params.codomain, op=op, weight=weight)
 
     @instantiate
     class operator:

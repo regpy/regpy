@@ -33,7 +33,7 @@ contrast[r < 1] = np.exp(-1/(1 - r[r < 1]**2))
 
 projection = CoordinateProjection(
     scattering.domain,
-    scattering.params.support)
+    scattering.support)
 embedding = projection.adjoint
 
 op = scattering * embedding
