@@ -16,8 +16,9 @@ class GenericDiscretization:
         # Upcast dtype to represent at least (single-precision) floats, no
         # bools or ints
         dtype = np.result_type(np.float32, dtype)
-        # Disallow objects, strings, times or other fancy dtypes
-        assert dtype.kind in 'fc'
+        # Allow only floats and complexflaot, disallow objects, strings, times
+        # or other fancy dtypes
+        assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
         try:
             iter(shape)

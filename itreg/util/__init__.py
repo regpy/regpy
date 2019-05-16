@@ -67,7 +67,7 @@ def real2complex(x, axis=-1):
     assert is_real_dtype(x.dtype)
     assert x.shape[axis] == 2
     x = np.moveaxis(x, axis, -1)
-    if x.dtype.kind == 'f' and x.flags.c_contiguous:
+    if np.issubdtype(x.dtype, np.floating) and x.flags.c_contiguous:
         return x.view(dtype=np.result_type(1j, x))[..., 0]
     else:
         z = np.array(x[..., 0], dtype=np.result_type(1j, x))
@@ -80,7 +80,8 @@ def is_real_dtype(obj):
         dtype = obj.dtype
     except AttributeError:
         dtype = np.dtype(obj)
-    return dtype.kind in 'biuf'
+    return (np.issubdtype(dtype, np.number) and not
+            np.issubdtype(dtype, np.complexfloating))
 
 
 def is_complex_dtype(obj):
@@ -88,7 +89,7 @@ def is_complex_dtype(obj):
         dtype = obj.dtype
     except AttributeError:
         dtype = np.dtype(obj)
-    return dtype.kind == 'c'
+    return np.issubdtype(dtype, np.complexfloating)
 
 
 def is_uniform(x):
