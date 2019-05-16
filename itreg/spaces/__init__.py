@@ -330,12 +330,11 @@ class HilbertPullBack(HilbertSpace):
         if not inverse:
             self.inverse = None
         elif inverse == 'conjugate':
+            self.log.info(
+                'Note: Using using T* G^{-1} T as inverse of T* G T. This is probably not correct.')
             self.inverse = op.adjoint * space.gram_inv * op
         elif inverse == 'cholesky':
-            G = np.empty((self.discr.size,) * 2, dtype=float)
-            for j, elm in enumerate(self.discr.iter_basis()):
-                G[j, :] = self.discr.flatten(self.gram(elm))
-            self.inverse = operators.CholeskyInverse(self.discr, G)
+            self.inverse = operators.CholeskyInverse(self.gram)
 
     @util.memoized_property
     def gram(self):

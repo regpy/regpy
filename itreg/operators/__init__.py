@@ -230,10 +230,12 @@ class Identity(LinearOperator):
 
 
 class CholeskyInverse(LinearOperator):
-    def __init__(self, domain, matrix):
-        matrix = np.asarray(matrix)
-        assert matrix.shape == (domain.size,) * 2
-        assert util.is_real_dtype(matrix)
+    def __init__(self, op):
+        assert op.domain == op.codomain
+        domain = op.domain
+        matrix = np.empty((domain.size,) * 2, dtype=float)
+        for j, elm in enumerate(domain.iter_basis()):
+            matrix[j, :] = domain.flatten(op(elm))
         super().__init__(
             domain=domain,
             codomain=domain,
