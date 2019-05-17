@@ -25,6 +25,7 @@ scattering = MediumScattering(
     inc_directions=util.linspace_circle(16),
     meas_directions=util.linspace_circle(16),
     # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
+    # coarseshape=(17, 17),
     amplitude=False)
 
 contrast = scattering.domain.zeros()
@@ -42,7 +43,6 @@ exact_solution = projection(contrast)
 exact_data = op(exact_solution)
 noise = 0.03 * op.codomain.randn()
 data = exact_data + noise
-noiselevel = np.linalg.norm(noise)
 init = 1.1 * op.domain.ones()
 
 setting = HilbertSpaceSetting(
@@ -53,7 +53,9 @@ setting = HilbertSpaceSetting(
 landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.1, tau=1))
+    rules.Discrepancy(setting.codomain.norm, data,
+                      noiselevel=setting.domain.norm(noise),
+                      tau=1))
 
 reco, reco_data = landweber.run(stoprule)
 solution = embedding(reco)

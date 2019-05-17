@@ -1,6 +1,7 @@
 import numpy as np
 
 from . import LinearOperator, NonlinearOperator
+from ..spaces import UniformGrid
 
 
 class Volterra(LinearOperator):
@@ -22,27 +23,26 @@ class Volterra(LinearOperator):
     -----
     The Volterra operator :math:`V` is defined as
 
-    .. math:: (Vf)(x) = \int_0^x f(t) dt.
+    .. math:: (Vf)(x) = \\int_0^x f(t) dt.
 
     Its discrete form, using a Riemann sum, is simply
 
-    .. math:: (Vx)_i = h \sum_{j \leq i} x_j,
+    .. math:: (Vx)_i = h \\sum_{j \\leq i} x_j,
 
     where :math:`h` is the grid spacing.
     """
 
     # TODO get rid of spacing
-    def __init__(self, domain, codomain=None, spacing=1):
-        codomain = codomain or domain
-        assert len(domain.shape) == 1
-        assert domain.shape == codomain.shape
-        super().__init__(domain, codomain, spacing=spacing)
+    def __init__(self, domain):
+        assert isinstance(domain, UniformGrid)
+        assert domain.ndim == 1
+        super().__init__(domain, domain)
 
     def _eval(self, x):
-        return self.params.spacing * np.cumsum(x)
+        return self.domain.volume_elem * np.cumsum(x)
 
     def _adjoint(self, y):
-        return self.params.spacing * np.flipud(np.cumsum(np.flipud(y)))
+        return self.domain.volume_elem * np.flipud(np.cumsum(np.flipud(y)))
 
 
 class NonlinearVolterra(NonlinearOperator):
@@ -51,7 +51,7 @@ class NonlinearVolterra(NonlinearOperator):
     This is like the linear :class:`~itreg.operators.Volterra` operator with an
     additional exponent:
 
-    .. math:: (Vx)_i = h \sum_{j \leq i} x_j^n,
+    .. math:: (Vx)_i = h \\sum_{j \\leq i} x_j^n,
 
     Parameters
     ----------
@@ -65,21 +65,20 @@ class NonlinearVolterra(NonlinearOperator):
         The grid spacing. Defaults to 1.
     """
 
-    def __init__(self, domain, exponent, codomain=None, spacing=1):
-        codomain = codomain or domain
-        assert len(domain.shape) == 1
-        assert domain.shape == codomain.shape
+    def __init__(self, domain, exponent):
+        assert isinstance(domain, UniformGrid)
+        assert domain.ndim == 1
         super().__init__(
-            domain, codomain, exponent=exponent, spacing=spacing)
+            domain, domain, exponent=exponent)
 
     def _eval(self, x, differentiate=False):
         if differentiate:
-            self.factor = self.params.exponent * x**(self.params.exponent - 1)
-        return self.params.spacing * np.cumsum(x**self.params.exponent)
+            self.factor = self.exponent * x**(self.exponent - 1)
+        return self.domain.volume_elem * np.cumsum(x**self.exponent)
 
     def _derivative(self, x):
-        return self.params.spacing * np.cumsum(self.factor * x)
+        return self.domain.volume_elem * np.cumsum(self.factor * x)
 
     def _adjoint(self, y):
-        return self.params.spacing * np.flipud(np.cumsum(np.flipud(
+        return self.domain.volume_elem * np.flipud(np.cumsum(np.flipud(
             self.factor * y)))
