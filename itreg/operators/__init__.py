@@ -59,10 +59,6 @@ class BaseOperator:
 
     def linearize(self, x):
         raise NotImplementedError
-    
-    #Jakob
-    def getArg(key):
-    	return self.__dict__.get(key)
 
 
 class NonlinearOperator(BaseOperator):
@@ -162,58 +158,46 @@ class Derivative(LinearOperator):
     def _adjoint(self, x):
         return self.params.op.get()._adjoint(x)
 
-################################################################################
-
-#Fragen:
-#1. Woher kommt das handle in NonlinearOperator und was macht das?
-#2. Was genau soll bei NonlinearOperator passieren wenn differentiate=True?
-#3. Meines Erachtens nach berechnet die _adjoint Funktion in der
-#	Derivative-Klasse aktuell die adjungierte des originalen Operators,
-#	müsste die nicht eigentlich die adjungierte der Ableitung berechnen?
-#4. Wie sieht im Allgemeinen die Adjungierte der Ableitung der Komposition
-#	zweier nicht-linearer Operatoren aus?
-#5. Derivative für lineare Operatoren nicht gebraucht? Was ist mit so Sachen wie
-#	k*x linearer Operator, aktuell würde linearize für die ableitung widerum
-#	k*x speichern, was dann zu falschen Ergebnissen führt.
-#6.	NonlinearOperator hat keine property adjoint, soll das so?
-#7. Kann derivative auch ne property werden? Dann wäre das ganze einheitlich
-
 
 #TODO Testing, need to define some simple cases first
 class LinearCombination(LinearOperator):
 	#TODO Domain and range query for scalars missing
 	def __init__(self, f, g, scalar_f, scalar_g):
-		if(f.domain() != g.domain() or f.range() != g.range()):
-			raise ValueError('Domains and Ranges of Operators must be the same')
-		args = {f:f, g:g, scalar_f:scalar_f, scalar_g:scalar_g}
-		super().__init__(Params(f.domain(), f.range(), args))
+		assert f.domain == g.domain and f.range == g.range, "Domains and Ranges of Operators must be the same"
+		super().__init__(Params(f.domain, f.range, f=f, g=g, scalar_f = scalar_f, scalar_g = scalar_g))
 	
 	def _eval(self, x):
-		return (self.getArg(scalar_f) * self.getArg(f)._eval(x) +
-				self.getArg(scalar_g) * self.getArg(g)._eval(x))
-	
-	#f._adjoint(x) oder f.adjoint._eval(x) verwenden?
+		return self.params.scalar_f * self.params.f.__call__(x) + self.params.scalar_g * self.params.g.__call__(x)
+
 	def _adjoint(self, x):
-		return self.getArg(scalar_f) * self.getArg(f).adjoint._eval(x) + self.getArg(scalar_g) * self.getArg(g).adjoint._eval(x)
+		return self.params.scalar_f * self.params.f._adjoint(x) + self.params.scalar_g * self.params.g._adjoint(x)
+
+################################################################################
+#Frage: Wie kann ich neue Werte in Params abspeichern, wie hier zum Beispiel die
+#		Ableitungen? Und falls das nicht geht, wie soll ich die sonst speichern?
+
 
 class Composition(NonlinearOperator):
 	def __init__(self,f,g):
-		if(f.domain() != g.range()):
-			raise ValueError('For f∘g, domain of f and' +
-							 'range of g must be the same')
-		super().__init__(Params(g.domain(), f.range(), {f:f, g:g}))
+		assert f.domain == g.range, "For f∘g, domain of f and range of g must be the same"
+		super().__init__(Params(g.domain, f.range, f=f, g=g))
 	
 	def _eval(self, x, differentiate = False):
-		return self.getArg(f)._eval(self.getArg(g)._eval(x))
+		#if differentiate save linearizations in x of g and f∘g now
+		if (differentiate):
+			self.params.__dict__.update(gx,dgx = self.params.g.linearize(x))
+			self.params.__dict__.update(fgx, dfgx = self.params.f.linearize(gx))
+		else:
+			self.params.__dict__.update(gx = self.params.g.__call__(x))
+			self.params.__dict__.update(fgx = self.params.f.__call__(gx))
+		return self.params.fgx
 	
-	def _adjoint(self, x):
-		return self.getArg(g)._adjoint(self.getArg(f)._adjoint(x))
+	def _adjoint(self, h):
+		return self.params.dgx._adjoint(h) * self.params.dfgx._adjoint(h)
 	
-	#not sure if this works
-	def _derivative(self, x):
-		g, dg = self.getArg(g).linearize(x)
-		fg, dfg = self.getArg(f).linearize(g)
-		return dg*dfg
+	#evaluate linearizations saved earlier in a possibly distinct point h
+	def _derivative(self, h):
+		return self.params.dgx._eval(h) * self.params.dfgx._eval(h)
 		
 	
 
