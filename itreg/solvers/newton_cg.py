@@ -80,9 +80,10 @@ class Newton_CG(Solver):
         self._x_k = np.zeros(np.shape(self.x))       
         self.y = self.op(self.x)                   
         self._residual = self.data - self.y
-        self._s = self._residual - self.op.derivative.eval(self.op.params, self._x_k)
+        _, self.deriv=self.op.linearize(self.x)
+        self._s = self._residual - self.deriv(self._x_k)
         self._s2 = self.op.codomain.gram(self._s)
-        self._rtilde = self.op.adjoint(self._s2)
+        self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.op.domain.gram_inv(self._rtilde)
         self._d = self._r
         self._innerProd = self.op.domain.inner(self._r,self._rtilde)
@@ -91,13 +92,13 @@ class Newton_CG(Solver):
      
     def inner_update(self):
         """Compute variables in each CG iteration."""
-        
-        self._aux = self.op.derivative.eval(self.op.params, self._d)
+        _, self.deriv=self.op.linearize(self.x)
+        self._aux = self.deriv(self._d)
         self._aux2 = self.op.codomain.gram(self._aux)
         self._alpha = (self._innerProd
                        / np.real(self.op.codomain.inner(self._aux,self._aux2)))
         self._s2 += -self._alpha*self._aux2
-        self._rtilde = self.op.adjoint(self._s2)
+        self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.op.domain.gram_inv(self._rtilde)
         self._beta = (np.real(self.op.codomain.inner(self._r,self._rtilde))
                       / self._innerProd)  

@@ -59,7 +59,7 @@ class IRNM_KL(Solver):
         Number of iterations.
     """
 
-    def __init__(self, op, data, init, alpha0=5e-6, alpha_step=2/3.,
+    def __init__(self, op, data, init, continuum, alpha0=5e-6, alpha_step=2/3.,
                  intensity=1):
         """Initialize parameters """
         
@@ -67,6 +67,7 @@ class IRNM_KL(Solver):
         self.op = op
         self.data = data
         self.init = init
+        self.continuum=continuum
         self.x = self.init
         self.y = self.op(self.x)
         
@@ -85,9 +86,8 @@ class IRNM_KL(Solver):
             Always True, as the IRNM_KL method never stops on its own.
 
         """
-        
         self._sqp = SQP(self.op, self.data, self.init, self.x, self.y,
-                        self.alpha, self.k, self.intensity)
+                        self.alpha, self.k, self.x, self.intensity)
         self.x = self._sqp.run()
         self.k += 1
         self.y = self.op(self.x)
