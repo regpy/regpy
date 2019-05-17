@@ -12,7 +12,7 @@ class GenericDiscretization:
 
     log = util.classlogger
 
-    def __init__(self, shape, names=None, dtype=float):
+    def __init__(self, shape, dtype=float):
         # Upcast dtype to represent at least (single-precision) floats, no
         # bools or ints
         dtype = np.result_type(np.float32, dtype)
@@ -21,11 +21,9 @@ class GenericDiscretization:
         assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
         try:
-            iter(shape)
+            self.shape = tuple(shape)
         except TypeError:
             shape = (shape,)
-        self.shape = util.named(names, *shape)
-        self.names = names
 
     def zeros(self, dtype=None):
         """Return the zero element of the space.
@@ -138,7 +136,7 @@ class GenericDiscretization:
 
 
 class Grid(GenericDiscretization):
-    def __init__(self, *coords, names=None, axisdata=None, dtype=float):
+    def __init__(self, *coords, axisdata=None, dtype=float):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
@@ -155,34 +153,25 @@ class Grid(GenericDiscretization):
             # copy using asarray anyway?
             v.flags.writeable = False
             views.append(v)
-        # TODO Names would be nice, but providing an ndarray is more important.
-        # Maybe add a "namedarray" class?
-        # self.coords = named(names, *np.broadcast_arrays(*views))
         self.coords = np.asarray(np.broadcast_arrays(*views))
         assert self.coords[0].ndim == len(self.coords)
         # TODO ensure coords are ascending?
 
-        super().__init__(self.coords[0].shape, names, dtype)
+        super().__init__(self.coords[0].shape, dtype)
 
         axes = []
         extents = []
-        spacing = []
         for i in range(self.ndim):
             slc = [0] * self.ndim
             slc[i] = slice(None)
             axis = self.coords[i][tuple(slc)]
             axes.append(axis)
-            spacing.append(abs(axis[1] - axis[0]))
             extents.append(abs(axis[-1] - axis[0]))
-        # self.axes = named(names, *axes)
         self.axes = np.asarray(axes)
-        # self.extents = named(names, *extents)
         self.extents = np.asarray(extents)
-        self.spacing = np.asarray(spacing)
-        self.volume_elem = np.prod(self.spacing)
 
         if axisdata is not None:
-            self.axisdata = util.named(names, *axisdata)
+            self.axisdata = tuple(axisdata)
             assert len(self.axisdata) == len(self.coords)
             for i in range(len(self.axisdata)):
                 assert self.shape[i] == self.axisdata[i].shape[0]
@@ -195,7 +184,8 @@ class UniformGrid(Grid):
         for axis in self.axes:
             assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
-        self.spacing = util.named(self.names, *spacing)
+        self.spacing = np.asarray(*spacing)
+        self.volume_elem = np.prod(self.spacing)
 
     @util.memoized_property
     def dualgrid(self):

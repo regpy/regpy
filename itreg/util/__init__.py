@@ -1,4 +1,3 @@
-from collections import namedtuple
 from functools import wraps
 from logging import getLogger
 import numpy as np
@@ -23,26 +22,6 @@ def memoized_property(prop):
         return getattr(self, attr)
 
     return mprop
-
-
-def named(names, *values):
-    if names is None:
-        return tuple(values)
-    elif isinstance(names, type):
-        return names(*values)
-    else:
-        return getnamedtuple(names)(*values)
-
-
-def getnamedtuple(*names):
-    names = tuple(names)
-    try:
-        return getnamedtuple._cache[names]
-    except KeyError:
-        cls = namedtuple('NamedTuple', *names)
-        getnamedtuple._cache[names] = cls
-        return cls
-getnamedtuple._cache = {}
 
 
 def set_defaults(params, **defaults):
