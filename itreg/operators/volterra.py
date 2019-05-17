@@ -1,7 +1,7 @@
 import numpy as np
 
 from . import LinearOperator, NonlinearOperator
-from ..spaces import UniformGrid
+from .. import spaces
 
 
 class Volterra(LinearOperator):
@@ -34,7 +34,7 @@ class Volterra(LinearOperator):
 
     # TODO get rid of spacing
     def __init__(self, domain):
-        assert isinstance(domain, UniformGrid)
+        assert isinstance(domain, spaces.UniformGrid)
         assert domain.ndim == 1
         super().__init__(domain, domain)
 
@@ -66,7 +66,7 @@ class NonlinearVolterra(NonlinearOperator):
     """
 
     def __init__(self, domain, exponent):
-        assert isinstance(domain, UniformGrid)
+        assert isinstance(domain, spaces.UniformGrid)
         assert domain.ndim == 1
         super().__init__(
             domain, domain, exponent=exponent)

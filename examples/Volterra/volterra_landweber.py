@@ -33,10 +33,10 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-plt.plot(grid.coords.T, exact_solution.T, label='exact solution')
-plt.plot(grid.coords.T, reco, label='reco')
-plt.plot(grid.coords.T, exact_data, label='exact data')
-plt.plot(grid.coords.T, data, label='data')
-plt.plot(grid.coords.T, reco_data, label='reco data')
+plt.plot(grid.coords[0], exact_solution.T, label='exact solution')
+plt.plot(grid.coords[0], reco, label='reco')
+plt.plot(grid.coords[0], exact_data, label='exact data')
+plt.plot(grid.coords[0], data, label='data')
+plt.plot(grid.coords[0], reco_data, label='reco data')
 plt.legend()
 plt.show()
