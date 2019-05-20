@@ -5,13 +5,16 @@ class Power(op.NonlinearOperator):
 		super().__init__(op.Params(None, None, p=p))
 	
 	def _eval(self, x, differentiate = False):
-		self.params.__dict__.update(x = x)
-		self.params.__dict__.update(fx = x**self.params.p)
-		self.params.__dict__.update(dfx = self.params.p*x**(self.params.p-1))
+		self.params.x = x
+		self.params.fx = x**self.params.p
+		if(differentiate):
+			self.params.dfx = self.params.p*x**(self.params.p-1)
 		return self.params.fx
 	
+	#erklärung für h!=x brauche ich noch.
 	def _derivative(self, h):
-		return self.params.fx + self.params.dfx(h-self.params.x)
+		return self.params.dfx
+		
 	def _adjoint(self, x):
 		return self.__call__(x)
 
@@ -25,14 +28,25 @@ class Scale(op.LinearOperator):
 	def _adjoint(self, x):
 		return self.__call__(x)
 
-p = Power(2)
-s = Scale(2)
+po = 3
+sc = 2
+d = 3
+p = Power(po)
+s = Scale(sc)
+
+print(str(d) + '**' + str(po) + ' = ' + str(p.__call__(d)))
+print(str(d) + '*' + str(sc) + ' = ' + str(s.__call__(d)))
+y,dy = p.linearize(d)
+print(str(po) + '*' + str(d) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
 
 LC = op.LinearCombination(p,s,1,1)
-d = 2
-print(LC._eval(d))
-print(LC._adjoint(d))
+print(str(d) + '*' + str(sc) + ' + ' + str(d) + '**' + str(po) + ' = ' + str(LC.__call__(d)))
+A = LC.adjoint
+#print(A._adjoint(d))
+#print(A.__call__(d))
+
 C = op.Composition(p,s)
-print(C._eval(d))
-print(C._adjoint(d))
-print(C._derivative(d))
+print('(' + str(sc) + '*' + str(d) + ')**' + str(po) + ' = ' + str(C.__call__(d)))
+y,dy = C.linearize(d)
+print(str(sc) + '*' + str(po) + '*' + str(s.__call__(d)) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
+#print(dy._adjoint(d))
