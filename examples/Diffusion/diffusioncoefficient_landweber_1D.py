@@ -28,7 +28,7 @@ meshsize=100
 
 from ngsolve import *
 rhs=10*sin(x)
-op = DiffusionCoefficient_alternate(domain, meshsize, rhs=rhs, bc_left=1, bc_right=2)
+op = DiffusionCoefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=2)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = cos(x)
