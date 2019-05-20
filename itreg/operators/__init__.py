@@ -184,7 +184,7 @@ class Composition(NonlinearOperator):
 			_gx,_dgx = self.params.g.linearize(x)
 			self._gx = _gx
 			self._dgx = _dgx
-			fgx, dfgx = self.params.f.linearize(_gx)
+			_fgx, _dfgx = self.params.f.linearize(_gx)
 			self._fgx = _fgx
 			self._dfgx = _dfgx
 		else:
