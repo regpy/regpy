@@ -197,8 +197,7 @@ class Composition(NonlinearOperator):
 	
 	#evaluate linearizations saved earlier in a possibly distinct point h
 	def _derivative(self, h):
-		print(self._dgx.__call__(h))
-		return self._dgx.__call__(h) * self._dfgx.__call__(h)
+		return self._dfgx.__call__(self._dgx.__call__(h))
 		
 	
 
