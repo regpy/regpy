@@ -5,15 +5,14 @@ class Power(op.NonlinearOperator):
 		super().__init__(op.Params(None, None, p=p))
 	
 	def _eval(self, x, differentiate = False):
-		self.params.x = x
-		self.params.fx = x**self.params.p
+		self.x = x
+		self.fx = x**self.params.p
 		if(differentiate):
-			self.params.dfx = self.params.p*x**(self.params.p-1)
-		return self.params.fx
+			self.dfx = self.params.p*x**(self.params.p-1)
+		return self.fx
 	
-	#erklärung für h!=x brauche ich noch.
 	def _derivative(self, h):
-		return self.params.dfx
+		return self.dfx*h
 		
 	def _adjoint(self, x):
 		return self.__call__(x)
@@ -26,7 +25,7 @@ class Scale(op.LinearOperator):
 		return self.params.s*x
 	
 	def _adjoint(self, x):
-		return self.__call__(x)
+		return self(x)
 
 po = 3
 sc = 2
@@ -49,4 +48,4 @@ C = op.Composition(p,s)
 print('(' + str(sc) + '*' + str(d) + ')**' + str(po) + ' = ' + str(C.__call__(d)))
 y,dy = C.linearize(d)
 print(str(sc) + '*' + str(po) + '*' + str(s.__call__(d)) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
-#print(dy._adjoint(d))
+print(dy._adjoint(d))
