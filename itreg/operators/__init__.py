@@ -5,11 +5,6 @@ from .. import spaces
 from .. import util
 
 
-class Params:
-    def __init__(self, **kwargs):
-        self.__dict__.update(**kwargs)
-
-
 class Revocable:
     def __init__(self, val):
         self.__val = val
@@ -33,23 +28,53 @@ class Revocable:
 class BaseOperator:
     log = util.classlogger
 
-    def __init__(self, domain, codomain, **kwargs):
-        self.__set_params(Params(domain=domain, codomain=codomain, **kwargs))
+    def __init__(self, domain, codomain, *, cloneparams=[]):
+        assert isinstance(domain, spaces.GenericDiscretization)
+        assert isinstance(codomain, spaces.GenericDiscretization)
+        self.domain, self.codomain = domain, codomain
+        for attr in self.__dict__:
+            if attr.startswith('_'):
+                self.log.warn(
+                    'Data attribute {} set in constructor, should probably be set in _alloc method'
+                    .format(attr))
+        for attr in cloneparams:
+            assert not attr.startswith('_'), 'Data attribute {} listed in cloneparams'.format(attr)
+        self._cloneparams = cloneparams
+        self._frozen = True
         self._alloc()
-
-    def __set_params(self, params):
-        self._params = params
-        self.__dict__.update(params.__dict__)
 
     def _alloc(self):
         pass
 
+    def __setattr__(self, name, value):
+        try:
+            if self._frozen and not name.startswith('_'):
+                raise RuntimeError(
+                    'Attempted to set parameter attribute \'{}\' outside __init__'
+                    .format(name))
+        except AttributeError:
+            pass
+        object.__setattr__(self, name, value)
+
     def clone(self):
         cls = type(self)
         instance = cls.__new__(cls)
-        instance.__set_params(self._params)
+        for attr, val in self.__dict__.items():
+            if not attr.startswith('_'):
+                instance.__dict__[attr] = val
+        for attr in self._cloneparams:
+            setattr(instance, attr, getattr(self, attr).clone())
+        instance._frozen = True
         instance._alloc()
         return instance
+
+    def _ensure_initialized(self):
+        try:
+            self._frozen
+        except AttributeError:
+            raise RuntimeError(
+                'Attempted to use operator before base class __init__ was called'
+            ) from None
 
     def __call__(self, x):
         raise NotImplementedError
@@ -61,6 +86,7 @@ class BaseOperator:
 class NonlinearOperator(BaseOperator):
     def __call__(self, x):
         assert x in self.domain
+        self._ensure_initialized()
         self.__revoke()
         y = self._eval(x, differentiate=False)
         assert y in self.codomain
@@ -68,6 +94,7 @@ class NonlinearOperator(BaseOperator):
 
     def linearize(self, x):
         assert x in self.domain
+        self._ensure_initialized()
         self.__revoke()
         y = self._eval(x, differentiate=True)
         assert y in self.codomain
@@ -112,6 +139,7 @@ class NonlinearOperator(BaseOperator):
 class LinearOperator(BaseOperator):
     def __call__(self, x):
         assert x in self.domain
+        self._ensure_initialized()
         y = self._eval(x)
         assert y in self.codomain
         return y
@@ -121,6 +149,7 @@ class LinearOperator(BaseOperator):
 
     @util.memoized_property
     def adjoint(self):
+        self._ensure_initialized()
         return Adjoint(self)
 
     def norm(self, iterations=10):
@@ -153,7 +182,8 @@ class LinearOperator(BaseOperator):
 
 class Adjoint(LinearOperator):
     def __init__(self, op):
-        super().__init__(op.codomain, op.domain, op=op)
+        self.op = op
+        super().__init__(op.codomain, op.domain, cloneparams=['op'])
 
     def _eval(self, x):
         return self.op._adjoint(x)
@@ -172,7 +202,9 @@ class Derivative(LinearOperator):
             # Wrap plain operators in a Revocable that will never be revoked to
             # avoid case distinctions below.
             op = Revocable(op)
-        super().__init__(op.get().domain, op.get().codomain, op=op)
+        self.op = op
+        _op = op.get()
+        super().__init__(_op.domain, _op.codomain)
 
     def clone(self):
         raise RuntimeError("Derivatives can't be cloned")
@@ -187,7 +219,8 @@ class Derivative(LinearOperator):
 class NonlinearOperatorComposition(NonlinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
-        super().__init__(g.domain, f.codomain, f=f, g=g)
+        self.f, self.g = f, g
+        super().__init__(g.domain, f.codomain, cloneparams=['f', 'g'])
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -209,7 +242,8 @@ class NonlinearOperatorComposition(NonlinearOperator):
 class LinearOperatorComposition(LinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
-        super().__init__(g.domain, f.codomain, f=f, g=g)
+        self.f, self.g = f, g
+        super().__init__(g.domain, f.codomain, cloneparams=['f', 'g'])
 
     def _eval(self, x):
         return self.f(self.g(x))
@@ -236,10 +270,10 @@ class CholeskyInverse(LinearOperator):
         matrix = np.empty((domain.size,) * 2, dtype=float)
         for j, elm in enumerate(domain.iter_basis()):
             matrix[j, :] = domain.flatten(op(elm))
+        self.factorization = cho_factor(matrix)
         super().__init__(
             domain=domain,
-            codomain=domain,
-            factorization=cho_factor(matrix))
+            codomain=domain)
 
     def _eval(self, x):
         return self.domain.fromflat(
@@ -254,10 +288,10 @@ class CoordinateProjection(LinearOperator):
         mask = np.asarray(mask)
         assert mask.dtype == bool
         assert mask.shape == domain.shape
+        self.mask = mask
         super().__init__(
             domain=domain,
-            codomain=spaces.GenericDiscretization(np.sum(mask), dtype=domain.dtype),
-            mask=mask)
+            codomain=spaces.GenericDiscretization(np.sum(mask), dtype=domain.dtype))
 
     def _eval(self, x):
         return x[self.mask]
@@ -277,7 +311,8 @@ class PointwiseMultiplication(LinearOperator):
         for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
             assert sf == sd or sf == 1
         assert domain.is_complex or not util.is_complex_dtype(factor)
-        super().__init__(domain, domain, factor=factor)
+        self.factor = factor
+        super().__init__(domain, domain)
 
     def _eval(self, x):
         return self.factor * x

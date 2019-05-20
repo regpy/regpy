@@ -4,7 +4,7 @@ from numpy.fft import fftn, ifftn, fftshift, ifftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
-from . import NonlinearOperator, Params
+from . import NonlinearOperator
 from .. import spaces
 from .. import util
 
@@ -43,60 +43,60 @@ class MediumScattering(NonlinearOperator):
         else:
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
+        self.support = support
+
+        self.amplitude = amplitude
+        self.refractive = refractive
+        self.absorptive = absorptive
 
         inc_directions = np.asarray(inc_directions)
         assert inc_directions.ndim == 2
         assert inc_directions.shape[1] == grid.ndim
         inc_directions = inc_directions / np.linalg.norm(inc_directions, axis=1)[:, np.newaxis]
-        inc_matrix = np.exp(-1j * wave_number * (inc_directions @ grid.coords[:, support]))
+        self.inc_matrix = np.exp(-1j * wave_number * (inc_directions @ grid.coords[:, support]))
 
         meas_directions = np.asarray(meas_directions)
         assert meas_directions.ndim == 2
         assert meas_directions.shape[1] == grid.ndim
         meas_directions = meas_directions / np.linalg.norm(meas_directions, axis=1)[:, np.newaxis]
-        farfield_matrix = np.exp(-1j * wave_number * (meas_directions @ grid.coords[:, support]))
+        self.farfield_matrix = np.exp(
+            -1j * wave_number * (meas_directions @ grid.coords[:, support]))
 
         if grid.ndim == 2:
             # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
-            farfield_matrix *= wave_number**2 * grid.volume_elem
+            self.farfield_matrix *= wave_number**2 * grid.volume_elem
             compute_kernel = partial(compute_kernel_2D, 2 * wave_number * radius)
         elif grid.ndim == 3:
             # TODO The sign appears to be wrong
-            farfield_matrix *= wave_number**2 * grid.volume_elem / (4*np.pi)
+            self.farfield_matrix *= wave_number**2 * grid.volume_elem / (4*np.pi)
             compute_kernel = partial(compute_kernel_3D, 2 * wave_number * radius)
+
+        self.kernel = compute_kernel(grid.shape)
 
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
                 raise ValueError('coarse grid is not coarser than fine grid')
             assert all(isinstance(c, int) for c in coarseshape)
-            coarsegrid = spaces.UniformGrid(*(np.linspace(-2*radius, 2*radius, c, endpoint=False)
-                                              for c in coarseshape))
-            coarse = Params(
-                grid=coarsegrid,
-                kernel=compute_kernel(coarsegrid.shape),
-                # TODO use coarsegrid.dualgrid here, move fftshift down (and
-                # use coarsegrid.fft there)
-                dualcoords=np.ix_(*(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)),
-                iterations=coarseiterations)
+            self.coarse = True
+            self.coarsegrid = spaces.UniformGrid(
+                *(np.linspace(-2*radius, 2*radius, c, endpoint=False)
+                  for c in coarseshape))
+            self.coarsekernel = compute_kernel(self.coarsegrid.shape),
+            # TODO use coarsegrid.dualgrid here, move fftshift down (and use
+            # coarsegrid.fft there)
+            self.dualcoords = np.ix_(
+                *(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape))
+            self.coarseiterations = coarseiterations
         else:
-            coarse = None
+            self.coarse = False
 
-        gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
+        self.gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
 
         super().__init__(
             domain=grid,
-            codomain=spaces.UniformGrid(axisdata=(meas_directions, inc_directions),
-                                        dtype=float if amplitude else complex),
-            inc_matrix=inc_matrix,
-            farfield_matrix=farfield_matrix,
-            wave_number=wave_number,
-            support=support,
-            amplitude=amplitude,
-            refractive=refractive,
-            absorptive=absorptive,
-            coarse=coarse,
-            gmres_args=gmres_args,
-            kernel=compute_kernel(grid.shape))
+            codomain=spaces.UniformGrid(
+                axisdata=(meas_directions, inc_directions),
+                dtype=float if amplitude else complex))
 
     def _alloc(self):
         self._totalfield = np.empty((np.sum(self.support), self.codomain.shape[1]),
@@ -110,7 +110,7 @@ class MediumScattering(NonlinearOperator):
             dtype=complex)
         if self.coarse:
             self._lippmann_schwinger_coarse = spla.LinearOperator(
-                (self.coarse.grid.csize,) * 2,
+                (self.coarsegrid.csize,) * 2,
                 matvec=self._lippmann_schwinger_coarse_op,
                 rmatvec=self._lippmann_schwinger_coarse_adjoint,
                 dtype=complex)
@@ -124,9 +124,9 @@ class MediumScattering(NonlinearOperator):
             # TODO take real part? what about even case? for 1d, highest
             # fourier coeff must be real then, which is not guaranteed by
             # subsampling here.
-            aux = fftn(self._contrast)[self.coarse.dualcoords]
+            aux = fftn(self._contrast)[self.dualcoords]
             self._coarse_contrast = (
-                (self.coarse.grid.size / self.domain.size) *
+                (self.coarsegrid.size / self.domain.size) *
                 ifftn(aux))
         farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
@@ -201,33 +201,33 @@ class MediumScattering(NonlinearOperator):
     def _solve_two_grid(self, rhs):
         rhs = fftn(rhs)
         v = self.domain.zeros(dtype=complex)
-        rhs_coarse = rhs[self.coarse.dualcoords]
-        for remaining_iters in range(self.coarse.iterations, 0, -1):
+        rhs_coarse = rhs[self.dualcoords]
+        for remaining_iters in range(self.coarseiterations, 0, -1):
             v_coarse = (self
                         ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
-                        .reshape(self.coarse.grid.shape))
-            v[self.coarse.dualcoords] = v_coarse
+                        .reshape(self.coarsegrid.shape))
+            v[self.dualcoords] = v_coarse
             if remaining_iters > 0:
                 rhs_coarse = fftn(self._coarse_contrast * ifftn(
-                    self.coarse.kernel * v_coarse))
+                    self.coarsekernel * v_coarse))
                 v = rhs - fftn(self._contrast * ifftn(self.kernel * v))
-                rhs_coarse += v[self.coarse.dualcoords]
+                rhs_coarse += v[self.dualcoords]
         return ifftn(v)
 
     def _solve_two_grid_adjoint(self, v):
         v = fftn(v)
         rhs = self.domain.zeros(dtype=complex)
-        v_coarse = v[self.coarse.dualcoords]
-        for remaining_iters in range(self.coarse.iterations, 0, -1):
+        v_coarse = v[self.dualcoords]
+        for remaining_iters in range(self.coarseiterations, 0, -1):
             rhs_coarse = (self
                           ._gmres(self._lippmann_schwinger_coarse.adjoint(), v_coarse)
-                          .reshape(self.coarse.grid.shape))
-            rhs[self.coarse.dualcoords] = rhs_coarse
+                          .reshape(self.coarsegrid.shape))
+            rhs[self.dualcoords] = rhs_coarse
             if remaining_iters > 0:
-                v_coarse = self.coarse.kernel * fftn(
+                v_coarse = self.coarsekernel * fftn(
                     self._coarse_contrast * ifftn(rhs_coarse))
                 rhs = v - self.kernel * fftn(self._contrast * ifftn(rhs))
-                v_coarse += rhs[self.coarse.dualcoords]
+                v_coarse += rhs[self.dualcoords]
         return ifftn(rhs)
 
     def _gmres(self, op, rhs):
@@ -255,15 +255,15 @@ class MediumScattering(NonlinearOperator):
     def _lippmann_schwinger_coarse_op(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
-        v = v.reshape(self.coarse.grid.shape)
-        v = v + fftn(self._coarse_contrast * ifftn(self.coarse.kernel * v))
+        v = v.reshape(self.coarsegrid.shape)
+        v = v + fftn(self._coarse_contrast * ifftn(self.coarsekernel * v))
         return v.ravel()
 
     def _lippmann_schwinger_coarse_adjoint(self, v):
         """Lippmann-Schwinger operator in frequency domain on coarse grid
         """
-        v = v.reshape(self.coarse.grid.shape)
-        v = v + np.conj(self.coarse.kernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
+        v = v.reshape(self.coarsegrid.shape)
+        v = v + np.conj(self.coarsekernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
         return v.ravel()
 
 
