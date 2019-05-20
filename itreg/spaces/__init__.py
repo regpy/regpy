@@ -23,7 +23,7 @@ class GenericDiscretization:
         try:
             self.shape = tuple(shape)
         except TypeError:
-            shape = (shape,)
+            self.shape = (shape,)
 
     def zeros(self, dtype=None):
         """Return the zero element of the space.
@@ -234,7 +234,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return np.real(np.vdot(np.conj(x), self.gram(y)))
+        return np.real(np.vdot(x, self.gram(y)))
 
     def norm(self, x):
         """Compute the norm of an element.

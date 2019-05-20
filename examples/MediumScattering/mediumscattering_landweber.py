@@ -54,7 +54,7 @@ landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(setting.codomain.norm, data,
-                      noiselevel=setting.domain.norm(noise),
+                      noiselevel=setting.codomain.norm(noise),
                       tau=1))
 
 reco, reco_data = landweber.run(stoprule)
