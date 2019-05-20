@@ -172,10 +172,6 @@ class LinearCombination(LinearOperator):
 	def _adjoint(self, x):
 		return self.params.scalar_f * self.params.f._adjoint(x) + self.params.scalar_g * self.params.g._adjoint(x)
 
-################################################################################
-#Frage: Wie kann ich neue Werte in Params abspeichern, wie hier zum Beispiel die
-#		Ableitungen? Und falls das nicht geht, wie soll ich die sonst speichern?
-
 
 class Composition(NonlinearOperator):
 	def __init__(self,f,g):
@@ -185,11 +181,16 @@ class Composition(NonlinearOperator):
 	def _eval(self, x, differentiate = False):
 		#if differentiate save linearizations in x of g and f∘g now
 		if (differentiate):
-			self.params.__dict__.update(gx,dgx = self.params.g.linearize(x))
-			self.params.__dict__.update(fgx, dfgx = self.params.f.linearize(gx))
+			gx,dgx = self.params.g.linearize(x)
+			self.params.gx = gx
+			self.params.dgx = dgx
+			#not sure if this formula is correct.
+			fgx, dfgx = self.params.f.linearize(gx)
+			self.params.fgx = fgx
+			self.params.dfgx = dfgx
 		else:
-			self.params.__dict__.update(gx = self.params.g.__call__(x))
-			self.params.__dict__.update(fgx = self.params.f.__call__(gx))
+			self.params.gx = self.params.g.__call__(x)
+			self.params.fgx = self.params.f.__call__(self.params.gx)
 		return self.params.fgx
 	
 	def _adjoint(self, h):
@@ -197,7 +198,7 @@ class Composition(NonlinearOperator):
 	
 	#evaluate linearizations saved earlier in a possibly distinct point h
 	def _derivative(self, h):
-		return self.params.dgx._eval(h) * self.params.dfgx._eval(h)
+		return self.params.dgx.__call__(h) * self.params.dfgx.__call__(h)
 		
 	
 
