@@ -5,14 +5,14 @@ class Power(op.NonlinearOperator):
 		super().__init__(op.Params(None, None, p=p))
 	
 	def _eval(self, x, differentiate = False):
-		self.x = x
-		self.fx = x**self.params.p
+		self._x = x
+		self._fx = x**self.params.p
 		if(differentiate):
-			self.dfx = self.params.p*x**(self.params.p-1)
-		return self.fx
+			self._dfx = self.params.p*x**(self.params.p-1)
+		return self._fx
 	
 	def _derivative(self, h):
-		return self.dfx*h
+		return self._dfx*h
 		
 	def _adjoint(self, x):
 		return self.__call__(x)
