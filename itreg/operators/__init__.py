@@ -181,23 +181,24 @@ class Composition(NonlinearOperator):
 	def _eval(self, x, differentiate = False):
 		#if differentiate save linearizations in x of g and f∘g now
 		if (differentiate):
-			gx,dgx = self.params.g.linearize(x)
-			self.gx = gx
-			self.dgx = dgx
-			fgx, dfgx = self.params.f.linearize(gx)
-			self.fgx = fgx
-			self.dfgx = dfgx
+			_gx,_dgx = self.params.g.linearize(x)
+			self._gx = _gx
+			self._dgx = _dgx
+			fgx, dfgx = self.params.f.linearize(_gx)
+			self._fgx = _fgx
+			self._dfgx = _dfgx
 		else:
-			self.gx = self.params.g.__call__(x)
-			self.fgx = self.params.f.__call__(self.gx)
-		return self.fgx
+			self._gx = self.params.g.__call__(x)
+			self._fgx = self.params.f.__call__(self._gx)
+		return self._fgx
 	
 	def _adjoint(self, h):
-		return self.dgx._adjoint(h) * self.dfgx._adjoint(h)
+		return self._dgx._adjoint(h) * self._dfgx._adjoint(h)
 	
 	#evaluate linearizations saved earlier in a possibly distinct point h
 	def _derivative(self, h):
-		return self.dgx.__call__(h) * self.dfgx.__call__(h)
+		print(self._dgx.__call__(h))
+		return self._dgx.__call__(h) * self._dfgx.__call__(h)
 		
 	
 
