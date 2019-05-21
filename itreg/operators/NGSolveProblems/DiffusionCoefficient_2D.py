@@ -5,6 +5,8 @@ from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 #from .Diffusion_Base_Functions import Diffusion_Base_Functions
 
+from .PDEBase import PDEBase
+
 import numpy as np
 import math as mt
 import scipy as scp
@@ -50,8 +52,10 @@ class DiffusionCoefficient(NonlinearOperator):
         f=LinearForm(fes)
         f += SymbolicLFI(gfu_rhs*v)
         
+        Base=PDEBase()
+        
         super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_bottom=bc_bottom, bc_top=bc_top, mesh=mesh, fes=fes, gfu=gfu,
-             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f))
+             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base))
         
     @instantiate
     class operator(OperatorImplementation):
@@ -78,7 +82,8 @@ class DiffusionCoefficient(NonlinearOperator):
             r.data = params.f.vec - params.a.mat * gfu.vec
             
             #Solve system
-            gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
+#            gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
+            gfu.vec.data+=params.Base.Solve(params, params.a, r)
 
             #data.u has not to be computed as values are stored in params.gfu
             if differentiate:
@@ -108,7 +113,8 @@ class DiffusionCoefficient(NonlinearOperator):
             params.f.Assemble()
             
             gfu=GridFunction(params.fes)
-            gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
+#            gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
+            gfu.vec.data=params.Base.Solve(params, params.a, params.f.vec)
             
             return gfu.vec.FV().NumPy().copy()
 
@@ -129,8 +135,8 @@ class DiffusionCoefficient(NonlinearOperator):
             params.f.Assemble()
 
             #Solve system
-            params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
-
+#            params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
+            params.gfu_adj.vec.data=params.Base.Solve(params, params.a, params.f.vec)
 
             res=-grad(params.gfu)*grad(params.gfu_adj)
             
