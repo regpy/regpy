@@ -79,8 +79,6 @@ class Coefficient(NonlinearOperator):
         self.a.Assemble()
             
         #Assemble Linearform
-#       for j in range(201):          
-#           params.Base_fes.gfu_rhs.vec[j]=params.rhs[j]
         self.gfu_rhs.Set(self.rhs)
         self.f.Assemble()
                        
