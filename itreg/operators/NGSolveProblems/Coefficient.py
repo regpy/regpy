@@ -3,9 +3,6 @@
 #TODO: Maybe use gridfunctions and not coefficient-vectors as input and output
 
 from itreg.operators import NonlinearOperator
-#from itreg.util import instantiate
-
-from .PDEBase import PDEBase
 
 import numpy as np
 import math as mt
@@ -67,9 +64,6 @@ class Coefficient(NonlinearOperator):
         #Define Linearform, will be assembled later        
         self.f=LinearForm(self.fes)
         self.f += SymbolicLFI(self.gfu_rhs*v)
-            
-        
-        self.Base=PDEBase()
         
         super().__init__(domain, codomain)
         
@@ -99,7 +93,7 @@ class Coefficient(NonlinearOperator):
             
         #Solve system
 #        gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
-        self.gfu.vec.data+=self.Base.Solve(self, self.a, r)
+        self.gfu.vec.data+=self._Solve(self.a, r)
 
         #data.u has not to be computed as values are stored in params.gfu, data.diff nicht nötig
         #da nur für a gebraucht, welches bekannt ist
@@ -132,7 +126,7 @@ class Coefficient(NonlinearOperator):
             
         gfu=GridFunction(self.fes)
 #       gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
-        gfu.vec.data=self.Base.Solve(self, self.a, self.f.vec)
+        gfu.vec.data=self._Solve(self.a, self.f.vec)
             
         return gfu.vec.FV().NumPy().copy()
 
@@ -154,7 +148,7 @@ class Coefficient(NonlinearOperator):
 
         #Solve system
 #        params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
-        self.gfu_adj.vec.data=self.Base.Solve(self, self.a, self.f.vec)
+        self.gfu_adj.vec.data=self._Solve(self.a, self.f.vec)
 
         if self.diffusion:
             res=-grad(self.gfu)*grad(self.gfu_adj)
@@ -165,5 +159,8 @@ class Coefficient(NonlinearOperator):
             
         return self.gfu_adj_sol.vec.FV().NumPy().copy()
 #       return gfu2
+        
+    def _Solve(self, bilinear, rhs):
+        return bilinear.mat.Inverse(freedofs=self.fes.FreeDofs()) * rhs
 
     
