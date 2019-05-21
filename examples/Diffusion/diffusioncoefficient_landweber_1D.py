@@ -5,7 +5,6 @@ from itreg.spaces import UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
-#from itreg.grids import User_Defined
 
 import numpy as np
 import logging
