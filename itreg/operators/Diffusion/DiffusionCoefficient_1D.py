@@ -1,6 +1,5 @@
 from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
-from .Diffusion_Base_Functions import Diffusion_Base_Functions
 
 import numpy as np
 import math as mt
@@ -100,7 +99,7 @@ class DiffusionCoefficient(NonlinearOperator):
             h=CoefficientFunction(gfu_h)
  
             #Define rhs               
-            rhs=div(h*grad(data.u))
+            rhs=div(h*grad(params.gfu))
             params.gfu_rhs.Set(rhs)
             params.f.Assemble()
             

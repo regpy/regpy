@@ -1,13 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Apr 11 16:05:46 2019
-
-@author: Hendrik Müller
-"""
-
 from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
-from .Reaction_Base_Functions import Reaction_Base_Functions
 
 import numpy as np
 import math as mt
