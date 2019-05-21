@@ -30,13 +30,13 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+noiselevel = op.codomain.norm(noise)
 
 irnm_kl = IRNM_KL(op, data, np.zeros(grid.shape), alpha0 = 5e-6, alpha_step = 0.92, intensity = 0.08)
 
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = irnm_kl.run(stoprule)
 

@@ -90,7 +90,7 @@ class IRGNM_L1_fid(Solver):
         # Computation of some parameters for the iteration
         self._GramX = self.op.domain.gram(np.eye(len(self.x)))
         self._GramX = 0.5 * (self._GramX+self._GramX.T)
-        self._GramY = self.op.range.gram(np.eye(len(self.y)))
+        self._GramY = self.op.codomain.gram(np.eye(len(self.y)))
         self._GramY = 0.5 * (self._GramY+self._GramY.T)     
         self._maxiter = 10000
 
@@ -107,8 +107,9 @@ class IRGNM_L1_fid(Solver):
         # Preparations for the minimization procedure
         self._regpar = self.alpha0 * self.alpha_step**self.k
         self._DF = np.eye(len(self.y), len(self.x))
+        _, deriv=self.op.linearize(self.x)
         for i in range(len(self.x)):
-            self._DF[:,i] = self.op.derivative.eval(self.op.params, self._DF[:,i])
+            self._DF[:,i] = deriv(self._DF[:,i])
         self._Hess = (np.dot(self._DF,np.linalg.solve(self._GramX, self._DF.T))
                       + self._regpar*np.linalg.inv(self._GramY))
         self._Hess = 0.5 * (self._Hess+self._Hess.T)

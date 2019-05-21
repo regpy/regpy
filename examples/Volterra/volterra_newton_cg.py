@@ -31,12 +31,12 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+noiselevel = op.codomain.norm(noise)
 
 newton_cg = Newton_CG(op, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = newton_cg.run(stoprule)
 plt.plot(grid.coords.T, exact_solution.T, label='exact solution')

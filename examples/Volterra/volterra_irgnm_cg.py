@@ -31,7 +31,7 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+noiselevel = op.codomain.norm(noise)
 
 irgnm_cg = IRGNM_CG(op, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 #stoprule = rules.CombineRules(
@@ -42,7 +42,7 @@ irgnm_cg = IRGNM_CG(op, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, al
 
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = irgnm_cg.run(stoprule)
 plt.plot(grid.coords.T, exact_solution.T)

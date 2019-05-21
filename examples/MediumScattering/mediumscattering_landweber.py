@@ -2,79 +2,64 @@ import setpath
 
 import itreg
 
-from itreg.operators.MediumScattering.mediumscattering import MediumScattering
-from itreg.spaces import Sobolev
-from itreg.spaces import L2
-from itreg.grids import Square_2D
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+from itreg.operators import MediumScattering, CoordinateProjection
+from itreg.spaces import L2, H1, HilbertPullBack
+from itreg.solvers import Landweber, HilbertSpaceSetting
+# TODO from itreg.util import test_adjoint
 import itreg.stoprules as rules
+import itreg.util as util
 
-import numpy as np 
+from functools import partial
+import numpy as np
 import logging
-import matplotlib.pyplot as plt 
-
 
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-#domain needs to be specified
-N=(64, 64)
-rho=1
-sobo_index=0
+scattering = MediumScattering(
+    gridshape=(65, 65),
+    radius=1,
+    wave_number=1,
+    inc_directions=util.linspace_circle(16),
+    meas_directions=util.linspace_circle(16),
+    # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
+    # coarseshape=(17, 17),
+    amplitude=False)
 
-grid=Square_2D(N, 0, 4*rho/N[0])
-grid.support_circle(rho)
+contrast = scattering.domain.zeros()
+r = np.linalg.norm(scattering.domain.coords, axis=0)
+contrast[r < 1] = np.exp(-1/(1 - r[r < 1]**2))
 
-#x_coo=(4*rho/N[0])*np.arange(-N[0]/2, (N[0]-1)/2, 1)
-#y_coo=(4*rho/N[1])*np.arange(-N[1]/2, (N[1]-1)/2, 1)
-#coords=np.array([x_coo, y_coo])
+projection = CoordinateProjection(
+    scattering.domain,
+    scattering.support)
+embedding = projection.adjoint
 
-domain=Sobolev(grid, sobo_index)
-op = MediumScattering(domain)
+op = scattering * embedding
 
-length_exact_solution=np.size(domain.parameters_domain.ind_support)
-#exact_solution=np.linspace(1, length_exact_solution, num=length_exact_solution)
-exact_solution=np.ones(length_exact_solution)
+exact_solution = projection(contrast)
+exact_data = op(exact_solution)
+noise = 0.03 * op.codomain.randn()
+data = exact_data + noise
+init = 1.1 * op.domain.ones()
 
-exact_data=op(exact_solution) 
+setting = HilbertSpaceSetting(
+    op=op,
+    domain=HilbertPullBack(partial(H1, index=1), embedding, inverse='cholesky'),
+    codomain=L2)
 
-data=exact_data
+landweber = Landweber(setting, data, init, stepsize=0.01)
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(setting.codomain.norm, data,
+                      noiselevel=setting.codomain.norm(noise),
+                      tau=1))
 
-#print(exact_data)
+reco, reco_data = landweber.run(stoprule)
+solution = embedding(reco)
 
-#noise=0.03 *op.domain.rand(np.random.randn)
-
-#data=exact_data+noise
-
-#noiselevel = op.range.norm(noise)
-#print(noiselevel)
-#init=op.initguess_func
-
-init=1.1*np.ones((length_exact_solution, 1), dtype=complex)
-#init=(1+0j)*np.ones(length_exact_solution)
-init_data=op(init)
-
-_, deriv=op.linearize(init)
-#_, deriv=op.linearize(exact_solution)
-
-testderivative=deriv(init)
-#testderivative=deriv(np.reshape(np.linspace(1, 13, num=13), (1, 13)))
-#testderivative=deriv(np.reshape(init, (1, 197)))
-#testadjoint=deriv.adjoint(np.reshape(np.array([1, 2, 3, 4]),(4,1)))
-#test_adjoint(deriv, 0.1)
-
-landweber= Landweber(op, data, init, stepsize=0.01)
-stoprule=(
-    rules.CountIterations(100)+
-    rules.Discrepancy(op.range.norm, data, noiselevel=0.1, tau=1))
-
-reco, reco_data=landweber.run(stoprule)
-op.params.scattering.plotX(grid, reco)
-op.params.scattering.plotX(grid, exact_solution)
-
-
-
-
+import matplotlib.pylab as plt
+plt.imshow(np.abs(solution))
+plt.show()

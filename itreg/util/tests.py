@@ -31,7 +31,7 @@ def test_adjoint(op, tolerance=1e-10, iterations=10):
     for i in range(iterations):
         x = op.domain.rand()
         fx = op(x)
-        y = op.range.rand()
+        y = op.codomain.rand()
         fty = op.adjoint(y)
         err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
         log.info('err = {}'.format(err))

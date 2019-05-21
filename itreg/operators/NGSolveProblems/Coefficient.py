@@ -1,5 +1,4 @@
 #TODO: Use netgen for visualization instead of own functions
-#TODO: Much of the code is the same as in the 1D case, use same baseclass
 #TODO: Further optimization, introduction of solve function, preconditioner, fewer gridfunctions ....
 #TODO: Rewrite to new interface
 #TODO: Maybe use gridfunctions and not coefficient-vectors as input and output

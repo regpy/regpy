@@ -1,19 +1,15 @@
-
-import setpath
-
-
-from itreg.spaces import L2
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+from itreg.spaces.l2 import L2
+from itreg.solvers.landweber import Landweber
+# from itreg.util import test_adjoint
 from itreg.operators.MRI.MRI import parallel_MRI
 import itreg.stoprules as rules
-from itreg.grids import Square_2D, User_Defined
+from itreg.grids import User_Defined
+from itreg.operators.MRI.MRI import plots
 
 import numpy as np
-import scipy as scp
 import logging
 import matplotlib.pyplot as plt
-from itreg.solvers import IRGNM_CG
+from itreg.solvers import Newton_CG_Frozen
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +31,7 @@ op=parallel_MRI(domain)
 
 
 exact_solution=np.ones(Nx*Ny*(nr_coils+1))
+#exact_solution=op.params.domain.rand()
 exact_data=op(exact_solution)
 #yscale=100/np.linalg.norm(exact_data)
 yscale=1
@@ -52,13 +49,25 @@ init_data, deriv = op.linearize(init)
 
 #stoprule = (
 #    rules.CountIterations(100) +
-#    rules.Discrepancy(op.range.norm, data, noiselevel=0.1, tau=1.1))
+#    rules.Discrepancy(op.codomain.norm, data, noiselevel=0.1, tau=1.1))
 
 #reco, reco_data = irgnm_cg.run(stoprule)
 
-landweber= Landweber(op, data, init, stepsize=1/(Nx*Ny*(nr_coils+1)))
+newton= Newton_CG_Frozen(op, data, init)
 stoprule=(
     rules.CountIterations(30)+
-    rules.Discrepancy(op.range.norm, data, noiselevel=0, tau=2))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=2))
 
-reco, reco_data=landweber.run(stoprule)
+reco, reco_data=newton.run(stoprule)
+
+plotting=plots(op, reco, reco_data, data, exact_solution)
+
+plotting.plot_samplingindex()
+plotting.plot_data()
+plotting.plot_rho()
+
+
+
+
+
+            

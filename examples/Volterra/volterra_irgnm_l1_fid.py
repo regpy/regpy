@@ -31,12 +31,12 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+noiselevel = op.codomain.norm(noise)
 
 irgnm_l1_fid = IRGNM_L1_fid(op, data, np.zeros(grid.shape), alpha0 = 1, alpha_step = 2/3., alpha_l1 = 1e-4)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = irgnm_l1_fid.run(stoprule)
 plt.plot(grid.coords.T, exact_solution.T, label='exact solution')
