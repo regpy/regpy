@@ -47,6 +47,7 @@ class Coefficient(NonlinearOperator):
         #grid functions for later use 
         #TODO: These elements should not be part of params, but of data or self
         self.gfu = GridFunction(self.fes)  # solution
+        self.gfu_bdr=GridFunction(self.fes)
         self.gfu_adj=GridFunction(self.fes) #solution for computation of adjoint
         self.gfu_adj_sol=GridFunction(self.fes) #return value for adjoint
         self.gfu_integrator = GridFunction(self.fes) #grid function for defining integrator
@@ -65,6 +66,14 @@ class Coefficient(NonlinearOperator):
         self.f=LinearForm(self.fes)
         self.f += SymbolicLFI(self.gfu_rhs*v)
         
+        #Compute Boundary values
+        if self.dim==1:
+            self.gfu_bdr.Set([self.bc_left, self.bc_right], definedon=self.mesh.Boundaries("left|right"))
+        elif self.dim==2:
+            self.gfu_bdr.Set([self.bc_left, self.bc_top, self.bc_right, self.bc_bottom], definedon=self.mesh.Boundaries("left|top|right|bottom"))
+        self.r=self.f.vec.CreateVector()
+        
+        
         super().__init__(domain, codomain)
         
     def _eval(self, diff, differentiate, **kwargs):
@@ -82,18 +91,18 @@ class Coefficient(NonlinearOperator):
         
         #Set boundary values         
 #       gfu=GridFunction(params.fes)
-        if self.dim==1:
-            self.gfu.Set([self.bc_left, self.bc_right], definedon=self.mesh.Boundaries("left|right"))
-        elif self.dim==2:
-            self.gfu.Set([self.bc_left, self.bc_top, self.bc_right, self.bc_bottom], definedon=self.mesh.Boundaries("left|top|right|bottom"))
+#        if self.dim==1:
+#            self.gfu.Set([self.bc_left, self.bc_right], definedon=self.mesh.Boundaries("left|right"))
+#        elif self.dim==2:
+#            self.gfu.Set([self.bc_left, self.bc_top, self.bc_right, self.bc_bottom], definedon=self.mesh.Boundaries("left|top|right|bottom"))
                        
         #Update rhs by boundary values            
-        r = self.f.vec.CreateVector()
-        r.data = self.f.vec - self.a.mat * self.gfu.vec
+#        r = self.f.vec.CreateVector()
+        self.r.data = self.f.vec - self.a.mat * self.gfu_bdr.vec
             
         #Solve system
 #        gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
-        self.gfu.vec.data+=self._Solve(self.a, r)
+        self.gfu.vec.data=self.gfu_bdr.vec.data+self._Solve(self.a, self.r)
 
         #data.u has not to be computed as values are stored in params.gfu, data.diff nicht nötig
         #da nur für a gebraucht, welches bekannt ist
