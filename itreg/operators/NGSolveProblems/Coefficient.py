@@ -3,8 +3,8 @@
 #TODO: Rewrite to new interface
 #TODO: Maybe use gridfunctions and not coefficient-vectors as input and output
 
-from itreg.operators import NonlinearOperator, OperatorImplementation, Params
-from itreg.util import instantiate
+from itreg.operators import NonlinearOperator
+#from itreg.util import instantiate
 
 from .PDEBase import PDEBase
 
@@ -22,8 +22,17 @@ import matplotlib.pyplot as plt
 class Coefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, range=None, diffusion=True, reaction=False, dim=1):
-        range = range or domain
+    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None, diffusion=True, reaction=False, dim=1):
+        codomain = codomain or domain
+        self.rhs=rhs
+        self.bc_left=bc_left
+        self.bc_right=bc_right
+        self.bc_top=bc_top
+        self.bc_bottom=bc_bottom
+        self.diffusion=diffusion
+        self.reaction=reaction
+        self.dim=dim
+        
         
         #Boundary values
         if bc_left is None:
@@ -33,133 +42,129 @@ class Coefficient(NonlinearOperator):
         
         #Define mesh and finite element space
         if dim==1:
-            mesh = Make1DMesh(meshsize)
-            fes = H1(mesh, order=2, dirichlet="left|right")
+            self.mesh = Make1DMesh(meshsize)
+            self.fes = H1(self.mesh, order=2, dirichlet="left|right")
         elif dim==2:
-            mesh = MakeQuadMesh(meshsize)
-            fes = H1(mesh, order=2, dirichlet="left|top|right|bottom")
+            self.mesh = MakeQuadMesh(meshsize)
+            self.fes = H1(self.mesh, order=2, dirichlet="left|top|right|bottom")
 
         #grid functions for later use 
         #TODO: These elements should not be part of params, but of data or self
-        gfu = GridFunction(fes)  # solution
-        gfu_adj=GridFunction(fes) #solution for computation of adjoint
-        gfu_adj_sol=GridFunction(fes) #return value for adjoint
-        gfu_integrator = GridFunction(fes) #grid function for defining integrator
-        gfu_rhs = GridFunction(fes) #grid function for defining right hand side
-        u = fes.TrialFunction()  # symbolic object
-        v = fes.TestFunction()   # symbolic object 
+        self.gfu = GridFunction(self.fes)  # solution
+        self.gfu_adj=GridFunction(self.fes) #solution for computation of adjoint
+        self.gfu_adj_sol=GridFunction(self.fes) #return value for adjoint
+        self.gfu_integrator = GridFunction(self.fes) #grid function for defining integrator
+        self.gfu_rhs = GridFunction(self.fes) #grid function for defining right hand side
+        u = self.fes.TrialFunction()  # symbolic object
+        v = self.fes.TestFunction()   # symbolic object 
 
         #Define Bilinearform, will be assembled later        
-        a = BilinearForm(fes, symmetric=True)
+        self.a = BilinearForm(self.fes, symmetric=True)
         if diffusion:
-            a += SymbolicBFI(grad(u)*grad(v)*gfu_integrator)
+            self.a += SymbolicBFI(grad(u)*grad(v)*self.gfu_integrator)
         elif reaction:
-            a += SymbolicBFI(grad(u)*grad(v)+u*v*gfu_integrator)
+            self.a += SymbolicBFI(grad(u)*grad(v)+u*v*self.gfu_integrator)
 
         #Define Linearform, will be assembled later        
-        f=LinearForm(fes)
-        f += SymbolicLFI(gfu_rhs*v)
+        self.f=LinearForm(self.fes)
+        self.f += SymbolicLFI(self.gfu_rhs*v)
             
         
-        Base=PDEBase()
+        self.Base=PDEBase()
         
-        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_top=bc_top, bc_bottom=bc_bottom, mesh=mesh, fes=fes, gfu=gfu,
-             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base, diffusion=diffusion, reaction=reaction, dim=dim))
+        super().__init__(domain, codomain)
         
-    @instantiate
-    class operator(OperatorImplementation):
-        def eval(self, params, diff, data, differentiate, **kwargs):
-            #Assemble Bilinearform, L_a           
-            for i in range(params.fes.ndof):
-                params.gfu_integrator.vec[i]=diff[i]
-#            params.Base_fes.gfu_integrator.Set(diff)
-            params.a.Assemble()
+    def _eval(self, diff, differentiate, **kwargs):
+        #Assemble Bilinearform, L_a           
+        for i in range(self.fes.ndof):
+            self.gfu_integrator.vec[i]=diff[i]
+#       params.Base_fes.gfu_integrator.Set(diff)
+        self.a.Assemble()
             
-            #Assemble Linearform
-#            for j in range(201):          
-#                params.Base_fes.gfu_rhs.vec[j]=params.rhs[j]
-            params.gfu_rhs.Set(params.rhs)
-            params.f.Assemble()
+        #Assemble Linearform
+#       for j in range(201):          
+#           params.Base_fes.gfu_rhs.vec[j]=params.rhs[j]
+        self.gfu_rhs.Set(self.rhs)
+        self.f.Assemble()
         
-           #Set boundary values         
-#            gfu=GridFunction(params.fes)
-            if params.dim==1:
-                params.gfu.Set([params.bc_left, params.bc_right], definedon=params.mesh.Boundaries("left|right"))
-            elif params.dim==2:
-                params.gfu.Set([params.bc_left, params.bc_top, params.bc_right, params.bc_bottom], definedon=params.mesh.Boundaries("left|top|right|bottom"))
+        #Set boundary values         
+#       gfu=GridFunction(params.fes)
+        if self.dim==1:
+            self.gfu.Set([self.bc_left, self.bc_right], definedon=self.mesh.Boundaries("left|right"))
+        elif self.dim==2:
+            self.gfu.Set([self.bc_left, self.bc_top, self.bc_right, self.bc_bottom], definedon=self.mesh.Boundaries("left|top|right|bottom"))
                        
-            #Update rhs by boundary values            
-            r = params.f.vec.CreateVector()
-            r.data = params.f.vec - params.a.mat * params.gfu.vec
+        #Update rhs by boundary values            
+        r = self.f.vec.CreateVector()
+        r.data = self.f.vec - self.a.mat * self.gfu.vec
             
-            #Solve system
-#            gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
-            params.gfu.vec.data+=params.Base.Solve(params, params.a, r)
+        #Solve system
+#        gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
+        self.gfu.vec.data+=self.Base.Solve(self, self.a, r)
 
-            #data.u has not to be computed as values are stored in params.gfu
-            if differentiate:
-#                data.u=gfu
-                data.diff=diff
-            return params.gfu.vec.FV().NumPy().copy()
+        #data.u has not to be computed as values are stored in params.gfu, data.diff nicht nötig
+        #da nur für a gebraucht, welches bekannt ist
+#        if differentiate:
+#           data.u=gfu
+#            self._diff=diff
+        return self.gfu.vec.FV().NumPy().copy()
 #            return gfu
 
-    @instantiate
-    class derivative(OperatorImplementation):
-        def eval(self, params, argument, data, **kwargs):
-            #Define Bilinearform 
-            #not needed, bilinearform already defined from operator evaluation
-#            for i in range(201):
-#                params.gfu_integrator.vec[i]=data.diff[i]
-#            params.a.Assemble()
+    def _derivative(self, argument, **kwargs):
+        #Define Bilinearform 
+        #not needed, bilinearform already defined from operator evaluation
+#        for i in range(201):
+#            params.gfu_integrator.vec[i]=data.diff[i]
+#        params.a.Assemble()
 
-            #Translate arguments in Coefficient Function            
-            gfu_h=GridFunction(params.fes)
-            for i in range(params.fes.ndof):
-                gfu_h.vec[i]=argument[i]
-            h=CoefficientFunction(gfu_h)
+        #Translate arguments in Coefficient Function            
+        gfu_h=GridFunction(self.fes)
+        for i in range(self.fes.ndof):
+            gfu_h.vec[i]=argument[i]
+        h=CoefficientFunction(gfu_h)
  
-            #Define rhs 
-            if params.diffusion:              
-                rhs=div(h*grad(params.gfu))
-            elif params.reaction:
-                rhs=h*params.gfu                
-            params.gfu_rhs.Set(rhs)
-            params.f.Assemble()
+        #Define rhs 
+        if self.diffusion:              
+            rhs=div(h*grad(self.gfu))
+        elif self.reaction:
+            rhs=h*self.gfu                
+        self.gfu_rhs.Set(rhs)
+        self.f.Assemble()
             
-            gfu=GridFunction(params.fes)
-#            gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
-            gfu.vec.data=params.Base.Solve(params, params.a, params.f.vec)
+        gfu=GridFunction(self.fes)
+#       gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
+        gfu.vec.data=self.Base.Solve(self, self.a, self.f.vec)
             
-            return gfu.vec.FV().NumPy().copy()
+        return gfu.vec.FV().NumPy().copy()
 
             
 
-        def adjoint(self, params, argument, data, **kwargs):  
-            #Definition of Bilinearform
-            #Not needed as Bilinearform is already defined from operator evaluation            
-#            for i in range(201):
-#                params.gfu_integrator.vec[i]=data.diff[i]
-##            params.gfu_integrator.Set(data.diff)
-#            params.a.Assemble()
+    def _adjoint(self, argument, **kwargs):  
+        #Definition of Bilinearform
+        #Not needed as Bilinearform is already defined from operator evaluation            
+#        for i in range(201):
+#             params.gfu_integrator.vec[i]=data.diff[i]
+##       params.gfu_integrator.Set(data.diff)
+#        params.a.Assemble()
             
-            #Definition of Linearform
-            for j in range(params.fes.ndof):          
-                params.gfu_rhs.vec[j]=argument[j]
-#            params.gfu_rhs.Set(rhs)
-            params.f.Assemble()
+        #Definition of Linearform
+        for j in range(self.fes.ndof):          
+            self.gfu_rhs.vec[j]=argument[j]
+#       params.gfu_rhs.Set(rhs)
+        self.f.Assemble()
 
-            #Solve system
-#            params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
-            params.gfu_adj.vec.data=params.Base.Solve(params, params.a, params.f.vec)
+        #Solve system
+#        params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
+        self.gfu_adj.vec.data=self.Base.Solve(self, self.a, self.f.vec)
 
-            if params.diffusion:
-                res=-grad(params.gfu)*grad(params.gfu_adj)
-            elif params.reaction:
-                res=-params.gfu*params.gfu_adj               
+        if self.diffusion:
+            res=-grad(self.gfu)*grad(self.gfu_adj)
+        elif self.reaction:
+            res=-self.gfu*self.gfu_adj               
             
-            params.gfu_adj_sol.Set(res)
+        self.gfu_adj_sol.Set(res)
             
-            return params.gfu_adj_sol.vec.FV().NumPy().copy()
-#            return gfu2
+        return self.gfu_adj_sol.vec.FV().NumPy().copy()
+#       return gfu2
 
     

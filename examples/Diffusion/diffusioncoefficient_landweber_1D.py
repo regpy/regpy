@@ -1,15 +1,11 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import L2
-from itreg.solvers import Landweber
-from itreg.solvers import IRGNM_CG
-from itreg.util import test_adjoint
+from itreg.spaces import UniformGrid
+from itreg.solvers import Landweber, HilbertSpaceSetting
+
 import itreg.stoprules as rules
-from itreg.grids import User_Defined
-from itreg.spaces import H1_NGSolve
-from ngsolve.meshes import Make1DMesh
-from ngsolve import CoefficientFunction, GridFunction
+#from itreg.grids import User_Defined
 
 import numpy as np
 import logging
@@ -21,31 +17,31 @@ logging.basicConfig(
 
 xs = np.linspace(0, 1, 201)
 
-grid=User_Defined(xs, xs.shape)
+grid = UniformGrid(xs)
 
-domain=L2(grid)
+#domain=L2(grid)
 meshsize=100
 
 from ngsolve import *
 rhs=10*sin(x)
-op = Coefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
+op = Coefficient(grid, meshsize, rhs, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = cos(x)
-gfu_exact_solution=GridFunction(op.params.fes)
+gfu_exact_solution=GridFunction(op.fes)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 data=exact_data
 
-gfu=GridFunction(op.params.fes)
+gfu=GridFunction(op.fes)
 for i in range(201):
     gfu.vec[i]=data[i]
     
 Symfunc=CoefficientFunction(gfu)
 func=np.zeros(201)
 for i in range(0, 201):
-    mip=op.params.mesh(op.params.domain.coords[i])
+    mip=op.mesh(i/200)
     func[i]=Symfunc(mip)
     
 plt.plot(func)
@@ -62,16 +58,19 @@ adj=deriv.adjoint(np.linspace(1, 2, 201))
 
 #init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
 init=cos(0.1*x)
-init_gfu=GridFunction(op.params.fes)
+init_gfu=GridFunction(op.fes)
 init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-landweber = Landweber(op, data, init_solution, stepsize=1)
+from itreg.spaces import L2
+setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+
+landweber = Landweber(setting, data, init_solution, stepsize=1)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(1000) +
-    rules.Discrepancy(op.range.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -81,9 +80,9 @@ plt.plot(exact_solution, label='exact')
 plt.legend()
 plt.show()
 
-gfu=GridFunction(op.params.fes)
-gfu2=GridFunction(op.params.fes)
-gfu3=GridFunction(op.params.fes)
+gfu=GridFunction(op.fes)
+gfu2=GridFunction(op.fes)
+gfu3=GridFunction(op.fes)
 for i in range(201):
     gfu.vec[i]=reco[i]
     gfu2.vec[i]=exact_solution[i]
@@ -96,7 +95,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.params.mesh(op.params.domain.coords[i])
+    mip=op.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
@@ -112,9 +111,9 @@ plt.show()
 
 
 
-gfu=GridFunction(op.params.fes)
-gfu2=GridFunction(op.params.fes)
-gfu3=GridFunction(op.params.fes)
+gfu=GridFunction(op.fes)
+gfu2=GridFunction(op.fes)
+gfu3=GridFunction(op.fes)
 for i in range(201):
     gfu.vec[i]=reco_data[i]
     gfu2.vec[i]=exact_data[i]
@@ -127,7 +126,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.params.mesh(op.params.domain.coords[i])
+    mip=op.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
