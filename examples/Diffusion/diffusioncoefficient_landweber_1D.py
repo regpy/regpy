@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.NGSolveProblems.DiffusionCoefficient_1D import DiffusionCoefficient
+from itreg.operators.NGSolveProblems.Coefficient_1D import Coefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG
@@ -28,7 +28,7 @@ meshsize=100
 
 from ngsolve import *
 rhs=10*sin(x)
-op = DiffusionCoefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=2)
+op = Coefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = cos(x)

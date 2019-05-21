@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.NGSolveProblems.ReactionCoefficient_1D import ReactionCoefficient
+from itreg.operators.NGSolveProblems.Coefficient_1D import Coefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG
@@ -28,10 +28,10 @@ meshsize=100
 
 from ngsolve import *
 rhs=10*x**2
-op = ReactionCoefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=1.1)
+op = Coefficient(domain, meshsize, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
 
 #exact_solution = np.linspace(1, 2, 201)
-exact_solution_coeff = x+1
+exact_solution_coeff = 1+x
 gfu_exact_solution=GridFunction(op.params.fes)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution=gfu_exact_solution.vec.FV().NumPy()
@@ -67,7 +67,7 @@ init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-landweber = Landweber(op, data, init_solution, stepsize=5)
+landweber = Landweber(op, data, init_solution, stepsize=1)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(1000) +
@@ -137,4 +137,8 @@ plt.plot(func2, label='exact')
 plt.plot(func3, label='init')
 plt.legend()
 plt.show()
+
+
+
+
 

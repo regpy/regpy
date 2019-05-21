@@ -14,10 +14,10 @@ from ngsolve.meshes import Make1DMesh
 import matplotlib.pyplot as plt
 
 
-class ReactionCoefficient(NonlinearOperator):
+class Coefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, range=None):
+    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, range=None, diffusion=True, reaction=False):
         range = range or domain
         
         #Boundary values
@@ -42,16 +42,20 @@ class ReactionCoefficient(NonlinearOperator):
 
         #Define Bilinearform, will be assembled later        
         a = BilinearForm(fes, symmetric=True)
-        a += SymbolicBFI(grad(u)*grad(v)+u*v*gfu_integrator)
+        if diffusion:
+            a += SymbolicBFI(grad(u)*grad(v)*gfu_integrator)
+        elif reaction:
+            a += SymbolicBFI(grad(u)*grad(v)+u*v*gfu_integrator)
 
         #Define Linearform, will be assembled later        
         f=LinearForm(fes)
         f += SymbolicLFI(gfu_rhs*v)
+            
         
         Base=PDEBase()
         
         super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, gfu=gfu,
-             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base))
+             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base, diffusion=diffusion, reaction=reaction))
         
     @instantiate
     class operator(OperatorImplementation):
@@ -103,15 +107,18 @@ class ReactionCoefficient(NonlinearOperator):
                 gfu_h.vec[i]=argument[i]
             h=CoefficientFunction(gfu_h)
  
-            #Define rhs               
-            rhs=h*params.gfu
+            #Define rhs 
+            if params.diffusion:              
+                rhs=div(h*grad(params.gfu))
+            elif params.reaction:
+                rhs=h*params.gfu                
             params.gfu_rhs.Set(rhs)
             params.f.Assemble()
             
             gfu=GridFunction(params.fes)
 #            gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
             gfu.vec.data=params.Base.Solve(params, params.a, params.f.vec)
-           
+            
             return gfu.vec.FV().NumPy().copy()
 
             
@@ -134,7 +141,10 @@ class ReactionCoefficient(NonlinearOperator):
 #            params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
             params.gfu_adj.vec.data=params.Base.Solve(params, params.a, params.f.vec)
 
-            res=-params.gfu*params.gfu_adj
+            if params.diffusion:
+                res=-grad(params.gfu)*grad(params.gfu_adj)
+            elif params.reaction:
+                res=-params.gfu*params.gfu_adj               
             
             params.gfu_adj_sol.Set(res)
             
