@@ -160,3 +160,4 @@ from . import MediumScattering
 from . import MRI
 from . import Diffusion
 from . import Reaction
+from . import NGSolveProblems

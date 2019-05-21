@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.Reaction.ReactionCoefficient_1D import ReactionCoefficient
+from itreg.operators.NGSolveProblems.ReactionCoefficient_1D import ReactionCoefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG
