@@ -16,7 +16,7 @@ class GenericDiscretization:
         # Upcast dtype to represent at least (single-precision) floats, no
         # bools or ints
         dtype = np.result_type(np.float32, dtype)
-        # Allow only floats and complexflaot, disallow objects, strings, times
+        # Allow only float and complexfloat, disallow objects, strings, times
         # or other fancy dtypes
         assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
@@ -261,7 +261,7 @@ def genericspace(*args, **kwargs):
 
 
 @genericspace
-def L2(discr, index=1):
+def L2(discr):
     raise NotImplementedError(
         'L2 not implemented on {}'.format(type(discr).__qualname__))
 
