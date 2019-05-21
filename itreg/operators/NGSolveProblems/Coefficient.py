@@ -1,6 +1,5 @@
 #TODO: Use netgen for visualization instead of own functions
 #TODO: Further optimization, introduction of solve function, preconditioner, fewer gridfunctions ....
-#TODO: Rewrite to new interface
 #TODO: Maybe use gridfunctions and not coefficient-vectors as input and output
 
 from itreg.operators import NonlinearOperator
