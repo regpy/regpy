@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.NGSolveProblems.Coefficient_1D import Coefficient
+from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG

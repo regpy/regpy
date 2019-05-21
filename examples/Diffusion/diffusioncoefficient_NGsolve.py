@@ -1,9 +1,8 @@
 #TODO: Works properly in data space, but not as well in solution space
-#TODO: Use netgen for visualization instead of own functions
 
 import setpath
 
-from itreg.operators.NGSolveProblems.DiffusionCoefficient_2D import DiffusionCoefficient
+from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG
@@ -31,7 +30,7 @@ meshsize=10
 
 from ngsolve import *
 rhs=10*sin(x)*sin(y)
-op = DiffusionCoefficient(domain, meshsize, rhs=rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y))
+op = Coefficient(domain, meshsize, rhs=rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = cos(x)

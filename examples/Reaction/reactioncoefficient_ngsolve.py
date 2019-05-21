@@ -1,9 +1,6 @@
-#TODO: Works properly in data space, but not as well in solution space
-#TODO: Use netgen for visualization instead of own functions
-
 import setpath
 
-from itreg.operators.NGSolveProblems.ReactionCoefficient_2D import ReactionCoefficient
+from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.spaces import L2
 from itreg.solvers import Landweber
 from itreg.solvers import IRGNM_CG
@@ -31,7 +28,7 @@ meshsize=10
 
 from ngsolve import *
 rhs=10*sin(x)*sin(y)
-op = ReactionCoefficient(domain, meshsize, rhs=rhs, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0)
+op = Coefficient(domain, meshsize, rhs=rhs, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False, reaction=True, dim=2)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = x+1

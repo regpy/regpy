@@ -1,3 +1,9 @@
+#TODO: Use netgen for visualization instead of own functions
+#TODO: Much of the code is the same as in the 1D case, use same baseclass
+#TODO: Further optimization, introduction of solve function, preconditioner, fewer gridfunctions ....
+#TODO: Rewrite to new interface
+#TODO: Maybe use gridfunctions and not coefficient-vectors as input and output
+
 from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
 
@@ -10,14 +16,14 @@ import scipy.ndimage
 import netgen.gui
 from ngsolve import *
 from netgen.geom2d import unit_square
-from ngsolve.meshes import Make1DMesh
+from ngsolve.meshes import Make1DMesh, MakeQuadMesh
 import matplotlib.pyplot as plt
 
 
 class Coefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, range=None, diffusion=True, reaction=False):
+    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, range=None, diffusion=True, reaction=False, dim=1):
         range = range or domain
         
         #Boundary values
@@ -27,8 +33,12 @@ class Coefficient(NonlinearOperator):
             bc_right=rhs[-1]
         
         #Define mesh and finite element space
-        mesh = Make1DMesh(meshsize)
-        fes = H1(mesh, order=2, dirichlet="left|right")
+        if dim==1:
+            mesh = Make1DMesh(meshsize)
+            fes = H1(mesh, order=2, dirichlet="left|right")
+        elif dim==2:
+            mesh = MakeQuadMesh(meshsize)
+            fes = H1(mesh, order=2, dirichlet="left|top|right|bottom")
 
         #grid functions for later use 
         #TODO: These elements should not be part of params, but of data or self
@@ -54,8 +64,8 @@ class Coefficient(NonlinearOperator):
         
         Base=PDEBase()
         
-        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, gfu=gfu,
-             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base, diffusion=diffusion, reaction=reaction))
+        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, bc_top=bc_top, bc_bottom=bc_bottom, mesh=mesh, fes=fes, gfu=gfu,
+             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f, Base=Base, diffusion=diffusion, reaction=reaction, dim=dim))
         
     @instantiate
     class operator(OperatorImplementation):
@@ -74,22 +84,24 @@ class Coefficient(NonlinearOperator):
         
            #Set boundary values         
 #            gfu=GridFunction(params.fes)
-            gfu=params.gfu
-            gfu.Set([params.bc_left, params.bc_right], definedon=params.mesh.Boundaries("left|right"))
+            if params.dim==1:
+                params.gfu.Set([params.bc_left, params.bc_right], definedon=params.mesh.Boundaries("left|right"))
+            elif params.dim==2:
+                params.gfu.Set([params.bc_left, params.bc_top, params.bc_right, params.bc_bottom], definedon=params.mesh.Boundaries("left|top|right|bottom"))
                        
             #Update rhs by boundary values            
             r = params.f.vec.CreateVector()
-            r.data = params.f.vec - params.a.mat * gfu.vec
+            r.data = params.f.vec - params.a.mat * params.gfu.vec
             
             #Solve system
 #            gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
-            gfu.vec.data+=params.Base.Solve(params, params.a, r)
+            params.gfu.vec.data+=params.Base.Solve(params, params.a, r)
 
             #data.u has not to be computed as values are stored in params.gfu
             if differentiate:
 #                data.u=gfu
                 data.diff=diff
-            return gfu.vec.FV().NumPy().copy()
+            return params.gfu.vec.FV().NumPy().copy()
 #            return gfu
 
     @instantiate
