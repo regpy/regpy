@@ -1,13 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Apr  8 16:29:40 2019
-
-@author: Hendrik Müller
-"""
-
 from itreg.operators import NonlinearOperator, OperatorImplementation, Params
 from itreg.util import instantiate
-from .Reaction_Base_Functions import Reaction_Base_Functions
 
 import numpy as np
 import math as mt
@@ -23,154 +15,123 @@ import matplotlib.pyplot as plt
 class ReactionCoefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, rhs, bc_left=None, bc_right=None, range=None, spacing=1):
+    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, range=None):
         range = range or domain
+        
+        #Boundary values
         if bc_left is None:
             bc_left=rhs[0]
         if bc_right is None:
             bc_right=rhs[-1]
-        mesh = Make1DMesh(domain.coords.shape[0])
-        fes = H1(mesh, order=2, dirichlet="bottom|right|top|left")
+        
+        #Define mesh and finite element space
+        mesh = Make1DMesh(meshsize)
+        fes = H1(mesh, order=2, dirichlet="left|right")
+
+        #grid functions for later use 
+        #TODO: These elements should not be part of params, but of data or self
+        gfu = GridFunction(fes)  # solution
+        gfu_adj=GridFunction(fes) #solution for computation of adjoint
+        gfu_adj_sol=GridFunction(fes) #return value for adjoint
+        gfu_integrator = GridFunction(fes) #grid function for defining integrator
+        gfu_rhs = GridFunction(fes) #grid function for defining right hand side
         u = fes.TrialFunction()  # symbolic object
-        v = fes.TestFunction()   # symbolic object        
-        Base=Reaction_Base_1D()
-        v_star=Base.tilde_g_builder(domain, bc_left, bc_right)
-        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, u=u, v=v, spacing=spacing, Base=Base, v_star=v_star))
+        v = fes.TestFunction()   # symbolic object 
+
+        #Define Bilinearform, will be assembled later        
+        a = BilinearForm(fes, symmetric=True)
+        a += SymbolicBFI(grad(u)*grad(v)+u*v*gfu_integrator)
+
+        #Define Linearform, will be assembled later        
+        f=LinearForm(fes)
+        f += SymbolicLFI(gfu_rhs*v)
+        
+        super().__init__(Params(domain, range, rhs=rhs, bc_left=bc_left, bc_right=bc_right, mesh=mesh, fes=fes, gfu=gfu,
+             gfu_adj=gfu_adj, gfu_adj_sol=gfu_adj_sol, gfu_integrator=gfu_integrator, gfu_rhs=gfu_rhs, a=a, f=f))
         
     @instantiate
     class operator(OperatorImplementation):
-        def eval(self, params, c, data, differentiate, **kwargs):
-            r_c=params.Base.rc(params, c)
-            rhs=params.Base.FunctoSymbolic(params, r_c)
-            myfunc=params.Base.FunctoSymbolic(params, c)
-#            fes = H1(params.mesh, order=2, dirichlet="bottom|right|top|left")
-
-
-#            u = fes.TrialFunction()  # symbolic object
-#            v = fes.TestFunction()   # symbolic object
-#            gfu = GridFunction(fes)  # solution
+        def eval(self, params, diff, data, differentiate, **kwargs):
+            #Assemble Bilinearform, L_a           
+            for i in range(params.fes.ndof):
+                params.gfu_integrator.vec[i]=diff[i]
+#            params.Base_fes.gfu_integrator.Set(diff)
+            params.a.Assemble()
             
-#            a = BilinearForm(fes, symmetric=True)
-#            a += SymbolicBFI(grad(params.u)*grad(params.v)+myfunc*params.u*params.v)
-#            a.Assemble()
+            #Assemble Linearform
+#            for j in range(201):          
+#                params.Base_fes.gfu_rhs.vec[j]=params.rhs[j]
+            params.gfu_rhs.Set(params.rhs)
+            params.f.Assemble()
+        
+           #Set boundary values         
+#            gfu=GridFunction(params.fes)
+            gfu=params.gfu
+            gfu.Set([params.bc_left, params.bc_right], definedon=params.mesh.Boundaries("left|right"))
+                       
+            #Update rhs by boundary values            
+            r = params.f.vec.CreateVector()
+            r.data = params.f.vec - params.a.mat * gfu.vec
             
-#            f = LinearForm(fes)
-#            f += SymbolicLFI(rhs*params.v)
-#            f.Assemble()
-            #solve the system
-#            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
-            gfu=params.Base.Base_Functions.Solve(params, myfunc, rhs)
+            #Solve system
+            gfu.vec.data += params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * r
 
+            #data.u has not to be computed as values are stored in params.gfu
             if differentiate:
-                data.u=params.Base.SymbolictoFunc(params, gfu)+params.v_star
-                data.c=c
-            return params.Base.SymbolictoFunc(params, gfu)+params.v_star
+#                data.u=gfu
+                data.diff=diff
+            return gfu.vec.FV().NumPy().copy()
+#            return gfu
+
     @instantiate
     class derivative(OperatorImplementation):
-        def eval(self, params, x, data, **kwargs):
-            rhs=params.Base.FunctoSymbolic(params, -data.u*x)
-            myfunc=params.Base.FunctoSymbolic(params, data.c)
-#            fes = H1(params.mesh, order=2, dirichlet="bottom|right|top|left")
+        def eval(self, params, argument, data, **kwargs):
+            #Define Bilinearform 
+            #not needed, bilinearform already defined from operator evaluation
+#            for i in range(201):
+#                params.gfu_integrator.vec[i]=data.diff[i]
+#            params.a.Assemble()
 
+            #Translate arguments in Coefficient Function            
+            gfu_h=GridFunction(params.fes)
+            for i in range(params.fes.ndof):
+                gfu_h.vec[i]=argument[i]
+            h=CoefficientFunction(gfu_h)
+ 
+            #Define rhs               
+            rhs=h*params.gfu
+            params.gfu_rhs.Set(rhs)
+            params.f.Assemble()
+            
+            gfu=GridFunction(params.fes)
+            gfu.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec
+            
+            return gfu.vec.FV().NumPy().copy()
 
-#            u = fes.TrialFunction()  # symbolic object
-#            v = fes.TestFunction()   # symbolic object
-#            gfu = GridFunction(fes)  # solution
-            
-#            a = BilinearForm(fes, symmetric=True)
-#            a += SymbolicBFI(grad(u)*grad(v)+myfunc*u*v)
-#            a.Assemble()
-            
-#            f = LinearForm(fes)
-#            f += SymbolicLFI(rhs*v)
-#            f.Assemble()
-            #solve the system
-#            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
-            gfu=params.Base.Base_Functions.Solve(params, myfunc, rhs)
-            return SymbolictoFunc(params, gfu)
             
 
-        def adjoint(self, params, y, data, **kwargs):
-            rhs=params.Base.FunctoSymbolic(params, y)
+        def adjoint(self, params, argument, data, **kwargs):  
+            #Definition of Bilinearform
+            #Not needed as Bilinearform is already defined from operator evaluation            
+#            for i in range(201):
+#                params.gfu_integrator.vec[i]=data.diff[i]
+##            params.gfu_integrator.Set(data.diff)
+#            params.a.Assemble()
             
-            myfunc=params.Base.FunctoSymbolic(params, data.c)
-#            fes = H1(params.mesh, order=2, dirichlet="bottom|right|top|left")
+            #Definition of Linearform
+            for j in range(params.fes.ndof):          
+                params.gfu_rhs.vec[j]=argument[j]
+#            params.gfu_rhs.Set(rhs)
+            params.f.Assemble()
 
+            #Solve system
+            params.gfu_adj.vec.data= params.a.mat.Inverse(freedofs=params.fes.FreeDofs()) * params.f.vec
 
-#            u = fes.TrialFunction()  # symbolic object
-#            v = fes.TestFunction()   # symbolic object
-#            gfu = GridFunction(fes)  # solution
+            res=-params.gfu*params.gfu_adj
             
-#            a = BilinearForm(fes, symmetric=True)
-#            a += SymbolicBFI(grad(u)*grad(v)+myfunc*u*v)
-#            a.Assemble()
+            params.gfu_adj_sol.Set(res)
             
-#            f = LinearForm(fes)
-#            f += SymbolicLFI(rhs*v)
-#            f.Assemble()
-            #solve the system
-#            gfu.vec.data = a.mat.Inverse(freedofs=fes.FreeDofs()) * f.vec
-            gfu=params.Base.Base_Functions.Solve(params, myfunc, rhs)
-           
-            return -data.u*params.Base.SymbolictoFunc(params, gfu)
-            
-class Reaction_Base_1D:
-    def __init__(self):
-        self.Base_Functions=Reaction_Base_Functions()
-        return  
+            return params.gfu_adj_sol.vec.FV().NumPy().copy()
+#            return gfu2
 
-#    def Solve(self, params, myfunc, rhs):
-#        gfu = GridFunction(params.fes)  # solution
-            
-#        a = BilinearForm(params.fes, symmetric=True)
-#        a += SymbolicBFI(grad(params.u)*grad(params.v)+myfunc*params.u*params.v)
-#        a.Assemble()
-            
-#        f = LinearForm(params.fes)
-#        f += SymbolicLFI(rhs*params.v)
-#        f.Assemble()
-        #solve the system
-#        gfu.vec.data = a.mat.Inverse(freedofs=params.fes.FreeDofs()) * f.vec        
-#        return gfu
-            
-    def tilde_g_builder(self, domain, bc_left, bc_right):
-        tilde_g=np.interp(domain.coords, np.asarray([domain.coords[0], domain.coords[-1]]), np.asarray([bc_left, bc_right]))
-        v_star=tilde_g
-        return v_star    
-
-
-    def FunctoSymbolic(self, params, func):
-        V = H1(params.mesh, order=1, dirichlet="left|right")
-        u = GridFunction(V)
-        N=params.domain.coords.shape[0]
-        for i in range(0, N):
-            u.vec[i]=func[i]           
-        return CoefficientFunction(u)
     
-    
-
-           
-    def SymbolictoFunc(self, params, Symfunc):
-        N=params.domain.size_support
-        Symfunc=CoefficientFunction(Symfunc)
-        func=np.zeros(N)
-        for i in range(0, N):
-            mip=params.mesh(params.domain.coords[i])
-            func[i]=Symfunc(mip)
-    
-        return func
-           
-    def rc(self, params, c):
-        res=self.mylaplace(params, params.v_star)
-        return params.rhs+res-c*params.v_star    
-
-
-
-    def mylaplace(self, params, func):
-        N=params.domain.size_support
-        der=np.zeros(N)
-        for i in range(1, N-1):
-            der[i]=(func[i+1]+func[i-1]-2*func[i])/(1/N**2)
-        der[0]=der[1]
-        der[-1]=der[-2]
-        return der  
