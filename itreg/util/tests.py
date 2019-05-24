@@ -1,4 +1,3 @@
-import logging
 import numpy as np
 
 
@@ -26,13 +25,11 @@ def test_adjoint(op, tolerance=1e-10, iterations=10):
     AssertionError
         If any test fails.
     """
-    log = logging.getLogger(__name__)
-
     for i in range(iterations):
-        x = op.domain.rand()
+        x = op.domain.randn()
         fx = op(x)
-        y = op.codomain.rand()
+        y = op.codomain.randn()
         fty = op.adjoint(y)
         err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
-        log.info('err = {}'.format(err))
-        assert err < tolerance
+        assert err < tolerance, 'err = {}'.format(err)
+    return True
