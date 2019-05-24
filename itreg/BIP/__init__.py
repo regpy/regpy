@@ -14,6 +14,25 @@ class Solver_BIP:
         if maxhits==None:
             maxhits=self.maxhits
         return self.evaluation.MC(maxhits)
+    
+    
+class State(object):
+    __slots__ = ('positions', 'log_prob')
+
+class HMCState(State):
+    __slots__ = ('positions', 'momenta', 'log_prob')
+
+class PDF(object):
+    """Abstract class for probability density functions
+    """
+    def log_prob(self, state):
+        raise NotImplementedError
+
+    def gradient(self, state):
+        raise NotImplementedError 
+        
+
+                
 
 
 
