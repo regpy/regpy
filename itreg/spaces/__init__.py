@@ -1,3 +1,4 @@
+from copy import copy
 import numpy as np
 from functools import singledispatch
 
@@ -133,6 +134,16 @@ class GenericDiscretization:
             return util.real2complex(x.reshape(self.shape + (2,)))
         else:
             return x.reshape(self.shape)
+
+    def complex_space(self):
+        other = copy(self)
+        other.dtype = np.result_type(1j, self.dtype)
+        return other
+
+    def real_space(self):
+        other = copy(self)
+        other.dtype = np.empty(0, dtype=self.dtype).real.dtype
+        return other
 
 
 class Grid(GenericDiscretization):
