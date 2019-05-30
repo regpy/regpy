@@ -43,7 +43,7 @@ class Landweber(Solver):
         self.rhs = rhs
         self.x = init
         self.y, self.deriv = self.setting.op.linearize(self.x)
-        self.stepsize = stepsize or 1 / self.deriv.norm()
+        self.stepsize = stepsize or 1 / self.deriv.norm()**2
 
     def _next(self):
         residual = self.y - self.rhs
