@@ -18,12 +18,20 @@ class Revocable:
         try:
             return self.__val
         except AttributeError:
-            raise RuntimeError('Attempted to use revoked reference')
+            raise RuntimeError('Attempted to use revoked reference') from None
 
     def revoke(self):
         val = self.get()
         del self.__val
         return val
+
+    @property
+    def valid(self):
+        try:
+            self.__val
+            return True
+        except AttributeError:
+            return False
 
 
 class BaseOperator:
@@ -127,7 +135,8 @@ class LinearOperator(BaseOperator):
         norm = np.sqrt(np.real(np.vdot(h, h)))
         for i in range(iterations):
             h = h / norm
-            h = self.hermitian(self(h))
+            # TODO gram matrices
+            h = self.adjoint(self(h))
             norm = np.sqrt(np.real(np.vdot(h, h)))
         return np.sqrt(norm)
 
