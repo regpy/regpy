@@ -1,3 +1,4 @@
+from copy import deepcopy
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
@@ -28,53 +29,26 @@ class Revocable:
 class BaseOperator:
     log = util.classlogger
 
-    def __init__(self, domain, codomain, *, cloneparams=[]):
+    def __init__(self, domain, codomain):
         assert isinstance(domain, spaces.GenericDiscretization)
         assert isinstance(codomain, spaces.GenericDiscretization)
         self.domain, self.codomain = domain, codomain
-        for attr in self.__dict__:
-            if attr.startswith('_'):
-                self.log.warn(
-                    'Data attribute {} set in constructor, should probably be set in _alloc method'
-                    .format(attr))
-        for attr in cloneparams:
-            assert not attr.startswith('_'), 'Data attribute {} listed in cloneparams'.format(attr)
-        self._cloneparams = cloneparams
-        self._frozen = True
-        self._alloc()
 
-    def _alloc(self):
-        pass
+    @property
+    def nocopy(self):
+        return ['domain', 'codomain']
 
-    def __setattr__(self, name, value):
-        try:
-            if self._frozen and not name.startswith('_'):
-                raise RuntimeError(
-                    'Attempted to set parameter attribute \'{}\' outside __init__'
-                    .format(name))
-        except AttributeError:
-            pass
-        object.__setattr__(self, name, value)
-
-    def clone(self):
+    def __deepcopy__(self, memo):
         cls = type(self)
-        instance = cls.__new__(cls)
-        for attr, val in self.__dict__.items():
-            if not attr.startswith('_'):
-                instance.__dict__[attr] = val
-        for attr in self._cloneparams:
-            setattr(instance, attr, getattr(self, attr).clone())
-        instance._frozen = True
-        instance._alloc()
-        return instance
-
-    def _ensure_initialized(self):
-        try:
-            self._frozen
-        except AttributeError:
-            raise RuntimeError(
-                'Attempted to use operator before base class __init__ was called'
-            ) from None
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        nocopy = set(self.nocopy)
+        for k, v in self.__dict__.items():
+            if k in nocopy:
+                setattr(result, k, v)
+            else:
+                setattr(result, k, deepcopy(v, memo))
+        return result
 
     def __call__(self, x):
         raise NotImplementedError
@@ -86,7 +60,6 @@ class BaseOperator:
 class NonlinearOperator(BaseOperator):
     def __call__(self, x):
         assert x in self.domain
-        self._ensure_initialized()
         self.__revoke()
         y = self._eval(x, differentiate=False)
         assert y in self.codomain
@@ -94,7 +67,6 @@ class NonlinearOperator(BaseOperator):
 
     def linearize(self, x):
         assert x in self.domain
-        self._ensure_initialized()
         self.__revoke()
         y = self._eval(x, differentiate=True)
         assert y in self.codomain
@@ -139,7 +111,6 @@ class NonlinearOperator(BaseOperator):
 class LinearOperator(BaseOperator):
     def __call__(self, x):
         assert x in self.domain
-        self._ensure_initialized()
         y = self._eval(x)
         assert y in self.codomain
         return y
@@ -149,7 +120,6 @@ class LinearOperator(BaseOperator):
 
     @util.memoized_property
     def adjoint(self):
-        self._ensure_initialized()
         return Adjoint(self)
 
     def norm(self, iterations=10):
@@ -183,7 +153,7 @@ class LinearOperator(BaseOperator):
 class Adjoint(LinearOperator):
     def __init__(self, op):
         self.op = op
-        super().__init__(op.codomain, op.domain, cloneparams=['op'])
+        super().__init__(op.codomain, op.domain)
 
     def _eval(self, x):
         return self.op._adjoint(x)
@@ -206,21 +176,21 @@ class Derivative(LinearOperator):
         _op = op.get()
         super().__init__(_op.domain, _op.codomain)
 
-    def clone(self):
-        raise RuntimeError("Derivatives can't be cloned")
-
     def _eval(self, x):
         return self.op.get()._derivative(x)
 
     def _adjoint(self, x):
         return self.op.get()._adjoint(x)
 
+    def __repr__(self):
+        return util.make_repr(self, self.op.get())
+
 
 class NonlinearOperatorComposition(NonlinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
         self.f, self.g = f, g
-        super().__init__(g.domain, f.codomain, cloneparams=['f', 'g'])
+        super().__init__(g.domain, f.codomain)
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -238,12 +208,15 @@ class NonlinearOperatorComposition(NonlinearOperator):
     def _adjoint(self, y):
         return self._dg_x.adjoint(self._df_gx.adjoint(y))
 
+    def __repr__(self):
+        return util.make_repr(self, self.f, self.g)
+
 
 class LinearOperatorComposition(LinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
         self.f, self.g = f, g
-        super().__init__(g.domain, f.codomain, cloneparams=['f', 'g'])
+        super().__init__(g.domain, f.codomain)
 
     def _eval(self, x):
         return self.f(self.g(x))
