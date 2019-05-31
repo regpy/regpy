@@ -174,6 +174,9 @@ class Adjoint(LinearOperator):
     def adjoint(self):
         return self.op
 
+    def __repr__(self):
+        return util.make_repr(self, self.op)
+
 
 class Derivative(LinearOperator):
     def __init__(self, op):
@@ -233,6 +236,9 @@ class LinearOperatorComposition(LinearOperator):
     def _adjoint(self, y):
         return self.g.adjoint(self.f.adjoint(y))
 
+    def __repr__(self):
+        return util.make_repr(self, self.f, self.g)
+
 
 class Identity(LinearOperator):
     def __init__(self, domain):
@@ -243,6 +249,9 @@ class Identity(LinearOperator):
 
     def _adjoint(self, x):
         return x
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain)
 
 
 class CholeskyInverse(LinearOperator):
@@ -256,6 +265,7 @@ class CholeskyInverse(LinearOperator):
         super().__init__(
             domain=domain,
             codomain=domain)
+        self.op = op
 
     def _eval(self, x):
         return self.domain.fromflat(
@@ -263,6 +273,9 @@ class CholeskyInverse(LinearOperator):
 
     def _adjoint(self, x):
         return self._eval(x)
+
+    def __repr__(self):
+        return util.make_repr(self, self.op)
 
 
 class CoordinateProjection(LinearOperator):
@@ -283,6 +296,9 @@ class CoordinateProjection(LinearOperator):
         y[self.mask] = x
         return y
 
+    def __repr__(self):
+        return util.make_repr(self, self.domain, self.mask)
+
 
 class PointwiseMultiplication(LinearOperator):
     def __init__(self, domain, factor):
@@ -302,6 +318,9 @@ class PointwiseMultiplication(LinearOperator):
     def _adjoint(self, x):
         return np.conj(self.factor) * x
 
+    def __repr__(self):
+        return util.make_repr(self, self.domain, self.factor)
+
 
 class FourierTransform(LinearOperator):
     def __init__(self, domain):
@@ -313,6 +332,9 @@ class FourierTransform(LinearOperator):
 
     def _adjoint(self, y):
         return self.domain.ifft(y)
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain)
 
 
 from .mediumscattering import MediumScattering
