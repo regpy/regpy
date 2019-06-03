@@ -13,16 +13,24 @@ from itreg.spaces import L2
 #from itreg.grids import Square_1D
 from itreg.grids import User_Defined
 #from itreg.BIP.mcmc import tikhonov_like
-from itreg.BIP.mcmc_second_variant import settings
+from itreg.BIP.mcmc import Settings
 from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
 from itreg.solvers import Landweber
 from itreg.util import test_adjoint
+from itreg.BIP.MonteCarlo_basics import fixed_stepsize
+from itreg.BIP.MonteCarlo_basics import adaptive_stepsize
+from itreg.BIP.MonteCarlo_basics import statemanager
+from itreg.BIP.MonteCarlo_basics import RandomWalk
+from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+from itreg.BIP.MonteCarlo_basics import HamiltonianMonteCarlo
+from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 import itreg.stoprules as rules
 
 import numpy as np
 import logging
 import matplotlib.pyplot as plt
+from functools import partial
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,12 +64,21 @@ likelihood=gaussian_likelihood(op, np.eye(200), exact_data+0.1*np.ones(exact_dat
 n_iter   = 2e4
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5][0]
 
-sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
-    
-#bip=tikhonov_like(op, data, 1, solver, stopping_rule,
-#                 sampler)
 
-bip=settings(op, data, prior, likelihood, solver, stopping_rule, sampler, 0.001, n_iter=n_iter, stepsize=stepsize)
+
+#sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
+
+    
+stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
+#stepsize_rule=fixed_stepsize
+
+bip=Settings(op, data, prior, likelihood, solver, stopping_rule, 0.001, 
+              n_iter=n_iter, stepsize_rule=stepsize_rule)
+
+statemanager=statemanager(bip.initial_state)
+sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize),
+         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
+bip.run(sampler, statemanager, 2e4)
 
 plt.plot(grid.coords.T, exact_solution.T, label='exact solution')
 plt.plot(grid.coords.T, bip.reco, label='reco')

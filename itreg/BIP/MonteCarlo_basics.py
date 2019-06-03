@@ -14,19 +14,31 @@ from . import State
 from . import HMCState
 from . import PDF
 
-from itreg.BIP.utils.BIP_utils import Monte_Carlo_evaluation
 from itreg.BIP.utils.SVD_methods import Lanzcos_SVD
 from itreg.BIP.utils.SVD_methods import randomized_SVD
 
 from copy import deepcopy
 
+
+def fixed_stepsize(stepsize, current_state, proposed_state, accepted):
+    return stepsize
+
+def adaptive_stepsize(stepsize, current_state, proposed_state, accepted, stepsize_factor):
+    stepsize *= stepsize_factor if accepted else 1 / stepsize_factor
+    return stepsize
+
+
+
 class MetropolisHastings(object):
     log=classlogger
     """MetropolisHastings for *symmetric* proposal kernel
     """
-    def __init__(self, pdf):
+    def __init__(self, pdf, initial_stepsize=1, stepsize_rule=fixed_stepsize):
         assert isinstance(pdf, PDF), 'Instance of PDF expected'
         self.pdf = pdf
+        self.stepsize=initial_stepsize
+        self.stepsize_rule=stepsize_rule
+        self.state=self.pdf.initial_state
         
     def propose(self, current_state):
         raise NotImplementedError
@@ -38,31 +50,56 @@ class MetropolisHastings(object):
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
+                   
+        accepted=np.log(np.random.random()) < log_odds
+        self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, accepted)
 
         return np.log(np.random.random()) < log_odds
+    
+    def next(self):
+        proposed_state = self.propose(self.state)
+        accept = self.accept(self.state, proposed_state)
+        if accept:
+            self.state = proposed_state
+        return accept
+    
+    
 
-    def run(self, initial_state, n_iter):
+#    def run(self, initial_state, n_iter):
 
-        assert isinstance(initial_state, State), 'State expected'
-        assert n_iter > 0, 'Positive number expected'
+ #       assert isinstance(initial_state, State), 'State expected'
+#        assert n_iter > 0, 'Positive number expected'
 
-        states = [initial_state]
+#        states = [initial_state]
 
-        current_state = initial_state
+#        current_state = initial_state
 
-        for i in range(int(n_iter)):
-            print(i)
+#        for i in range(int(n_iter)):
+#            print(i)
 
-            proposed_state = self.propose(current_state)
+#            proposed_state = self.propose(current_state)
 
-            do_accept = self.accept(current_state, proposed_state)
+#            do_accept = self.accept(current_state, proposed_state)
 
-            if do_accept:
-                current_state = proposed_state
+#            if do_accept:
+#                current_state = proposed_state
 
-            states.append(current_state)
+##            states.append(current_state)
 
-        return states
+#        return states
+class statemanager(object):
+    """Describes what to do with the states
+    """
+    def __init__(self, initial_state):
+        self.initial_state=initial_state
+        self.states=[initial_state]
+        self.N=1
+        
+    def statemanager(self, state, accepted):
+        assert isinstance(self.initial_state, State), 'State expected'
+        if accepted:
+            self.states.append(state)
+        self.N+=1
     
 class RandomWalk(MetropolisHastings):
     """Gaussian proposal kernel
@@ -89,8 +126,9 @@ class AdaptiveRandomWalk(RandomWalk):
 
     def accept(self, current_state, proposed_state):
         do_accept = super(AdaptiveRandomWalk, self).accept(current_state, proposed_state)
-        self.stepsize *= self.stepsize_factor if do_accept else \
-                         1. / self.stepsize_factor
+#        self.stepsize *= self.stepsize_factor if do_accept else \
+#                         1. / self.stepsize_factor
+        self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, do_accept)
         return do_accept
 
 class Leapfrog(object):
@@ -198,8 +236,13 @@ class GaussianApproximation(object):
         self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
         self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.pdf.prior.gamma_prior.shape[0])))
 #define prior, posterior sampling
-        self.evaluation=Monte_Carlo_evaluation(self.pdf.op, self.pdf.log_prob, self.gamma_post_half, self.pdf.initial_state.positions, self.pdf.initial_state.positions,  maxnum=self.pdf.n_iter, gamma_prior_half=self.gamma_prior_half)
-#        self.m_prior, self.m_post=self.evaluation.random_samples()
+
+        
+    def random_samples(self):
+        R=np.random.normal(0, 1, self.gamma_post_half.shape[0]) 
+        m_prior=self.m_0+np.dot(self.gamma_prior_half, R)
+        m_post=self.m_MAP+np.dot(self.gamma_post_half, R)
+        return m_prior, m_post
         
     def run(self, initial_state, n_iter):
         states = [initial_state]
@@ -212,5 +255,7 @@ class GaussianApproximation(object):
             states.append(current_state)
 
         return states
+    
+    
     
         
