@@ -37,7 +37,7 @@ class EIT(NonlinearOperator):
         self.fes_in = H1 (self.mesh, order=1)
         self.gfu_in = GridFunction(self.fes_in)
         
-        self.fes = H1(self.mesh, order=2)
+        self.fes = H1(self.mesh, order=2, dirichlet="top|right|bottom|left")
 
         #grid functions for later use 
         self.gfu = GridFunction(self.fes)  # solution, return value of _eval
@@ -86,8 +86,8 @@ class EIT(NonlinearOperator):
         #print(self.b.vec)
             
         #Solve system
-        self.gfu.vec.data=self._Solve(self.a, self.b.vec)
-        res=sco.least_squares(self._Target, np.zeros(441), max_nfev=400)
+        #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
+        res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         #print(res.x)
         #print(self._Target(np.zeros(441)))
         #print(self._Target(self.gfu.vec.FV().NumPy()))
