@@ -11,6 +11,8 @@ from .Obstacle2dBaseOp import bd_params
 from itreg.util import instantiate
 
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 
 
 class PotentialOp(NonlinearOperator):
@@ -137,5 +139,57 @@ class PotentialOp(NonlinearOperator):
             
             adj = params.bd.adjoint_der_normal(adj)
             return adj
+
+
+class plots():
+    def __init__(self,
+                 op,
+                 reco,
+                 reco_data,
+                 data,
+                 exact_solution,
+#                 nr_plots,
+#                 fig_rec=None,
+                 figsize=(8, 8),
+#                 Nx=None,
+#                 Ny=None, 
+                 ):
         
+        self.op=op
+#        self.Nx=Nx or self.op.params.Nx
+#        self.Ny=Ny or self.op.params.Ny
+        self.reco=reco
+        self.reco_data=reco_data
+        self.data=data
+        self.exact_solution=exact_solution 
+#        self.nr_plots=nr_plots
+#        self.fig_rec=fig_rec
+        self.figsize=figsize
+    
+    def plotting(self):    
+#    function F = plot(F,x_k,x_start,y_k,y_obs,k)
+#            nr_plots = self.nr_plots
+            
+            fig, axs = plt.subplots(1, 2,sharey=True,figsize=self.figsize)
+            fig.title('Potential Problem')
+            axs[0].title('Domain')
+            axs[1].title('Heat source')
+            axs[1].plot(self.exact_data)
+            axs[1].plot(self.reco_data)
+            bd=self.op.params.bd
+            pts=bd.coeff2Curve(self.reco)
+            pts_2=bd.coeff2Curve(self.exact_solution)
+            poly = Polygon(np.column_stack([pts[0, :], pts[1, :]]), animated=True, fill=False)
+            poly_2=Polygon(np.column_stack([pts_2[0, :], pts_2[1, :]]), animated=True, fill=False)
+            axs[0].add_patch(poly)
+            axs[0].add_patch(poly_2)
+            xmin=1.5*min(pts[0, :].min(), pts_2[0, :].min())
+            xmax=1.5*max(pts[0, :].max(), pts_2[0, :].max())
+            ymin=1.5*min(pts[1, :].min(), pts_2[1, :].min())
+            ymax=1.5*max(pts[1, :].max(), pts_2[1, :].max())
+            axs[0].set_xlim((xmin, xmax))
+            axs[0].set_ylim((ymin, ymax))
+            plt.show()
+                
+            
         
