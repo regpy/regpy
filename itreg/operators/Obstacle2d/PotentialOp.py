@@ -112,7 +112,7 @@ class PotentialOp(NonlinearOperator):
             if (N % 2==0):
                 fac = fac/params.radius
                 qq = qq*q
-                der = der + fac * params.cos_fl[:,N/2] * np.sum(qq*h*params.cosin[N/2,:])
+                der = der + fac * params.cos_fl[:,int(N/2)] * np.sum(qq*h*params.cosin[int(N/2),:])
             return der
         
         
@@ -135,7 +135,7 @@ class PotentialOp(NonlinearOperator):
                 fac = fac/params.radius
                 qq = qq*q
                 """transpose?"""
-                adj = adj + fac * np.sum(g*params.cos_fl[:,N/2]) * (params.cosin[N/2,:]*qq).transpose()
+                adj = adj + fac * np.sum(g*params.cos_fl[:,int(N/2)]) * (params.cosin[int(N/2),:]*qq).transpose()
             
             adj = params.bd.adjoint_der_normal(adj)
             return adj
@@ -147,12 +147,14 @@ class plots():
                  reco,
                  reco_data,
                  data,
+                 exact_data,
                  exact_solution,
 #                 nr_plots,
 #                 fig_rec=None,
                  figsize=(8, 8),
 #                 Nx=None,
 #                 Ny=None, 
+                 n=64
                  ):
         
         self.op=op
@@ -161,24 +163,29 @@ class plots():
         self.reco=reco
         self.reco_data=reco_data
         self.data=data
+        self.exact_data=exact_data
         self.exact_solution=exact_solution 
 #        self.nr_plots=nr_plots
 #        self.fig_rec=fig_rec
         self.figsize=figsize
+        self.n=n
     
     def plotting(self):    
 #    function F = plot(F,x_k,x_start,y_k,y_obs,k)
 #            nr_plots = self.nr_plots
             
             fig, axs = plt.subplots(1, 2,sharey=True,figsize=self.figsize)
-            fig.title('Potential Problem')
-            axs[0].title('Domain')
-            axs[1].title('Heat source')
+            axs[0].set_title('Domain')
+            axs[1].set_title('Heat source')
             axs[1].plot(self.exact_data)
+            axs[1].plot(self.data)
             axs[1].plot(self.reco_data)
+            ymin=0.7*min(self.reco_data.min(), self.data.min(), self.exact_data.min())
+            ymax=1.3*max(self.reco_data.max(), self.data.max(), self.exact_data.max())
+            axs[1].set_ylim((ymin, ymax))
             bd=self.op.params.bd
-            pts=bd.coeff2Curve(self.reco)
-            pts_2=bd.coeff2Curve(self.exact_solution)
+            pts=bd.coeff2Curve(self.reco, self.n)
+            pts_2=bd.coeff2Curve(self.exact_solution, self.n)
             poly = Polygon(np.column_stack([pts[0, :], pts[1, :]]), animated=True, fill=False)
             poly_2=Polygon(np.column_stack([pts_2[0, :], pts_2[1, :]]), animated=True, fill=False)
             axs[0].add_patch(poly)

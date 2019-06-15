@@ -44,16 +44,17 @@ class StarTrig:
             ValueError('length of t should be even')
 
         N = len(val)
+#        print(N)
         coeffhat = np.fft.fft(val)
         coeffhat2 = 1j*np.zeros(n)
         if (n>=N):
             coeffhat2[0:int(N/2)]= coeffhat[0:int(N/2)]
-            coeffhat2[n-int(N/2)+1:n] = coeffhat[N/2+1:N]
+            coeffhat2[n-int(N/2)+1:n] = coeffhat[int(N/2)+1:N]
             if (n>N):
-                coeffhat2[N/2] = 0.5*coeffhat[N/2]
-                coeffhat2[n-N/2] = 0.5*coeffhat[N/2]
+                coeffhat2[int(N/2)] = 0.5*coeffhat[int(N/2)]
+                coeffhat2[n-int(N/2)] = 0.5*coeffhat[int(N/2)]
             else: #n==N
-                coeffhat2[N/2] = coeffhat[N/2]
+                coeffhat2[int(N/2)] = coeffhat[int(N/2)]
 
         else:
             coeffhat2[0:int(n/2)] = coeffhat[0:int(n/2)]
@@ -109,7 +110,7 @@ class StarTrig:
         
         n=np.size(self.q[0, :])
         h_long = np.fft.ifft(np.fft.fftshift(self.compute_FK(h,n)))
-        der =  self.q[0,:].tranpose() * h_long / self.zpabs.transpose()
+        der =  self.q[0,:].transpose() * h_long / self.zpabs.transpose()
         return der
 
     def adjoint_der_normal(self, g):    
@@ -117,10 +118,11 @@ class StarTrig:
         """applies the adjoint of the linear mapping h->der_normal(curve,h) to g"""
         
         N = len(self.coeff)
+#        print(N)
         n = len(g)
         adj_long = g*self.q[0,:].transpose() / self.zpabs.transpose()
         adj = np.fft.ifft(np.fft.fftshift(self.compute_FK(adj_long,N))) * n/N
-        return adj
+        return adj.real
         
         """ The following two methods are not needed for operators depending
              only on the curve, but not on its parametrization.
@@ -164,4 +166,4 @@ class StarTrig:
         t = 2*np.pi/n * np.linspace(0, n-1, n)
         pts = np.append(radial.transpose()*np.cos(t), \
             radial.transpose()*np.sin(t)).reshape(2, n)
-        return pts
+        return pts.real

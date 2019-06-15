@@ -7,7 +7,7 @@ Created on Thu Jun  6 11:07:16 2019
 
 import setpath
 
-#import itreg.operators as iop
+import itreg.operators as iop
 from itreg.operators.Obstacle2d.PotentialOp import PotentialOp as iop
 #from itreg.operators.Obstacle2d.PotentialOp import PotentialOp as iop
 #import itreg.operators.Obstacle2d.PotentialOp as iop
@@ -17,6 +17,7 @@ from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
 from itreg.grids import User_Defined
+from itreg.operators.Obstacle2d.PotentialOp import plots
 
 import numpy as np
 import logging
@@ -28,10 +29,12 @@ logging.basicConfig(
 
 xs = np.linspace(0, 2 * np.pi, 200)
 spacing = xs[1] - xs[0]
+ys=np.linspace(0, 63, 64)
 
 grid=User_Defined(xs, (200,))
+grid_range=User_Defined(ys, (64,))
 
-op=iop(L2(grid))
+op=iop(L2(grid), range=L2(grid_range))
 #op = PotentialOp(L2(grid))
 
 exact_solution = np.ones(200)
@@ -41,9 +44,9 @@ data = exact_data
 
 #noiselevel = op.range.norm(noise)
 
-init = op.domain.one()
+init = 1.1*op.domain.one()
 
-_, deriv = op.linearize(init)
+#_, deriv = op.linearize(init)
 #test_adjoint(deriv)
 
 
@@ -55,10 +58,10 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-plt.plot(xs, exact_solution, label='exact solution')
-plt.plot(xs, reco, label='reco')
-plt.plot(xs, exact_data, label='exact data')
-plt.plot(xs, data, label='data')
-plt.plot(xs, reco_data, label='reco data')
-plt.legend()
-plt.show()
+plotting=plots(op, reco, reco_data, data, exact_data, exact_solution)
+plotting.plotting()
+
+
+
+
+
