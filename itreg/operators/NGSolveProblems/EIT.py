@@ -89,7 +89,7 @@ class EIT(NonlinearOperator):
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
         #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
-        res=sco.minimize(self._Target, np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._Target(u, self.b.vec)), np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
         
         #print(res.x)
         #print(self._Target(np.zeros(441)))
@@ -128,7 +128,7 @@ class EIT(NonlinearOperator):
         
         #self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)#+self.b.vec)
         
-        res=sco.minimize(self._Target_diff, np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._Target(u, self.f.vec)), np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
 
         self.gfu_toret.vec.FV().NumPy()[:]=res.x
 #        return res.x            
@@ -156,7 +156,7 @@ class EIT(NonlinearOperator):
         self.gfu_rhs.Set(self.gfu_in)
         self.f.Assemble()
         
-        res=sco.minimize(self._Target_diff, 0.0001*np.ones(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._Target(u, self.f.vec)), 0.0001*np.ones(441), constraints={"fun": self._Constraint, "type": "eq"})
         self.gfu_inner.vec.FV().NumPy()[:]=res.x
         
         toret=-grad(self.gfu_inner)*grad(self.gfu)
@@ -179,21 +179,14 @@ class EIT(NonlinearOperator):
     
 ###############################################################################
     
-    def _Target(self, u):
+    def _Target(self, u, linearform_vec):
         tar=GridFunction(self.fes)
         tar.vec.FV().NumPy()[:]=u
         coff=CoefficientFunction(tar)
         gfu_error=GridFunction(self.fes)
-        gfu_error.vec.data = self.a.mat * tar.vec-self.b.vec
+        gfu_error.vec.data = self.a.mat * tar.vec-linearform_vec
         return gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
-    
-    def _Target_diff(self, u):
-        tar=GridFunction(self.fes)
-        tar.vec.FV().NumPy()[:]=u
-        coff=CoefficientFunction(tar)
-        gfu_error=GridFunction(self.fes)
-        gfu_error.vec.data = self.a.mat * tar.vec-self.f.vec
-        return gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
+
         
     def _Constraint(self, u):
         tar=GridFunction(self.fes)
