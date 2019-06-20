@@ -89,7 +89,7 @@ class EIT(NonlinearOperator):
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
         #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
-        res=sco.minimize((lambda u: self._Target(u, self.b.vec)), np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(441), constraints={"fun": self._constraint, "type": "eq"})
         
         #print(res.x)
         #print(self._Target(np.zeros(441)))
@@ -107,7 +107,7 @@ class EIT(NonlinearOperator):
 #        return self.gfu.vec.FV().NumPy().copy()
 #        return self._GetBoundaryValues(self.gfu)
         self.gfu.vec.FV().NumPy()[:]=res.x
-        return self._GetBoundaryValues(self.gfu)
+        return self._get_boundary_values(self.gfu)
 
 
     def _derivative(self, h, **kwargs):
@@ -128,12 +128,12 @@ class EIT(NonlinearOperator):
         
         #self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)#+self.b.vec)
         
-        res=sco.minimize((lambda u: self._Target(u, self.f.vec)), np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(441), constraints={"fun": self._constraint, "type": "eq"})
 
         self.gfu_toret.vec.FV().NumPy()[:]=res.x
 #        return res.x            
 #        return self.gfu_toret.vec.FV().NumPy().copy()
-        return self._GetBoundaryValues(self.gfu_toret)
+        return self._get_boundary_values(self.gfu_toret)
 
             
 
@@ -142,7 +142,7 @@ class EIT(NonlinearOperator):
             
         #Definition of Linearform
         #But it only needs to be defined on boundary
-        self._SetBoundaryValues(argument)
+        self._set_boundary_values(argument)
 #        self.gfu_dir.Set(self.gfu_in)
         
         #Note: Here the linearform f for the dirichlet problem is just zero
@@ -156,7 +156,7 @@ class EIT(NonlinearOperator):
         self.gfu_rhs.Set(self.gfu_in)
         self.f.Assemble()
         
-        res=sco.minimize((lambda u: self._Target(u, self.f.vec)), 0.0001*np.ones(441), constraints={"fun": self._Constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(441), constraints={"fun": self._constraint, "type": "eq"})
         self.gfu_inner.vec.FV().NumPy()[:]=res.x
         
         toret=-grad(self.gfu_inner)*grad(self.gfu)
@@ -165,21 +165,21 @@ class EIT(NonlinearOperator):
         return self.gfu_toret.vec.FV().NumPy().copy()
 
         
-    def _Solve(self, bilinear, rhs, boundary=False):
+    def _solve(self, bilinear, rhs, boundary=False):
         return bilinear.mat.Inverse(freedofs=self.fes.FreeDofs()) * rhs
     
-    def _GetBoundaryValues(self, gfu):
+    def _get_boundary_values(self, gfu):
         myfunc=CoefficientFunction(gfu)
         vals = np.asarray([myfunc(self.mesh(*p)) for p in self.pts])
         return vals
     
-    def _SetBoundaryValues(self, vals):
+    def _set_boundary_values(self, vals):
         self.gfu_in.vec.FV().NumPy()[self.ind]=vals
         return 
     
 ###############################################################################
     
-    def _Target(self, u, linearform_vec):
+    def _target(self, u, linearform_vec):
         tar=GridFunction(self.fes)
         tar.vec.FV().NumPy()[:]=u
         coff=CoefficientFunction(tar)
@@ -188,7 +188,7 @@ class EIT(NonlinearOperator):
         return gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
 
         
-    def _Constraint(self, u):
+    def _constraint(self, u):
         tar=GridFunction(self.fes)
         tar.vec.FV().NumPy()[:]=u
         coff=CoefficientFunction(tar)
