@@ -22,6 +22,7 @@ grid = UniformGrid(xs)
 meshsize=100
 
 from ngsolve import *
+
 rhs=10*sin(x)
 op = Coefficient(grid, meshsize, rhs, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
 
