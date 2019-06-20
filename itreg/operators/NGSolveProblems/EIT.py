@@ -87,7 +87,7 @@ class EIT(NonlinearOperator):
             
         #Solve system
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
-#        res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
+        #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
         res=sco.minimize(self._Target, np.zeros(441), constraints={"fun": self._Constraint, "type": "eq"})
         
