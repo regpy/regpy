@@ -143,26 +143,26 @@ class EIT(NonlinearOperator):
         #Definition of Linearform
         #But it only needs to be defined on boundary
         self._SetBoundaryValues(argument)
-        self.gfu_dir.Set(self.gfu_in)
+#        self.gfu_dir.Set(self.gfu_in)
         
         #Note: Here the linearform f for the dirichlet problem is just zero
         #Update for boundary values
-        self.r.data=-self.a.mat * self.gfu_dir.vec
+#        self.r.data=-self.a.mat * self.gfu_dir.vec
         
         #Solve system
-        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._Solve(self.a, self.r)
+#        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._Solve(self.a, self.r)
         
-        return self.gfu_toret.vec.FV().NumPy().copy()
-#        self.gfu_rhs.Set(self.gfu_in)
-#        self.f.Assemble()
-        
-#        res=sco.minimize(self._Target_diff, 0.0001*np.ones(441), constraints={"fun": self._Constraint, "type": "eq"})
-#        self.gfu_inner.vec.FV().NumPy()[:]=res.x
-        
-#        toret=-grad(self.gfu_inner)*grad(self.gfu)
-        
-#        self.gfu_toret.Set(toret)
 #        return self.gfu_toret.vec.FV().NumPy().copy()
+        self.gfu_rhs.Set(self.gfu_in)
+        self.f.Assemble()
+        
+        res=sco.minimize(self._Target_diff, 0.0001*np.ones(441), constraints={"fun": self._Constraint, "type": "eq"})
+        self.gfu_inner.vec.FV().NumPy()[:]=res.x
+        
+        toret=-grad(self.gfu_inner)*grad(self.gfu)
+        
+        self.gfu_toret.Set(toret)
+        return self.gfu_toret.vec.FV().NumPy().copy()
 
         
     def _Solve(self, bilinear, rhs, boundary=False):
