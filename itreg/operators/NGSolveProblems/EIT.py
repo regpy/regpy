@@ -41,7 +41,7 @@ class EIT(NonlinearOperator):
 
         #grid functions for later use 
         self.gfu = GridFunction(self.fes)  # solution, return value of _eval
-        self.gfu_bdr=GridFunction(self.fes) #grid function holding boundary values, g/sigma=du/dn
+#        self.gfu_bdr=GridFunction(self.fes) #grid function holding boundary values, g/sigma=du/dn
         
         self.gfu_integrator = GridFunction(self.fes) #grid function for defining integrator (bilinearform)
         self.gfu_rhs = GridFunction(self.fes) #grid function for defining right hand side (linearform), f
@@ -102,9 +102,9 @@ class EIT(NonlinearOperator):
         #c.Update()
         #self.gfu.vec.data=inv * self.b.vec
         
-        if differentiate:
-            sigma=CoefficientFunction(self.gfu_integrator)
-            self.gfu_bdr.Set(self.g/sigma)
+#        if differentiate:
+#            sigma=CoefficientFunction(self.gfu_integrator)
+#            self.gfu_bdr.Set(self.g/sigma)
 
 #        return self.gfu.vec.FV().NumPy().copy()
 #        return self._GetBoundaryValues(self.gfu)
