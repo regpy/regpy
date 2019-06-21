@@ -49,7 +49,9 @@ class EIT(NonlinearOperator):
         self.gfu_inner=GridFunction(self.fes) #grid function for inner computation in derivative and adjoint
         self.gfu_toret=GridFunction(self.fes) #grid function for returning values in adjoint and derivative
        
-        self.gfu_dir=GridFunction(self.fes) #grid function for solving the dirichlet problem in adjoint
+#        self.gfu_dir=GridFunction(self.fes) #grid function for solving the dirichlet problem in adjoint
+        self.gfu_error=GridFunction(self.fes) #grid function used in _target to compute the error in forward computation
+        self.gfu_tar=GridFunction(self.fes) #grid function used in _target, holding the arguments
         
         u = self.fes.TrialFunction()  # symbolic object
         v = self.fes.TestFunction()   # symbolic object 
@@ -180,12 +182,9 @@ class EIT(NonlinearOperator):
 ###############################################################################
     
     def _target(self, u, linearform_vec):
-        tar=GridFunction(self.fes)
-        tar.vec.FV().NumPy()[:]=u
-        coff=CoefficientFunction(tar)
-        gfu_error=GridFunction(self.fes)
-        gfu_error.vec.data = self.a.mat * tar.vec-linearform_vec
-        return gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
+        self.gfu_tar.vec.FV().NumPy()[:]=u
+        self.gfu_error.vec.data = self.a.mat * self.gfu_tar.vec-linearform_vec
+        return self.gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
 
         
     def _constraint(self, u):
