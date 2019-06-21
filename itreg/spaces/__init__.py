@@ -1,3 +1,4 @@
+from copy import copy
 import numpy as np
 from functools import singledispatch
 
@@ -16,7 +17,7 @@ class GenericDiscretization:
         # Upcast dtype to represent at least (single-precision) floats, no
         # bools or ints
         dtype = np.result_type(np.float32, dtype)
-        # Allow only floats and complexflaot, disallow objects, strings, times
+        # Allow only float and complexfloat, disallow objects, strings, times
         # or other fancy dtypes
         assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
@@ -133,6 +134,16 @@ class GenericDiscretization:
             return util.real2complex(x.reshape(self.shape + (2,)))
         else:
             return x.reshape(self.shape)
+
+    def complex_space(self):
+        other = copy(self)
+        other.dtype = np.result_type(1j, self.dtype)
+        return other
+
+    def real_space(self):
+        other = copy(self)
+        other.dtype = np.empty(0, dtype=self.dtype).real.dtype
+        return other
 
 
 class Grid(GenericDiscretization):
@@ -261,7 +272,7 @@ def genericspace(*args, **kwargs):
 
 
 @genericspace
-def L2(discr, index=1):
+def L2(discr):
     raise NotImplementedError(
         'L2 not implemented on {}'.format(type(discr).__qualname__))
 

@@ -98,11 +98,9 @@ class MediumScattering(NonlinearOperator):
                 axisdata=(meas_directions, inc_directions),
                 dtype=float if amplitude else complex))
 
-    def _alloc(self):
+        # pre-allocate to save time in _eval
         self._totalfield = np.empty((np.sum(self.support), self.codomain.shape[1]),
                                     dtype=complex)
-        # These belong to self, not params, since they implicitly depend on
-        # self._contrast
         self._lippmann_schwinger = spla.LinearOperator(
             (self.domain.csize,) * 2,
             matvec=self._lippmann_schwinger_op,

@@ -83,3 +83,12 @@ def linspace_circle(num, *, start=0, stop=None, endpoint=False):
         stop = start + 2*np.pi
     angles = np.linspace(start, stop, num, endpoint)
     return np.stack((np.cos(angles), np.sin(angles)), axis=1)
+
+
+def make_repr(self, *args, **kwargs):
+    arglist = []
+    for arg in args:
+        arglist.append(repr(arg))
+    for k, v in sorted(kwargs.items()):
+        arglist.append("{}={}".format(repr(k), repr(v)))
+    return '{}({})'.format(self.__qualname__, ', '.join(arglist))
