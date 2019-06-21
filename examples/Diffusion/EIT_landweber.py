@@ -15,16 +15,20 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
 xs = np.linspace(0, 1, 61)
-x2 = np.linspace(0, 1, 12)
+x2 = np.linspace(0, 1, 8)
 
 grid = UniformGrid(xs)
 grid2= UniformGrid(x2)
 
 
 
+
+
 from ngsolve import *
+mesh=Mesh('..\..\itreg\meshes_ngsolve\meshes\circle.vol.gz')
+
 g=0.1*(x-0.5)
-op = EIT(grid, g, pts, codomain=grid2)
+op = EIT(grid, g, mesh, codomain=grid2)
 
 exact_solution_coeff = 1
 gfu_exact_solution=GridFunction(op.fes)
@@ -64,10 +68,10 @@ init_data=op(init_solution)
 from itreg.spaces import L2
 setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 
-landweber = Landweber(setting, data, init_solution, stepsize=0.1)
+landweber = Landweber(setting, data, init_solution, stepsize=10)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(30) +
+    rules.CountIterations(300) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)

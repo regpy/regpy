@@ -1,7 +1,4 @@
 #TODO: Insert Netgen and netgen visualization
-#TODO: Insert projection onto boundary values
-#TODO: Make sure int_domega u=0 in evaluation (maybe define new fes)
-#TODO: Make landweber converging
 
 
 from itreg.operators import NonlinearOperator
@@ -18,7 +15,7 @@ from ngsolve.meshes import MakeQuadMesh
 class EIT(NonlinearOperator):
     
 
-    def __init__(self, domain, g, pts, codomain=None):
+    def __init__(self, domain, g, mesh, codomain=None):
         
         codomain = codomain or domain
         self.g=g
@@ -26,11 +23,13 @@ class EIT(NonlinearOperator):
 
         
         #Define mesh and finite element space
-        geo=SplineGeometry()
-        geo.AddCircle((0,0), 1, bc="circle")
-        self.ngmesh = geo.GenerateMesh()
+        #geo=SplineGeometry()
+        #geo.AddCircle((0,0), 1, bc="circle")
+        #ngmesh = geo.GenerateMesh()
+        #ngmesh.Save('ngmesh')
 #        self.mesh=MakeQuadMesh(10)
-        self.mesh=Mesh(self.ngmesh)
+        #self.mesh=Mesh(ngmesh)
+        self.mesh=mesh
    
 #Variables for setting of boundary values later     
         #self.ind=[v.point in pts for v in self.mesh.vertices]
