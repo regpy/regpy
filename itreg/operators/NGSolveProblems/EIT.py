@@ -1,5 +1,4 @@
 #TODO: Insert Netgen and netgen visualization
-#TODO: Circular domain
 #TODO: Insert projection onto boundary values
 #TODO: Make sure int_domega u=0 in evaluation (maybe define new fes)
 #TODO: Make landweber converging
@@ -23,17 +22,22 @@ class EIT(NonlinearOperator):
         
         codomain = codomain or domain
         self.g=g
-        self.pts=pts
+        #self.pts=pts
 
         
         #Define mesh and finite element space
-#        geo=SplineGeometry()
-#        geo.AddCircle((0,0),0.5,bc="circle")
-#        self.mesh = geo.GenerateMesh()
-        self.mesh=MakeQuadMesh(10)
+        geo=SplineGeometry()
+        geo.AddCircle((0,0), 1, bc="circle")
+        self.ngmesh = geo.GenerateMesh()
+#        self.mesh=MakeQuadMesh(10)
+        self.mesh=Mesh(self.ngmesh)
    
 #Variables for setting of boundary values later     
-        self.ind=[v.point in pts for v in self.mesh.vertices]
+        #self.ind=[v.point in pts for v in self.mesh.vertices]
+        self.pts=[v.point for v in self.mesh.vertices]
+        self.ind=[np.linalg.norm(np.array(p))==1 for p in self.pts]
+        self.pts_bdr=np.array(self.pts)[self.ind]
+        
         self.fes_in = H1 (self.mesh, order=1)
         self.gfu_in = GridFunction(self.fes_in)
         
@@ -91,7 +95,7 @@ class EIT(NonlinearOperator):
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
         #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
-        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(441), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(61), constraints={"fun": self._constraint, "type": "eq"})
         
         #print(res.x)
         #print(self._Target(np.zeros(441)))
@@ -130,7 +134,7 @@ class EIT(NonlinearOperator):
         
         #self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)#+self.b.vec)
         
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(441), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(61), constraints={"fun": self._constraint, "type": "eq"})
 
         self.gfu_toret.vec.FV().NumPy()[:]=res.x
 #        return res.x            
@@ -158,7 +162,7 @@ class EIT(NonlinearOperator):
         self.gfu_rhs.Set(self.gfu_in)
         self.f.Assemble()
         
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(441), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(61), constraints={"fun": self._constraint, "type": "eq"})
         self.gfu_inner.vec.FV().NumPy()[:]=res.x
         
         toret=-grad(self.gfu_inner)*grad(self.gfu)
@@ -172,7 +176,7 @@ class EIT(NonlinearOperator):
     
     def _get_boundary_values(self, gfu):
         myfunc=CoefficientFunction(gfu)
-        vals = np.asarray([myfunc(self.mesh(*p)) for p in self.pts])
+        vals = np.asarray([myfunc(self.mesh(*p)) for p in self.pts_bdr])
         return vals
     
     def _set_boundary_values(self, vals):
