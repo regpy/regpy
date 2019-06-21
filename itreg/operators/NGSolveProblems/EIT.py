@@ -18,6 +18,7 @@ class EIT(NonlinearOperator):
     def __init__(self, domain, g, mesh, codomain=None):
         
         codomain = codomain or domain
+        self.N_domain=domain.coords.shape[1]
         self.g=g
         #self.pts=pts
 
@@ -94,7 +95,7 @@ class EIT(NonlinearOperator):
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
         #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
-        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(61), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
         
         #print(res.x)
         #print(self._Target(np.zeros(441)))
@@ -133,7 +134,7 @@ class EIT(NonlinearOperator):
         
         #self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)#+self.b.vec)
         
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(61), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
 
         self.gfu_toret.vec.FV().NumPy()[:]=res.x
 #        return res.x            
@@ -161,7 +162,7 @@ class EIT(NonlinearOperator):
         self.gfu_rhs.Set(self.gfu_in)
         self.f.Assemble()
         
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(61), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
         self.gfu_inner.vec.FV().NumPy()[:]=res.x
         
         toret=-grad(self.gfu_inner)*grad(self.gfu)
