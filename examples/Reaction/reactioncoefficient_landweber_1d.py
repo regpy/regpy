@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import L2, UniformGrid
+from itreg.spaces import L2, NGSolveDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import Make1DMesh
@@ -16,18 +16,16 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-xs = np.linspace(0, 1, 201)
-
-grid=UniformGrid(xs)
 
 meshsize=100
 
 from ngsolve import *
 mesh = Make1DMesh(meshsize)
 fes = H1(mesh, order=2, dirichlet="left|right")
+disc= NGSolveDiscretization(fes)
 
 rhs=10*x**2
-op = Coefficient(grid, fes, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
+op = Coefficient(disc, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = 1+x

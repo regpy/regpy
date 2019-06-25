@@ -3,7 +3,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import UniformGrid
+from itreg.spaces import NGSolveDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import MakeQuadMesh
@@ -18,19 +18,16 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-xs = np.linspace(0, 1, 441)
-
-grid=UniformGrid(xs)
-
 meshsize=10
 
 from ngsolve import *
 
 mesh = MakeQuadMesh(meshsize)
 fes = H1(mesh, order=2, dirichlet="left|top|right|bottom")
+disc= NGSolveDiscretization(fes)
 
 rhs=10*sin(x)*sin(y)
-op = Coefficient(grid, fes, rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
+op = Coefficient(disc, rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = cos(x)

@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import UniformGrid
+from itreg.spaces import UniformGrid, NGSolveDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import Make1DMesh
@@ -16,50 +16,21 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-xs = np.linspace(0, 1, 201)
-
-grid = UniformGrid(xs)
-
-#domain=L2(grid)
-meshsize=100
+meshsize_domain=200
+meshsize_codomain=100
 
 from ngsolve import *
 
 mesh = Make1DMesh(meshsize)
-fes = H1(mesh, order=2, dirichlet="left|right")
+fes_domain = H1(mesh, order=2, dirichlet="left|right")
+domain = NGSolveDiscretization(fes_domain)
+
+mesh = Make1DMesh(100)
+fes_codomain = H1(mesh, order=2, dirichlet=[])
+codomain = NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)
-op = Coefficient(grid, fes, rhs, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
-
-#exact_solution = np.linspace(1, 2, 201)
-exact_solution_coeff = cos(x)
-gfu_exact_solution=GridFunction(op.fes)
-gfu_exact_solution.Set(exact_solution_coeff)
-exact_solution=gfu_exact_solution.vec.FV().NumPy()
-exact_data = op(exact_solution)
-data=exact_data
-
-gfu=GridFunction(op.fes)
-for i in range(201):
-    gfu.vec[i]=data[i]
-    
-Symfunc=CoefficientFunction(gfu)
-func=np.zeros(201)
-for i in range(0, 201):
-    mip=op.mesh(i/200)
-    func[i]=Symfunc(mip)
-    
-plt.plot(func)
-plt.show()
-
-
-
-
-
-
-
-_, deriv = op.linearize(exact_solution)
-adj=deriv.adjoint(np.linspace(1, 2, 201))
+op = Coefficient(domain, rhs, codomain=codomain, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
 
 #init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
 init=cos(0.1*x)
@@ -100,7 +71,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.mesh(i/200)
+    mip=op.fes.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
@@ -131,7 +102,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.mesh(i/200)
+    mip=op.fes.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)

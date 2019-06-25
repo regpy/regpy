@@ -215,6 +215,11 @@ class UniformGrid(Grid):
             return y
         else:
             return np.real(y)
+        
+class NGSolveDiscretization(Grid):
+    def __init__(self, fes, *args, **kwargs):
+        self.fes=fes
+        super().__init__(np.empty(fes.ndof), *args, **kwargs)
 
 
 class HilbertSpace:
