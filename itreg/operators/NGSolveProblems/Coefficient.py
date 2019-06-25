@@ -14,7 +14,7 @@ from ngsolve.meshes import Make1DMesh, MakeQuadMesh
 class Coefficient(NonlinearOperator):
     
 
-    def __init__(self, domain, meshsize, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None, diffusion=True, reaction=False, dim=1):
+    def __init__(self, domain, fes, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None, diffusion=True, reaction=False, dim=1):
         assert dim in (1, 2)
         assert diffusion or reaction
         
@@ -32,12 +32,14 @@ class Coefficient(NonlinearOperator):
 
         
         #Define mesh and finite element space
-        if dim==1:
-            self.mesh = Make1DMesh(meshsize)
-            self.fes = H1(self.mesh, order=2, dirichlet="left|right")
-        elif dim==2:
-            self.mesh = MakeQuadMesh(meshsize)
-            self.fes = H1(self.mesh, order=2, dirichlet="left|top|right|bottom")
+        self.fes=fes
+        self.mesh=self.fes.mesh
+#        if dim==1:
+#            self.mesh = Make1DMesh(meshsize)
+#            self.fes = H1(self.mesh, order=2, dirichlet="left|right")
+#        elif dim==2:
+#            self.mesh = MakeQuadMesh(meshsize)
+#            self.fes = H1(self.mesh, order=2, dirichlet="left|top|right|bottom")
 
         #grid functions for later use 
         self.gfu = GridFunction(self.fes)  # solution, return value of _eval

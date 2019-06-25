@@ -4,6 +4,8 @@ from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
+from ngsolve.meshes import Make1DMesh
+
 import itreg.stoprules as rules
 
 import numpy as np
@@ -21,8 +23,11 @@ grid=UniformGrid(xs)
 meshsize=100
 
 from ngsolve import *
+mesh = Make1DMesh(meshsize)
+fes = H1(mesh, order=2, dirichlet="left|right")
+
 rhs=10*x**2
-op = Coefficient(grid, meshsize, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
+op = Coefficient(grid, fes, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
 
 #exact_solution = np.linspace(1, 2, 201)
 exact_solution_coeff = 1+x
