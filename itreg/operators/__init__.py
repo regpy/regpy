@@ -193,17 +193,22 @@ class Composition(NonlinearOperator):
 		return self._fgx
 	
 	def _adjoint(self, h):
-		return self._dgx._adjoint(h) * self._dfgx._adjoint(h)
+		return self._dgx._adjoint(self._dfgx._adjoint(h))
 	
 	#evaluate linearizations saved earlier in a possibly distinct point h
 	def _derivative(self, h):
 		return self._dfgx.__call__(self._dgx.__call__(h))
 		
-	
 
+class MatrixMultiplication(LinearOperator):
+    def __init__(self, matrix):
+        super().__init__(Params(None, None, matrix=matrix))
 
+    def _eval(self, x):
+        return self.params.matrix @ x
 
-
+    def _adjoint(self, y):
+        return self.params.matrix.T @ y
 
 
 

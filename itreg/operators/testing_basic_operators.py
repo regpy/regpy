@@ -33,19 +33,19 @@ d = 3
 p = Power(po)
 s = Scale(sc)
 
-print(str(d) + '**' + str(po) + ' = ' + str(p.__call__(d)))
-print(str(d) + '*' + str(sc) + ' = ' + str(s.__call__(d)))
-y,dy = p.linearize(d)
-print(str(po) + '*' + str(d) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
+#print(str(d) + '**' + str(po) + ' = ' + str(p.__call__(d)))
+#print(str(d) + '*' + str(sc) + ' = ' + str(s.__call__(d)))
+#y,dy = p.linearize(d)
+#print(str(po) + '*' + str(d) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
 
-LC = op.LinearCombination(p,s,1,1)
-print(str(d) + '*' + str(sc) + ' + ' + str(d) + '**' + str(po) + ' = ' + str(LC.__call__(d)))
-A = LC.adjoint
+#LC = op.LinearCombination(p,s,1,1)
+#print(str(d) + '*' + str(sc) + ' + ' + str(d) + '**' + str(po) + ' = ' + str(LC.__call__(d)))
+#A = LC.adjoint
 #print(A._adjoint(d))
 #print(A.__call__(d))
 
 C = op.Composition(p,s)
-print('(' + str(sc) + '*' + str(d) + ')**' + str(po) + ' = ' + str(C.__call__(d)))
+#print('(' + str(sc) + '*' + str(d) + ')**' + str(po) + ' = ' + str(C.__call__(d)))
 y,dy = C.linearize(d)
-print(str(sc) + '*' + str(po) + '*' + str(s.__call__(d)) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
+#print(str(sc) + '*' + str(po) + '*' + str(s.__call__(d)) + '**' + str(po-1) + ' = ' + str(dy.__call__(d)))
 print(dy._adjoint(d))
