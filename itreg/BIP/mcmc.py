@@ -45,14 +45,14 @@ class Settings(PDF):
     """
 #    __slots__ = ('mu', 'cov', 'prec')
 
-    def __init__(self, op, rhs, prior, likelihood, solver, stopping_rule,
+    def __init__(self, setting, rhs, prior, likelihood, solver, stopping_rule,
                   T, n_iter=None, stepsize_rule=None,  
                  n_steps=None, m_0=None, initial_stepsize=None):
 
 
 
         
-        self.op=op
+        self.setting=setting
         self.rhs=rhs
         self.prior=prior
         self.likelihood=likelihood
@@ -116,7 +116,7 @@ class Settings(PDF):
         if not False:
             self.reco = np.mean([s.positions for s in statemanager.states[-int(statemanager.N/2):]], axis=0)
             self.std = np.std([s.positions for s in statemanager.states[-int(statemanager.N/2):]], axis=0)
-            self.reco_data=self.op(self.reco)
+            self.reco_data=self.setting.op(self.reco)
                 
             
             
