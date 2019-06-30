@@ -1,7 +1,0 @@
-before_script:
-  - cd doc
-
-doc:
-  script:
-    - make html
-

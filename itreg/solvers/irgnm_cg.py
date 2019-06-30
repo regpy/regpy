@@ -114,7 +114,7 @@ class IRGNM_CG(Solver):
         self._kappa = 1
         
         # Preparations for the CG method
-        self._ztilde = self.op.range.gram(self._residual)
+        self._ztilde = self.op.codomain.gram(self._residual)
         self._stilde = (deriv.adjoint(self._ztilde) 
                         + self._regpar*self.op.domain.gram(self._xref))
         self._s = self.op.domain.gram_inv(self._stilde)
@@ -172,7 +172,7 @@ class IRGNM_CG(Solver):
         +--------------------+-------------------------------------+ 
         | :math:`F`          | self.op                             | 
         +--------------------+-------------------------------------+ 
-        | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.range.gram | 
+        | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.codomain.gram | 
         +--------------------+-------------------------------------+
         | :math:`G_X^{-1}`   | self.op.domain.gram_inv               |
         +--------------------+-------------------------------------+                  
@@ -206,7 +206,7 @@ class IRGNM_CG(Solver):
             # Computations and updates of variables
             _, deriv=self.op.linearize(self.x)
             self._z = deriv(self._d)
-            self._ztilde = self.op.range.gram(self._z)
+            self._ztilde = self.op.codomain.gram(self._z)
             self._gamma = (self._norm_s
                            / np.real(self._regpar
                                      *self.op.domain.inner(self._dtilde,self._d)

@@ -32,7 +32,7 @@ exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+noiselevel = op.codomain.norm(noise)
 
 irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(grid.shape), \
         alpha0 = 1e-0, alpha_step = 0.3, intensity = 1,\
@@ -41,7 +41,7 @@ irnm_kl_newton = IRNM_KL_Newton(op, data, np.ones(grid.shape), \
 
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
 
 reco, reco_data = irnm_kl_newton.run(stoprule)
 plt.plot(grid.coords.T, exact_solution.T, label='exact solution')

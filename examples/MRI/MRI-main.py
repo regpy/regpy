@@ -1,10 +1,6 @@
-
-import setpath
-
-
-from itreg.spaces import L2
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+from itreg.spaces.l2 import L2
+from itreg.solvers.landweber import Landweber
+# from itreg.util import test_adjoint
 from itreg.operators.MRI.MRI import parallel_MRI
 import itreg.stoprules as rules
 from itreg.grids import User_Defined
@@ -53,14 +49,14 @@ init_data, deriv = op.linearize(init)
 
 #stoprule = (
 #    rules.CountIterations(100) +
-#    rules.Discrepancy(op.range.norm, data, noiselevel=0.1, tau=1.1))
+#    rules.Discrepancy(op.codomain.norm, data, noiselevel=0.1, tau=1.1))
 
 #reco, reco_data = irgnm_cg.run(stoprule)
 
 newton= Newton_CG_Frozen(op, data, init)
 stoprule=(
     rules.CountIterations(30)+
-    rules.Discrepancy(op.range.norm, data, noiselevel=0, tau=2))
+    rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=2))
 
 reco, reco_data=newton.run(stoprule)
 

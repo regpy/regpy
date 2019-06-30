@@ -1,33 +1,20 @@
-
-from itreg.operators import LinearOperator, NonlinearOperator, OperatorImplementation, Params
-from itreg.util import instantiate
-from itreg.spaces import L2
-from itreg.grids import User_Defined
+from itreg.operators import NonlinearOperator, Params
 
 import numpy as np
 import scipy as scp
 import matplotlib.pyplot as plt
 
 class parallel_MRI(NonlinearOperator):
-    
     def __init__(self,
                  domain,
-                 range=None,
-                noiselevel=0,
-                nr_coils=20, 
-                Nx=200, 
+                 codomain=None,
+                nr_coils=20,
+                Nx=200,
                 Ny=20,
                 samplingIndx=None,
-                init_guess=None,
                 Fourier_weights=None,
-                Xdim=None,
-                Ydim=None
                 ):
-        
-        #range=range or domain
-        #if range is None:
-         #   range=domain
-        
+
         if samplingIndx is None:
             undersampling = 2
             nrcenterlines =  8
@@ -36,43 +23,29 @@ class parallel_MRI(NonlinearOperator):
             P[:,np.arange(0, Ny, undersampling)] = 1
             P[:,int((Ny-nrcenterlines)/2):int((Ny+nrcenterlines)/2)] = 1
             samplingIndx = np.nonzero(np.reshape(P, (Nx*Ny, 1), order='F'))[0]
-        
-        if range is None:
+
+        if codomain is None:
             coords_range=np.ones(nr_coils*len(samplingIndx))
             grid_range=User_Defined(coords_range, coords_range.shape)
-            range=L2(grid_range)
-        
-            
+            codomain=L2(grid_range)
+
+
         if Fourier_weights is None:
             Fourier_weights = np.zeros((Nx,Ny))
             #for k in range(0, Nx):
                 #for j in range(0, Ny):
                     #d = (k  / Nx - 0.5)**2 + (j  / Ny - 0.5)**2
                     #Fourier_weights[k, j] = (1. + 220. * d)**32
-                    
-        if init_guess is None:
-            N = Nx*Ny
-            init_guess = np.zeros((N*(1+nr_coils),1))
-            init_guess[0:N] = 1
-        
-        if Xdim is None:
-            Xdim = Nx * Ny * (nr_coils+1)
-        if Ydim is None:
-            Ydim = np.size(samplingIndx) * nr_coils
-            
+
         super().__init__(
             Params(domain,
-                range,
+                codomain,
                 samplingIndx=samplingIndx,
-                init_guess=init_guess,
                 Fourier_weights=Fourier_weights,
-                Xdim=Xdim,
-                Ydim=Ydim,
-                noiselevel=noiselevel,
-                nr_coils=nr_coils, 
-                Nx=Nx, 
+                nr_coils=nr_coils,
+                Nx=Nx,
                 Ny=Ny))
-        
+
     @instantiate
     class operator(OperatorImplementation):
         def eval(self, params, rho_and_coils, data, **kwargs):
@@ -80,37 +53,37 @@ class parallel_MRI(NonlinearOperator):
             nr_coils = params.nr_coils
             samplingIndx = params.samplingIndx
             N = params.Nx*params.Ny
-            
+
             # current spin density and coil sensitivities are stored for
             # later evaluations of F.derivative and F.adjoint:
             # The derivative will be taken at the point (rho,coils)
             data.rho = np.reshape(rho_and_coils[0:N],(params.Nx,params.Ny), order='F')+1j*np.zeros((params.Nx,params.Ny))
             data.coils = np.reshape(rho_and_coils[N:],(params.Nx,params.Ny,nr_coils), order='F')+1j*np.zeros((params.Nx,params.Ny,nr_coils))
-            
+
             data_mes = 1j*np.zeros((len(samplingIndx),nr_coils))
             aux=1j*np.zeros((params.Nx, params.Ny))
             #data_mes=1j*np.zeros((N, nr_coils))
-            
+
             for j in range(0, nr_coils):
                 data.coils[:,:,j] = myifft(data.coils[:,:,j])
                 aux = myfft(data.rho * data.coils[:,:,j])
                 data_mes[:,j] = np.reshape(aux, N, order='F')[samplingIndx]
             return data_mes.reshape(len(samplingIndx)*nr_coils, order='F')
-        
-        
-        
-    @instantiate    
+
+
+
+    @instantiate
     class derivative(OperatorImplementation):
         def eval(self, params, h, data, **kwargs):
             nr_coils = params.nr_coils
             samplingIndx = params.samplingIndx
             N = params.Nx*params.Ny
-            
+
             d_K = 1j*np.zeros((len(samplingIndx),nr_coils))
             aux=1j*np.zeros((params.Nx, params.Ny))
             d_rho = np.reshape(h[0:N],(params.Nx,params.Ny), order='F')+1j*np.zeros((params.Nx, params.Ny))
             d_coils = np.reshape(h[N:],(params.Nx,params.Ny,nr_coils), order='F')+1j*np.zeros((params.Nx,params.Ny,nr_coils))
-            
+
             for j in range(0, nr_coils):
                 aux = myfft(data.rho * myifft(d_coils[:,:,j]) + d_rho * data.coils[:,:,j])
                 d_K[:,j]= np.reshape(aux, N, order='F')[samplingIndx]
@@ -122,7 +95,7 @@ class parallel_MRI(NonlinearOperator):
             Nx = params.Nx
             Ny = params.Ny
             M = len(samplingIndx)
-            
+
             aux = 1j*np.zeros(Nx*Ny)
             d_rho = 1j*np.zeros((Nx,Ny))
             d_coils = 1j*np.zeros((Nx,Ny,nr_coils))
@@ -135,10 +108,10 @@ class parallel_MRI(NonlinearOperator):
                 d_coils[:,:,j] = myfft(aux2 * np.conjugate(data.rho))
             d_rho_and_coils = np.append(np.reshape(d_rho, Nx*Ny, order='F'),np.reshape(d_coils, Nx*Ny*nr_coils, order='F'))
             return d_rho_and_coils
-        
+
 def myfft(rho):
     Nx, Ny=rho.shape
-    data=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(rho)))/scp.sqrt(Nx*Ny)
+    data=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(rho)))/np.sqrt(Nx*Ny)
     return data
 
 def myifft(data):
