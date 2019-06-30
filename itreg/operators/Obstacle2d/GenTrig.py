@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jun  5 00:18:35 2019
-
-@author: Bjoern Mueller
-"""
-
 from .GenCurve import GenCurve
 import numpy as np
 import numpy.matlib

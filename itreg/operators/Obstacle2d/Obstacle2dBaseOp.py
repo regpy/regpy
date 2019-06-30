@@ -1,17 +1,10 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jun  3 23:25:25 2019
-
-@author: Bjoern Mueller
-"""
-
 import numpy as np
 from .GenCurve import GenCurve
 from .GenTrig import GenTrig
 from .StarTrig import StarTrig
 from .StarCurve import StarCurve
 
-class Obstacle2dBaseOp(object):
+class Obstacle2dBaseOp():
     def __init__(self, **kwargs):
         
             self.op_name = 'PotentialOp'
