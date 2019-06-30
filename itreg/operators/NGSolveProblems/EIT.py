@@ -35,17 +35,17 @@ class EIT(NonlinearOperator):
 #Variables for setting of boundary values later     
         #self.ind=[v.point in pts for v in self.mesh.vertices]
         self.pts=[v.point for v in self.mesh.vertices]
-        self.ind=[np.linalg.norm(np.array(p))==1 for p in self.pts]
+        self.ind=[np.linalg.norm(np.array(p))>0.95 for p in self.pts]
         self.pts_bdr=np.array(self.pts)[self.ind]
         
         self.fes_in = H1 (self.mesh, order=1)
         self.gfu_in = GridFunction(self.fes_in)
         
-        self.fes = H1(self.mesh, order=2, dirichlet="top|right|bottom|left")
+        self.fes = H1(self.mesh, order=2, dirichlet=[1])
 
         #grid functions for later use 
         self.gfu = GridFunction(self.fes)  # solution, return value of _eval
-#        self.gfu_bdr=GridFunction(self.fes) #grid function holding boundary values, g/sigma=du/dn
+        self.gfu_bdr=GridFunction(self.fes) #grid function holding boundary values, g/sigma=du/dn
         
         self.gfu_integrator = GridFunction(self.fes) #grid function for defining integrator (bilinearform)
         self.gfu_rhs = GridFunction(self.fes) #grid function for defining right hand side (linearform), f
@@ -53,7 +53,7 @@ class EIT(NonlinearOperator):
         self.gfu_inner=GridFunction(self.fes) #grid function for inner computation in derivative and adjoint
         self.gfu_toret=GridFunction(self.fes) #grid function for returning values in adjoint and derivative
        
-#        self.gfu_dir=GridFunction(self.fes) #grid function for solving the dirichlet problem in adjoint
+        self.gfu_dir=GridFunction(self.fes) #grid function for solving the dirichlet problem in adjoint
         self.gfu_error=GridFunction(self.fes) #grid function used in _target to compute the error in forward computation
         self.gfu_tar=GridFunction(self.fes) #grid function used in _target, holding the arguments
         
@@ -106,9 +106,9 @@ class EIT(NonlinearOperator):
         #c.Update()
         #self.gfu.vec.data=inv * self.b.vec
         
-#        if differentiate:
-#            sigma=CoefficientFunction(self.gfu_integrator)
-#            self.gfu_bdr.Set(self.g/sigma)
+        if differentiate:
+            sigma=CoefficientFunction(self.gfu_integrator)
+            self.gfu_bdr.Set(self.g/sigma)
 
 #        return self.gfu.vec.FV().NumPy().copy()
 #        return self._GetBoundaryValues(self.gfu)
@@ -149,26 +149,29 @@ class EIT(NonlinearOperator):
         #Definition of Linearform
         #But it only needs to be defined on boundary
         self._set_boundary_values(argument)
-#        self.gfu_dir.Set(self.gfu_in)
+        self.gfu_dir.Set(self.gfu_in)
         
         #Note: Here the linearform f for the dirichlet problem is just zero
         #Update for boundary values
-#        self.r.data=-self.a.mat * self.gfu_dir.vec
+        self.r.data=-self.a.mat * self.gfu_dir.vec
         
         #Solve system
-#        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._Solve(self.a, self.r)
+        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
         
-#        return self.gfu_toret.vec.FV().NumPy().copy()
-        self.gfu_rhs.Set(self.gfu_in)
-        self.f.Assemble()
-        
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0.0001*np.ones(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
-        self.gfu_inner.vec.FV().NumPy()[:]=res.x
-        
-        toret=-grad(self.gfu_inner)*grad(self.gfu)
-        
-        self.gfu_toret.Set(toret)
         return self.gfu_toret.vec.FV().NumPy().copy()
+        #self.gfu_inner.Set(self.gfu_in)
+        #rhs=div(self.gfu_inner*grad(self.gfu))
+#        self.gfu_rhs.Set(self.gfu_in)
+        #self.gfu_rhs.Set(rhs)
+#        self.f.Assemble()
+        
+#        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0*0.0001*np.ones(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
+#        self.gfu_inner.vec.FV().NumPy()[:]=res.x
+        
+#        toret=-grad(self.gfu_inner)*grad(self.gfu)
+        
+#        self.gfu_toret.Set(toret)
+#        return self.gfu_toret.vec.FV().NumPy().copy()
 
         
     def _solve(self, bilinear, rhs, boundary=False):
