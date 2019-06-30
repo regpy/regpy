@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jun  6 14:34:54 2019
-
-@author: Bjoern Mueller
-"""
-
 import numpy as np
 
 class StarTrig:

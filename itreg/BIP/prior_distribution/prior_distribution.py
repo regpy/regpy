@@ -12,22 +12,22 @@ import scipy.optimize
 
 class User_defined_prior(object):
     
-    def __init__(self, op, logprob, gradient, hessian, m_0):
+    def __init__(self, setting, logprob, gradient, hessian, m_0):
         super().__init__()
         self.prior=logprob
         self.hessian=hessian
         self.gradient=gradient
-        self.op=op
+        self.setting=setting
         self.m_0=m_0
         
 class gaussian(object):  
-    def __init__(self, gamma_prior, op, m_0=None):
+    def __init__(self, gamma_prior, setting, m_0=None):
         super().__init__()
         if gamma_prior is None:
                 raise ValueError('Error: No prior covariance matrix')
-        self.op=op
+        self.setting=setting
         if m_0 is None:
-            self.m_0=np.zeros(self.op.domain.coords.shape[0])
+            self.m_0=np.zeros(self.setting.domain.coords.shape[0])
         else:
             self.m_0=m_0
         self.gamma_prior=gamma_prior
@@ -43,10 +43,10 @@ class gaussian(object):
             raise ValueError('Error: No gamma_prior is given')
 
         return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs))-\
-            1/2*np.dot(x-self.m_0, self.op.domain.gram(np.dot(self.gamma_prior, x-self.m_0)))
+            1/2*np.dot(x-self.m_0, self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0)))
     
     def gradient_gaussian(self, x):
-        return self.op.domain.gram(np.dot(self.gamma_prior, x-self.m_0))
+        return self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0))
     
     def hessian_gaussian(self, m, x):
         return np.dot(self.gamma_prior, x)
@@ -54,12 +54,12 @@ class gaussian(object):
     
 
 class l1(object):
-    def __init__(self, l1_sigma, op):
+    def __init__(self, l1_sigma, setting):
         super().__init__()
         if l1_sigma is None:
             raise ValueError('Error: Not all necessary parameters are specified')
         self.l1_sigma=l1_sigma
-        self.op=op
+        self.setting=setting
         self.hessian=self.hessian_l1
         self.gradient=self.gradient_l1
         self.prior=self.l1
@@ -77,9 +77,9 @@ class l1(object):
 
         
 class mean(object):       
-    def __init__(self, op, x_lower=None, x_upper=None):
+    def __init__(self, setting, x_lower=None, x_upper=None):
         super().__init__()
-        self.op=op
+        self.setting=setting
         self.x_lower=x_lower
         self.x_upper=x_upper
         self.prior=self.mean
@@ -100,36 +100,36 @@ class mean(object):
         return 0
     
     def hessian_mean(self, m, x):
-        y, deriv=self.op.linearize(m+x)
+        y, deriv=self.setting.op.linearize(m+x)
         grad_mx=0
-        y, deriv=self.op.linearize(m)
+        y, deriv=self.setting.op.linearize(m)
         grad_m=0
         return grad_mx-grad_m
         
 class unity(object):
-    def __init__(self, op):
+    def __init__(self, setting):
         super().__init__()
-        self.op=op
+        self.setting=setting
         self.prior=(lambda x: 0)
         self.gradient=(lambda x: 0)
         self.hessian=(lambda x: 0)
         
 class tikhonov(object):
-    def __init__(self, op, regpar):
-        self.op=op
+    def __init__(self, setting, regpar):
+        self.setting=setting
         self.regpar=regpar
         self.prior=self.tikhonov
         self.gradient=self.gradient_tikhonov
         self.hessian=self.hessian_tikhonov
         
     def tikhonov(self, x):
-        y=self.op(x)-self.rhs
-        return - 0.5 * (self.op.range.inner(y, y)+self.regpar*self.op.domain.inner(x, x))
+        y=self.setting.op(x)-self.rhs
+        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
     
     def gradient_tikhonov(self, x):
-        y, deriv=self.op.linearize(x)
+        y, deriv=self.setting.op.linearize(x)
         y-=self.rhs
-        return -(deriv.adjoint(self.op.range.gram(y))+self.regpar*self.op.domain.gram(x))
+        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
     
     def hessian_tikhonov(self, m, x):
         grad_mx=self.gradient_tikhonov(m+x)

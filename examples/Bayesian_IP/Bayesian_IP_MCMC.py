@@ -1,23 +1,18 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon May 20 19:18:06 2019
-
-@author: Bjoern Mueller
-"""
-
 import setpath
 
+import itreg
 
-from itreg.operators.Volterra.volterra import NonlinearVolterra
-from itreg.spaces import L2
-#from itreg.grids import Square_1D
-from itreg.grids import User_Defined
+from itreg.operators import NonlinearVolterra
+from itreg.spaces import L2, HilbertPullBack, UniformGrid
+from itreg.solvers import Landweber, HilbertSpaceSetting
+#from itreg.util import test_adjoint
+import itreg.stoprules as rules
+
 #from itreg.BIP.mcmc import tikhonov_like
 from itreg.BIP.mcmc import Settings
 from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+
 from itreg.BIP.MonteCarlo_basics import fixed_stepsize
 from itreg.BIP.MonteCarlo_basics import adaptive_stepsize
 from itreg.BIP.MonteCarlo_basics import statemanager
@@ -25,7 +20,7 @@ from itreg.BIP.MonteCarlo_basics import RandomWalk
 #from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
 from itreg.BIP.MonteCarlo_basics import HamiltonianMonteCarlo
 from itreg.BIP.MonteCarlo_basics import GaussianApproximation
-import itreg.stoprules as rules
+
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
 
@@ -40,28 +35,30 @@ logging.basicConfig(
 
 spacing=2*np.pi/200
 xs=np.linspace(0, 200, 200)/200*2*np.pi
-grid=User_Defined(xs, 200)
+grid=UniformGrid(xs)
 
-op = NonlinearVolterra(L2(grid), exponent=3, spacing=spacing)
+op = NonlinearVolterra(grid, exponent=3)
 
-exact_solution = np.sin(grid.coords)
+exact_solution = np.sin(xs)
 exact_data = op(exact_solution)
 noise = 0.03 * op.domain.rand(np.random.randn)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
+#noiselevel = op.codomain.norm(noise)
 
-init=op.domain.one()
+init = op.domain.ones()
 
-solver = Landweber(op, data, init, stepsize=0.01)
+setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+
+solver = Landweber(setting, data, init, stepsize=0.01)
 stopping_rule = (
     rules.CountIterations(10) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.Discrepancy(setting.codomain.norm, data, noiselevel=setting.codomain.norm(noise), tau=1.1))
 
 #prior=gaussian_prior(np.eye(200), op, exact_solution+0.1*np.ones(exact_solution.shape[0]))
 #likelihood=gaussian_likelihood(op, np.eye(200), exact_data+0.1*np.ones(exact_data.shape[0]))
-prior=gaussian_prior(0.1*np.eye(200), op, np.zeros(200))
-likelihood=gaussian_likelihood(op, np.eye(200), exact_data)
+prior=gaussian_prior(0.1*np.eye(200), setting, np.zeros(200))
+likelihood=gaussian_likelihood(setting, np.eye(200), exact_data)
 #prior=l1_prior(1, op)
 #likelihood=l1_likelihood(op, 1, exact_data)
 
@@ -78,7 +75,7 @@ stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5][0]
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(op, data, prior, likelihood, solver, stopping_rule, 0.001, 
+bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, 0.001, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
