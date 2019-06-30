@@ -16,21 +16,28 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-meshsize_domain=200
+meshsize_domain=100
 meshsize_codomain=100
 
 from ngsolve import *
 
-mesh = Make1DMesh(meshsize)
+mesh = Make1DMesh(meshsize_domain)
 fes_domain = H1(mesh, order=2, dirichlet="left|right")
 domain = NGSolveDiscretization(fes_domain)
 
-mesh = Make1DMesh(100)
-fes_codomain = H1(mesh, order=2, dirichlet=[])
+mesh = Make1DMesh(meshsize_codomain)
+fes_codomain = H1(mesh, order=2, dirichlet="left|right")
 codomain = NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)
 op = Coefficient(domain, rhs, codomain=codomain, bc_left=1, bc_right=1.1, diffusion=True, reaction=False)
+
+exact_solution_coeff = cos(x)
+gfu_exact_solution=GridFunction(op.fes)
+gfu_exact_solution.Set(exact_solution_coeff)
+exact_solution=gfu_exact_solution.vec.FV().NumPy()
+exact_data = op(exact_solution)
+data=exact_data
 
 #init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
 init=cos(0.1*x)
@@ -39,8 +46,9 @@ init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-from itreg.spaces import L2
+from itreg.spaces import NGSolveSpace, L2
 setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+
 
 landweber = Landweber(setting, data, init_solution, stepsize=1)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
@@ -50,9 +58,11 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
+#print(reco_data)
+
 plt.plot(reco, label='reco')
 plt.plot(exact_solution, label='exact')
-#plt.plot(init_solution, label='init')
+plt.plot(init_solution, label='init')
 plt.legend()
 plt.show()
 
@@ -78,7 +88,7 @@ for i in range(0, 201):
     
 plt.plot(func, label='reco')
 plt.plot(func2, label='exact')
-#plt.plot(func3, label='init')
+plt.plot(func3, label='init')
 plt.legend()
 plt.show()
 
