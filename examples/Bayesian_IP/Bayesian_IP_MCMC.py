@@ -84,23 +84,21 @@ bip=Settings(op, data, prior, likelihood, solver, stopping_rule, 0.001,
 statemanager=statemanager(bip.initial_state)
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
-#sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
+sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 #sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize_rule=stepsize_rule)
-sampler=GaussianApproximation(bip)
+#sampler=GaussianApproximation(bip)
 
 bip.run(sampler, statemanager, 2e4)
 
-plt.plot(grid.coords.T, exact_solution.T, label='exact solution')
-plt.plot(grid.coords.T, bip.reco, label='reco')
-plt.plot(grid.coords.T, exact_data, label='exact data')
-plt.plot(grid.coords.T, data, label='data')
-plt.plot(grid.coords.T, bip.reco_data, label='reco data')
-plt.legend()
-plt.show()
+from itreg.BIP.plot_functions import plot_lastiter
+from itreg.BIP.plot_functions import plot_mean
+from itreg.BIP.plot_functions import plot_verlauf
+from itreg.BIP.plot_functions import plot_iter
+
+#plot_lastiter(bip, exact_solution, exact_data, data)
+#plot_mean(statemanager, exact_solution, n_iter=1000)
+#plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
+plot_iter(bip, statemanager, 10)
 
 
-a = np.array([s.positions for s in statemanager.states[-1000:]])
-v = a.std(axis=0)*3
-m = a.mean(axis=0)
-plt.plot(np.array([m+v, m-v, exact_solution]).T)
-plt.plot( exact_solution.T, label='exact solution')
+
