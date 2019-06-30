@@ -18,7 +18,7 @@ from . import PDF
 from . import State
 from .MonteCarlo_basics import MetropolisHastings
 from .MonteCarlo_basics import RandomWalk
-from .MonteCarlo_basics import AdaptiveRandomWalk
+#from .MonteCarlo_basics import AdaptiveRandomWalk
 from .MonteCarlo_basics import Leapfrog
 from .MonteCarlo_basics import HamiltonianMonteCarlo
 from .MonteCarlo_basics import GaussianApproximation
@@ -96,7 +96,9 @@ class Settings(PDF):
     def run(self, sampler, statemanager, n_iter):
         for i in range(int(n_iter)):
             accepted = sampler.next()
+#            print(sampler.stepsize)
             statemanager.statemanager(sampler.state, accepted)
+            
             
         self.points = np.array([state.positions for state in statemanager.states])
         
@@ -105,7 +107,11 @@ class Settings(PDF):
         #accepted = [i for i in range(int(n_iter)) if statemanager.states[i]!=statemanager.states[i+1]]
         #print('acceptance_rate : {0:.1f} %'.format(100. * len(accepted) / n_iter))
         print('acceptance_rate : {0:.1f} %'.format(100. *statemanager.N/n_iter))
-        print('stepsize        : {0:.1f}'.format(sampler.stepsize))
+        if type(sampler.stepsize)==float:
+            print('stepsize        : {0:.5f}'.format(sampler.stepsize))
+        else:
+            print('sampler.stepsize')
+        
             
         if not False:
             self.reco = np.mean([s.positions for s in statemanager.states[-int(statemanager.N/2):]], axis=0)

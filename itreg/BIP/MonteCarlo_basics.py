@@ -33,12 +33,12 @@ class MetropolisHastings(object):
     log=classlogger
     """MetropolisHastings for *symmetric* proposal kernel
     """
-    def __init__(self, pdf, initial_stepsize=1, stepsize_rule=fixed_stepsize):
+    def __init__(self, pdf, statemanager, initial_stepsize=1, stepsize_rule=fixed_stepsize):
         assert isinstance(pdf, PDF), 'Instance of PDF expected'
         self.pdf = pdf
         self.stepsize=initial_stepsize
         self.stepsize_rule=stepsize_rule
-        self.state=self.pdf.initial_state
+        self.state=statemanager.initial_state
         
     def propose(self, current_state):
         raise NotImplementedError
@@ -53,6 +53,7 @@ class MetropolisHastings(object):
                    
         accepted=np.log(np.random.random()) < log_odds
         self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, accepted)
+        #print(accepted)
 
         return np.log(np.random.random()) < log_odds
     
@@ -65,49 +66,34 @@ class MetropolisHastings(object):
     
     
 
-#    def run(self, initial_state, n_iter):
 
- #       assert isinstance(initial_state, State), 'State expected'
-#        assert n_iter > 0, 'Positive number expected'
-
-#        states = [initial_state]
-
-#        current_state = initial_state
-
-#        for i in range(int(n_iter)):
-#            print(i)
-
-#            proposed_state = self.propose(current_state)
-
-#            do_accept = self.accept(current_state, proposed_state)
-
-#            if do_accept:
-#                current_state = proposed_state
-
-##            states.append(current_state)
-
-#        return states
 class statemanager(object):
     """Describes what to do with the states
     """
-    def __init__(self, initial_state):
-        self.initial_state=initial_state
-        self.states=[initial_state]
+    def __init__(self, initial_state, momenta=False):
+        if momenta:
+            self.initial_state=HMCState()
+            self.initial_state.log_prob=initial_state.log_prob
+            self.initial_state.positions=initial_state.positions
+        else:
+            self.initial_state=initial_state
+        self.states=[self.initial_state]
         self.N=1
         
     def statemanager(self, state, accepted):
         assert isinstance(self.initial_state, State), 'State expected'
         if accepted:
             self.states.append(state)
-        self.N+=1
+            self.N+=1
     
 class RandomWalk(MetropolisHastings):
     """Gaussian proposal kernel
     """
-    def __init__(self, pdf, stepsize=1e-1):
+    def __init__(self, pdf, statemanager, stepsize=1e-1, stepsize_rule=fixed_stepsize):
         assert stepsize > 0., 'Positive number expected'
-        super(RandomWalk, self).__init__(pdf)
+        super(RandomWalk, self).__init__(pdf, statemanager)
         self.stepsize = float(stepsize)
+        self.stepsize_rule=stepsize_rule
 
     def propose(self, current_state):
 
@@ -119,17 +105,8 @@ class RandomWalk(MetropolisHastings):
 
         return proposed_state
 
-class AdaptiveRandomWalk(RandomWalk):
-    """RandomWalk Metropolis-Hastings with an adaptive stepsize
-    """
-    stepsize_factor = 1.05
 
-    def accept(self, current_state, proposed_state):
-        do_accept = super(AdaptiveRandomWalk, self).accept(current_state, proposed_state)
-#        self.stepsize *= self.stepsize_factor if do_accept else \
-#                         1. / self.stepsize_factor
-        self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, do_accept)
-        return do_accept
+
 
 class Leapfrog(object):
     """Leapfrog integrator
@@ -174,9 +151,9 @@ class Leapfrog(object):
 
 class HamiltonianMonteCarlo(RandomWalk):
 
-    def __init__(self, pdf, stepsize=1e-1, n_steps=10):
+    def __init__(self, pdf, statemanager, stepsize=1e-1, stepsize_rule=fixed_stepsize, n_steps=10):
 
-        super(HamiltonianMonteCarlo, self).__init__(pdf, stepsize)
+        super(HamiltonianMonteCarlo, self).__init__(pdf, statemanager, stepsize, stepsize_rule)
 
         self.integrator = Leapfrog(self.pdf, self.stepsize, n_steps)
 
@@ -201,12 +178,7 @@ class HamiltonianMonteCarlo(RandomWalk):
 
         return proposed_state
 
-    def run(self, initial_state, n_iter=1e3):
 
-        current_state = HMCState()
-        current_state.positions = initial_state.positions
-
-        return super(HamiltonianMonteCarlo, self).run(current_state, n_iter)
     
     
     
@@ -219,6 +191,7 @@ class GaussianApproximation(object):
         Insert approximated code to compute gamma_prior_half^{1/2}
         """
         self.pdf=pdf
+        self.stepsize='randomly chosen'
         self.y_MAP=self.pdf.op(self.pdf.initial_state.positions)
         N=self.pdf.initial_state.positions.shape[0]
 #define the prior-preconditioned Hessian
@@ -236,25 +209,36 @@ class GaussianApproximation(object):
         self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
         self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.pdf.prior.gamma_prior.shape[0])))
 #define prior, posterior sampling
+        
+
+        
 
         
     def random_samples(self):
         R=np.random.normal(0, 1, self.gamma_post_half.shape[0]) 
-        m_prior=self.m_0+np.dot(self.gamma_prior_half, R)
-        m_post=self.m_MAP+np.dot(self.gamma_post_half, R)
-        return m_prior, m_post
+#        m_prior=self.pdf.m_0+np.dot(self.gamma_prior_half, R)
+        m_post=self.pdf.initial_state.positions+np.dot(self.gamma_post_half, R)
+        return  m_post
         
-    def run(self, initial_state, n_iter):
-        states = [initial_state]
+#    def run(self, initial_state, n_iter):
+#        states = [initial_state]
 
-        for i in range(0, int(n_iter)):
-            _, m_post=self.evaluation.random_samples()
-            current_state=State()
-            current_state.positions=m_post
-            current_state.log_prob=self.pdf.log_prob(m_post)
-            states.append(current_state)
+#        for i in range(0, int(n_iter)):
+#            _, m_post=self.evaluation.random_samples()
+#            current_state=State()
+#            current_state.positions=m_post
+#            current_state.log_prob=self.pdf.log_prob(m_post)
+#            states.append(current_state)
 
-        return states
+#        return states
+    
+    def next(self):
+        m_post=self.random_samples()
+        next_state=State()
+        next_state.positions=m_post
+        next_state.log_prob=np.exp(-np.dot(m_post, np.dot(self.gamma_post, m_post)))
+        self.state=next_state
+        
     
     
     

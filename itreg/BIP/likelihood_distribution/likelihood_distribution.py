@@ -58,18 +58,20 @@ class gaussian(object):
         
 class l1(object):
     
-    def __init__(self, op, l1_sigma):
+    def __init__(self, op, l1_sigma, rhs):
         super().__init__()
         if l1_sigma is None:
             raise ValueError('Error: Not all necessary parameters are specified')
         self.op=op
         self.l1_sigma=l1_sigma
+        self.rhs=rhs
         self.likelihood=self.l1
         self.gradient=self.gradient_l1
         self.hessian=self.hessian_l1
         
     def l1(self, x):
-        return -self.l1_sigma*sum(abs(self.op(x)-self.rhs))
+        return (-1)*self.l1_sigma*np.sum(abs(self.op(x)-self.rhs))
+
     
     def gradient_l1(self, x):
         y, deriv=self.op.linearize(x)
