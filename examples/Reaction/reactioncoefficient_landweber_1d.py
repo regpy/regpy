@@ -42,7 +42,7 @@ for i in range(201):
 Symfunc=CoefficientFunction(gfu)
 func=np.zeros(201)
 for i in range(0, 201):
-    mip=op.mesh(i/200)
+    mip=op.fes.mesh(i/200)
     func[i]=Symfunc(mip)
     
 plt.plot(func)
@@ -96,7 +96,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.mesh(i/200)
+    mip=op.fes.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
@@ -127,7 +127,7 @@ func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
 for i in range(0, 201):
-    mip=op.mesh(i/200)
+    mip=op.fes.mesh(i/200)
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)

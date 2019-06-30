@@ -26,6 +26,7 @@ mesh = MakeQuadMesh(meshsize)
 fes = H1(mesh, order=2, dirichlet="left|top|right|bottom")
 disc= NGSolveDiscretization(fes)
 
+
 rhs=10*sin(x)*sin(y)
 op = Coefficient(disc, rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
 
@@ -45,7 +46,7 @@ Symfunc=CoefficientFunction(gfu)
 func=np.zeros((21, 21))
 for j in range(0, 21):
     for k in range(0, 21):
-        mip=op.mesh(j/20, k/20)
+        mip=op.fes.mesh(j/20, k/20)
         func[j][k]=Symfunc(mip)
         
 plt.contourf(func)
@@ -104,7 +105,7 @@ func2=np.zeros((21, 21))
 #func3=np.zeros(201)
 for i in range(21):
     for j in range(21):
-        mip=op.mesh(i/20, j/20)
+        mip=op.fes.mesh(i/20, j/20)
         func[i, j]=Symfunc(mip)
         func2[i, j]=Symfunc2(mip)
 #    func3[i]=Symfunc3(mip)
@@ -138,7 +139,7 @@ func2=np.zeros((21, 21))
 #func3=np.zeros(201)
 for i in range(0, 21):
     for j in range(0, 21):
-        mip=op.mesh(i/20, j/20)
+        mip=op.fes.mesh(i/20, j/20)
         func[i, j]=Symfunc(mip)
         func2[i, j]=Symfunc2(mip)
 #    func3[i]=Symfunc3(mip)
