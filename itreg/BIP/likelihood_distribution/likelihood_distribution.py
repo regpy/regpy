@@ -26,7 +26,7 @@ class User_defined_likelihood(object):
         
 class gaussian(object):
        
-    def __init__(self, setting, gamma_d, rhs):
+    def __init__(self, setting, gamma_d, rhs, offset=None):
         super().__init__()
         if gamma_d is None:
            raise ValueError('Error: No data covariance matrix')
@@ -39,11 +39,12 @@ class gaussian(object):
         self.likelihood=self.gaussian
         self.gradient=self.gradient_gaussian
         self.hessian=self.hessian_gaussian
+        self.offset=offset or 1e-10
         
     def gaussian(self, x):
         if self.gamma_d is None:
             raise ValueError('Error: No gamma_d is given')
-        return -1/2*np.log(2*np.pi*self.gamma_d_abs)-\
+        return -1/2*np.log(2*np.pi*self.gamma_d_abs+self.offset)-\
             1/2*np.dot(self.setting.op(x)-self.rhs, self.setting.codomain.gram(np.dot(self.gamma_d, self.setting.op(x))-self.rhs))
     
     def gradient_gaussian(self, x):

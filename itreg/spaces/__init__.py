@@ -336,9 +336,9 @@ def H1(discr, index=1):
         'H1 not implemented on {}'.format(type(discr).__qualname__))
 
 
-@H1.register(UniformGrid)
+@H1.register(GenericDiscretization)
 class H1UniformGrid(HilbertSpace):
-    def __init__(self, discr, index):
+    def __init__(self, discr, index=1):
         self.discr = discr
         self.index = index
         self.weights = (1 + np.linalg.norm(discr.dualgrid.coords, axis=0)**2) ** index

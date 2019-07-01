@@ -93,20 +93,23 @@ class Settings(PDF):
 #            raise ValueError('sampler is not specified. Choose one of the following: AdaptiveRandomWalk, HamiltonianMonteCarlo, AdaptiveRandomWalk, GaussianApproximation')
         
         
-    def run(self, sampler, statemanager, n_iter):
-        for i in range(int(n_iter)):
+    def run(self, sampler, statemanager):
+        printed=[]
+        for i in range(int(self.n_iter)):
             accepted = sampler.next()
 #            print(sampler.stepsize)
             statemanager.statemanager(sampler.state, accepted)
+            printed.append(100*round(i/self.n_iter, 2))
             
             
+        print('\n'.join(map(str, printed)))    
         self.points = np.array([state.positions for state in statemanager.states])
         
         
         
         #accepted = [i for i in range(int(n_iter)) if statemanager.states[i]!=statemanager.states[i+1]]
         #print('acceptance_rate : {0:.1f} %'.format(100. * len(accepted) / n_iter))
-        print('acceptance_rate : {0:.1f} %'.format(100. *statemanager.N/n_iter))
+        print('acceptance_rate : {0:.1f} %'.format(100. *statemanager.N/self.n_iter))
         if type(sampler.stepsize)==float:
             print('stepsize        : {0:.5f}'.format(sampler.stepsize))
         else:

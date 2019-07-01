@@ -1,14 +1,15 @@
 import setpath
 
-import itreg
+#import itreg
 
 from itreg.operators import NonlinearVolterra
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
+from itreg.spaces import H1, HilbertPullBack, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
-#from itreg.BIP.mcmc import tikhonov_like
+
 from itreg.BIP.mcmc import Settings
 from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
@@ -48,24 +49,36 @@ data = exact_data + noise
 
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting = HilbertSpaceSetting(op=op, domain=H1, codomain=L2)
 
 solver = Landweber(setting, data, init, stepsize=0.01)
 stopping_rule = (
-    rules.CountIterations(10) +
+    rules.CountIterations(100) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=setting.codomain.norm(noise), tau=1.1))
 
 #prior=gaussian_prior(np.eye(200), op, exact_solution+0.1*np.ones(exact_solution.shape[0]))
 #likelihood=gaussian_likelihood(op, np.eye(200), exact_data+0.1*np.ones(exact_data.shape[0]))
-prior=gaussian_prior(0.1*np.eye(200), setting, np.zeros(200))
-likelihood=gaussian_likelihood(setting, np.eye(200), exact_data)
+
 #prior=l1_prior(1, op)
 #likelihood=l1_likelihood(op, 1, exact_data)
 
 ## run random walk mcmc
 
-n_iter   = 2e4
-stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5][0]
+"""werte für adaptive randomwalk, L2-regularization:
+n_iter=2e4
+stepsize=1e-2
+Temperature=0.001
+reg_parameter=0.1
+"""
+
+n_iter   = 2e6
+stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-4]
+Temperature=1e-2
+reg_parameter=0.01
+
+
+prior=gaussian_prior(reg_parameter*np.eye(200), setting, np.zeros(200))
+likelihood=gaussian_likelihood(setting, np.eye(200), exact_data)
 
 
 
@@ -75,7 +88,7 @@ stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5][0]
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, 0.001, 
+bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
@@ -85,16 +98,16 @@ sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 #sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize_rule=stepsize_rule)
 #sampler=GaussianApproximation(bip)
 
-bip.run(sampler, statemanager, 2e4)
+bip.run(sampler, statemanager)
 
 from itreg.BIP.plot_functions import plot_lastiter
 from itreg.BIP.plot_functions import plot_mean
 from itreg.BIP.plot_functions import plot_verlauf
 from itreg.BIP.plot_functions import plot_iter
 
-#plot_lastiter(bip, exact_solution, exact_data, data)
-#plot_mean(statemanager, exact_solution, n_iter=1000)
-#plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
+plot_lastiter(bip, exact_solution, exact_data, data)
+plot_mean(statemanager, exact_solution, n_iter=2e5)
+plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
 plot_iter(bip, statemanager, 10)
 
 

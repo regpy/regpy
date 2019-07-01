@@ -21,7 +21,7 @@ class User_defined_prior(object):
         self.m_0=m_0
         
 class gaussian(object):  
-    def __init__(self, gamma_prior, setting, m_0=None):
+    def __init__(self, gamma_prior, setting, m_0=None, offset=None):
         super().__init__()
         if gamma_prior is None:
                 raise ValueError('Error: No prior covariance matrix')
@@ -30,6 +30,7 @@ class gaussian(object):
             self.m_0=np.zeros(self.setting.domain.coords.shape[0])
         else:
             self.m_0=m_0
+        self.offset=offset or 1e-10
         self.gamma_prior=gamma_prior
         self.gamma_prior_abs=np.linalg.det(self.gamma_prior)
 #        D, S=np.linalg.eig(self.gamma_prior)
@@ -42,7 +43,7 @@ class gaussian(object):
         if self.gamma_prior is None:
             raise ValueError('Error: No gamma_prior is given')
 
-        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs))-\
+        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs)+self.offset)-\
             1/2*np.dot(x-self.m_0, self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0)))
     
     def gradient_gaussian(self, x):
