@@ -7,6 +7,7 @@ Created on Sun Jun 30 17:57:00 2019
 import matplotlib.pyplot as plt 
 import numpy as np
 
+
 def plot_lastiter(pdf, exact_solution, exact_data, data):
     plt.plot(pdf.setting.domain.discr.coords[0, ], exact_solution.T, label='exact solution')
     plt.plot(pdf.setting.domain.discr.coords[0, ], pdf.reco, label='reco')
