@@ -41,22 +41,22 @@ class BaseOperator:
         assert isinstance(domain, spaces.GenericDiscretization)
         assert isinstance(codomain, spaces.GenericDiscretization)
         self.domain, self.codomain = domain, codomain
-
-    @property
-    def nocopy(self):
-        return ['domain', 'codomain']
+        self._consts = {'domain', 'codomain'}
 
     def __deepcopy__(self, memo):
         cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
-        nocopy = set(self.nocopy)
         for k, v in self.__dict__.items():
-            if k in nocopy:
+            if k in self._consts:
                 setattr(result, k, v)
             else:
                 setattr(result, k, deepcopy(v, memo))
         return result
+
+    @property
+    def attrs(self):
+        return set(self.__dict__)
 
     def __call__(self, x):
         raise NotImplementedError

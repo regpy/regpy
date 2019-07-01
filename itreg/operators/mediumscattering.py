@@ -98,6 +98,9 @@ class MediumScattering(NonlinearOperator):
                 axisdata=(meas_directions, inc_directions),
                 dtype=float if amplitude else complex))
 
+        # all attributes defined above are constants
+        self._consts.update(self.attrs)
+
         # pre-allocate to save time in _eval
         self._totalfield = np.empty((np.sum(self.support), self.codomain.shape[1]),
                                     dtype=complex)
