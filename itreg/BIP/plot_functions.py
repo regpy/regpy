@@ -35,7 +35,7 @@ def plot_mean(statemanager, exact_solution, n_list=None, n_iter=None, variance=N
         a = np.array([s.positions for s in statemanager.states[n_list]])        
     else:
         assert n_iter<statemanager.N
-        a = np.array([s.positions for s in statemanager.states[-n_iter:]])
+        a = np.array([s.positions for s in statemanager.states[-int(n_iter):]])
     for i in range(0, n_plots):
         v = a.std(axis=0)*variance[i]
         m = a.mean(axis=0)
