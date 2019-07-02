@@ -50,6 +50,7 @@ class MetropolisHastings(object):
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
+        print(log_odds)
                    
         accepted=np.log(np.random.random()) < log_odds
 #        print(accepted)
@@ -78,9 +79,12 @@ class statemanager(object):
                 parameter_list.append('log_prob')
             if 'positions' not in parameter_list:
                 parameter_list.append('positions')
-            class state(object):
+            class User_state(object):
                 __slots__ = tuple(parameter_list)
-            self.initial_state=state
+#    def __init__(self, initial_state, momentum=False):
+#        if momentum is True:
+#            self.initial_state=HMCState
+            self.initial_state=User_state
             self.initial_state.log_prob=initial_state.log_prob
             self.initial_state.positions=initial_state.positions
         else:
@@ -168,25 +172,35 @@ class HamiltonianMonteCarlo(RandomWalk):
 
     def propose(self, current_state):
 
-        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
-        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
-                                 self.pdf.log_prob(current_state.positions)
+#        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
+        momenta  = np.random.standard_normal(current_state.positions.shape)
+#        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
+#                                 self.pdf.log_prob(current_state.positions)
         #current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
         #                         self.pdf.log_prob(current_state)
 
         proposed_state = deepcopy(current_state)
 
-        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+#        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+        q, p = self.integrator.run(proposed_state.positions, momenta)
 
-        proposed_state.positions, proposed_state.momenta = q, p
+#        proposed_state.positions, proposed_state.momenta = q, p
+        proposed_state.positions, momenta = q, p
 
-        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#                                  self.pdf.log_prob(proposed_state.positions)
+        proposed_state.log_prob = -0.5 * np.sum(momenta**2) + \
                                   self.pdf.log_prob(proposed_state.positions)
 #        print(proposed_state.log_prob)
         #proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
         #                          self.pdf.log_prob(proposed_state)
 
         return proposed_state
+    
+    def accept(self, current_state, proposed_state):
+        do_accept = super(HamiltonianMonteCarlo, self).accept(current_state, proposed_state)
+        self.integrator.stepsize = self.stepsize
+        return do_accept
 
 
     
