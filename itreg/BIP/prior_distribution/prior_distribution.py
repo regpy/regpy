@@ -21,7 +21,7 @@ class User_defined_prior(object):
         self.m_0=m_0
         
 class gaussian(object):  
-    def __init__(self, gamma_prior, setting, m_0=None, offset=None):
+    def __init__(self, gamma_prior, setting, m_0=None, offset=None, inv_offset=None):
         super().__init__()
         if gamma_prior is None:
                 raise ValueError('Error: No prior covariance matrix')
@@ -31,26 +31,27 @@ class gaussian(object):
         else:
             self.m_0=m_0
         self.offset=offset or 1e-10
+        self.inv_offset=inv_offset or 1e-5
         self.gamma_prior=gamma_prior
         self.gamma_prior_abs=np.linalg.det(self.gamma_prior)
-#        D, S=np.linalg.eig(self.gamma_prior)
-#        self.gamma_prior_half=np.dot(S.transpose(), np.dot(np.diag(np.sqrt(D)), S))
+        D, S=np.linalg.eig(self.gamma_prior)
+        self.gamma_prior_half_inv=np.dot(S.transpose(), np.dot(np.diag(1/np.sqrt(D)+self.inv_offset), S))
+        self.gamma_prior_inv=np.dot(S.transpose(), np.dot(np.diag(1/D+self.inv_offset), S))
         self.hessian=self.hessian_gaussian
         self.gradient=self.gradient_gaussian
         self.prior=self.gaussian
+        self.len_domain=np.prod(self.setting.op.domain.shape)
         
     def gaussian(self, x):
-        if self.gamma_prior is None:
-            raise ValueError('Error: No gamma_prior is given')
-
-        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs)+self.offset)-\
-            1/2*np.dot(x-self.m_0, self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0)))
+#        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs)+self.offset)-\
+#            1/2*np.dot(x-self.m_0, np.dot(self.gamma_prior_inv, np.conjugate(x-self.m_0)))
+        return -1/2*np.dot((x-self.m_0).reshape(self.len_domain), np.dot(self.gamma_prior_inv, np.conjugate((x-self.m_0).reshape(self.len_domain)))).real
     
     def gradient_gaussian(self, x):
-        return self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0))
+        return np.dot(self.gamma_prior_inv, x-self.m_0).real
     
     def hessian_gaussian(self, m, x):
-        return np.dot(self.gamma_prior, x)
+        return np.dot(self.gamma_prior_inv, x)
     
     
 

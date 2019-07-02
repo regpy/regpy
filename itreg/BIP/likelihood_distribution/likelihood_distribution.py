@@ -26,7 +26,7 @@ class User_defined_likelihood(object):
         
 class gaussian(object):
        
-    def __init__(self, setting, gamma_d, rhs, offset=None):
+    def __init__(self, setting, gamma_d, rhs, offset=None, inv_offset=None):
         super().__init__()
         if gamma_d is None:
            raise ValueError('Error: No data covariance matrix')
@@ -35,21 +35,30 @@ class gaussian(object):
         self.setting=setting
         self.rhs=rhs
         self.gamma_d=gamma_d
+        self.inv_offset=inv_offset or 1e-5
+        self.D, self.U=np.linalg.eig(self.gamma_d)
+        self.gamma_d_half_inv=np.dot(self.U.T, np.dot(np.diag(np.sqrt(1/self.D)+self.inv_offset), self.U))
+        self.gamma_d_inv=np.dot(self.U.T, np.dot(np.diag(1/self.D+self.inv_offset), self.U))
         self.gamma_d_abs=np.linalg.det(self.gamma_d)
         self.likelihood=self.gaussian
         self.gradient=self.gradient_gaussian
         self.hessian=self.hessian_gaussian
         self.offset=offset or 1e-10
+        self.len_codomain=np.prod(self.setting.op.codomain.shape)
         
-    def gaussian(self, x):
-        if self.gamma_d is None:
-            raise ValueError('Error: No gamma_d is given')
-        return -1/2*np.log(2*np.pi*self.gamma_d_abs+self.offset)-\
-            1/2*np.dot(self.setting.op(x)-self.rhs, self.setting.codomain.gram(np.dot(self.gamma_d, self.setting.op(x))-self.rhs))
+    
+        
+    def gaussian(self, x):      
+        misfit=np.dot((self.setting.op(x)-self.rhs).reshape(self.len_codomain), self.gamma_d_half_inv)
+#        return -1/2*np.log(2*np.pi*self.gamma_d_abs+self.offset)-\
+#            1/2*np.dot(misfit.reshape(self.len_codomain), np.conjugate(misfit.reshape(self.len_codomain))).real
+        return -1/2*np.dot(misfit.reshape(self.len_codomain), np.conjugate(misfit.reshape(self.len_codomain))).real
     
     def gradient_gaussian(self, x):
         y, deriv=self.setting.op.linearize(x)
-        return -deriv.adjoint(self.setting.codomain.gram_inv(np.dot(np.linalg.inv(self.gamma_d), (self.rhs-y))))
+        misfit=(self.setting.op(x)-self.rhs).reshape(self.len_codomain)
+        res=np.dot(self.gamma_d_inv, misfit)
+        return -deriv.adjoint(self.setting.codomain.gram_inv(res.reshape(self.setting.op.codomain.shape))).real
     
     def hessian_gaussian(self, m, x):
         grad_mx=self.gradient_gaussian(m+x)
