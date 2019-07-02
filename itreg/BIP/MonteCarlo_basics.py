@@ -52,6 +52,7 @@ class MetropolisHastings(object):
                    current_state.log_prob
                    
         accepted=np.log(np.random.random()) < log_odds
+#        print(accepted)
         self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, accepted)
         #print(accepted)
 
@@ -102,6 +103,7 @@ class RandomWalk(MetropolisHastings):
         proposed_state.positions += self.stepsize * random_step
         #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
         proposed_state.log_prob = self.pdf.log_prob(proposed_state.positions)
+#        print(current_state.log_prob)
 
         return proposed_state
 
@@ -111,7 +113,7 @@ class RandomWalk(MetropolisHastings):
 class Leapfrog(object):
     """Leapfrog integrator
     """
-    def __init__(self, pdf, stepsize=1e-1, n_steps=10):
+    def __init__(self, pdf, stepsize=1e-5, n_steps=10):
 
         assert stepsize > 0
         assert n_steps  > 0
@@ -151,7 +153,7 @@ class Leapfrog(object):
 
 class HamiltonianMonteCarlo(RandomWalk):
 
-    def __init__(self, pdf, statemanager, stepsize=1e-1, stepsize_rule=fixed_stepsize, n_steps=10):
+    def __init__(self, pdf, statemanager, stepsize=1e-5, stepsize_rule=fixed_stepsize, n_steps=10):
 
         super(HamiltonianMonteCarlo, self).__init__(pdf, statemanager, stepsize, stepsize_rule)
 
@@ -173,6 +175,7 @@ class HamiltonianMonteCarlo(RandomWalk):
 
         proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
                                   self.pdf.log_prob(proposed_state.positions)
+#        print(proposed_state.log_prob)
         #proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
         #                          self.pdf.log_prob(proposed_state)
 
