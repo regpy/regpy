@@ -39,10 +39,10 @@ class IRGNM_CG(Solver):
         The second entry controls the relative accuracy of the Newton update in
         data space.
         The third entry controls the reduction of the residual.
-    alpha0 : float, optional
-    alpha_step : float, optional
-        With these (alpha0, alpha_step) we compute the regulization parameter
-        for the k-th Newton step by alpha0*alpha_step^k.
+    regpar0 : float, optional
+    regpar_step : float, optional
+        With these (regpar0, regpar_step) we compute the regulization parameter
+        for the k-th Newton step by regpar0*regpar_step^k.
 
     Attributes
     ----------
@@ -54,8 +54,8 @@ class IRGNM_CG(Solver):
         The initial guess.
     cgmaxit : int, optional
         Maximum number of CG iterations.
-    alpha0 : float
-    alpha_step : float
+    regpar0 : float
+    regpar_step : float
         Needed for the computation of the regulization parameter for the k-th
         Newton step.
     k : int
@@ -68,7 +68,7 @@ class IRGNM_CG(Solver):
         The value at the current point.
     """
 
-    def __init__(self, op, data, init, cgmaxit=50, alpha0=1, alpha_step=2/3.,
+    def __init__(self, op, data, init, cgmaxit=50, regpar0=1, regpar_step=2/3.,
                  cgtol=[0.3, 0.3, 1e-6]):
         super().__init__()
         self.op = op
@@ -76,13 +76,10 @@ class IRGNM_CG(Solver):
         self.init = init
         self.x = self.init
 
-        # Parameter for the outer iteration (Newton method)
-        self.k = 0
-
         # Parameters for the inner iteration (CG method)
         self.cgmaxit = cgmaxit
-        self.alpha0 = alpha0
-        self.alpha_step = alpha_step
+        self.regpar = regpar0
+        self.regpar_step = regpar_step
         self.cgtol = cgtol
 
         # Update of the variables in the Newton iteration and preparation of
@@ -99,17 +96,15 @@ class IRGNM_CG(Solver):
         """
 
         self.y, deriv = self.op.linearize(self.x)
-        self._residual = self.data - self.y
-        self._xref = self.init - self.x
-        self.k += 1
-        self._regpar = self.alpha0 * self.alpha_step**self.k
+        self.regpar *= self.regpar_step
         self._cgstep = 0
         self._kappa = 1
 
         # Preparations for the CG method
-        self._ztilde = self.op.codomain.gram(self._residual)
+        residual = self.data - self.y
+        self._ztilde = self.op.codomain.gram(residual)
         self._stilde = (deriv.adjoint(self._ztilde)
-                        + self._regpar*self.op.domain.gram(self._xref))
+                        + self.regpar*self.op.domain.gram(self.init - self.x))
         self._s = self.op.domain.gram_inv(self._stilde)
         self._d = self._s
         self._dtilde = self._stilde
@@ -118,7 +113,7 @@ class IRGNM_CG(Solver):
         self._norm_h = 0
 
         self._h = np.zeros(np.shape(self._s))
-        self._Th = np.zeros(np.shape(self._residual))
+        self._Th = np.zeros(np.shape(residual))
         self._Thtilde = self._Th
 
     def inner_update(self):
@@ -131,7 +126,7 @@ class IRGNM_CG(Solver):
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
         _, deriv = self.op.linearize(self.x)
         self._stilde += (- self._gamma*(deriv(self._ztilde)
-                         + self._regpar*self._dtilde)).real
+                         + self.regpar*self._dtilde)).real
         self._s = self.op.domain.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
@@ -184,11 +179,11 @@ class IRGNM_CG(Solver):
         while (
             # First condition
               np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
-              / self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
+              / self.regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
                       / np.real(self.op.domain.inner(self._Thtilde,self._Th))
-                      / self._kappa/self._regpar)
+                      / self._kappa/self.regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
               np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa)
@@ -200,7 +195,7 @@ class IRGNM_CG(Solver):
             self._z = deriv(self._d)
             self._ztilde = self.op.codomain.gram(self._z)
             self._gamma = (self._norm_s
-                           / np.real(self._regpar
+                           / np.real(self.regpar
                                      * self.op.domain.inner(self._dtilde, self._d)
                                      + self.op.domain.inner(self._ztilde, self._z)
                                      )
