@@ -75,46 +75,11 @@ class IRGNM_CG(Solver):
         self.data = data
         self.init = init
         self.x = self.init
-
-        # Parameters for the inner iteration (CG method)
         self.cgmaxit = cgmaxit
         self.regpar = regpar0
         self.regpar_step = regpar_step
         self.cgtol = cgtol
-
-        # Update of the variables in the Newton iteration and preparation of
-        # the first CG step.
-        self.outer_update()
-
-    def outer_update(self):
-        """Updates and computes variables for the Newton iteration.
-
-        In this function all variables of the current Newton iteration are
-        updated, after the CG method is used. Furthermore some variables for
-        the next time the CG method is used (in the next Newton iteration) are
-        prepared.
-        """
-
         self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
-        self._cgstep = 0
-        self._kappa = 1
-
-        # Preparations for the CG method
-        residual = self.data - self.y
-        self._ztilde = self.op.codomain.gram(residual)
-        self._stilde = (self.deriv.adjoint(self._ztilde)
-                        + self.regpar*self.op.domain.gram(self.init - self.x))
-        self._s = self.op.domain.gram_inv(self._stilde)
-        self._d = self._s
-        self._dtilde = self._stilde
-        self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
-        self._norm_s0 = self._norm_s
-        self._norm_h = 0
-
-        self._h = np.zeros(np.shape(self._s))
-        self._Th = np.zeros(np.shape(residual))
-        self._Thtilde = self._Th
 
     def next(self):
         """Run a single IRGNM_CG iteration.
@@ -155,6 +120,25 @@ class IRGNM_CG(Solver):
             Always True, as the IRGNM_CG method never stops on its own.
 
         """
+
+        # Preparations for the CG method
+        residual = self.data - self.y
+        self._ztilde = self.op.codomain.gram(residual)
+        self._stilde = (self.deriv.adjoint(self._ztilde)
+                        + self.regpar*self.op.domain.gram(self.init - self.x))
+        self._s = self.op.domain.gram_inv(self._stilde)
+        self._d = self._s
+        self._dtilde = self._stilde
+        self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
+        self._norm_s0 = self._norm_s
+        self._norm_h = 0
+        self._h = np.zeros(np.shape(self._s))
+        self._Th = np.zeros(np.shape(residual))
+        self._Thtilde = self._Th
+
+        self._cgstep = 0
+        self._kappa = 1
+
         while (
             # First condition
               np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
@@ -195,5 +179,6 @@ class IRGNM_CG(Solver):
             self._cgstep += 1
 
         self.x += self._h
-        self.outer_update()
-        return True
+        self.y, self.deriv = self.op.linearize(self.x)
+        self.regpar *= self.regpar_step
+
