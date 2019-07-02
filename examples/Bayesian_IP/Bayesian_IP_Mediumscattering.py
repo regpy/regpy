@@ -102,7 +102,7 @@ stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
-statemanager=statemanager(bip.initial_state, momenta=True)
+statemanager=statemanager(bip.initial_state)
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
 sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)

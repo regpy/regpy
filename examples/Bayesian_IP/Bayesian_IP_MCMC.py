@@ -24,6 +24,8 @@ from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
+from itreg.BIP import HMCState
+from itreg.BIP import State
 
 import numpy as np
 import logging
@@ -99,11 +101,11 @@ stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
-statemanager=statemanager(bip.initial_state, momenta=True)
+statemanager=statemanager(bip.initial_state, ['momenta'])
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
-sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
-#sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize_rule=stepsize_rule)
+#sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
+sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize_rule=stepsize_rule)
 #sampler=GaussianApproximation(bip)
 
 bip.run(sampler, statemanager)

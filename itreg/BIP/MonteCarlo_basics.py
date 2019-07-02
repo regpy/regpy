@@ -45,8 +45,8 @@ class MetropolisHastings(object):
 
     def accept(self, current_state, proposed_state):
 
-        assert isinstance(current_state, State), 'State expected'
-        assert isinstance(proposed_state, State), 'State expected'
+#        assert isinstance(current_state, State), 'State expected'
+#        assert isinstance(proposed_state, State), 'State expected'
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
@@ -71,9 +71,16 @@ class MetropolisHastings(object):
 class statemanager(object):
     """Describes what to do with the states
     """
-    def __init__(self, initial_state, momenta=False):
-        if momenta:
-            self.initial_state=HMCState()
+    def __init__(self, initial_state, parameter_list=None):
+        if parameter_list is not None:
+
+            if 'log_prob' not in parameter_list:
+                parameter_list.append('log_prob')
+            if 'positions' not in parameter_list:
+                parameter_list.append('positions')
+            class state(object):
+                __slots__ = tuple(parameter_list)
+            self.initial_state=state
             self.initial_state.log_prob=initial_state.log_prob
             self.initial_state.positions=initial_state.positions
         else:
@@ -82,7 +89,7 @@ class statemanager(object):
         self.N=1
         
     def statemanager(self, state, accepted):
-        assert isinstance(self.initial_state, State), 'State expected'
+#        assert isinstance(self.initial_state, State), 'State expected'
         if accepted:
             self.states.append(state)
             self.N+=1
@@ -182,7 +189,6 @@ class HamiltonianMonteCarlo(RandomWalk):
         return proposed_state
 
 
-    
     
     
 class GaussianApproximation(object):    
