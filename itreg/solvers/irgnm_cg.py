@@ -95,7 +95,7 @@ class IRGNM_CG(Solver):
         prepared.
         """
 
-        self.y, deriv = self.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
         self.regpar *= self.regpar_step
         self._cgstep = 0
         self._kappa = 1
@@ -103,7 +103,7 @@ class IRGNM_CG(Solver):
         # Preparations for the CG method
         residual = self.data - self.y
         self._ztilde = self.op.codomain.gram(residual)
-        self._stilde = (deriv.adjoint(self._ztilde)
+        self._stilde = (self.deriv.adjoint(self._ztilde)
                         + self.regpar*self.op.domain.gram(self.init - self.x))
         self._s = self.op.domain.gram_inv(self._stilde)
         self._d = self._s
@@ -115,27 +115,6 @@ class IRGNM_CG(Solver):
         self._h = np.zeros(np.shape(self._s))
         self._Th = np.zeros(np.shape(residual))
         self._Thtilde = self._Th
-
-    def inner_update(self):
-        """Updates and computes variables for the CG iteration.
-
-        In this function all variables in each CG iteration , after ``self.x``
-        was updated, are updated. Its only purpose is to improve tidiness.
-        """
-        self._Th = self._Th + self._gamma*self._z
-        self._Thtilde = self._Thtilde + self._gamma*self._ztilde
-        _, deriv = self.op.linearize(self.x)
-        self._stilde += (- self._gamma*(deriv(self._ztilde)
-                         + self.regpar*self._dtilde)).real
-        self._s = self.op.domain.gram_inv(self._stilde)
-        self._norm_s_old = self._norm_s
-        self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
-        self._beta = self._norm_s / self._norm_s_old
-        self._d = self._s + self._beta*self._d
-        self._dtilde = self._stilde + self._beta*self._dtilde
-        self._norm_h = self.op.domain.inner(self._h, self.op.domain.gram(self._h))
-        self._kappa = 1 + self._beta*self._kappa
-        self._cgstep += 1
 
     def next(self):
         """Run a single IRGNM_CG iteration.
@@ -191,8 +170,7 @@ class IRGNM_CG(Solver):
               # Fourth condition
               self._cgstep <= self.cgmaxit):
 
-            _, deriv = self.op.linearize(self.x)
-            self._z = deriv(self._d)
+            self._z = self.deriv(self._d)
             self._ztilde = self.op.codomain.gram(self._z)
             self._gamma = (self._norm_s
                            / np.real(self.regpar
@@ -202,7 +180,19 @@ class IRGNM_CG(Solver):
                            )
             self._h = self._h + self._gamma*self._d
 
-            self.inner_update()
+            self._Th = self._Th + self._gamma*self._z
+            self._Thtilde = self._Thtilde + self._gamma*self._ztilde
+            self._stilde += (- self._gamma*(self.deriv(self._ztilde)
+                            + self.regpar*self._dtilde)).real
+            self._s = self.op.domain.gram_inv(self._stilde)
+            self._norm_s_old = self._norm_s
+            self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
+            self._beta = self._norm_s / self._norm_s_old
+            self._d = self._s + self._beta*self._d
+            self._dtilde = self._stilde + self._beta*self._dtilde
+            self._norm_h = self.op.domain.inner(self._h, self.op.domain.gram(self._h))
+            self._kappa = 1 + self._beta*self._kappa
+            self._cgstep += 1
 
         self.x += self._h
         self.outer_update()
