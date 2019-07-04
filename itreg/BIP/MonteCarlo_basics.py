@@ -50,7 +50,7 @@ class MetropolisHastings(object):
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
-        print(log_odds)
+#        print(log_odds)
                    
         accepted=np.log(np.random.random()) < log_odds
 #        print(accepted)
