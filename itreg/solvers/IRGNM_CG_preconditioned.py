@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu May 16 12:40:28 2019
-
-@author: Björn Müller
-"""
-
 import logging
 import numpy as np
 import scipy.optimize
