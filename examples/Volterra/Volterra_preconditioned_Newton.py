@@ -1,16 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue May 14 00:47:06 2019
-
-@author: Björn Müller
-"""
-
 import setpath  # NOQA
 
 from itreg.operators import Volterra
-from itreg.spaces import L2
-from itreg.grids import Square_1D
-from itreg.solvers.preconditioned_newton_cg import Newton_CG
+from itreg.spaces import L2, UniformGrid
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.preconditioned_newton_cg import Newton_CG_Preconditioned
 import itreg.stoprules as rules
 
 import numpy as np
@@ -21,30 +14,30 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-#xs = np.linspace(0, 2 * np.pi, 200)
-#spacing = xs[1] - xs[0]
-spacing=2*np.pi/200
-grid=Square_1D((200,), np.pi, spacing)
+grid=UniformGrid(np.linspace(1, 200, 200))
 
-op = Volterra(L2(grid), spacing=spacing)
+op = Volterra(grid)
 
-exact_solution = np.cos(grid.coords)
+exact_solution = np.cos(grid.coords[0])
 exact_data = op(exact_solution)
 noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
-noiselevel = op.range.norm(noise)
 
-newton_cg = Newton_CG(op, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
+setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+
+newton_cg = Newton_CG_Preconditioned(setting, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.CountIterations(1) +
+    rules.Discrepancy(setting.codomain.norm, data,
+                      noiselevel=setting.codomain.norm(noise), tau=1.1))
 
 reco, reco_data = newton_cg.run(stoprule)
-plt.plot(grid.coords.T, exact_solution.T, label='exact solution')
-plt.plot(grid.coords.T, reco, label='reco')
-plt.plot(grid.coords.T, exact_data, label='exact data')
-plt.plot(grid.coords.T, data, label='data')
-plt.plot(grid.coords.T, reco_data, label='reco data')
+
+plt.plot(grid.coords[0], exact_solution.T, label='exact solution')
+plt.plot(grid.coords[0], reco, label='reco')
+plt.plot(grid.coords[0], exact_data, label='exact data')
+plt.plot(grid.coords[0], data, label='data')
+plt.plot(grid.coords[0], reco_data, label='reco data')
 plt.legend()
 plt.show()
