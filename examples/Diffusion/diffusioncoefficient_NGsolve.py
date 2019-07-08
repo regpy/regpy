@@ -1,5 +1,3 @@
-#TODO: Works properly in data space, but not as well in solution space
-
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
@@ -12,149 +10,71 @@ import itreg.stoprules as rules
 
 import numpy as np
 import logging
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-meshsize=10
+meshsize_domain=10
+meshsize_codomain=10
 
 from ngsolve import *
+mesh = MakeQuadMesh(meshsize_domain)
+fes_domain = L2(mesh, order=2, dirichlet="left|top|right|bottom")
+domain= NGSolveDiscretization(fes_domain)
 
-mesh = MakeQuadMesh(meshsize)
-fes = H1(mesh, order=2, dirichlet="left|top|right|bottom")
-disc= NGSolveDiscretization(fes)
-
+mesh = MakeQuadMesh(meshsize_codomain)
+fes_codomain = H1(mesh, order=2, dirichlet="left|top|right|bottom")
+codomain= NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)*sin(y)
-op = Coefficient(disc, rhs, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
+op = Coefficient(domain, rhs, codomain=codomain, bc_left=0, bc_right=1, bc_bottom=sin(y), bc_top=sin(y), dim=2)
 
-#exact_solution = np.linspace(1, 2, 201)
-exact_solution_coeff = cos(x)
-gfu_exact_solution=GridFunction(op.fes)
+exact_solution_coeff = cos(x)*sin(y)
+gfu_exact_solution=GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 data=exact_data
 
-gfu=GridFunction(op.fes)
-for i in range(441):
-    gfu.vec[i]=data[i]
-    
-Symfunc=CoefficientFunction(gfu)
-func=np.zeros((21, 21))
-for j in range(0, 21):
-    for k in range(0, 21):
-        mip=op.fes.mesh(j/20, k/20)
-        func[j][k]=Symfunc(mip)
-        
-plt.contourf(func)
-plt.colorbar()      
-plt.show()
-
-
-
-
-
-
-
-_, deriv = op.linearize(exact_solution)
-adj=deriv.adjoint(np.linspace(1, 2, 441))
-
-#init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
 init=1
-init_gfu=GridFunction(op.fes)
+init_gfu=GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-from itreg.spaces import L2
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+from itreg.spaces import NGSolveSpace
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace, codomain=NGSolveSpace)
 
-landweber = Landweber(setting, data, init_solution, stepsize=3)
+landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(3000) +
+    rules.CountIterations(100) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
-plt.contourf(reco.reshape(21, 21))
-plt.colorbar()
-plt.show()
+Draw (exact_solution_coeff, op.fes_domain.mesh, "exact")
+Draw (init, op.fes_domain.mesh, "init")
 
-plt.contourf(exact_solution.reshape(21, 21))
-plt.colorbar()
-plt.show()
+#Draw recondtructed solution
+gfu_reco=GridFunction(op.fes_domain)
+gfu_reco.vec.FV().NumPy()[:]=reco
+coeff_reco=CoefficientFunction(gfu_reco)
 
-
-gfu=GridFunction(op.fes)
-gfu2=GridFunction(op.fes)
-#gfu3=GridFunction(op.params.fes)
-for i in range(441):
-    gfu.vec[i]=reco[i]
-    gfu2.vec[i]=exact_solution[i]
-#    gfu3.vec[i]=init_solution[i]
+Draw (coeff_reco, op.fes_domain.mesh, "reco")
     
-Symfunc=CoefficientFunction(gfu)
-Symfunc2=CoefficientFunction(gfu2)
-#Symfunc3=CoefficientFunction(gfu3)
-func=np.zeros((21, 21))
-func2=np.zeros((21, 21))
-#func3=np.zeros(201)
-for i in range(21):
-    for j in range(21):
-        mip=op.fes.mesh(i/20, j/20)
-        func[i, j]=Symfunc(mip)
-        func2[i, j]=Symfunc2(mip)
-#    func3[i]=Symfunc3(mip)
-    
-plt.contourf(func)
-plt.colorbar()
-plt.show()
 
-plt.contourf(func2)
-plt.colorbar()
-plt.show()
+#Draw data space
+gfu_data=GridFunction(op.fes_codomain)
+gfu_reco_data=GridFunction(op.fes_codomain)
 
+gfu_data.vec.FV().NumPy()[:]=data
+coeff_data = CoefficientFunction(gfu_data)
 
+gfu_reco_data.vec.FV().NumPy()[:]=reco_data
+coeff_reco_data = CoefficientFunction(gfu_reco_data)
 
-
-
-
-gfu=GridFunction(op.fes)
-gfu2=GridFunction(op.fes)
-#gfu3=GridFunction(op.params.fes)
-for i in range(441):
-    gfu.vec[i]=reco_data[i]
-    gfu2.vec[i]=exact_data[i]
-#    gfu3.vec[i]=init_data[i]
-    
-Symfunc=CoefficientFunction(gfu)
-Symfunc2=CoefficientFunction(gfu2)
-#Symfunc3=CoefficientFunction(gfu3)
-func=np.zeros((21, 21))
-func2=np.zeros((21, 21))
-#func3=np.zeros(201)
-for i in range(0, 21):
-    for j in range(0, 21):
-        mip=op.fes.mesh(i/20, j/20)
-        func[i, j]=Symfunc(mip)
-        func2[i, j]=Symfunc2(mip)
-#    func3[i]=Symfunc3(mip)
-    
-plt.contourf(func)
-plt.colorbar()
-plt.show()
-
-plt.contourf(func2)
-plt.colorbar()
-plt.show()
-
-
-
-
-
-
-
+Draw(coeff_data, op.fes_codomain.mesh, "data")
+Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
