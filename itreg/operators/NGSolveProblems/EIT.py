@@ -1,11 +1,7 @@
-#TODO: Insert Netgen and netgen visualization
-
-
 from itreg.operators import NonlinearOperator
 
 import numpy as np
 import scipy.optimize as sco
-import netgen.gui
 #%gui tk
 from ngsolve import *
 from netgen.geom2d import SplineGeometry
@@ -15,7 +11,7 @@ from ngsolve.meshes import MakeQuadMesh
 class EIT(NonlinearOperator):
     
 
-    def __init__(self, domain, g, mesh, codomain=None):
+    def __init__(self, domain, g, codomain=None):
         
         codomain = codomain or domain
         self.N_domain=domain.coords.shape[1]
@@ -30,49 +26,49 @@ class EIT(NonlinearOperator):
         #ngmesh.Save('ngmesh')
 #        self.mesh=MakeQuadMesh(10)
         #self.mesh=Mesh(ngmesh)
-        self.mesh=mesh
+        
+        self.fes_domain=domain.fes
+        self.fes_codomain=codomain.fes
    
 #Variables for setting of boundary values later     
         #self.ind=[v.point in pts for v in self.mesh.vertices]
-        self.pts=[v.point for v in self.mesh.vertices]
+        self.pts=[v.point for v in self.fes_codomain.mesh.vertices]
         self.ind=[np.linalg.norm(np.array(p))>0.95 for p in self.pts]
         self.pts_bdr=np.array(self.pts)[self.ind]
         
-        self.fes_in = H1 (self.mesh, order=1)
-        self.gfu_in = GridFunction(self.fes_in)
+        self.gfu_in = GridFunction(self.fes_domain)
         
-        self.fes = H1(self.mesh, order=2, dirichlet=[1])
-
         #grid functions for later use 
-        self.gfu = GridFunction(self.fes)  # solution, return value of _eval
-        self.gfu_bdr=GridFunction(self.fes) #grid function holding boundary values, g/sigma=du/dn
+        self.gfu = GridFunction(self.fes_domain)  # solution, return value of _eval
+        self.gfu_bdr=GridFunction(self.fes_codomain) #grid function holding boundary values, g/sigma=du/dn
         
-        self.gfu_integrator = GridFunction(self.fes) #grid function for defining integrator (bilinearform)
-        self.gfu_rhs = GridFunction(self.fes) #grid function for defining right hand side (linearform), f
+        self.gfu_integrator = GridFunction(self.fes_domain) #grid function for defining integrator (bilinearform)
+        self.gfu_integrator_codomain = GridFunction(self.fes_codomain)
+        self.gfu_rhs = GridFunction(self.fes_codomain) #grid function for defining right hand side (linearform), f
         
-        self.gfu_inner=GridFunction(self.fes) #grid function for inner computation in derivative and adjoint
-        self.gfu_toret=GridFunction(self.fes) #grid function for returning values in adjoint and derivative
+        self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
+        self.gfu_toret=GridFunction(self.fes_codomain) #grid function for returning values in adjoint and derivative
        
-        self.gfu_dir=GridFunction(self.fes) #grid function for solving the dirichlet problem in adjoint
-        self.gfu_error=GridFunction(self.fes) #grid function used in _target to compute the error in forward computation
-        self.gfu_tar=GridFunction(self.fes) #grid function used in _target, holding the arguments
+        self.gfu_dir=GridFunction(self.fes_codomain) #grid function for solving the dirichlet problem in adjoint
+        self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
+        self.gfu_tar=GridFunction(self.fes_domain) #grid function used in _target, holding the arguments
         
-        u = self.fes.TrialFunction()  # symbolic object
-        v = self.fes.TestFunction()   # symbolic object 
+        u = self.fes_codomain.TrialFunction()  # symbolic object
+        v = self.fes_codomain.TestFunction()   # symbolic object 
 
         #Define Bilinearform, will be assembled later        
-        self.a = BilinearForm(self.fes, symmetric=True)
-        self.a += SymbolicBFI(grad(u)*grad(v)*self.gfu_integrator)
+        self.a = BilinearForm(self.fes_codomain, symmetric=True)
+        self.a += SymbolicBFI(grad(u)*grad(v)*self.gfu_integrator_codomain)
         
 
         #Define Linearform, will be assembled later        
-        self.f=LinearForm(self.fes)
+        self.f=LinearForm(self.fes_codomain)
         self.f += SymbolicLFI(self.gfu_rhs*v)
         
         self.r=self.f.vec.CreateVector()
         
-        self.b=LinearForm(self.fes)
-        self.gfu_b = GridFunction(self.fes)
+        self.b=LinearForm(self.fes_codomain)
+        self.gfu_b = GridFunction(self.fes_codomain)
         self.b+=SymbolicLFI(self.gfu_b*v.Trace(), BND)
         
 #        self.b2=LinearForm(self.fes)
@@ -83,6 +79,7 @@ class EIT(NonlinearOperator):
     def _eval(self, diff, differentiate, **kwargs):
         #Assemble Bilinearform
         self.gfu_integrator.vec.FV().NumPy()[:]=diff  
+        self.gfu_integrator_codomain.Set(self.gfu_integrator)
         self.a.Assemble()
         #print(self.a.mat)
             
@@ -179,7 +176,7 @@ class EIT(NonlinearOperator):
     
     def _get_boundary_values(self, gfu):
         myfunc=CoefficientFunction(gfu)
-        vals = np.asarray([myfunc(self.mesh(*p)) for p in self.pts_bdr])
+        vals = np.asarray([myfunc(self.fes_codomain.mesh(*p)) for p in self.pts_bdr])
         return vals
     
     def _set_boundary_values(self, vals):
@@ -195,10 +192,10 @@ class EIT(NonlinearOperator):
 
         
     def _constraint(self, u):
-        tar=GridFunction(self.fes)
+        tar=GridFunction(self.fes_domain)
         tar.vec.FV().NumPy()[:]=u
         coff=CoefficientFunction(tar)
-        return Integrate(coff, self.mesh, BND)
+        return Integrate(coff, self.fes_codomain.mesh, BND)
 
     
 
