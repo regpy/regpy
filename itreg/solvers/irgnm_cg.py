@@ -1,10 +1,9 @@
-import logging
 import numpy as np
 
 from . import Solver
 
 
-class IRGNM_CG(Solver):
+class IrgnmCG(Solver):
     """The IRGNM_CG method.
 
     Solves the potentially non-linear, ill-posed equation:
@@ -68,10 +67,10 @@ class IRGNM_CG(Solver):
         The value at the current point.
     """
 
-    def __init__(self, op, data, init, cgmaxit=50, regpar0=1, regpar_step=2/3.,
+    def __init__(self, setting, data, init, cgmaxit=50, regpar0=1, regpar_step=2/3,
                  cgtol=[0.3, 0.3, 1e-6]):
         super().__init__()
-        self.op = op
+        self.setting = setting
         self.data = data
         self.init = init
         self.x = self.init
@@ -79,9 +78,9 @@ class IRGNM_CG(Solver):
         self.regpar = regpar0
         self.regpar_step = regpar_step
         self.cgtol = cgtol
-        self.y, self.deriv = self.op.linearize(self.x)
+        self.y, self.deriv = setting.op.linearize(self.x)
 
-    def next(self):
+    def _next(self):
         """Run a single IRGNM_CG iteration.
 
         The while loop is the CG method, it has four conditions to stop. The
@@ -123,13 +122,12 @@ class IRGNM_CG(Solver):
 
         # Preparations for the CG method
         residual = self.data - self.y
-        ztilde = self.op.codomain.gram(residual)
-        stilde = (self.deriv.adjoint(ztilde)
-                        + self.regpar*self.op.domain.gram(self.init - self.x))
-        s = self.op.domain.gram_inv(stilde)
+        ztilde = self.setting.codomain.gram(residual)
+        stilde = self.deriv.adjoint(ztilde) + self.regpar*self.setting.domain.gram(self.init - self.x)
+        s = self.setting.domain.gram_inv(stilde)
         d = s
         dtilde = stilde
-        norm_s = np.real(self.op.domain.inner(stilde, s))
+        norm_s = np.real(inner(stilde, s))
         norm_s0 = norm_s
         norm_h = 0
         h = np.zeros(np.shape(s))
@@ -140,45 +138,39 @@ class IRGNM_CG(Solver):
         kappa = 1
 
         while (
-            # First condition
-              np.sqrt(np.float64(norm_s)/norm_h/kappa)
-              / self.regpar > self.cgtol[0] / (1+self.cgtol[0]) and
+              # First condition
+              np.sqrt(norm_s/norm_h/kappa) / self.regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
-              np.sqrt(np.float64(norm_s)
-                      / np.real(self.op.domain.inner(Thtilde, Th))
+              np.sqrt(norm_s
+                      / np.real(inner(Thtilde, Th))
                       / kappa/self.regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
-              np.sqrt(np.float64(norm_s)/norm_s0/kappa)
-              > self.cgtol[2] and
+              np.sqrt(np.float64(norm_s)/norm_s0/kappa) > self.cgtol[2] and
               # Fourth condition
               cgstep <= self.cgmaxit):
 
             z = self.deriv(d)
-            ztilde = self.op.codomain.gram(z)
-            gamma = (norm_s
-                           / np.real(self.regpar
-                                     * self.op.domain.inner(dtilde, d)
-                                     + self.op.domain.inner(ztilde, z)
-                                     )
-                           )
+            ztilde = self.setting.codomain.gram(z)
+            gamma = norm_s / np.real(self.regpar * inner(dtilde, d) + inner(ztilde, z))
             h = h + gamma*d
-
             Th = Th + gamma*z
             Thtilde = Thtilde + gamma*ztilde
-            stilde += (- gamma*(self.deriv(ztilde)
-                            + self.regpar*dtilde)).real
-            s = self.op.domain.gram_inv(stilde)
+            stilde -= (gamma*(self.deriv(ztilde) + self.regpar*dtilde)).real
+            s = self.setting.domain.gram_inv(stilde)
             norm_s_old = norm_s
-            norm_s = np.real(self.op.domain.inner(stilde, s))
+            norm_s = np.real(inner(stilde, s))
             beta = norm_s / norm_s_old
             d = s + beta*d
             dtilde = stilde + beta*dtilde
-            norm_h = self.op.domain.inner(h, self.op.domain.gram(h))
+            norm_h = inner(h, self.setting.domain.gram(h))
             kappa = 1 + beta*kappa
             cgstep += 1
 
         self.x += h
-        self.y, self.deriv = self.op.linearize(self.x)
+        self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
 
+
+def inner(a, b):
+    return np.real(np.vdot(a, b))
