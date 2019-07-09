@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def test_adjoint(op, tolerance=1e-10, iterations=10):
+def test_adjoint(op, tolerance=1e-10):
     """Numerically test validity of :meth:`adjoint` method.
 
     Checks if ::
@@ -17,19 +17,24 @@ def test_adjoint(op, tolerance=1e-10, iterations=10):
     tolerance : float, optional
         The maximum allowed difference between the inner products. Defaults to
         1e-10.
-    iterations : int, optional
-        How often to repeat the test. Defaults to 10.
 
     Raises
     ------
     AssertionError
-        If any test fails.
+        If the test fails.
     """
-    for i in range(iterations):
-        x = op.domain.randn()
-        fx = op(x)
-        y = op.codomain.randn()
-        fty = op.adjoint(y)
-        err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
-        assert err < tolerance, 'err = {}'.format(err)
-    return True
+    x = op.domain.randn()
+    fx = op(x)
+    y = op.codomain.randn()
+    fty = op.adjoint(y)
+    err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
+    assert err < tolerance, 'err = {}'.format(err)
+
+
+def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
+    x = op.domain.rand()
+    y, deriv = op.linearize(x)
+    h = op.domain.rand()
+    normh = np.linalg.norm(h)
+    g = deriv(h)
+    return [np.linalg.norm((op(x + step*h) - y) / step - g) / normh for step in steps]
