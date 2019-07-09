@@ -397,16 +397,49 @@ class MatrixMultiplication(LinearOperator):
     Implements a matrix multiplication with a given matrix.
     """
 
+    # TODO complex case
     def __init__(self, matrix):
         self.matrix = matrix
-        # TODO domain and codomain
-        super().__init__(None, None)
+        super().__init__(
+            domain=spaces.GenericDiscretization(matrix.shape[1]),
+            codomain=spaces.GenericDiscretization(matrix.shape[0]))
 
     def _eval(self, x):
         return self.params.matrix @ x
 
     def _adjoint(self, y):
         return self.params.matrix.T @ y
+
+
+class Power(NonlinearOperator):
+    # TODO complex case
+    def __init__(self, power, domain):
+        self.power = power
+        super().__init__(domain, domain)
+
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            self._factor = self.power * x**(self.power - 1)
+        return x ** self.power
+
+    def _derivative(self, x):
+        return self._factor * x
+
+    def _adjoint(self, y):
+        return self._factor * y
+
+
+class Scale(LinearOperator):
+    # TODO complex case
+    def __init__(self, scale, domain):
+        self.scale = scale
+        super().__init__(domain, domain)
+
+    def _eval(self, x):
+        return self.scale * x
+
+    def _adjoint(self, y):
+        return self.scale * x
 
 
 from .mediumscattering import MediumScattering
