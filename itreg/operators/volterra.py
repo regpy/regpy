@@ -75,5 +75,4 @@ class NonlinearVolterra(NonlinearOperator):
         return self.domain.volume_elem * np.cumsum(self._factor * x)
 
     def _adjoint(self, y):
-        return self.domain.volume_elem * np.flipud(np.cumsum(np.flipud(
-            self._factor * y)))
+        return self.domain.volume_elem * self._factor * np.flipud(np.cumsum(np.flipud(y)))
