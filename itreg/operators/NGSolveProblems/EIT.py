@@ -1,4 +1,5 @@
 from itreg.operators import NonlinearOperator
+from itreg.spaces import NGSolveDiscretization, UniformGrid
 
 import numpy as np
 import scipy.optimize as sco
@@ -39,7 +40,7 @@ class EIT(NonlinearOperator):
         self.gfu_in = GridFunction(self.fes_domain)
         
         #grid functions for later use 
-        self.gfu = GridFunction(self.fes_domain)  # solution, return value of _eval
+        self.gfu = GridFunction(self.fes_codomain)  # solution, return value of _eval
         self.gfu_bdr=GridFunction(self.fes_codomain) #grid function holding boundary values, g/sigma=du/dn
         
         self.gfu_integrator = GridFunction(self.fes_domain) #grid function for defining integrator (bilinearform)
@@ -51,7 +52,7 @@ class EIT(NonlinearOperator):
        
         self.gfu_dir=GridFunction(self.fes_codomain) #grid function for solving the dirichlet problem in adjoint
         self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
-        self.gfu_tar=GridFunction(self.fes_domain) #grid function used in _target, holding the arguments
+        self.gfu_tar=GridFunction(self.fes_codomain) #grid function used in _target, holding the arguments
         
         u = self.fes_codomain.TrialFunction()  # symbolic object
         v = self.fes_codomain.TestFunction()   # symbolic object 
@@ -74,7 +75,7 @@ class EIT(NonlinearOperator):
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
 
-        super().__init__(domain, codomain)
+        super().__init__(domain, UniformGrid(self.pts_bdr.shape[0]))
         
     def _eval(self, diff, differentiate, **kwargs):
         #Assemble Bilinearform
@@ -92,7 +93,7 @@ class EIT(NonlinearOperator):
         #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
         #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
         
-        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
+        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(self.fes_codomain.ndof), constraints={"fun": self._constraint, "type": "eq"})
         
         #print(res.x)
         #print(self._Target(np.zeros(441)))
@@ -192,7 +193,7 @@ class EIT(NonlinearOperator):
 
         
     def _constraint(self, u):
-        tar=GridFunction(self.fes_domain)
+        tar=GridFunction(self.fes_codomain)
         tar.vec.FV().NumPy()[:]=u
         coff=CoefficientFunction(tar)
         return Integrate(coff, self.fes_codomain.mesh, BND)
