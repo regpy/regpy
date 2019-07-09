@@ -55,12 +55,18 @@ class EIT(NonlinearOperator):
         self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
         self.gfu_tar=GridFunction(self.fes_codomain) #grid function used in _target, holding the arguments
         
+        self.Number=NumberSpace(self.fes_codomain.mesh)
+        r, s = self.Number.TnT()
+        
         u = self.fes_codomain.TrialFunction()  # symbolic object
         v = self.fes_codomain.TestFunction()   # symbolic object 
 
         #Define Bilinearform, will be assembled later        
         self.a = BilinearForm(self.fes_codomain, symmetric=True)
         self.a += SymbolicBFI(grad(u)*grad(v)*self.gfu_integrator_codomain)
+
+########new
+        self.a += SymbolicBFI(u*s+v*r, BND)
         
 
         #Define Linearform, will be assembled later        
@@ -83,35 +89,21 @@ class EIT(NonlinearOperator):
         self.gfu_integrator.vec.FV().NumPy()[:]=diff  
         self.gfu_integrator_codomain.Set(self.gfu_integrator)
         self.a.Assemble()
-        #print(self.a.mat)
             
         #Assemble Linearform, boundary term
         self.gfu_b.Set(self.g)
         self.b.Assemble()
-        #print(self.b.vec)
             
         #Solve system
-        #self.gfu.vec.data=self._Solve(self.a, self.b.vec)
-        #res=sco.least_squares(self._Target, np.zeros(441), max_nfev=50)
+        self.gfu.vec.data=self._solve(self.a, self.b.vec)
         
-        res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(self.fes_codomain.ndof), constraints={"fun": self._constraint, "type": "eq"})
-        
-        #print(res.x)
-        #print(self._Target(np.zeros(441)))
-        #print(self._Target(self.gfu.vec.FV().NumPy()))
-        #print(self._Target(res.x))
-        #c = Preconditioner(self.a, 'local')
-        #inv=CGSolver(self.a.mat, c.mat, maxsteps=1000)
-        #c.Update()
-        #self.gfu.vec.data=inv * self.b.vec
+        #res=sco.minimize((lambda u: self._target(u, self.b.vec)), np.zeros(self.fes_codomain.ndof), constraints={"fun": self._constraint, "type": "eq"})
         
         if differentiate:
             sigma=CoefficientFunction(self.gfu_integrator)
             self.gfu_bdr.Set(self.g/sigma)
 
-#        return self.gfu.vec.FV().NumPy().copy()
-#        return self._GetBoundaryValues(self.gfu)
-        self.gfu.vec.FV().NumPy()[:]=res.x
+        #self.gfu.vec.FV().NumPy()[:]=res.x
         return self._get_boundary_values(self.gfu)
 
 
