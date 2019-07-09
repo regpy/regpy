@@ -227,45 +227,72 @@ class LinearCombination(LinearOperator):
 
 
 class NonlinearOperatorComposition(NonlinearOperator):
-    def __init__(self, f, g):
-        assert f.domain == g.codomain
-        self.f, self.g = f, g
-        super().__init__(g.domain, f.codomain)
+    def __init__(self, *ops):
+        for f, g in zip(ops, ops[1:]):
+            assert f.domain == g.codomain
+        self.ops = []
+        for op in ops:
+            assert isinstance(op, BaseOperator)
+            if isinstance(op, (LinearOperatorComposition, NonlinearOperatorComposition)):
+                self.ops.extend(op.ops)
+            else:
+                self.ops.append(op)
+        super().__init__(self.ops[-1].domain, self.ops[0].codomain)
 
     def _eval(self, x, differentiate=False):
+        y = x
         if differentiate:
-            gx, dg_x = self.g.linearize(x)
-            y, df_gx = self.f.linearize(gx)
-            self._dg_x = dg_x
-            self._df_gx = df_gx
-            return y
+            self._derivs = []
+            for op in self.ops[::-1]:
+                y, deriv = op.linearize(y)
+                self._derivs.insert(0, deriv)
         else:
-            return self.f(self.g(x))
+            for op in self.ops[::-1]:
+                y = op(y)
+        return y
 
     def _derivative(self, x):
-        return self._df_gx(self._dg_x(x))
+        y = x
+        for deriv in self._derivs[::-1]:
+            y = deriv(y)
+        return y
 
     def _adjoint(self, y):
-        return self._dg_x.adjoint(self._df_gx.adjoint(y))
+        x = y
+        for deriv in self._derivs:
+            x = deriv.adjoint(x)
+        return x
 
     def __repr__(self):
-        return util.make_repr(self, self.f, self.g)
+        return util.make_repr(self, *self.ops)
 
 
 class LinearOperatorComposition(LinearOperator):
-    def __init__(self, f, g):
-        assert f.domain == g.codomain
-        self.f, self.g = f, g
-        super().__init__(g.domain, f.codomain)
+    def __init__(self, *ops):
+        for f, g in zip(ops, ops[1:]):
+            assert f.domain == g.codomain
+        for op in ops:
+            assert isinstance(op, LinearOperator)
+            if isinstance(op, LinearOperatorComposition):
+                self.ops.extend(op.ops)
+            else:
+                self.ops.append(op)
+        super().__init__(self.ops[-1].domain, self.ops[0].codomain)
 
     def _eval(self, x):
-        return self.f(self.g(x))
+        y = x
+        for op in self.ops[::-1]:
+            y = deriv(y)
+        return y
 
     def _adjoint(self, y):
-        return self.g.adjoint(self.f.adjoint(y))
+        x = y
+        for op in self.ops:
+            x = deriv.adjoint(x)
+        return x
 
     def __repr__(self):
-        return util.make_repr(self, self.f, self.g)
+        return util.make_repr(self, *self.ops)
 
 
 class Identity(LinearOperator):
