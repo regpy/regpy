@@ -42,3 +42,6 @@ init_solution=init_gfu.vec.FV().NumPy().copy()
 init_sol=init_solution.copy()
 init_data=op(init_solution)
 
+_, deriv=op.linearize(exact_solution)
+adj=deriv.adjoint(exact_data)
+

@@ -37,7 +37,8 @@ class EIT(NonlinearOperator):
         self.ind=[np.linalg.norm(np.array(p))>0.95 for p in self.pts]
         self.pts_bdr=np.array(self.pts)[self.ind]
         
-        self.gfu_in = GridFunction(self.fes_domain)
+        self.fes_in=H1(self.fes_codomain.mesh, order=1)
+        self.gfu_in = GridFunction(self.fes_in)
         
         #grid functions for later use 
         self.gfu = GridFunction(self.fes_codomain)  # solution, return value of _eval
@@ -48,9 +49,9 @@ class EIT(NonlinearOperator):
         self.gfu_rhs = GridFunction(self.fes_codomain) #grid function for defining right hand side (linearform), f
         
         self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
-        self.gfu_toret=GridFunction(self.fes_codomain) #grid function for returning values in adjoint and derivative
+        self.gfu_toret=GridFunction(self.fes_domain) #grid function for returning values in adjoint and derivative
        
-        self.gfu_dir=GridFunction(self.fes_codomain) #grid function for solving the dirichlet problem in adjoint
+        self.gfu_dir=GridFunction(self.fes_domain) #grid function for solving the dirichlet problem in adjoint
         self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
         self.gfu_tar=GridFunction(self.fes_codomain) #grid function used in _target, holding the arguments
         
@@ -173,7 +174,7 @@ class EIT(NonlinearOperator):
 
         
     def _solve(self, bilinear, rhs, boundary=False):
-        return bilinear.mat.Inverse(freedofs=self.fes.FreeDofs()) * rhs
+        return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
     
     def _get_boundary_values(self, gfu):
         myfunc=CoefficientFunction(gfu)
