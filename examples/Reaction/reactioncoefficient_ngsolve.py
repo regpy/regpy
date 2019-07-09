@@ -16,7 +16,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-
 meshsize_domain=10
 meshsize_codomain=10
 
@@ -30,8 +29,7 @@ fes_codomain = H1(mesh, order=2, dirichlet="left|top|right|bottom")
 codomain= NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)*sin(y)
-op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False, reaction=True, dim=2)
-
+op = Coefficient(domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False, reaction=True, dim=2)
 
 exact_solution_coeff = x+1
 gfu_exact_solution=GridFunction(op.fes_domain)
@@ -56,7 +54,7 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-Draw (gfu_exact_solution)
+Draw (exact_solution_coeff, op.fes_domain.mesh, "exact")
 Draw (init, op.fes_domain.mesh, "init")
 
 #Draw recondtructed solution
