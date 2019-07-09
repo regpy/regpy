@@ -198,6 +198,34 @@ class Derivative(LinearOperator):
         return util.make_repr(self, self.op.get())
 
 
+class LinearCombination(LinearOperator):
+    """
+    Implements a linear combination of any number of operators with sepcified scalars.
+    Domains and ranges must be the same.
+    E.g. : F(x) = a * f(x) + b * g(x) + c * h(x)
+    """
+    def __init__(self, operators, scalars):
+        for i in range(len(operators)-1):
+            f = operators[i]
+            g = operators[i+1]
+            assert f.domain == g.domain and f.range == g.range, "Domains and Ranges of Operators must be the same"
+        self.operators = operators
+        self.scalars = scalars
+        super().__init__(f.domain, f.range)
+
+    def _eval(self, x):
+        res = 0
+        for i in range(len(self.operators)-1):
+            res += self.paramas.scalar[i] * self.operators[i](x)
+        return res
+
+    def _adjoint(self, x):
+        res = 0
+        for i in range(len(self.operators)-1):
+            res += self.paramas.scalar[i] * self.operators[i].adjoint(x)
+        return res
+
+
 class NonlinearOperatorComposition(NonlinearOperator):
     def __init__(self, f, g):
         assert f.domain == g.codomain
@@ -335,6 +363,23 @@ class FourierTransform(LinearOperator):
 
     def __repr__(self):
         return util.make_repr(self, self.domain)
+
+
+class MatrixMultiplication(LinearOperator):
+    """
+    Implements a matrix multiplication with a given matrix.
+    """
+
+    def __init__(self, matrix):
+        self.matrix = matrix
+        # TODO domain and codomain
+        super().__init__(None, None)
+
+    def _eval(self, x):
+        return self.params.matrix @ x
+
+    def _adjoint(self, y):
+        return self.params.matrix.T @ y
 
 
 from .mediumscattering import MediumScattering
