@@ -90,7 +90,7 @@ class MediumScattering(NonlinearOperator):
         else:
             self.coarse = False
 
-        self.gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100)
+        self.gmres_args = util.set_defaults(gmres_args, restart=10, tol=1e-14, maxiter=100, atol='legacy')
 
         super().__init__(
             domain=grid,
@@ -166,9 +166,9 @@ class MediumScattering(NonlinearOperator):
             if self.coarse:
                 v = self._solve_two_grid(rhs)
             else:
-                v, info = (self
-                           ._gmres(self._lippmann_schwinger, rhs)
-                           .reshape(self.domain.shape))
+                v = (self
+                     ._gmres(self._lippmann_schwinger, rhs)
+                     .reshape(self.domain.shape))
             farfield[:, j] = self.farfield_matrix @ v[self.support]
         if self.amplitude:
             return 2 * np.real(self._farfield.conj() * farfield)
