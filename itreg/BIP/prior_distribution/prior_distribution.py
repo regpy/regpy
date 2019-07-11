@@ -27,7 +27,7 @@ class gaussian(object):
                 raise ValueError('Error: No prior covariance matrix')
         self.setting=setting
         if m_0 is None:
-            self.m_0=np.zeros(self.setting.domain.coords.shape[0])
+            self.m_0=np.zeros(self.setting.Hdomain.coords.shape[0])
         else:
             self.m_0=m_0
         self.gamma_prior=gamma_prior
@@ -43,10 +43,10 @@ class gaussian(object):
             raise ValueError('Error: No gamma_prior is given')
 
         return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs))-\
-            1/2*np.dot(x-self.m_0, self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0)))
+            1/2*np.dot(x-self.m_0, self.setting.Hdomain.gram(np.dot(self.gamma_prior, x-self.m_0)))
     
     def gradient_gaussian(self, x):
-        return self.setting.domain.gram(np.dot(self.gamma_prior, x-self.m_0))
+        return self.setting.Hdomain.gram(np.dot(self.gamma_prior, x-self.m_0))
     
     def hessian_gaussian(self, m, x):
         return np.dot(self.gamma_prior, x)
@@ -124,12 +124,12 @@ class tikhonov(object):
         
     def tikhonov(self, x):
         y=self.setting.op(x)-self.rhs
-        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+        return - 0.5 * (self.setting.Hcodomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
     
     def gradient_tikhonov(self, x):
         y, deriv=self.setting.op.linearize(x)
         y-=self.rhs
-        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
+        return -(deriv.adjoint(self.setting.Hcodomain.gram(y))+self.regpar*self.setting.domain.gram(x))
     
     def hessian_tikhonov(self, m, x):
         grad_mx=self.gradient_tikhonov(m+x)

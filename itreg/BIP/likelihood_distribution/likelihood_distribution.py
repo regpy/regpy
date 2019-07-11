@@ -44,11 +44,11 @@ class gaussian(object):
         if self.gamma_d is None:
             raise ValueError('Error: No gamma_d is given')
         return -1/2*np.log(2*np.pi*self.gamma_d_abs)-\
-            1/2*np.dot(self.setting.op(x)-self.rhs, self.setting.codomain.gram(np.dot(self.gamma_d, self.setting.op(x))-self.rhs))
+            1/2*np.dot(self.setting.op(x)-self.rhs, self.setting.Hcodomain.gram(np.dot(self.gamma_d, self.setting.op(x))-self.rhs))
     
     def gradient_gaussian(self, x):
         y, deriv=self.setting.op.linearize(x)
-        return -deriv.adjoint(self.setting.codomain.gram_inv(np.dot(np.linalg.inv(self.gamma_d), (self.rhs-y))))
+        return -deriv.adjoint(self.setting.Hcodomain.gram_inv(np.dot(np.linalg.inv(self.gamma_d), (self.rhs-y))))
     
     def hessian_gaussian(self, m, x):
         grad_mx=self.gradient_gaussian(m+x)
