@@ -223,6 +223,13 @@ class Product(Discretization):
         self.idxs = [0] + list(accumulate(f.size for f in factors))
         super.__init__(self.idxs[-1])
 
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and
+            len(self.factors) == len(other.factors) and
+            all(f == g for f, g in zip(self.factors, other.factors))
+        )
+
     def join(self, *xs):
         assert all(x in f for f, x in zip(self.factors, xs))
         elm = self.empty()
@@ -234,4 +241,5 @@ class Product(Discretization):
         assert x in self
         return tuple(
             f.fromflat(x[start:end])
-            for f, start, end in zip(self.factors, self.idxs, self.idxs[1:]))
+            for f, start, end in zip(self.factors, self.idxs, self.idxs[1:])
+        )

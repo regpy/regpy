@@ -103,6 +103,9 @@ class L2Generic(HilbertSpace):
     def gram_inv(self):
         return self.discr.identity
 
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and self.discr == other.discr
+
 # TODO L2 for grids, with proper weights
 
 
@@ -118,6 +121,13 @@ class SobolevUniformGrid(HilbertSpace):
         super().__init__(discr)
         self.index = index
         self.weights = (1 + np.linalg.norm(discr.dualgrid.coords, axis=0)**2) ** index
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and
+            self.discr == other.discr and
+            self.index == other.index
+        )
 
     @util.memoized_property
     def gram(self):
