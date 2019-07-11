@@ -2,8 +2,8 @@ from copy import deepcopy
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
-from .. import spaces
-from .. import util
+from .. import spaces, util
+from ..spaces import discrs
 
 
 class Revocable:
@@ -413,6 +413,40 @@ class Scale(Operator):
 
     def _adjoint(self, y):
         return self.scale * x
+
+
+class BlockDiagonal(Operator):
+    def __init__(self, *ops):
+        assert all(isinstance(op, Operator) for op in ops)
+        self.ops = ops
+        super().__init__(
+            domain=discrs.Product(*(op.domain for op in ops)),
+            codomain=discrs.Product(*(op.codomain for op in ops)),
+            linear=all(op.linear for op in ops)
+        )
+
+    def _eval(self, x, differentiate=False):
+        elms = self.domain.split(x)
+        if differentiate:
+            linearizations = [op.linearize(elm) for op, elm in zip(self.ops, elms)]
+            self._derivs = [l[1] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
+        else:
+            return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
+
+    def _derivative(self, x):
+        elms = self.domain.split(x)
+        return self.codomain.join(
+            *(deriv(elm) for deriv, elm in zip(self._derivs, elms)))
+
+    def _adjoint(self, y):
+        elms = self.codomain.split(y)
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        return self.domain.join(
+            *(op.adjoint(elm) for op, elm in zip(ops, elms)))
 
 
 from .mediumscattering import MediumScattering

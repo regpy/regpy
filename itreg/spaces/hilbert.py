@@ -140,3 +140,36 @@ class SobolevUniformGrid(HilbertSpace):
         ft = operators.FourierTransform(self.discr)
         mul = operators.PointwiseMultiplication(self.discr.dualgrid, 1/self.weights)
         return ft.adjoint * mul * ft
+
+
+class Product(HilbertSpace):
+    def __init__(self, *factors):
+        assert all(isinstance(f, HilbertSpace) for f in factors)
+        self.factors = factors
+        super().__init__(discrs.Product(*(f.discr for f in factors)))
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and
+            len(self.factors) == len(other.factors) and
+            all(f == g for f, g in zip(self.factors, other.factors))
+        )
+
+    @util.memoized_property
+    def gram(self):
+        return operators.BlockDiagonal(*(f.gram for f in self.factors))
+
+    @util.memoized_property
+    def gram_inv(self):
+        return operators.BlockDiagonal(*(f.gram_inv for f in self.factors))
+
+
+class GenericProduct:
+    def __init__(self, *factors):
+        assert all(callable(f) for f in factors)
+        self.factors = factors
+
+    def __call__(self, discr):
+        assert isinstance(discr, discrs.Product)
+        assert len(self.factors) == len(discr.factors)
+        return Product(*(f(d) for f, d in zip(self.factors, discr.factors)))
