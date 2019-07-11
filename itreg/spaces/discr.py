@@ -1,5 +1,6 @@
 from copy import copy
 import numpy as np
+from itertools import accumulate
 
 from .. import util, operators
 
@@ -213,3 +214,24 @@ class UniformGrid(Grid):
             return y
         else:
             return np.real(y)
+
+
+class Product(Discretization):
+    def __init__(self, *factors):
+        assert all(isinstance(f, Discretization) for f in factors)
+        self.factors = factors
+        self.idxs = [0] + list(accumulate(f.size for f in factors))
+        super.__init__(self.idxs[-1])
+
+    def join(self, *xs):
+        assert all(x in f for f, x in zip(self.factors, xs))
+        elm = self.empty()
+        for f, x, start, end in zip(self.factors, xs, self.idxs, self.idxs[1:]):
+            elm[start:end] = f.flatten(x)
+        return elm
+
+    def split(self, x):
+        assert x in self
+        return tuple(
+            f.fromflat(x[start:end])
+            for f, start, end in zip(self.factors, self.idxs, self.idxs[1:]))
