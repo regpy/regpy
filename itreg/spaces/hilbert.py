@@ -7,7 +7,7 @@ from .. import util, operators
 
 class HilbertSpace:
     def __init__(self, discr):
-        assert isinstance(discr, discr.GenericDiscretization)
+        assert isinstance(discr, discr.Discretization)
         self.discr = discr
 
     @property
@@ -93,7 +93,7 @@ def L2(discr):
         'L2 not implemented on {}'.format(type(discr).__qualname__))
 
 
-@L2.register(discr.GenericDiscretization)
+@L2.register(discr.Discretization)
 class L2Generic(HilbertSpace):
     @property
     def gram(self):

@@ -4,7 +4,7 @@ import numpy as np
 from .. import util, operators
 
 
-class GenericDiscretization:
+class Discretization:
     """Discrete space R^shape or C^shape (viewed as a real space) without any
     additional structure.
     """
@@ -144,7 +144,7 @@ class GenericDiscretization:
         return other
 
 
-class Grid(GenericDiscretization):
+class Grid(Discretization):
     def __init__(self, *coords, axisdata=None, dtype=float):
         views = []
         if axisdata and not coords:

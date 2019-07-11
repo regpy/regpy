@@ -38,8 +38,8 @@ class BaseOperator:
     log = util.classlogger
 
     def __init__(self, domain, codomain):
-        assert isinstance(domain, spaces.GenericDiscretization)
-        assert isinstance(codomain, spaces.GenericDiscretization)
+        assert isinstance(domain, spaces.Discretization)
+        assert isinstance(codomain, spaces.Discretization)
         self.domain, self.codomain = domain, codomain
         self._consts = {'domain', 'codomain'}
 
@@ -341,7 +341,7 @@ class CoordinateProjection(LinearOperator):
         self.mask = mask
         super().__init__(
             domain=domain,
-            codomain=spaces.GenericDiscretization(np.sum(mask), dtype=domain.dtype))
+            codomain=spaces.Discretization(np.sum(mask), dtype=domain.dtype))
 
     def _eval(self, x):
         return x[self.mask]
@@ -401,8 +401,8 @@ class MatrixMultiplication(LinearOperator):
     def __init__(self, matrix):
         self.matrix = matrix
         super().__init__(
-            domain=spaces.GenericDiscretization(matrix.shape[1]),
-            codomain=spaces.GenericDiscretization(matrix.shape[0]))
+            domain=spaces.Discretization(matrix.shape[1]),
+            codomain=spaces.Discretization(matrix.shape[0]))
 
     def _eval(self, x):
         return self.params.matrix @ x
