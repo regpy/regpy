@@ -1,13 +1,13 @@
 import numpy as np
 from functools import singledispatch
 
-from . import discr
+from . import discrs
 from .. import util, operators
 
 
 class HilbertSpace:
     def __init__(self, discr):
-        assert isinstance(discr, discr.Discretization)
+        assert isinstance(discr, discrs.Discretization)
         self.discr = discr
 
     @property
@@ -93,7 +93,7 @@ def L2(discr):
         'L2 not implemented on {}'.format(type(discr).__qualname__))
 
 
-@L2.register(discr.Discretization)
+@L2.register(discrs.Discretization)
 class L2Generic(HilbertSpace):
     @property
     def gram(self):
@@ -112,7 +112,7 @@ def Sobolev(discr, index=1):
         'Sobolev not implemented on {}'.format(type(discr).__qualname__))
 
 
-@Sobolev.register(discr.UniformGrid)
+@Sobolev.register(discrs.UniformGrid)
 class SobolevUniformGrid(HilbertSpace):
     def __init__(self, discr, index):
         super().__init__(discr)
