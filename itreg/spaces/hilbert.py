@@ -107,13 +107,13 @@ class L2Generic(HilbertSpace):
 
 
 @singledispatch
-def H1(discr, index=1):
+def Sobolev(discr, index=1):
     raise NotImplementedError(
-        'H1 not implemented on {}'.format(type(discr).__qualname__))
+        'Sobolev not implemented on {}'.format(type(discr).__qualname__))
 
 
-@H1.register(discr.UniformGrid)
-class H1UniformGrid(HilbertSpace):
+@Sobolev.register(discr.UniformGrid)
+class SobolevUniformGrid(HilbertSpace):
     def __init__(self, discr, index):
         super().__init__(discr)
         self.index = index

@@ -3,7 +3,7 @@ import setpath
 import itreg
 
 from itreg.operators import MediumScattering, CoordinateProjection
-from itreg.spaces import L2, H1, HilbertPullBack
+from itreg.spaces import L2, Sobolev, HilbertPullBack
 from itreg.solvers import Landweber, HilbertSpaceSetting
 # TODO from itreg.util import test_adjoint
 import itreg.stoprules as rules
@@ -47,7 +47,7 @@ init = 1.1 * op.domain.ones()
 
 setting = HilbertSpaceSetting(
     op=op,
-    domain=HilbertPullBack(partial(H1, index=1), embedding, inverse='cholesky'),
+    domain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
     codomain=L2)
 
 landweber = Landweber(setting, data, init, stepsize=0.01)
