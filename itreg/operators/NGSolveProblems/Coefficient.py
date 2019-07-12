@@ -23,7 +23,7 @@ class Coefficient(NonlinearOperator):
 
         self.diffusion=diffusion
         self.reaction=reaction
-        self.dim=dim
+        self.dim=domain.fes.mesh.dim
         
         bc_left=bc_left or 0
         bc_right=bc_right or 0
@@ -51,7 +51,9 @@ class Coefficient(NonlinearOperator):
         self.gfu_integrator_codomain = GridFunction(self.fes_codomain)
         self.gfu_rhs = GridFunction(self.fes_codomain) #grid function for defining right hand side (Linearform)
         
+        self.gfu_inner_domain(self.fes_domain) #grid function for reading in values in derivative
         self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
+        self.gfu_deriv=GridFunction(self.fes_domain) #return value of derivative
         self.gfu_toret=GridFunction(self.fes_domain) #grid function for returning values in adjoint and derivative
        
         u = self.fes_codomain.TrialFunction()  # symbolic object
@@ -67,6 +69,10 @@ class Coefficient(NonlinearOperator):
         #Define Linearform, will be assembled later        
         self.f=LinearForm(self.fes_codomain)
         self.f += SymbolicLFI(self.gfu_rhs*v)
+        
+        if diffusion:
+            self.f_deriv=LinearForm(self.fes_codomain)
+            self.f_deriv += SymbolicLFI(-self.gfu_rhs*grad(v))
         
         #Precompute Boundary values and boundary valued corrected rhs
         if self.dim==1:
@@ -101,17 +107,24 @@ class Coefficient(NonlinearOperator):
         #Bilinearform already defined from _eval
 
         #Translate arguments in Coefficient Function            
-        self.gfu_inner.vec.FV().NumPy()[:]=argument
+        self.gfu_inner_domain.vec.FV().NumPy()[:]=argument
+        #Interpolate to codomain
+        self.gfu_inner.Set(self.gfu_inner_domain)
  
         #Define rhs 
         if self.diffusion:              
-            rhs=div(self.gfu_inner*grad(self.gfu))
+            rhs=self.gfu_inner*grad(self.gfu)
+            self.gfu_rhs.Set(rhs)
+            self.f_deriv.Assemble()
+            
+            self.gfu_deriv.vec.data=self._Solve(self.a, self.f_deriv.vec)
+            
         elif self.reaction:
             rhs=self.gfu_inner*self.gfu                
-        self.gfu_rhs.Set(rhs)
-        self.f.Assemble()
+            self.gfu_rhs.Set(rhs)
+            self.f.Assemble()
             
-        self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)
+            self.gfu_deriv.vec.data=self._Solve(self.a, self.f.vec)
             
         return self.gfu_toret.vec.FV().NumPy().copy()
 
