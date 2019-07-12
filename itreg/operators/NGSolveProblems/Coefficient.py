@@ -53,7 +53,7 @@ class Coefficient(NonlinearOperator):
         
         self.gfu_inner_domain=GridFunction(self.fes_domain) #grid function for reading in values in derivative
         self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
-        self.gfu_deriv=GridFunction(self.fes_domain) #return value of derivative
+        self.gfu_deriv=GridFunction(self.fes_codomain) #return value of derivative
         self.gfu_toret=GridFunction(self.fes_domain) #grid function for returning values in adjoint and derivative
        
         u = self.fes_codomain.TrialFunction()  # symbolic object
@@ -72,7 +72,7 @@ class Coefficient(NonlinearOperator):
         
         if diffusion:
             self.f_deriv=LinearForm(self.fes_codomain)
-            self.f_deriv += SymbolicLFI(-self.gfu_rhs*grad(v))
+            self.f_deriv += SymbolicLFI(-self.gfu_rhs*grad(self.gfu)*grad(v))
         
         #Precompute Boundary values and boundary valued corrected rhs
         if self.dim==1:
@@ -113,7 +113,7 @@ class Coefficient(NonlinearOperator):
  
         #Define rhs 
         if self.diffusion:              
-            rhs=self.gfu_inner*grad(self.gfu)
+            rhs=self.gfu_inner
             self.gfu_rhs.Set(rhs)
             self.f_deriv.Assemble()
             
@@ -126,7 +126,7 @@ class Coefficient(NonlinearOperator):
             
             self.gfu_deriv.vec.data=self._solve(self.a, self.f.vec)
             
-        return self.gfu_toret.vec.FV().NumPy().copy()
+        return self.gfu_deriv.vec.FV().NumPy().copy()
 
             
 
