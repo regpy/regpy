@@ -82,7 +82,7 @@ class EIT(NonlinearOperator):
         self.b+=SymbolicLFI(self.gfu_b*v.Trace(), BND)
         
         self.f_deriv=LinearForm(self.fes_codomain)
-        self.f += SymbolicLFI(self.gfu_rhs*grad(self.gfu)*grad(v))
+        self.f_deriv += SymbolicLFI(self.gfu_rhs*grad(self.gfu)*grad(v))
         
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
@@ -128,11 +128,11 @@ class EIT(NonlinearOperator):
         #self.gfu_b.Set(-self.gfu_inner*self.gfu_bdr)
         #self.b.Assemble()
         
-        #self.gfu_toret.vec.data=self._Solve(self.a, self.f.vec)#+self.b.vec)
+        self.gfu_deriv.vec.data=self._solve(self.a, self.f_deriv.vec)#+self.b.vec)
         
-        res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
+        #res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
 
-        self.gfu_deriv.vec.FV().NumPy()[:]=res.x
+        #self.gfu_deriv.vec.FV().NumPy()[:]=res.x
 #        return res.x            
 #        return self.gfu_toret.vec.FV().NumPy().copy()
         return self._get_boundary_values(self.gfu_deriv)
