@@ -412,27 +412,32 @@ class Scale(Operator):
         return self.scale * x
 
     def _adjoint(self, y):
-        return self.scale * x
+        return self.scale * y
 
 
 class BlockDiagonal(Operator):
-    def __init__(self, *ops):
-        assert all(isinstance(op, Operator) for op in ops)
-        self.ops = ops
+    def __init__(self, *blocks, flatten=True):
+        assert all(isinstance(block, Operator) for block in blocks)
+        self.blocks = []
+        for block in blocks:
+            if flatten and isinstance(block, type(self)):
+                self.blocks.extend(block.blocks)
+            else:
+                self.blocks.append(block)
         super().__init__(
-            domain=discrs.Product(*(op.domain for op in ops)),
-            codomain=discrs.Product(*(op.codomain for op in ops)),
-            linear=all(op.linear for op in ops)
+            domain=discrs.Product(*(block.domain for block in self.blocks), flatten=False),
+            codomain=discrs.Product(*(block.codomain for block in self.blocks), flatten=False),
+            linear=all(block.linear for block in blocks)
         )
 
     def _eval(self, x, differentiate=False):
         elms = self.domain.split(x)
         if differentiate:
-            linearizations = [op.linearize(elm) for op, elm in zip(self.ops, elms)]
+            linearizations = [block.linearize(elm) for block, elm in zip(self.blocks, elms)]
             self._derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
-            return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
+            return self.codomain.join(*(block(elm) for block, elm in zip(self.blocks, elms)))
 
     def _derivative(self, x):
         elms = self.domain.split(x)
@@ -442,11 +447,11 @@ class BlockDiagonal(Operator):
     def _adjoint(self, y):
         elms = self.codomain.split(y)
         if self.linear:
-            ops = self.ops
+            blocks = self.blocks
         else:
-            ops = self._derivs
+            blocks = self._derivs
         return self.domain.join(
-            *(op.adjoint(elm) for op, elm in zip(ops, elms)))
+            *(block.adjoint(elm) for block, elm in zip(blocks, elms)))
 
 
 from .mediumscattering import MediumScattering
