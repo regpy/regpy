@@ -48,7 +48,9 @@ class EIT(NonlinearOperator):
         self.gfu_integrator_codomain = GridFunction(self.fes_codomain)
         self.gfu_rhs = GridFunction(self.fes_codomain) #grid function for defining right hand side (linearform), f
         
+        self.gfu_inner_domain=GridFunction(self.fes_domain) #grid function for reading in values in derivative
         self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
+        self.gfu_deriv=GridFunction(self.fes_codomain) #gridd function return value of derivative
         self.gfu_toret=GridFunction(self.fes_domain) #grid function for returning values in adjoint and derivative
        
         self.gfu_dir=GridFunction(self.fes_domain) #grid function for solving the dirichlet problem in adjoint
@@ -78,6 +80,9 @@ class EIT(NonlinearOperator):
         self.b=LinearForm(self.fes_codomain)
         self.gfu_b = GridFunction(self.fes_codomain)
         self.b+=SymbolicLFI(self.gfu_b*v.Trace(), BND)
+        
+        self.f_deriv=LinearForm(self.fes_codomain)
+        self.f += SymbolicLFI(self.gfu_rhs*grad(self.gfu)*grad(v))
         
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
@@ -111,13 +116,13 @@ class EIT(NonlinearOperator):
         #Bilinearform already defined from _eval
 
         #Translate arguments in Coefficient Function            
-        self.gfu_inner.vec.FV().NumPy()[:]=h
+        self.gfu_inner_domain.vec.FV().NumPy()[:]=h
+        self.gfu_inner.Set(self.gfu_inner_domain)
  
         #Define rhs (f)              
-        rhs=div(self.gfu_inner*grad(self.gfu))
-               
+        rhs=self.gfu_inner               
         self.gfu_rhs.Set(rhs)
-        self.f.Assemble()
+        self.f_deriv.Assemble()
         
         #Define boundary term
         #self.gfu_b.Set(-self.gfu_inner*self.gfu_bdr)
@@ -127,10 +132,10 @@ class EIT(NonlinearOperator):
         
         res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
 
-        self.gfu_toret.vec.FV().NumPy()[:]=res.x
+        self.gfu_deriv.vec.FV().NumPy()[:]=res.x
 #        return res.x            
 #        return self.gfu_toret.vec.FV().NumPy().copy()
-        return self._get_boundary_values(self.gfu_toret)
+        return self._get_boundary_values(self.gfu_deriv)
 
             
 
