@@ -51,7 +51,7 @@ class Coefficient(NonlinearOperator):
         self.gfu_integrator_codomain = GridFunction(self.fes_codomain)
         self.gfu_rhs = GridFunction(self.fes_codomain) #grid function for defining right hand side (Linearform)
         
-        self.gfu_inner_domain(self.fes_domain) #grid function for reading in values in derivative
+        self.gfu_inner_domain=GridFunction(self.fes_domain) #grid function for reading in values in derivative
         self.gfu_inner=GridFunction(self.fes_codomain) #grid function for inner computation in derivative and adjoint
         self.gfu_deriv=GridFunction(self.fes_domain) #return value of derivative
         self.gfu_toret=GridFunction(self.fes_domain) #grid function for returning values in adjoint and derivative
@@ -98,7 +98,7 @@ class Coefficient(NonlinearOperator):
         self.r.data = self.f.vec - self.a.mat * self.gfu_bdr.vec
             
         #Solve system
-        self.gfu.vec.data=self.gfu_bdr.vec.data+self._Solve(self.a, self.r)
+        self.gfu.vec.data=self.gfu_bdr.vec.data+self._solve(self.a, self.r)
 
         return self.gfu.vec.FV().NumPy().copy()
 #            return self.gfu
@@ -117,14 +117,14 @@ class Coefficient(NonlinearOperator):
             self.gfu_rhs.Set(rhs)
             self.f_deriv.Assemble()
             
-            self.gfu_deriv.vec.data=self._Solve(self.a, self.f_deriv.vec)
+            self.gfu_deriv.vec.data=self._solve(self.a, self.f_deriv.vec)
             
         elif self.reaction:
             rhs=self.gfu_inner*self.gfu                
             self.gfu_rhs.Set(rhs)
             self.f.Assemble()
             
-            self.gfu_deriv.vec.data=self._Solve(self.a, self.f.vec)
+            self.gfu_deriv.vec.data=self._solve(self.a, self.f.vec)
             
         return self.gfu_toret.vec.FV().NumPy().copy()
 
@@ -139,7 +139,7 @@ class Coefficient(NonlinearOperator):
         self.f.Assemble()
 
         #Solve system
-        self.gfu_inner.vec.data=self._Solve(self.a, self.f.vec)
+        self.gfu_inner.vec.data=self._solve(self.a, self.f.vec)
 
         if self.diffusion:
             res=-grad(self.gfu)*grad(self.gfu_inner)
@@ -150,7 +150,7 @@ class Coefficient(NonlinearOperator):
             
         return self.gfu_toret.vec.FV().NumPy().copy()
         
-    def _Solve(self, bilinear, rhs, boundary=False):
+    def _solve(self, bilinear, rhs, boundary=False):
         return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
 
 
