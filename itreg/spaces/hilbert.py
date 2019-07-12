@@ -56,6 +56,19 @@ class HilbertSpace:
         """
         return np.sqrt(self.inner(x, x))
 
+    def __mul__(self, other):
+        # TODO weighted hilbert spaces, multiplication by constants
+        if isinstance(other, HilbertSpace):
+            return Product(self, other, flatten=True)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, HilbertSpace):
+            return Product(other, self, flatten=True)
+        else:
+            return NotImplemented
+
 
 class HilbertPullBack(HilbertSpace):
     def __init__(self, space, op, inverse=None):
@@ -109,6 +122,11 @@ class L2Generic(HilbertSpace):
 # TODO L2 for grids, with proper weights
 
 
+@L2.register(discrs.Product)
+def L2Product(discr):
+    return Product(*(L2(f) for f in discr.factors), flatten=False)
+
+
 @singledispatch
 def Sobolev(discr, index=1):
     raise NotImplementedError(
@@ -142,34 +160,68 @@ class SobolevUniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 
+@Sobolev.register(discrs.Product)
+def SobolevProduct(discr):
+    return Product(*(Sobolev(f) for f in discr.factors), flatten=False)
+
+
 class Product(HilbertSpace):
-    def __init__(self, *factors):
+    def __init__(self, *factors, weights=None, flatten=True):
         assert all(isinstance(f, HilbertSpace) for f in factors)
-        self.factors = factors
-        super().__init__(discrs.Product(*(f.discr for f in factors)))
+        if weights is None:
+            weights = [1] * len(factors)
+        assert len(weights) == len(factors)
+        for w, f in zip(weights, factors):
+            if flatten and isinstance(f, type(self)):
+                self.factors.extend(f.factors)
+                self.weights.extend(w * fw for fw in f.weights)
+            else:
+                self.factors.append(f)
+                self.weights.append(w)
+        super().__init__(discrs.Product(*(f.discr for f in self.factors), flatten=False))
 
     def __eq__(self, other):
         return (
             isinstance(other, type(self)) and
             len(self.factors) == len(other.factors) and
-            all(f == g for f, g in zip(self.factors, other.factors))
+            all(f == g for f, g in zip(self.factors, other.factors)) and
+            all(v == w for v, w in zip(self.weights, other.weights))
         )
 
     @util.memoized_property
     def gram(self):
-        return operators.BlockDiagonal(*(f.gram for f in self.factors))
+        blocks = []
+        for w, f in zip(self.weights, self.factors):
+            if w == 1:
+                blocks.append(f.gram)
+            else:
+                blocks.append(w * f.gram)
+        return operators.BlockDiagonal(blocks)
 
     @util.memoized_property
     def gram_inv(self):
-        return operators.BlockDiagonal(*(f.gram_inv for f in self.factors))
+        blocks = []
+        for w, f in zip(self.weights, self.factors):
+            if w == 1:
+                blocks.append(f.gram_inv)
+            else:
+                blocks.append(1/w * f.gram_inv)
+        return operators.BlockDiagonal(blocks)
 
 
 class GenericProduct:
-    def __init__(self, *factors):
+    def __init__(self, *factors, weights=None):
+        # TODO flatten GenericProduct factors
         assert all(callable(f) for f in factors)
+        assert weights is None or len(weights) == len(factors)
         self.factors = factors
+        self.weights = weights
 
     def __call__(self, discr):
         assert isinstance(discr, discrs.Product)
         assert len(self.factors) == len(discr.factors)
-        return Product(*(f(d) for f, d in zip(self.factors, discr.factors)))
+        return Product(
+            *(f(d) for f, d in zip(self.factors, discr.factors)),
+            weights=self.weights,
+            flatten=False
+        )
