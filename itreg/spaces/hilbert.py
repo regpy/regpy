@@ -69,6 +69,13 @@ class HilbertSpace:
         else:
             return NotImplemented
 
+    def __rmul__(self, other):
+        if np.isreal(other):
+            assert other > 0
+            return DirectSum(self, weights=[other], flatten=True)
+        else:
+            return NotImplemented
+
 
 class HilbertPullBack(HilbertSpace):
     def __init__(self, space, op, inverse=None):
@@ -198,7 +205,10 @@ class DirectSum(HilbertSpace):
                 blocks.append(f.gram)
             else:
                 blocks.append(w * f.gram)
-        return operators.BlockDiagonal(*blocks)
+        if len(blocks) == 1:
+            return blocks[0]
+        else:
+            return operators.BlockDiagonal(*blocks)
 
     @util.memoized_property
     def gram_inv(self):
@@ -208,7 +218,10 @@ class DirectSum(HilbertSpace):
                 blocks.append(f.gram_inv)
             else:
                 blocks.append(1/w * f.gram_inv)
-        return operators.BlockDiagonal(*blocks)
+        if len(blocks) == 1:
+            return blocks[0]
+        else:
+            return operators.BlockDiagonal(*blocks)
 
 
 class GenericSum:
