@@ -432,6 +432,9 @@ class MatrixMultiplication(Operator):
     def _adjoint(self, y):
         return self.params.matrix.T @ y
 
+    def __repr__(self):
+        return util.make_repr(self, self.matrix)
+
 
 class Power(NonlinearOperator):
     # TODO complex case
@@ -488,6 +491,9 @@ class BlockDiagonal(Operator):
             blocks = self._derivs
         return self.domain.join(
             *(block.adjoint(elm) for block, elm in zip(blocks, elms)))
+
+    def __repr__(self):
+        return util.make_repr(self, *self.blocks)
 
 
 from .mediumscattering import MediumScattering
