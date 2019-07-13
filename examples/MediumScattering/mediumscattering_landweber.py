@@ -47,14 +47,14 @@ init = 1.1 * op.domain.ones()
 
 setting = HilbertSpaceSetting(
     op=op,
-    domain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
-    codomain=L2)
+    Hdomain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
+    Hcodomain=L2)
 
 landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data,
-                      noiselevel=setting.codomain.norm(noise),
+    rules.Discrepancy(setting.Hcodomain.norm, data,
+                      noiselevel=setting.Hcodomain.norm(noise),
                       tau=1))
 
 reco, reco_data = landweber.run(stoprule)

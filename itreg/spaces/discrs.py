@@ -217,7 +217,7 @@ class UniformGrid(Grid):
 
 
 class Product(Discretization):
-    def __init__(self, *factors, flatten=True):
+    def __init__(self, *factors, flatten=False):
         assert all(isinstance(f, Discretization) for f in factors)
         self.factors = []
         for f in factors:
@@ -226,7 +226,7 @@ class Product(Discretization):
             else:
                 self.factors.append(f)
         self.idxs = [0] + list(accumulate(f.size for f in self.factors))
-        super.__init__(self.idxs[-1])
+        super().__init__(self.idxs[-1])
 
     def __eq__(self, other):
         return (

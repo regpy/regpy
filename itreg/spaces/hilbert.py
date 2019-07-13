@@ -72,7 +72,7 @@ class HilbertSpace:
 
 class HilbertPullBack(HilbertSpace):
     def __init__(self, space, op, inverse=None):
-        assert isinstance(op, operators.LinearOperator)
+        assert op.linear
         if not isinstance(space, HilbertSpace) and callable(space):
             space = space(op.codomain)
         assert isinstance(space, HilbertSpace)
@@ -166,11 +166,13 @@ def SobolevProduct(discr):
 
 
 class Product(HilbertSpace):
-    def __init__(self, *factors, weights=None, flatten=True):
+    def __init__(self, *factors, weights=None, flatten=False):
         assert all(isinstance(f, HilbertSpace) for f in factors)
         if weights is None:
             weights = [1] * len(factors)
         assert len(weights) == len(factors)
+        self.factors = []
+        self.weights = []
         for w, f in zip(weights, factors):
             if flatten and isinstance(f, type(self)):
                 self.factors.extend(f.factors)
@@ -196,7 +198,7 @@ class Product(HilbertSpace):
                 blocks.append(f.gram)
             else:
                 blocks.append(w * f.gram)
-        return operators.BlockDiagonal(blocks)
+        return operators.BlockDiagonal(*blocks)
 
     @util.memoized_property
     def gram_inv(self):
@@ -206,7 +208,7 @@ class Product(HilbertSpace):
                 blocks.append(f.gram_inv)
             else:
                 blocks.append(1/w * f.gram_inv)
-        return operators.BlockDiagonal(blocks)
+        return operators.BlockDiagonal(*blocks)
 
 
 class GenericProduct:
