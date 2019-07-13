@@ -326,7 +326,7 @@ class CoordinateProjection(Operator):
         return util.make_repr(self, self.domain, self.mask)
 
 
-class PointwiseMultiplication(Operator):
+class Multiplication(Operator):
     def __init__(self, domain, factor):
         factor = np.asarray(factor)
         # Check that factor can broadcast against domain elements without
@@ -400,19 +400,6 @@ class Power(NonlinearOperator):
 
     def _adjoint(self, y):
         return self._factor * y
-
-
-class Scale(Operator):
-    # TODO complex case
-    def __init__(self, scale, domain):
-        self.scale = scale
-        super().__init__(domain, domain, linear=True)
-
-    def _eval(self, x):
-        return self.scale * x
-
-    def _adjoint(self, y):
-        return self.scale * y
 
 
 class BlockDiagonal(Operator):

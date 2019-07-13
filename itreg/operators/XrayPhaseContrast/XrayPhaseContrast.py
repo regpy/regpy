@@ -1,6 +1,6 @@
 import numpy as np
 
-from itreg.operators import PointwiseMultiplication
+from itreg.operators import Multiplication
 from . import PointwiseSquaredModulus
 from . import PointwiseExponential
 from . import PointwiseRealPart
@@ -51,7 +51,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     # Operator that maps the phase-image to the corresponding wave-field behind the object
     # phi |--> psi_0 = exp(-(1j+absorption_fraction) * phi)
     image_to_wavefield_op =   PointwiseExponential(domain_complex) \
-                            * PointwiseMultiplication(domain_complex, -1j-absorption_fraction)
+                            * Multiplication(domain_complex, -1j-absorption_fraction)
 
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)

@@ -150,13 +150,13 @@ class SobolevUniformGrid(HilbertSpace):
     @util.memoized_property
     def gram(self):
         ft = operators.FourierTransform(self.discr)
-        mul = operators.PointwiseMultiplication(self.discr.dualgrid, self.weights)
+        mul = operators.Multiplication(self.discr.dualgrid, self.weights)
         return ft.adjoint * mul * ft
 
     @util.memoized_property
     def gram_inv(self):
         ft = operators.FourierTransform(self.discr)
-        mul = operators.PointwiseMultiplication(self.discr.dualgrid, 1/self.weights)
+        mul = operators.Multiplication(self.discr.dualgrid, 1/self.weights)
         return ft.adjoint * mul * ft
 
 
