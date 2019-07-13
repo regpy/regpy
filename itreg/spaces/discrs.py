@@ -144,6 +144,29 @@ class Discretization:
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
         return other
 
+    def __eq__(self, other):
+        # Only handle the base class to avoid accidental equality of subclass
+        # instances.
+        if type(self) == type(other) == Discretization:
+            return (
+                self.shape == other.shape and
+                self.dtype == other.dtype
+            )
+        else:
+            return NotImplemented
+
+    def __add__(self, other):
+        if isinstance(other, Discretization):
+            return DirectSum(self, other, flatten=True)
+        else:
+            return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, Discretization):
+            return DirectSum(other, self, flatten=True)
+        else:
+            return NotImplemented
+
 
 class Grid(Discretization):
     def __init__(self, *coords, axisdata=None, dtype=float):
