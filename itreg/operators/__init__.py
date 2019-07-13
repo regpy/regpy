@@ -412,8 +412,8 @@ class BlockDiagonal(Operator):
             else:
                 self.blocks.append(block)
         super().__init__(
-            domain=discrs.Product(*(block.domain for block in self.blocks), flatten=False),
-            codomain=discrs.Product(*(block.codomain for block in self.blocks), flatten=False),
+            domain=discrs.DirectSum(*(block.domain for block in self.blocks), flatten=False),
+            codomain=discrs.DirectSum(*(block.codomain for block in self.blocks), flatten=False),
             linear=all(block.linear for block in blocks)
         )
 
