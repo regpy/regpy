@@ -1,3 +1,4 @@
+from collections import defaultdict
 from copy import deepcopy
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
@@ -127,6 +128,17 @@ class Operator:
     def __rmul__(self, other):
         if isinstance(other, Operator):
             return Composition(other, self)
+        elif (
+            np.isreal(other) or
+            (np.iscomplex(other) and self.codomain.is_complex)
+        ):
+            return LinearCombination((other, self))
+        else:
+            return NotImplemented
+
+    def __add__(self, other):
+        if isinstance(other, Operator):
+            return LinearCombination(self, other)
         else:
             return NotImplemented
 
@@ -184,34 +196,71 @@ class Derivative(Operator):
 
 
 class LinearCombination(Operator):
-    """
-    Implements a linear combination of any number of operators with sepcified scalars.
-    Domains and ranges must be the same.
-    E.g. : F(x) = a * f(x) + b * g(x) + c * h(x)
-    """
-    # TODO split into Scaled and Sum classes, allow nonlinear operators, add __mul__ etc
-    # TODO nonlinear case
-    def __init__(self, operators, scalars):
-        assert all(op.linear for op in operators)
-        for i in range(len(operators)-1):
-            f = operators[i]
-            g = operators[i+1]
-            assert f.domain == g.domain and f.range == g.range, "Domains and Ranges of Operators must be the same"
-        self.operators = operators
-        self.scalars = scalars
-        super().__init__(f.domain, f.range, linear=True)
+    def __init__(self, *args):
+        coeff_for_op = defaultdict(lambda: 0)
+        for arg in args:
+            if isinstance(arg, tuple):
+                coeff, op = arg
+            else:
+                coeff, op = 1, arg
+            assert isinstance(op, Operator)
+            assert not np.iscomplex(coeff) or op.codomain.is_complex
+            if isinstance(op, type(self)):
+                for c, o in zip(op.coeffs, op.ops):
+                    coeff_for_op[o] += coeff * c
+            else:
+                coeff_for_op[op] += coeff
+        self.coeffs = []
+        self.ops = []
+        for op, coeff in coeff_for_op.items():
+            self.coeffs.append(coeff)
+            self.ops.append(op)
+        domain = self.ops[0].domain
+        codomain = self.ops[0].codomain
+        assert all(op.domain == domain for op in self.ops[1:])
+        assert all(op.codomain == codomain for op in self.ops[1:])
+        super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x):
-        res = 0
-        for i in range(len(self.operators)-1):
-            res += self.paramas.scalar[i] * self.operators[i](x)
-        return res
+    def _eval(self, x, differentiate=False):
+        y = self.codomain.zeros()
+        if differentiate:
+            self._derivs = []
+        for coeff, op in zip(self.coeffs, self.ops):
+            if differentiate:
+                z, deriv = op.linearize(x)
+                self._derivs.append(deriv)
+            else:
+                z = op(x)
+            y += coeff * z
+        return y
 
-    def _adjoint(self, x):
-        res = 0
-        for i in range(len(self.operators)-1):
-            res += self.paramas.scalar[i] * self.operators[i].adjoint(x)
-        return res
+    def _derivative(self, x):
+        y = self.codomain.zeros()
+        for coeff, deriv in zip(self.coeffs, self._derivs):
+            y += coeff * deriv(x)
+        return y
+
+    def _adjoint(self, y):
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        x = self.codomain.zeros()
+        for coeff, op in zip(self.coeffs, ops):
+            x += np.conj(coeff) * op.adjoint(y)
+        return x
+
+    def __repr__(self):
+        return util.make_repr(self, *zip(self.coeffs, self.ops))
+
+    def __str__(self):
+        reprs = []
+        for coeff, op in zip(self.coeffs, self.ops):
+            if coeff == 1:
+                reprs.append(repr(op))
+            else:
+                reprs.append('{} * {}'.format(coeff, op))
+        return ' + '.join(reprs)
 
 
 class Composition(Operator):
