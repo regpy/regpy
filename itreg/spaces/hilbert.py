@@ -199,29 +199,29 @@ class DirectSum(HilbertSpace):
 
     @util.memoized_property
     def gram(self):
-        blocks = []
+        ops = []
         for w, f in zip(self.weights, self.factors):
             if w == 1:
-                blocks.append(f.gram)
+                ops.append(f.gram)
             else:
-                blocks.append(w * f.gram)
-        if len(blocks) == 1:
-            return blocks[0]
+                ops.append(w * f.gram)
+        if len(ops) == 1:
+            return ops[0]
         else:
-            return operators.BlockDiagonal(*blocks)
+            return operators.DirectSum(*ops)
 
     @util.memoized_property
     def gram_inv(self):
-        blocks = []
+        ops = []
         for w, f in zip(self.weights, self.factors):
             if w == 1:
-                blocks.append(f.gram_inv)
+                ops.append(f.gram_inv)
             else:
-                blocks.append(1/w * f.gram_inv)
-        if len(blocks) == 1:
-            return blocks[0]
+                ops.append(1/w * f.gram_inv)
+        if len(ops) == 1:
+            return ops[0]
         else:
-            return operators.BlockDiagonal(*blocks)
+            return operators.DirectSum(*ops)
 
 
 class GenericSum:

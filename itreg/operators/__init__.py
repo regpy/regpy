@@ -454,29 +454,29 @@ class Power(NonlinearOperator):
         return self._factor * y
 
 
-class BlockDiagonal(Operator):
-    def __init__(self, *blocks, flatten=True):
-        assert all(isinstance(block, Operator) for block in blocks)
-        self.blocks = []
-        for block in blocks:
-            if flatten and isinstance(block, type(self)):
-                self.blocks.extend(block.blocks)
+class DirectSum(Operator):
+    def __init__(self, *ops, flatten=True):
+        assert all(isinstance(op, Operator) for op in ops)
+        self.ops = []
+        for op in ops:
+            if flatten and isinstance(op, type(self)):
+                self.ops.extend(op.ops)
             else:
-                self.blocks.append(block)
+                self.ops.append(op)
         super().__init__(
-            domain=discrs.DirectSum(*(block.domain for block in self.blocks), flatten=False),
-            codomain=discrs.DirectSum(*(block.codomain for block in self.blocks), flatten=False),
-            linear=all(block.linear for block in blocks)
+            domain=discrs.DirectSum(*(op.domain for op in self.ops), flatten=False),
+            codomain=discrs.DirectSum(*(op.codomain for op in self.ops), flatten=False),
+            linear=all(op.linear for op in ops)
         )
 
     def _eval(self, x, differentiate=False):
         elms = self.domain.split(x)
         if differentiate:
-            linearizations = [block.linearize(elm) for block, elm in zip(self.blocks, elms)]
+            linearizations = [op.linearize(elm) for op, elm in zip(self.ops, elms)]
             self._derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
-            return self.codomain.join(*(block(elm) for block, elm in zip(self.blocks, elms)))
+            return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
 
     def _derivative(self, x):
         elms = self.domain.split(x)
@@ -486,14 +486,14 @@ class BlockDiagonal(Operator):
     def _adjoint(self, y):
         elms = self.codomain.split(y)
         if self.linear:
-            blocks = self.blocks
+            ops = self.ops
         else:
-            blocks = self._derivs
+            ops = self._derivs
         return self.domain.join(
-            *(block.adjoint(elm) for block, elm in zip(blocks, elms)))
+            *(op.adjoint(elm) for op, elm in zip(ops, elms)))
 
     def __repr__(self):
-        return util.make_repr(self, *self.blocks)
+        return util.make_repr(self, *self.ops)
 
 
 from .mediumscattering import MediumScattering
