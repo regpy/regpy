@@ -56,16 +56,16 @@ class HilbertSpace:
         """
         return np.sqrt(self.inner(x, x))
 
-    def __mul__(self, other):
+    def __add__(self, other):
         # TODO weighted hilbert spaces, multiplication by constants
         if isinstance(other, HilbertSpace):
-            return Product(self, other, flatten=True)
+            return DirectSum(self, other, flatten=True)
         else:
             return NotImplemented
 
-    def __rmul__(self, other):
+    def __radd_(self, other):
         if isinstance(other, HilbertSpace):
-            return Product(other, self, flatten=True)
+            return DirectSum(other, self, flatten=True)
         else:
             return NotImplemented
 
@@ -122,9 +122,9 @@ class L2Generic(HilbertSpace):
 # TODO L2 for grids, with proper weights
 
 
-@L2.register(discrs.Product)
-def L2Product(discr):
-    return Product(*(L2(f) for f in discr.factors), flatten=False)
+@L2.register(discrs.DirectSum)
+def L2DirectSum(discr):
+    return DirectSum(*(L2(f) for f in discr.factors), flatten=False)
 
 
 @singledispatch
@@ -160,12 +160,12 @@ class SobolevUniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 
-@Sobolev.register(discrs.Product)
-def SobolevProduct(discr):
-    return Product(*(Sobolev(f) for f in discr.factors), flatten=False)
+@Sobolev.register(discrs.DirectSum)
+def SobolevDirectSum(discr):
+    return DirectSum(*(Sobolev(f) for f in discr.factors), flatten=False)
 
 
-class Product(HilbertSpace):
+class DirectSum(HilbertSpace):
     def __init__(self, *factors, weights=None, flatten=False):
         assert all(isinstance(f, HilbertSpace) for f in factors)
         if weights is None:
@@ -180,7 +180,7 @@ class Product(HilbertSpace):
             else:
                 self.factors.append(f)
                 self.weights.append(w)
-        super().__init__(discrs.Product(*(f.discr for f in self.factors), flatten=False))
+        super().__init__(discrs.DirectSum(*(f.discr for f in self.factors), flatten=False))
 
     def __eq__(self, other):
         return (
@@ -211,18 +211,18 @@ class Product(HilbertSpace):
         return operators.BlockDiagonal(*blocks)
 
 
-class GenericProduct:
+class GenericSum:
     def __init__(self, *factors, weights=None):
-        # TODO flatten GenericProduct factors
+        # TODO flatten factors
         assert all(callable(f) for f in factors)
         assert weights is None or len(weights) == len(factors)
         self.factors = factors
         self.weights = weights
 
     def __call__(self, discr):
-        assert isinstance(discr, discrs.Product)
+        assert isinstance(discr, discrs.DirectSum)
         assert len(self.factors) == len(discr.factors)
-        return Product(
+        return DirectSum(
             *(f(d) for f, d in zip(self.factors, discr.factors)),
             weights=self.weights,
             flatten=False

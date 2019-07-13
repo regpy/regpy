@@ -216,7 +216,7 @@ class UniformGrid(Grid):
             return np.real(y)
 
 
-class Product(Discretization):
+class DirectSum(Discretization):
     def __init__(self, *factors, flatten=False):
         assert all(isinstance(f, Discretization) for f in factors)
         self.factors = []
