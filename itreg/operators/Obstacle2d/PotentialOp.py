@@ -149,7 +149,31 @@ def create_synthetic_data(self, noiselevel):
             flux = flux + fac * np.cos(N/2*t_fl) * np.sum(qq*np.cos(N/2*t))
         noise = np.random.randn(len(flux))
         data = flux + noiselevel * noise/self.codomain.norm(noise)
-        return data    
+        return data 
+    
+def create_impulsive_noise(n,eta,var=None):
+    """Create Mc such that |Mc|<eta
+    """
+    Mc = set('')
+    while(len(Mc) < int(eta*n)):
+        s = np.ceil(np.random.rand()*n)
+        t = np.ceil(np.random.rand()*n)
+        st=np.arange(s, t)
+        if s < t and len(Mc) + len(st) <= int(eta*n):
+            Mc = Mc.union(st)
+        if (len(Mc) == int(eta*n)-1):
+            break
+    
+    if var is None:
+        """Now create random noise on Mc such that noise = \pm 1/\eta with equal
+        probability"""
+        res = np.zeros((n))
+        res[np.asarry(list(Mc)).astype(int)] = (2*np.random.uniform(1,2,len(Mc))-3)/eta
+    else:
+        """Create Gaussian noise on Mc with variance var^2"""
+        res = np.zeros(n)
+        res[np.asarray(list(Mc)).astype(int)] = var*np.random.randn(len(Mc))
+    return res
 
 
 class plots():

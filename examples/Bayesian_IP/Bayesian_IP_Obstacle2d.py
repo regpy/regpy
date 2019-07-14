@@ -12,6 +12,7 @@ from itreg.operators.Obstacle2d import PotentialOp
 
 from itreg.operators.Obstacle2d import plots
 from itreg.operators.Obstacle2d.PotentialOp import create_synthetic_data
+from itreg.operators.Obstacle2d.PotentialOp import create_impulsive_noise
 
 
 #import itreg
