@@ -265,12 +265,12 @@ class NGSolveBoundaryDiscretization(Grid):
 #        self.v=gfu.vec.CreateVector()
 #        self.toret=np.empty(fes.ndof)
         
-        u, v=self.fes.TnT()
+        #u, v=self.fes.TnT()
         self.a=BilinearForm(self.fes, symmetric=True)
-        self.a+=SymbolicBFI(u.Trace()*v.Trace(), BND)
-        self.a.Assemble()
+        #self.a+=SymbolicBFI(u.Trace()*v.Trace(), BND)
+        #self.a.Assemble()
         
-        self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
+        #self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
         
         self.gfu_in=GridFunction(self.fes)
         self.gfu_in_bdr=GridFunction(self.fes_bdr)
