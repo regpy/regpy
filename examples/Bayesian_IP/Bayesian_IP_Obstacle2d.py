@@ -9,8 +9,9 @@ from itreg.operators.Obstacle2d import PotentialOp
 
 
 
-from itreg.operators.Obstacle2d import plots
 
+from itreg.operators.Obstacle2d import plots
+from itreg.operators.Obstacle2d.PotentialOp import create_synthetic_data
 
 
 #import itreg
@@ -37,6 +38,7 @@ from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
 from itreg.BIP.prior_distribution.prior_distribution import tikhonov
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
+from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
 from itreg.BIP import HMCState
 from itreg.BIP import State
 
@@ -57,6 +59,7 @@ grid=UniformGrid(xs)
 grid_codomain=UniformGrid(ys)
 
 op=PotentialOp(grid, codomain=grid_codomain)
+
 #op = PotentialOp(L2(grid))
 
 exact_solution = np.ones(200)
@@ -72,7 +75,8 @@ init = 1.1*op.domain.ones()
 #_, deriv = op.linearize(init)
 #test_adjoint(deriv)
 
-setting=HilbertSpaceSetting(op=op, domain=H1, codomain=L2)
+setting=HilbertSpaceSetting(op=op, domain=partial(H1, index=2), codomain=L2)
+apple=create_synthetic_data(setting, 0)
 
 solver = Landweber(setting, data, init, stepsize=0.1)
 stopping_rule = (
@@ -89,6 +93,7 @@ reg_parameter=1e-4
 #prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
 #likelihood=gaussian_likelihood(setting, np.eye(64), exact_data)
 prior=tikhonov(setting, reg_parameter, exact_data)
+likelihood=unity(setting)
 
 
 #sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
@@ -182,3 +187,24 @@ plt.show()
 
 plotting=plots(op, m, reco_data, data, exact_data, exact_solution)
 plotting.plotting()
+
+
+data=create_synthetic_data(setting, noiselevel=0)
+n=64
+fig, ax=plt.subplots(1, figsize=(9,6))
+ax.set_title('Domain')
+#bd_ex=op.obstacle.bd_ex
+#pts=bd_ex.coeff2Curve(apple, n)
+bd=op.obstacle.bd
+pts=bd.coeff2Curve(data, n)
+poly = Polygon(np.column_stack([pts[0, :], pts[1, :]]), label='peanut',  animated=True, fill=False)
+poly.set_color([1, 0, 0])
+ax.add_patch(poly)
+xmin=1.5*pts[0, :].min()
+xmax=1.5*pts[0, :].max()
+ymin=1.5*pts[1, :].min()
+ymax=1.5*pts[1, :].max()
+ax.set_xlim((xmin, xmax))
+ax.set_ylim((ymin, ymax))
+plt.legend()
+plt.show()

@@ -126,6 +126,30 @@ class PotentialOp(NonlinearOperator):
             
         adj = self.bd.adjoint_der_normal(adj)
         return adj
+    
+def create_synthetic_data(self, noiselevel):
+
+        N = self.op.Nfwd_synth
+        t = 2*np.pi/N * np.arange(0, N, 1)
+        t_fl = self.op.meas_angles
+        q = self.op.obstacle.bd_ex.radial(self.op.obstacle.bd_ex, N)
+        qq = q**2
+        
+        flux = 1/(2*self.op.radius*N) * sum(qq)*np.ones(len(t_fl))
+        fac = 2/(N*self.op.radius)
+        for j in range(0, int((N-1)/2)):
+            fac= fac/self.op.radius
+            qq = qq*q
+            flux = flux + (fac/(j+3)) * np.cos((j+1)*t_fl) * np.sum(qq*np.cos((j+1)*t)) \
+                + (fac/(j+3)) * np.sin((j+1)*t_fl) * np.sum(qq*np.sin((j+1)*t))
+    
+        if N%2==0:
+            fac = fac/self.op.radius
+            qq = qq*q
+            flux = flux + fac * np.cos(N/2*t_fl) * np.sum(qq*np.cos(N/2*t))
+        noise = np.random.randn(len(flux))
+        data = flux + noiselevel * noise/self.codomain.norm(noise)
+        return data    
 
 
 class plots():
@@ -184,6 +208,10 @@ class plots():
             axs[0].set_xlim((xmin, xmax))
             axs[0].set_ylim((ymin, ymax))
             plt.show()
+            
+            
+            
+
                 
             
         

@@ -56,40 +56,40 @@ class StarCurve:
         return rad
 
 
-    def peanut(t,der):
-        res=np.zeros(t.shape[0])
-        if der==0:
-            res = 1./2.*(3*np.cos(t)**2+1)**(1./2)
-        elif der==1:
-            res = -3./2./(4.*np.cos(t)**2+np.sin(t)**2)**(1./2)*np.cos(t)*np.sin(t)
-        elif der==2:
-            res = -3./2*(3.*np.cos(t)**4+2.*np.cos(t)**2-1)/(3*np.cos(t)**2+1)**(3./2)
-        elif der==3:
-            res = 3./2.*np.cos(t)*np.sin(t)*(9.*np.cos(t)**4+6*np.cos(t)**2+13)/(3*np.cos(t)**2+1)**(5./2)
-        else:
-            raise ValueError('derivative not implemented')
-        return res
+def peanut(t,der):
+    res=np.zeros(t.shape[0])
+    if der==0:
+        res = 1./2.*(3*np.cos(t)**2+1)**(1./2)
+    elif der==1:
+        res = -3./2./(4.*np.cos(t)**2+np.sin(t)**2)**(1./2)*np.cos(t)*np.sin(t)
+    elif der==2:
+        res = -3./2*(3.*np.cos(t)**4+2.*np.cos(t)**2-1)/(3*np.cos(t)**2+1)**(3./2)
+    elif der==3:
+        res = 3./2.*np.cos(t)*np.sin(t)*(9.*np.cos(t)**4+6*np.cos(t)**2+13)/(3*np.cos(t)**2+1)**(5./2)
+    else:
+        raise ValueError('derivative not implemented')
+    return res
 
-    def round_rect(t,der):
-        co = 2/3
-        if der==0:
-            res = (np.sin(t)**10 + (co*np.cos(t))**10)**(-0.1)
-        elif der==1:
-            res = -1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))
-        
-        elif der==2:
-            res = 11/100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
-                **2-1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10 \
-                *np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)
-        elif der==3:
-            res = -231/1000/(np.sin(t)**10+co**10*np.cos(t)**10)**(31/10)**(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))**3+33 \
-                /100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
-                *(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10*np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)-1/10 \
-                /(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(720*np.sin(t)**7*np.cos(t)**3-280*np.sin(t)**9*np.cos(t)-720*co**10 \
-                *np.cos(t)**7*np.sin(t)**3+280*co**10*np.cos(t)**9*np.sin(t))
-        else:
-            raise ValueError('derivative not implemented')
-        return res
+def round_rect(t,der):
+    co = 2/3
+    if der==0:
+        res = (np.sin(t)**10 + (co*np.cos(t))**10)**(-0.1)
+    elif der==1:
+        res = -1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))
+    
+    elif der==2:
+        res = 11/100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
+            **2-1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10 \
+            *np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)
+    elif der==3:
+        res = -231/1000/(np.sin(t)**10+co**10*np.cos(t)**10)**(31/10)**(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))**3+33 \
+            /100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
+            *(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10*np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)-1/10 \
+            /(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(720*np.sin(t)**7*np.cos(t)**3-280*np.sin(t)**9*np.cos(t)-720*co**10 \
+            *np.cos(t)**7*np.sin(t)**3+280*co**10*np.cos(t)**9*np.sin(t))
+    else:
+        raise ValueError('derivative not implemented')
+    return res
 
 
 
