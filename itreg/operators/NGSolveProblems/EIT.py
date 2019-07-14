@@ -87,7 +87,7 @@ class EIT(NonlinearOperator):
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
 
-        super().__init__(domain, UniformGrid(self.pts_bdr.shape[0]))
+        super().__init__(domain, codomain)
         
     def _eval(self, diff, differentiate, **kwargs):
         #Assemble Bilinearform

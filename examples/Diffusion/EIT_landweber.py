@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.EIT import EIT
-from itreg.spaces import NGSolveDiscretization
+from itreg.spaces import NGSolveDiscretization, NGSolveBoundaryDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
@@ -21,7 +21,11 @@ fes_domain = L2(mesh, order=2)
 domain= NGSolveDiscretization(fes_domain)
 
 fes_codomain = H1(mesh, order=2)
-codomain= NGSolveDiscretization(fes_codomain)
+fes_bdr = H1(mesh, order=1)
+pts=[v.point for v in mesh.vertices]
+ind=[np.linalg.norm(np.array(p))>0.95 for p in pts]
+pts_bdr=np.array(pts)[ind]
+codomain= NGSolveBoundaryDiscretization(fes_codomain, fes_bdr, ind)
 
 g=0.1*(x-0.5)*(y-0.5)
 op = EIT(domain, g, codomain=codomain)
