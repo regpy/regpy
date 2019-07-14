@@ -44,8 +44,8 @@ init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-from itreg.spaces import NGSolveSpace
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace, codomain=NGSolveSpace)
+from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_H1)
 
 landweber = Landweber(setting, data, init_solution, stepsize=3)
 stoprule = (

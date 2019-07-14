@@ -225,12 +225,13 @@ class NGSolveDiscretization(Grid):
 #        self.v=gfu.vec.CreateVector()
 #        self.toret=np.empty(fes.ndof)
         
-        u, v=self.fes.TnT()
+        #u, v=self.fes.TnT()
         self.a=BilinearForm(self.fes, symmetric=True)
-        self.a+=SymbolicBFI(u*v)
-        self.a.Assemble()
+        #self.a+=SymbolicBFI(u*v)
+        #self.a.Assemble()
         
-        self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
+        #self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
+        #self.b=self.a.mat
         
         self.gfu_in=GridFunction(self.fes)
         self.gfu_toret=GridFunction(self.fes)
@@ -244,7 +245,7 @@ class NGSolveDiscretization(Grid):
 #            toret[i]=InnerProduct(self.u, self.v)
 #        return toret
     
-    def apply_gram(self,x):
+    def apply_gram(self, x):
         self.gfu_in.vec.FV().NumPy()[:]=x
         self.gfu_toret.vec.data = self.a.mat*self.gfu_in.vec
         return self.gfu_toret.vec.FV().NumPy().copy()
@@ -403,14 +404,21 @@ class H1UniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 @genericspace
-def NGSolveSpace(discr):
+def NGSolveSpace_L2(discr):
     raise NotImplementedError(
         'H1 not implemented on {}'.format(type(discr).__qualname__))    
 
-@NGSolveSpace.register(NGSolveDiscretization)   
-class NGSolveFESSpace(HilbertSpace):
+@NGSolveSpace_L2.register(NGSolveDiscretization)   
+class NGSolveFESSpace_L2(HilbertSpace):
     def __init__(self, discr):
         self.discr = discr
+        
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u*v)
+        self.discr.a.Assemble()
+        
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+        
     
     @property
     def gram(self):
@@ -418,8 +426,33 @@ class NGSolveFESSpace(HilbertSpace):
     
     @property
     def gram_inv(self):
-#        return self.discr.apply_gram_inverse
         return self.discr.apply_gram_inverse
+    
+@genericspace
+def NGSolveSpace_H1(discr):
+    raise NotImplementedError(
+        'H1 not implemented on {}'.format(type(discr).__qualname__))    
+
+@NGSolveSpace_H1.register(NGSolveDiscretization)   
+class NGSolveFESSpace_H1(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+        
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u*v+grad(u)*grad(v))
+        self.discr.a.Assemble()
+        
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+        
+    
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+    
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
+
 
 
 class HilbertPullBack(HilbertSpace):
