@@ -240,34 +240,34 @@ class UniformGrid(Grid):
 
 
 class DirectSum(Discretization):
-    def __init__(self, *factors, flatten=False):
-        assert all(isinstance(f, Discretization) for f in factors)
-        self.factors = []
-        for f in factors:
-            if flatten and isinstance(f, type(self)):
-                self.factors.extend(f.factors)
+    def __init__(self, *summands, flatten=False):
+        assert all(isinstance(s, Discretization) for s in summands)
+        self.summands = []
+        for s in summands:
+            if flatten and isinstance(s, type(self)):
+                self.summands.extend(s.summands)
             else:
-                self.factors.append(f)
-        self.idxs = [0] + list(accumulate(f.size for f in self.factors))
+                self.summands.append(s)
+        self.idxs = [0] + list(accumulate(s.size for s in self.summands))
         super().__init__(self.idxs[-1])
 
     def __eq__(self, other):
         return (
             isinstance(other, type(self)) and
-            len(self.factors) == len(other.factors) and
-            all(f == g for f, g in zip(self.factors, other.factors))
+            len(self.summands) == len(other.summands) and
+            all(s == t for s, t in zip(self.summands, other.summands))
         )
 
     def join(self, *xs):
-        assert all(x in f for f, x in zip(self.factors, xs))
+        assert all(x in s for s, x in zip(self.summands, xs))
         elm = self.empty()
-        for f, x, start, end in zip(self.factors, xs, self.idxs, self.idxs[1:]):
-            elm[start:end] = f.flatten(x)
+        for s, x, start, end in zip(self.summands, xs, self.idxs, self.idxs[1:]):
+            elm[start:end] = s.flatten(x)
         return elm
 
     def split(self, x):
         assert x in self
         return tuple(
-            f.fromflat(x[start:end])
-            for f, start, end in zip(self.factors, self.idxs, self.idxs[1:])
+            s.fromflat(x[start:end])
+            for s, start, end in zip(self.summands, self.idxs, self.idxs[1:])
         )

@@ -139,7 +139,7 @@ class L2UniformGrid(HilbertSpace):
 
 @L2.register(discrs.DirectSum)
 def L2DirectSum(discr):
-    return DirectSum(*(L2(f) for f in discr.factors), flatten=False)
+    return DirectSum(*(L2(s) for s in discr.summands), flatten=False)
 
 
 @singledispatch
@@ -177,42 +177,42 @@ class SobolevUniformGrid(HilbertSpace):
 
 @Sobolev.register(discrs.DirectSum)
 def SobolevDirectSum(discr):
-    return DirectSum(*(Sobolev(f) for f in discr.factors), flatten=False)
+    return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
 
 
 class DirectSum(HilbertSpace):
-    def __init__(self, *factors, weights=None, flatten=False):
-        assert all(isinstance(f, HilbertSpace) for f in factors)
+    def __init__(self, *summands, weights=None, flatten=False):
+        assert all(isinstance(s, HilbertSpace) for s in summands)
         if weights is None:
-            weights = [1] * len(factors)
-        assert len(weights) == len(factors)
-        self.factors = []
+            weights = [1] * len(summands)
+        assert len(weights) == len(summands)
+        self.summands = []
         self.weights = []
-        for w, f in zip(weights, factors):
-            if flatten and isinstance(f, type(self)):
-                self.factors.extend(f.factors)
+        for w, s in zip(weights, summands):
+            if flatten and isinstance(s, type(self)):
+                self.summands.extend(s.summands)
                 self.weights.extend(w * fw for fw in f.weights)
             else:
-                self.factors.append(f)
+                self.summands.append(s)
                 self.weights.append(w)
-        super().__init__(discrs.DirectSum(*(f.discr for f in self.factors), flatten=False))
+        super().__init__(discrs.DirectSum(*(s.discr for s in self.summands), flatten=False))
 
     def __eq__(self, other):
         return (
             isinstance(other, type(self)) and
-            len(self.factors) == len(other.factors) and
-            all(f == g for f, g in zip(self.factors, other.factors)) and
+            len(self.summands) == len(other.summands) and
+            all(s == t for s, t in zip(self.summands, other.summands)) and
             all(v == w for v, w in zip(self.weights, other.weights))
         )
 
     @util.memoized_property
     def gram(self):
         ops = []
-        for w, f in zip(self.weights, self.factors):
+        for w, s in zip(self.weights, self.summands):
             if w == 1:
-                ops.append(f.gram)
+                ops.append(s.gram)
             else:
-                ops.append(w * f.gram)
+                ops.append(w * s.gram)
         if len(ops) == 1:
             return ops[0]
         else:
@@ -221,11 +221,11 @@ class DirectSum(HilbertSpace):
     @util.memoized_property
     def gram_inv(self):
         ops = []
-        for w, f in zip(self.weights, self.factors):
+        for w, s in zip(self.weights, self.summands):
             if w == 1:
-                ops.append(f.gram_inv)
+                ops.append(s.gram_inv)
             else:
-                ops.append(1/w * f.gram_inv)
+                ops.append(1/w * s.gram_inv)
         if len(ops) == 1:
             return ops[0]
         else:
@@ -233,18 +233,18 @@ class DirectSum(HilbertSpace):
 
 
 class GenericSum:
-    def __init__(self, *factors, weights=None):
-        # TODO flatten factors
-        assert all(callable(f) for f in factors)
-        assert weights is None or len(weights) == len(factors)
-        self.factors = factors
+    def __init__(self, *summands, weights=None):
+        # TODO flatten summands
+        assert all(callable(s) for s in summands)
+        assert weights is None or len(weights) == len(summands)
+        self.summands = summands
         self.weights = weights
 
     def __call__(self, discr):
         assert isinstance(discr, discrs.DirectSum)
-        assert len(self.factors) == len(discr.factors)
+        assert len(self.summands) == len(discr.summands)
         return DirectSum(
-            *(f(d) for f, d in zip(self.factors, discr.factors)),
+            *(s(d) for s, d in zip(self.summands, discr.summands)),
             weights=self.weights,
             flatten=False
         )
