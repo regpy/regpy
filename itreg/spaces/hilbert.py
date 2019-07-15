@@ -57,7 +57,6 @@ class HilbertSpace:
         return np.sqrt(self.inner(x, x))
 
     def __add__(self, other):
-        # TODO weighted hilbert spaces, multiplication by constants
         if isinstance(other, HilbertSpace):
             return DirectSum(self, other, flatten=True)
         else:
@@ -126,7 +125,16 @@ class L2Generic(HilbertSpace):
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.discr == other.discr
 
-# TODO L2 for grids, with proper weights
+
+@L2.register(discrs.UniformGrid)
+class L2UniformGrid(HilbertSpace):
+    @util.memoized_property
+    def gram(self):
+        return self.discr.volume_elem * self.discr.identity
+
+    @util.memoized_property
+    def gram_inv(self):
+        return 1/self.discr.volume_elem * self.discr.identity
 
 
 @L2.register(discrs.DirectSum)
