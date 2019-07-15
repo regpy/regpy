@@ -212,7 +212,7 @@ class DirectSum(HilbertSpace):
             if w == 1:
                 ops.append(s.gram)
             else:
-                ops.append(w * s.gram)
+                ops.append(w**2 * s.gram)
         if len(ops) == 1:
             return ops[0]
         else:
@@ -225,7 +225,7 @@ class DirectSum(HilbertSpace):
             if w == 1:
                 ops.append(s.gram_inv)
             else:
-                ops.append(1/w * s.gram_inv)
+                ops.append(1/w**2 * s.gram_inv)
         if len(ops) == 1:
             return ops[0]
         else:
