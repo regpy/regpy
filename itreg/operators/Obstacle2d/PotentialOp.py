@@ -19,7 +19,7 @@ class PotentialOp(NonlinearOperator):
      and an inverse scattering problem" Inverse Problems 13 (1997) 1279–1299
     """
      
-    def __init__(self, domain, codomain=None, **kwargs):
+    def __init__(self, domain, codomain=None, error='deterministic', **kwargs):
 
             codomain = codomain or domain
             self.radius = 1.5            # radius of outer circle
@@ -36,6 +36,7 @@ class PotentialOp(NonlinearOperator):
             self.obstacle=Obstacle2dBaseOp()
             self.obstacle.Obstacle2dBasefunc()
             self.bd=self.obstacle.bd
+            self.error=error
             super().__init__(
                     domain=domain,
                     codomain=codomain)
@@ -62,6 +63,7 @@ class PotentialOp(NonlinearOperator):
             
         if q.min()<=0:
             raise ValueError('reconstructed radial function negative')
+             
                 
             """exact meaning of q.?""" 
         qq = q**2
@@ -100,7 +102,7 @@ class PotentialOp(NonlinearOperator):
             fac = fac/self.radius
             qq = qq*q
             der = der + fac * self.cos_fl[:,int(N/2)] * np.sum(qq*h*self.cosin[int(N/2),:])
-        return der
+        return der.real
         
         
     def _adjoint(self, g, **kwargs):
@@ -124,8 +126,32 @@ class PotentialOp(NonlinearOperator):
             """transpose?"""
             adj = adj + fac * np.sum(g*self.cos_fl[:,int(N/2)]) * (self.cosin[int(N/2),:]*qq).transpose()
             
-        adj = self.bd.adjoint_der_normal(adj)
+        adj = self.bd.adjoint_der_normal(adj).real
         return adj
+    
+    def accept_proposed(self, positions):
+        """self.bd.coeff"""
+        self.bd.coeff=positions
+        N = self.Nfwd
+        t= 2*np.pi*np.linspace(0, N-1, N)/N
+        t_fl = self.meas_angles
+            
+        for j in range(0, N):
+            self.cosin[j,:] = np.cos((j+1)*t)
+            self.sinus[j,:] = np.sin((j+1)*t)
+            self.sin_fl[:,j] = np.sin((j+1)*t_fl)
+            self.cos_fl[:,j] = np.cos((j+1)*t_fl)
+        """F.bd has to be specified"""
+        self.bd.bd_eval(N,1)
+#            params.bd.radial(N,1)
+        q=self.bd.q[0, :]
+#            q = params.bd.q[0,:]
+        if q.max() >= self.radius:
+            return False
+            
+        if q.min()<=0:
+            return False
+        return True
     
 def create_synthetic_data(self, noiselevel):
 

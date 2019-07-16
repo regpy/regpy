@@ -112,10 +112,14 @@ class RandomWalk(MetropolisHastings):
         proposed_state = deepcopy(current_state)
         random_step = np.random.standard_normal(proposed_state.positions.shape)
         proposed_state.positions += self.stepsize * random_step
+        counter=0
         #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
+        while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
+            random_step = np.random.standard_normal(proposed_state.positions.shape)
+            proposed_state.positions += self.stepsize * random_step
+            counter+=1
+            self.stepsize=1/2*self.stepsize
         proposed_state.log_prob = self.pdf.log_prob(proposed_state.positions)
-#        print(current_state.log_prob)
-
         return proposed_state
 
 
