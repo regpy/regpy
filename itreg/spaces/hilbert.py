@@ -62,7 +62,7 @@ class HilbertSpace:
         else:
             return NotImplemented
 
-    def __radd_(self, other):
+    def __radd__(self, other):
         if isinstance(other, HilbertSpace):
             return DirectSum(other, self, flatten=True)
         else:
@@ -70,8 +70,7 @@ class HilbertSpace:
 
     def __rmul__(self, other):
         if np.isreal(other):
-            assert other > 0
-            return DirectSum(self, weights=[other], flatten=True)
+            return DirectSum((other, self), flatten=True)
         else:
             return NotImplemented
 
@@ -110,6 +109,62 @@ class HilbertPullBack(HilbertSpace):
 def L2(discr):
     raise NotImplementedError(
         'L2 not implemented on {}'.format(type(discr).__qualname__))
+
+
+class DirectSum(HilbertSpace):
+    def __init__(self, *args, flatten=False):
+        self.summands = []
+        self.weights = []
+        for arg in args:
+            if isinstance(arg, tuple):
+                w, s = arg
+            else:
+                w, s = 1, arg
+            assert w > 0
+            assert isinstance(s, HilbertSpace)
+            if flatten and isinstance(s, type(self)):
+                self.summands.extend(s.summands)
+                self.weights.extend(w * sw for sw in s.weights)
+            else:
+                self.summands.append(s)
+                self.weights.append(w)
+        super().__init__(discrs.DirectSum(*(s.discr for s in self.summands), flatten=False))
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and
+            len(self.summands) == len(other.summands) and
+            all(s == t for s, t in zip(self.summands, other.summands)) and
+            all(v == w for v, w in zip(self.weights, other.weights))
+        )
+
+    @util.memoized_property
+    def gram(self):
+        ops = []
+        for w, s in zip(self.weights, self.summands):
+            if w == 1:
+                ops.append(s.gram)
+            else:
+                ops.append(w**2 * s.gram)
+        if len(ops) == 1:
+            return ops[0]
+        else:
+            return operators.DirectSum(*ops)
+
+    @util.memoized_property
+    def gram_inv(self):
+        ops = []
+        for w, s in zip(self.weights, self.summands):
+            if w == 1:
+                ops.append(s.gram_inv)
+            else:
+                ops.append(1/w**2 * s.gram_inv)
+        if len(ops) == 1:
+            return ops[0]
+        else:
+            return operators.DirectSum(*ops)
+
+
 
 
 @L2.register(discrs.Discretization)
@@ -178,58 +233,6 @@ class SobolevUniformGrid(HilbertSpace):
 @Sobolev.register(discrs.DirectSum)
 def SobolevDirectSum(discr):
     return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
-
-
-class DirectSum(HilbertSpace):
-    def __init__(self, *summands, weights=None, flatten=False):
-        assert all(isinstance(s, HilbertSpace) for s in summands)
-        if weights is None:
-            weights = [1] * len(summands)
-        assert len(weights) == len(summands)
-        self.summands = []
-        self.weights = []
-        for w, s in zip(weights, summands):
-            if flatten and isinstance(s, type(self)):
-                self.summands.extend(s.summands)
-                self.weights.extend(w * fw for fw in f.weights)
-            else:
-                self.summands.append(s)
-                self.weights.append(w)
-        super().__init__(discrs.DirectSum(*(s.discr for s in self.summands), flatten=False))
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            len(self.summands) == len(other.summands) and
-            all(s == t for s, t in zip(self.summands, other.summands)) and
-            all(v == w for v, w in zip(self.weights, other.weights))
-        )
-
-    @util.memoized_property
-    def gram(self):
-        ops = []
-        for w, s in zip(self.weights, self.summands):
-            if w == 1:
-                ops.append(s.gram)
-            else:
-                ops.append(w**2 * s.gram)
-        if len(ops) == 1:
-            return ops[0]
-        else:
-            return operators.DirectSum(*ops)
-
-    @util.memoized_property
-    def gram_inv(self):
-        ops = []
-        for w, s in zip(self.weights, self.summands):
-            if w == 1:
-                ops.append(s.gram_inv)
-            else:
-                ops.append(1/w**2 * s.gram_inv)
-        if len(ops) == 1:
-            return ops[0]
-        else:
-            return operators.DirectSum(*ops)
 
 
 class GenericSum:
