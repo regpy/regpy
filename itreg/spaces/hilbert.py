@@ -1,5 +1,5 @@
+from copy import copy
 import numpy as np
-from functools import singledispatch
 
 from . import discrs
 from .. import util, operators
@@ -105,12 +105,6 @@ class HilbertPullBack(HilbertSpace):
         raise NotImplementedError
 
 
-@singledispatch
-def L2(discr):
-    raise NotImplementedError(
-        'L2 not implemented on {}'.format(type(discr).__qualname__))
-
-
 class DirectSum(HilbertSpace):
     def __init__(self, *args, flatten=False):
         self.summands = []
@@ -165,6 +159,85 @@ class DirectSum(HilbertSpace):
             return operators.DirectSum(*ops)
 
 
+class AbstractSpace:
+    def __add__(self, other):
+        if callable(other):
+            return AbstractSum(self, other, flatten=True)
+        else:
+            return NotImplemented
+
+    def __radd__(self, other):
+        if callable(other):
+            return AbstractSum(other, self, flatten=True)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if np.isreal(other):
+            return AbstractSum((other, self), flatten=True)
+        else:
+            return NotImplemented
+
+
+class AbstractSpaceDispatcher(AbstractSpace):
+    def __init__(self, name):
+        self._registry = {}
+        self.name = name
+        self.args = {}
+
+    def register(self, discr_type):
+        def decorator(impl):
+            self._registry[discr_type] = impl
+            return impl
+        return decorator
+
+    def __call__(self, discr=None, **kwargs):
+        if discr is None:
+            clone = copy(self)
+            clone.args = copy(self.args)
+            clone.args.update(kwargs)
+            return clone
+        for cls in type(discr).mro():
+            try:
+                impl = self._registry[cls]
+            except KeyError:
+                continue
+            kws = copy(self.args)
+            kws.update(kwargs)
+            return impl(discr, **kws)
+        raise NotImplementedError(
+            '{} not implemented on {}'.format(self.name, discr)
+        )
+
+
+class AbstractSum(AbstractSpace):
+    def __init__(self, *args, flatten=False):
+        self.summands = []
+        self.weights = []
+        for arg in args:
+            if isinstance(arg, tuple):
+                w, s = arg
+            else:
+                w, s = 1, arg
+            assert w > 0
+            assert callable(s)
+            if flatten and isinstance(s, type(self)):
+                self.summands.extend(s.summands)
+                self.weights.extend(w * sw for sw in s.weights)
+            else:
+                self.summands.append(s)
+                self.weights.append(w)
+
+    def __call__(self, discr):
+        assert isinstance(discr, discrs.DirectSum)
+        assert len(self.summands) == len(discr.summands)
+        return DirectSum(
+            *((w, s(d)) for w, s, d in zip(self.weights, self.summands, discr.summands)),
+            flatten=False
+        )
+
+
+L2 = AbstractSpaceDispatcher('L2')
 
 
 @L2.register(discrs.Discretization)
@@ -197,10 +270,7 @@ def L2DirectSum(discr):
     return DirectSum(*(L2(s) for s in discr.summands), flatten=False)
 
 
-@singledispatch
-def Sobolev(discr, index=1):
-    raise NotImplementedError(
-        'Sobolev not implemented on {}'.format(type(discr).__qualname__))
+Sobolev = AbstractSpaceDispatcher('Sobolev')
 
 
 @Sobolev.register(discrs.UniformGrid)
@@ -233,21 +303,3 @@ class SobolevUniformGrid(HilbertSpace):
 @Sobolev.register(discrs.DirectSum)
 def SobolevDirectSum(discr):
     return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
-
-
-class GenericSum:
-    def __init__(self, *summands, weights=None):
-        # TODO flatten summands
-        assert all(callable(s) for s in summands)
-        assert weights is None or len(weights) == len(summands)
-        self.summands = summands
-        self.weights = weights
-
-    def __call__(self, discr):
-        assert isinstance(discr, discrs.DirectSum)
-        assert len(self.summands) == len(discr.summands)
-        return DirectSum(
-            *(s(d) for s, d in zip(self.summands, discr.summands)),
-            weights=self.weights,
-            flatten=False
-        )
