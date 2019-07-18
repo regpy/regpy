@@ -455,7 +455,26 @@ class Power(NonlinearOperator):
 
 
 class DirectSum(Operator):
-    def __init__(self, *ops, flatten=True):
+    """The direct sum of operators. For
+
+        T_i : X_i -> Y_i
+
+    the direct sum
+
+        T := DirectSum(T_i) : DirectSum(X_i) -> DirectSum(Y_i)
+
+    is given by `T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
+    with blocks (T_i).
+
+    Parameters
+    ----------
+    *ops : variable number of :class:`~itreg.operators.Operator`s
+    flatten : bool
+        If True, summands that are themselves direct sums will be merged with
+        this one. Default: False.
+    """
+
+    def __init__(self, *ops, flatten=False):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
         for op in ops:

@@ -240,6 +240,30 @@ class UniformGrid(Grid):
 
 
 class DirectSum(Discretization):
+    """The direct sum of an arbirtary number of discretizations.
+
+    Elements of the direct sum will always be 1d real arrays.
+
+    Note that constructing DirectSum instances can be done more comfortably
+    simply by adding :class:`~itreg.spaces.discrs.Discretization` instances.
+    However, for generic code, when it's not known whether the summands are
+    themselves direct sums, it's better to avoid the `+` overload due the
+    `flatten` parameter (see below), since otherwise the number of summands is
+    not fixed.
+
+    Parameters
+    ----------
+    *summands : variable number of :class:`~itreg.spaces.discrs.Discretization`
+        The discretizations to be summed.
+    flatten : bool, optional
+        Whether summands that are themselves DirectSums should be merged into
+        this instance. If False, DirectSum is not associative, but the join and
+        split methods behave more predictably. Default: False, but will be set
+        to True when constructing the DirectSum via Discretization.__add__,
+        i.e. when using the `+` operator, in order to make repeated sums like
+        `A + B + C` unambiguous.
+    """
+
     def __init__(self, *summands, flatten=False):
         assert all(isinstance(s, Discretization) for s in summands)
         self.summands = []
@@ -259,6 +283,20 @@ class DirectSum(Discretization):
         )
 
     def join(self, *xs):
+        """Transform a collection of elements of the summands to an element of
+        the direct sum.
+
+        Parameters
+        ----------
+        *xs : variable number of arrays
+            The elements of the summands. The number should match the number of
+            summands, and for all i, xs[i] should be an element of
+            self.summands[i].
+
+        Returns
+        -------
+        1d real array representing and element of the direct sum.
+        """
         assert all(x in s for s, x in zip(self.summands, xs))
         elm = self.empty()
         for s, x, start, end in zip(self.summands, xs, self.idxs, self.idxs[1:]):
@@ -266,6 +304,19 @@ class DirectSum(Discretization):
         return elm
 
     def split(self, x):
+        """Split an element of the direct sum into a tuple of elements of the
+        summands.
+
+        Parameters
+        ----------
+        x : array
+            An array representing an element of the direct sum.
+
+        Returns
+        -------
+        tuple of discretizations
+            The components of x for the summands.
+        """
         assert x in self
         return tuple(
             s.fromflat(x[start:end])

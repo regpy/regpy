@@ -76,6 +76,35 @@ class HilbertSpace:
 
 
 class HilbertPullBack(HilbertSpace):
+    """Pullback of a hilbert space on the codomain of an operator to its
+    domain.
+
+    For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined
+    as
+
+        <a, b> := <op(x), op(b)>
+
+    (This really only works in finite dimensions due to completeness). The gram
+    matrix of the pullback space is simply `G_X = op^* G_Y op`.
+
+    Note that computation of the inverse of `G_Y` is not trivial.
+
+    Parameters
+    ----------
+    space : `~itreg.spaces.hilbert.HilbertSpace`
+        Hilbert space on the codomain of `op`.
+    op : `~itreg.operators.Operator`
+        The operator along which to pull back `space`
+    inverse : one of None, 'conjugate' or 'cholesky'
+        How to compute the inverse gram matrix.
+        - None: no inverse will be implemented.
+        - 'conjugate': the inverse will be computed as `op^* G_Y^{-1} op`.
+          **This is in general not correct**, but may in some cases be an
+          efficient approximation.
+        - 'cholesky': Implement the inverse via Cholesky decomposition. This
+          requires assembling the full matrix.
+    """
+
     def __init__(self, space, op, inverse=None):
         assert op.linear
         if not isinstance(space, HilbertSpace) and callable(space):
@@ -106,6 +135,28 @@ class HilbertPullBack(HilbertSpace):
 
 
 class DirectSum(HilbertSpace):
+    """The direct sum of an arbirtary number of hilbert spaces, with optional
+    scaling of the respective norms. The underlying discretization will be the
+    :class:`itreg.spaces.discrs.DirectSum` of the underlying discretizations of the
+    summands.
+
+    Note that constructing DirectSum instances can be done more comfortably
+    simply by adding :class:`~itreg.spaces.hilbert.HilbertSpace` instances and
+    by multiplying them with scalars, but see the documentation for
+    :class:`itreg.spaces.discrs.DirectSum` for the `flatten` parameter.
+
+    Parameters
+    ----------
+    *summands : variable number of :class:`~itreg.spaces.hilbert
+        The Hilbert spaces to be summed. Alternatively, summands can be given
+        as tuples `(scalar, HilbertSpace)`, which will scale the norm the
+        respective summand. The gram matrices and hence the inner products will
+        be scaled by `scalar**2`.
+    flatten : bool, optional
+        Whether summands that are themselves DirectSums should be merged into
+        this instance.
+    """
+
     def __init__(self, *args, flatten=False):
         self.summands = []
         self.weights = []
@@ -140,10 +191,7 @@ class DirectSum(HilbertSpace):
                 ops.append(s.gram)
             else:
                 ops.append(w**2 * s.gram)
-        if len(ops) == 1:
-            return ops[0]
-        else:
-            return operators.DirectSum(*ops)
+        return operators.DirectSum(*ops)
 
     @util.memoized_property
     def gram_inv(self):
@@ -153,13 +201,27 @@ class DirectSum(HilbertSpace):
                 ops.append(s.gram_inv)
             else:
                 ops.append(1/w**2 * s.gram_inv)
-        if len(ops) == 1:
-            return ops[0]
-        else:
-            return operators.DirectSum(*ops)
+        return operators.DirectSum(*ops)
 
 
 class AbstractSpace:
+    """Class representing abstract hilbert spaces without reference to a
+    concrete implementation.
+
+    The motivation for using this construction is to be able to specify e.g. a
+    Thikhonov penalty without requiring knowledge of the concrete discretization
+    the forward operator uses. See the documentation of
+    :class:`~itreg.spaces.hilbert.AbstractSpaceDispatcher` for more details.
+
+    Abstract spaces do not have elements, their sole purpose is to pick the
+    proper concrete implementation for a given discretization.
+
+    This class only implements operator overloads so that scaling and adding
+    abstract spaces works analogously to the concrete
+    :class:`~itreg.spaces.hilbert.HilbertSpace` instances, returning
+    :class:`~itreg.spaces.hilbert.AbstractSum` instances.
+    """
+
     def __add__(self, other):
         if callable(other):
             return AbstractSum(self, other, flatten=True)
@@ -180,6 +242,45 @@ class AbstractSpace:
 
 
 class AbstractSpaceDispatcher(AbstractSpace):
+    """An abstract Hilbert space that can be called on a discretization to get
+    the corresponding concrete implementation.
+
+    AbstractSpaceDispatchers provide two kinds of functionality:
+
+    - A decorator method `register(discr_type)` that can be used to declare
+      some class or function as the concrete implementation of this abstract
+      space for discretizations of type `discr_type` or subclasses thereof,
+      e.g.:
+
+          @Sobolev.register(discrs.UniformGrid)
+          class SobolevUniformGrid(HilbertSpace):
+              ...
+
+    - AbstractSpaces are callable. Calling them on a discretization and
+      arbitrary optional keyword arguments finds the corresponding concrete
+      :class:`~itreg.spaces.hilbert.HilbertSpace` among all registered
+      implementations. If there are implementations for multiple base classes
+      of the discretization type, the most specific one will be chosen. The
+      chosen implementation will then be called with the discretization and the
+      keyword arguments, and the result will be returned.
+
+      If called without a discretization as positional argument, it returns a
+      new abstract space with all passed keyword arguments remembered as
+      defaults. This allows one e.g. to write
+
+          H = Sobolev(index=2)
+
+      after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in
+      turn will be the same as something like `SobolevUniformGrid(grid, index=2)`,
+      depending on the type of `grid`).
+
+    Parameters
+    ----------
+    name : str
+        A name for this abstract space. Currently, this is only used in error
+        messages, when no implementation was found for some discretization.
+    """
+
     def __init__(self, name):
         self._registry = {}
         self.name = name
@@ -211,6 +312,21 @@ class AbstractSpaceDispatcher(AbstractSpace):
 
 
 class AbstractSum(AbstractSpace):
+    """Weighted sum of abstract Hilbert spaces.
+
+    The constructor arguments work like for concrete
+    :class:`~itreg.spaces.hilbert.HilbertSpace`s, which see. Adding and scaling
+    :class:`~itreg.spaces.hilbert.AbstractSpace` instances is again a more
+    convenient way to construct AbstractSums.
+
+    This abstract space can only be called on a
+    :class:`itreg.spaces.discrs.DirectSum`, in which case it constructs the
+    corresponding :class:`itreg.spaces.hilbert.DirectSum` obtained by matching
+    up summands, e.g.
+
+        (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
+    """
+
     def __init__(self, *args, flatten=False):
         self.summands = []
         self.weights = []
