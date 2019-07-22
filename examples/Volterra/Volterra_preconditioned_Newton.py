@@ -3,7 +3,7 @@ import setpath  # NOQA
 from itreg.operators import Volterra
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.preconditioned_newton_cg import Newton_CG_Preconditioned
+from itreg.solvers.irgnm_cg_lanczos import IRGNM_CG_Lanczos
 import itreg.stoprules as rules
 
 import numpy as np
@@ -24,15 +24,15 @@ noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
 
-setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting=HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-newton_cg = Newton_CG_Preconditioned(setting, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
+irgnm_cg = IRGNM_CG_Lanczos(setting, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
 stoprule = (
     rules.CountIterations(1) +
     rules.Discrepancy(setting.codomain.norm, data,
                       noiselevel=setting.codomain.norm(noise), tau=1.1))
 
-reco, reco_data = newton_cg.run(stoprule)
+reco, reco_data = irgnm_cg.run(stoprule)
 
 plt.plot(grid.coords[0], exact_solution.T, label='exact solution')
 plt.plot(grid.coords[0], reco, label='reco')
