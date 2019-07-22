@@ -92,7 +92,9 @@ class IRGNM_CG_Lanczos(Solver):
         self.cgtol = cgtol
         
         self.eigval_num=3
-        self.orthonormal=np.zeros((self.eigval_num, self.data.shape[0]))
+        #orthonormalization computed in which krylov space
+        self.krylov_num=10
+        self.orthonormal=np.zeros((self.krylov_num, self.data.shape[0]))
         self.need_prec_update=True
 
         # Update of the variables in the Newton iteration and preparation of
@@ -100,6 +102,8 @@ class IRGNM_CG_Lanczos(Solver):
         self.outer_update()
         self.lanzcos_update()
         self.outer_update_precond()
+        
+
 
     def outer_update(self):
         """Updates and computes variables for the Newton iteration.
@@ -251,9 +255,10 @@ class IRGNM_CG_Lanczos(Solver):
         """
         
             
-        if self.need_prec_update is True:
+        if self.need_prec_update:
             while (
-              # First condition
+              self.inner_num<self.krylov_num or
+              (# First condition
               np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
               /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
@@ -265,7 +270,7 @@ class IRGNM_CG_Lanczos(Solver):
               np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
               > self.cgtol[2] and 
               # Fourth condition
-              self._cgstep <= self.cgmaxit):
+              self._cgstep <= self.cgmaxit)):
                   
             # Computations and updates of variables
             
@@ -284,55 +289,56 @@ class IRGNM_CG_Lanczos(Solver):
      #           self.x += self._h
                 
                 self.inner_update()
-                if self.inner_num<=self.eigval_num:
+                if self.inner_num<=self.krylov_num:
                     self.orthonormal[self.inner_num-1, :]=self._s/self._norm_s
-                self.lanzcos_update()
+                    
+            self.lanzcos_update()
             
         # End of the CG method. ``self.outer_update()`` does all computations
         # of the current Newton iteration.
-        
-        while (
-              # First condition
-              np.sqrt(np.float64(self._norm_s_precond)/self._norm_h_precond/self._kappa)
-              /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
-              # Second condition
-              np.sqrt(np.float64(self._norm_s_precond)
-              /np.real(self.setting.domain.inner(self._Thtilde_precond,self._Th_precond))
-              /self._kappa/self._regpar)
-              > self.cgtol[1] / (1+self.cgtol[1]) and
-              # Third condition
-              np.sqrt(np.float64(self._norm_s_precond)/self._norm_s0_precond/self._kappa) 
-              > self.cgtol[2] and 
-              # Fourth condition
-              self._cgstep <= self.cgmaxit):
-                  
-            # Computations and updates of variables
-            
-            _, deriv=self.setting.op.linearize(self.x)
-            self._z_precond = deriv(self._d_precond)
-            self._ztilde_precond = self.setting.codomain.gram(self._z_precond)
-            self._gamma_precond = (self._norm_s_precond
-                           / np.real(self._regpar
-                                     *self.setting.domain.inner(self._dtilde_precond,self._d_precond)
-                                     + self.setting.domain.inner(self._ztilde_precond,self._z_precond)
-                                     )
-                           )
-            self._h_precond = self._h_precond + self._gamma_precond*self._d_precond
-#            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
-            # Updating ``self.x`` 
- #           self.x += self._h
-            
-            self.inner_update_precond()
+        else:
+            while (
+                  # First condition
+                  np.sqrt(np.float64(self._norm_s_precond)/self._norm_h_precond/self._kappa)
+                  /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
+                  # Second condition
+                  np.sqrt(np.float64(self._norm_s_precond)
+                  /np.real(self.setting.domain.inner(self._Thtilde_precond,self._Th_precond))
+                  /self._kappa/self._regpar)
+                  > self.cgtol[1] / (1+self.cgtol[1]) and
+                  # Third condition
+                  np.sqrt(np.float64(self._norm_s_precond)/self._norm_s0_precond/self._kappa) 
+                  > self.cgtol[2] and 
+                  # Fourth condition
+                  self._cgstep <= self.cgmaxit):
+                      
+                # Computations and updates of variables
+                
+                _, deriv=self.setting.op.linearize(self.x)
+                self._z_precond = deriv(self._d_precond)
+                self._ztilde_precond = self.setting.codomain.gram(self._z_precond)
+                self._gamma_precond = (self._norm_s_precond
+                               / np.real(self._regpar
+                                         *self.setting.domain.inner(self._dtilde_precond,self._d_precond)
+                                         + self.setting.domain.inner(self._ztilde_precond,self._z_precond)
+                                         )
+                               )
+                self._h_precond = self._h_precond + self._gamma_precond*self._d_precond
+    #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
+                # Updating ``self.x`` 
+     #           self.x += self._h
+                
+                self.inner_update_precond()
             
 #        self._h=scipy.optimize.minimize(self.M+self._regpar*np.identity(self.op.domain.shape[0]), self._h_precond)
-        self._h=np.dot(np.linalg.inv(self.M), self._h_precond)
+            self._h=np.dot(np.linalg.inv(self.M), self._h_precond)
         
         
         
         self.x+=self._h
         self.outer_update()
         self.need_prec_update=False
-        if int(np.sqrt(self.k))**2==self.k:
+        if (int(np.sqrt(self.k)))**2==self.k:
             self.need_prec_update=True
         return True
     
@@ -346,11 +352,13 @@ class IRGNM_CG_Lanczos(Solver):
     def lanzcos_update(self):
         """perform lanzcos method to calculate the preconditioner"""
         self.deriv_mat=np.zeros((self.setting.domain.discr.shape[0], self.setting.domain.discr.shape[0]))
-        self.L=np.zeros((self.eigval_num, self.eigval_num))
+        self.L=np.zeros((self.krylov_num, self.krylov_num))
         _, self.deriv=self.setting.op.linearize(self.x)
-        for i in range(0, self.eigval_num):
+        for i in range(0, self.krylov_num):
             self.L[i, :]=np.dot(self.orthonormal, self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.codomain.gram(self.deriv((self.orthonormal[i, :]))))))
             self.deriv_mat[i, :]=self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.domain.gram(self.deriv(self.x))))
+#TODO: Only compute the three biggest eigenvalues with Lanczos method
+#TODO: Solve Cast error
         self.lamb, self.U=np.linalg.eig(self.L)
         self.lanczos=np.dot(self.orthonormal.transpose(), self.U)
 #        self.M=self._alpha*np.identity(self.data.shape[0])
@@ -360,6 +368,7 @@ class IRGNM_CG_Lanczos(Solver):
             self.M[i, :]+=self.lanczos[:, i]*self.lamb[i]
         self.pre_cond_deriv=np.dot(self.M.transpose(), np.dot(self.deriv_mat+self._regpar*np.identity(self.setting.domain.discr.shape[0]), self.M))
         self.C=np.dot(self.pre_cond_deriv, self.pre_cond_deriv.transpose())
+
     
         
     
