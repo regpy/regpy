@@ -24,9 +24,9 @@ noise = 0.1 * np.random.normal(size=grid.shape)
 data = exact_data + noise
 
 
-setting=HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 
-irgnm_cg = IRGNM_CG_Lanczos(setting, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
+irgnm_cg = IRGNM_CG_Lanczos(setting, data, np.zeros(grid.shape), cgmaxit = 100)
 stoprule = (
     rules.CountIterations(1) +
     rules.Discrepancy(setting.codomain.norm, data,
