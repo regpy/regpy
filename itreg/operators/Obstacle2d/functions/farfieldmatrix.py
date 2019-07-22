@@ -10,9 +10,10 @@ import numpy as np
 def farfield_matrix(bd,dire,kappa,weightSL,weightDL):
     """set up matrix corresponding to the far field evaluation of a combined
     %single and double layer potential with weigths weightSL and weightDL, rsp."""
+#    print(dire)
     FFmat =  np.pi / (np.size(bd.z,1)*np.sqrt(8*np.pi*kappa)) * np.exp(-complex(0,1)*np.pi/4) \
-         * (weightDL*kappa*dire.T*bd.normal +complex(0,1)*weightSL*np.matlib.repmat(bd.zpabs,np.size(dire,1),1)) \
-         * np.exp(-complex(0,1)*kappa* (dire.T * bd.z))
+         * (weightDL*kappa*dire.T.dot(bd.normal) +complex(0,1)*weightSL*np.matlib.repmat(bd.zpabs,np.size(dire,1),1)) \
+         * np.exp(-complex(0,1)*kappa* (dire.T.dot(bd.z)))
     return FFmat
 
 

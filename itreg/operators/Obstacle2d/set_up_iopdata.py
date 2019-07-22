@@ -15,19 +15,29 @@ from .functions.bessy1 import bessy1
 def setup_iop_data(bd,kappa):
     """ computes data needed to set up the boundary integral matrices
      to avoid repeated computations"""
-    dim = len(bd.z)
+    dimension = len(bd.z.shape)
+    dim=np.max([np.size(bd.z, l) for l in range(0, dimension)])
 #    dat.kappa = kappa
     
     """compute matrix of distances of grid points"""
-    t1=np.matlibrepmat(bd.z[0,:].T,1,dim)-np.matlib.repmat(bd.z[1,:],dim,1)
-    t2=np.matlib.repmat(bd.z[2,:].T,1,dim)-np.matlib.repmat(bd.z[2,:],dim,1)
+    t1=np.matlib.repmat(bd.z[0,:].T,1,dim).reshape(dim**2)-np.matlib.repmat(bd.z[0,:], dim, 1).reshape(dim**2)
+    t2=np.matlib.repmat(bd.z[1,:].T,1,dim).reshape(dim**2)-np.matlib.repmat(bd.z[1,:], dim, 1).reshape(dim**2)
     kdist = kappa*np.sqrt(t1**2 + t2**2)
     bessj0_kdist = bessj0(kdist) 
     bessH0 = bessj0_kdist+complex(0, 1)*bessy0(kdist,bessj0_kdist)
+    bessH0=bessH0.reshape((dim, dim))
     #bessH0 = besselh(0,1,dat.kdist)
     
     bessj1_kdist= bessj1(kdist)
-    bessH1quot = (bessj1_kdist+ complex(0,1)*bessy1(kdist,bessj1_kdist))/kdist
+    """bessH1quot=np.zeros(dim**2)
+    for i in range(0, dim):
+        for j in range(0, dim):
+            if kdist[dim*i+j]==0:
+                bessH1quot[dim*i+j]=0
+            else:
+                bessH1quot[dim*i+j] = (bessj1_kdist[dim*i+j]+ complex(0,1)*bessy1(kdist[dim*i+j],bessj1_kdist[dim*i+j]))/kdist[dim*i+j]"""
+    bessH1quot = (bessj1_kdist+ complex(0,1)*bessy1(kdist,bessj1_kdist))/(kdist+1e-5)
+    bessH1quot=bessH1quot.reshape((dim, dim))
     #bessH1quot = besselh(1,1,dat.kdist) / dat.kdist
     for j in range(0, dim):
         bessH0[j,j]=1
@@ -35,14 +45,14 @@ def setup_iop_data(bd,kappa):
     
     """set up prototyp of the singularity of boundary integral operators"""
     t=2*np.pi*np.arange(1, dim)/dim
-    logsin = scla.toeplitz([1, np.log(4*np.sin(t/2)**2)])
+    logsin = scla.toeplitz(np.append(np.asarray([1]), np.log(4*np.sin(t/2)**2)))
     
     """quadrature weight for weight function log(4*(sin(t-tau))**2)"""
     sign=np.ones(dim)
     sign[np.arange(1, dim, 2)]=-1
     t = 2*np.pi*np.arange(0, dim)/dim 
     s=0
-    for m in range(0, dim/2-1):
+    for m in range(0, int(dim/2)-1):
         s=s+np.cos((m+1)*t)/(m+1)
     logsin_weights = scla.toeplitz(-2*(s + sign/dim)/dim)
     
@@ -50,15 +60,16 @@ def setup_iop_data(bd,kappa):
     Euler_gamma =  0.577215664901532860606512
     
     return dat_object(kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
-                      kdist, )
+                      kdist )
     
     
 class dat_object(object):
     def __init__(self, kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
-                      kdist, ):
+                      kdist):
         self.kappa=kappa
         self.Euler_gamma=Euler_gamma
         self.logsin_weights=logsin_weights
         self.logsin=logsin
+        self.bessH0=bessH0
         self.bessH1quot=bessH1quot
         self.kdist=kdist

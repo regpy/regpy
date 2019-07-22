@@ -7,7 +7,7 @@ Created on Mon Jul 15 11:38:26 2019
 
 import numpy as np
 import scipy.linalg as scla
-import scip.sparse as scsp
+import scipy.sparse as scsp
 
 def op_S(bd,dat):
     """ set up matrix representing the single layer potential operator
@@ -41,13 +41,13 @@ def op_K(bd,dat):
     dim = np.size(bd.z,1)
     kappa = dat.kappa
     
-    aux = bd.z.T * bd.normal - np.ones((dim,2)) * (bd.normal*bd.z)
+    aux = np.dot(bd.z.T, bd.normal) - np.dot(np.ones((dim, 2)),(bd.normal*bd.z))
     H = 0.5*complex(0, 1)*kappa**2* aux * dat.bessH1quot
     H1 = -kappa**2/(2*np.pi)*aux * dat.bessH1quot.real
     H2 = H - H1*dat.logsin
     for j in range(0, dim):
         H1[j, j] = 0
-        H2[j, j] = 1/(2*np.pi) * (bd.normal[:,j].T*bd.zpp[:,j]) / bd.zpabs[j]**2
+        H2[j, j] = 1/(2*np.pi) * (np.dot(bd.normal[:,j].T, bd.zpp[:,j])) / bd.zpabs[j]**2
 
     K =  (2*np.pi) * scsp.spdiags(bd.zpabs.T,0,dim,dim) * ( H1 * dat.logsin_weights + H2/dim )
     return K
@@ -74,10 +74,9 @@ def op_T(bd,dat):
     
     N_tilde = kappa*(z.T*zp -  np.ones(dim)*np.sum(z*zp)) / dat.kdist
     N_tilde = -N_tilde.T*N_tilde
-    Nker = complx(0,1)/2*N_tilde*( kappa**2*dat.bessH0 - 2*kappa**2*dat.bessH1quot) \
+    Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bessH0 - 2*kappa**2*dat.bessH1quot) \
         +complex(0,1)*kappa**2/2*(zp.T*zp) * dat.bessH1quot  \
-        #What happens here?
-        + scla.toeplitz(np.pi/2 1/(4*np.pi)*np.sin(np.pi*np.arange(1, dim)/dim)**(-2))
+        + scla.toeplitz(np.append(np.asarray([np.pi/2]), 1/(4*np.pi)*np.sin(np.pi*np.arange(1, dim)/dim)**(-2)))
     N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bessH0.real-2*kappa**2*dat.bessH1quot.real)  \
         - kappa**2/(2*np.pi)* (zp.T*zp) * dat.bessH1quot.real
     N2 = Nker - N1*dat.logsin
