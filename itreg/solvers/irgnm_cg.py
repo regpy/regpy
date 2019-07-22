@@ -72,13 +72,13 @@ class IRGNM_CG(Solver):
         The value at the current point.
     """
 
-    def __init__(self, op, data, init, cgmaxit=50, alpha0=1, alpha_step=2/3., 
+    def __init__(self, setting, data, init, cgmaxit=50, alpha0=1, alpha_step=2/3., 
                  cgtol=[0.3, 0.3, 1e-6]):
         """Initialization of parameters."""
         
         #super().__init__(logging.getLogger(__name__))
         super().__init__()
-        self.op = op
+        self.setting = setting
         self.data = data
         self.init = init
         self.x = self.init
@@ -105,7 +105,7 @@ class IRGNM_CG(Solver):
         prepared.
         """
         
-        self.y, deriv = self.op.linearize(self.x)
+        self.y, deriv = self.setting.op.linearize(self.x)
         self._residual = self.data - self.y
         self._xref = self.init - self.x
         self.k += 1
@@ -114,13 +114,13 @@ class IRGNM_CG(Solver):
         self._kappa = 1
         
         # Preparations for the CG method
-        self._ztilde = self.op.codomain.gram(self._residual)
+        self._ztilde = self.setting.codomain.gram(self._residual)
         self._stilde = (deriv.adjoint(self._ztilde) 
-                        + self._regpar*self.op.domain.gram(self._xref))
-        self._s = self.op.domain.gram_inv(self._stilde)
+                        + self._regpar*self.setting.domain.gram(self._xref))
+        self._s = self.setting.domain.gram_inv(self._stilde)
         self._d = self._s
         self._dtilde = self._stilde
-        self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
         self._norm_s0 = self._norm_s
         self._norm_h = 0
         
@@ -136,16 +136,16 @@ class IRGNM_CG(Solver):
         """
         self._Th = self._Th + self._gamma*self._z
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
-        _, deriv=self.op.linearize(self.x)
+        _, deriv=self.setting.op.linearize(self.x)
         self._stilde += (- self._gamma*(deriv(self._ztilde) 
                          + self._regpar*self._dtilde)).real
-        self._s = self.op.domain.gram_inv(self._stilde)
+        self._s = self.setting.domain.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
-        self._norm_s = np.real(self.op.domain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
-        self._norm_h = self.op.domain.inner(self._h, self.op.domain.gram(self._h))
+        self._norm_h = self.setting.domain.inner(self._h, self.setting.domain.gram(self._h))
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
 
@@ -194,7 +194,7 @@ class IRGNM_CG(Solver):
               /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
-              /np.real(self.op.domain.inner(self._Thtilde,self._Th))
+              /np.real(self.setting.domain.inner(self._Thtilde,self._Th))
               /self._kappa/self._regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
@@ -204,13 +204,13 @@ class IRGNM_CG(Solver):
               self._cgstep <= self.cgmaxit):
                   
             # Computations and updates of variables
-            _, deriv=self.op.linearize(self.x)
+            _, deriv=self.setting.op.linearize(self.x)
             self._z = deriv(self._d)
-            self._ztilde = self.op.codomain.gram(self._z)
+            self._ztilde = self.setting.codomain.gram(self._z)
             self._gamma = (self._norm_s
                            / np.real(self._regpar
-                                     *self.op.domain.inner(self._dtilde,self._d)
-                                     + self.op.domain.inner(self._ztilde,self._z)
+                                     *self.setting.domain.inner(self._dtilde,self._d)
+                                     + self.setting.domain.inner(self._ztilde,self._z)
                                      )
                            )
             self._h = self._h + self._gamma*self._d
