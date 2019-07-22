@@ -37,14 +37,20 @@ import numpy as np
 
 def bessy0(x,bessj0x):
 
-    ans = np.zeros(size(x))
+    ans = np.zeros(np.size(x))
     #if ~isempty(find(x<=0))
     #    error('rg<=0 in bessy0')
     #end
-    ind1 = np.argwhere(x>0 and x<=5.0)[:, 0]
+    
+    set_1=set(np.argwhere(0<x)[:, 0])
+    set_2=set(np.argwhere(x<=5)[:, 0])
+    final_set=set_1.intersection(set_2)
+    ind1=np.asarray([list(final_set)])
+    
+#    ind1 = np.argwhere(x>0 and x<=5.0)[:, 0]
     ind2 = np.argwhere(x>5.0)[:, 0]
     
-    if ind1 is not empty:
+    if len(ind1)!=0:
         xx = x[ind1.astype(int)]
         z = xx* xx
 
@@ -52,11 +58,11 @@ def bessy0(x,bessj0x):
 
         ans[ind1.astype(int)] = TWOOPI * np.log(xx)*bessj0xx + polevl(z, YP) / p1evl(z, YQ)
 
-    if ind2 is not empty:
+    if len(ind2)!=0:
         xx = x[ind2.astype(int)]
         one = np.ones(np.size(ind2))
         w = 5.0*one/xx
-        z = 25.0 *ones/(xx*xx)
+        z = 25.0 *np.ones/(xx*xx)
         p = polevl(z,PP) / polevl(z,PQ)
         q = polevl(z,QP)/p1evl( z, QQ)
         xn = xx - PIO4

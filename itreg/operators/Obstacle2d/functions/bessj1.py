@@ -30,19 +30,19 @@ def bessj1(x):
 
     ans = np.zeros(np.size(x))
     ind = np.argwhere(x<0)[:, 0]
-    if ind is not empty:
+    if len(ind)!=0:
         x[ind.astype(int)] = -x[ind.astype(int)]
 
     
     ind1 = np.argwhere(x<=5.0)[:, 0]
     ind2 = np.argwhere(x>5.0)[:, 0]
-    if ind1 is not empty:
+    if len(ind1)!=0:
         xx = x[ind1.astype(int)]
         z=xx*xx
         w=polevl(z, RP1)/p1evl(z, RQ1)
         ans[ind1.astype(int)]=w*xx*(z-Z1)*(z-Z2)
 
-    if ind2 is not empty:
+    if len(ind2)!=0:
         xx = x[ind2.astype(int)]
         one = np.ones(np.size(ind2))
         w = 5.0*one/xx
@@ -77,7 +77,7 @@ SQ2OPI =  7.9788456080286535587989E-1  # sqrt( 2/pi )
 TWOOPI =  6.36619772367581343075535E-1 # 2/pi 
 THPIO4 =  2.35619449019234492885       # 3*pi/4 
 
-RP1 = np.asarry([-8.99971225705559398224E8,
+RP1 = np.asarray([-8.99971225705559398224E8,
  4.52228297998194034323E11,
 -7.27494245221818276015E13,
  3.68295732863852883286E15])

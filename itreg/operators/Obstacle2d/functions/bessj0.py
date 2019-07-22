@@ -40,26 +40,33 @@ def bessj0(x):
 
     ans = np.zeros(np.size(x))
     ind = np.argwhere(x<0)[:, 0]
-    if ind is not empty:
+    if len(ind)!=0:
         x[ind] = -x[ind]
 
     
     ind1 = np.argwhere(x<1e-5)[:, 0]
-    ind2 = np.argwhere(1e-5<=x and x<=5.0)[:, 0]
+    
+    set_1=set(np.argwhere(1e-5<=x)[:, 0])
+    set_2=set(np.argwhere(x<=5)[:, 0])
+    final_set=set_1.intersection(set_2)
+    ind2=np.asarray([list(final_set)])
+
     ind3 = np.argwhere(x>5.0)[:, 0]
     
-    if ind1 is not empty:
+    
+    
+    if len(ind1)!=0:
         z= x[ind1.astype(int)]
         ans[ind1.astype(int)] = 1-z*z/4
 
-    if ind2 is not empty:
+    if len(ind2)!=0:
         z = x[ind2.astype(int)]
         z = z*z
         p = (z - DR1)*(z - DR2)
-        ans[ind2.astpe(int)] = p * polevl(z, RP)/p1evl(z, RQ)
+        ans[ind2.astype(int)] = p * polevl(z, RP)/p1evl(z, RQ)
 
-    if ind3 is not empty:
-        one = np.ones(size(ind3))
+    if len(ind3)!=0:
+        one = np.ones(np.size(ind3))
         xx = x[ind3.astype(int)]
         w = 5.0*one/xx
         q = 25.0 *one/(xx*xx)
@@ -73,7 +80,7 @@ def bessj0(x):
 def polevl(x, coef):
 
     """evaluates polynomial coeff(1)x^N+..+coef(N+1)"""
-    ans = coef[0] * np.ones(size(x))
+    ans = coef[0] * np.ones(np.size(x))
     for j in range(1, len(coef)):
         ans = ans * x  + coef[j]
     return ans
@@ -111,7 +118,7 @@ RP = np.asarray([-4.79443220978201773821E9,   \
     -2.49248344360967716204E14,    \
     9.70862251047306323952E15])
 
-RQ = np.asarry([#... 1.00000000000000000000E1
+RQ = np.asarray([#... 1.00000000000000000000E1
     4.99563147152651017219E2,   \
     1.73785401676374683123E5,   \
     4.84409658339962045305E7,   \
