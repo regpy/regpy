@@ -7,7 +7,7 @@ from . import Solver
 __all__ = ['IRGNM_CG']
 
 
-class IRGNM_CG_preconditioned(Solver):
+class IRGNM_CG_Lanczos(Solver):
     """The IRGNM_CG method.
 
     Solves the potentially non-linear, ill-posed equation:
