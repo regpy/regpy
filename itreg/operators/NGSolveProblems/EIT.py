@@ -68,7 +68,10 @@ class EIT(NonlinearOperator):
         self.a += SymbolicBFI(grad(u)*grad(v)*self.gfu_integrator_codomain)
 
 ########new
-        self.a += SymbolicBFI(u*s+v*r, BND)
+        self.a += SymbolicBFI(u*s+v*r, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.fes1=H1(self.fes_codomain.mesh, order=2, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.gfu_getbdr=GridFunction(self.fes1)
+        self.gfu_setbdr=GridFunction(self.fes_codomain)
         
 
         #Define Linearform, will be assembled later        
@@ -79,7 +82,7 @@ class EIT(NonlinearOperator):
         
         self.b=LinearForm(self.fes_codomain)
         self.gfu_b = GridFunction(self.fes_codomain)
-        self.b+=SymbolicLFI(self.gfu_b*v.Trace(), BND)
+        self.b+=SymbolicLFI(self.gfu_b*v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         
         self.f_deriv=LinearForm(self.fes_codomain)
         self.f_deriv += SymbolicLFI(self.gfu_rhs*grad(self.gfu)*grad(v))
@@ -174,13 +177,21 @@ class EIT(NonlinearOperator):
         return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
     
     def _get_boundary_values(self, gfu):
-        myfunc=CoefficientFunction(gfu)
-        vals = np.asarray([myfunc(self.fes_codomain.mesh(*p)) for p in self.pts_bdr])
-        return vals
+#        myfunc=CoefficientFunction(gfu)
+#        vals = np.asarray([myfunc(self.fes_codomain.mesh(*p)) for p in self.pts_bdr])
+#        return vals
+        self.gfu_getbdr.Set(0)
+        self.gfu_getbdr.Set(gfu, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        return self.gfu_getbdr.vec.FV().NumPy().copy()
+        
     
     def _set_boundary_values(self, vals):
-        self.gfu_in.vec.FV().NumPy()[self.ind]=vals
-        return 
+#        self.gfu_in.vec.FV().NumPy()[self.ind]=vals
+#        return 
+        self.gfu_setbdr.vec.FV().NumPy()[:]=vals
+        self.gfu_in.Set(0)
+        self.gfu_in.Set(self.gfu_setbdr, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        return
     
 ###############################################################################
     
