@@ -21,11 +21,11 @@ meshsize_codomain=10
 
 from ngsolve import *
 mesh = MakeQuadMesh(meshsize_domain)
-fes_domain = L2(mesh, order=2, dirichlet="left|top|right|bottom")
+fes_domain = H1(mesh, order=3)
 domain= NGSolveDiscretization(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = H1(mesh, order=2, dirichlet="left|top|right|bottom")
+fes_codomain = H1(mesh, order=3, dirichlet="left|top|right|bottom")
 codomain= NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)*sin(y)
@@ -38,19 +38,19 @@ exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 data=exact_data
 
-init=1
+init=cos(x)
 init_gfu=GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-from itreg.spaces import NGSolveSpace
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace, codomain=NGSolveSpace)
+from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_H1, codomain=NGSolveSpace_H1)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(100) +
+    rules.CountIterations(300) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)

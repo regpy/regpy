@@ -21,11 +21,11 @@ meshsize_codomain=10
 
 from ngsolve import *
 mesh = MakeQuadMesh(meshsize_domain)
-fes_domain = L2(mesh, order=2, dirichlet="left|top|right|bottom")
+fes_domain = L2(mesh, order=2)
 domain= NGSolveDiscretization(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = H1(mesh, order=2, dirichlet="left|top|right|bottom")
+fes_codomain = H1(mesh, order=3, dirichlet="left|top|right|bottom")
 codomain= NGSolveDiscretization(fes_codomain)
 
 rhs=10*sin(x)*sin(y)
@@ -47,9 +47,9 @@ init_data=op(init_solution)
 from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
 setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_H1)
 
-landweber = Landweber(setting, data, init_solution, stepsize=3)
+landweber = Landweber(setting, data, init_solution, stepsize=1000)
 stoprule = (
-    rules.CountIterations(3000) +
+    rules.CountIterations(10000) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
