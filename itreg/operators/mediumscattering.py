@@ -26,7 +26,7 @@ class MediumScattering(NonlinearOperator):
     """
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
-                 meas_directions, support=None, amplitude=False, refractive=True,
+                 meas_directions, support=None, refractive=True,
                  absorptive=True, coarseshape=None, coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
@@ -45,7 +45,6 @@ class MediumScattering(NonlinearOperator):
         assert support.shape == grid.shape
         self.support = support
 
-        self.amplitude = amplitude
         self.refractive = refractive
         self.absorptive = absorptive
 
@@ -96,7 +95,7 @@ class MediumScattering(NonlinearOperator):
             domain=grid,
             codomain=spaces.UniformGrid(
                 axisdata=(meas_directions, inc_directions),
-                dtype=float if amplitude else complex))
+                dtype=complex))
 
         # all attributes defined above are constants
         self._consts.update(self.attrs)
@@ -149,11 +148,7 @@ class MediumScattering(NonlinearOperator):
             if differentiate:
                 self._totalfield[:, j] = (self.inc_matrix[j, :] -
                                           ifftn(self.kernel * fftn(v))[self.support])
-        if self.amplitude:
-            self._farfield = farfield
-            return np.abs(farfield)**2
-        else:
-            return farfield
+        return farfield
 
     def _derivative(self, contrast):
         contrast = contrast[self.support]
@@ -170,14 +165,9 @@ class MediumScattering(NonlinearOperator):
                      ._gmres(self._lippmann_schwinger, rhs)
                      .reshape(self.domain.shape))
             farfield[:, j] = self.farfield_matrix @ v[self.support]
-        if self.amplitude:
-            return 2 * np.real(self._farfield.conj() * farfield)
-        else:
-            return farfield
+        return farfield
 
     def _adjoint(self, farfield):
-        if self.amplitude:
-            farfield = 2 * self._farfield * farfield
         v = self.domain.zeros(dtype=complex)
         farfield_matrix_H = self.farfield_matrix.conj().T
         contrast = self.domain.zeros()
