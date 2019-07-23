@@ -1,9 +1,9 @@
 import numpy as np
 
-from itreg.operators import Multiplication
-from . import PointwiseSquaredModulus
-from . import PointwiseExponential
-from . import PointwiseRealPart
+from itreg.operators import (
+    Multiplication, PointwiseSquaredModulus, PointwiseExponential,
+    PointwiseRealPart
+)
 from . import FresnelPropagator
 
 
