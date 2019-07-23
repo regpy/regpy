@@ -59,6 +59,8 @@ def setup_iop_data(bd,kappa):
     #euler constant 'eulergamma'
     Euler_gamma =  0.577215664901532860606512
     
+    kdist=kdist.reshape((dim, dim))
+    
     return dat_object(kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
                       kdist )
     

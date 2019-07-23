@@ -72,13 +72,13 @@ def op_T(bd,dat):
     zpabs = bd.zpabs
     kappa = dat.kappa
     
-    N_tilde = kappa*(z.T*zp -  np.ones(dim)*np.sum(z*zp)) / dat.kdist
-    N_tilde = -N_tilde.T*N_tilde
+    N_tilde = kappa*(z.T.dot(zp) -  np.ones((dim,1)).dot(np.sum(z*zp, 0).reshape((1, dim))) / (dat.kdist+1e-5))
+    N_tilde = -N_tilde.T.dot(N_tilde)
     Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bessH0 - 2*kappa**2*dat.bessH1quot) \
-        +complex(0,1)*kappa**2/2*(zp.T*zp) * dat.bessH1quot  \
+        +complex(0,1)*kappa**2/2*(zp.T.dot(zp)) * dat.bessH1quot  \
         + scla.toeplitz(np.append(np.asarray([np.pi/2]), 1/(4*np.pi)*np.sin(np.pi*np.arange(1, dim)/dim)**(-2)))
     N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bessH0.real-2*kappa**2*dat.bessH1quot.real)  \
-        - kappa**2/(2*np.pi)* (zp.T*zp) * dat.bessH1quot.real
+        - kappa**2/(2*np.pi)* (zp.T.dot(zp)) * dat.bessH1quot.real
     N2 = Nker - N1*dat.logsin
     for j in range(0, dim):
         N1[j, j] = -kappa**2*zpabs[j]**2/(4*np.pi)
@@ -90,10 +90,10 @@ def op_T(bd,dat):
 
     
     T_weights = np.zeros(dim)
-    T_weights[np.arange(1, dim, 2)]=(1/dim) * np.sin(np.pi*np.arange(0, dim-1, 2)/dim)**(-2)
+    T_weights[np.arange(1, dim, 2)]=(1/dim) * np.sin(np.pi*np.arange(1, dim, 2)/dim)**(-2)
     T_weights[0] = -dim/4
     
     T =  scla.toeplitz(T_weights) \
         - 2*np.pi*( N1*dat.logsin_weights + N2/dim )  \
-        + kappa**2*op_S(bd,dat)* (zp.T*zp) / (zpabs.T*zpabs)
+        + kappa**2*op_S(bd,dat)* (zp.T.dot(zp)) / (zpabs.T*zpabs)
     return T
