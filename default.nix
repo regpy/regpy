@@ -9,7 +9,6 @@
 } @ args:
 
 with pkgs;
-with lib;
 
 let
 
@@ -20,30 +19,32 @@ let
     exec "$@"
   '';
 
-in rec {
-  inherit nixpkgs;
+  self = {
+    inherit nixpkgs;
 
-  ngsolve = callPackage nix/ngsolve.nix {};
+    ngsolve = callPackage nix/ngsolve.nix {};
 
-  pdoc3 = python3.pkgs.callPackage nix/pdoc3.nix {
-    mako = python3.pkgs.callPackage nix/mako.nix {};
-    markdown3 = python3.pkgs.callPackage nix/markdown3.nix {};
+    pdoc3 = with python3.pkgs; callPackage nix/pdoc3.nix {
+      mako = callPackage nix/mako.nix {};
+      markdown3 = callPackage nix/markdown3.nix {};
+    };
+
+    env = python3.buildEnv.override {
+      extraLibs = (with python3.pkgs; [
+        numpy scipy matplotlib
+      ])
+      ++ (lib.optional ngsolve self.ngsolve);
+    };
+
+    devenv = self.env.override (attrs: {
+      extraLibs = attrs.extraLibs ++ (with python3.pkgs; [
+        self.pdoc3 ipython pytest
+      ]);
+    });
+
+    run = runscript self.env;
+
+    rundev = runscript self.devenv;
   };
 
-  env = python3.buildEnv.override {
-    extraLibs = (with python3.pkgs; [
-      numpy scipy matplotlib
-    ])
-    ++ (optional args.ngsolve ngsolve);
-  };
-
-  devenv = env.override (attrs: {
-    extraLibs = attrs.extraLibs ++ (with python3.pkgs; [
-      ipython pdoc3 pytest
-    ]);
-  });
-
-  run = runscript env;
-
-  rundev = runscript devenv;
-}
+in self
