@@ -41,12 +41,12 @@ data = exact_data + noise
 
 
 # Image-reconstruction using Landweber's method
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 initial_guess = grid.zeros()
 
 landweber = Landweber(setting, data, initial_guess, stepsize=0.25)
 stoprule = (rules.CountIterations(max_iterations) +
-            rules.Discrepancy(setting.codomain.norm, data, noiselevel=setting.codomain.norm(noise), tau=1.1))
+            rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 

@@ -2,6 +2,7 @@ import numpy as np
 
 from itreg.operators import NonlinearOperator, Multiplication, FourierTransform
 
+
 def FresnelPropagator(domain, Fresnel_number):
     """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
     diffraction in the regime of the free-space paraxial Helmholtz equation.

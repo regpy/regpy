@@ -6,7 +6,7 @@
   }
 , pkgs ? import nixpkgs {}
 , ngsolve ? false
-} @ args:
+}:
 
 with pkgs;
 

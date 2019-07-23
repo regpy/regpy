@@ -32,6 +32,7 @@ def test_nonlinear_volterra():
             domain=spaces.UniformGrid(np.linspace(0, 2*np.pi, 200)),
             exponent=3))
 
+
 def test_mediumscattering():
     do_nonlinear_test(
         operators.MediumScattering(
