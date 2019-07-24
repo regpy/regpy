@@ -26,7 +26,7 @@ scattering = MediumScattering(
     meas_directions=util.linspace_circle(16),
     # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
     # coarseshape=(17, 17),
-    amplitude=False)
+)
 
 contrast = scattering.domain.zeros()
 r = np.linalg.norm(scattering.domain.coords, axis=0)
