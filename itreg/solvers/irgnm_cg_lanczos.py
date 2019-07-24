@@ -100,8 +100,6 @@ class IRGNM_CG_Lanczos(Solver):
         # Update of the variables in the Newton iteration and preparation of
         # the first CG step.
         self.outer_update()
-        self.lanzcos_update()
-        self.outer_update_precond()
         
 
 
@@ -127,6 +125,8 @@ class IRGNM_CG_Lanczos(Solver):
         self._stilde = (deriv.adjoint(self._ztilde) 
                         + self._regpar*self.setting.domain.gram(self._xref))
         self._s = self.setting.domain.gram_inv(self._stilde)
+        if self.need_prec_update==False:
+            self.s=self.M @ self._s
         self._d = self._s
         self._dtilde = self._stilde
         self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
@@ -151,6 +151,8 @@ class IRGNM_CG_Lanczos(Solver):
         self._stilde += (- self._gamma*(deriv(self._ztilde) 
                          + self._regpar*self._dtilde)).real
         self._s = self.setting.domain.gram_inv(self._stilde)
+        if self.need_prec_update==False:
+            self._s=self.M @ self._s
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
         self._beta = self._norm_s / self._norm_s_old
@@ -267,17 +269,13 @@ class IRGNM_CG_Lanczos(Solver):
                 self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self.setting.domain.inner(self._dtilde,self._d)
-                                         + self.setting.domain.inner(self._ztilde,self._z)
+                                         *self.setting.domain.inner(self._dtilde,self.M @ self._d)
+                                         + self.setting.domain.inner(self._ztilde,self.M @ self._z)
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
                 
                 self.inner_update()
-
-            
-#        self._h=scipy.optimize.minimize(self.M+self._regpar*np.identity(self.op.domain.shape[0]), self._h_precond)
-            self._h=np.dot(np.linalg.inv(self.M), self._h_precond)
         
         
         
