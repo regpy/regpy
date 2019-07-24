@@ -356,18 +356,20 @@ class IRGNM_CG_Lanczos(Solver):
         _, self.deriv=self.setting.op.linearize(self.x)
         for i in range(0, self.krylov_num):
             self.L[i, :]=np.dot(self.orthonormal, self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.codomain.gram(self.deriv((self.orthonormal[i, :]))))))
-            self.deriv_mat[i, :]=self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.domain.gram(self.deriv(self.x))))
+            #self.deriv_mat[i, :]=self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.domain.gram(self.deriv(self.x))))
 #TODO: Only compute the three biggest eigenvalues with Lanczos method
 #TODO: Solve Cast error
         self.lamb, self.U=np.linalg.eig(self.L)
-        self.lanczos=np.dot(self.orthonormal.transpose(), self.U)
+        self.diag_lamb=np.zeros(self.L.shape)
+        for i in range(0, self.eigval_num):
+            self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
+        self.lanczos_krylov=np.float64(self.U @ self.diag_lamb @ self.U.transpose())
+        self.lanczos=self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal
 #        self.M=self._alpha*np.identity(self.data.shape[0])
 #        self.M=np.zeros((self.data.shape[0], self.data.shape[0]))
-        self.M=self._regpar*np.identity(self.data.shape[0])
-        for  i in range(0, self.eigval_num):
-            self.M[i, :]+=self.lanczos[:, i]*self.lamb[i]
-        self.pre_cond_deriv=np.dot(self.M.transpose(), np.dot(self.deriv_mat+self._regpar*np.identity(self.setting.domain.discr.shape[0]), self.M))
-        self.C=np.dot(self.pre_cond_deriv, self.pre_cond_deriv.transpose())
+        self.M=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
+        #self.pre_cond_deriv=np.dot(self.M.transpose(), np.dot(self.deriv_mat+self._regpar*np.identity(self.setting.domain.discr.shape[0]), self.M))
+        #self.C=np.dot(self.pre_cond_deriv, self.pre_cond_deriv.transpose())
 
     
         
