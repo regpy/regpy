@@ -15,6 +15,47 @@ class MediumScatteringBase(Operator):
     The forward problem is solved Vainikko's fast solver of the Lippmann
     Schwinger equation.
 
+    This is an abstract base class that computes the total field, but delegates
+    farfield computation to subclasses, to allow implementing different
+    measurement geometries.
+
+    Child classes need to set the `codomain` attribute to the appropriate
+    farfield space.
+
+    Parameters
+    ----------
+    gridshape : tuple
+        Tuple determining the size of the grid on which the total field is
+        computed. Should have 2 or 3 elements depending on the dimension of the
+        problem. The domain always is taken to range from `-2*radius` to
+        `2*radius` along each axis.
+    radius : float
+        An a-priori estimate for the radius of a circle or sphere covering the
+        entire unknown object.
+    wave_number : float
+        The wave number of the incident waves.
+    inc_directions : array-like
+        Directions of the incident waves. Should be of shape `(n, 2)` or
+        `(n, 3)`, depending on the dimension. Each of the `n` directions needs
+        to be normalized.
+    support : array-like, callable or None
+        Mask determining the subset of the grid on which the object is
+        supported. Will be converted to a boolean array. If `None`, a circle of
+        `radius` given by the radius argument will be assumed. A callable will
+        be called with arguments `grid` and `radius` and should return a
+        boolean array.
+    coarseshape : tuple or None
+        Tuple determining the size of the coarse grid for the two-grid solver.
+        If `None`, the single-grid solver will be used.
+    coarseiterations : int
+        Number of coarse grid iterations in the two-grid solver.
+    gmres_args : dict
+        Arguments passed to [`scipy.sparse.linalg.gmres`][1] for solving the
+        Lippmann Schwinger equation. Default values are `restart=10`,
+        `tol=1e-14`, `maxiter=100` and `atol='legacy'`.
+
+    [1]: https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.gmres.html
+
     References
     ----------
     T. Hohage: On the numerical solution of a 3D inverse medium scattering
@@ -108,10 +149,25 @@ class MediumScatteringBase(Operator):
                 dtype=complex
             )
 
-    def _compute_farfield(self, farfield, inc_idx, v):
+    def compute_farfield(self, farfield, inc_idx, v):
+        """Abstract method, needs to be implemented by child classes.
+
+        Compute the farfield for incident wave `inc_idx` (an index into
+        `self.inc_directions`), where `v` is the contrast multiplied by the
+        computed total field, supported on `self.support`. The result should be
+        stored into `farfield` in-place. The return value is ignored.
+        `farfield` will be initialized to zero before computing the first
+        incident wave. The final `farfield` is the return value of the operator
+        evaluation.
+        """
         raise NotImplementedError
 
-    def _compute_farfield_adjoint(self, farfield, inc_idx, v):
+    def compute_farfield_adjoint(self, farfield, inc_idx, v):
+        """Abstract method, needs to be implemented by child classes.
+
+        Compute the adjoint of the above method for a given `farfield`, storing
+        the result into `v`, which should only be modified on `self.support`.
+        """
         raise NotImplementedError
 
     def _eval(self, contrast, differentiate=False):
@@ -137,7 +193,7 @@ class MediumScatteringBase(Operator):
                 v = self._solve_two_grid(rhs)
             else:
                 v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
-            self._compute_farfield(farfield, j, v)
+            self.compute_farfield(farfield, j, v)
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = u_inc - conv(k, v)
             if differentiate:
@@ -156,14 +212,14 @@ class MediumScatteringBase(Operator):
                 v = self._solve_two_grid(rhs)
             else:
                 v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
-            self._compute_farfield(farfield, j, v)
+            self.compute_farfield(farfield, j, v)
         return farfield
 
     def _adjoint(self, farfield):
         v = self.domain.zeros()
         contrast = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
-            self._compute_farfield_adjoint(farfield, j, v)
+            self.compute_farfield_adjoint(farfield, j, v)
             if self.coarse:
                 rhs = self._solve_two_grid_adjoint(v)
             else:
@@ -279,6 +335,18 @@ def _compute_kernel_3D(R, shape):
 
 
 class MediumScattering(MediumScatteringBase):
+    """Acoustic medium scattering with fixed measurement directions.
+
+    Parameters
+    ----------
+    meas_directions : array-like
+        Array of measurement directions of the farfield, shape `(n, 2)` or
+        `(n, 3)` depending on the problem dimension. All directions must be
+        normalized.
+    **kwargs
+        All other (keyword-only) arguments are passed to the base class, which
+        see.
+    """
     def __init__(self, *, meas_directions, **kwargs):
         super().__init__(**kwargs)
 
@@ -303,8 +371,8 @@ class MediumScattering(MediumScatteringBase):
             dtype=complex
         )
 
-    def _compute_farfield(self, farfield, inc_idx, v):
+    def compute_farfield(self, farfield, inc_idx, v):
         farfield[:, inc_idx] = self.farfield_matrix @ v[self.support]
 
-    def _compute_farfield_adjoint(self, farfield, inc_idx, v):
+    def compute_farfield_adjoint(self, farfield, inc_idx, v):
         v[self.support] = farfield[:, inc_idx] @ self.farfield_matrix.conj()
