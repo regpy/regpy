@@ -4,12 +4,12 @@ from numpy.fft import fftn, ifftn, fftshift, ifftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
-from . import NonlinearOperator
+from . import Operator
 from .. import spaces
 from .. import util
 
 
-class MediumScattering(NonlinearOperator):
+class MediumScattering(Operator):
     """Acoustic scattering problem for inhomogeneous medium.
 
     The forward problem is solved Vainikko's fast solver of the Lippmann
@@ -64,11 +64,11 @@ class MediumScattering(NonlinearOperator):
         if grid.ndim == 2:
             # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
             self.farfield_matrix *= wave_number**2 * grid.volume_elem
-            compute_kernel = partial(compute_kernel_2D, 2 * wave_number * radius)
+            compute_kernel = partial(_compute_kernel_2D, 2 * wave_number * radius)
         elif grid.ndim == 3:
             # TODO The sign appears to be wrong
             self.farfield_matrix *= wave_number**2 * grid.volume_elem / (4*np.pi)
-            compute_kernel = partial(compute_kernel_3D, 2 * wave_number * radius)
+            compute_kernel = partial(_compute_kernel_3D, 2 * wave_number * radius)
 
         self.kernel = compute_kernel(grid.shape)
 
@@ -258,7 +258,7 @@ class MediumScattering(NonlinearOperator):
         return v.ravel()
 
 
-def compute_kernel_2D(R, shape):
+def _compute_kernel_2D(R, shape):
     J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
@@ -273,7 +273,7 @@ def compute_kernel_2D(R, shape):
     return 2 * R * fftshift(K_hat)
 
 
-def compute_kernel_3D(R, shape):
+def _compute_kernel_3D(R, shape):
     J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
