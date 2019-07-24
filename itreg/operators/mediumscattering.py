@@ -26,15 +26,14 @@ class MediumScattering(Operator):
     """
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
-                 meas_directions, support=None, refractive=True,
-                 absorptive=True, coarseshape=None, coarseiterations=3, gmres_args={}):
+                 meas_directions, support=None, coarseshape=None,
+                 coarseiterations=3, gmres_args={}):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
-        assert refractive or absorptive
         grid = spaces.UniformGrid(
             *(np.linspace(-2*radius, 2*radius, s, endpoint=False)
               for s in gridshape),
-            dtype=complex if refractive and absorptive else float)
+            dtype=complex)
 
         if support is None:
             support = (np.linalg.norm(grid.coords, axis=0) <= radius)
@@ -44,9 +43,6 @@ class MediumScattering(Operator):
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
         self.support = support
-
-        self.refractive = refractive
-        self.absorptive = absorptive
 
         inc_directions = np.asarray(inc_directions)
         assert inc_directions.ndim == 2
@@ -117,8 +113,6 @@ class MediumScattering(Operator):
 
     def _eval(self, contrast, differentiate=False):
         contrast[~self.support] = 0
-        if self.absorptive and not self.refractive:
-            contrast = 1j * contrast
         self._contrast = contrast
         if self.coarse:
             # TODO take real part? what about even case? for 1d, highest
@@ -152,8 +146,6 @@ class MediumScattering(Operator):
 
     def _derivative(self, contrast):
         contrast = contrast[self.support]
-        if self.absorptive and not self.refractive:
-            contrast = 1j * contrast
         farfield = self.codomain.empty(dtype=complex)
         rhs = self.domain.zeros(dtype=complex)
         for j in range(self.codomain.shape[1]):
@@ -180,13 +172,7 @@ class MediumScattering(Operator):
                        ._gmres(self._lippmann_schwinger.adjoint(), v)
                        .reshape(self.domain.shape))
             aux = self._totalfield[:, j].conj() * rhs[self.support]
-            if self.refractive:
-                if self.absorptive:
-                    contrast[self.support] += aux
-                else:
-                    contrast[self.support] += np.real(aux)
-            else:
-                contrast[self.support] += np.imag(aux)
+            contrast[self.support] += aux
         return contrast
 
     def _solve_two_grid(self, rhs):
