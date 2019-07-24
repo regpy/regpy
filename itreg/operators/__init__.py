@@ -515,7 +515,7 @@ class DirectSum(Operator):
         return util.make_repr(self, *self.ops)
 
 
-class PointwiseExponential(Operator):
+class Exponential(Operator):
     """The pointwise exponential operator exp.
 
     Parameters
@@ -550,7 +550,7 @@ class PointwiseExponential(Operator):
         return self._exponential_factor.conj() * y
 
 
-class PointwiseRealPart(Operator):
+class RealPart(Operator):
     """The pointwise real part operator
 
     Parameters
@@ -570,7 +570,7 @@ class PointwiseRealPart(Operator):
         return y
 
 
-class PointwiseSquaredModulus(Operator):
+class SquaredModulus(Operator):
     """The pointwise squared modulus operator.
 
     Parameters
