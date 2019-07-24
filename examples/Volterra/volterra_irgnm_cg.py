@@ -5,7 +5,7 @@
 
 import setpath  # NOQA
 
-from itreg.operators.Volterra.volterra import Volterra
+from itreg.operators.volterra import Volterra
 from itreg.spaces import L2
 from itreg.grids import Square_1D
 from itreg.solvers import IRGNM_CG
