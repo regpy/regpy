@@ -570,6 +570,27 @@ class RealPart(Operator):
         return y
 
 
+class ImaginaryPart(Operator):
+    """The pointwise imaginary part operator
+
+    Parameters
+    ----------
+    domain : :class:`~itreg.spaces.Space`
+        The domain on which the operator is defined.
+    """
+
+    def __init__(self, domain):
+        assert domain.is_complex
+        codomain = domain.real_space()
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        return x.imag
+
+    def _adjoint(self, y):
+        return 1j * y
+
+
 class SquaredModulus(Operator):
     """The pointwise squared modulus operator.
 
