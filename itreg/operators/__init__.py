@@ -38,9 +38,9 @@ class Revocable:
 class Operator:
     log = util.classlogger
 
-    def __init__(self, domain, codomain, linear=False):
-        assert isinstance(domain, spaces.Discretization)
-        assert isinstance(codomain, spaces.Discretization)
+    def __init__(self, domain=None, codomain=None, linear=False):
+        assert not domain or isinstance(domain, spaces.Discretization)
+        assert not codomain or isinstance(codomain, spaces.Discretization)
         self.domain, self.codomain = domain, codomain
         self.linear = linear
         self._consts = {'domain', 'codomain'}
@@ -61,23 +61,23 @@ class Operator:
         return set(self.__dict__)
 
     def __call__(self, x):
-        assert x in self.domain
+        assert not self.domain or x in self.domain
         if self.linear:
             y = self._eval(x)
         else:
             self.__revoke()
             y = self._eval(x, differentiate=False)
-        assert y in self.codomain
+        assert not self.codomain or y in self.codomain
         return y
 
     def linearize(self, x):
         if self.linear:
             return self(x), self
         else:
-            assert x in self.domain
+            assert not self.domain or x in self.domain
             self.__revoke()
             y = self._eval(x, differentiate=True)
-            assert y in self.codomain
+            assert not self.codomain or y in self.codomain
             deriv = Derivative(self.__get_handle())
             return y, deriv
 
@@ -130,7 +130,7 @@ class Operator:
             return Composition(other, self)
         elif (
             np.isreal(other) or
-            (np.iscomplex(other) and self.codomain.is_complex)
+            (np.iscomplex(other) and (not self.codomain or self.codomain.is_complex))
         ):
             return LinearCombination((other, self))
         else:
@@ -147,12 +147,12 @@ class Operator:
 # removed when possible.
 
 class NonlinearOperator(Operator):
-    def __init__(self, domain, codomain):
+    def __init__(self, domain=None, codomain=None):
         super().__init__(domain, codomain)
 
 
 class LinearOperator(Operator):
-    def __init__(self, domain, codomain):
+    def __init__(self, domain=None, codomain=None):
         super().__init__(domain, codomain, linear=True)
 
 
@@ -204,7 +204,11 @@ class LinearCombination(Operator):
             else:
                 coeff, op = 1, arg
             assert isinstance(op, Operator)
-            assert not np.iscomplex(coeff) or op.codomain.is_complex
+            assert (
+                not np.iscomplex(coeff)
+                or not op.codomain
+                or op.codomain.is_complex
+            )
             if isinstance(op, type(self)):
                 for c, o in zip(op.coeffs, op.ops):
                     coeff_for_op[o] += coeff * c
@@ -215,10 +219,21 @@ class LinearCombination(Operator):
         for op, coeff in coeff_for_op.items():
             self.coeffs.append(coeff)
             self.ops.append(op)
-        domain = self.ops[0].domain
-        codomain = self.ops[0].codomain
-        assert all(op.domain == domain for op in self.ops[1:])
-        assert all(op.codomain == codomain for op in self.ops[1:])
+
+        domains = [op.domain for op in self.ops if op.domain]
+        if domains:
+            domain = domains[0]
+            assert all(d == domain for d in domains)
+        else:
+            domain = None
+
+        codomains = [op.codomain for op in self.ops if op.codomain]
+        if codomains:
+            codomain = codomains[0]
+            assert all(c == codomain for c in codomains)
+        else:
+            codomain = None
+
         super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
 
     def _eval(self, x, differentiate=False):
@@ -266,7 +281,7 @@ class LinearCombination(Operator):
 class Composition(Operator):
     def __init__(self, *ops):
         for f, g in zip(ops, ops[1:]):
-            assert f.domain == g.codomain
+            assert not f.domain or not g.codomain or f.domain == g.codomain
         self.ops = []
         for op in ops:
             assert isinstance(op, Operator)
@@ -327,7 +342,7 @@ class Identity(Operator):
 class CholeskyInverse(Operator):
     def __init__(self, op):
         assert op.linear
-        assert op.domain == op.codomain
+        assert op.domain and op.domain == op.codomain
         domain = op.domain
         matrix = np.empty((domain.size,) * 2, dtype=float)
         for j, elm in enumerate(domain.iter_basis()):
@@ -380,10 +395,11 @@ class Multiplication(Operator):
         factor = np.asarray(factor)
         # Check that factor can broadcast against domain elements without
         # increasing their size.
-        assert factor.ndim <= domain.ndim
-        for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
-            assert sf == sd or sf == 1
-        assert domain.is_complex or not util.is_complex_dtype(factor)
+        if domain:
+            assert factor.ndim <= domain.ndim
+            for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
+                assert sf == sd or sf == 1
+            assert domain.is_complex or not util.is_complex_dtype(factor)
         self.factor = factor
         super().__init__(domain, domain, linear=True)
 
@@ -560,7 +576,10 @@ class RealPart(Operator):
     """
 
     def __init__(self, domain):
-        codomain = domain.real_space()
+        if domain:
+            codomain = domain.real_space()
+        else:
+            codomain = None
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
@@ -580,8 +599,11 @@ class ImaginaryPart(Operator):
     """
 
     def __init__(self, domain):
-        assert domain.is_complex
-        codomain = domain.real_space()
+        if domain:
+            assert domain.is_complex
+            codomain = domain.real_space()
+        else:
+            codomain = None
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
@@ -612,7 +634,10 @@ class SquaredModulus(Operator):
     """
 
     def __init__(self, domain):
-        codomain = domain.real_space()
+        if domain:
+            codomain = domain.real_space()
+        else:
+            codomain = None
         super().__init__(domain, codomain)
 
     def _eval(self, x, differentiate=False):
