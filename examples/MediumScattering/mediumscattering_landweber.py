@@ -2,7 +2,7 @@ import setpath
 
 import itreg
 
-from itreg.operators import MediumScattering, CoordinateProjection
+from itreg.operators import MediumScatteringFixed, CoordinateProjection
 from itreg.spaces import L2, Sobolev, HilbertPullBack
 from itreg.solvers import Landweber, HilbertSpaceSetting
 # TODO from itreg.util import test_adjoint
@@ -18,12 +18,12 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-scattering = MediumScattering(
+scattering = MediumScatteringFixed(
     gridshape=(65, 65),
     radius=1,
     wave_number=1,
     inc_directions=util.linspace_circle(16),
-    meas_directions=util.linspace_circle(16),
+    farfield_directions=util.linspace_circle(16),
     # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
     # coarseshape=(17, 17),
 )

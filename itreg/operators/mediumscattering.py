@@ -153,12 +153,14 @@ class MediumScatteringBase(Operator):
         """Abstract method, needs to be implemented by child classes.
 
         Compute the farfield for incident wave `inc_idx` (an index into
-        `self.inc_directions`), where `v` is the contrast multiplied by the
-        computed total field, supported on `self.support`. The result should be
-        stored into `farfield` in-place. The return value is ignored.
-        `farfield` will be initialized to zero before computing the first
-        incident wave. The final `farfield` is the return value of the operator
-        evaluation.
+        `itreg.operators.mediumscattering.MediumScatteringBase.inc_directions`),
+        where `v` is the contrast multiplied by the computed total field,
+        supported on
+        `itreg.operators.mediumscattering.MediumScatteringBase.support`. The
+        result should be stored into `farfield` in-place. The return value is
+        ignored. `farfield` will be initialized to zero before computing the
+        first incident wave. The final `farfield` is the return value of the
+        operator evaluation.
         """
         raise NotImplementedError
 
@@ -334,12 +336,12 @@ def _compute_kernel_3D(R, shape):
     return 2 * R * fftshift(K_hat)
 
 
-class MediumScattering(MediumScatteringBase):
+class MediumScatteringFixed(MediumScatteringBase):
     """Acoustic medium scattering with fixed measurement directions.
 
     Parameters
     ----------
-    meas_directions : array-like
+    farfield_directions : array-like
         Array of measurement directions of the farfield, shape `(n, 2)` or
         `(n, 3)` depending on the problem dimension. All directions must be
         normalized.
@@ -347,16 +349,16 @@ class MediumScattering(MediumScatteringBase):
         All other (keyword-only) arguments are passed to the base class, which
         see.
     """
-    def __init__(self, *, meas_directions, **kwargs):
+    def __init__(self, *, farfield_directions, **kwargs):
         super().__init__(**kwargs)
 
-        meas_directions = np.asarray(meas_directions)
-        assert meas_directions.ndim == 2
-        assert meas_directions.shape[1] == self.domain.ndim
-        assert np.allclose(np.linalg.norm(meas_directions, axis=1), 1)
-        self.meas_directions = meas_directions
+        farfield_directions = np.asarray(farfield_directions)
+        assert farfield_directions.ndim == 2
+        assert farfield_directions.shape[1] == self.domain.ndim
+        assert np.allclose(np.linalg.norm(farfield_directions, axis=1), 1)
+        self.farfield_directions = farfield_directions
         self.farfield_matrix = np.exp(
-            -1j * self.wave_number * (meas_directions @ self.domain.coords[:, self.support])
+            -1j * self.wave_number * (farfield_directions @ self.domain.coords[:, self.support])
         )
 
         if self.domain.ndim == 2:
@@ -367,7 +369,7 @@ class MediumScattering(MediumScatteringBase):
             self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem / (4*np.pi)
 
         self.codomain = spaces.UniformGrid(
-            axisdata=(self.meas_directions, self.inc_directions),
+            axisdata=(self.farfield_directions, self.inc_directions),
             dtype=complex
         )
 
