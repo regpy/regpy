@@ -149,7 +149,7 @@ class MediumScatteringBase(Operator):
                 dtype=complex
             )
 
-    def compute_farfield(self, farfield, inc_idx, v):
+    def _compute_farfield(self, farfield, inc_idx, v):
         """Abstract method, needs to be implemented by child classes.
 
         Compute the farfield for incident wave `inc_idx` (an index into
@@ -164,7 +164,7 @@ class MediumScatteringBase(Operator):
         """
         raise NotImplementedError
 
-    def compute_farfield_adjoint(self, farfield, inc_idx, v):
+    def _compute_farfield_adjoint(self, farfield, inc_idx, v):
         """Abstract method, needs to be implemented by child classes.
 
         Compute the adjoint of the above method for a given `farfield`, storing
@@ -195,7 +195,7 @@ class MediumScatteringBase(Operator):
                 v = self._solve_two_grid(rhs)
             else:
                 v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
-            self.compute_farfield(farfield, j, v)
+            self._compute_farfield(farfield, j, v)
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = u_inc - conv(k, v)
             if differentiate:
@@ -214,14 +214,14 @@ class MediumScatteringBase(Operator):
                 v = self._solve_two_grid(rhs)
             else:
                 v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
-            self.compute_farfield(farfield, j, v)
+            self._compute_farfield(farfield, j, v)
         return farfield
 
     def _adjoint(self, farfield):
         v = self.domain.zeros()
         contrast = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
-            self.compute_farfield_adjoint(farfield, j, v)
+            self._compute_farfield_adjoint(farfield, j, v)
             if self.coarse:
                 rhs = self._solve_two_grid_adjoint(v)
             else:
@@ -373,8 +373,8 @@ class MediumScatteringFixed(MediumScatteringBase):
             dtype=complex
         )
 
-    def compute_farfield(self, farfield, inc_idx, v):
+    def _compute_farfield(self, farfield, inc_idx, v):
         farfield[:, inc_idx] = self.farfield_matrix @ v[self.support]
 
-    def compute_farfield_adjoint(self, farfield, inc_idx, v):
+    def _compute_farfield_adjoint(self, farfield, inc_idx, v):
         v[self.support] = farfield[:, inc_idx] @ self.farfield_matrix.conj()
