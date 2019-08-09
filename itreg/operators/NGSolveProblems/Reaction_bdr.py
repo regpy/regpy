@@ -60,7 +60,7 @@ class Reaction_Bdr(NonlinearOperator):
         self.b+=SymbolicLFI(self.gfu_b*v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         
         self.f_deriv=LinearForm(self.fes_codomain)
-        self.f_deriv += SymbolicLFI(self.gfu_rhs*grad(self.gfu)*grad(v))
+        self.f_deriv += SymbolicLFI(self.gfu_rhs*self.gfu*v)
         
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
@@ -106,7 +106,7 @@ class Reaction_Bdr(NonlinearOperator):
         #self.gfu_b.Set(-self.gfu_inner*self.gfu_bdr)
         #self.b.Assemble()
         
-        self.gfu_deriv.vec.data=self._solve(self.a, self.f_deriv.vec)#+self.b.vec)
+        self.gfu_deriv.vec.data=self._solve(self.a, self.f_deriv.vec)
         
         #res=sco.minimize((lambda u: self._target(u, self.f.vec)), np.zeros(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
 
@@ -133,20 +133,6 @@ class Reaction_Bdr(NonlinearOperator):
         self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
         
         return self.gfu_toret.vec.FV().NumPy().copy()
-        #self.gfu_inner.Set(self.gfu_in)
-        #rhs=div(self.gfu_inner*grad(self.gfu))
-#        self.gfu_rhs.Set(self.gfu_in)
-        #self.gfu_rhs.Set(rhs)
-#        self.f.Assemble()
-        
-#        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0*0.0001*np.ones(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
-#        self.gfu_inner.vec.FV().NumPy()[:]=res.x
-        
-#        toret=-grad(self.gfu_inner)*grad(self.gfu)
-        
-#        self.gfu_toret.Set(toret)
-#        return self.gfu_toret.vec.FV().NumPy().copy()
-
         
     def _solve(self, bilinear, rhs, boundary=False):
         return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
