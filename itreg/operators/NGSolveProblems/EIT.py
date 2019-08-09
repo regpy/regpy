@@ -192,20 +192,6 @@ class EIT(NonlinearOperator):
         self.gfu_in.Set(0)
         self.gfu_in.Set(self.gfu_setbdr, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         return
-    
-###############################################################################
-    
-    def _target(self, u, linearform_vec):
-        self.gfu_tar.vec.FV().NumPy()[:]=u
-        self.gfu_error.vec.data = self.a.mat * self.gfu_tar.vec-linearform_vec
-        return self.gfu_error.vec.Norm()**2#+1*Integrate(coff, self.mesh, BND)**2 
-
-        
-    def _constraint(self, u):
-        tar=GridFunction(self.fes_codomain)
-        tar.vec.FV().NumPy()[:]=u
-        coff=CoefficientFunction(tar)
-        return Integrate(coff, self.fes_codomain.mesh, BND)
 
     
 
