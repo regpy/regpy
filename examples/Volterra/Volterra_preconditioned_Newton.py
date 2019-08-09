@@ -29,7 +29,7 @@ setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 
 irgnm_cg = IRGNM_CG_Lanczos(setting, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(10) +
+    rules.CountIterations(1) +
     rules.Discrepancy(setting.codomain.norm, data,
                       noiselevel=setting.codomain.norm(noise), tau=0.2))
 

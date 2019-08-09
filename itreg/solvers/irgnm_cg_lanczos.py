@@ -91,7 +91,7 @@ class IRGNM_CG_Lanczos(Solver):
         self.alpha_step = alpha_step
         self.cgtol = cgtol
         
-        self.eigval_num=3
+        self.eigval_num=2
         #orthonormalization computed in which krylov space
         self.krylov_num=10
         self.orthonormal=np.zeros((self.krylov_num, self.data.shape[0]))
@@ -155,6 +155,8 @@ class IRGNM_CG_Lanczos(Solver):
             self._s=self.M @ self._s
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
+        print(self._s)
+        print(self._norm_s)
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
@@ -239,9 +241,9 @@ class IRGNM_CG_Lanczos(Solver):
                 # Updating ``self.x`` 
      #           self.x += self._h
                 
-                self.inner_update()
                 if self.inner_num<=self.krylov_num:
                     self.orthonormal[self.inner_num-1, :]=self._s/self._norm_s
+                self.inner_update()
                     
             self.lanzcos_update()
             
@@ -266,18 +268,19 @@ class IRGNM_CG_Lanczos(Solver):
                 # Computations and updates of variables
                 _, deriv=self.setting.op.linearize(self.x)
                 self._z = deriv(self._d)
+                #NEW
+                self._z_hat = deriv(self.M @ self._d)
                 self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
                                          *self.setting.domain.inner(self._dtilde,self.M @ self._d)
-                                         + self.setting.domain.inner(self._ztilde,self.M @ self._z)
+                                         #+ self.setting.domain.inner(self._ztilde,self.M @ self._z)                                
+                                         +self.setting.domain.inner(self._z_hat, self._z)
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
                 
                 self.inner_update()
-        
-        
         
         self.x+=self._h
         self.outer_update()
@@ -285,24 +288,16 @@ class IRGNM_CG_Lanczos(Solver):
         if (int(np.sqrt(self.k)))**2==self.k:
             self.need_prec_update=True
         return True
-    
-    
-    
-    
-    
-    
-    
-    
+       
     def lanzcos_update(self):
         """perform lanzcos method to calculate the preconditioner"""
-        self.deriv_mat=np.zeros((self.setting.domain.discr.shape[0], self.setting.domain.discr.shape[0]))
+#        self.deriv_mat=np.zeros((self.setting.domain.discr.shape[0], self.setting.domain.discr.shape[0]))
         self.L=np.zeros((self.krylov_num, self.krylov_num))
         _, self.deriv=self.setting.op.linearize(self.x)
         for i in range(0, self.krylov_num):
             self.L[i, :]=np.dot(self.orthonormal, self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.codomain.gram(self.deriv((self.orthonormal[i, :]))))))
             #self.deriv_mat[i, :]=self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.domain.gram(self.deriv(self.x))))
 #TODO: Only compute the three biggest eigenvalues with Lanczos method
-#TODO: Solve Cast error
         self.lamb, self.U=np.linalg.eig(self.L)
         self.diag_lamb=np.zeros(self.L.shape)
         for i in range(0, self.eigval_num):
