@@ -60,7 +60,7 @@ class Reaction_Bdr(NonlinearOperator):
         self.b+=SymbolicLFI(self.gfu_b*v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         
         self.f_deriv=LinearForm(self.fes_codomain)
-        self.f_deriv += SymbolicLFI(self.gfu_rhs*self.gfu*v)
+        self.f_deriv += SymbolicLFI(-self.gfu_rhs*self.gfu*v)
         
 #        self.b2=LinearForm(self.fes)
 #        self.b2+=SymbolicLFI(div(v*grad(self.gfu))
