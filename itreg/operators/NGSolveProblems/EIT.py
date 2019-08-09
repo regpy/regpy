@@ -2,12 +2,8 @@ from itreg.operators import NonlinearOperator
 from itreg.spaces import NGSolveDiscretization, UniformGrid
 
 import numpy as np
-import scipy.optimize as sco
-#%gui tk
-from ngsolve import *
-from netgen.geom2d import SplineGeometry
 
-from ngsolve.meshes import MakeQuadMesh
+from ngsolve import *
 
 class EIT(NonlinearOperator):
     
