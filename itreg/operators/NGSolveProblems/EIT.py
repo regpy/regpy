@@ -7,7 +7,35 @@ from ngsolve import *
 
 class EIT(NonlinearOperator):
     
-
+    """Electrical Impedance Tomography Problem
+    
+    PDE: -div(s grad u)=0       in Omega
+         s du/dn = g            on dOmega
+         
+    Evaluate: F: s mapsto trace(u)
+    Derivative:
+        -div (s grad v)=div (h grad u) (=:f)
+        s dv/dn = 0
+        
+    Der: F'[s]: h mapsto trace(v)
+    
+    Denote A: f mapsto trace(v)
+    
+    Adjoint:
+        -div (s grad w)=0     
+        w=q
+        
+    Adj: q mapsto w mapsto grad(u) grad(w)
+    
+    proof:
+    (f, A* q)=(f, w)=(-div(s grad v), w)=(grad v, s grad w)=(v, -div s grad w)
+    +int[div (v s grad w)]=int(div (v s grad w))=int_dOmega [trace(v) s dw/dn]
+    =int_dOmega [trace(v) q]=(Af, q)_(dOmega)
+    
+    WARNING: The last steps only hold if the pde for adjoint is: s dw/dn=q on dOmega
+    instead!!!!!!!!!!!!!!!!!
+    """
+    
     def __init__(self, domain, g, codomain=None):
         
         codomain = codomain or domain
