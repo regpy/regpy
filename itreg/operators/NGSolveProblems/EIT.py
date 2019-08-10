@@ -80,6 +80,7 @@ class EIT(NonlinearOperator):
         self.gfu_dir=GridFunction(self.fes_domain) #grid function for solving the dirichlet problem in adjoint
         self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
         self.gfu_tar=GridFunction(self.fes_codomain) #grid function used in _target, holding the arguments
+        self.gfu_adjtoret=GridFunction(self.fes_domain)
         
         self.Number=NumberSpace(self.fes_codomain.mesh)
         r, s = self.Number.TnT()
@@ -181,20 +182,9 @@ class EIT(NonlinearOperator):
         #Solve system
         self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
         
-        return self.gfu_toret.vec.FV().NumPy().copy()
-        #self.gfu_inner.Set(self.gfu_in)
-        #rhs=div(self.gfu_inner*grad(self.gfu))
-#        self.gfu_rhs.Set(self.gfu_in)
-        #self.gfu_rhs.Set(rhs)
-#        self.f.Assemble()
-        
-#        res=sco.minimize((lambda u: self._target(u, self.f.vec)), 0*0.0001*np.ones(self.N_domain), constraints={"fun": self._constraint, "type": "eq"})
-#        self.gfu_inner.vec.FV().NumPy()[:]=res.x
-        
-#        toret=-grad(self.gfu_inner)*grad(self.gfu)
-        
-#        self.gfu_toret.Set(toret)
 #        return self.gfu_toret.vec.FV().NumPy().copy()
+        self.gfu_adjtoret.Set(-grad(self.gfu_toret)*grad(self.gfu))
+        return self.gfu_adjtoret.vec.FV().NumPy().copy()        
 
         
     def _solve(self, bilinear, rhs, boundary=False):

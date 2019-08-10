@@ -16,6 +16,7 @@ class Reaction_Bdr(NonlinearOperator):
         
         self.fes_domain=domain.fes
         self.fes_codomain=codomain.fes
+        self.fes_dir=H1(self.fes_codomain.mesh, order=2, dirichlet="cyc")
         
         self.fes_in = H1(self.fes_codomain.mesh, order=1)
         self.gfu_in = GridFunction(self.fes_in)
@@ -36,7 +37,8 @@ class Reaction_Bdr(NonlinearOperator):
         self.gfu_dir=GridFunction(self.fes_domain) #grid function for solving the dirichlet problem in adjoint
         self.gfu_error=GridFunction(self.fes_codomain) #grid function used in _target to compute the error in forward computation
         self.gfu_tar=GridFunction(self.fes_codomain) #grid function used in _target, holding the arguments
-                
+        self.gfu_adjtoret=GridFunction(self.fes_domain)
+        
         u = self.fes_codomain.TrialFunction()  # symbolic object
         v = self.fes_codomain.TestFunction()   # symbolic object 
 
@@ -130,12 +132,18 @@ class Reaction_Bdr(NonlinearOperator):
         self.r.data=-self.a.mat * self.gfu_dir.vec
         
         #Solve system
-        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
+        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve_dir(self.a, self.r)
         
-        return self.gfu_toret.vec.FV().NumPy().copy()
-        
+        #return self.gfu_toret.vec.FV().NumPy().copy()
+
+        self.gfu_adjtoret.Set(-self.gfu_toret*self.gfu)
+        return self.gfu_adjtoret.vec.FV().NumPy().copy()
+    
     def _solve(self, bilinear, rhs, boundary=False):
         return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
+        
+    def _solve_dir(self, bilinear, rhs, boundary=False):
+        return bilinear.mat.Inverse(freedofs=self.fes_dir.FreeDofs()) * rhs
     
     def _get_boundary_values(self, gfu):
 #        myfunc=CoefficientFunction(gfu)
