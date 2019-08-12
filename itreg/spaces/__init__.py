@@ -452,6 +452,32 @@ class NGSolveFESSpace_H1(HilbertSpace):
     @property
     def gram_inv(self):
         return self.discr.apply_gram_inverse
+    
+@genericspace
+def NGSolveSpace_L2_bdr(discr):
+    raise NotImplementedError(
+                   'H1 not implemented on {}'.format(type(discr).__qualname__))
+    
+@NGSolveSpace_L2_bdr.register(NGSolveDiscretization)   
+class NGSolveFESSpace_L2_bdr(HilbertSpace):
+    def __init__(self, discr, fes_bdr):
+        self.discr = discr
+        self.fes_bdr=fes_bdr
+        
+        u, v=self.fes_bdr.TnT()
+        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace(), BND)
+        self.discr.a.Assemble()
+        
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+        
+    
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+    
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
 
 
 

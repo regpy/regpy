@@ -25,7 +25,7 @@ from ngsolve import *
 #mesh=Mesh(ngmesh)
 mesh=Mesh('..\..\itreg\meshes_ngsolve\meshes\circle.vol.gz')
 
-fes_domain = L2(mesh, order=2)
+fes_domain = H1(mesh, order=2)
 domain= NGSolveDiscretization(fes_domain)
 
 fes_codomain = H1(mesh, order=2)
@@ -34,9 +34,10 @@ fes_codomain = H1(mesh, order=2)
 #ind=[np.linalg.norm(np.array(p))>0.95 for p in pts]
 #pts_bdr=np.array(pts)[ind]
 #codomain= NGSolveBoundaryDiscretization(fes_codomain, fes_bdr, ind)
+fes_bdr = H1(mesh, order=2, dirichlet="cyc")
 codomain=NGSolveDiscretization(fes_codomain)
 
-g=0.1*(x-0.5)*(y-0.5)
+g=x**2*y
 op = Reaction_Bdr(domain, g, codomain=codomain)
 #pts=np.array(op.pts)
 #nr_points=pts.shape[0]
@@ -58,13 +59,13 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_H1, codomain=NGSolveSpace_H1)
+from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1, NGSolveSpace_L2_bdr
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_H1)
 
-landweber = Landweber(setting, data, init_solution, stepsize=0.01)
+landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(300) +
+    rules.CountIterations(10000) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
@@ -81,9 +82,9 @@ Draw (coeff_reco, op.fes_domain.mesh, "reco")
     
 
 #Draw data space
-gfu_data=GridFunction(op.fes_codomain)
-gfu_reco_data=GridFunction(op.fes_codomain)
-gfu_init_data=GridFunction(op.fes_codomain)
+gfu_data=GridFunction(op.fes_bdr)
+gfu_reco_data=GridFunction(op.fes_bdr)
+gfu_init_data=GridFunction(op.fes_bdr)
 
 gfu_data.vec.FV().NumPy()[:]=data
 coeff_data = CoefficientFunction(gfu_data)

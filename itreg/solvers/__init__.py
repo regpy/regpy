@@ -111,7 +111,7 @@ class HilbertSpaceSetting:
         if not isinstance(domain, HilbertSpace) and callable(domain):
             domain = domain(op.domain)
         assert isinstance(domain, HilbertSpace)
-        assert domain.discr == op.domain
+#        assert domain.discr == op.domain
 
         if not isinstance(codomain, HilbertSpace) and callable(codomain):
             codomain = codomain(op.codomain)
