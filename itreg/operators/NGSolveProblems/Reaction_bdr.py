@@ -44,7 +44,7 @@ class Reaction_Bdr(NonlinearOperator):
 
         #Define Bilinearform, will be assembled later        
         self.a = BilinearForm(self.fes_codomain, symmetric=True)
-        self.a += SymbolicBFI(grad(u)*grad(v)+u*v*self.gfu_integrator_codomain)
+        self.a += SymbolicBFI(-grad(u)*grad(v)+u*v*self.gfu_integrator_codomain)
 
         self.fes_bdr=H1(self.fes_codomain.mesh, order=2, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         self.gfu_getbdr=GridFunction(self.fes_bdr)
@@ -59,7 +59,7 @@ class Reaction_Bdr(NonlinearOperator):
         
         self.b=LinearForm(self.fes_codomain)
         self.gfu_b = GridFunction(self.fes_codomain)
-        self.b+=SymbolicLFI(self.gfu_b*v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.b+=SymbolicLFI(-self.gfu_b*v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         
         self.f_deriv=LinearForm(self.fes_codomain)
         self.f_deriv += SymbolicLFI(-self.gfu_rhs*self.gfu*v)
@@ -125,19 +125,30 @@ class Reaction_Bdr(NonlinearOperator):
         #Definition of Linearform
         #But it only needs to be defined on boundary
         self._set_boundary_values(argument)
-        self.gfu_dir.Set(self.gfu_in)
+#        self.gfu_dir.Set(self.gfu_in)
         
         #Note: Here the linearform f for the dirichlet problem is just zero
         #Update for boundary values
-        self.r.data=-self.a.mat * self.gfu_dir.vec
+#        self.r.data=-self.a.mat * self.gfu_dir.vec
         
         #Solve system
-        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve_dir(self.a, self.r)
+#        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve_dir(self.a, self.r)
         
         #return self.gfu_toret.vec.FV().NumPy().copy()
 
-        self.gfu_adjtoret.Set(-self.gfu_toret*self.gfu)
+#        self.gfu_adjtoret.Set(-self.gfu_toret*self.gfu)
+#        return self.gfu_adjtoret.vec.FV().NumPy().copy()
+        
+        self.gfu_b.Set(self.gfu_in)
+        self.b.Assemble()
+        
+        self.gfu_toret.vec.data=self._solve(self.a, self.b.vec)
+        
+        self.gfu_adjtoret.Set(self.gfu_toret*self.gfu)
+        
         return self.gfu_adjtoret.vec.FV().NumPy().copy()
+        
+        
     
     def _solve(self, bilinear, rhs, boundary=False):
         return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
