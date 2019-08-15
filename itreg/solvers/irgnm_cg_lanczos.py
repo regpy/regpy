@@ -91,7 +91,7 @@ class IRGNM_CG_Lanczos(Solver):
         self.alpha_step = alpha_step
         self.cgtol = cgtol
         
-        self.eigval_num=2
+        self.eigval_num=3
         #orthonormalization computed in which krylov space
         self.krylov_num=10
         self.orthonormal=np.zeros((self.krylov_num, self.data.shape[0]))
@@ -148,15 +148,13 @@ class IRGNM_CG_Lanczos(Solver):
         self._Th = self._Th + self._gamma*self._z
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
         _, deriv=self.setting.op.linearize(self.x)
-        self._stilde += (- self._gamma*(deriv(self._ztilde) 
+        self._stilde += (- self._gamma*(deriv.adjoint(self._ztilde) 
                          + self._regpar*self._dtilde)).real
         self._s = self.setting.domain.gram_inv(self._stilde)
         if self.need_prec_update==False:
             self._s=self.M @ self._s
         self._norm_s_old = self._norm_s
         self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
-        print(self._s)
-        print(self._norm_s)
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
@@ -167,7 +165,7 @@ class IRGNM_CG_Lanczos(Solver):
         
         
 
-    def next(self):
+    def _next(self):
         """Run a single IRGNM_CG iteration.
 
         The while loop is the CG method, it has four conditions to stop. The
@@ -240,10 +238,10 @@ class IRGNM_CG_Lanczos(Solver):
     #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
                 # Updating ``self.x`` 
      #           self.x += self._h
-                
+                self.inner_update()
                 if self.inner_num<=self.krylov_num:
                     self.orthonormal[self.inner_num-1, :]=self._s/self._norm_s
-                self.inner_update()
+
                     
             self.lanzcos_update()
             
@@ -268,14 +266,11 @@ class IRGNM_CG_Lanczos(Solver):
                 # Computations and updates of variables
                 _, deriv=self.setting.op.linearize(self.x)
                 self._z = deriv(self._d)
-                #NEW
-                self._z_hat = deriv(self.M @ self._d)
                 self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
                                          *self.setting.domain.inner(self._dtilde,self.M @ self._d)
-                                         #+ self.setting.domain.inner(self._ztilde,self.M @ self._z)                                
-                                         +self.setting.domain.inner(self._z_hat, self._z)
+                                         + self.setting.domain.inner(self._ztilde,self.M @ self._z)                                
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
