@@ -25,7 +25,7 @@ def op_S(bd,dat):
     for j  in range(0, dim):
         M2[j, j] = (complex(0, 1)/2 - dat.Euler_gamma/np.pi - 1/np.pi*np.log(dat.kappa/2*bd.zpabs[j]))
 
-    S =  2*np.pi* (M1 * dat.logsin_weights + M2/dim) * (bd.zpabs.T*bd.zpabs)
+    S =  2*np.pi* (M1 * dat.logsin_weights + M2/dim) * (bd.zpabs.T.dot(bd.zpabs))
     return S
 
 
@@ -95,5 +95,5 @@ def op_T(bd,dat):
     
     T =  scla.toeplitz(T_weights) \
         - 2*np.pi*( N1*dat.logsin_weights + N2/dim )  \
-        + kappa**2*op_S(bd,dat)* (zp.T.dot(zp)) / (zpabs.T*zpabs)
+        + kappa**2*op_S(bd,dat)* (zp.T.dot(zp)) / (zpabs.T.dot(zpabs))
     return T

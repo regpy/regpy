@@ -93,9 +93,9 @@ stopping_rule = (
     rules.CountIterations(1e2) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
-n_iter   = 1e5
+n_iter   = 1e4
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][5]
-Temperature=1e-10
+Temperature=1e-2
 reg_parameter=0
 
 

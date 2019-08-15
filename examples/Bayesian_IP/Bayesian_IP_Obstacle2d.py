@@ -77,7 +77,8 @@ init = 1*op.domain.ones()
 #test_adjoint(deriv)
 
 setting=HilbertSpaceSetting(op=op, domain=partial(H1, index=2), codomain=L2)
-exact_data=create_synthetic_data(setting, noiselevel=0.03)
+#setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+exact_data=create_synthetic_data(setting, noiselevel=0)
 data=exact_data
 #exact_solution=op.obstacle.xdag_pts_plot
 #exact_solution=op.obstacle.bd_ex.z
@@ -85,19 +86,19 @@ data=exact_data
 
 solver = Landweber(setting, data, init)
 stopping_rule = (
-    rules.CountIterations(1000) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.03, tau=1.1))
+    rules.CountIterations(1e4) +
+    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
-n_iter   = 2e5
+n_iter   = 1e5
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][5]
 Temperature=1e-10
-reg_parameter=1e-4
+reg_parameter=0
 
 
 
 #prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
 #likelihood=gaussian_likelihood(setting, np.eye(64), exact_data)
-prior=tikhonov(setting, reg_parameter, exact_data)
+prior=tikhonov(setting, reg_parameter, exact_data, )
 likelihood=unity(setting)
 
 
@@ -129,7 +130,7 @@ from itreg.BIP.plot_functions import plot_iter
 plot_verlauf(statemanager, pdf=bip, exact_solution=bip.setting.op.obstacle.bd_ex.q[0, :], plot_real=True)
 plot_iter(bip, statemanager, 10)
 
-a = np.array([s.positions for s in statemanager.states[-50000:]])
+a = np.array([s.positions for s in statemanager.states[-300000:]])
 v = a.std(axis=0)
 m = a.mean(axis=0)
 
@@ -170,7 +171,7 @@ plt.show()
 #plt.plot(np.linspace(0, 1, 128), m)
 
 from matplotlib.patches import Polygon
-n=128
+"""n=128
 fig, axs = plt.subplots(1, 2,sharey=True,figsize=(9, 6))
 axs[0].set_title('Domain')
 axs[1].set_title('Heat source')
@@ -196,13 +197,13 @@ ymin=1.5*min(pts[1, :].min(), pts_2[1, :].min(), pts[0, :].min())
 ymax=1.5*max(pts[1, :].max(), pts_2[1, :].max(), pts[0, :].min())
 axs[0].set_xlim((xmin, xmax))
 axs[0].set_ylim((ymin, ymax))
-plt.show()
+plt.show()"""
 
 fig, ax=plt.subplots(1, figsize=(9,6))
 ax.set_title('Domain')
 bd=op.bd
 n=200
-pts=bd.coeff2Curve(m, n)
+pts=bd.coeff2Curve(m+v, n)
 #pts_2=bd.coeff2Curve(exact_solution, n)
 pts_2=op.obstacle.xdag_pts_plot
 pts_3=bd.coeff2Curve(m-v, n)
@@ -224,8 +225,8 @@ ax.set_ylim((ymin, ymax))
 plt.legend()
 plt.show()
 
-plotting=plots(op, m, reco_data, data, exact_data, exact_solution)
-plotting.plotting()
+#plotting=plots(op, m, reco_data, data, exact_data, exact_solution)
+#plotting.plotting()
 
 
 data=create_synthetic_data(setting, noiselevel=0)

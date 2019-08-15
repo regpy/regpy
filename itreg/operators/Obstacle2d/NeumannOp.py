@@ -157,6 +157,9 @@ class NeumannOp(NonlinearOperator):
             res = np.sqrt(((h-self.xdag).T*(h-self.xdag)).real)
             return res
         
+    def accept_proposed(self, x):
+        return True
+        
         
 def create_synthetic_data(self):
         self.op.obstacle.bd_ex.bd_eval(self.op.obstacle.bd_ex, 2*self.op.N_ieq_synth,3)
@@ -193,4 +196,4 @@ def create_synthetic_data(self):
         complex_noise=noise[0, :]+complex(0,1)*noise[1, :]
         data = farfield + self.op.noiselevel * complex_noise/np.sqrt(complex_noise*self.codomain.gram(complex_noise))
         
-        return data
+        return data[0, :].real+complex(0, 1)*data[1, :].real

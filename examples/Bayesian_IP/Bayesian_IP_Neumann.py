@@ -84,19 +84,20 @@ setting=HilbertSpaceSetting(op=op, domain=partial(H1, index=2), codomain=L2)
 #exact_data=setting.op.create_synthetic_data()
 exact_data=create_synthetic_data(setting)
 data=exact_data
+#data=exact_data[0, :].real+complex(0,1)*exact_data[1, :].real
 #exact_solution=op.obstacle.xdag_pts_plot
 #exact_solution=op.obstacle.bd_ex.z
 #apple=create_synthetic_data(setting, 0)
 
 solver = Landweber(setting, data, init)
 stopping_rule = (
-    rules.CountIterations(1e2) +
+    rules.CountIterations(1e3) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
-n_iter   = 1e4
-stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][5]
+n_iter   = 1e5
+stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-1]
 Temperature=1e-2
-reg_parameter=0
+reg_parameter=1
 
 
 
