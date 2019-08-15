@@ -93,6 +93,35 @@ coeff_reco_data = CoefficientFunction(gfu_reco_data)
 Draw(coeff_data, op.fes_codomain.mesh, "data")
 Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
 
+def der(x):
+    val2=op(res1+x*res2)
+    val1=op(res1)
+    der=x*op._derivative(res2)
+    return setting.codomain.norm( 1/x*(val2-val1-der) )
+
+res1=0.001*np.random.randn(804)
+res2=0.001*np.random.randn(804)
+
+print(der(0.1))
+print(der(0.01))
+print(der(0.001))
+print(der(0.0001))
+
+def adj():
+    res1=0.001*np.random.randn(804)
+    res2=0.001*np.random.randn(804)
+    v=op(res1)
+    toret1=setting.codomain.inner(op._derivative(res1), v)
+    toret2=5.08*setting.domain.inner(res1, op._adjoint(v))
+    return [toret1, toret2]
+
+print(adj())
+print(adj())
+print(adj())
+print(adj())
+print(adj())
+
+
 
 
 

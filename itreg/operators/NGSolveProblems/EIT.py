@@ -173,18 +173,26 @@ class EIT(NonlinearOperator):
         #Definition of Linearform
         #But it only needs to be defined on boundary
         self._set_boundary_values(argument)
-        self.gfu_dir.Set(self.gfu_in)
+        #self.gfu_dir.Set(self.gfu_in)
         
         #Note: Here the linearform f for the dirichlet problem is just zero
         #Update for boundary values
-        self.r.data=-self.a.mat * self.gfu_dir.vec
+        #self.r.data=-self.a.mat * self.gfu_dir.vec
         
         #Solve system
-        self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
+        #self.gfu_toret.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
         
-#        return self.gfu_toret.vec.FV().NumPy().copy()
+        #self.gfu_adjtoret.Set(-grad(self.gfu_toret)*grad(self.gfu))
+        #return self.gfu_adjtoret.vec.FV().NumPy().copy()    
+        
+        self.gfu_b.Set(self.gfu_in)
+        self.b.Assemble()
+        
+        self.gfu_toret.vec.data=self._solve(self.a, self.b.vec)
+        
         self.gfu_adjtoret.Set(-grad(self.gfu_toret)*grad(self.gfu))
-        return self.gfu_adjtoret.vec.FV().NumPy().copy()        
+        
+        return self.gfu_adjtoret.vec.FV().NumPy().copy()
 
         
     def _solve(self, bilinear, rhs, boundary=False):
