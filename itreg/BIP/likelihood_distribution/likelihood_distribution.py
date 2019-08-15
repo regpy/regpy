@@ -55,10 +55,13 @@ class gaussian(object):
         return -1/2*np.dot(misfit.reshape(self.len_codomain), np.conjugate(misfit.reshape(self.len_codomain))).real
     
     def gradient_gaussian(self, x):
-        y, deriv=self.setting.op.linearize(x)
-        misfit=(self.setting.op(x)-self.rhs).reshape(self.len_codomain)
+#        y, deriv=self.setting.op.linearize(x)
+        y=self.setting.op._eval(x, differentiate=True)
+        misfit=(y-self.rhs).reshape(self.len_codomain)
         res=np.dot(self.gamma_d_inv, misfit)
-        return -deriv.adjoint(self.setting.codomain.gram_inv(res.reshape(self.setting.op.codomain.shape))).real
+        res=self.setting.op._adjoint(misfit)
+        return -self.setting.op._adjoint(self.setting.codomain.gram_inv(res.reshape(self.setting.op.codomain.shape))).real
+
     
     def hessian_gaussian(self, m, x):
         grad_mx=self.gradient_gaussian(m+x)

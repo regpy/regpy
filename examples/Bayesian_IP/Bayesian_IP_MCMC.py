@@ -2,7 +2,7 @@ import setpath
 
 #import itreg
 
-from itreg.operators import NonlinearVolterra
+from itreg.operators import NonlinearVolterra, Volterra
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
 from itreg.spaces import H1, HilbertPullBack, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
@@ -23,7 +23,11 @@ from itreg.BIP.MonteCarlo_basics import HamiltonianMonteCarlo
 from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
+from itreg.BIP.prior_distribution.prior_distribution import tikhonov
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
+from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
+from itreg.BIP import HMCState
+from itreg.BIP import State
 
 import numpy as np
 import logging
@@ -39,6 +43,7 @@ xs=np.linspace(0, 200, 200)/200*2*np.pi
 grid=UniformGrid(xs)
 
 op = NonlinearVolterra(grid, exponent=3)
+#op=Volterra(grid)
 
 exact_solution = np.sin(xs)
 exact_data = op(exact_solution)
@@ -85,9 +90,10 @@ Temperature=1e-3
 reg_parameter=0.01
 
 
-prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
-likelihood=gaussian_likelihood(setting, np.eye(200), exact_data)
-
+#prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
+#likelihood=gaussian_likelihood(setting, np.eye(200), exact_data)
+prior=tikhonov(setting, reg_parameter, exact_data)
+likelihood=unity(setting)
 
 
 #sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
@@ -99,11 +105,11 @@ stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
-statemanager=statemanager(bip.initial_state, momenta=True)
+statemanager=statemanager(bip.initial_state)
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
 sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
-#sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize_rule=stepsize_rule)
+#sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize=1, stepsize_rule=stepsize_rule)
 #sampler=GaussianApproximation(bip)
 
 bip.run(sampler, statemanager)
@@ -114,7 +120,7 @@ from itreg.BIP.plot_functions import plot_verlauf
 from itreg.BIP.plot_functions import plot_iter
 
 plot_lastiter(bip, exact_solution, exact_data, data)
-plot_mean(statemanager, exact_solution, n_iter=2000)
+plot_mean(statemanager, exact_solution, n_iter=1e3)
 plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
 plot_iter(bip, statemanager, 10)
 

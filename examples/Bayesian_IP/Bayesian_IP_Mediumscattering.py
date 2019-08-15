@@ -31,6 +31,8 @@ from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
+from itreg.BIP.prior_distribution.prior_distribution import tikhonov
+from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
 
 import numpy as np
 import logging
@@ -78,7 +80,7 @@ setting = HilbertSpaceSetting(
 
 solver = Landweber(setting, data, init, stepsize=0.01)
 stopping_rule = (
-    rules.CountIterations(10) +
+    rules.CountIterations(100) +
     rules.Discrepancy(setting.codomain.norm, data,
                       noiselevel=setting.codomain.norm(noise),
                       tau=1))
@@ -87,14 +89,16 @@ stopping_rule = (
 
 n_iter   = 2e3
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-4]
-Temperature=1e-2
-reg_parameter=0.01
+Temperature=1e-5
+reg_parameter=1e-4
 
     
 n_codomain=np.prod(op.codomain.shape)
     
-prior=gaussian_prior(reg_parameter*np.eye(op.domain.shape[0]), setting, np.zeros(op.domain.shape[0]))
-likelihood=gaussian_likelihood(setting, np.eye(n_codomain), exact_data)
+#prior=gaussian_prior(reg_parameter*np.eye(op.domain.shape[0]), setting, np.zeros(op.domain.shape[0]))
+#likelihood=gaussian_likelihood(setting, np.eye(n_codomain), exact_data)
+prior=tikhonov(setting, reg_parameter, exact_data)
+likelihood=unity(setting)
 
     
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
@@ -102,7 +106,7 @@ stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
-statemanager=statemanager(bip.initial_state, momenta=True)
+statemanager=statemanager(bip.initial_state)
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
 sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
@@ -112,7 +116,7 @@ sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 bip.run(sampler, statemanager)
 
 
-a = np.array([s.positions for s in statemanager.states[-20:]])
+a = np.array([s.positions for s in statemanager.states[-9000:]])
 m = a.mean(axis=0)
 solution=embedding(m)
 

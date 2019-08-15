@@ -77,10 +77,10 @@ class StarTrig:
         sint = np.sin(t)
         
         self.z = np.append(q[0,:]*cost, \
-            q[1,:]*sint).reshape(2, q[0, :].shape[0])
+            q[0,:]*sint).reshape(2, q[0, :].shape[0])
         if der>=1:
             self.zp = np.append(q[1,:]*cost - q[0,:]*sint, \
-                q[1,:]*sint + q[1,:]*cost).reshape(2, q[0, :].shape[0])
+                q[1,:]*sint + q[0,:]*cost).reshape(2, q[0, :].shape[0])
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             #outer normal vector
             self.normal = np.append(self.zp[1,:], \

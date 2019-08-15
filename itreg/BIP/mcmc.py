@@ -70,6 +70,7 @@ class Settings(PDF):
         self.initial_state.positions, _=self.solver.run(self.stopping_rule)
         self.initial_state.log_prob = self.log_prob(self.initial_state.positions)
         self.first_state=self.initial_state.positions
+#        print(self.first_state)
         
 #parameters for Random Walk
         self.n_iter=n_iter or 2e4

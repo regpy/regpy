@@ -117,16 +117,19 @@ class unity(object):
         self.hessian=(lambda x: 0)
         
 class tikhonov(object):
-    def __init__(self, setting, regpar):
+    def __init__(self, setting, regpar, rhs):
         self.setting=setting
         self.regpar=regpar
         self.prior=self.tikhonov
         self.gradient=self.gradient_tikhonov
         self.hessian=self.hessian_tikhonov
+        self.rhs=rhs
         
     def tikhonov(self, x):
         y=self.setting.op(x)-self.rhs
         return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+
+    
     
     def gradient_tikhonov(self, x):
         y, deriv=self.setting.op.linearize(x)

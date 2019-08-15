@@ -78,7 +78,8 @@ class IRGNM_CG(Solver):
         
         #super().__init__(logging.getLogger(__name__))
         super().__init__()
-        self.setting = setting
+        self.setting=setting
+        self.op = setting.op
         self.data = data
         self.init = init
         self.x = self.init
@@ -105,7 +106,7 @@ class IRGNM_CG(Solver):
         prepared.
         """
         
-        self.y, deriv = self.setting.op.linearize(self.x)
+        self.y, deriv = self.op.linearize(self.x)
         self._residual = self.data - self.y
         self._xref = self.init - self.x
         self.k += 1
@@ -136,8 +137,8 @@ class IRGNM_CG(Solver):
         """
         self._Th = self._Th + self._gamma*self._z
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
-        _, deriv=self.setting.op.linearize(self.x)
-        self._stilde += (- self._gamma*(deriv(self._ztilde) 
+        _, deriv=self.op.linearize(self.x)
+        self._stilde += (- self._gamma*(deriv.adjoint(self._ztilde) 
                          + self._regpar*self._dtilde)).real
         self._s = self.setting.domain.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
@@ -149,7 +150,7 @@ class IRGNM_CG(Solver):
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
 
-    def next(self):
+    def _next(self):
         """Run a single IRGNM_CG iteration.
 
         The while loop is the CG method, it has four conditions to stop. The
@@ -202,9 +203,11 @@ class IRGNM_CG(Solver):
               > self.cgtol[2] and 
               # Fourth condition
               self._cgstep <= self.cgmaxit):
+
+              
                   
             # Computations and updates of variables
-            _, deriv=self.setting.op.linearize(self.x)
+            _, deriv=self.op.linearize(self.x)
             self._z = deriv(self._d)
             self._ztilde = self.setting.codomain.gram(self._z)
             self._gamma = (self._norm_s
@@ -214,6 +217,7 @@ class IRGNM_CG(Solver):
                                      )
                            )
             self._h = self._h + self._gamma*self._d
+#            print(self._gamma)
 #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
             # Updating ``self.x`` 
  #           self.x += self._h
@@ -221,7 +225,12 @@ class IRGNM_CG(Solver):
             self.inner_update()
         # End of the CG method. ``self.outer_update()`` does all computations
         # of the current Newton iteration.
+        _, deriv=self.op.linearize(self.x)
+        self.err=self._regpar*self._h+deriv.adjoint(deriv(self._h))-self._stilde
+#        print(self._h)
         self.x+=self._h
         self.outer_update()
         return True
 
+"""while (np.sqrt(np.float64(self._norm_s)/self._kappa/self._regpar**2)>self.cgtol[0] and
+self._cgstep<=self.cgmaxit):"""

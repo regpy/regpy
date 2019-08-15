@@ -45,11 +45,12 @@ class MetropolisHastings(object):
 
     def accept(self, current_state, proposed_state):
 
-        assert isinstance(current_state, State), 'State expected'
-        assert isinstance(proposed_state, State), 'State expected'
+#        assert isinstance(current_state, State), 'State expected'
+#        assert isinstance(proposed_state, State), 'State expected'
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
+#        print(log_odds)
                    
         accepted=np.log(np.random.random()) < log_odds
 #        print(accepted)
@@ -71,9 +72,19 @@ class MetropolisHastings(object):
 class statemanager(object):
     """Describes what to do with the states
     """
-    def __init__(self, initial_state, momenta=False):
-        if momenta:
-            self.initial_state=HMCState()
+    def __init__(self, initial_state, parameter_list=None):
+        if parameter_list is not None:
+
+            if 'log_prob' not in parameter_list:
+                parameter_list.append('log_prob')
+            if 'positions' not in parameter_list:
+                parameter_list.append('positions')
+            class User_state(object):
+                __slots__ = tuple(parameter_list)
+#    def __init__(self, initial_state, momentum=False):
+#        if momentum is True:
+#            self.initial_state=HMCState
+            self.initial_state=User_state
             self.initial_state.log_prob=initial_state.log_prob
             self.initial_state.positions=initial_state.positions
         else:
@@ -82,7 +93,7 @@ class statemanager(object):
         self.N=1
         
     def statemanager(self, state, accepted):
-        assert isinstance(self.initial_state, State), 'State expected'
+#        assert isinstance(self.initial_state, State), 'State expected'
         if accepted:
             self.states.append(state)
             self.N+=1
@@ -101,10 +112,14 @@ class RandomWalk(MetropolisHastings):
         proposed_state = deepcopy(current_state)
         random_step = np.random.standard_normal(proposed_state.positions.shape)
         proposed_state.positions += self.stepsize * random_step
+        counter=0
         #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
+        while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
+            random_step = np.random.standard_normal(proposed_state.positions.shape)
+            proposed_state.positions += self.stepsize * random_step
+            counter+=1
+            self.stepsize=1/2*self.stepsize
         proposed_state.log_prob = self.pdf.log_prob(proposed_state.positions)
-#        print(current_state.log_prob)
-
         return proposed_state
 
 
@@ -161,28 +176,37 @@ class HamiltonianMonteCarlo(RandomWalk):
 
     def propose(self, current_state):
 
-        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
-        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
-                                 self.pdf.log_prob(current_state.positions)
+#        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
+        momenta  = np.random.standard_normal(current_state.positions.shape)
+#        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
+#                                 self.pdf.log_prob(current_state.positions)
         #current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
         #                         self.pdf.log_prob(current_state)
 
         proposed_state = deepcopy(current_state)
 
-        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+#        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+        q, p = self.integrator.run(proposed_state.positions, momenta)
 
-        proposed_state.positions, proposed_state.momenta = q, p
+#        proposed_state.positions, proposed_state.momenta = q, p
+        proposed_state.positions, momenta = q, p
 
-        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#                                  self.pdf.log_prob(proposed_state.positions)
+        proposed_state.log_prob = -0.5 * np.sum(momenta**2) + \
                                   self.pdf.log_prob(proposed_state.positions)
 #        print(proposed_state.log_prob)
         #proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
         #                          self.pdf.log_prob(proposed_state)
 
         return proposed_state
-
-
     
+    def accept(self, current_state, proposed_state):
+        do_accept = super(HamiltonianMonteCarlo, self).accept(current_state, proposed_state)
+        self.integrator.stepsize = self.stepsize
+        return do_accept
+
+
     
     
 class GaussianApproximation(object):    

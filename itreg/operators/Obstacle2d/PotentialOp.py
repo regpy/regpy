@@ -19,7 +19,7 @@ class PotentialOp(NonlinearOperator):
      and an inverse scattering problem" Inverse Problems 13 (1997) 1279–1299
     """
      
-    def __init__(self, domain, codomain=None, **kwargs):
+    def __init__(self, domain, codomain=None, error='deterministic', **kwargs):
 
             codomain = codomain or domain
             self.radius = 1.5            # radius of outer circle
@@ -36,6 +36,7 @@ class PotentialOp(NonlinearOperator):
             self.obstacle=Obstacle2dBaseOp()
             self.obstacle.Obstacle2dBasefunc()
             self.bd=self.obstacle.bd
+            self.error=error
             super().__init__(
                     domain=domain,
                     codomain=codomain)
@@ -62,6 +63,7 @@ class PotentialOp(NonlinearOperator):
             
         if q.min()<=0:
             raise ValueError('reconstructed radial function negative')
+             
                 
             """exact meaning of q.?""" 
         qq = q**2
@@ -100,7 +102,7 @@ class PotentialOp(NonlinearOperator):
             fac = fac/self.radius
             qq = qq*q
             der = der + fac * self.cos_fl[:,int(N/2)] * np.sum(qq*h*self.cosin[int(N/2),:])
-        return der
+        return der.real
         
         
     def _adjoint(self, g, **kwargs):
@@ -124,8 +126,80 @@ class PotentialOp(NonlinearOperator):
             """transpose?"""
             adj = adj + fac * np.sum(g*self.cos_fl[:,int(N/2)]) * (self.cosin[int(N/2),:]*qq).transpose()
             
-        adj = self.bd.adjoint_der_normal(adj)
+        adj = self.bd.adjoint_der_normal(adj).real
         return adj
+    
+    def accept_proposed(self, positions):
+        """self.bd.coeff"""
+        self.bd.coeff=positions
+        N = self.Nfwd
+        t= 2*np.pi*np.linspace(0, N-1, N)/N
+        t_fl = self.meas_angles
+            
+        for j in range(0, N):
+            self.cosin[j,:] = np.cos((j+1)*t)
+            self.sinus[j,:] = np.sin((j+1)*t)
+            self.sin_fl[:,j] = np.sin((j+1)*t_fl)
+            self.cos_fl[:,j] = np.cos((j+1)*t_fl)
+        """F.bd has to be specified"""
+        self.bd.bd_eval(N,1)
+#            params.bd.radial(N,1)
+        q=self.bd.q[0, :]
+#            q = params.bd.q[0,:]
+        if q.max() >= self.radius:
+            return False
+            
+        if q.min()<=0:
+            return False
+        return True
+    
+def create_synthetic_data(self, noiselevel):
+
+        N = self.op.Nfwd_synth
+        t = 2*np.pi/N * np.arange(0, N, 1)
+        t_fl = self.op.meas_angles
+        q = self.op.obstacle.bd_ex.radial(self.op.obstacle.bd_ex, N)
+        qq = q**2
+        
+        flux = 1/(2*self.op.radius*N) * sum(qq)*np.ones(len(t_fl))
+        fac = 2/(N*self.op.radius)
+        for j in range(0, int((N-1)/2)):
+            fac= fac/self.op.radius
+            qq = qq*q
+            flux = flux + (fac/(j+3)) * np.cos((j+1)*t_fl) * np.sum(qq*np.cos((j+1)*t)) \
+                + (fac/(j+3)) * np.sin((j+1)*t_fl) * np.sum(qq*np.sin((j+1)*t))
+    
+        if N%2==0:
+            fac = fac/self.op.radius
+            qq = qq*q
+            flux = flux + fac * np.cos(N/2*t_fl) * np.sum(qq*np.cos(N/2*t))
+        noise = np.random.randn(len(flux))
+        data = flux + noiselevel * noise/self.codomain.norm(noise)
+        return data 
+    
+def create_impulsive_noise(n,eta,var=None):
+    """Create Mc such that |Mc|<eta
+    """
+    Mc = set('')
+    while(len(Mc) < int(eta*n)):
+        s = np.ceil(np.random.rand()*n)
+        t = np.ceil(np.random.rand()*n)
+        st=np.arange(s, t)
+        if s < t and len(Mc) + len(st) <= int(eta*n):
+            Mc = Mc.union(st)
+        if (len(Mc) == int(eta*n)-1):
+            break
+    
+    if var is None:
+        """Now create random noise on Mc such that noise = \pm 1/\eta with equal
+        probability"""
+        res = np.zeros((n))
+        res[np.asarry(list(Mc)).astype(int)] = (2*np.random.uniform(1,2,len(Mc))-3)/eta
+    else:
+        """Create Gaussian noise on Mc with variance var^2"""
+        res = np.zeros(n)
+        res[np.asarray(list(Mc)).astype(int)] = var*np.random.randn(len(Mc))
+    return res
 
 
 class plots():
@@ -184,6 +258,10 @@ class plots():
             axs[0].set_xlim((xmin, xmax))
             axs[0].set_ylim((ymin, ymax))
             plt.show()
+            
+            
+            
+
                 
             
         
