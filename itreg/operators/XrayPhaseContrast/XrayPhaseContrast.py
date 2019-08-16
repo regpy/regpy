@@ -1,9 +1,8 @@
 import numpy as np
 
-from itreg.operators import PointwiseMultiplication
-from . import PointwiseSquaredModulus
-from . import PointwiseExponential
-from . import PointwiseRealPart
+from itreg.operators import (
+    Multiplication, SquaredModulus, Exponential, RealPart
+)
 from . import FresnelPropagator
 
 
@@ -46,12 +45,12 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
 
     # Embedding operator that interprets the real-valued input image as complex-valued arrays
     domain_complex = domain.complex_space()
-    real_to_complex_op = PointwiseRealPart(domain_complex).adjoint
+    real_to_complex_op = RealPart(domain_complex).adjoint
 
     # Operator that maps the phase-image to the corresponding wave-field behind the object
     # phi |--> psi_0 = exp(-(1j+absorption_fraction) * phi)
-    image_to_wavefield_op =   PointwiseExponential(domain_complex) \
-                            * PointwiseMultiplication(domain_complex, -1j-absorption_fraction)
+    image_to_wavefield_op =   Exponential(domain_complex) \
+                            * Multiplication(domain_complex, -1j-absorption_fraction)
 
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
@@ -60,7 +59,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     # Detection operator: Maps the wave-field psi_d at the detector onto the corresponding
     # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates 
     # phase-information)
-    detection_op = PointwiseSquaredModulus(domain_complex)
+    detection_op = SquaredModulus(domain_complex)
 
     # Return total operator
     return detection_op * fresnel_prop * image_to_wavefield_op * real_to_complex_op

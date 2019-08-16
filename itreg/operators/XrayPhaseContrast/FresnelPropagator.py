@@ -1,6 +1,7 @@
 import numpy as np
 
-from itreg.operators import NonlinearOperator, PointwiseMultiplication, FourierTransform
+from itreg.operators import NonlinearOperator, Multiplication, FourierTransform
+
 
 def FresnelPropagator(domain, Fresnel_number):
     """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
@@ -30,7 +31,7 @@ def FresnelPropagator(domain, Fresnel_number):
     assert domain.is_complex
 
     propagation_factor = np.exp((-1j*np.pi/Fresnel_number) * (domain.dualgrid.coords[0]**2 + domain.dualgrid.coords[1]**2))
-    fresnel_multiplier = PointwiseMultiplication(domain.dualgrid, propagation_factor)
+    fresnel_multiplier = Multiplication(domain.dualgrid, propagation_factor)
     ft = FourierTransform(domain)
 
     return ft.adjoint * fresnel_multiplier * ft

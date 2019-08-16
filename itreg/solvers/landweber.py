@@ -47,8 +47,8 @@ class Landweber(Solver):
 
     def _next(self):
         residual = self.y - self.rhs
-        gy_residual = self.setting.codomain.gram(residual)
-        self.x -= self.stepsize * self.setting.domain.gram_inv(self.deriv.adjoint(gy_residual))
+        gy_residual = self.setting.Hcodomain.gram(residual)
+        self.x -= self.stepsize * self.setting.Hdomain.gram_inv(self.deriv.adjoint(gy_residual))
         self.y, self.deriv = self.setting.op.linearize(self.x)
 
         if self.log.isEnabledFor(logging.INFO):

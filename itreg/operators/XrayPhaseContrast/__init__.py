@@ -1,5 +1,2 @@
 from .FresnelPropagator import FresnelPropagator
-from .PointwiseExponential import PointwiseExponential
-from .PointwiseSquaredModulus import PointwiseSquaredModulus
-from .PointwiseRealPart import PointwiseRealPart
 from .XrayPhaseContrast import XrayPhaseContrast

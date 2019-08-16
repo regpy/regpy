@@ -91,4 +91,4 @@ def make_repr(self, *args, **kwargs):
         arglist.append(repr(arg))
     for k, v in sorted(kwargs.items()):
         arglist.append("{}={}".format(repr(k), repr(v)))
-    return '{}({})'.format(self.__qualname__, ', '.join(arglist))
+    return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
