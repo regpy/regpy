@@ -269,8 +269,8 @@ class IRGNM_CG_Lanczos(Solver):
                 self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self.setting.domain.inner(self._dtilde,self.M @ self._d)
-                                         + self.setting.domain.inner(self._ztilde,self.M @ self._z)                                
+                                         *self.setting.domain.inner(self._dtilde,self._d)
+                                         + self.setting.domain.inner(self._ztilde,self._z)                                
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
@@ -302,6 +302,10 @@ class IRGNM_CG_Lanczos(Solver):
 #        self.M=self._alpha*np.identity(self.data.shape[0])
 #        self.M=np.zeros((self.data.shape[0], self.data.shape[0]))
         self.M=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
+        #self.M=np.random.randn(self.M.shape[0], self.M.shape[1])
+        #self.M=1*np.eye(200, 200)
+        #self.M_inv=np.linalg.inv(self.M)
+        #self.M=self.lanczos
         #self.pre_cond_deriv=np.dot(self.M.transpose(), np.dot(self.deriv_mat+self._regpar*np.identity(self.setting.domain.discr.shape[0]), self.M))
         #self.C=np.dot(self.pre_cond_deriv, self.pre_cond_deriv.transpose())
 
