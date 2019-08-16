@@ -33,15 +33,15 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-noiselevel = setting.codomain.norm(noise)
+noiselevel = setting.Hcodomain.norm(noise)
 
 irgnm_cg = IRGNM_CG(setting, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data,
-                      noiselevel=setting.codomain.norm(noise),
+    rules.Discrepancy(setting.Hcodomain.norm, data,
+                      noiselevel=setting.Hcodomain.norm(noise),
                       tau=1.1))
 
 
