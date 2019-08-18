@@ -105,8 +105,10 @@ def der(x):
     der=x*op._derivative(res2)
     return setting.codomain.norm( 1/x*(val2-val1-der) )
 
-res1=0.001*np.random.randn(301)
-res2=0.001*np.random.randn(301)
+N=domain.shape[0]
+
+res1=0.001*np.random.randn(N)
+res2=0.001*np.random.randn(N)
 
 print(der(0.1))
 print(der(0.01))
@@ -114,11 +116,13 @@ print(der(0.001))
 print(der(0.0001))
 
 def adj():
-    res1=0.001*np.random.randn(301)
-    res2=0.001*np.random.randn(301)
-    v=op(res1)
+    res1=0.001*np.random.randn(N)
+    res2=0.001*np.random.randn(N)
+    res3=0.001*np.random.randn(N)
+    v=op(res2)
+    u=op(res3)
     toret1=setting.codomain.inner(op._derivative(res1), v)
-    toret2=5.08*setting.domain.inner(res1, op._adjoint(v))
+    toret2=setting.domain.inner(res1, op._adjoint(v))
     return [toret1, toret2]
 
 print(adj())
