@@ -195,7 +195,7 @@ class IRGNM_CG(Solver):
               /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
-              /np.real(self.setting.domain.inner(self._Thtilde,self._Th))
+              /np.real(self.setting.codomain.inner(self._Thtilde,self._Th))
               /self._kappa/self._regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
@@ -213,7 +213,7 @@ class IRGNM_CG(Solver):
             self._gamma = (self._norm_s
                            / np.real(self._regpar
                                      *self.setting.domain.inner(self._dtilde,self._d)
-                                     + self.setting.domain.inner(self._ztilde,self._z)
+                                     + self.setting.codomain.inner(self._ztilde,self._z)
                                      )
                            )
             self._h = self._h + self._gamma*self._d
