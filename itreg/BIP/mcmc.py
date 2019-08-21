@@ -30,7 +30,7 @@ from itreg.solvers.landweber import Landweber
 import logging
 import numpy as np
 import scipy.sparse.linalg as scsla
-import scipy.optimize
+import scipy.optimize as scio
 import random as rd
 
 import numpy as np
@@ -45,9 +45,9 @@ class Settings(PDF):
     """
 #    __slots__ = ('mu', 'cov', 'prec')
 
-    def __init__(self, setting, rhs, prior, likelihood, solver, stopping_rule,
-                  T, n_iter=None, stepsize_rule=None,  
-                 n_steps=None, m_0=None, initial_stepsize=None):
+    def __init__(self, setting, rhs, prior, likelihood, T, solver=None, stopping_rule=None,
+                   n_iter=None, stepsize_rule=None,  
+                 n_steps=None, m_0=None, initial_stepsize=None, x_0=None):
 
 
 
@@ -57,17 +57,24 @@ class Settings(PDF):
         self.prior=prior
         self.likelihood=likelihood
         self.T=T
+        self.x_0=x_0 or self.setting.op.domain.zeros()
         self.log_prob=(lambda x: (self.prior.prior(x)+self.likelihood.likelihood(x))/self.T)
         self.gradient=(lambda x: (self.prior.gradient(x)+self.likelihood.gradient(x))/self.T)
         
-        self.solver=solver
-        self.stopping_rule=stopping_rule
+        if solver is not None:
+            self.solver=solver
+        if stopping_rule is not None:
+            self.stopping_rule=stopping_rule
         
         """The initial state is computed by the classical solver
         """
         
         self.initial_state = State()
-        self.initial_state.positions, _=self.solver.run(self.stopping_rule)
+        if 'solver' and 'stopping_rule' in dir(self):
+            self.initial_state.positions, _=self.solver.run(self.stopping_rule)
+        else:
+            res=scio.minimize(lambda x: -self.log_prob(x), self.x_0)
+            self.initial_state.positions=res.x
         self.initial_state.log_prob = self.log_prob(self.initial_state.positions)
         self.first_state=self.initial_state.positions
 #        print(self.first_state)
