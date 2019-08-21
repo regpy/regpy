@@ -20,7 +20,7 @@ from itreg.operators.Obstacle2d import NeumannOp
 
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
 from itreg.spaces import H1, HilbertPullBack, UniformGrid
-from itreg.solvers import Landweber, HilbertSpaceSetting
+from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
@@ -89,14 +89,14 @@ data=exact_data
 #exact_solution=op.obstacle.bd_ex.z
 #apple=create_synthetic_data(setting, 0)
 
-solver = Landweber(setting, data, init)
+solver = IRGNM_CG(setting, data, init)
 stopping_rule = (
-    rules.CountIterations(1e3) +
+    rules.CountIterations(1) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 n_iter   = 1e5
-stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-1]
-Temperature=1e-2
+stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-1]/1000
+Temperature=1e-6
 reg_parameter=1
 
 
@@ -119,9 +119,9 @@ bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperatur
 statemanager=statemanager(bip.initial_state)
 #sampler=[RandomWalk(bip, stepsize=stepsize), AdaptiveRandomWalk(bip, stepsize=stepsize), \
 #         HamiltonianMonteCarlo(bip, stepsize=stepsize), GaussianApproximation(bip)][0]
-sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
+#sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 #sampler=HamiltonianMonteCarlo(bip, statemanager, stepsize=1, stepsize_rule=stepsize_rule)
-#sampler=GaussianApproximation(bip)
+sampler=GaussianApproximation(bip)
 
 bip.run(sampler, statemanager)
 

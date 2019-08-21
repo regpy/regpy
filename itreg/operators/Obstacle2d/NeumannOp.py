@@ -87,7 +87,7 @@ class NeumannOp(NonlinearOperator):
         
         """ solve the forward scattering problem for the obstacle parameterized by
         % coeff. Quantities needed again for the computation of derivatives and
-        % adjoints are stored as members of F."""
+        % adjoints are stored as members of self."""
         
         self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
@@ -101,10 +101,11 @@ class NeumannOp(NonlinearOperator):
             Iop = np.zeros(np.size(self.bd.z,2),np.size(self.bd.z,2));
         if self.wSL!=0:
             Iop = Iop + self.wSL*(op_K(self.bd,Iop_data).T - np.diag(self.bd.zpabs))
+            self.Iop=Iop
         #F.Iop=Iop;
         self.u = complex(0,1)*np.zeros((2*self.N_ieq,np.size(self.inc_directions,1)))
         FF_DL = farfield_matrix(self.bd,self.meas_directions,self.kappa,0,1)
-
+        print(Iop)
         self.perm_mat, self.L, self.U =scla.lu(Iop)
         self.perm=self.perm_mat.dot(np.arange(0, np.size(self.bd.z,1)))
         self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,self.wSL,self.wDL)
