@@ -48,10 +48,10 @@ class gaussian(object):
         return -1/2*np.dot((x-self.m_0).reshape(self.len_domain), np.dot(self.gamma_prior_inv, np.conjugate((x-self.m_0).reshape(self.len_domain)))).real
     
     def gradient_gaussian(self, x):
-        return np.dot(self.gamma_prior_inv, x-self.m_0).real
+        return -np.dot(self.gamma_prior_inv, x-self.m_0).real
     
     def hessian_gaussian(self, m, x):
-        return np.dot(self.gamma_prior_inv, x)
+        return -np.dot(self.gamma_prior_inv, x)
     
     
 
@@ -113,28 +113,33 @@ class unity(object):
         super().__init__()
         self.setting=setting
         self.prior=(lambda x: 0)
-        self.gradient=(lambda x: 0)
-        self.hessian=(lambda x: 0)
+        self.gradient=(lambda x: self.op.domain.zeros())
+        self.hessian=(lambda x: self.op.domain.zeros())
         
 class tikhonov(object):
-    def __init__(self, setting, regpar, rhs):
+    def __init__(self, setting, regpar):
         self.setting=setting
         self.regpar=regpar
         self.prior=self.tikhonov
         self.gradient=self.gradient_tikhonov
         self.hessian=self.hessian_tikhonov
-        self.rhs=rhs
         
+#    def tikhonov(self, x):
+#        y=self.setting.op(x)-self.rhs
+#        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+    
     def tikhonov(self, x):
-        y=self.setting.op(x)-self.rhs
-        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+        return -0.5*self.regpar*self.setting.domain.inner(x, x)
 
     
     
+#    def gradient_tikhonov(self, x):
+#        y, deriv=self.setting.op.linearize(x)
+#        y-=self.rhs
+#        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
+    
     def gradient_tikhonov(self, x):
-        y, deriv=self.setting.op.linearize(x)
-        y-=self.rhs
-        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
+        return -self.regpar*self.setting.domain.gram(x)
     
     def hessian_tikhonov(self, m, x):
         grad_mx=self.gradient_tikhonov(m+x)

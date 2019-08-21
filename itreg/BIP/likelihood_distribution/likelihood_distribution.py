@@ -122,6 +122,35 @@ class unity(object):
         super().__init__()
         self.setting=setting
         self.likelihood=(lambda x: 0)
-        self.gradient=(lambda x: 0)
-        self.hessian=(lambda x: 0)
+        self.gradient=(lambda x: self.setting.op.domain.zeros())
+        self.hessian=(lambda x, y: self.setting.op.domain.zeros())
+        
+class tikhonov(object):
+    
+
+    def __init__(self, setting, rhs):
+        self.setting=setting
+        self.likelihood=self.tikhonov
+        self.gradient=self.gradient_tikhonov
+        self.hessian=self.hessian_tikhonov
+        self.rhs=rhs
+        
+
+    def tikhonov(self, x):
+        y=self.setting.op(x)-self.rhs
+        return -0.5 * self.setting.codomain.inner(y, y)
+
+    
+    
+
+    def gradient_tikhonov(self, x):
+        y, deriv=self.setting.op.linearize(x)
+        y-=self.rhs
+        return -deriv.adjoint(self.setting.codomain.gram(y))
+    
+    def hessian_tikhonov(self, m, x):
+        #print(m+x)
+        grad_mx=self.gradient_tikhonov(m+x)
+        grad_m=self.gradient_tikhonov(m)
+        return grad_mx-grad_m
 
