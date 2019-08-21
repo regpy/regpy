@@ -99,8 +99,6 @@ class DirichletOp(NonlinearOperator):
         of the parametrization and save these quantities as members of F.bd"""
         self.bd.bd_eval(2*self.N_ieq,2)
         Iop_data = setup_iop_data(self.bd,self.kappa)
-#        print(Iop_data)
-        #Iop = diag(F.bd.zpabs)+ op_K(F.bd,Iop_data) - i*F.eta*op_S(F.bd,Iop_data)
         if self.wSL!=0:
             Iop = self.wSL*op_S(self.bd,Iop_data)
         else:
@@ -109,23 +107,20 @@ class DirichletOp(NonlinearOperator):
             Iop = Iop + self.wDL*(np.diag(self.bd.zpabs)+ op_K(self.bd,Iop_data))
         self.dudn = np.zeros((2*self.N_ieq,np.size(self.inc_directions,1)))
         FF_SL = farfield_matrix(self.bd,self.meas_directions,self.kappa,-1.,0.)
-#What is lu
         self.perm_mat, self.L, self.U =scla.lu(Iop)
         self.perm=self.perm_mat.dot(np.arange(0, np.size(self.bd.z,1)))
-        #F.Iop=Iop;
-        self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,self.wSL,self.wDL);
+        self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa, \
+                                           self.wSL,self.wDL)
         farfield = []
         
         for l in range(0, np.size(self.inc_directions, 1)):
             rhs = 2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))*  \
-                (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) +self.wSL*self.bd.zpabs)
-            #same as
-            #F.dudn(:,l) = F.Iop.' \ rhs.';
+                (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
+                                         +self.wSL*self.bd.zpabs)
 
-            self.dudn[:, l]=np.linalg.solve(self.L.T, np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
-#            self.dudn[:,l] = np.dot((self.L.T) ,1/(self.U.T.dot(1/rhs[self.perm.astype(int)].T)))
+            self.dudn[:, l]=np.linalg.solve(self.L.T, \
+                     np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
             complex_farfield = np.dot(FF_SL, self.dudn[:,l])
-#            farfield = np.append(farfield, np.append(complex_farfield.real, complex_farfield.imag)).reshape((3*farfield.shape[0], farfield.shape[1]))
             farfield=np.append(farfield, complex_farfield)
         return farfield
         
@@ -133,12 +128,8 @@ class DirichletOp(NonlinearOperator):
             der = []
             for l in range(0, np.size(self.inc_directions,1 )):
                 rhs = - 2*self.dudn[:,l].dot(self.bd.der_normal(h)) * self.bd.zpabs.T
-                #same as
-                #phi = F.Iop \ rhs;
-#                phi = np.dot(self.U, 1/(self.L.dot(1/rhs[self.perm.astype(int)])))
                 phi=np.linalg.solve(self.U, np.linalg.solve(self.L, rhs[self.perm.astype(int)]))
                 complex_farfield = self.FF_combined.dot(phi)
-                #der=np.append(der, np.append(complex_farfield.real, complex_farfield.imag)).reshape((3*der.shape[0], der.shape[1]))
                 der=np.append(der, complex_farfield)
             return der
         
@@ -147,14 +138,11 @@ class DirichletOp(NonlinearOperator):
             rhs = np.zeros(2*self.N_ieq)
             N_FF = np.size(self.meas_directions,1)
             for  l in range(0, np.size(self.inc_directions,1)):
-                #g_complex = g[2*(l)*N_FF+np.arange(1, N_FF+1)] + complex(0,1)*g[2*(l)*N_FF+np.arange(N_FF+1, 2*N_FF+1)]
                 g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)] 
                 phi = self.FF_combined.T.dot(g_complex)
-                #rhs = F.Iop' \ phi;
-                #rhs(F.perm) = F.L' \ (F.U' \ phi);
 
-                rhs[self.perm.astype(int)]=np.linalg.solve(self.L, np.linalg.solve(self.U, phi.T)).T
-#                rhs[self.perm.astype(int)] = np.dot(phi.T.dot(np.linalg.inv(self.U)), np.linalg.inv(self.L)).T
+                rhs[self.perm.astype(int)]=np.linalg.solve(self.L, \
+                    np.linalg.solve(self.U, phi.T)).T
                 res = res -2*rhs*np.conjugate(self.dudn[:,l]).real
             adj = self.bd.adjoint_der_normal(res * self.bd.zpabs.T)
             return adj
@@ -178,23 +166,27 @@ def create_synthetic_data(self):
             if self.op.wDL!=0:
                 Iop = Iop + self.op.wDL*(np.diag(bd.zpabs)+ op_K(bd,Iop_data))
 
-            #set up the matrix mapping the density to the far field pattern
-            FF_combined = farfield_matrix(bd,self.op.meas_directions,self.op.kappa,self.op.wSL,self.op.wDL)
+            """set up the matrix mapping the density to the far field pattern"""
+            FF_combined = farfield_matrix(bd,self.op.meas_directions,self.op.kappa, \
+                                          self.op.wSL,self.op.wDL)
             farfield = []
             for l in range(0, np.size(self.op.inc_directions,1)):
-                rhs = - 2*np.exp(complex(0,1)*self.op.kappa*self.op.inc_directions[:,l].T.dot(bd.z))*bd.zpabs
-#                phi = np.dot(Iop, 1/rhs.T)
+                rhs = - 2*np.exp(complex(0,1)*self.op.kappa*   \
+                            self.op.inc_directions[:,l].T.dot(bd.z))*bd.zpabs
                 phi=np.linalg.solve(Iop, rhs)
                 complex_farfield =np.dot(FF_combined, phi)
-#                print(complex_farfield.shape)
-                farfield = np.append(farfield, np.append(complex_farfield.real, complex_farfield.imag))
-                #farfield=np.append(farfield, complex_farfield)
-#            print(farfield.shape)
-            farfield=farfield.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
+                farfield = np.append(farfield, np.append(complex_farfield.real, \
+                                                         complex_farfield.imag))
+
+            farfield=farfield.reshape((2*np.size(self.op.inc_directions, 1), \
+                                       bd.zpabs.shape[0]))
             noise = np.random.randn(np.size(farfield))
-            noise=noise.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
+            noise=noise.reshape((2*np.size(self.op.inc_directions, 1), \
+                                 bd.zpabs.shape[0]))
             complex_noise=noise[0, :]+complex(0,1)*noise[1, :]
 #            data = farfield + self.op.noiselevel * noise/np.sqrt(noise.T*self.codomain.gram(noise))
-            data=farfield[0, :]+complex(0,1)*farfield[1, :]+self.op.noiselevel * complex_noise/np.sqrt(complex_noise.T*self.codomain.gram(complex_noise))
+            data=farfield[0, :]+complex(0,1)*farfield[1, :]+self.op.noiselevel * \
+                    complex_noise/np.sqrt(complex_noise.T*   \
+                    self.codomain.gram(complex_noise))
             
             return data
