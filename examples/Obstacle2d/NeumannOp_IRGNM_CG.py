@@ -35,13 +35,13 @@ setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 #setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 #exact_data=setting.op.create_synthetic_data()
 exact_data=create_synthetic_data(setting)
-exact_solution=setting.op.obstacle.bd_ex.z
+exact_solution=setting.op.obstacle.bd_ex.q[0, :]
 data=exact_data
 
 
 newton = IRGNM_CG(setting, data, init)
 stoprule = (
-    rules.CountIterations(100) +
+    rules.CountIterations(1000) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.1, tau=1.1))
 
 reco, reco_data = newton.run(stoprule)
