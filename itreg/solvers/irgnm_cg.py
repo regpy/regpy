@@ -121,7 +121,7 @@ class IRGNM_CG(Solver):
         self._s = self.setting.Hdomain.gram_inv(self._stilde)
         self._d = self._s
         self._dtilde = self._stilde
-        self._norm_s = np.real(self.setting.Hdomain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self._stilde @ self._s)
         self._norm_s0 = self._norm_s
         self._norm_h = 0
         
@@ -142,11 +142,11 @@ class IRGNM_CG(Solver):
                          + self._regpar*self._dtilde)).real
         self._s = self.setting.Hdomain.gram_inv(self._stilde)
         self._norm_s_old = self._norm_s
-        self._norm_s = np.real(self.setting.Hdomain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self._stilde @ self._s)
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
-        self._norm_h = self.setting.Hdomain.inner(self._h, self.setting.Hdomain.gram(self._h))
+        self._norm_h = self.setting.Hdomain.inner(self._h, self._h)
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
 
@@ -212,8 +212,8 @@ class IRGNM_CG(Solver):
             self._ztilde = self.setting.Hcodomain.gram(self._z)
             self._gamma = (self._norm_s
                            / np.real(self._regpar
-                                     *self.setting.Hdomain.inner(self._dtilde,self._d)
-                                     + self.setting.Hdomain.inner(self._ztilde,self._z)
+                                     *self._dtilde @ self._d
+                                     + self._ztilde @ self._z
                                      )
                            )
             self._h = self._h + self._gamma*self._d
