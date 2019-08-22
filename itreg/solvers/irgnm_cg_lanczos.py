@@ -129,7 +129,7 @@ class IRGNM_CG_Lanczos(Solver):
             self.s=self.M @ self._s
         self._d = self._s
         self._dtilde = self._stilde
-        self._norm_s = np.real(self.setting.Hdomain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self._stilde @ self._s)
         self._norm_s0 = self._norm_s
         self._norm_h = 0
         
@@ -154,11 +154,11 @@ class IRGNM_CG_Lanczos(Solver):
         if self.need_prec_update==False:
             self._s=self.M @ self._s
         self._norm_s_old = self._norm_s
-        self._norm_s = np.real(self.setting.Hdomain.inner(self._stilde, self._s))
+        self._norm_s = np.real(self._stilde @ self._s)
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
-        self._norm_h = self.setting.Hdomain.inner(self._h, self.setting.Hdomain.gram(self._h))
+        self._norm_h = self.setting.Hdomain.inner(self._h, self._h)
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
         self.inner_num+=1
@@ -214,7 +214,7 @@ class IRGNM_CG_Lanczos(Solver):
               /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
-              /np.real(self.setting.Hdomain.inner(self._Thtilde,self._Th))
+              /np.real(self.setting.Hdomain.inner(self._Th,self._Th))
               /self._kappa/self._regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
@@ -230,18 +230,18 @@ class IRGNM_CG_Lanczos(Solver):
                 self._ztilde = self.setting.Hcodomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self.setting.Hdomain.inner(self._dtilde,self._d)
-                                         + self.setting.Hdomain.inner(self._ztilde,self._z)
+                                         *self._dtilde @ self._d
+                                         + self._ztilde @ self._z
                                          )
                                )
                 self._h = self._h + self._gamma*self._d
     #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
                 # Updating ``self.x`` 
      #           self.x += self._h
-                self.inner_update()
-                if self.inner_num<=self.krylov_num:
-                    self.orthonormal[self.inner_num-1, :]=self._s/self._norm_s
 
+                if self.inner_num<=self.krylov_num:
+                    self.orthonormal[self.inner_num-1, :]=self._s/np.sqrt(self._norm_s)
+                self.inner_update()
                     
             self.lanzcos_update()
             
@@ -254,7 +254,7 @@ class IRGNM_CG_Lanczos(Solver):
                   /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
                   # Second condition
                   np.sqrt(np.float64(self._norm_s)
-                  /np.real(self.setting.Hdomain.inner(self._Thtilde,self._Th))
+                  /np.real(self.setting.Hdomain.inner(self._Th,self._Th))
                   /self._kappa/self._regpar)
                   > self.cgtol[1] / (1+self.cgtol[1]) and
                   # Third condition
@@ -269,8 +269,8 @@ class IRGNM_CG_Lanczos(Solver):
                 self._ztilde = self.setting.Hcodomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self.setting.Hdomain.inner(self._dtilde,self._d)
-                                         + self.setting.Hdomain.inner(self._ztilde,self._z)                                
+                                         *self._dtilde @ self._d
+                                         + self._ztilde @ self._z                                
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
@@ -302,6 +302,8 @@ class IRGNM_CG_Lanczos(Solver):
 #        self.M=self._alpha*np.identity(self.data.shape[0])
 #        self.M=np.zeros((self.data.shape[0], self.data.shape[0]))
         self.M=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
+        from scipy.linalg import sqrtm
+        self.A = sqrtm(self.M)
         #self.M=np.random.randn(self.M.shape[0], self.M.shape[1])
         #self.M=1*np.eye(200, 200)
         #self.M_inv=np.linalg.inv(self.M)
