@@ -6,6 +6,8 @@ from .. import util, operators
 
 
 class HilbertSpace:
+    log = util.classlogger
+
     def __init__(self, discr):
         assert isinstance(discr, discrs.Discretization)
         self.discr = discr
