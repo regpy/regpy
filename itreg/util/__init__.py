@@ -7,6 +7,10 @@ from scipy.spatial.qhull import Voronoi
 
 @property
 def classlogger(self):
+    """The [`logging.Logger`][1] instance for this class
+
+    [1]: https://docs.python.org/3/library/logging.html#logging.Logger
+    """
     return getLogger(type(self).__qualname__)
 
 

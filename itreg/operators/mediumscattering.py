@@ -90,15 +90,21 @@ class MediumScatteringBase(Operator):
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
         # TODO assert support is contained in radius
+
         self.support = support
+        """Boolean array for the support constraint"""
 
         self.wave_number = wave_number
+        """The wave number of the incident waves"""
 
         inc_directions = np.asarray(inc_directions)
         assert inc_directions.ndim == 2
         assert inc_directions.shape[1] == grid.ndim
         assert np.allclose(np.linalg.norm(inc_directions, axis=1), 1)
+
         self.inc_directions = inc_directions
+        """Array of incident directions"""
+
         self.inc_matrix = np.exp(1j * wave_number * (inc_directions @ grid.coords[:, support]))
 
         assert isinstance(normalization, Normalization)

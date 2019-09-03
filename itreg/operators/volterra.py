@@ -1,70 +1,34 @@
 import numpy as np
 
-from itreg.operators import LinearOperator, NonlinearOperator
-from itreg import discrs
+from itreg.operators import Operator
+from itreg.discrs import UniformGrid
 
 
-class Volterra(LinearOperator):
-    """The discrete Volterra operator.
+class Volterra(Operator):
+    r"""The \(x\) discrete Volterra operator. The Volterra operator \(V_n\) is
+    defined as
 
-    The discrete Volterra operator is essentially a cumulative sum as in
-    :func:`numpy.cumsum`. See Notes below.
-
-    Parameters
-    ----------
-    domain : :class:`~itreg.spaces.Space`
-        The domain on which the operator is defined.
-    codomain : :class:`~itreg.spaces.Space`, optional
-        The operator's codomain. Defaults to `domain`.
-
-    Notes
-    -----
-    The Volterra operator :math:`V` is defined as
-
-    .. math:: (Vf)(x) = \\int_0^x f(t) dt.
+    \[ (V_n f)(x) = \int_0^x f(t)^n dt. \]
 
     Its discrete form, using a Riemann sum, is simply
 
-    .. math:: (Vx)_i = h \\sum_{j \\leq i} x_j,
+    \[ (V_n x)_i = h \sum_{j \leq i} x_j^n, \]
 
-    where :math:`h` is the grid spacing.
-    """
-
-    def __init__(self, domain):
-        assert isinstance(domain, discrs.UniformGrid)
-        assert domain.ndim == 1
-        super().__init__(domain, domain)
-
-    def _eval(self, x):
-        return self.domain.volume_elem * np.cumsum(x)
-
-    def _adjoint(self, y):
-        return self.domain.volume_elem * np.flipud(np.cumsum(np.flipud(y)))
-
-
-class NonlinearVolterra(NonlinearOperator):
-    """The non-linear discrete Volterra operator.
-
-    This is like the linear :class:`~itreg.operators.Volterra` operator with an
-    additional exponent:
-
-    .. math:: (Vx)_i = h \\sum_{j \\leq i} x_j^n,
+    where \(h\) is the grid spacing. \(V_1\) is linear.
 
     Parameters
     ----------
-    domain : :class:`~itreg.spaces.Space`
-        The domain on which the operator is defined.
+    domain : itreg.spaces.discrs.UniformGrid
+        The domain on which the operator is defined. Must be one-dimensional.
     exponent : float
-        The exponent.
-    codomain : :class:`~itreg.spaces.Space`, optional
-        The operator's codomain. Defaults to `domain`.
+        The exponent \(n\). Default is 1.
     """
 
-    def __init__(self, domain, exponent):
-        assert isinstance(domain, discrs.UniformGrid)
+    def __init__(self, domain, exponent=1):
+        assert isinstance(domain, UniformGrid)
         assert domain.ndim == 1
         self.exponent = exponent
-        super().__init__(domain, domain)
+        super().__init__(domain, domain, linear=(exponent == 1))
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -75,4 +39,8 @@ class NonlinearVolterra(NonlinearOperator):
         return self.domain.volume_elem * np.cumsum(self._factor * x)
 
     def _adjoint(self, y):
-        return self.domain.volume_elem * self._factor * np.flipud(np.cumsum(np.flipud(y)))
+        x = self.domain.volume_elem * np.flipud(np.cumsum(np.flipud(y)))
+        if self.linear:
+            return x
+        else:
+            return self._factor * x

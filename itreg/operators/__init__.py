@@ -7,7 +7,7 @@ from scipy.linalg import cho_factor, cho_solve
 from itreg import functionals, util, discrs
 
 
-class Revocable:
+class _Revocable:
     def __init__(self, val):
         self.__val = val
 
@@ -41,8 +41,14 @@ class Operator:
     def __init__(self, domain=None, codomain=None, linear=False):
         assert not domain or isinstance(domain, discrs.Discretization)
         assert not codomain or isinstance(codomain, discrs.Discretization)
-        self.domain, self.codomain = domain, codomain
+        self.domain = domain
+        """The discretization on which the operator is defined. Either a
+        subclass of `itreg.spaces.discrs.Discretization` or `None`"""
+        self.codomain = codomain
+        """The discretization on which the operator values are defined. Either
+        a subclass of `itreg.spaces.discrs.Discretization` or `None`"""
         self.linear = linear
+        """Boolean indicating whether the operator is linear"""
         self._consts = {'domain', 'codomain'}
 
     def __deepcopy__(self, memo):
@@ -83,12 +89,14 @@ class Operator:
 
     @util.memoized_property
     def adjoint(self):
-        assert self.linear
+        """For linear operators, this is the adjoint as a linear
+        `itreg.operators.Operator` instance
+        """
         return Adjoint(self)
 
     def __revoke(self):
         try:
-            self.__handle = Revocable.take(self.__handle)
+            self.__handle = _Revocable.take(self.__handle)
         except AttributeError:
             pass
 
@@ -96,7 +104,7 @@ class Operator:
         try:
             return self.__handle
         except AttributeError:
-            self.__handle = Revocable(self)
+            self.__handle = _Revocable(self)
             return self.__handle
 
     def _eval(self, x, differentiate=False):
@@ -211,10 +219,10 @@ class Adjoint(Operator):
 
 class Derivative(Operator):
     def __init__(self, op):
-        if not isinstance(op, Revocable):
-            # Wrap plain operators in a Revocable that will never be revoked to
+        if not isinstance(op, _Revocable):
+            # Wrap plain operators in a _Revocable that will never be revoked to
             # avoid case distinctions below.
-            op = Revocable(op)
+            op = _Revocable(op)
         self.op = op
         _op = op.get()
         super().__init__(_op.domain, _op.codomain, linear=True)
@@ -732,8 +740,9 @@ class RealPart(Operator):
 
     Parameters
     ----------
-    domain : :class:`~itreg.spaces.Space`
-        The domain on which the operator is defined.
+    domain : itreg.discrs.GenericDiscretization
+        The domain on which the operator is defined. The codomain will be the
+        corresponding real space.
     """
 
     def __init__(self, domain):

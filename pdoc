@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+from importlib.abc import Loader, MetaPathFinder
+from importlib.machinery import ModuleSpec
+from pdoc.cli import main, parser
+from sys import meta_path
+from types import ModuleType
+
+
+class MockImporter(MetaPathFinder, Loader):
+    def __init__(self, *modules):
+        self.modules = modules
+
+    def create_module(self, spec):
+        return ModuleType(spec.name)
+
+    def exec_module(self, module):
+        pass
+
+    def find_spec(self, fullname, path, target=None):
+        if fullname.split('.', 1)[0] in self.modules:
+            return ModuleSpec(fullname, self, is_package=True)
+
+
+meta_path.append(MockImporter(
+    'foo',
+))
+
+parser.set_defaults(modules=['itreg'])
+for action in parser._actions:
+    if action.dest == 'modules':
+        action.required = False
+        action.nargs = '*'
+args = parser.parse_args()
+args.config.append('latex_math=True')
+main(args)
