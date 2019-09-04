@@ -176,6 +176,8 @@ class Grid(Discretization):
         for n, c in enumerate(coords):
             if isinstance(c, int):
                 v = np.arange(c)
+            elif isinstance(c, tuple):
+                v = np.linspace(*c)
             else:
                 v = np.asarray(c).view()
             if 1 == v.ndim < len(coords):
@@ -236,6 +238,7 @@ class UniformGrid(Grid):
         if self.is_complex:
             return y
         else:
+            # TODO use rfft?
             return np.real(y)
 
 
