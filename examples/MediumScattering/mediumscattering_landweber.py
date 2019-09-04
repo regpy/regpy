@@ -1,11 +1,8 @@
 import setpath
 
-import itreg
-
 from itreg.operators import MediumScatteringFixed, CoordinateProjection
 from itreg.spaces import L2, Sobolev, HilbertPullBack
 from itreg.solvers import Landweber, HilbertSpaceSetting
-# TODO from itreg.util import test_adjoint
 import itreg.stoprules as rules
 import itreg.util as util
 
@@ -47,19 +44,23 @@ init = 1.1 * op.domain.ones()
 
 setting = HilbertSpaceSetting(
     op=op,
-    Hdomain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
-    Hcodomain=L2)
+    # TODO
+    # Hdomain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
+    Hdomain=L2,
+    Hcodomain=L2
+)
 
-landweber = Landweber(setting, data, init, stepsize=0.01)
+landweber = Landweber(setting, data, init, stepsize=0.001)
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(setting.Hcodomain.norm, data,
                       noiselevel=setting.Hcodomain.norm(noise),
-                      tau=1))
+                      tau=1)
+)
 
 reco, reco_data = landweber.run(stoprule)
 solution = embedding(reco)
 
-import matplotlib.pylab as plt
+import matplotlib.pyplot as plt
 plt.imshow(np.abs(solution))
 plt.show()
