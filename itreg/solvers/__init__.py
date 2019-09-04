@@ -124,3 +124,4 @@ class HilbertSpaceSetting:
 
 
 from .landweber import Landweber
+from .cg import TikhonovCG
