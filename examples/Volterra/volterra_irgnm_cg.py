@@ -1,14 +1,8 @@
-"""Example:
-    Solver: IRGNM_CG
-    Operator: Volterra
-"""
+import setpath
 
-import setpath  # NOQA
-
-from itreg.operators.Volterra.volterra import Volterra
-from itreg.spaces import L2
-from itreg.grids import Square_1D
-from itreg.solvers import IRGNM_CG
+from itreg.operators import NonlinearVolterra
+from itreg.spaces import L2, Sobolev, UniformGrid
+from itreg.solvers import IrgnmCG, HilbertSpaceSetting
 import itreg.stoprules as rules
 
 import numpy as np
@@ -17,39 +11,35 @@ import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-#xs = np.linspace(0, 2 * np.pi, 200)
-#spacing = xs[1] - xs[0]
+grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
+op = NonlinearVolterra(grid, exponent=3)
 
-spacing=2*np.pi/200
-grid=Square_1D((200,), np.pi, spacing)
-op = Volterra(L2(grid), spacing=spacing)
-
-exact_solution = np.sin(grid.coords)
+exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.1 * np.random.normal(size=grid.shape)
+noise = 0.03 * op.domain.randn()
 data = exact_data + noise
+init = op.domain.ones()
 
-noiselevel = op.codomain.norm(noise)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
-irgnm_cg = IRGNM_CG(op, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
-#stoprule = rules.CombineRules(
-#    [rules.CountIterations(100),
-#     rules.Discrepancy(op, data, noiselevel, tau=1.1)],
-#    op=op)
-
-
+solver = IrgnmCG(setting, data, regpar=100, regpar_step=0.9, init=init)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(op.codomain.norm, data, noiselevel, tau=1.1))
+    rules.CountIterations(1000) +
+    rules.Discrepancy(
+        setting.Hcodomain.norm, data,
+        noiselevel=setting.Hcodomain.norm(noise),
+        tau=2
+    )
+)
 
-reco, reco_data = irgnm_cg.run(stoprule)
-plt.plot(grid.coords.T, exact_solution.T)
-plt.plot(grid.coords.T, reco)
+reco, reco_data = solver.run(stoprule)
 
-plt.plot(grid.coords.T, exact_data)
-plt.plot(grid.coords.T, reco_data)
-plt.plot(grid.coords.T, data)
+plt.plot(grid.coords[0], exact_solution.T, label='exact solution')
+plt.plot(grid.coords[0], reco, label='reco')
+plt.plot(grid.coords[0], exact_data, label='exact data')
+plt.plot(grid.coords[0], data, label='data')
+plt.plot(grid.coords[0], reco_data, label='reco data')
+plt.legend()
 plt.show()
-
