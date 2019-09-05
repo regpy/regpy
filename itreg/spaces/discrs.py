@@ -219,7 +219,7 @@ class UniformGrid(Grid):
         for axis in self.axes:
             assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
-        self.spacing = np.asarray(*spacing)
+        self.spacing = np.asarray(spacing)
         self.volume_elem = np.prod(self.spacing)
 
     @util.memoized_property

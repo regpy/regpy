@@ -93,7 +93,7 @@ class MediumScatteringBase(Operator):
         assert inc_directions.shape[1] == grid.ndim
         assert np.allclose(np.linalg.norm(inc_directions, axis=1), 1)
         self.inc_directions = inc_directions
-        self.inc_matrix = np.exp(-1j * wave_number * (inc_directions @ grid.coords[:, support]))
+        self.inc_matrix = np.exp(1j * wave_number * (inc_directions @ grid.coords[:, support]))
 
         if grid.ndim == 2:
             compute_kernel = partial(_compute_kernel_2D, 2 * wave_number * radius)
