@@ -393,7 +393,7 @@ Sobolev = AbstractSpaceDispatcher('Sobolev')
 
 @Sobolev.register(discrs.UniformGrid)
 class SobolevUniformGrid(HilbertSpace):
-    def __init__(self, discr, index):
+    def __init__(self, discr, index=1):
         super().__init__(discr)
         self.index = index
         self.weights = (1 + np.linalg.norm(discr.dualgrid.coords, axis=0)**2) ** index

@@ -92,3 +92,6 @@ def make_repr(self, *args, **kwargs):
     for k, v in sorted(kwargs.items()):
         arglist.append("{}={}".format(repr(k), repr(v)))
     return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
+
+
+eps = np.finfo(float).eps

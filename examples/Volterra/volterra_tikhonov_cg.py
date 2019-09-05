@@ -1,8 +1,8 @@
 import setpath
 
-from itreg.operators import NonlinearVolterra
-from itreg.spaces import L2, Sobolev, UniformGrid
-from itreg.solvers import IrgnmCG, HilbertSpaceSetting
+from itreg.operators import Volterra
+from itreg.spaces import L2, UniformGrid
+from itreg.solvers import TikhonovCG, HilbertSpaceSetting
 import itreg.stoprules as rules
 
 import numpy as np
@@ -13,8 +13,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
-op = NonlinearVolterra(grid, exponent=3)
+grid = UniformGrid((0, 2*np.pi, 200))
+op = Volterra(grid)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
@@ -22,15 +22,15 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-solver = IrgnmCG(setting, data, regpar=100, regpar_step=0.9, init=init)
+solver = TikhonovCG(setting, data, regpar=0.01)
 stoprule = (
     rules.CountIterations(1000) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=2
+        tau=1.1
     )
 )
 
