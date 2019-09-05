@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import Solver
+from . import Solver, TikhonovCG, HilbertSpaceSetting
 
 
 class IrgnmCG(Solver):
@@ -67,110 +67,27 @@ class IrgnmCG(Solver):
         The value at the current point.
     """
 
-    def __init__(self, setting, data, init, cgmaxit=50, regpar0=1, regpar_step=2/3,
-                 cgtol=[0.3, 0.3, 1e-6]):
+    def __init__(self, setting, data, regpar, regpar_step=2/3, init=None, cgpars={}):
         super().__init__()
         self.setting = setting
         self.data = data
+        if init is None:
+            init = self.setting.op.domain.zeros()
         self.init = init
-        self.x = self.init
-        self.cgmaxit = cgmaxit
-        self.regpar = regpar0
+        self.x = np.copy(self.init)
+        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.regpar = regpar
         self.regpar_step = regpar_step
-        self.cgtol = cgtol
-        self.y, self.deriv = setting.op.linearize(self.x)
+        self.cgpars = cgpars
 
     def _next(self):
-        """Run a single IRGNM_CG iteration.
-
-        The while loop is the CG method, it has four conditions to stop. The
-        first three work with the tolerances given in ``self.cgtol``. The last
-        condition checks if the maximum number of CG iterations
-        (``self.cgmaxit``) is reached.
-
-        The CG method solves by CGNE
-
-
-        .. math:: A h = b,
-
-        with
-
-        .. math:: A := G_X^{-1} F^{' *} G_Y F' + regpar*I
-        .. math:: b := G_X^{-1} F^{' *} G_Y y + regpar*ref
-
-        where
-
-        +--------------------+-------------------------------------+
-        | :math:`F`          | self.op                             |
-        +--------------------+-------------------------------------+
-        | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.codomain.gram |
-        +--------------------+-------------------------------------+
-        | :math:`G_X^{-1}`   | self.op.domain.gram_inv               |
-        +--------------------+-------------------------------------+
-        | :math:`F'`         | self.op.derivative()                |
-        +--------------------+-------------------------------------+
-        | :math:`F'*`        | self.op.derivative().adjoint        |
-        +--------------------+-------------------------------------+
-
-
-        Returns
-        -------
-        bool
-            Always True, as the IRGNM_CG method never stops on its own.
-
-        """
-
-        # Preparations for the CG method
-        residual = self.data - self.y
-        ztilde = self.setting.codomain.gram(residual)
-        stilde = self.deriv.adjoint(ztilde) + self.regpar*self.setting.domain.gram(self.init - self.x)
-        s = self.setting.domain.gram_inv(stilde)
-        d = s
-        dtilde = stilde
-        norm_s = np.real(inner(stilde, s))
-        norm_s0 = norm_s
-        norm_h = 0
-        h = np.zeros(np.shape(s))
-        Th = np.zeros(np.shape(residual))
-        Thtilde = Th
-
-        cgstep = 0
-        kappa = 1
-
-        while (
-              # First condition
-              np.sqrt(norm_s/norm_h/kappa) / self.regpar > self.cgtol[0] / (1+self.cgtol[0]) and
-              # Second condition
-              np.sqrt(norm_s
-                      / np.real(inner(Thtilde, Th))
-                      / kappa/self.regpar)
-              > self.cgtol[1] / (1+self.cgtol[1]) and
-              # Third condition
-              np.sqrt(np.float64(norm_s)/norm_s0/kappa) > self.cgtol[2] and
-              # Fourth condition
-              cgstep <= self.cgmaxit):
-
-            z = self.deriv(d)
-            ztilde = self.setting.codomain.gram(z)
-            gamma = norm_s / np.real(self.regpar * inner(dtilde, d) + inner(ztilde, z))
-            h = h + gamma*d
-            Th = Th + gamma*z
-            Thtilde = Thtilde + gamma*ztilde
-            stilde -= (gamma*(self.deriv(ztilde) + self.regpar*dtilde)).real
-            s = self.setting.domain.gram_inv(stilde)
-            norm_s_old = norm_s
-            norm_s = np.real(inner(stilde, s))
-            beta = norm_s / norm_s_old
-            d = s + beta*d
-            dtilde = stilde + beta*dtilde
-            norm_h = inner(h, self.setting.domain.gram(h))
-            kappa = 1 + beta*kappa
-            cgstep += 1
-
-        self.x += h
+        step, _ = TikhonovCG(
+            setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
+            data=self.data - self.y,
+            regpar=self.regpar,
+            xref=self.init - self.x,
+            **self.cgpars
+        ).run()
+        self.x += step
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
-
-
-def inner(a, b):
-    return np.real(np.vdot(a, b))

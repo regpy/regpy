@@ -3,16 +3,15 @@ from . import Solver
 import logging
 import numpy as np
 
-from ..util import eps
+from .. import util
 
 
 class TikhonovCG(Solver):
-    def __init__(self, setting, rhs, regpar, xref=None, tol=eps, reltolx=None, reltoly=None):
+    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None):
         assert setting.op.linear
 
         super().__init__()
         self.setting = setting
-        self.rhs = rhs
         self.regpar = regpar
         self.tol = tol
         self.reltolx = reltolx
@@ -26,7 +25,7 @@ class TikhonovCG(Solver):
             self.ytilde = self.setting.op.codomain.zeros()
             self.norm_y = 0
 
-        ztilde = self.setting.Hcodomain.gram(self.rhs)
+        ztilde = self.setting.Hcodomain.gram(data)
         self.stilde = self.setting.op.adjoint(ztilde)
         if xref is not None:
             self.stilde += self.regpar * self.setting.Hdomain.gram(xref)
@@ -40,13 +39,9 @@ class TikhonovCG(Solver):
     def _next(self):
         z = self.setting.op(self.d)
         ztilde = self.setting.Hcodomain.gram(z)
-        # gamma = self.norm_s / np.real(
-        #     np.vdot(ztilde, z) + self.regpar * np.vdot(self.dtilde, self.d)
-        # )
-        aux = np.real(
+        gamma = self.norm_s / np.real(
             np.vdot(ztilde, z) + self.regpar * np.vdot(self.dtilde, self.d)
         )
-        gamma = self.norm_s / aux
 
         self.x += gamma * self.d
         if self.reltolx is not None:
