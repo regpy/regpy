@@ -330,10 +330,10 @@ class Identity(Operator):
         super().__init__(domain, domain, linear=True)
 
     def _eval(self, x):
-        return x
+        return x.copy()
 
     def _adjoint(self, x):
-        return x
+        return x.copy()
 
     def __repr__(self):
         return util.make_repr(self, self.domain)
@@ -583,10 +583,10 @@ class RealPart(Operator):
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
-        return x.real
+        return x.real.copy()
 
     def _adjoint(self, y):
-        return y
+        return y.copy()
 
 
 class ImaginaryPart(Operator):
@@ -607,7 +607,7 @@ class ImaginaryPart(Operator):
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
-        return x.imag
+        return x.imag.copy()
 
     def _adjoint(self, y):
         return 1j * y
