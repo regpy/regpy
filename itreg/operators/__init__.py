@@ -112,7 +112,7 @@ class Operator:
         assert self.linear
         h = self.domain.rand()
         norm = np.sqrt(np.real(np.vdot(h, h)))
-        for i in range(iterations):
+        for _ in range(iterations):
             h = h / norm
             # TODO gram matrices
             h = self.adjoint(self(h))
@@ -443,10 +443,10 @@ class MatrixMultiplication(Operator):
         )
 
     def _eval(self, x):
-        return self.params.matrix @ x
+        return self.matrix @ x
 
     def _adjoint(self, y):
-        return self.params.matrix.T @ y
+        return self.matrix.T @ y
 
     def __repr__(self):
         return util.make_repr(self, self.matrix)
