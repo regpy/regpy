@@ -179,6 +179,7 @@ class MediumScatteringBase(Operator):
         raise NotImplementedError
 
     def _eval(self, contrast, differentiate=False):
+        contrast = contrast.copy()
         contrast[~self.support] = 0
         self._contrast = contrast
         if self.coarse:
@@ -211,6 +212,7 @@ class MediumScatteringBase(Operator):
         return farfield
 
     def _derivative(self, contrast):
+        contrast = contrast.copy()
         contrast = contrast[self.support]
         farfield = self.codomain.empty()
         rhs = self.domain.zeros()

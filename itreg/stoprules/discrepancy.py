@@ -38,6 +38,6 @@ class Discrepancy(StopRule):
             raise MissingValueError
         residual = self.data - y
         discrepancy = self.norm(residual)
-        self.log.info('discrepancy = {}, noiselevel = {}, tau = {}'.format(
-            discrepancy, self.noiselevel, self.tau))
-        return discrepancy < self.noiselevel * self.tau
+        rel = discrepancy / self.noiselevel
+        self.log.info('relative discrepancy = {}, tolerance = {}'.format(rel, self.tau))
+        return rel < self.tau
