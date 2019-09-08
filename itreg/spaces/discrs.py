@@ -325,3 +325,9 @@ class DirectSum(Discretization):
             s.fromflat(x[start:end])
             for s, start, end in zip(self.summands, self.idxs, self.idxs[1:])
         )
+
+
+class OneToManyGrid(Discretization):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        

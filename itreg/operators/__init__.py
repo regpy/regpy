@@ -652,5 +652,5 @@ class SquaredModulus(Operator):
         return self._factor * y
 
 
-from .mediumscattering import MediumScatteringFixed
+from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
 from .volterra import Volterra, NonlinearVolterra

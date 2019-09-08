@@ -2,6 +2,7 @@ from functools import wraps
 from logging import getLogger
 import numpy as np
 
+from .get_directions import get_directions
 
 @property
 def classlogger(self):
