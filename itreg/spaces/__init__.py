@@ -258,49 +258,26 @@ class NGSolveDiscretization(Grid):
 class NGSolveBoundaryDiscretization(Grid):
     def __init__(self, fes, fes_bdr, ind, *args, **kwargs):
         self.fes=fes
-        self.fes_bdr=fes_bdr
-        self.ind=ind
-#        gfu=GridFunction(self.fes)
-#        self.u=gfu.vec.CreateVector()
-#        self.v=gfu.vec.CreateVector()
-#        self.toret=np.empty(fes.ndof)
         
         #u, v=self.fes.TnT()
         self.a=BilinearForm(self.fes, symmetric=True)
-        #self.a+=SymbolicBFI(u.Trace()*v.Trace(), BND)
-        #self.a.Assemble()
-        
-        #self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
         
         self.gfu_in=GridFunction(self.fes)
-        self.gfu_in_bdr=GridFunction(self.fes_bdr)
         self.gfu_toret=GridFunction(self.fes)
-        self.gfu_toret_bdr=GridFunction(self.fes_bdr)
         
-        size=np.count_nonzero(self.ind)
-        super().__init__(np.empty(size), *args, **kwargs)
+        super().__init__(np.empty(fes.ndof), *args, **kwargs)
         
-#    def inner(self, x):
-#        self.v.FV().NumPy()[:]=x
-#        toret=np.zeros(self.fes.ndof)
-#        for i in range(self.fes.ndof):
-#            self.u.FV().NumPy()[:]=np.eye(1, self.fes.ndof, i)[0]
-#            toret[i]=InnerProduct(self.u, self.v)
-#        return toret
-    
-    def apply_gram(self,x):
-        self.gfu_in_bdr.vec.FV().NumPy()[self.ind]=x
-        self.gfu_in.Set(self.gfu_in_bdr)
+    def apply_gram(self, x):
+        self.gfu_in.vec.FV().NumPy()[:]=x
         self.gfu_toret.vec.data = self.a.mat*self.gfu_in.vec
-        self.gfu_toret_bdr.Set(self.gfu_toret)
-        return self.gfu_toret_bdr.vec.FV().NumPy()[self.ind]
+        return self.gfu_toret.vec.FV().NumPy().copy()
     
     def apply_gram_inverse(self, x):
-        self.gfu_in_bdr.vec.FV().NumPy()[self.ind]=x
-        self.gfu_in.Set(self.gfu_in_bdr)
+        self.gfu_in.vec.FV().NumPy()[:]=x
         self.gfu_toret.vec.data = self.b*self.gfu_in.vec
-        self.gfu_toret_bdr.Set(self.gfu_toret)
-        return self.gfu_toret_bdr.vec.FV().NumPy()[self.ind]
+        return self.gfu_toret.vec.FV().NumPy().copy()
+    
+
         
 class HilbertSpace:
     @property
@@ -453,6 +430,33 @@ class NGSolveFESSpace_H1(HilbertSpace):
     def gram_inv(self):
         return self.discr.apply_gram_inverse
     
+#The boundary spaces are only defined for a circular boundary
+#Need to define the definedon keyword argument outside of spaces
+@genericspace
+def NGSolveSpace_H1_bdr(discr):
+    raise NotImplementedError(
+        'H1 not implemented on {}'.format(type(discr).__qualname__))    
+
+@NGSolveSpace_H1_bdr.register(NGSolveDiscretization)   
+class NGSolveFESSpace_H1_bdr(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+        
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace()+u.Trace().Deriv()*v.Trace().Deriv(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
+        self.discr.a.Assemble()
+        
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+        
+    
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+    
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
+    
 @genericspace
 def NGSolveSpace_L2_bdr(discr):
     raise NotImplementedError(
@@ -460,12 +464,11 @@ def NGSolveSpace_L2_bdr(discr):
     
 @NGSolveSpace_L2_bdr.register(NGSolveDiscretization)   
 class NGSolveFESSpace_L2_bdr(HilbertSpace):
-    def __init__(self, discr, fes_bdr):
+    def __init__(self, discr):
         self.discr = discr
-        self.fes_bdr=fes_bdr
         
-        u, v=self.fes_bdr.TnT()
-        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace(), BND)
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
         self.discr.a.Assemble()
         
         self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
