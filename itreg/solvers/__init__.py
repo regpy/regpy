@@ -126,7 +126,6 @@ class HilbertSpaceSetting:
 from .landweber import Landweber
 from .cg import TikhonovCG
 from .irgnm_cg import IrgnmCG
-from .iterative_born import IterativeBorn
 from .newton_cg_frozen import Newton_CG_Frozen
 from .newton_semismooth import NewtonSemiSmooth
 from .irgnm_cg_lanczos import IRGNM_CG_Lanczos
