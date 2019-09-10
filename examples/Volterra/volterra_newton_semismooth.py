@@ -24,12 +24,12 @@ init = 0.9*np.sin(grid.coords[0])
 init_sol = init.copy()
 init_data = op(init)
 
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
 newton = NewtonSemiSmooth(setting, data, init, alpha=1, psi_minus=-1, psi_plus=1)
 stoprule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data,
+    rules.Discrepancy(setting.Hcodomain.norm, data,
                       noiselevel=0,
                       tau=1.1))
 
