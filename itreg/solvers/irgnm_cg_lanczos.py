@@ -101,6 +101,10 @@ class IRGNM_CG_Lanczos(Solver):
         # the first CG step.
         self.outer_update()
         
+        #Initialize Lanczos method
+        self._v=np.random.randn(np.size(self.data))
+        self._v/=np.linalg.norm(self._v)
+        
 
 
     def outer_update(self):
@@ -304,7 +308,35 @@ class IRGNM_CG_Lanczos(Solver):
         self.lanczos=self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal
         self.M_left=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
         self.M_right=np.eye(np.size(self.data))
-
+        
+    def lanczos(self):
+        """perform lanczos method to calculate biggest eigenvalues"""
+        self._epsilon=np.dot(self._v, self.L @ self.v)
+        self._w=self.L @ self._v -self._epsilon * self._v
+        self._zeta=np.linalg.norm(self._w)
+        self._v_old=self._v
+        
+        self._V=np.zeros((self.eigval_num, np.size(self.data)))
+        self._Epsilon=np.zeros(self.eigval_num)
+        self._Zeta=np.zeros(self.eigval_num)
+        
+        self._V[0,:]=self._v
+        self._Epsilon[0]=self._epsilon
+        self._Zeta[0]=self._zeta
+        
+        counter=1
+        while(self._zeta != 0 and counter<self.eigval_num):
+            self._v=self._w/self._zeta
+            self._epsilon=np.dot(self._v, self.L @ self.v)  
+            self._w=self.L @ self._v -self._epsilon * self._v-self._zeta * self._v_old
+            self._zeta=np.linalg.norm(self._w)
+            self._v_old=self._v
+            
+            self._V[counter,:]=self._v
+            self._Epsilon[counter]=self._epsilon
+            self._Zeta[counter]=self._zeta
+            counter+=1
+        return
     
         
     
