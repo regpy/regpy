@@ -20,7 +20,7 @@ from itreg.operators.Obstacle2d import DirichletOp
 
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
 from itreg.spaces import H1, HilbertPullBack, UniformGrid
-from itreg.solvers import Landweber, HilbertSpaceSetting
+from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
@@ -40,9 +40,9 @@ from itreg.BIP.MonteCarlo_basics import HamiltonianMonteCarlo
 from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
-from itreg.BIP.prior_distribution.prior_distribution import tikhonov
+from itreg.BIP.prior_distribution.prior_distribution import tikhonov as tikhonov_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
-from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
+from itreg.BIP.likelihood_distribution.likelihood_distribution import tikhonov as tikhonov_likelihood
 from itreg.BIP import HMCState
 from itreg.BIP import State
 
@@ -95,15 +95,16 @@ stopping_rule = (
 
 n_iter   = 1e4
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][5]
-Temperature=1e-2
-reg_parameter=0
+Temperature=1e-6
+reg_parameter=1
 
 
 
 #prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
 #likelihood=gaussian_likelihood(setting, np.eye(64), exact_data)
-prior=tikhonov(setting, reg_parameter, exact_data, )
-likelihood=unity(setting)
+prior=tikhonov_prior(setting, reg_parameter)
+#likelihood=unity(setting)
+likelihood=tikhonov_likelihood(setting, exact_data)
 
 
 #sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
@@ -112,7 +113,7 @@ likelihood=unity(setting)
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
+bip=Settings(setting, data, prior, likelihood, Temperature, solver=solver, stopping_rule=stopping_rule,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
