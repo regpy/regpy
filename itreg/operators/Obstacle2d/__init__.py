@@ -7,4 +7,3 @@ from .Curves.StarTrig import StarTrig
 
 from .Dirichlet_Op import DirichletOp
 from .NeumannOp import NeumannOp
-

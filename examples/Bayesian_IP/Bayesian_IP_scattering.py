@@ -70,7 +70,7 @@ op=DirichletOp(grid, codomain=grid_codomain)
 #exact_solution = np.ones(200)
 #exact_data = op(exact_solution)
 #noise = 0.03 * op.domain.rand(np.random.randn)
-#data = exact_data 
+#data = exact_data
 #noise = 0.03 * op.codomain.rand(np.random.randn)
 #data = exact_data + noise
 #noiselevel = op.codomain.norm(noise)
@@ -109,7 +109,7 @@ likelihood=tikhonov_likelihood(setting, exact_data)
 
 #sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
 
-    
+
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 

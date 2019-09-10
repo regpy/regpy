@@ -8,9 +8,9 @@ from itreg.solvers import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
-import numpy as np 
+import numpy as np
 import logging
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +34,7 @@ op = MediumScattering(domain)
 length_exact_solution=np.size(domain.parameters_domain.ind_support)
 exact_solution=np.linspace(1, length_exact_solution, num=length_exact_solution)
 
-exact_data=op(exact_solution)   
+exact_data=op(exact_solution)
 
 data=exact_data
 #print(exact_data)
@@ -58,5 +58,3 @@ stoprule=(
     rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=2))
 
 reco, reco_data=landweber.run(stoprule)
-
-

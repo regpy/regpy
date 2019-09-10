@@ -41,15 +41,15 @@ def bessy0(x,bessj0x):
     #if ~isempty(find(x<=0))
     #    error('rg<=0 in bessy0')
     #end
-    
+
     set_1=set(np.argwhere(0<x)[:, 0])
     set_2=set(np.argwhere(x<=5)[:, 0])
     final_set=set_1.intersection(set_2)
     ind1=np.asarray([list(final_set)])
-    
+
 #    ind1 = np.argwhere(x>0 and x<=5.0)[:, 0]
     ind2 = np.argwhere(x>5.0)[:, 0]
-    
+
     if len(ind1)!=0:
         xx = x[ind1.astype(int)]
         z = xx* xx
@@ -88,8 +88,8 @@ def p1evl(x, coef):
 
 PIO4   =  7.85398163397448309616E-1    # pi/4
 SQ2OPI =  7.9788456080286535587989E-1  # sqrt( 2/pi )
-TWOOPI =  6.36619772367581343075535E-1 # 2/pi 
-#THPIO4 =  2.35619449019234492885       # 3*pi/4 
+TWOOPI =  6.36619772367581343075535E-1 # 2/pi
+#THPIO4 =  2.35619449019234492885       # 3*pi/4
 
 PP = np.asarray([7.96936729297347051624E-4,    \
     8.28352392107440799803E-2,    \

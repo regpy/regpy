@@ -45,13 +45,13 @@ data=exact_data+noise
 gfu=GridFunction(op.fes_codomain)
 for i in range(201):
     gfu.vec[i]=data[i]
-    
+
 Symfunc=CoefficientFunction(gfu)
 func=np.zeros(201)
 for i in range(0, 201):
     mip=op.fes_codomain.mesh(i/200)
     func[i]=Symfunc(mip)
-    
+
 plt.plot(func)
 plt.show()
 
@@ -98,7 +98,7 @@ for i in range(N):
     gfu.vec[i]=reco[i]
     gfu2.vec[i]=exact_solution[i]
     gfu3.vec[i]=init_plot[i]
-    
+
 Symfunc=CoefficientFunction(gfu)
 Symfunc2=CoefficientFunction(gfu2)
 Symfunc3=CoefficientFunction(gfu3)
@@ -110,7 +110,7 @@ for i in range(0, N):
     func[i]=Symfunc(mip)
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
-    
+
 plt.plot(func, label='reco')
 plt.plot(func2, label='exact')
 #plt.plot(func3, label='init')
@@ -131,7 +131,7 @@ for i in range(201):
     gfu2.vec[i]=exact_data[i]
     gfu3.vec[i]=init_data[i]
     gfu4.vec[i]=data[i]
-    
+
 Symfunc=CoefficientFunction(gfu)
 Symfunc2=CoefficientFunction(gfu2)
 Symfunc3=CoefficientFunction(gfu3)
@@ -146,15 +146,10 @@ for i in range(0, 201):
     func2[i]=Symfunc2(mip)
     func3[i]=Symfunc3(mip)
     func4[i]=Symfunc4(mip)
-    
+
 plt.plot(func, label='reco')
 plt.plot(func2, label='exact')
 plt.plot(func3, label='init')
 plt.plot(func4, label='data')
 plt.legend()
 plt.show()
-
-
-
-
-

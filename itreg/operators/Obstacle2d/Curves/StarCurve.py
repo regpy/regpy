@@ -2,19 +2,19 @@ import numpy as np
 
 
 class StarCurve:
-    """ radial curve parameterized by z(t) = q(t)*[cos(t);sin(t)] 
+    """ radial curve parameterized by z(t) = q(t)*[cos(t);sin(t)]
      with a positive, 2pi-periodic function q"""
     def __init__(self, **kwargs):
         """ the first row of q contains values of q(t) at equidistant points
          the second row values of q', the third row of q'' and so on"""
         self.q=None
 
-    
-    
+
+
 #        function curve = StarCurve(name)
 #            curve = curve@GenCurve(name);
 #        end
-        
+
     def bd_eval(self,n,der):
         t=2*np.pi*np.linspace(0, n-1, n)/n
         cost = np.cos(t)
@@ -41,7 +41,7 @@ class StarCurve:
         if der>=2:
             self.zpp = np.append(q[2,:]*cost - 2*q[1,:]*sint - q[0,:]*cost, \
                 q[2,:]*sint + 2*q[1,:]*cost - q[0,:]*sint).reshape(2, n)
-            
+
         if der>=3:
             self.zppp = np.append(q[3,:]*cost - 3*q[2,:]*sint - 3*q[1,:]*cost + q[0,:]*sint, \
                 q[3,:]*sint + 3*q[2,:]*cost - 3*q[1,:]*sint - q[0,:]*cost).reshape(2,n)
@@ -49,7 +49,7 @@ class StarCurve:
             raise ValueError('only derivatives up to order 3 implemented')
         return der
 
-        
+
     def radial(self,n):
         t=2*np.pi*np.linspace(0, n-1, n)/n
         rad =  eval(self.name)(t,0)
@@ -76,7 +76,7 @@ def round_rect(t,der):
         res = (np.sin(t)**10 + (co*np.cos(t))**10)**(-0.1)
     elif der==1:
         res = -1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))
-    
+
     elif der==2:
         res = 11/100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
             **2-1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10 \
@@ -101,7 +101,7 @@ def apple(t, der):
         res = (0.5+0.4*np.cos(t)+0.1*np.sin(2*t))/(1+0.7*np.cos(t))
     elif der==1:
         res = (-2/5*np.sin(t)+1/5*np.cos(2*t))/(1+7/10*np.cos(t))+7/10*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**2*np.sin(t)
-    elif der==2:    
+    elif der==2:
         res = (-2/5*np.cos(t)-2/5*np.sin(2*t))/(1+7/10*np.cos(t))+7/5*(-2/5*np.sin(t)+1/5*np.cos(2*t))/(1+7/10*np.cos(t)) \
             **2*np.sin(t)+49/50*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**3*np.sin(t)**2+7/10*(1/2+2/5  \
             *np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**2*np.cos(t)
@@ -114,8 +114,8 @@ def apple(t, der):
     else:
         raise ValueError('derivative not implemented')
     return res
-        
-        
+
+
 def three_lobes(t, der):
     res=np.zeros(t.shape[0])
     if der==0:
@@ -129,7 +129,7 @@ def three_lobes(t, der):
     else:
         raise ValueError('derivative not implemented')
     return res
-        
+
 def pinched_ellipse(t, der):
     res=np.zeros(t.shape[0])
     if der==0:
@@ -143,8 +143,8 @@ def pinched_ellipse(t, der):
     else:
         raise ValueError('derivative not implemented')
     return res
-       
-          
+
+
 
 def smoothed_rectangle(t, der):
     res=np.zeros(t.shape[0])

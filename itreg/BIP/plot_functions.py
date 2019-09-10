@@ -4,7 +4,7 @@ Created on Sun Jun 30 17:57:00 2019
 
 @author: Björn Müller
 """
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -14,14 +14,14 @@ def plot_lastiter(pdf, exact_solution, exact_data, data):
     plt.title('solution')
     plt.legend()
     plt.show()
-    
+
     plt.plot(pdf.setting.codomain.discr.coords[0, ], exact_data, label='exact data')
     plt.plot(pdf.setting.codomain.discr.coords[0, ], data, label='data')
     plt.plot(pdf.setting.codomain.discr.coords[0, ], pdf.reco_data, label='reco data')
     plt.legend()
     plt.title('data')
     plt.show()
-    
+
 def plot_mean(statemanager, exact_solution, n_list=None, n_iter=None, variance=None):
     variance=variance or np.array([3])
 #    print(variance[0])
@@ -32,7 +32,7 @@ def plot_mean(statemanager, exact_solution, n_list=None, n_iter=None, variance=N
         raise ValueError('Specify the evaluation points')
     if n_list is not None:
         assert n_list.max()<statemanager.N
-        a = np.array([s.positions for s in statemanager.states[n_list]])        
+        a = np.array([s.positions for s in statemanager.states[n_list]])
     else:
         assert n_iter<statemanager.N
         a = np.array([s.positions for s in statemanager.states[-int(n_iter):]])
@@ -45,7 +45,7 @@ def plot_mean(statemanager, exact_solution, n_list=None, n_iter=None, variance=N
     plt.plot(m.T, label='mean')
     plt.legend()
     plt.show()
-    
+
 def plot_verlauf(statemanager, pdf=None, exact_solution=None, y_min=None, y_max=None, plot_real=False):
     arr=[s.log_prob for s in statemanager.states]
 #    maximum=np.asarray([arr]).max()
@@ -63,8 +63,8 @@ def plot_verlauf(statemanager, pdf=None, exact_solution=None, y_min=None, y_max=
         plt.ylim(top=y_max)
     plt.legend()
     plt.show()
-    
-def plot_iter(pdf, statemanager, position):  
+
+def plot_iter(pdf, statemanager, position):
     assert type(position)==int
     plt.plot(range(0, statemanager.N), [s.positions[position] for s in statemanager.states])
     plt.xlabel('iterations')

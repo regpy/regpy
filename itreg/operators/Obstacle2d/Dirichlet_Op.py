@@ -19,7 +19,7 @@ import scipy.linalg as scla
 
 
 class DirichletOp(NonlinearOperator):
-    
+
     def __init__(self, domain, codomain=None, **kwargs):
         codomain = codomain or domain
 #        codomain.discr.iscomplex()
@@ -33,8 +33,8 @@ class DirichletOp(NonlinearOperator):
         self.obstacle=Obstacle2dBaseOp()
         self.obstacle.Obstacle2dBasefunc()
         self.bd=self.obstacle.bd
-        
-        
+
+
         self.op_name = 'DirichletOp'
         self.syntheticdata_flag = True
         self.kappa = 3    # wave number
@@ -43,14 +43,14 @@ class DirichletOp(NonlinearOperator):
         t=2*np.pi*np.arange(0, self.N_inc)/self.N_inc
         #t = 0.5;
         self.inc_directions = np.append(np.cos(t), np.sin(t)).reshape((2, self.N_inc))
-        
-        
+
+
         self.N_meas = 64
         t= 2*np.pi*np.arange(0, self.N_meas)/self.N_meas
         self.N_ieq = 64
         self.meas_directions = np.append(np.cos(t), np.sin(t)).reshape((2, self.N_meas))
-        
-        
+
+
         self.true_curve = 'nonsym_shape'
         self.noiselevel = 0.000
         self.N_FK = 64
@@ -63,17 +63,17 @@ class DirichletOp(NonlinearOperator):
 
 
 
-    
+
 
         """ 2 dimensional obstacle scattering problem with Dirichlet boundary condition
          see sec. 4 in T. Hohage "Logarithmic convergence rates of the iteratively
          regularized Gauss-Newton method for an inverse potential
          and an inverse scattering problem" Inverse Problems 13 (1997) 1279�1299"""
-    
-    
+
+
         self.dudn=None  # normal derivative of total field at boundary
         """ weights of single and double layer potentials"""
-        self.wSL=-1*complex(0,1)*self.kappa 
+        self.wSL=-1*complex(0,1)*self.kappa
         self.wDL=1
         """ LU factors + permuation for integral equation matrix"""
         self.L=None
@@ -83,17 +83,17 @@ class DirichletOp(NonlinearOperator):
         self.op_name='DirichletOp'
         """ use a mixed single and double layer potential ansatz with
              weights wSL and wDL"""
-        self.Ydim = 2* np.size(self.meas_directions) * np.size(self.inc_directions, 1) 
+        self.Ydim = 2* np.size(self.meas_directions) * np.size(self.inc_directions, 1)
         super().__init__(domain=domain, codomain=codomain)
 
-        
+
     def _eval(self, coeff, **kwargs):
-        
-    
+
+
         """ solve the forward Dirichlet problem for the obstacle parameterized by
          coeff. Quantities needed again for the computation of derivatives and
          adjoints are stored as members of F."""
-        
+
         self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
         of the parametrization and save these quantities as members of F.bd"""
@@ -112,7 +112,7 @@ class DirichletOp(NonlinearOperator):
         self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa, \
                                            self.wSL,self.wDL)
         farfield = []
-        
+
         for l in range(0, np.size(self.inc_directions, 1)):
             rhs = 2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))*  \
                 (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
@@ -123,7 +123,7 @@ class DirichletOp(NonlinearOperator):
             complex_farfield = np.dot(FF_SL, self.dudn[:,l])
             farfield=np.append(farfield, complex_farfield)
         return farfield
-        
+
     def _derivative(self, h):
             der = []
             for l in range(0, np.size(self.inc_directions,1 )):
@@ -132,13 +132,13 @@ class DirichletOp(NonlinearOperator):
                 complex_farfield = self.FF_combined.dot(phi)
                 der=np.append(der, complex_farfield)
             return der
-        
+
     def _adjoint(self, g):
             res = np.zeros(2*self.N_ieq)
             rhs = np.zeros(2*self.N_ieq)
             N_FF = np.size(self.meas_directions,1)
             for  l in range(0, np.size(self.inc_directions,1)):
-                g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)] 
+                g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)]
                 phi = self.FF_combined.T.dot(g_complex)
 
                 rhs[self.perm.astype(int)]=np.linalg.solve(self.L, \
@@ -146,15 +146,15 @@ class DirichletOp(NonlinearOperator):
                 res = res -2*rhs*np.conjugate(self.dudn[:,l]).real
             adj = self.bd.adjoint_der_normal(res * self.bd.zpabs.T)
             return adj
-        
+
     def accept_proposed(self, positions):
         return True
-        
+
 def create_synthetic_data(self):
             self.op.obstacle.bd_ex.bd_eval(self.op.obstacle.bd_ex, 2*self.op.N_ieq_synth,2)
             """compute the grid points of the exact boundary and derivatives of the
             %parametrization and save these quantities as members of bd_ex"""
-            
+
             #set up the boudary integral operator
             bd=self.op.obstacle.bd_ex
             Iop_data = setup_iop_data(bd,self.op.kappa);
@@ -162,7 +162,7 @@ def create_synthetic_data(self):
                 Iop = self.op.wSL*op_S(bd,Iop_data)
             else:
                 Iop = np.zeros(np.size(bd.z,1),np.size(bd.z,1))
-                
+
             if self.op.wDL!=0:
                 Iop = Iop + self.op.wDL*(np.diag(bd.zpabs)+ op_K(bd,Iop_data))
 
@@ -188,5 +188,5 @@ def create_synthetic_data(self):
             data=farfield[0, :]+complex(0,1)*farfield[1, :]+self.op.noiselevel * \
                     complex_noise/np.sqrt(complex_noise.T*   \
                     self.codomain.gram(complex_noise))
-            
+
             return data

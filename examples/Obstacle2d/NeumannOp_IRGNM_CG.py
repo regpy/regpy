@@ -48,4 +48,3 @@ reco, reco_data = newton.run(stoprule)
 
 plotting=plots(op, reco, reco_data, data, exact_data, exact_solution)
 plotting.plotting()
-

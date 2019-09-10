@@ -33,7 +33,7 @@ def bessj1(x):
     if len(ind)!=0:
         x[ind.astype(int)] = -x[ind.astype(int)]
 
-    
+
     ind1 = np.argwhere(x<=5.0)[:, 0]
     ind2 = np.argwhere(x>5.0)[:, 0]
     if len(ind1)!=0:
@@ -52,9 +52,9 @@ def bessj1(x):
         xn = xx - THPIO4
         p = p* np.cos(xn) - w * q * np.sin(xn)
         ans[ind2.astype(int)]= SQ2OPI* p / np.sqrt(xx)
-        
+
     return ans
-       
+
 
 
 def polevl(x,coef):
@@ -74,8 +74,8 @@ def p1evl(x, coef):
 
 PIO4   =  7.85398163397448309616E-1    # pi/4
 SQ2OPI =  7.9788456080286535587989E-1  # sqrt( 2/pi )
-TWOOPI =  6.36619772367581343075535E-1 # 2/pi 
-THPIO4 =  2.35619449019234492885       # 3*pi/4 
+TWOOPI =  6.36619772367581343075535E-1 # 2/pi
+THPIO4 =  2.35619449019234492885       # 3*pi/4
 
 RP1 = np.asarray([-8.99971225705559398224E8,
  4.52228297998194034323E11,

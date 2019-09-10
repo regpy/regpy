@@ -43,4 +43,3 @@ plt.plot(grid.coords[0], data, label='data')
 plt.plot(grid.coords[0], reco_data, label='reco data')
 plt.legend()
 plt.show()
-

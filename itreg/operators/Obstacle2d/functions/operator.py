@@ -14,9 +14,9 @@ def op_S(bd,dat):
     % (S\phi)(z(t)):=2|z'(t)|\int_0^{2\pi} \Phi(z(t),z(s)) |z'(s)| \phi(s) ds
     % Our implementation is based section 3.5 of the monograph "Inverse Acoustic
     % and Electomagnetic Scattering Theory" by R. Kress and D. Colton.
-    % As opposed to this reference we multiplied by |z'(t)| to obtain a 
+    % As opposed to this reference we multiplied by |z'(t)| to obtain a
     % complex symmetric matrix """
-    
+
     dim = np.size(bd.z,1)
     M1 = -1/(2*np.pi)*dat.bessH0.real
     M = complex(0,1)/2*dat.bessH0
@@ -37,10 +37,10 @@ def op_K(bd,dat):
     % Our implementation is based section 3.5 of the monograph "Inverse Acoustic
     % and Electomagnetic Scattering Theory" by R. Kress and D. Colton.
     % As opposed to this reference we multiplied by |z'(t)|."""
-    
+
     dim = np.size(bd.z,1)
     kappa = dat.kappa
-    
+
     aux = np.dot(bd.z.T, bd.normal) - np.dot(np.ones((dim, 2)),(bd.normal*bd.z))
     H = 0.5*complex(0, 1)*kappa**2* aux * dat.bessH1quot
     H1 = -kappa**2/(2*np.pi)*aux * dat.bessH1quot.real
@@ -63,7 +63,7 @@ def op_T(bd,dat):
     %hypersingular integral equation in scattering theory" by Rainer Kress,
     %J. Comp. Appl. Math. 61:345-360, 1995, and uses the formula
     %T = \frac{d}{ds}S\frac{d\phi}{ds} + \kappa^2\nu\cdot S(\nu\phi)"""
-    
+
     dim=np.size(bd.z,1)
     z = bd.z
     zp = bd.zp
@@ -71,7 +71,7 @@ def op_T(bd,dat):
     zppp = bd.zppp
     zpabs = bd.zpabs
     kappa = dat.kappa
-    
+
     N_tilde = kappa*(z.T.dot(zp) -  np.ones((dim,1)).dot(np.sum(z*zp, 0).reshape((1, dim))) / (dat.kdist+1e-5))
     N_tilde = -N_tilde.T.dot(N_tilde)
     Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bessH0 - 2*kappa**2*dat.bessH1quot) \
@@ -88,11 +88,11 @@ def op_T(bd,dat):
              - 1/(4*np.pi) * np.sum(zpp[:,j]**2)                    / zpabs[j]**2 \
              - 1/(6*np.pi) * np.sum(zp[:,j]*zppp[:,j])             / zpabs[j]**2
 
-    
+
     T_weights = np.zeros(dim)
     T_weights[np.arange(1, dim, 2)]=(1/dim) * np.sin(np.pi*np.arange(1, dim, 2)/dim)**(-2)
     T_weights[0] = -dim/4
-    
+
     T =  scla.toeplitz(T_weights) \
         - 2*np.pi*( N1*dat.logsin_weights + N2/dim )  \
         + kappa**2*op_S(bd,dat)* (zp.T.dot(zp)) / (zpabs.T.dot(zpabs))

@@ -68,15 +68,15 @@ for x,y in BornSolver:
     e = x - exact_solution
     r_norm = BornSolver.NFFT.norm(r) / BornSolver.NFFT.norm(BornSolver.rhs)
     e_norm = np.linalg.norm(e)/np.linalg.norm(exact_solution)
-    
+
     print('{:2d}: |r|={:.2g}, |e|={:.2g}'.format(BornSolver.iteration,r_norm,e_norm))
 
-    
+
 plt.figure()
 plt.imshow(np.abs(contrast))
 plt.title('potential')
 plt.colorbar()
-    
+
 plt.figure()
 plt.imshow(np.abs(proj.adjoint(x)))
 plt.title('solution')
@@ -87,4 +87,3 @@ plt.imshow(np.abs(proj.adjoint(e)))
 plt.title('error')
 plt.colorbar()
 plt.show()
-

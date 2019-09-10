@@ -92,18 +92,18 @@ stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][-4]
 Temperature=1e-5
 reg_parameter=1e-4
 
-    
+
 n_codomain=np.prod(op.codomain.shape)
-    
+
 #prior=gaussian_prior(reg_parameter*np.eye(op.domain.shape[0]), setting, np.zeros(op.domain.shape[0]))
 #likelihood=gaussian_likelihood(setting, np.eye(n_codomain), exact_data)
 prior=tikhonov(setting, reg_parameter, exact_data)
 likelihood=unity(setting)
 
-    
+
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
+bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
@@ -140,4 +140,3 @@ from itreg.BIP.plot_functions import plot_verlauf
 #plot_mean(statemanager, exact_solution, n_iter=1e4)
 plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
 #plot_iter(bip, statemanager, 10)
-

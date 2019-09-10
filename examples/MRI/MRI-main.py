@@ -36,7 +36,7 @@ exact_data=op(exact_solution)
 #yscale=100/np.linalg.norm(exact_data)
 yscale=1
 data=yscale*exact_data
-        
+
 
 #init=op.domain.one()+1j*op.domain.zero()
 init=2*exact_solution+1j*op.domain.zero()
@@ -65,9 +65,3 @@ plotting=plots(op, reco, reco_data, data, exact_solution)
 plotting.plot_samplingindex()
 plotting.plot_data()
 plotting.plot_rho()
-
-
-
-
-
-            

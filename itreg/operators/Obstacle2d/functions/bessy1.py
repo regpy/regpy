@@ -31,7 +31,7 @@ import numpy as np
 
 
 
-       
+
 def bessy1(x,bessj1x):
     ans = np.zeros(np.size(x))
     #if ~isempty(find(x<=0))
@@ -41,18 +41,18 @@ def bessy1(x,bessj1x):
     set_2=set(np.argwhere(x<=5)[:, 0])
     final_set=set_1.intersection(set_2)
     ind1=np.asarray([list(final_set)])
-    
+
 #    ind1 = np.argwhere(x>0 and x<=5.0)[:, 0]
     ind2 = np.argwhere(x>5.0)[:, 0]
-    
+
     if len(ind1)!=0:
         xx = x[ind1.astype(int)]
         z = xx * xx
         w = xx * polevl(z, YP1) / p1evl(z, YQ1)
-        
+
         bessj1xx = bessj1x[ind1.astype(int)]
 
-    
+
         w = w + TWOOPI * ( bessj1xx * np.log(xx)  -  np.ones(np.size(ind1))/xx )
         ans[ind1.astype(int)] =w
 
@@ -84,8 +84,8 @@ def p1evl(x, coef):
 
 #PIO4   =  7.85398163397448309616E-1;    % pi/4
 SQ2OPI =  7.9788456080286535587989E-1  # sqrt( 2/pi )
-TWOOPI =  6.36619772367581343075535E-1 # 2/pi 
-THPIO4 =  2.35619449019234492885       # 3*pi/4 
+TWOOPI =  6.36619772367581343075535E-1 # 2/pi
+THPIO4 =  2.35619449019234492885       # 3*pi/4
 
 PP1 = np.asarray([7.62125616208173112003E-4,
  7.31397056940917570436E-2,
@@ -101,7 +101,7 @@ PQ1 = np.asarray([5.71323128072548699714E-4,
  8.39985554327604159757E0,
  5.20982848682361821619E0,
  9.99999999999999997461E-1])
-    
+
 QP1 = np.asarray([5.10862594750176621635E-2,
  4.98213872951233449420E0,
  7.58238284132545283818E1,

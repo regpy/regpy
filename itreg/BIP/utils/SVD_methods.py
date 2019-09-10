@@ -17,17 +17,17 @@ def randomized_SVD(self, H):
     for i in range(0, N):
         for j in range(0, r):
             X[i,j]=rd.random()
-        
+
     #second step, compute sample matrix
     Y=np.dot(H, X)
-    
+
     #third step, QR-decomposition of Y
     Q, R=np.linalg.qr(Y)
-    
+
     #solve linear system to obtain the matrix B: Q^TY=B(Q^T X)
     B_trans=np.linalg.solve(np.dot(X.transpose(), Q), np.dot(Y.transpose(), Q))
     B=B_trans.transpose()
-    
+
     #Perform SVD of B
     L, U=np.linalg.eig(B)
     #compute singular vectors
@@ -51,7 +51,7 @@ def Lanzcos_SVD(self, H, number, basis=None, v_1=None):
     alpha[0]=np.dot(w_bar[:, 0], v[:, 0])
     w[:, 0]=w_bar[:, 0]-alpha[0]*v[:, 0]
     beta=np.zeros(number)
-    for j in range(1, number): 
+    for j in range(1, number):
         beta[j]=np.sqrt(np.vdot(w[:, j], w[:, j]))
         if beta[j]!=0:
             v[:, j]=w[:, j-1]/beta[j]
@@ -66,5 +66,3 @@ def Lanzcos_SVD(self, H, number, basis=None, v_1=None):
     eigenvalues=np.zeros(N)
     eigenvalues[0:number]=S
     return eigenvalues, np.dot(V, v.transpose())
-    
-

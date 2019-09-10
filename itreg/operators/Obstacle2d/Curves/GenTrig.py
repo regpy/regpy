@@ -13,18 +13,18 @@ class GenTrig:
      z and its derivatives are sampled at n equidistant points.
      Application of the Gramian matrix and its inverse w.r.t. the
      Sobolev norm ||z||_{H^s} are implemented."""
-    
+
     def __init__(self, N_fk, sobo_Index, type=None, coeff=None, **kwargs):
-    
+
         self.N_fk=N_fk
         self.sobo_index=sobo_Index
         self.type=None
         self.coeff=None  # coefficients of the trigonometric polynomials
 
-    
+
 
     def GenTrig(self, N, s):
-        
+
         self.GenCurve('GenTrig')
         if N%2==1:
             ValueError('N should be even')
@@ -32,11 +32,11 @@ class GenTrig:
         self.coeff = np.zeros(2*N)
         self.sobo_Index = s
 
-    def compute_FK(self, val, n):    
-        
+    def compute_FK(self, val, n):
+
         # computes n Fourier coeffients to the point values given by by val.
         # such that ifft(fftshift(coeffhat)) is an interpolation of val
-        
+
         if n%2==1:
             ValueError('length of t should be even')
 
@@ -61,12 +61,12 @@ class GenTrig:
         return coeffhat2
 
     def bd_eval(self, n, der):
-        
+
         # evaluates the first der derivatives of the parametrization of
         # the curve on n equidistant time points
         N = int(len(self.coeff)/2)
 
-        
+
         """transpose ?"""
         coeffhat = np.append(self.compute_FK(self.coeff[0:N],n), \
             self.compute_FK(self.coeff[N:2*N],n)).reshape(2, n)
@@ -79,7 +79,7 @@ class GenTrig:
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             #outer normal vector
             self.normal = np.append(self.zp[1,:], -self.zp[0,:]).reshape(2, self.zp[0, :].shape[0])
-   
+
 
         if der>=2:
             """array indices"""
@@ -92,8 +92,8 @@ class GenTrig:
         if der>3:
             raise ValueError('only derivatives up to order 3 implemented')
 
-    def der_normal(self, h):        
-        
+    def der_normal(self, h):
+
         #computes the normal part of the perturbation of the curve caused by
         #perturbing the coefficient vector curve.coeff in direction h
         N= len(h)/2
@@ -106,13 +106,13 @@ class GenTrig:
                 self.compute_FK(h[N:2*N],n)].transpose()
             hn = [np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))), \
                 np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))].reshape(2, h_hat[0, :].shape[0])
-        """transpose ?"""   
+        """transpose ?"""
         der = (np.sum(hn*self.normal,1)/self.zpabs).tranpose()
         return der
-        
-    
+
+
     def adjoint_der_normal(self, g):
-        
+
         #applies the adjoint of the linear mapping h->der_normal(curve,h) to g
         N = len(self.coeff)/2
         n= len(g)
@@ -127,21 +127,21 @@ class GenTrig:
                 np.fft.ifft(np.fft.fftshift(adj_hat[:,1]))].reshape(2, adj_hat[:, 0].shape[0])
         return adj
 
-    def arc_length_der(self, h):    
-        
+    def arc_length_der(self, h):
+
             #computes the derivative of h with respect to arclength
             n=len(self.zpabs)
             """transpsoe ?"""
             dhds = np.fft.ifft(np.fft.fftshift((1j*np.linspace(-n/2, n/2-1, n)).transpose()*self.compute_FK(h,n)))/self.zpabs.transpose()
             return dhds
-        
+
     def L2err(self, q1, q2):
         res=self.params.domain.norm(q1-q2)/np.sqrt(len(q1))
         return res
-        
-    def coeff2Curve(self, coeff, n):   
-        
-        
+
+    def coeff2Curve(self, coeff, n):
+
+
         N = len(coeff)/2
         """transpose ?"""
         coeffhat = [self.compute_FK(coeff[0:N],N), \

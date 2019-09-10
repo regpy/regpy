@@ -94,7 +94,7 @@ class MediumScatteringBase(Operator):
         assert np.allclose(np.linalg.norm(inc_directions, axis=1), 1)
         self.inc_directions = inc_directions
         self.inc_matrix = np.exp(1j * wave_number * (inc_directions @ grid.coords[:, support]))
-        
+
         assert equation in {'HELMHOLTZ','SCHROEDINGER'}
         self.equation = equation
 
@@ -104,7 +104,7 @@ class MediumScatteringBase(Operator):
             compute_kernel = partial(_compute_kernel_3D, 2 * wave_number * radius)
 
         self.kernel = compute_kernel(grid.shape)
-        
+
         if self.equation == 'SCHROEDINGER':
             self.kernel /= self.wave_number ** 2
 
@@ -375,7 +375,7 @@ class MediumScatteringFixed(MediumScatteringBase):
                 self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem
             elif self.equation == 'SCHROEDINGER':
                 self.farfield_matrix *= self.domain.volume_elem / (2*np.pi)**2
-                
+
         elif self.domain.ndim == 3:
             # TODO The sign appears to be wrong
             self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem / (4*np.pi)
@@ -390,10 +390,10 @@ class MediumScatteringFixed(MediumScatteringBase):
 
     def _compute_farfield_adjoint(self, farfield, inc_idx, v):
         v[self.support] = farfield[:, inc_idx] @ self.farfield_matrix.conj()
-        
-        
-        
-        
+
+
+
+
 class MediumScatteringOneToMany(MediumScatteringBase):
     """Acoustic medium scattering with fixed measurement directions.
 
@@ -407,23 +407,23 @@ class MediumScatteringOneToMany(MediumScatteringBase):
         All other (keyword-only) arguments are passed to the base class, which
         see.
     """
-    
+
     def __init__(self,*,farfield_directions,**kwargs):
         """
             Parameters:
             -----------
             farfield directions: Ninc x Nmeas x dim(=2)
                 directions must be normalized
-            
+
             Initialized quantities:
             -----------------------
             farfield_matrix:  Ninc x Nmeas x Nx
             farfield: Nmeas x Ninc
         """
-        
+
         super().__init__(**kwargs)
         assert self.domain.ndim == 2
-        
+
         # initializing the farfield matrix: exp(-ilx)
         self.farfield_matrix = np.asarray(
                 [np.exp(-1j*self.wave_number * (M @ self.domain.coords[:,self.support]) )
@@ -433,16 +433,16 @@ class MediumScatteringOneToMany(MediumScatteringBase):
             self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem
         elif self.equation == 'SCHROEDINGER':
             self.farfield_matrix *= self.domain.volume_elem / (2*np.pi)**2
-    
+
         self.codomain = spaces.OneToManyGrid(
                 shape = (len(farfield_directions[0]),
                          len(farfield_directions)),
                 dtype = complex
         )
-    
-    
+
+
     def _compute_farfield(self,farfield,inc_idx,v):
         farfield[:,inc_idx] = self.farfield_matrix[inc_idx] @ v[self.support]
-    
+
     def _compute_farfield_adjoint(self,farfield,inc_idx,v):
         v[self.support] = farfield[:,inc_idx] @ self.farfield_matrix[inc_idx].conj()

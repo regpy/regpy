@@ -15,7 +15,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
 
-# Example parameters 
+# Example parameters
 fresnelNumber = 5e-4    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                         # in grid (i.e. with the size of one pixel for the above choice of grid)
 noise_level = 0.01      # Noise level in the simulated data
@@ -68,4 +68,3 @@ plt.imshow(reco)
 plt.colorbar()
 
 plt.show()
-

@@ -24,7 +24,7 @@ class NeumannOp(NonlinearOperator):
     """ 2 dimensional obstacle scattering problem with Neumann boundary condition
      see T. Hohage "Convergence rates of a regularized Newton method
      in sound-hard inverse scattering" SIAM J. Numer. Anal. 36:125--142, 1999"""
-    
+
     def __init__(self, domain, codomain=None, **kwargs):
         codomain = codomain or domain
         super().__init__(domain, codomain)
@@ -38,9 +38,9 @@ class NeumannOp(NonlinearOperator):
         self.obstacle=Obstacle2dBaseOp()
         self.obstacle.Obstacle2dBasefunc()
         self.bd=self.obstacle.bd
-        
-        
-        
+
+
+
         self.op_name = 'NeumannOp'
         self.syntheticdata_flag = True
         self.kappa = 3    # wave number
@@ -49,13 +49,13 @@ class NeumannOp(NonlinearOperator):
         #t=2*pi*[0:N_inc-1]/N_inc;
         t = 0.5
         self.inc_directions = np.append(np.cos(t), np.sin(t)).reshape((2, N_inc))
-        
+
         N_meas = 64
         t= 2*np.pi*np.arange(0, N_meas)/N_meas
         self.meas_directions = np.append(np.cos(t), np.sin(t)).reshape((2, N_meas))
         self.noiselevel = 0.01
         self.N_ieq = 64
-        
+
         self.true_curve = 'nonsym_shape'
         #'peanut','round_rect', 'apple',
         #'three_lobes','pinched_ellipse','smoothed_rectangle','nonsym_shape'
@@ -63,7 +63,7 @@ class NeumannOp(NonlinearOperator):
 
 
 
-        
+
         self.u=None  # values of total field at boundary
         """ weights of single and double layer potentials"""
         self.wSL = -complex(0,1)*self.kappa
@@ -79,16 +79,16 @@ class NeumannOp(NonlinearOperator):
 
         self.Ydim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
 
-    
-    
-        
+
+
+
     def _eval(self, coeff, differentiate=False):
-        
-        
+
+
         """ solve the forward scattering problem for the obstacle parameterized by
         % coeff. Quantities needed again for the computation of derivatives and
         % adjoints are stored as members of self."""
-        
+
         self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
         of the parametrization and save these quantities as members of F.bd"""
@@ -111,7 +111,7 @@ class NeumannOp(NonlinearOperator):
         self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,  \
                                            self.wSL,self.wDL)
         farfield = []
-        
+
         for l in range (0,np.size(self.inc_directions,1)):
             rhs = -2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))* \
                 (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
@@ -121,7 +121,7 @@ class NeumannOp(NonlinearOperator):
             complex_farfield = FF_DL.dot(self.u[:,l])
             farfield=np.append(farfield, complex_farfield)
         return farfield
-        
+
     def _derivative(self,h):
 
             der = []
@@ -135,13 +135,13 @@ class NeumannOp(NonlinearOperator):
                 der=np.append(der, complex_farfield)
             return der
 
-        
+
     def _adjoint(self,g):
             res = complex(0,1)*np.zeros(2*self.N_ieq)
             v = complex(0,1)*np.zeros(2*self.N_ieq)
             N_FF = np.size(self.meas_directions,1)
             for l in range(0, np.size(self.inc_directions,1)):
-                g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)] 
+                g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)]
                 phi = self.FF_combined.T.dot(g_complex)
                 v[self.perm.astype(int)] = np.linalg.solve(self.L.T, \
                                           np.linalg.solve(self.U.T, phi))
@@ -151,24 +151,24 @@ class NeumannOp(NonlinearOperator):
                               self.u[:,l]).real
             adj = self.bd.adjoint_der_normal(res * self.bd.zpabs.T)
             return adj
-        
+
     def other_X_err(self,h):
             res = np.sqrt(((h-self.xdag).T*(h-self.xdag)).real)
             return res
-        
+
     def accept_proposed(self, x):
         return True
-        
-        
+
+
 def create_synthetic_data(self):
         self.op.obstacle.bd_ex.bd_eval(self.op.obstacle.bd_ex, 2*self.op.N_ieq_synth,3)
         """compute the grid points of the exact boundary and derivatives of the
         %parametrization and save these quantities as members of bd_ex"""
-        
+
         #set up the boudary integral operator
         bd=self.op.obstacle.bd_ex
         Iop_data = setup_iop_data(bd,self.op.kappa)
-        
+
         if self.op.wDL!=0:
             Iop = self.op.wDL*op_T(bd,Iop_data)
         else:
@@ -189,12 +189,12 @@ def create_synthetic_data(self):
             phi = np.linalg.solve(Iop, rhs)
             complex_farfield = FF_combined.dot(phi)
             farfield = np.append(farfield, np.append(complex_farfield.real, complex_farfield.imag))
-        
+
         farfield=farfield.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
         noise = np.random.randn(np.size(farfield))
         noise=noise.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
         complex_noise=noise[0, :]+complex(0,1)*noise[1, :]
         data = farfield + self.op.noiselevel * complex_noise/ \
                             np.sqrt(complex_noise*self.codomain.gram(complex_noise))
-        
+
         return data[0, :].real+complex(0, 1)*data[1, :].real

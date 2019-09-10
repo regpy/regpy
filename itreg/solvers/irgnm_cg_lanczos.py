@@ -14,17 +14,17 @@ class IRGNM_CG_Lanczos(Solver):
 
        .. math:: T(x) = y,
 
-    where   :math:`T` is a Frechet-differentiable operator. The number of 
+    where   :math:`T` is a Frechet-differentiable operator. The number of
     iterations is effectively the regularization parameter and needs to be
     picked carefully.
-    
+
     IRGNM stands for Iteratively Regularized Gauss Newton Method. CG stands for
     the Conjugate Gradient method. The regularized Newton equations are solved
     by the conjugate gradient method applied to the normal equation. The "outer
     iteration" and the "inner iteration" are referred to as the Newton
     iteration and the CG iteration, respectively. The CG method with all its
     iterations is run in each Newton iteration.
-    
+
     Parameters
     ----------
     op : :class:`Operator <itreg.operators.Operator>`
@@ -71,26 +71,26 @@ class IRGNM_CG_Lanczos(Solver):
         The value at the current point.
     """
 
-    def __init__(self, setting, data, init, cgmaxit=50, alpha0=1, alpha_step=2/3., 
+    def __init__(self, setting, data, init, cgmaxit=50, alpha0=1, alpha_step=2/3.,
                  cgtol=[0.3, 0.3, 1e-6]):
         """Initialization of parameters."""
-        
+
         #super().__init__(logging.getLogger(__name__))
         super().__init__()
         self.setting = setting
         self.data = data
         self.init = init
         self.x = self.init
-        
+
         # Parameter for the outer iteration (Newton method)
         self.k = 0
-        
+
         # Parameters for the inner iteration (CG method)
         self.cgmaxit = cgmaxit
         self.alpha0 = alpha0
         self.alpha_step = alpha_step
         self.cgtol = cgtol
-        
+
         self.eigval_num=3
         #orthonormalization computed in which krylov space
         self.krylov_num=10
@@ -100,17 +100,17 @@ class IRGNM_CG_Lanczos(Solver):
         # Update of the variables in the Newton iteration and preparation of
         # the first CG step.
         self.outer_update()
-        
+
         #Initialize Lanczos method
         self._v=np.random.randn(np.size(self.data))
         self._v/=np.linalg.norm(self._v)
-        
+
 
 
     def outer_update(self):
         """Updates and computes variables for the Newton iteration.
-        
-        In this function all variables of the current Newton iteration are 
+
+        In this function all variables of the current Newton iteration are
         updated, after the CG method is used. Furthermore some variables for
         the next time the CG method is used (in the next Newton iteration) are
         prepared.
@@ -126,10 +126,10 @@ class IRGNM_CG_Lanczos(Solver):
         self._regpar = self.alpha0 * self.alpha_step**self.k
         self._cgstep = 0
         self._kappa = 1
-        
+
         # Preparations for the CG method
         self._ztilde = self.setting.Hcodomain.gram(self._residual)
-        self._stilde = (deriv.adjoint(self._ztilde) 
+        self._stilde = (deriv.adjoint(self._ztilde)
                         + self._regpar*self.setting.Hdomain.gram(self._xref))
         self._s = self.setting.Hdomain.gram_inv(self._stilde)
         if self.need_prec_update==False:
@@ -139,23 +139,23 @@ class IRGNM_CG_Lanczos(Solver):
         self._norm_s = np.real(self._stilde @ self._s)
         self._norm_s0 = self._norm_s
         self._norm_h = 0
-        
+
         self._h = np.zeros(np.shape(self._s))
         self._Th = np.zeros(np.shape(self._residual))
         self._Thtilde = self._Th
         self.inner_num=0
-                    
-        
+
+
     def inner_update(self):
         """Updates and computes variables for the CG iteration.
-        
+
         In this function all variables in each CG iteration , after ``self.x``
         was updated, are updated. Its only purpose is to improve tidiness.
         """
         self._Th = self._Th + self._gamma*self._z
         self._Thtilde = self._Thtilde + self._gamma*self._ztilde
         _, deriv=self.setting.op.linearize(self.x)
-        self._stilde += (- self._gamma*(deriv.adjoint(self._ztilde) 
+        self._stilde += (- self._gamma*(deriv.adjoint(self._ztilde)
                          + self._regpar*self._dtilde)).real
         self._s = self.setting.Hdomain.gram_inv(self._stilde)
         if self.need_prec_update==False:
@@ -169,39 +169,39 @@ class IRGNM_CG_Lanczos(Solver):
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
         self.inner_num+=1
-        
-        
+
+
 
     def _next(self):
         """Run a single IRGNM_CG iteration.
 
         The while loop is the CG method, it has four conditions to stop. The
         first three work with the tolerances given in ``self.cgtol``. The last
-        condition checks if the maximum number of CG iterations 
+        condition checks if the maximum number of CG iterations
         (``self.cgmaxit``) is reached.
-        
+
         The CG method solves by CGNE
-        
+
 
         .. math:: A h = b,
-        
+
         with
-        
+
         .. math:: A := G_X^{-1} F^{' *} G_Y F' + \mbox{regpar} ~I
         .. math:: b := G_X^{-1} F^{' *} G_Y y + \mbox{regpar}~ \mbox{xref}
-        
+
         where
-        
-        +--------------------+-------------------------------------+ 
-        | :math:`F`          | self.op                             | 
-        +--------------------+-------------------------------------+ 
-        | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.range.gram | 
+
+        +--------------------+-------------------------------------+
+        | :math:`F`          | self.op                             |
+        +--------------------+-------------------------------------+
+        | :math:`G_X,~ G_Y`  | self.op.domain.gram, self.op.range.gram |
         +--------------------+-------------------------------------+
         | :math:`G_X^{-1}`   | self.op.domain.gram_inv               |
-        +--------------------+-------------------------------------+                  
+        +--------------------+-------------------------------------+
         | :math:`F'`         | self.op.derivative()                |
-        +--------------------+-------------------------------------+ 
-        | :math:`F'*`        | self.op.derivative().adjoint        | 
+        +--------------------+-------------------------------------+
+        | :math:`F'*`        | self.op.derivative().adjoint        |
         +--------------------+-------------------------------------+
 
 
@@ -211,8 +211,8 @@ class IRGNM_CG_Lanczos(Solver):
             Always True, as the IRGNM_CG method never stops on its own.
 
         """
-        
-            
+
+
         if self.need_prec_update:
             while (
               self.inner_num<self.krylov_num or
@@ -225,15 +225,15 @@ class IRGNM_CG_Lanczos(Solver):
               /self._kappa/self._regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
-              np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
-              > self.cgtol[2] and 
+              np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa)
+              > self.cgtol[2] and
               # Fourth condition
               self._cgstep <= self.cgmaxit)):
-                  
+
             # Computations and updates of variables
-            
+
                 _, deriv=self.setting.op.linearize(self.x)
-                self._z = deriv(self._d)                    
+                self._z = deriv(self._d)
                 self._ztilde = self.setting.Hcodomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
@@ -243,14 +243,14 @@ class IRGNM_CG_Lanczos(Solver):
                                )
                 self._h = self._h + self._gamma*self._d
     #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
-                # Updating ``self.x`` 
+                # Updating ``self.x``
      #           self.x += self._h
                 if self.inner_num<=self.krylov_num:
                     self.orthonormal[self.inner_num-1, :]=self._s/np.sqrt(self._norm_s)
                 self.inner_update()
-                    
+
             self.lanzcos_update()
-            
+
         # End of the CG method. ``self.outer_update()`` does all computations
         # of the current Newton iteration.
         else:
@@ -264,12 +264,12 @@ class IRGNM_CG_Lanczos(Solver):
                   #/self._kappa/self._regpar)
                   #> self.cgtol[1] / (1+self.cgtol[1]) and
                   # Third condition
-                  #np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
-                  #> self.cgtol[2] and 
+                  #np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa)
+                  #> self.cgtol[2] and
                   # Fourth condition
                   self._cgstep <= self.cgmaxit
                   ):
-                      
+
                 # Computations and updates of variables
                 _, deriv=self.setting.op.linearize(self.x)
                 #self._z = deriv(self._d)
@@ -278,14 +278,14 @@ class IRGNM_CG_Lanczos(Solver):
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
                                          *self._dtilde @ self._d
-                                         + self._ztilde @ self._z                                
+                                         + self._ztilde @ self._z
                                          )
                                )
-                self._h = self._h + self._gamma*self._d 
+                self._h = self._h + self._gamma*self._d
                 self.inner_update()
-        
+
             self._h=np.linalg.solve(self.M_right, self._h)
-            
+
             _, deriv=self.op.linearize(self.x)
             self._z_precond = deriv(self._d_precond)
             self._ztilde_precond = self.op.range.gram(self._z_precond)
@@ -297,16 +297,16 @@ class IRGNM_CG_Lanczos(Solver):
                            )
             self._h_precond = self._h_precond + self._gamma_precond*self._d_precond
 #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
-            # Updating ``self.x`` 
+            # Updating ``self.x``
  #           self.x += self._h
-            
+
             self.inner_update_precond()
-            
+
 #        self._h=scipy.optimize.minimize(self.M+self._regpar*np.identity(self.op.domain.shape[0]), self._h_precond)
         self._h=np.dot(np.linalg.inv(self.M), self._h_precond)
-        
-        
-        
+
+
+
         self.x+=self._h
         self.outer_update()
         self.need_prec_update=False
@@ -314,7 +314,7 @@ class IRGNM_CG_Lanczos(Solver):
             self.need_prec_update=True
         self.outer_update()
         return True
-       
+
     def lanzcos_update(self):
         """perform lanzcos method to calculate the preconditioner"""
         self.L=np.zeros((self.krylov_num, self.krylov_num))
@@ -329,39 +329,36 @@ class IRGNM_CG_Lanczos(Solver):
         from scipy.sparse.linalg import eigsh
         self.lamb, self.U=eigsh(self.L, self.eigval_num, which='LM')
         self.diag_lamb=np.diag(1/(self._regpar+self.lamb)-1/self._regpar)
-                
+
         self.lanczos_krylov=np.float64(self.U @ self.diag_lamb @ self.U.transpose())
         self.lanczos=self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal
         self.M_left=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
         self.M_right=np.eye(np.size(self.data))
-        
+
     def lanczos(self, L, v, maxit):
         """perform lanczos method to calculate tridiagonal decomposition"""
         epsilon=np.dot(v, L @ v)
         w=L @ v -epsilon * v
         zeta=np.linalg.norm(w)
         v_old=v
-        
+
         V=np.zeros((maxit, maxit))
         Epsilon=np.zeros(maxit)
         Zeta=np.zeros(maxit-1)
-        
+
         V[0,:]=v
         Epsilon[0]=epsilon
-        
+
         counter=1
         while(zeta != 0 and counter<maxit):
             v=w/zeta
-            epsilon=np.dot(v, L @ v)  
+            epsilon=np.dot(v, L @ v)
             w=L @ v -epsilon * v-zeta * v_old
             zeta=np.linalg.norm(w)
             v_old=v
-            
+
             V[counter,:]=v
             Epsilon[counter]=epsilon
             Zeta[counter-1]=zeta
             counter+=1
         return [V, Epsilon, Zeta]
-    
-        
-    

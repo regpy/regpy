@@ -10,16 +10,16 @@ class StarTrig:
      z and its derivatives are sampled at n equidistant points.
      Application of the Gramian matrix and its inverse w.r.t. the
      Sobolev norm ||q||_{H^s} are implemented."""
-    
+
     def __init__(self, N_fk, sobo_Index, type=None, coeff=None, **kwargs):
         # Fourier coefficients of q(t)
-        self.coeff=None 
+        self.coeff=None
         # Sobolev index (for GramX)
         self.sobo_Index=sobo_Index
         self.type=None
         self.coeff=None
 
-    
+
     def StarTrig(self, N, s):
         self.name = 'StarTrig'
         self.type = 'StarTrig'
@@ -29,7 +29,7 @@ class StarTrig:
         self.sobo_Index = s
 
     def compute_FK(self, val, n):
-    
+
         """ computes n Fourier coeffients to the point values given by by val
          such that ifft(fftshift(coeffhat)) is an interpolation of val"""
 
@@ -59,23 +59,23 @@ class StarTrig:
 
 
     def radial(self, n, der):
-        
+
         """ evaluates all derivatives of the radial function up to order der
         at n equidistant points"""
-        
+
         coeffhat = self.compute_FK(self.coeff,n)
         self.q=np.zeros((der+1, coeffhat.shape[0]))
         for d in range(0, der+1):
             self.q[d,:] = np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-n/2, n/2-1, n).transpose())**d * coeffhat))).transpose()
 
     def bd_eval(self, n, der):
-    
+
         self.radial(n,der)
         q=self.q
         t = 2*np.pi*np.linspace(0, n-1, n)/n
         cost = np.cos(t)
         sint = np.sin(t)
-        
+
         self.z = np.append(q[0,:]*cost, \
             q[0,:]*sint).reshape(2, q[0, :].shape[0])
         if der>=1:
@@ -96,34 +96,34 @@ class StarTrig:
         if der>3:
             raise ValueError('only derivatives up to order 3 implemented')
 
-    def der_normal(self, h):        
-    
+    def der_normal(self, h):
+
         """computes the normal part of the perturbation of the curve caused by
         perturbing the coefficient vector curve.coeff in direction h"""
-        
+
         n=np.size(self.q[0, :])
         h_long = np.fft.ifft(np.fft.fftshift(self.compute_FK(h,n)))
         der =  self.q[0,:].transpose() * h_long / self.zpabs.transpose()
         return der
 
-    def adjoint_der_normal(self, g):    
-    
+    def adjoint_der_normal(self, g):
+
         """applies the adjoint of the linear mapping h->der_normal(curve,h) to g"""
-        
+
         N = len(self.coeff)
 #        print(N)
         n = len(g)
         adj_long = g*self.q[0,:].transpose() / self.zpabs.transpose()
         adj = np.fft.ifft(np.fft.fftshift(self.compute_FK(adj_long,N))) * n/N
         return adj.real
-        
+
         """ The following two methods are not needed for operators depending
              only on the curve, but not on its parametrization.
              They are included for test purposes."""
-             
+
     def StarTrig_derivative(self, h):
-        
-    
+
+
         """computes the perturbation of the curve caused by perturbing the coefficient
          vector curve.coeff in direction h"""
         n=np.size(self.q[0, :])
@@ -132,8 +132,8 @@ class StarTrig:
         der =  np.append(h_long*np.cos(t), h_long*np.sin(t)).reshape(2, n)
         return der
 
-    def StarTrig_adjoint_derivative(self, g):   
-    
+    def StarTrig_adjoint_derivative(self, g):
+
         """applies the adjoint of the linear mapping h->derivative(curve,h) to g"""
         N = len(self.coeff)
         n = len(g)
@@ -141,19 +141,19 @@ class StarTrig:
         adj_long = g[0,:]*np.cos(t)+g[1,:]*np.sin(t)
         adj = np.fft.ifft(np.fft.fftshift(self.compute_FK(adj_long,N))) * n/N
         return adj
-    
-    def arc_length_der(self, h):    
+
+    def arc_length_der(self, h):
         """ computes the derivative of h with respect to arclength"""
         n=np.size(self.q[0, :])
         dhds = np.fft.ifft(np.fft.fftshift((1j*np.linspace(-n/2, n/2-1, n).transpose()) *self.compute_FK(h,n)))/self.zpabs.transpose()
         return dhds
-    
+
     def L2err(self, q1, q2):
-        
-        
+
+
         res = self.params.domain.norm(q1-q2)/np.sqrt(len(q1))
         return res
-        
+
     def coeff2Curve(self,coeff,n):
         radial = np.fft.ifft(np.fft.fftshift(self.compute_FK(coeff,n)))
         t = 2*np.pi/n * np.linspace(0, n-1, n)

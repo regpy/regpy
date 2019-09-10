@@ -6,25 +6,25 @@ class GenCurve:
         parametrization by function name(t), 0<=t<=2*pi (counter-clockwise)
     """
     def __init__(self, **kwargs):
-        self.name=None        
+        self.name=None
         """ values of z(t) and its derivatives at equidistant grid"""
         self.z=None
-        self.zp=None 
+        self.zp=None
         self.zpp=None
         self.zppp=None
         self.zpabs=None   # |z'(t)|
         self.normal=None # outer normal vector (not normalized)
-        
-        
-   
 
-    
-    
+
+
+
+
+
 #    def GenCurve_func(self, name):
 #        self.name=name
-        
-    def bd_eval(self, n, der) :   
-        
+
+    def bd_eval(self, n, der) :
+
         t=2*np.pi*np.linspace(0, n-1, n)/n
         """feval ?"""
         self.z = eval(self.name)(t,0)
@@ -35,19 +35,19 @@ class GenCurve:
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             #outer normal vector
             self.normal = [self.zp[1,:]-self.zp[1,:]]
-            
+
         if der>=2:
             """feval ?"""
             self.zpp = eval(self.name)(t,2)
-        
+
         if der>=3:
             """feval ?"""
             self.zppp = eval(self.name)(t,3)
-        
+
         if der>3:
             raise ValueError('only derivatives up to order 3 implemented')
-        
-        
+
+
 
 def kite(t, der):
     res=np.zeros((2,t.shape[0]))
@@ -63,4 +63,3 @@ def kite(t, der):
     else:
         raise ValueError('derivative not implemented')
     return res
-

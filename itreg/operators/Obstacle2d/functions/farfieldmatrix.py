@@ -24,11 +24,11 @@ def farfield_matrix_trans(bd,dire,kappa,weightSL,weightDL):
     FFmat_a = 2*np.pi / (np.size(bd.z,1)*np.sqrt(8*np.pi*kappa)) * np.exp(complex(0,1)*np.pi/4) \
             * (-complex(0,1)*weightDL*kappa*dire.T*bd.normal) \
             * np.exp(-complex(0,1)*kappa* (dire.T * bd.z))
-     
+
     FFmat_b = 2*np.pi / (np.size(bd.z,1)*np.sqrt(8*np.pi*kappa)) * np.exp(complex(0,1)*np.pi/4) \
             * (weightSL*np.matlib.repmat(bd.zpabs,np.size(dire,1),1)) \
             * np.exp(-complex(0,1)*kappa* (dire.T * bd.z))
-            
-# Is there really a komma?     
+
+# Is there really a komma?
     FFmat = [FFmat_a, FFmat_b]
     return FFmat

@@ -4,9 +4,9 @@ import logging
 
 
 class Inner_Solver(object):
-    
+
     """Abstract base class for inner solvers (for example SQP method).
-    
+
     Parameters
     ----------
     log : :class:`logging.Logger`, optional
@@ -51,7 +51,7 @@ class Inner_Solver(object):
         ------
         tuple of array
             The (x, y) pair of the current iteration. Callers should not expect
-            arrays from previous iterations to be valid, as the inner solver 
+            arrays from previous iterations to be valid, as the inner solver
             might modify them in-place.
 
         """

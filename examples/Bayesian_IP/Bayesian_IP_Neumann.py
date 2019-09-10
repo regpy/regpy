@@ -70,7 +70,7 @@ op=NeumannOp(grid, codomain=grid_codomain)
 #exact_solution = np.ones(200)
 #exact_data = op(exact_solution)
 #noise = 0.03 * op.domain.rand(np.random.randn)
-#data = exact_data 
+#data = exact_data
 #noise = 0.03 * op.codomain.rand(np.random.randn)
 #data = exact_data + noise
 #noiselevel = op.codomain.norm(noise)
@@ -109,11 +109,11 @@ likelihood=unity(setting)
 
 #sampler=['RandomWalk', 'AdaptiveRandomWalk', 'HamiltonianMonteCarlo', 'GaussianApproximation'][0]
 
-    
+
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature, 
+bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)

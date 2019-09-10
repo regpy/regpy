@@ -31,7 +31,7 @@ op=PotentialOp(grid, codomain=grid_codomain)
 exact_solution = np.ones(200)
 exact_data = op(exact_solution)
 #noise = 0.03 * op.domain.rand(np.random.randn)
-data = exact_data 
+data = exact_data
 
 #noiselevel = op.range.norm(noise)
 
@@ -51,8 +51,3 @@ reco, reco_data = landweber.run(stoprule)
 
 plotting=plots(op, reco, reco_data, data, exact_data, exact_solution)
 plotting.plotting()
-
-
-
-
-

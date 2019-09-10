@@ -12,7 +12,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     the induced phase shifts in the X-ray wave-field directly behind the imaged sample,
     onto the intensities I of the near-field diffraction pattern (also known as hologram)
     recorded by a detector at some distance behind the sample. The forward operator
-    models incident X-rays as a fully coherent plane wave. 
+    models incident X-rays as a fully coherent plane wave.
 
     Parameters
     ----------
@@ -24,7 +24,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
         diffractive effects.
     absorption_fraction : float
         Assumed constant ratio of X-ray absorption compared to refractive phase shifts,
-        i.e. the value of the constant :math:`c_{\\beta/\\delta}` described in Notes. 
+        i.e. the value of the constant :math:`c_{\\beta/\\delta}` described in Notes.
         The default value 0 corresponds to assuming a completely non-absorbing sample,
         which is often a justified assumption for objects composed only of light chemical
         elements.
@@ -33,10 +33,10 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     -----
     The forward operator :math:`F` of X-ray phase contrast imaging is defined by
 
-    .. math:: F(phi) = |D_F(exp(-(i + c_{\\beta/\\delta}) \\cdot  phi))|^2 = I 
+    .. math:: F(phi) = |D_F(exp(-(i + c_{\\beta/\\delta}) \\cdot  phi))|^2 = I
 
-    where :math:`D_F` is the Fresnel-propagator and :math:`c_{\\beta/\\delta}` is 
-    a constant that parametrizes the magnitude of X-ray absorption versus X-ray 
+    where :math:`D_F` is the Fresnel-propagator and :math:`c_{\\beta/\\delta}` is
+    a constant that parametrizes the magnitude of X-ray absorption versus X-ray
     refraction for the imaged sample (:math:`c_{\\beta/\\delta} = \\beta/\\delta`).
     """
 
@@ -57,7 +57,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     fresnel_prop = FresnelPropagator(domain_complex, Fresnel_number)
 
     # Detection operator: Maps the wave-field psi_d at the detector onto the corresponding
-    # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates 
+    # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates
     # phase-information)
     detection_op = SquaredModulus(domain_complex)
 

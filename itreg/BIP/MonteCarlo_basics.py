@@ -39,7 +39,7 @@ class MetropolisHastings(object):
         self.stepsize=initial_stepsize
         self.stepsize_rule=stepsize_rule
         self.state=statemanager.initial_state
-        
+
     def propose(self, current_state):
         raise NotImplementedError
 
@@ -51,22 +51,22 @@ class MetropolisHastings(object):
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
 #        print(log_odds)
-                   
+
         accepted=np.log(np.random.random()) < log_odds
 #        print(accepted)
         self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, accepted)
         #print(accepted)
 
         return np.log(np.random.random()) < log_odds
-    
+
     def next(self):
         proposed_state = self.propose(self.state)
         accept = self.accept(self.state, proposed_state)
         if accept:
             self.state = proposed_state
         return accept
-    
-    
+
+
 
 
 class statemanager(object):
@@ -91,13 +91,13 @@ class statemanager(object):
             self.initial_state=initial_state
         self.states=[self.initial_state]
         self.N=1
-        
+
     def statemanager(self, state, accepted):
 #        assert isinstance(self.initial_state, State), 'State expected'
         if accepted:
             self.states.append(state)
             self.N+=1
-    
+
 class RandomWalk(MetropolisHastings):
     """Gaussian proposal kernel
     """
@@ -115,7 +115,7 @@ class RandomWalk(MetropolisHastings):
         if 'accept_proposed' in dir(self.pdf.setting.op):
             counter=0
             #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
-            
+
             while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
                 random_step = np.random.standard_normal(proposed_state.positions.shape)
                 proposed_state.positions += self.stepsize * random_step
@@ -134,7 +134,7 @@ class Leapfrog(object):
 
         assert stepsize > 0
         assert n_steps  > 0
-        
+
         self.pdf      = pdf
         self.stepsize = float(stepsize)
         self.n_steps  = int(n_steps)
@@ -153,7 +153,7 @@ class Leapfrog(object):
         q  = positions.copy()
         p  = momenta.copy()
         dt = self.stepsize
-        
+
         ## half-step
 
         p -= 0.5 * dt * dH_q(q, p)
@@ -202,18 +202,18 @@ class HamiltonianMonteCarlo(RandomWalk):
         #                          self.pdf.log_prob(proposed_state)
 
         return proposed_state
-    
+
     def accept(self, current_state, proposed_state):
         do_accept = super(HamiltonianMonteCarlo, self).accept(current_state, proposed_state)
         self.integrator.stepsize = self.stepsize
         return do_accept
 
 
-    
-    
-class GaussianApproximation(object):    
+
+
+class GaussianApproximation(object):
     def __init__(self, pdf):
-        
+
 #find m_MAP by Maximum-Likelihood
         """TODO: Insert one of the implemented solvers instead of scipy.optimize.minimize
         Is done in mcmc_second_variant.
@@ -238,28 +238,28 @@ class GaussianApproximation(object):
             self.Hessian_prior[:, i]=np.dot(self.gamma_prior_half, \
                     self.pdf.likelihood.hessian(self.pdf.m_0, \
                                 np.dot(self.gamma_prior_half, np.eye(N)[:, i])))
-#construct randomized SVD of Hessian_prior      
+#construct randomized SVD of Hessian_prior
         self.L, self.V=randomized_SVD(self, self.Hessian_prior)
         self.L=-self.L
 #define gamma_post
         self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, \
                                     np.dot(np.diag(1/(self.L+1)), \
-                                    np.dot(self.V.transpose(), self.gamma_prior_half))))  
+                                    np.dot(self.V.transpose(), self.gamma_prior_half))))
         self.gamma_post_half=np.dot(self.gamma_prior_half, \
                                 (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), \
                             self.V.transpose()))+np.eye(self.gamma_prior_half.shape[0])))
 #define prior, posterior sampling
-        
 
-        
 
-        
+
+
+
     def random_samples(self):
-        R=np.random.normal(0, 1, self.gamma_post_half.shape[0]) 
+        R=np.random.normal(0, 1, self.gamma_post_half.shape[0])
 #        m_prior=self.pdf.m_0+np.dot(self.gamma_prior_half, R)
         m_post=self.pdf.initial_state.positions+np.dot(self.gamma_post_half, R)
         return  m_post
-        
+
 #    def run(self, initial_state, n_iter):
 #        states = [initial_state]
 
@@ -271,7 +271,7 @@ class GaussianApproximation(object):
 #            states.append(current_state)
 
 #        return states
-    
+
     def next(self):
         m_post=self.random_samples()
         next_state=State()
@@ -279,8 +279,3 @@ class GaussianApproximation(object):
         next_state.log_prob=np.exp(-np.dot(m_post, np.dot(self.gamma_post, m_post)))
         self.state=next_state
         return True
-        
-    
-    
-    
-        

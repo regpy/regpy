@@ -9,7 +9,7 @@ import mpmath
 
 
 def evaluate_potential(bd,phi,zz,kappa,weightSL, weightDL):
-    """ Evaluates the combined layer potential with density phi at points zz and 
+    """ Evaluates the combined layer potential with density phi at points zz and
     % wave length kappa.
     % The weights of the single and double layer potential are given by
     % the input parameters weightSL and weightDL, respectively."""

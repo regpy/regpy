@@ -117,7 +117,7 @@ def myfft(rho):
 def myifft(data):
     Nx, Ny=data.shape
     rho=np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(data)))*scp.sqrt(Nx*Ny)
-    return rho    
+    return rho
 
 class plots():
     def __init__(self,
@@ -127,11 +127,11 @@ class plots():
                  data,
                  exact_solution,
                  Nx=None,
-                 Ny=None, 
+                 Ny=None,
                  nr_coils=None,
                  samplingIndx=None
                  ):
-        
+
         self.op=op
         self.Nx=Nx or self.op.params.Nx
         self.Ny=Ny or self.op.params.Ny
@@ -140,15 +140,15 @@ class plots():
         self.reco_data=reco_data
         self.data=data
         self.samplingIndx=samplingIndx or self.op.params.samplingIndx
-        self.exact_solution=exact_solution 
-        
-        
-        
+        self.exact_solution=exact_solution
+
+
+
     def plot_samplingindex(self):
         P=np.zeros((self.Nx*self.Ny))
         P[self.samplingIndx]=1
         P=P.reshape(self.Nx, self.Ny, order='F')
-        
+
         fig = plt.figure(figsize=(8, 8))
         vmax = abs(P).max()
         X, Y=np.meshgrid(np.arange(0, 1, 1/self.Ny), np.arange(0, 1, 1/self.Nx))
@@ -156,7 +156,7 @@ class plots():
         plt.title('sampling Index')
         plt.colorbar()
         plt.show()
-        
+
     def plot_data(self, coil=None):
         coil=coil or 0
         P_data=np.zeros((self.Nx*self.Ny, self.nr_coils))
@@ -164,13 +164,13 @@ class plots():
         P_data[self.samplingIndx, coil]=self.reco_data[int(coil)*self.samplingIndx.shape[0]:int(coil+1)*self.samplingIndx.shape[0]]
         for i in range(0, self.nr_coils):
             P_data2[:, i]=P_data[:, i].reshape((self.Nx, self.Ny), order='F')
-        
+
         data_print=np.zeros((self.Nx*self.Ny, self.nr_coils))
         data_print2=np.zeros((self.Nx, self.Ny, self.nr_coils))
         data_print[self.samplingIndx, coil]=self.data[int(coil)*self.samplingIndx.shape[0]:int(coil+1)*self.samplingIndx.shape[0]]
         for i in range(0, self.nr_coils):
             data_print2[:, i]=data_print[:, i].reshape((self.Nx, self.Ny), order='F')
-        
+
         fig, axs = plt.subplots(1, 2,sharey=True,figsize=(8, 10))
         X, Y=np.meshgrid(np.arange(0, 1, 1/self.Ny), np.arange(0, 1, 1/self.Nx))
         cs=axs[0].contourf(X,Y,P_data2[:, 0],cmap=plt.cm.seismic)
@@ -179,12 +179,12 @@ class plots():
         axs[0].set_title('reco_data')
         axs[1].set_title('data')
         plt.show()
-        
-        
+
+
     def plot_rho(self):
         N=self.Nx*self.Ny
         rho = np.reshape(self.reco[0:N],(self.Nx,self.Ny), order='F')
-                
+
         fig, axs = plt.subplots(1, 2,sharey=True,figsize=(8, 10))
         X, Y=np.meshgrid(np.arange(0, 1, 1/self.Ny), np.arange(0, 1, 1/self.Nx))
         cs=axs[0].contourf(X,Y,rho,cmap=plt.cm.seismic)
@@ -193,7 +193,3 @@ class plots():
         axs[0].set_title('reco')
         axs[1].set_title('exact solution')
         plt.show()
-        
-
-            
-                

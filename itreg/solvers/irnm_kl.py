@@ -12,7 +12,7 @@ __all__ = ['IRNM_KL']
 
 
 class IRNM_KL(Solver):
-    
+
     """The iteratively regularized Newton method with shifted Kullback-Leibler
     divergence
 
@@ -20,8 +20,8 @@ class IRNM_KL(Solver):
 
        .. math:: T(x) = y,
 
-    where :math:`T` is a Frechet-differentiable operator. 
-    
+    where :math:`T` is a Frechet-differentiable operator.
+
     The penalty is determined by self.op.domain.gram(X).
 
     Parameters
@@ -62,20 +62,20 @@ class IRNM_KL(Solver):
     def __init__(self, op, data, init, continuum, alpha0=5e-6, alpha_step=2/3.,
                  intensity=1):
         """Initialize parameters """
-        
+
         super().__init__()
         self.op = op
         self.data = data
         self.init = init
         self.x = self.init
         self.y = self.op(self.x)
-        
+
         # Parameters for the outer iteration (Newton method)
-        self.k = 0   
+        self.k = 0
         self.alpha_step = alpha_step
         self.intensity = intensity
         self.alpha = alpha0 * self.intensity
-            
+
     def next(self):
         """Run a single IRNM_KL iteration.
 
@@ -92,5 +92,5 @@ class IRNM_KL(Solver):
         self.y = self.op(self.x)
         # prepare next step
         self.alpha *= self.alpha_step
-        
+
         return True

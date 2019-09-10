@@ -63,7 +63,7 @@ gfu_reco.vec.FV().NumPy()[:]=reco
 coeff_reco=CoefficientFunction(gfu_reco)
 
 Draw (coeff_reco, op.fes_domain.mesh, "reco")
-    
+
 
 #Draw data space
 gfu_data=GridFunction(op.fes_codomain)
@@ -77,9 +77,3 @@ coeff_reco_data = CoefficientFunction(gfu_reco_data)
 
 Draw(coeff_data, op.fes_codomain.mesh, "data")
 Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
-
-
-
-
-
-

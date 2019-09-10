@@ -18,7 +18,7 @@ class PotentialOp(NonlinearOperator):
      regularized Gauss–Newton method for an inverse potential
      and an inverse scattering problem" Inverse Problems 13 (1997) 1279–1299
     """
-     
+
     def __init__(self, domain, codomain=None, error='deterministic', **kwargs):
 
             codomain = codomain or domain
@@ -28,7 +28,7 @@ class PotentialOp(NonlinearOperator):
             self.N_meas = 64             # number of measurement points
             """transpose"""
             self.meas_angles=2*np.pi*np.linspace(0, self.N_meas-1, self.N_meas).transpose()/self.N_meas             # angles of measure points
-            
+
             self.cosin=np.zeros((self.Nfwd, self.Nfwd))
             self.sinus=np.zeros((self.Nfwd, self.Nfwd))
             self.sin_fl=np.zeros((self.Nfwd, self.Nfwd))
@@ -37,11 +37,11 @@ class PotentialOp(NonlinearOperator):
             self.obstacle.Obstacle2dBasefunc()
             self.bd=self.obstacle.bd
             self.error=error
-            
+
             N = self.Nfwd
             t= 2*np.pi*np.linspace(0, N-1, N)/N
             t_fl = self.meas_angles
-                
+
             for j in range(0, N):
                 self.cosin[j,:] = np.cos((j+1)*t)
                 self.sinus[j,:] = np.sin((j+1)*t)
@@ -59,12 +59,12 @@ class PotentialOp(NonlinearOperator):
         q=self.bd.q[0, :]
         if q.max() >= self.radius:
             raise ValueError('reconstructed object penetrates measurement circle')
-            
+
         if q.min()<=0:
             raise ValueError('reconstructed radial function negative')
-              
+
         qq = q**2
-            
+
         flux = 1/(2*self.radius*N) * np.sum(qq)*np.ones(len(self.meas_angles))
         fac = 2/(N*self.radius)
         for j in range(0, int((N-1)/2)):
@@ -72,21 +72,21 @@ class PotentialOp(NonlinearOperator):
             qq = qq * q
             flux = flux + (fac/(j+3)) * self.cos_fl[:,j] * np.sum(qq*self.cosin[j,:]) \
                 + (fac/(j+3)) * self.sin_fl[:,j] * np.sum(qq*self.sinus[j,:])
-           
+
         if (N % 2==0):
             fac = fac/self.radius
             qq = qq * q
             flux = flux + fac * self.cos_fl[:,int(N/2)] * np.sum(qq*self.cosin[int(N/2),:])
         return flux
-                
+
     def _derivative(self, h_coeff, **kwargs):
-            
+
         N = self.Nfwd
         """transpose ?"""
         h = self.bd.der_normal(h_coeff).transpose()
         q = self.bd.q[0,:]
         qq = self.bd.zpabs
-            
+
         der = 1/(self.radius*N) * np.sum(qq*h)*np.ones(len(self.meas_angles))
         fac = 2/(N*self.radius)
         for j in range(0, int((N-1)/2)):
@@ -94,19 +94,19 @@ class PotentialOp(NonlinearOperator):
             qq = qq*q
             der = der + fac * self.cos_fl[:,j] * np.sum(qq*h*self.cosin[j,:]) \
                     + fac * self.sin_fl[:,j] * np.sum(qq*h*self.sinus[j,:])
-            
+
         if (N % 2==0):
             fac = fac/self.radius
             qq = qq*q
             der = der + fac * self.cos_fl[:,int(N/2)] * np.sum(qq*h*self.cosin[int(N/2),:])
         return der.real
-        
-        
+
+
     def _adjoint(self, g, **kwargs):
         N = self.Nfwd
         q = self.bd.q[0,:]
         qq = self.bd.zpabs
-            
+
         """transpose?"""
         adj = 1/(self.radius*N) *np.sum(g) * qq.transpose()
         fac = 2/(N*self.radius)
@@ -116,16 +116,16 @@ class PotentialOp(NonlinearOperator):
             """transpose?"""
             adj = adj + fac * np.sum(g*self.cos_fl[:,j]) * (self.cosin[j,:]*qq).transpose() \
                     + fac * np.sum(g*self.sin_fl[:,j]) * (self.sinus[j,:]*qq).transpose()
-            
+
         if (N % 2==0):
             fac = fac/self.radius
             qq = qq*q
             """transpose?"""
             adj = adj + fac * np.sum(g*self.cos_fl[:,int(N/2)]) * (self.cosin[int(N/2),:]*qq).transpose()
-            
+
         adj = self.bd.adjoint_der_normal(adj).real
         return adj
-    
+
     def accept_proposed(self, positions):
         """self.bd.coeff"""
         self.bd.coeff=positions
@@ -134,11 +134,11 @@ class PotentialOp(NonlinearOperator):
         q=self.bd.q[0, :]
         if q.max() >= self.radius:
             return False
-            
+
         if q.min()<=0:
             return False
         return True
-    
+
 def create_synthetic_data(self, noiselevel):
 
         N = self.op.Nfwd_synth
@@ -146,7 +146,7 @@ def create_synthetic_data(self, noiselevel):
         t_fl = self.op.meas_angles
         q = self.op.obstacle.bd_ex.radial(self.op.obstacle.bd_ex, N)
         qq = q**2
-        
+
         flux = 1/(2*self.op.radius*N) * sum(qq)*np.ones(len(t_fl))
         fac = 2/(N*self.op.radius)
         for j in range(0, int((N-1)/2)):
@@ -154,15 +154,15 @@ def create_synthetic_data(self, noiselevel):
             qq = qq*q
             flux = flux + (fac/(j+3)) * np.cos((j+1)*t_fl) * np.sum(qq*np.cos((j+1)*t)) \
                 + (fac/(j+3)) * np.sin((j+1)*t_fl) * np.sum(qq*np.sin((j+1)*t))
-    
+
         if N%2==0:
             fac = fac/self.op.radius
             qq = qq*q
             flux = flux + fac * np.cos(N/2*t_fl) * np.sum(qq*np.cos(N/2*t))
         noise = np.random.randn(len(flux))
         data = flux + noiselevel * noise/self.codomain.norm(noise)
-        return data 
-    
+        return data
+
 def create_impulsive_noise(n,eta,var=None):
     """Create Mc such that |Mc|<eta
     """
@@ -175,7 +175,7 @@ def create_impulsive_noise(n,eta,var=None):
             Mc = Mc.union(st)
         if (len(Mc) == int(eta*n)-1):
             break
-    
+
     if var is None:
         """Now create random noise on Mc such that noise = \pm 1/\eta with equal
         probability"""
@@ -200,10 +200,10 @@ class plots():
 #                 fig_rec=None,
                  figsize=(8, 8),
 #                 Nx=None,
-#                 Ny=None, 
+#                 Ny=None,
                  n=64
                  ):
-        
+
         self.op=op
 #        self.Nx=Nx or self.op.params.Nx
 #        self.Ny=Ny or self.op.params.Ny
@@ -211,16 +211,16 @@ class plots():
         self.reco_data=reco_data
         self.data=data
         self.exact_data=exact_data
-        self.exact_solution=exact_solution 
+        self.exact_solution=exact_solution
 #        self.nr_plots=nr_plots
 #        self.fig_rec=fig_rec
         self.figsize=figsize
         self.n=n
-    
-    def plotting(self):    
+
+    def plotting(self):
 #    function F = plot(F,x_k,x_start,y_k,y_obs,k)
 #            nr_plots = self.nr_plots
-            
+
             fig, axs = plt.subplots(1, 2,sharey=True,figsize=self.figsize)
             axs[0].set_title('Domain')
             axs[1].set_title('Heat source')
@@ -244,10 +244,3 @@ class plots():
             axs[0].set_xlim((xmin, xmax))
             axs[0].set_ylim((ymin, ymax))
             plt.show()
-            
-            
-            
-
-                
-            
-        

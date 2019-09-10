@@ -43,18 +43,18 @@ def bessj0(x):
     if len(ind)!=0:
         x[ind] = -x[ind]
 
-    
+
     ind1 = np.argwhere(x<1e-5)[:, 0]
-    
+
     set_1=set(np.argwhere(1e-5<=x)[:, 0])
     set_2=set(np.argwhere(x<=5)[:, 0])
     final_set=set_1.intersection(set_2)
     ind2=np.asarray([list(final_set)])
 
     ind3 = np.argwhere(x>5.0)[:, 0]
-    
-    
-    
+
+
+
     if len(ind1)!=0:
         z= x[ind1.astype(int)]
         ans[ind1.astype(int)] = 1-z*z/4

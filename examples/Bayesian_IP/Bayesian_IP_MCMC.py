@@ -100,11 +100,11 @@ likelihood=tikhonov_likelihood(setting, exact_data)
 
 
 
-    
+
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(setting, data, prior, likelihood, Temperature, 
+bip=Settings(setting, data, prior, likelihood, Temperature,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
@@ -125,6 +125,3 @@ plot_lastiter(bip, exact_solution, exact_data, data)
 plot_mean(statemanager, exact_solution, n_iter=statemanager.N-1, variance=np.asarray([1]))
 plot_verlauf(statemanager, pdf=bip, exact_solution=exact_solution, plot_real=True)
 plot_iter(bip, statemanager, 10)
-
-
-

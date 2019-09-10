@@ -20,7 +20,7 @@ def FresnelPropagator(domain, Fresnel_number):
     -----
     The Fresnel-propagator :math:`D_F` is a unitary Fourier-multiplier defined by
 
-    .. math:: D_F(f) = FT^{-1}(m_F \\cdot FT(f)) 
+    .. math:: D_F(f) = FT^{-1}(m_F \\cdot FT(f))
 
     where :math:`FT(f)(\\nu) = \int_{\\mathbb R^2}` \exp(-i\\xi \\cdot x) f(x) Dx`
     denotes the Fourier transform and the factor :math:`m_F` is defined by
