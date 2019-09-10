@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import L2, NGSolveDiscretization
+from itreg.spaces.discrs import NGSolveDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import MakeQuadMesh
@@ -44,13 +44,13 @@ init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_data=op(init_solution)
 
-from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_H1)
+from itreg.spaces import L2, Sobolev
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
 landweber = Landweber(setting, data, init_solution, stepsize=1000)
 stoprule = (
     rules.CountIterations(10000) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 

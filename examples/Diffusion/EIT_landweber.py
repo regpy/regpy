@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.EIT import EIT
-from itreg.spaces import NGSolveDiscretization, NGSolveBoundaryDiscretization
+from itreg.spaces.discrs import NGSolveDiscretization, NGSolveBoundaryDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
@@ -58,14 +58,14 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_H1, codomain=NGSolveSpace_H1)
+from itreg.spaces.hilbert import L2, Sobolev, SobolevBoundary
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(300) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -97,7 +97,7 @@ def der(x):
     val2=op(res1+x*res2)
     val1=op(res1)
     der=x*op._derivative(res2)
-    return setting.codomain.norm( 1/x*(val2-val1-der) )
+    return setting.Hcodomain.norm( 1/x*(val2-val1-der) )
 
 res1=0.001*np.random.randn(804)
 res2=0.001*np.random.randn(804)
@@ -111,8 +111,8 @@ def adj():
     res1=0.001*np.random.randn(804)
     res2=0.001*np.random.randn(804)
     v=op(res1)
-    toret1=setting.codomain.inner(op._derivative(res1), v)
-    toret2=5.08*setting.domain.inner(res1, op._adjoint(v))
+    toret1=setting.Hcodomain.inner(op._derivative(res1), v)
+    toret2=5.08*setting.Hdomain.inner(res1, op._adjoint(v))
     return [toret1, toret2]
 
 print(adj())

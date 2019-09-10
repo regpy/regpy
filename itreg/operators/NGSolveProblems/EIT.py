@@ -1,5 +1,5 @@
 from itreg.operators import NonlinearOperator
-from itreg.spaces import NGSolveDiscretization, UniformGrid
+#from itreg.spaces import NGSolveDiscretization, UniformGrid
 
 import numpy as np
 

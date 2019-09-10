@@ -59,8 +59,8 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces.hilbert import L2, L2Boundary
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2Boundary)
+from itreg.spaces.hilbert import L2, L2Boundary, SobolevBoundary
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
