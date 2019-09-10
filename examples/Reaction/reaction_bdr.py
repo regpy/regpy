@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Reaction_bdr import Reaction_Bdr
-from itreg.spaces import NGSolveDiscretization, NGSolveBoundaryDiscretization
+from itreg.spaces.discrs import NGSolveDiscretization, NGSolveBoundaryDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
@@ -59,21 +59,21 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1_bdr, NGSolveSpace_L2_bdr
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_L2_bdr)
+from itreg.spaces.hilbert import L2, L2Boundary
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2Boundary)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(1000) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
 Draw (exact_solution_coeff, op.fes_domain.mesh, "exact")
 Draw (init, op.fes_domain.mesh, "init")
 
-#Draw recondtructed solution
+#Draw reconstructed solution
 gfu_reco=GridFunction(op.fes_domain)
 gfu_reco.vec.FV().NumPy()[:]=reco
 coeff_reco=CoefficientFunction(gfu_reco)
@@ -103,7 +103,7 @@ def der(x):
     val2=op(res1+x*res2)
     val1=op(res1)
     der=x*op._derivative(res2)
-    return setting.codomain.norm( 1/x*(val2-val1-der) )
+    return setting.Hcodomain.norm( 1/x*(val2-val1-der) )
 
 N=domain.shape[0]
 
@@ -121,8 +121,8 @@ def adj():
     res3=0.001*np.random.randn(N)
     v=op(res2)
     u=op(res3)
-    toret1=setting.codomain.inner(op._derivative(res1), v)
-    toret2=setting.domain.inner(res1, op._adjoint(v))
+    toret1=setting.Hcodomain.inner(op._derivative(res1), v)
+    toret2=setting.Hdomain.inner(res1, op._adjoint(v))
     return [toret1, toret2]
 
 print(adj())
