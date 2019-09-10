@@ -300,43 +300,46 @@ class IRGNM_CG_Lanczos(Solver):
         for i in range(0, self.krylov_num):
             self.L[i, :]=np.dot(self.orthonormal, self.setting.Hdomain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.deriv((self.orthonormal[i, :]))))))
 #TODO: Only compute the three biggest eigenvalues with Lanczos method
-        self.lamb, self.U=np.linalg.eig(self.L)
-        self.diag_lamb=np.zeros(self.L.shape)
-        for i in range(0, self.eigval_num):
-            self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
+        #self.lamb, self.U=np.linalg.eig(self.L)
+        #self.diag_lamb=np.zeros(self.L.shape)
+        #for i in range(0, self.eigval_num):
+        #    self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
+        from scipy.sparse.linalg import eigsh
+        self.lamb, self.U=eigsh(self.L, self.eigval_num, which='LM')
+        self.diag_lamb=np.diag(1/(self._regpar+self.lamb)-1/self._regpar)
+                
         self.lanczos_krylov=np.float64(self.U @ self.diag_lamb @ self.U.transpose())
         self.lanczos=self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal
         self.M_left=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
         self.M_right=np.eye(np.size(self.data))
         
-    def lanczos(self):
-        """perform lanczos method to calculate biggest eigenvalues"""
-        self._epsilon=np.dot(self._v, self.L @ self.v)
-        self._w=self.L @ self._v -self._epsilon * self._v
-        self._zeta=np.linalg.norm(self._w)
-        self._v_old=self._v
+    def lanczos(self, L, v, maxit):
+        """perform lanczos method to calculate tridiagonal decomposition"""
+        epsilon=np.dot(v, L @ v)
+        w=L @ v -epsilon * v
+        zeta=np.linalg.norm(w)
+        v_old=v
         
-        self._V=np.zeros((self.eigval_num, np.size(self.data)))
-        self._Epsilon=np.zeros(self.eigval_num)
-        self._Zeta=np.zeros(self.eigval_num)
+        V=np.zeros((maxit, maxit))
+        Epsilon=np.zeros(maxit)
+        Zeta=np.zeros(maxit-1)
         
-        self._V[0,:]=self._v
-        self._Epsilon[0]=self._epsilon
-        self._Zeta[0]=self._zeta
+        V[0,:]=v
+        Epsilon[0]=epsilon
         
         counter=1
-        while(self._zeta != 0 and counter<self.eigval_num):
-            self._v=self._w/self._zeta
-            self._epsilon=np.dot(self._v, self.L @ self.v)  
-            self._w=self.L @ self._v -self._epsilon * self._v-self._zeta * self._v_old
-            self._zeta=np.linalg.norm(self._w)
-            self._v_old=self._v
+        while(zeta != 0 and counter<maxit):
+            v=w/zeta
+            epsilon=np.dot(v, L @ v)  
+            w=L @ v -epsilon * v-zeta * v_old
+            zeta=np.linalg.norm(w)
+            v_old=v
             
-            self._V[counter,:]=self._v
-            self._Epsilon[counter]=self._epsilon
-            self._Zeta[counter]=self._zeta
+            V[counter,:]=v
+            Epsilon[counter]=epsilon
+            Zeta[counter-1]=zeta
             counter+=1
-        return
+        return [V, Epsilon, Zeta]
     
         
     
