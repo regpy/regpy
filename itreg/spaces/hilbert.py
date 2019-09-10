@@ -4,6 +4,8 @@ import numpy as np
 from . import discrs
 from .. import util, operators
 
+from ngsolve import *
+
 
 class HilbertSpace:
     def __init__(self, discr):
@@ -419,3 +421,91 @@ class SobolevUniformGrid(HilbertSpace):
 @Sobolev.register(discrs.DirectSum)
 def SobolevDirectSum(discr):
     return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
+
+
+@L2.register(discrs.NGSolveDiscretization)
+class NGSolveFESSpace_L2(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u*v)
+        self.discr.a.Assemble()
+
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
+
+
+@Sobolev.register(NGSolveDiscretization)
+class NGSolveFESSpace_H1(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u*v+grad(u)*grad(v))
+        self.discr.a.Assemble()
+
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+
+
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
+
+# The boundary spaces are only defined for a circular boundary
+# Need to define the definedon keyword argument outside of spaces
+SobolevBoundary = AbstractSpaceDispatcher('SobolevBoundary')
+
+
+@SobolevBoundary.register(discrs.NGSolveDiscretization)
+class NGSolveFESSpace_H1_bdr(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace()+u.Trace().Deriv()*v.Trace().Deriv(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
+        self.discr.a.Assemble()
+
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse
+
+
+L2Boundary = AbstractSpaceDispatcher('L2Boundary')
+
+
+@L2Boundary.register(discrs.NGSolveDiscretization)
+class NGSolveFESSpace_L2_bdr(HilbertSpace):
+    def __init__(self, discr):
+        self.discr = discr
+
+        u, v=self.discr.fes.TnT()
+        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
+        self.discr.a.Assemble()
+
+        self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
+
+    @property
+    def gram(self):
+        return self.discr.apply_gram
+
+    @property
+    def gram_inv(self):
+        return self.discr.apply_gram_inverse

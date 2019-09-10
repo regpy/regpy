@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.NGSolveProblems.EIT import EIT
+from itreg.operators.NGSolveProblems.Reaction_bdr import Reaction_Bdr
 from itreg.spaces import NGSolveDiscretization, NGSolveBoundaryDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
@@ -25,7 +25,7 @@ from ngsolve import *
 #mesh=Mesh(ngmesh)
 mesh=Mesh('..\..\itreg\meshes_ngsolve\meshes\circle.vol.gz')
 
-fes_domain = L2(mesh, order=2)
+fes_domain = H1(mesh, order=2)
 domain= NGSolveDiscretization(fes_domain)
 
 fes_codomain = H1(mesh, order=2)
@@ -34,21 +34,22 @@ fes_codomain = H1(mesh, order=2)
 #ind=[np.linalg.norm(np.array(p))>0.95 for p in pts]
 #pts_bdr=np.array(pts)[ind]
 #codomain= NGSolveBoundaryDiscretization(fes_codomain, fes_bdr, ind)
+fes_bdr = H1(mesh, order=2, dirichlet="cyc")
 codomain=NGSolveDiscretization(fes_codomain)
 
-g=0.1*(x-0.5)*(y-0.5)
-op = EIT(domain, g, codomain=codomain)
-pts=np.array(op.pts)
-nr_points=pts.shape[0]
+g=x**2*y
+op = Reaction_Bdr(domain, g, codomain=codomain)
+#pts=np.array(op.pts)
+#nr_points=pts.shape[0]
 
-exact_solution_coeff = sin(y)
+exact_solution_coeff = sin(y)+2
 gfu_exact_solution=GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 data=exact_data
 
-init=0.5*y
+init=2
 init_gfu=GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
@@ -58,13 +59,13 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_H1, codomain=NGSolveSpace_H1)
+from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1_bdr, NGSolveSpace_L2_bdr
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_L2_bdr)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-    rules.CountIterations(300) +
+    rules.CountIterations(1000) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
@@ -81,8 +82,9 @@ Draw (coeff_reco, op.fes_domain.mesh, "reco")
     
 
 #Draw data space
-gfu_data=GridFunction(op.fes_codomain)
-gfu_reco_data=GridFunction(op.fes_codomain)
+gfu_data=GridFunction(op.fes_bdr)
+gfu_reco_data=GridFunction(op.fes_bdr)
+gfu_init_data=GridFunction(op.fes_bdr)
 
 gfu_data.vec.FV().NumPy()[:]=data
 coeff_data = CoefficientFunction(gfu_data)
@@ -90,8 +92,12 @@ coeff_data = CoefficientFunction(gfu_data)
 gfu_reco_data.vec.FV().NumPy()[:]=reco_data
 coeff_reco_data = CoefficientFunction(gfu_reco_data)
 
+gfu_init_data.vec.FV().NumPy()[:]=init_data
+coeff_init_data = CoefficientFunction(gfu_init_data)
+
 Draw(coeff_data, op.fes_codomain.mesh, "data")
 Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
+Draw(coeff_init_data, op.fes_codomain.mesh, "init_data")
 
 def der(x):
     val2=op(res1+x*res2)
@@ -99,8 +105,10 @@ def der(x):
     der=x*op._derivative(res2)
     return setting.codomain.norm( 1/x*(val2-val1-der) )
 
-res1=0.001*np.random.randn(804)
-res2=0.001*np.random.randn(804)
+N=domain.shape[0]
+
+res1=0.001*np.random.randn(N)
+res2=0.001*np.random.randn(N)
 
 print(der(0.1))
 print(der(0.01))
@@ -108,11 +116,13 @@ print(der(0.001))
 print(der(0.0001))
 
 def adj():
-    res1=0.001*np.random.randn(804)
-    res2=0.001*np.random.randn(804)
-    v=op(res1)
+    res1=0.001*np.random.randn(N)
+    res2=0.001*np.random.randn(N)
+    res3=0.001*np.random.randn(N)
+    v=op(res2)
+    u=op(res3)
     toret1=setting.codomain.inner(op._derivative(res1), v)
-    toret2=5.08*setting.domain.inner(res1, op._adjoint(v))
+    toret2=setting.domain.inner(res1, op._adjoint(v))
     return [toret1, toret2]
 
 print(adj())
@@ -120,8 +130,3 @@ print(adj())
 print(adj())
 print(adj())
 print(adj())
-
-
-
-
-
