@@ -135,7 +135,7 @@ class IRNM_KL_Newton(Solver):
 #            print('res', np.mean(self._res))
 #            self._h_n+=self._eta
 #            print(np.mean(self._rhs))
-            self._h_n += self._eta.real
+            self._h_n += self._eta
             self._rhs = -self._grad(self._h_n)
             self._res = LA.norm(self._rhs)
             

@@ -101,10 +101,6 @@ class IRGNM_CG_Lanczos(Solver):
         # the first CG step.
         self.outer_update()
         
-        #Initialize Lanczos method
-        self._v=np.random.randn(np.size(self.data))
-        self._v/=np.linalg.norm(self._v)
-        
 
 
     def outer_update(self):
@@ -115,28 +111,25 @@ class IRGNM_CG_Lanczos(Solver):
         the next time the CG method is used (in the next Newton iteration) are
         prepared.
         """
+        
         self.y, deriv = self.setting.op.linearize(self.x)
         self._residual = self.data - self.y
-        if self.need_prec_update==False:
-            self._residual=self.data-self.setting.op(self.M_right @ self.x)
         self._xref = self.init - self.x
-        if self.need_prec_update==False:
-            self._xref=self.M_right @ self._xref
         self.k += 1
         self._regpar = self.alpha0 * self.alpha_step**self.k
         self._cgstep = 0
         self._kappa = 1
         
         # Preparations for the CG method
-        self._ztilde = self.setting.Hcodomain.gram(self._residual)
+        self._ztilde = self.setting.codomain.gram(self._residual)
         self._stilde = (deriv.adjoint(self._ztilde) 
-                        + self._regpar*self.setting.Hdomain.gram(self._xref))
-        self._s = self.setting.Hdomain.gram_inv(self._stilde)
+                        + self._regpar*self.setting.domain.gram(self._xref))
+        self._s = self.setting.domain.gram_inv(self._stilde)
         if self.need_prec_update==False:
-            self._s=self.M_left @ self._s
+            self.s=self.M @ self._s
         self._d = self._s
         self._dtilde = self._stilde
-        self._norm_s = np.real(self._stilde @ self._s)
+        self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
         self._norm_s0 = self._norm_s
         self._norm_h = 0
         
@@ -157,15 +150,15 @@ class IRGNM_CG_Lanczos(Solver):
         _, deriv=self.setting.op.linearize(self.x)
         self._stilde += (- self._gamma*(deriv.adjoint(self._ztilde) 
                          + self._regpar*self._dtilde)).real
-        self._s = self.setting.Hdomain.gram_inv(self._stilde)
+        self._s = self.setting.domain.gram_inv(self._stilde)
         if self.need_prec_update==False:
-            self._s=self.M_left @ self._s
+            self._s=self.M @ self._s
         self._norm_s_old = self._norm_s
-        self._norm_s = np.real(self._stilde @ self._s)
+        self._norm_s = np.real(self.setting.domain.inner(self._stilde, self._s))
         self._beta = self._norm_s / self._norm_s_old
         self._d = self._s + self._beta*self._d
         self._dtilde = self._stilde + self._beta*self._dtilde
-        self._norm_h = self.setting.Hdomain.inner(self._h, self._h)
+        self._norm_h = self.setting.domain.inner(self._h, self.setting.domain.gram(self._h))
         self._kappa = 1 + self._beta*self._kappa
         self._cgstep += 1
         self.inner_num+=1
@@ -221,7 +214,7 @@ class IRGNM_CG_Lanczos(Solver):
               /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
               # Second condition
               np.sqrt(np.float64(self._norm_s)
-              /np.real(self.setting.Hdomain.inner(self._Th,self._Th))
+              /np.real(self.setting.domain.inner(self._Thtilde,self._Th))
               /self._kappa/self._regpar)
               > self.cgtol[1] / (1+self.cgtol[1]) and
               # Third condition
@@ -233,21 +226,22 @@ class IRGNM_CG_Lanczos(Solver):
             # Computations and updates of variables
             
                 _, deriv=self.setting.op.linearize(self.x)
-                self._z = deriv(self._d)                    
-                self._ztilde = self.setting.Hcodomain.gram(self._z)
+                self._z = deriv(self._d)
+                self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self._dtilde @ self._d
-                                         + self._ztilde @ self._z
+                                         *self.setting.domain.inner(self._dtilde,self._d)
+                                         + self.setting.domain.inner(self._ztilde,self._z)
                                          )
                                )
                 self._h = self._h + self._gamma*self._d
     #            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
                 # Updating ``self.x`` 
      #           self.x += self._h
-                if self.inner_num<=self.krylov_num:
-                    self.orthonormal[self.inner_num-1, :]=self._s/np.sqrt(self._norm_s)
                 self.inner_update()
+                if self.inner_num<=self.krylov_num:
+                    self.orthonormal[self.inner_num-1, :]=self._s/self._norm_s
+
                     
             self.lanzcos_update()
             
@@ -256,112 +250,63 @@ class IRGNM_CG_Lanczos(Solver):
         else:
             while (
                   # First condition
-                  #np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
-                  #/self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
+                  np.sqrt(np.float64(self._norm_s)/self._norm_h/self._kappa)
+                  /self._regpar > self.cgtol[0] / (1+self.cgtol[0]) and
                   # Second condition
-                  #np.sqrt(np.float64(self._norm_s)
-                  #/np.real(self.setting.Hdomain.inner(self._Th,self._Th))
-                  #/self._kappa/self._regpar)
-                  #> self.cgtol[1] / (1+self.cgtol[1]) and
+                  np.sqrt(np.float64(self._norm_s)
+                  /np.real(self.setting.domain.inner(self._Thtilde,self._Th))
+                  /self._kappa/self._regpar)
+                  > self.cgtol[1] / (1+self.cgtol[1]) and
                   # Third condition
-                  #np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
-                  #> self.cgtol[2] and 
+                  np.sqrt(np.float64(self._norm_s)/self._norm_s0/self._kappa) 
+                  > self.cgtol[2] and 
                   # Fourth condition
-                  self._cgstep <= self.cgmaxit
-                  ):
+                  self._cgstep <= self.cgmaxit):
                       
                 # Computations and updates of variables
                 _, deriv=self.setting.op.linearize(self.x)
-                #self._z = deriv(self._d)
-                self._z = deriv(self.M_right @ self._d)
-                self._ztilde = self.setting.Hcodomain.gram(self._z)
+                self._z = deriv(self._d)
+                self._ztilde = self.setting.codomain.gram(self._z)
                 self._gamma = (self._norm_s
                                / np.real(self._regpar
-                                         *self._dtilde @ self._d
-                                         + self._ztilde @ self._z                                
+                                         *self.setting.domain.inner(self._dtilde,self._d)
+                                         + self.setting.domain.inner(self._ztilde,self._z)                                
                                          )
                                )
                 self._h = self._h + self._gamma*self._d 
+                
                 self.inner_update()
-        
-            self._h=np.linalg.solve(self.M_right, self._h)
-            
-            _, deriv=self.op.linearize(self.x)
-            self._z_precond = deriv(self._d_precond)
-            self._ztilde_precond = self.op.range.gram(self._z_precond)
-            self._gamma_precond = (self._norm_s_precond
-                           / np.real(self._regpar
-                                     *self.op.domain.inner(self._dtilde_precond,self._d_precond)
-                                     + self.op.domain.inner(self._ztilde_precond,self._z_precond)
-                                     )
-                           )
-            self._h_precond = self._h_precond + self._gamma_precond*self._d_precond
-#            print(np.mean(self._norm_s)/np.mean(self._norm_s0))
-            # Updating ``self.x`` 
- #           self.x += self._h
-            
-            self.inner_update_precond()
-            
-#        self._h=scipy.optimize.minimize(self.M+self._regpar*np.identity(self.op.domain.shape[0]), self._h_precond)
-        self._h=np.dot(np.linalg.inv(self.M), self._h_precond)
-        
-        
         
         self.x+=self._h
         self.outer_update()
         self.need_prec_update=False
         if (int(np.sqrt(self.k)))**2==self.k:
             self.need_prec_update=True
-        self.outer_update()
         return True
        
     def lanzcos_update(self):
         """perform lanzcos method to calculate the preconditioner"""
+#        self.deriv_mat=np.zeros((self.setting.domain.discr.shape[0], self.setting.domain.discr.shape[0]))
         self.L=np.zeros((self.krylov_num, self.krylov_num))
         _, self.deriv=self.setting.op.linearize(self.x)
         for i in range(0, self.krylov_num):
-            self.L[i, :]=np.dot(self.orthonormal, self.setting.Hdomain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.deriv((self.orthonormal[i, :]))))))
+            self.L[i, :]=np.dot(self.orthonormal, self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.codomain.gram(self.deriv((self.orthonormal[i, :]))))))
+            #self.deriv_mat[i, :]=self.setting.domain.gram_inv(self.deriv.adjoint(self.setting.domain.gram(self.deriv(self.x))))
 #TODO: Only compute the three biggest eigenvalues with Lanczos method
-        #self.lamb, self.U=np.linalg.eig(self.L)
-        #self.diag_lamb=np.zeros(self.L.shape)
-        #for i in range(0, self.eigval_num):
-        #    self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
-        from scipy.sparse.linalg import eigsh
-        self.lamb, self.U=eigsh(self.L, self.eigval_num, which='LM')
-        self.diag_lamb=np.diag(1/(self._regpar+self.lamb)-1/self._regpar)
-                
+        self.lamb, self.U=np.linalg.eig(self.L)
+        self.diag_lamb=np.zeros(self.L.shape)
+        for i in range(0, self.eigval_num):
+            self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
         self.lanczos_krylov=np.float64(self.U @ self.diag_lamb @ self.U.transpose())
         self.lanczos=self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal
-        self.M_left=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
-        self.M_right=np.eye(np.size(self.data))
-        
-    def lanczos(self, L, v, maxit):
-        """perform lanczos method to calculate tridiagonal decomposition"""
-        epsilon=np.dot(v, L @ v)
-        w=L @ v -epsilon * v
-        zeta=np.linalg.norm(w)
-        v_old=v
-        
-        V=np.zeros((maxit, maxit))
-        Epsilon=np.zeros(maxit)
-        Zeta=np.zeros(maxit-1)
-        
-        V[0,:]=v
-        Epsilon[0]=epsilon
-        
-        counter=1
-        while(zeta != 0 and counter<maxit):
-            v=w/zeta
-            epsilon=np.dot(v, L @ v)  
-            w=L @ v -epsilon * v-zeta * v_old
-            zeta=np.linalg.norm(w)
-            v_old=v
-            
-            V[counter,:]=v
-            Epsilon[counter]=epsilon
-            Zeta[counter-1]=zeta
-            counter+=1
-        return [V, Epsilon, Zeta]
-    
-        
-    
+#        self.M=self._alpha*np.identity(self.data.shape[0])
+#        self.M=np.zeros((self.data.shape[0], self.data.shape[0]))
+        self.M=1/self._regpar*np.identity(self.data.shape[0])+self.lanczos
+        #self.M=np.random.randn(self.M.shape[0], self.M.shape[1])
+        #self.M=1*np.eye(200, 200)
+        #self.M_inv=np.linalg.inv(self.M)
+        #self.M=self.lanczos
+        #self.pre_cond_deriv=np.dot(self.M.transpose(), np.dot(self.deriv_mat+self._regpar*np.identity(self.setting.domain.discr.shape[0]), self.M))
+        #self.C=np.dot(self.pre_cond_deriv, self.pre_cond_deriv.transpose())
+
+

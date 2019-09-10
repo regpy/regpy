@@ -87,7 +87,7 @@ class NeumannOp(NonlinearOperator):
         
         """ solve the forward scattering problem for the obstacle parameterized by
         % coeff. Quantities needed again for the computation of derivatives and
-        % adjoints are stored as members of F."""
+        % adjoints are stored as members of self."""
         
         self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
@@ -101,39 +101,37 @@ class NeumannOp(NonlinearOperator):
             Iop = np.zeros(np.size(self.bd.z,2),np.size(self.bd.z,2));
         if self.wSL!=0:
             Iop = Iop + self.wSL*(op_K(self.bd,Iop_data).T - np.diag(self.bd.zpabs))
+            self.Iop=Iop
         #F.Iop=Iop;
         self.u = complex(0,1)*np.zeros((2*self.N_ieq,np.size(self.inc_directions,1)))
         FF_DL = farfield_matrix(self.bd,self.meas_directions,self.kappa,0,1)
 
         self.perm_mat, self.L, self.U =scla.lu(Iop)
         self.perm=self.perm_mat.dot(np.arange(0, np.size(self.bd.z,1)))
-        self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,self.wSL,self.wDL)
-#farfield has to be introduced in another way
+        self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,  \
+                                           self.wSL,self.wDL)
         farfield = []
         
         for l in range (0,np.size(self.inc_directions,1)):
             rhs = -2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))* \
-                (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) + self.wSL*self.bd.zpabs)
-            self.u[:, l]=np.linalg.solve(self.L.T, np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
-#            self.u[:,l] = (self.L.T) / ((self.U.T) / rhs[self.perm.astype(int)].T)
+                (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
+                                     + self.wSL*self.bd.zpabs)
+            self.u[:, l]=np.linalg.solve(self.L.T, \
+                          np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
             complex_farfield = FF_DL.dot(self.u[:,l])
             farfield=np.append(farfield, complex_farfield)
-   #     farfield=farfield.reshape((np.size(self.inc_directions, 1), self.meas_directions.shape[1]))
         return farfield
         
     def _derivative(self,h):
-#define der in another form
+
             der = []
-#            n=np.size(self.u,0)
             for l in range(0, np.size(self.inc_directions,1)):
                 duds = self.bd.arc_length_der(self.u[:,l])
                 hn = self.bd.der_normal(h)
                 rhs = self.bd.arc_length_der(hn*duds) + self.kappa**2* hn*(self.u[:,l])
                 rhs = 2*rhs*(self.bd.zpabs.T)
                 phi=np.linalg.solve(self.U, np.linalg.solve(self.L, rhs[self.perm.astype(int)]))
-#                phi = self.U / (self.L / rhs[self.perm.astype(int)])
                 complex_farfield = self.FF_combined.dot(phi)
-#                der=np.append(der, np.append(complex_farfield.real, complex_farfield.imag)).reshape((3*complex_farfield.shape[0], complex_farfield.shape[1]))
                 der=np.append(der, complex_farfield)
             return der
 
@@ -142,14 +140,15 @@ class NeumannOp(NonlinearOperator):
             res = complex(0,1)*np.zeros(2*self.N_ieq)
             v = complex(0,1)*np.zeros(2*self.N_ieq)
             N_FF = np.size(self.meas_directions,1)
-#            n=np.size(self.u,0)
             for l in range(0, np.size(self.inc_directions,1)):
                 g_complex=g[2*(l)*N_FF+np.arange(0, N_FF)] 
                 phi = self.FF_combined.T.dot(g_complex)
-                v[self.perm.astype(int)] = np.linalg.solve(self.L.T, np.linalg.solve(self.U.T, phi))
+                v[self.perm.astype(int)] = np.linalg.solve(self.L.T, \
+                                          np.linalg.solve(self.U.T, phi))
                 dvds=  self.bd.arc_length_der(v)
                 duds =  self.bd.arc_length_der(self.u[:,l])
-                res = res -2*(np.conjugate(dvds)*duds - self.kappa**2*np.conjugate(v)*self.u[:,l]).real
+                res = res -2*(np.conjugate(dvds)*duds - self.kappa**2*np.conjugate(v)*  \
+                              self.u[:,l]).real
             adj = self.bd.adjoint_der_normal(res * self.bd.zpabs.T)
             return adj
         
@@ -181,7 +180,8 @@ def create_synthetic_data(self):
         """F.bd_ex = bd;
         %set up the matrix mapping the density to the far field pattern
         %FF_combined = farfield_matrix(bd,F.meas_directions,F.kappa,-i*F.eta,1.);"""
-        FF_combined = farfield_matrix(bd,self.op.meas_directions,self.op.kappa,self.op.wSL,self.op.wDL)
+        FF_combined = farfield_matrix(bd,self.op.meas_directions,self.op.kappa,  \
+                                      self.op.wSL,self.op.wDL)
         farfield = []
         for l in range(0, np.size(self.op.inc_directions,1)):
             rhs = - 2*np.exp(complex(0,1)*self.op.kappa*self.op.inc_directions[:,l].T.dot(bd.z))* \
@@ -194,6 +194,7 @@ def create_synthetic_data(self):
         noise = np.random.randn(np.size(farfield))
         noise=noise.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
         complex_noise=noise[0, :]+complex(0,1)*noise[1, :]
-        data = farfield + self.op.noiselevel * complex_noise/np.sqrt(complex_noise*self.codomain.gram(complex_noise))
+        data = farfield + self.op.noiselevel * complex_noise/ \
+                            np.sqrt(complex_noise*self.codomain.gram(complex_noise))
         
         return data[0, :].real+complex(0, 1)*data[1, :].real

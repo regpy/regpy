@@ -37,6 +37,16 @@ class PotentialOp(NonlinearOperator):
             self.obstacle.Obstacle2dBasefunc()
             self.bd=self.obstacle.bd
             self.error=error
+            
+            N = self.Nfwd
+            t= 2*np.pi*np.linspace(0, N-1, N)/N
+            t_fl = self.meas_angles
+                
+            for j in range(0, N):
+                self.cosin[j,:] = np.cos((j+1)*t)
+                self.sinus[j,:] = np.sin((j+1)*t)
+                self.sin_fl[:,j] = np.sin((j+1)*t_fl)
+                self.cos_fl[:,j] = np.cos((j+1)*t_fl)
             super().__init__(
                     domain=domain,
                     codomain=codomain)
@@ -45,27 +55,14 @@ class PotentialOp(NonlinearOperator):
         """self.bd.coeff"""
         self.bd.coeff = coeff
         N = self.Nfwd
-        t= 2*np.pi*np.linspace(0, N-1, N)/N
-        t_fl = self.meas_angles
-            
-        for j in range(0, N):
-            self.cosin[j,:] = np.cos((j+1)*t)
-            self.sinus[j,:] = np.sin((j+1)*t)
-            self.sin_fl[:,j] = np.sin((j+1)*t_fl)
-            self.cos_fl[:,j] = np.cos((j+1)*t_fl)
-        """F.bd has to be specified"""
         self.bd.bd_eval(N,1)
-#            params.bd.radial(N,1)
         q=self.bd.q[0, :]
-#            q = params.bd.q[0,:]
         if q.max() >= self.radius:
             raise ValueError('reconstructed object penetrates measurement circle')
             
         if q.min()<=0:
             raise ValueError('reconstructed radial function negative')
-             
-                
-            """exact meaning of q.?""" 
+              
         qq = q**2
             
         flux = 1/(2*self.radius*N) * np.sum(qq)*np.ones(len(self.meas_angles))
@@ -132,20 +129,9 @@ class PotentialOp(NonlinearOperator):
     def accept_proposed(self, positions):
         """self.bd.coeff"""
         self.bd.coeff=positions
-        N = self.Nfwd
-        t= 2*np.pi*np.linspace(0, N-1, N)/N
-        t_fl = self.meas_angles
-            
-        for j in range(0, N):
-            self.cosin[j,:] = np.cos((j+1)*t)
-            self.sinus[j,:] = np.sin((j+1)*t)
-            self.sin_fl[:,j] = np.sin((j+1)*t_fl)
-            self.cos_fl[:,j] = np.cos((j+1)*t_fl)
-        """F.bd has to be specified"""
+
         self.bd.bd_eval(N,1)
-#            params.bd.radial(N,1)
         q=self.bd.q[0, :]
-#            q = params.bd.q[0,:]
         if q.max() >= self.radius:
             return False
             

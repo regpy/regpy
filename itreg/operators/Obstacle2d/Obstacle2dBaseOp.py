@@ -1,8 +1,8 @@
 import numpy as np
-from .GenCurve import GenCurve
-from .GenTrig import GenTrig
-from .StarTrig import StarTrig
-from .StarCurve import StarCurve
+from .Curves.GenCurve import GenCurve
+from .Curves.GenTrig import GenTrig
+from .Curves.StarTrig import StarTrig
+from .Curves.StarCurve import StarCurve
 
 class Obstacle2dBaseOp():
     def __init__(self, **kwargs):

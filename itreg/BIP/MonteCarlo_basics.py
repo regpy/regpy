@@ -112,13 +112,15 @@ class RandomWalk(MetropolisHastings):
         proposed_state = deepcopy(current_state)
         random_step = np.random.standard_normal(proposed_state.positions.shape)
         proposed_state.positions += self.stepsize * random_step
-        counter=0
-        #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
-        while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
-            random_step = np.random.standard_normal(proposed_state.positions.shape)
-            proposed_state.positions += self.stepsize * random_step
-            counter+=1
-            self.stepsize=1/2*self.stepsize
+        if 'accept_proposed' in dir(self.pdf.setting.op):
+            counter=0
+            #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
+            
+            while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
+                random_step = np.random.standard_normal(proposed_state.positions.shape)
+                proposed_state.positions += self.stepsize * random_step
+                counter+=1
+                self.stepsize=1/2*self.stepsize
         proposed_state.log_prob = self.pdf.log_prob(proposed_state.positions)
         return proposed_state
 
@@ -219,22 +221,33 @@ class GaussianApproximation(object):
         """
         self.pdf=pdf
         self.stepsize='randomly chosen'
-        self.y_MAP=self.pdf.op(self.pdf.initial_state.positions)
+        self.y_MAP=self.pdf.setting.op(self.pdf.initial_state.positions)
         N=self.pdf.initial_state.positions.shape[0]
 #define the prior-preconditioned Hessian
         self.Hessian_prior=np.zeros((N, N))
         self.gamma_prior_inv=np.zeros((N, N))
         for i in range(0, N):
             self.gamma_prior_inv[:, i]=self.pdf.prior.hessian(self.pdf.m_0, np.eye(N)[:, i])
-        D, S=np.linalg.eig(np.linalg.inv(self.gamma_prior_inv))
+        D, S=np.linalg.eig(-np.linalg.inv(self.gamma_prior_inv))
+        D=D.real
+        S=S.real
+
         self.gamma_prior_half=np.dot(S.transpose(), np.dot(np.diag(np.sqrt(D)), S))
+#
         for i in range(0, N):
-            self.Hessian_prior[:, i]=np.dot(self.gamma_prior_half, self.pdf.likelihood.hessian(self.pdf.m_0, np.dot(self.gamma_prior_half, np.eye(N)[:, i])))
+            self.Hessian_prior[:, i]=np.dot(self.gamma_prior_half, \
+                    self.pdf.likelihood.hessian(self.pdf.m_0, \
+                                np.dot(self.gamma_prior_half, np.eye(N)[:, i])))
 #construct randomized SVD of Hessian_prior      
         self.L, self.V=randomized_SVD(self, self.Hessian_prior)
+        self.L=-self.L
 #define gamma_post
-        self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
-        self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.pdf.prior.gamma_prior.shape[0])))
+        self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, \
+                                    np.dot(np.diag(1/(self.L+1)), \
+                                    np.dot(self.V.transpose(), self.gamma_prior_half))))  
+        self.gamma_post_half=np.dot(self.gamma_prior_half, \
+                                (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), \
+                            self.V.transpose()))+np.eye(self.gamma_prior_half.shape[0])))
 #define prior, posterior sampling
         
 
@@ -265,6 +278,7 @@ class GaussianApproximation(object):
         next_state.positions=m_post
         next_state.log_prob=np.exp(-np.dot(m_post, np.dot(self.gamma_post, m_post)))
         self.state=next_state
+        return True
         
     
     
