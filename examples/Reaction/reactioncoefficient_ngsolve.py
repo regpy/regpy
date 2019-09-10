@@ -1,68 +1,85 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Apr  4 14:43:53 2019
-
-@author: Hendrik Müller
-"""
-
 import setpath
 
-from itreg.operators.Reaction.ReactionCoefficient_2D import ReactionCoefficient
-from itreg.spaces import L2
-from itreg.solvers import Landweber
-from itreg.util import test_adjoint
+from itreg.operators.NGSolveProblems.Coefficient import Coefficient
+from itreg.spaces import L2, NGSolveDiscretization
+from itreg.solvers import Landweber, HilbertSpaceSetting
+
+from ngsolve.meshes import MakeQuadMesh
+
 import itreg.stoprules as rules
-from itreg.grids import User_Defined
 
 import numpy as np
 import logging
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
 
-N=10
-xcoo=np.linspace(0, 1, 10)
-ycoo=np.linspace(0, 1, 10)
-spacing = xcoo[1] - xcoo[0]
+meshsize_domain=10
+meshsize_codomain=10
 
-#rhs=np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
-rhs=np.ones((N, N))
+from ngsolve import *
+mesh = MakeQuadMesh(meshsize_domain)
+fes_domain = L2(mesh, order=2)
+domain= NGSolveDiscretization(fes_domain)
 
-coords=np.asarray([xcoo, ycoo])
-grid=User_Defined(coords, (10, 10))
-op = ReactionCoefficient(L2(grid), rhs, spacing=spacing)
+mesh = MakeQuadMesh(meshsize_codomain)
+fes_codomain = H1(mesh, order=3, dirichlet="left|top|right|bottom")
+codomain= NGSolveDiscretization(fes_codomain)
 
-#exact_solution = np.dot(np.sin(xcoo).reshape((N, 1)), np.cos(ycoo).reshape((1, N)))
-exact_solution=np.ones((N, N))
+rhs=10*sin(x)*sin(y)
+op = Coefficient(domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False, reaction=True, dim=2)
+
+exact_solution_coeff = x+1
+gfu_exact_solution=GridFunction(op.fes_domain)
+gfu_exact_solution.Set(exact_solution_coeff)
+exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.rand(np.random.randn).reshape((10, 10))
-data = exact_data + noise
+data=exact_data
 
-#noiselevel = op.codomain.norm(noise)
+init=1+x**2
+init_gfu=GridFunction(op.fes_domain)
+init_gfu.Set(init)
+init_solution=init_gfu.vec.FV().NumPy().copy()
+init_data=op(init_solution)
 
-#init = op.domain.one()
-init=1.1*np.ones((N, N))
+from itreg.spaces import NGSolveSpace_L2, NGSolveSpace_H1
+setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace_L2, codomain=NGSolveSpace_H1)
 
-#_, deriv = op.linearize(init)
-#test_adjoint(deriv)
-#deriv(init)
-
-
-landweber = Landweber(op, exact_data, init, stepsize=0.1)
+landweber = Landweber(setting, data, init_solution, stepsize=1000)
 stoprule = (
-    rules.CountIterations(1000) +
-    rules.Discrepancy(op.codomain.norm, exact_data, noiselevel=0, tau=1.1))
+    rules.CountIterations(10000) +
+    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
-xs=np.linspace(1, 100, 100)
+Draw (exact_solution_coeff, op.fes_domain.mesh, "exact")
+Draw (init, op.fes_domain.mesh, "init")
 
-plt.plot(xs, exact_solution.reshape((100, 1)), label='exact solution')
-plt.plot(xs, reco.reshape((100, 1)), label='reco')
-plt.plot(xs, exact_data.reshape((100, 1)), label='exact data')
-plt.plot(xs, data.reshape((100,1)), label='data')
-plt.plot(xs, reco_data.reshape((100,1)), label='reco data')
-plt.legend()
-plt.show()
+#Draw recondtructed solution
+gfu_reco=GridFunction(op.fes_domain)
+gfu_reco.vec.FV().NumPy()[:]=reco
+coeff_reco=CoefficientFunction(gfu_reco)
+
+Draw (coeff_reco, op.fes_domain.mesh, "reco")
+    
+
+#Draw data space
+gfu_data=GridFunction(op.fes_codomain)
+gfu_reco_data=GridFunction(op.fes_codomain)
+
+gfu_data.vec.FV().NumPy()[:]=data
+coeff_data = CoefficientFunction(gfu_data)
+
+gfu_reco_data.vec.FV().NumPy()[:]=reco_data
+coeff_reco_data = CoefficientFunction(gfu_reco_data)
+
+Draw(coeff_data, op.fes_codomain.mesh, "data")
+Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
+
+
+
+
+
+

@@ -1,8 +1,8 @@
 import numpy as np
-from .GenCurve import GenCurve
-from .GenTrig import GenTrig
-from .StarTrig import StarTrig
-from .StarCurve import StarCurve
+from .Curves.GenCurve import GenCurve
+from .Curves.GenTrig import GenTrig
+from .Curves.StarTrig import StarTrig
+from .Curves.StarCurve import StarCurve
 
 class Obstacle2dBaseOp():
     def __init__(self, **kwargs):
@@ -44,7 +44,7 @@ class Obstacle2dBaseOp():
                 #self.bd_ex.StarCurve(self.true_curve)
                 self.bd_ex.name=self.true_curve
             
-            N_plot =128
+            N_plot =64
             self.bd_ex.bd_eval(self.bd_ex, N_plot,0)
             self.xdag_pts_plot = self.bd_ex.z
             #   t_plot = 2*pi/N_plot*[0:N_plot];

@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Apr 24 11:01:06 2019
 
-@author: Hendrik Müller
-"""
 
 """Example:
     Solver: Newton_CG
@@ -12,10 +8,12 @@ Created on Wed Apr 24 11:01:06 2019
 
 import setpath  # NOQA
 
-from itreg.operators.Volterra.volterra import Volterra
-from itreg.spaces import L2
-from itreg.grids import Square_1D
-from itreg.solvers import Newton_CG_Frozen
+#from itreg.operators.Volterra.volterra import Volterra
+from itreg.operators import Volterra
+
+
+from itreg.spaces import L2, UniformGrid
+from itreg.solvers import Newton_CG_Frozen, HilbertSpaceSetting
 import itreg.stoprules as rules
 
 import numpy as np
@@ -28,22 +26,21 @@ logging.basicConfig(
 
 #xs = np.linspace(0, 2 * np.pi, 200)
 #spacing = xs[1] - xs[0]
-spacing=2*np.pi/200
-grid=Square_1D((200,), np.pi, spacing)
+grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
+op = Volterra(grid)
 
-op = Volterra(L2(grid), spacing=spacing)
-
-exact_solution = np.cos(grid.coords)
+exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.1 * np.random.normal(size=grid.shape)
+noise = 0.03 * op.domain.randn()
 data = exact_data + noise
+init = op.domain.ones()
 
-noiselevel = op.range.norm(noise)
+setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 
-newton_cg = Newton_CG(op, data, np.zeros(grid.shape), cgmaxit = 100, rho = 0.98)
+newton_cg = Newton_CG_Frozen(setting, data, init, cgmaxit = 100, rho = 0.98)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(op.range.norm, data, noiselevel, tau=1.1))
+    rules.CountIterations(1000) +
+    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.03, tau=1.1))
 
 reco, reco_data = newton_cg.run(stoprule)
 plt.plot(grid.coords.T, exact_solution.T, label='exact solution')

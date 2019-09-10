@@ -67,7 +67,6 @@ class IRNM_KL(Solver):
         self.op = op
         self.data = data
         self.init = init
-        self.continuum=continuum
         self.x = self.init
         self.y = self.op(self.x)
         

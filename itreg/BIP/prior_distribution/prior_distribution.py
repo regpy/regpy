@@ -21,35 +21,37 @@ class User_defined_prior(object):
         self.m_0=m_0
         
 class gaussian(object):  
-    def __init__(self, gamma_prior, setting, m_0=None):
+    def __init__(self, gamma_prior, setting, m_0=None, offset=None, inv_offset=None):
         super().__init__()
         if gamma_prior is None:
                 raise ValueError('Error: No prior covariance matrix')
         self.setting=setting
         if m_0 is None:
-            self.m_0=np.zeros(self.setting.Hdomain.coords.shape[0])
+            self.m_0=np.zeros(self.setting.domain.coords.shape[0])
         else:
             self.m_0=m_0
+        self.offset=offset or 1e-10
+        self.inv_offset=inv_offset or 1e-5
         self.gamma_prior=gamma_prior
         self.gamma_prior_abs=np.linalg.det(self.gamma_prior)
-#        D, S=np.linalg.eig(self.gamma_prior)
-#        self.gamma_prior_half=np.dot(S.transpose(), np.dot(np.diag(np.sqrt(D)), S))
+        D, S=np.linalg.eig(self.gamma_prior)
+        self.gamma_prior_half_inv=np.dot(S.transpose(), np.dot(np.diag(1/np.sqrt(D)+self.inv_offset), S))
+        self.gamma_prior_inv=np.dot(S.transpose(), np.dot(np.diag(1/D+self.inv_offset), S))
         self.hessian=self.hessian_gaussian
         self.gradient=self.gradient_gaussian
         self.prior=self.gaussian
+        self.len_domain=np.prod(self.setting.op.domain.shape)
         
     def gaussian(self, x):
-        if self.gamma_prior is None:
-            raise ValueError('Error: No gamma_prior is given')
-
-        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs))-\
-            1/2*np.dot(x-self.m_0, self.setting.Hdomain.gram(np.dot(self.gamma_prior, x-self.m_0)))
+#        return -np.log(np.sqrt(2*np.pi*self.gamma_prior_abs)+self.offset)-\
+#            1/2*np.dot(x-self.m_0, np.dot(self.gamma_prior_inv, np.conjugate(x-self.m_0)))
+        return -1/2*np.dot((x-self.m_0).reshape(self.len_domain), np.dot(self.gamma_prior_inv, np.conjugate((x-self.m_0).reshape(self.len_domain)))).real
     
     def gradient_gaussian(self, x):
-        return self.setting.Hdomain.gram(np.dot(self.gamma_prior, x-self.m_0))
+        return -np.dot(self.gamma_prior_inv, x-self.m_0).real
     
     def hessian_gaussian(self, m, x):
-        return np.dot(self.gamma_prior, x)
+        return -np.dot(self.gamma_prior_inv, x)
     
     
 
@@ -111,8 +113,8 @@ class unity(object):
         super().__init__()
         self.setting=setting
         self.prior=(lambda x: 0)
-        self.gradient=(lambda x: 0)
-        self.hessian=(lambda x: 0)
+        self.gradient=(lambda x: self.op.domain.zeros())
+        self.hessian=(lambda x: self.op.domain.zeros())
         
 class tikhonov(object):
     def __init__(self, setting, regpar):
@@ -122,14 +124,22 @@ class tikhonov(object):
         self.gradient=self.gradient_tikhonov
         self.hessian=self.hessian_tikhonov
         
+#    def tikhonov(self, x):
+#        y=self.setting.op(x)-self.rhs
+#        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+    
     def tikhonov(self, x):
-        y=self.setting.op(x)-self.rhs
-        return - 0.5 * (self.setting.Hcodomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
+        return -0.5*self.regpar*self.setting.domain.inner(x, x)
+
+    
+    
+#    def gradient_tikhonov(self, x):
+#        y, deriv=self.setting.op.linearize(x)
+#        y-=self.rhs
+#        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
     
     def gradient_tikhonov(self, x):
-        y, deriv=self.setting.op.linearize(x)
-        y-=self.rhs
-        return -(deriv.adjoint(self.setting.Hcodomain.gram(y))+self.regpar*self.setting.domain.gram(x))
+        return -self.regpar*self.setting.domain.gram(x)
     
     def hessian_tikhonov(self, m, x):
         grad_mx=self.gradient_tikhonov(m+x)

@@ -45,13 +45,15 @@ class MetropolisHastings(object):
 
     def accept(self, current_state, proposed_state):
 
-        assert isinstance(current_state, State), 'State expected'
-        assert isinstance(proposed_state, State), 'State expected'
+#        assert isinstance(current_state, State), 'State expected'
+#        assert isinstance(proposed_state, State), 'State expected'
 
         log_odds = proposed_state.log_prob - \
                    current_state.log_prob
+#        print(log_odds)
                    
         accepted=np.log(np.random.random()) < log_odds
+#        print(accepted)
         self.stepsize=self.stepsize_rule(self.stepsize, current_state, proposed_state, accepted)
         #print(accepted)
 
@@ -70,9 +72,19 @@ class MetropolisHastings(object):
 class statemanager(object):
     """Describes what to do with the states
     """
-    def __init__(self, initial_state, momenta=False):
-        if momenta:
-            self.initial_state=HMCState()
+    def __init__(self, initial_state, parameter_list=None):
+        if parameter_list is not None:
+
+            if 'log_prob' not in parameter_list:
+                parameter_list.append('log_prob')
+            if 'positions' not in parameter_list:
+                parameter_list.append('positions')
+            class User_state(object):
+                __slots__ = tuple(parameter_list)
+#    def __init__(self, initial_state, momentum=False):
+#        if momentum is True:
+#            self.initial_state=HMCState
+            self.initial_state=User_state
             self.initial_state.log_prob=initial_state.log_prob
             self.initial_state.positions=initial_state.positions
         else:
@@ -81,7 +93,7 @@ class statemanager(object):
         self.N=1
         
     def statemanager(self, state, accepted):
-        assert isinstance(self.initial_state, State), 'State expected'
+#        assert isinstance(self.initial_state, State), 'State expected'
         if accepted:
             self.states.append(state)
             self.N+=1
@@ -100,9 +112,16 @@ class RandomWalk(MetropolisHastings):
         proposed_state = deepcopy(current_state)
         random_step = np.random.standard_normal(proposed_state.positions.shape)
         proposed_state.positions += self.stepsize * random_step
-        #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
+        if 'accept_proposed' in dir(self.pdf.setting.op):
+            counter=0
+            #proposed_state.log_prob = self.pdf.log_prob(proposed_state)
+            
+            while self.pdf.setting.op.accept_proposed(proposed_state.positions) is False and counter<10:
+                random_step = np.random.standard_normal(proposed_state.positions.shape)
+                proposed_state.positions += self.stepsize * random_step
+                counter+=1
+                self.stepsize=1/2*self.stepsize
         proposed_state.log_prob = self.pdf.log_prob(proposed_state.positions)
-
         return proposed_state
 
 
@@ -111,7 +130,7 @@ class RandomWalk(MetropolisHastings):
 class Leapfrog(object):
     """Leapfrog integrator
     """
-    def __init__(self, pdf, stepsize=1e-1, n_steps=10):
+    def __init__(self, pdf, stepsize=1e-5, n_steps=10):
 
         assert stepsize > 0
         assert n_steps  > 0
@@ -151,7 +170,7 @@ class Leapfrog(object):
 
 class HamiltonianMonteCarlo(RandomWalk):
 
-    def __init__(self, pdf, statemanager, stepsize=1e-1, stepsize_rule=fixed_stepsize, n_steps=10):
+    def __init__(self, pdf, statemanager, stepsize=1e-5, stepsize_rule=fixed_stepsize, n_steps=10):
 
         super(HamiltonianMonteCarlo, self).__init__(pdf, statemanager, stepsize, stepsize_rule)
 
@@ -159,27 +178,37 @@ class HamiltonianMonteCarlo(RandomWalk):
 
     def propose(self, current_state):
 
-        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
-        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
-                                 self.pdf.log_prob(current_state.positions)
+#        current_state.momenta  = np.random.standard_normal(current_state.positions.shape)
+        momenta  = np.random.standard_normal(current_state.positions.shape)
+#        current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
+#                                 self.pdf.log_prob(current_state.positions)
         #current_state.log_prob = -0.5 * np.sum(current_state.momenta**2) + \
         #                         self.pdf.log_prob(current_state)
 
         proposed_state = deepcopy(current_state)
 
-        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+#        q, p = self.integrator.run(proposed_state.positions, proposed_state.momenta)
+        q, p = self.integrator.run(proposed_state.positions, momenta)
 
-        proposed_state.positions, proposed_state.momenta = q, p
+#        proposed_state.positions, proposed_state.momenta = q, p
+        proposed_state.positions, momenta = q, p
 
-        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#        proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
+#                                  self.pdf.log_prob(proposed_state.positions)
+        proposed_state.log_prob = -0.5 * np.sum(momenta**2) + \
                                   self.pdf.log_prob(proposed_state.positions)
+#        print(proposed_state.log_prob)
         #proposed_state.log_prob = -0.5 * np.sum(proposed_state.momenta**2) + \
         #                          self.pdf.log_prob(proposed_state)
 
         return proposed_state
-
-
     
+    def accept(self, current_state, proposed_state):
+        do_accept = super(HamiltonianMonteCarlo, self).accept(current_state, proposed_state)
+        self.integrator.stepsize = self.stepsize
+        return do_accept
+
+
     
     
 class GaussianApproximation(object):    
@@ -192,22 +221,33 @@ class GaussianApproximation(object):
         """
         self.pdf=pdf
         self.stepsize='randomly chosen'
-        self.y_MAP=self.pdf.op(self.pdf.initial_state.positions)
+        self.y_MAP=self.pdf.setting.op(self.pdf.initial_state.positions)
         N=self.pdf.initial_state.positions.shape[0]
 #define the prior-preconditioned Hessian
         self.Hessian_prior=np.zeros((N, N))
         self.gamma_prior_inv=np.zeros((N, N))
         for i in range(0, N):
             self.gamma_prior_inv[:, i]=self.pdf.prior.hessian(self.pdf.m_0, np.eye(N)[:, i])
-        D, S=np.linalg.eig(np.linalg.inv(self.gamma_prior_inv))
+        D, S=np.linalg.eig(-np.linalg.inv(self.gamma_prior_inv))
+        D=D.real
+        S=S.real
+
         self.gamma_prior_half=np.dot(S.transpose(), np.dot(np.diag(np.sqrt(D)), S))
+#
         for i in range(0, N):
-            self.Hessian_prior[:, i]=np.dot(self.gamma_prior_half, self.pdf.likelihood.hessian(self.pdf.m_0, np.dot(self.gamma_prior_half, np.eye(N)[:, i])))
+            self.Hessian_prior[:, i]=np.dot(self.gamma_prior_half, \
+                    self.pdf.likelihood.hessian(self.pdf.m_0, \
+                                np.dot(self.gamma_prior_half, np.eye(N)[:, i])))
 #construct randomized SVD of Hessian_prior      
         self.L, self.V=randomized_SVD(self, self.Hessian_prior)
+        self.L=-self.L
 #define gamma_post
-        self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, np.dot(np.diag(1/(self.L+1)), np.dot(self.V.transpose(), self.gamma_prior_half))))  
-        self.gamma_post_half=np.dot(self.gamma_prior_half, (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), self.V.transpose()))+np.eye(self.pdf.prior.gamma_prior.shape[0])))
+        self.gamma_post=np.dot(self.gamma_prior_half, np.dot(self.V, \
+                                    np.dot(np.diag(1/(self.L+1)), \
+                                    np.dot(self.V.transpose(), self.gamma_prior_half))))  
+        self.gamma_post_half=np.dot(self.gamma_prior_half, \
+                                (np.dot(self.V, np.dot(np.diag(1/np.sqrt(self.L+1)-1), \
+                            self.V.transpose()))+np.eye(self.gamma_prior_half.shape[0])))
 #define prior, posterior sampling
         
 
@@ -238,6 +278,7 @@ class GaussianApproximation(object):
         next_state.positions=m_post
         next_state.log_prob=np.exp(-np.dot(m_post, np.dot(self.gamma_post, m_post)))
         self.state=next_state
+        return True
         
     
     
