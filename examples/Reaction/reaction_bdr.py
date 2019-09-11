@@ -8,7 +8,6 @@ import itreg.stoprules as rules
 
 import numpy as np
 import logging
-#import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,31 +15,16 @@ logging.basicConfig(
 
 from ngsolve import *
 
-#import netgen.gui
-#from netgen.geom2d import SplineGeometry
-#geo=SplineGeometry()
-#geo.AddRectangle((0,0), (2,2), bcs=["b","r","t","l"])
-#geo.AddCircle ( (0, 0), r=1, bc="cyc", maxh=0.2)
-#ngmesh = geo.GenerateMesh(maxh=0.2)
-#mesh=Mesh(ngmesh)
 mesh=Mesh('..\..\itreg\meshes_ngsolve\meshes\circle.vol.gz')
 
 fes_domain = H1(mesh, order=2)
 domain= NGSolveDiscretization(fes_domain)
 
 fes_codomain = H1(mesh, order=2)
-#fes_bdr = H1(mesh, order=1)
-#pts=[v.point for v in mesh.vertices]
-#ind=[np.linalg.norm(np.array(p))>0.95 for p in pts]
-#pts_bdr=np.array(pts)[ind]
-#codomain= NGSolveBoundaryDiscretization(fes_codomain, fes_bdr, ind)
-fes_bdr = H1(mesh, order=2, dirichlet="cyc")
 codomain=NGSolveDiscretization(fes_codomain)
 
 g=x**2*y
 op = Reaction_Bdr(domain, g, codomain=codomain)
-#pts=np.array(op.pts)
-#nr_points=pts.shape[0]
 
 exact_solution_coeff = sin(y)+2
 gfu_exact_solution=GridFunction(op.fes_domain)
