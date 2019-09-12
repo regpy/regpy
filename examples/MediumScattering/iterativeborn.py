@@ -1,76 +1,74 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jun 25 18:46:07 2019
-
-@author: agaltsov
-"""
-
 import setpath
-import itreg
 
-import yaml
 import numpy as np
-
 import matplotlib.pyplot as plt
 
-from itreg.operators import MediumScatteringOneToMany, CoordinateProjection
-from itreg.solvers import IterativeBorn
+from itreg.operators import CoordinateProjection
+from itreg.operators.mediumscattering import MediumScatteringOneToMany, Normalization
+from itreg.solvers.iterative_born import IterativeBorn
 
-#from itreg.util.nfft_ewald import NFFT, Rep
-from itreg.util import get_directions, potentials
-#from itreg import stoprules as rules
+from itreg.util import potentials
+from itreg.stoprules import CountIterations
 
-# Set parameter file
-parameter_file = 'parameter_files/default.yaml'
+import logging
 
-# Load parameters from file
-with open(parameter_file,'r') as stream:
-    par = yaml.load(stream,Loader=yaml.CLoader)
-    p = par['p']
-    m = par['m']
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
+log = logging.getLogger()
 
-# Computing the incident and measurement directions
-inc_directions, farfield_directions = get_directions(p)
+inc_directions, farfield_directions = MediumScatteringOneToMany.generate_directions(
+    ninc=32,
+    nfarfield=256
+)
 
-# Initializing the problem
 scattering = MediumScatteringOneToMany(
-    gridshape=p['GRID_SHAPE'],
-    radius=p['SUPPORT_RADIUS'],
-    wave_number=p['WAVE_NUMBER'],
+    gridshape=(100, 100),
+    radius=1,
+    wave_number=10,
     inc_directions=inc_directions,
     farfield_directions=farfield_directions,
-    equation='SCHROEDINGER')
+    normalization=Normalization.Schroedinger
+)
 
-# Initializing the contrast
-v = getattr(potentials,p['POTENTIAL'])
-contrast = v(scattering.domain)
+noiselevel = 0.00
 
-# Defining the projection operator onto the contrast support
+contrast = potentials.bell(scattering.domain)
+
 projection = CoordinateProjection(
     scattering.domain,
-    scattering.support)
+    scattering.support
+)
 
-# Composition
 op = scattering * projection.adjoint
-proj = projection
-
 exact_solution = projection(contrast)
-exact_data = op(exact_solution)     # Forward map applied texacto exact solution
-noise = p['NOISE_LVL'] * op.codomain.randn() * np.max(np.abs(exact_data))
-data = exact_data + noise            # Noisy data for inversions
+exact_data = op(exact_solution)
+noise = noiselevel * np.max(np.abs(exact_data)) * op.codomain.randn()
+data = exact_data + noise
 
 # Initializing the inversion method
-BornSolver = IterativeBorn(op,proj,data,inc_directions,farfield_directions,p,m)
+solver = IterativeBorn(
+    op=op,
+    projection=projection,
+    data=data,
+    inc_directions=inc_directions,
+    farfield_directions=farfield_directions,
+    cutoffs=np.linspace(0.3, 0.5, 5),
+    p=dict(
+        GRID_SHAPE=scattering.domain.shape,
+        WAVE_NUMBER=scattering.wave_number,
+        SUPPORT_RADIUS=1,
+    )
+)
+stoprule = CountIterations(20)
 
-for x,y in BornSolver:
-    r = y-BornSolver.rhs
+for x, y in solver.until(stoprule):
+    r = y - solver.rhs
     e = x - exact_solution
-    r_norm = BornSolver.NFFT.norm(r) / BornSolver.NFFT.norm(BornSolver.rhs)
-    e_norm = np.linalg.norm(e)/np.linalg.norm(exact_solution)
-
-    print('{:2d}: |r|={:.2g}, |e|={:.2g}'.format(BornSolver.iteration,r_norm,e_norm))
-
+    r_norm = solver.NFFT.norm(r) / solver.NFFT.norm(solver.rhs)
+    e_norm = np.linalg.norm(e) / np.linalg.norm(exact_solution)
+    log.info('|r|={:.2g}, |e|={:.2g}'.format(r_norm, e_norm))
 
 plt.figure()
 plt.imshow(np.abs(contrast))
@@ -78,12 +76,12 @@ plt.title('potential')
 plt.colorbar()
 
 plt.figure()
-plt.imshow(np.abs(proj.adjoint(x)))
+plt.imshow(np.abs(projection.adjoint(x)))
 plt.title('solution')
 plt.colorbar()
 
 plt.figure()
-plt.imshow(np.abs(proj.adjoint(e)))
+plt.imshow(np.abs(projection.adjoint(e)))
 plt.title('error')
 plt.colorbar()
 plt.show()

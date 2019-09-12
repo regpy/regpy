@@ -2,7 +2,6 @@ from functools import wraps
 from logging import getLogger
 import numpy as np
 
-from .get_directions import get_directions
 
 @property
 def classlogger(self):
@@ -26,7 +25,8 @@ def memoized_property(prop):
 
 
 def set_defaults(params, **defaults):
-    defaults.update(params)
+    if params is not None:
+        defaults.update(params)
     return defaults
 
 
