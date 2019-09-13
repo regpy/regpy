@@ -1,17 +1,17 @@
 import ngsolve as ngs
 import numpy as np
 
-from . import Grid
+from . import Discretization
 from .hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
 
 
-class NGSolveDiscretization(Grid):
-    def __init__(self, fes, *args, **kwargs):
+class NGSolveDiscretization(Discretization):
+    def __init__(self, fes):
+        super().__init__(fes.ndof)
         self.fes = fes
         self.a = ngs.BilinearForm(self.fes, symmetric=True)
         self.gfu_in = ngs.GridFunction(self.fes)
         self.gfu_toret = ngs.GridFunction(self.fes)
-        super().__init__(np.empty(fes.ndof), *args, **kwargs)
 
     def apply_gram(self, x):
         self.gfu_in.vec.FV().NumPy()[:] = x
@@ -24,13 +24,13 @@ class NGSolveDiscretization(Grid):
         return self.gfu_toret.vec.FV().NumPy().copy()
 
 
-class NGSolveBoundaryDiscretization(Grid):
-    def __init__(self, fes, fes_bdr, ind, *args, **kwargs):
+class NGSolveBoundaryDiscretization(Discretization):
+    def __init__(self, fes):
+        super().__init__(fes.ndof)
         self.fes = fes
         self.a = ngs.BilinearForm(self.fes, symmetric=True)
         self.gfu_in = ngs.GridFunction(self.fes)
         self.gfu_toret = ngs.GridFunction(self.fes)
-        super().__init__(np.empty(fes.ndof), *args, **kwargs)
 
     def apply_gram(self, x):
         self.gfu_in.vec.FV().NumPy()[:] = x
