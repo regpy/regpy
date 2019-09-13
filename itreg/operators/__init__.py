@@ -108,6 +108,10 @@ class Operator:
     def _adjoint(self, y):
         raise NotImplementedError
 
+    @property
+    def inverse(self):
+        raise NotImplementedError
+
     def norm(self, iterations=10):
         assert self.linear
         h = self.domain.rand()
@@ -334,6 +338,10 @@ class Identity(Operator):
 
     def _adjoint(self, x):
         return x.copy()
+
+    @property
+    def inverse(self):
+        return self
 
     def __repr__(self):
         return util.make_repr(self, self.domain)

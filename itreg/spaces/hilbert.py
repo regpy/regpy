@@ -22,7 +22,7 @@ class HilbertSpace:
     def gram_inv(self):
         """The inverse of the gram matrix as a LinearOperator
         """
-        raise NotImplementedError
+        return self.gram.inverse
 
     def inner(self, x, y):
         """Compute the inner product between to elements.
@@ -362,10 +362,6 @@ L2 = AbstractSpaceDispatcher('L2')
 class L2Generic(HilbertSpace):
     @property
     def gram(self):
-        return self.discr.identity
-
-    @property
-    def gram_inv(self):
         return self.discr.identity
 
     def __eq__(self, other):
