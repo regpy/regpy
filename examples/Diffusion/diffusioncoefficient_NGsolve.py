@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces.discrs import NGSolveDiscretization
+from itreg.spaces.ngsolve import NGSolveDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import MakeQuadMesh

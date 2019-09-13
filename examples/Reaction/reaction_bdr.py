@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Reaction_bdr import Reaction_Bdr
-from itreg.spaces.discrs import NGSolveDiscretization, NGSolveBoundaryDiscretization
+from itreg.spaces.ngsolve import NGSolveDiscretization, NGSolveBoundaryDiscretization
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
@@ -43,7 +43,8 @@ init_data=op(init_solution)
 #_, deriv=op.linearize(exact_solution)
 #adj=deriv.adjoint(exact_data)
 
-from itreg.spaces.hilbert import L2, L2Boundary, SobolevBoundary
+from itreg.spaces.hilbert import L2, SobolevBoundary, L2Boundary
+
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)

@@ -1,5 +1,4 @@
 from copy import copy
-import ngsolve as ngs
 import numpy as np
 from itertools import accumulate
 
@@ -331,65 +330,3 @@ class DirectSum(Discretization):
 class OneToManyGrid(Discretization):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-
-class NGSolveDiscretization(Grid):
-    def __init__(self, fes, *args, **kwargs):
-        self.fes=fes
-#        gfu=ngs.GridFunction(self.fes)
-#        self.u=gfu.vec.CreateVector()
-#        self.v=gfu.vec.CreateVector()
-#        self.toret=np.empty(fes.ndof)
-
-        #u, v=self.fes.TnT()
-        self.a=ngs.BilinearForm(self.fes, symmetric=True)
-        #self.a+=SymbolicBFI(u*v)
-        #self.a.Assemble()
-
-        #self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
-        #self.b=self.a.mat
-
-        self.gfu_in=ngs.GridFunction(self.fes)
-        self.gfu_toret=ngs.GridFunction(self.fes)
-        super().__init__(np.empty(fes.ndof), *args, **kwargs)
-
-#    def inner(self, x):
-#        self.v.FV().NumPy()[:]=x
-#        toret=np.zeros(self.fes.ndof)
-#        for i in range(self.fes.ndof):
-#            self.u.FV().NumPy()[:]=np.eye(1, self.fes.ndof, i)[0]
-#            toret[i]=InnerProduct(self.u, self.v)
-#        return toret
-
-    def apply_gram(self, x):
-        self.gfu_in.vec.FV().NumPy()[:]=x
-        self.gfu_toret.vec.data = self.a.mat*self.gfu_in.vec
-        return self.gfu_toret.vec.FV().NumPy().copy()
-
-    def apply_gram_inverse(self, x):
-        self.gfu_in.vec.FV().NumPy()[:]=x
-        self.gfu_toret.vec.data = self.b*self.gfu_in.vec
-        return self.gfu_toret.vec.FV().NumPy().copy()
-
-
-class NGSolveBoundaryDiscretization(Grid):
-    def __init__(self, fes, fes_bdr, ind, *args, **kwargs):
-        self.fes=fes
-
-        #u, v=self.fes.TnT()
-        self.a=ngs.BilinearForm(self.fes, symmetric=True)
-
-        self.gfu_in=ngs.GridFunction(self.fes)
-        self.gfu_toret=ngs.GridFunction(self.fes)
-
-        super().__init__(np.empty(fes.ndof), *args, **kwargs)
-
-    def apply_gram(self, x):
-        self.gfu_in.vec.FV().NumPy()[:]=x
-        self.gfu_toret.vec.data = self.a.mat*self.gfu_in.vec
-        return self.gfu_toret.vec.FV().NumPy().copy()
-
-    def apply_gram_inverse(self, x):
-        self.gfu_in.vec.FV().NumPy()[:]=x
-        self.gfu_toret.vec.data = self.b*self.gfu_in.vec
-        return self.gfu_toret.vec.FV().NumPy().copy()
