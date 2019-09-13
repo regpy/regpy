@@ -1,10 +1,9 @@
 from copy import copy
+import ngsolve as ngs
 import numpy as np
 from itertools import accumulate
 
 from .. import util, operators
-
-from ngsolve import *
 
 
 class Discretization:
@@ -337,21 +336,21 @@ class OneToManyGrid(Discretization):
 class NGSolveDiscretization(Grid):
     def __init__(self, fes, *args, **kwargs):
         self.fes=fes
-#        gfu=GridFunction(self.fes)
+#        gfu=ngs.GridFunction(self.fes)
 #        self.u=gfu.vec.CreateVector()
 #        self.v=gfu.vec.CreateVector()
 #        self.toret=np.empty(fes.ndof)
 
         #u, v=self.fes.TnT()
-        self.a=BilinearForm(self.fes, symmetric=True)
+        self.a=ngs.BilinearForm(self.fes, symmetric=True)
         #self.a+=SymbolicBFI(u*v)
         #self.a.Assemble()
 
         #self.b=self.a.mat.Inverse(freedofs=self.fes.FreeDofs())
         #self.b=self.a.mat
 
-        self.gfu_in=GridFunction(self.fes)
-        self.gfu_toret=GridFunction(self.fes)
+        self.gfu_in=ngs.GridFunction(self.fes)
+        self.gfu_toret=ngs.GridFunction(self.fes)
         super().__init__(np.empty(fes.ndof), *args, **kwargs)
 
 #    def inner(self, x):
@@ -378,10 +377,10 @@ class NGSolveBoundaryDiscretization(Grid):
         self.fes=fes
 
         #u, v=self.fes.TnT()
-        self.a=BilinearForm(self.fes, symmetric=True)
+        self.a=ngs.BilinearForm(self.fes, symmetric=True)
 
-        self.gfu_in=GridFunction(self.fes)
-        self.gfu_toret=GridFunction(self.fes)
+        self.gfu_in=ngs.GridFunction(self.fes)
+        self.gfu_toret=ngs.GridFunction(self.fes)
 
         super().__init__(np.empty(fes.ndof), *args, **kwargs)
 

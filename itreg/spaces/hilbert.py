@@ -1,10 +1,9 @@
 from copy import copy
+import ngsolve as ngs
 import numpy as np
 
 from . import discrs
 from .. import util, operators
-
-from ngsolve import *
 
 
 class HilbertSpace:
@@ -431,7 +430,7 @@ class NGSolveFESSpace_L2(HilbertSpace):
         self.discr = discr
 
         u, v=self.discr.fes.TnT()
-        self.discr.a+=SymbolicBFI(u*v)
+        self.discr.a+=ngs.SymbolicBFI(u*v)
         self.discr.a.Assemble()
 
         self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
@@ -451,7 +450,7 @@ class NGSolveFESSpace_H1(HilbertSpace):
         self.discr = discr
 
         u, v=self.discr.fes.TnT()
-        self.discr.a+=SymbolicBFI(u*v+grad(u)*grad(v))
+        self.discr.a+=ngs.SymbolicBFI(u*v+ngs.grad(u)*ngs.grad(v))
         self.discr.a.Assemble()
 
         self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
@@ -476,7 +475,7 @@ class NGSolveFESSpace_H1_bdr(HilbertSpace):
         self.discr = discr
 
         u, v=self.discr.fes.TnT()
-        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace()+u.Trace().Deriv()*v.Trace().Deriv(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
+        self.discr.a+=ngs.SymbolicBFI(u.Trace()*v.Trace()+u.Trace().Deriv()*v.Trace().Deriv(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
         self.discr.a.Assemble()
 
         self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
@@ -499,7 +498,7 @@ class NGSolveFESSpace_L2_bdr(HilbertSpace):
         self.discr = discr
 
         u, v=self.discr.fes.TnT()
-        self.discr.a+=SymbolicBFI(u.Trace()*v.Trace(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
+        self.discr.a+=ngs.SymbolicBFI(u.Trace()*v.Trace(), definedon=self.discr.fes.mesh.Boundaries("cyc"))
         self.discr.a.Assemble()
 
         self.discr.b=self.discr.a.mat.Inverse(freedofs=self.discr.fes.FreeDofs())
