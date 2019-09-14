@@ -132,6 +132,8 @@ class Operator:
     def __rmul__(self, other):
         if isinstance(other, Operator):
             return Composition(other, self)
+        elif other == 1:
+            return self
         elif (
             np.isreal(other) or
             (np.iscomplex(other) and (not self.codomain or self.codomain.is_complex))
@@ -162,6 +164,7 @@ class LinearOperator(Operator):
 
 class Adjoint(Operator):
     def __init__(self, op):
+        assert op.linear
         self.op = op
         super().__init__(op.codomain, op.domain, linear=True)
 
@@ -174,6 +177,10 @@ class Adjoint(Operator):
     @property
     def adjoint(self):
         return self.op
+
+    @property
+    def inverse(self):
+        return self.op.inverse.adjoint
 
     def __repr__(self):
         return util.make_repr(self, self.op)
@@ -269,6 +276,12 @@ class LinearCombination(Operator):
             x += np.conj(coeff) * op.adjoint(y)
         return x
 
+    @property
+    def inverse(self):
+        if len(self.ops) > 1:
+            raise NotImplementedError
+        return (1 / self.coeffs[0]) * self.ops[0].inverse
+
     def __repr__(self):
         return util.make_repr(self, *zip(self.coeffs, self.ops))
 
@@ -325,6 +338,10 @@ class Composition(Operator):
             x = op.adjoint(x)
         return x
 
+    @util.memoized_property
+    def inverse(self):
+        return Composition(*(op.inverse for op in self.ops[::-1]))
+
     def __repr__(self):
         return util.make_repr(self, *self.ops)
 
@@ -348,13 +365,14 @@ class Identity(Operator):
 
 
 class CholeskyInverse(Operator):
-    def __init__(self, op):
+    def __init__(self, op, matrix=None):
         assert op.linear
         assert op.domain and op.domain == op.codomain
         domain = op.domain
-        matrix = np.empty((domain.size,) * 2, dtype=float)
-        for j, elm in enumerate(domain.iter_basis()):
-            matrix[j, :] = domain.flatten(op(elm))
+        if matrix is None:
+            matrix = np.empty((domain.size,) * 2, dtype=float)
+            for j, elm in enumerate(domain.iter_basis()):
+                matrix[j, :] = domain.flatten(op(elm))
         self.factorization = cho_factor(matrix)
         super().__init__(
             domain=domain,
@@ -369,6 +387,10 @@ class CholeskyInverse(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+
+    @property
+    def inverse(self):
+        return self.op
 
     def __repr__(self):
         return util.make_repr(self, self.op)
@@ -417,6 +439,14 @@ class Multiplication(Operator):
     def _adjoint(self, x):
         return np.conj(self.factor) * x
 
+    @util.memoized_property
+    def inverse(self):
+        sav = np.seterr(divide='raise')
+        try:
+            return Multiplication(1 / self.factor)
+        finally:
+            np.seterr(*sav)
+
     def __repr__(self):
         return util.make_repr(self, self.domain, self.factor)
 
@@ -432,6 +462,10 @@ class FourierTransform(Operator):
     def _adjoint(self, y):
         return self.domain.ifft(y)
 
+    @property
+    def inverse(self):
+        return self.adjoint
+
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
@@ -442,19 +476,34 @@ class MatrixMultiplication(Operator):
     """
 
     # TODO complex case
-    def __init__(self, matrix):
+    def __init__(self, matrix, inverse=None):
         self.matrix = matrix
         super().__init__(
             domain=spaces.Discretization(matrix.shape[1]),
             codomain=spaces.Discretization(matrix.shape[0]),
             linear=True
         )
+        self._inverse = inverse
 
     def _eval(self, x):
         return self.matrix @ x
 
     def _adjoint(self, y):
         return self.matrix.T @ y
+
+    @util.memoized_property
+    def inverse(self):
+        if isinstance(self._inverse, Operator):
+            return self._inverse
+        elif isinstance(self._inverse, np.ndarray):
+            return MatrixMultiplication(self._inverse, inverse=self)
+        elif isinstance(self._inverse, str):
+            if self._inverse == 'inv':
+                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
+            if self._inverse == 'cholesky':
+                # TODO LU, QR
+                return CholeskyInverse(self, matrix=self.matrix)
+        raise NotImplementedError
 
     def __repr__(self):
         return util.make_repr(self, self.matrix)
@@ -534,6 +583,10 @@ class DirectSum(Operator):
             ops = self._derivs
         return self.domain.join(
             *(op.adjoint(elm) for op, elm in zip(ops, elms)))
+
+    @util.memoized_property
+    def inverse(self):
+        return DirectSum(*(op.inverse for op in self.ops))
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
