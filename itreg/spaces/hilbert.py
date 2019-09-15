@@ -195,16 +195,6 @@ class DirectSum(HilbertSpace):
                 ops.append(w**2 * s.gram)
         return operators.DirectSum(*ops)
 
-    @util.memoized_property
-    def gram_inv(self):
-        ops = []
-        for w, s in zip(self.weights, self.summands):
-            if w == 1:
-                ops.append(s.gram_inv)
-            else:
-                ops.append(1/w**2 * s.gram_inv)
-        return operators.DirectSum(*ops)
-
 
 class AbstractSpace:
     """Class representing abstract hilbert spaces without reference to a
@@ -356,6 +346,9 @@ class AbstractSum(AbstractSpace):
 
 
 L2 = AbstractSpaceDispatcher('L2')
+Sobolev = AbstractSpaceDispatcher('Sobolev')
+L2Boundary = AbstractSpaceDispatcher('L2Boundary')
+SobolevBoundary = AbstractSpaceDispatcher('SobolevBoundary')
 
 
 @L2.register(discrs.Discretization)
@@ -374,17 +367,10 @@ class L2UniformGrid(HilbertSpace):
     def gram(self):
         return self.discr.volume_elem * self.discr.identity
 
-    @util.memoized_property
-    def gram_inv(self):
-        return 1/self.discr.volume_elem * self.discr.identity
-
 
 @L2.register(discrs.DirectSum)
-def L2DirectSum(discr):
+def l2_direct_sum(discr):
     return DirectSum(*(L2(s) for s in discr.summands), flatten=False)
-
-
-Sobolev = AbstractSpaceDispatcher('Sobolev')
 
 
 @Sobolev.register(discrs.UniformGrid)
@@ -407,17 +393,7 @@ class SobolevUniformGrid(HilbertSpace):
         mul = operators.Multiplication(self.discr.dualgrid, self.weights)
         return ft.adjoint * mul * ft
 
-    @util.memoized_property
-    def gram_inv(self):
-        ft = operators.FourierTransform(self.discr)
-        mul = operators.Multiplication(self.discr.dualgrid, 1/self.weights)
-        return ft.adjoint * mul * ft
-
 
 @Sobolev.register(discrs.DirectSum)
-def SobolevDirectSum(discr):
+def sobolev_direct_sum(discr):
     return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
-
-
-SobolevBoundary = AbstractSpaceDispatcher('SobolevBoundary')
-L2Boundary = AbstractSpaceDispatcher('L2Boundary')
