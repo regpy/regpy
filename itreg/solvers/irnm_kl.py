@@ -3,7 +3,6 @@
 import logging
 import numpy as np # noqa
 
-import setpath # noqa
 from . import Solver
 from itreg.innersolvers import SQP
 

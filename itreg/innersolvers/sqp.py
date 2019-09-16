@@ -5,7 +5,6 @@ import logging
 import numpy as np
 import scipy
 
-import setpath #noqa
 from itreg.util import CGNE_reg
 from itreg.operators import Weighted
 from . import Inner_Solver
