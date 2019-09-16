@@ -5,7 +5,7 @@ import ngsolve as ngs
 import numpy as np
 
 import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.Reaction_bdr import Reaction_Bdr
+from itreg.operators.NGSolveProblems.Reaction_bdr import ReactionBoundary
 from itreg.solvers import HilbertSpaceSetting, Landweber
 from itreg.spaces.hilbert import L2, SobolevBoundary
 from itreg.spaces.ngsolve import FESpace
@@ -24,7 +24,7 @@ fes_codomain = ngs.H1(mesh, order=2)
 codomain = FESpace(fes_codomain)
 
 g = ngs.x ** 2 * ngs.y
-op = Reaction_Bdr(domain, g, codomain=codomain)
+op = ReactionBoundary(domain, g, codomain=codomain)
 
 exact_solution_coeff = ngs.sin(ngs.y) + 2
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
