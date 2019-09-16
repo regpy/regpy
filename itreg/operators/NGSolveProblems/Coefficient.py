@@ -23,7 +23,7 @@ class Coefficient(NonlinearOperator):
 
         self.diffusion=diffusion
         self.reaction=reaction
-        self.dim=domain.fes.mesh.dim
+        self.dim=domain.fespace.mesh.dim
 
         bc_left=bc_left or 0
         bc_right=bc_right or 0
@@ -32,10 +32,10 @@ class Coefficient(NonlinearOperator):
 
 
         #Define mesh and finite element space
-        self.fes_domain=domain.fes
+        self.fes_domain=domain.fespace
         #self.mesh=self.fes.mesh
 
-        self.fes_codomain=codomain.fes
+        self.fes_codomain=codomain.fespace
 #        if dim==1:
 #            self.mesh = Make1DMesh(meshsize)
 #            self.fes = H1(self.mesh, order=2, dirichlet="left|right")
