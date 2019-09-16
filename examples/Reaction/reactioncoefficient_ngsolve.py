@@ -1,79 +1,78 @@
 import setpath
 
-from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces.ngsolve import NGSolveDiscretization
-from itreg.solvers import Landweber, HilbertSpaceSetting
-
+import logging
+import ngsolve as ngs
 from ngsolve.meshes import MakeQuadMesh
 
 import itreg.stoprules as rules
-
-import numpy as np
-import logging
-#import matplotlib.pyplot as plt
+from itreg.operators.NGSolveProblems.Coefficient import Coefficient
+from itreg.solvers import HilbertSpaceSetting, Landweber
+from itreg.spaces import L2, Sobolev
+from itreg.spaces.ngsolve import FESpace
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
+)
 
-meshsize_domain=10
-meshsize_codomain=10
+meshsize_domain = 10
+meshsize_codomain = 10
 
-from ngsolve import *
 mesh = MakeQuadMesh(meshsize_domain)
-fes_domain = L2(mesh, order=2)
-domain= NGSolveDiscretization(fes_domain)
+fes_domain = ngs.L2(mesh, order=2)
+domain = FESpace(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = H1(mesh, order=3, dirichlet="left|top|right|bottom")
-codomain= NGSolveDiscretization(fes_codomain)
+fes_codomain = ngs.H1(mesh, order=3, dirichlet="left|top|right|bottom")
+codomain = FESpace(fes_codomain)
 
-rhs=10*sin(x)*sin(y)
-op = Coefficient(domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False, reaction=True, dim=2)
+rhs = 10 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
+op = Coefficient(
+    domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False,
+    reaction=True, dim=2
+)
 
-exact_solution_coeff = x+1
-gfu_exact_solution=GridFunction(op.fes_domain)
+exact_solution_coeff = ngs.x + 1
+gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
-exact_solution=gfu_exact_solution.vec.FV().NumPy()
+exact_solution = gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
-data=exact_data
+data = exact_data
 
-init=1+x**2
-init_gfu=GridFunction(op.fes_domain)
+init = 1 + ngs.x ** 2
+init_gfu = ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
-init_solution=init_gfu.vec.FV().NumPy().copy()
-init_data=op(init_solution)
+init_solution = init_gfu.vec.FV().NumPy().copy()
+init_data = op(init_solution)
 
-from itreg.spaces import L2, Sobolev
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
 landweber = Landweber(setting, data, init_solution, stepsize=1000)
 stoprule = (
-    rules.CountIterations(10000) +
-    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
+        rules.CountIterations(10000) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
-Draw (exact_solution_coeff, op.fes_domain.mesh, "exact")
-Draw (init, op.fes_domain.mesh, "init")
+ngs.Draw(exact_solution_coeff, op.fes_domain.mesh, "exact")
+ngs.Draw(init, op.fes_domain.mesh, "init")
 
-#Draw recondtructed solution
-gfu_reco=GridFunction(op.fes_domain)
-gfu_reco.vec.FV().NumPy()[:]=reco
-coeff_reco=CoefficientFunction(gfu_reco)
+# Draw recondtructed solution
+gfu_reco = ngs.GridFunction(op.fes_domain)
+gfu_reco.vec.FV().NumPy()[:] = reco
+coeff_reco = ngs.CoefficientFunction(gfu_reco)
 
-Draw (coeff_reco, op.fes_domain.mesh, "reco")
+ngs.Draw(coeff_reco, op.fes_domain.mesh, "reco")
 
+# Draw data space
+gfu_data = ngs.GridFunction(op.fes_codomain)
+gfu_reco_data = ngs.GridFunction(op.fes_codomain)
 
-#Draw data space
-gfu_data=GridFunction(op.fes_codomain)
-gfu_reco_data=GridFunction(op.fes_codomain)
+gfu_data.vec.FV().NumPy()[:] = data
+coeff_data = ngs.CoefficientFunction(gfu_data)
 
-gfu_data.vec.FV().NumPy()[:]=data
-coeff_data = CoefficientFunction(gfu_data)
+gfu_reco_data.vec.FV().NumPy()[:] = reco_data
+coeff_reco_data = ngs.CoefficientFunction(gfu_reco_data)
 
-gfu_reco_data.vec.FV().NumPy()[:]=reco_data
-coeff_reco_data = CoefficientFunction(gfu_reco_data)
-
-Draw(coeff_data, op.fes_codomain.mesh, "data")
-Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
+ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
+ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
