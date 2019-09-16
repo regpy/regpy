@@ -3,6 +3,7 @@ import setpath
 import logging
 import ngsolve as ngs
 import numpy as np
+from netgen.geom2d import SplineGeometry
 
 import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.EIT import EIT
@@ -15,7 +16,9 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-mesh = ngs.Mesh('../../itreg/meshes_ngsolve/meshes/circle.vol.gz')
+geo = SplineGeometry()
+geo.AddCircle((0, 0), r=1, bc="cyc", maxh=0.2)
+mesh = ngs.Mesh(geo.GenerateMesh())
 
 fes_domain = ngs.L2(mesh, order=2)
 domain = FESpace(fes_domain)
