@@ -9,7 +9,6 @@ class Reaction_Bdr(NonlinearOperator):
     def __init__(self, domain, g, codomain=None):
 
         codomain = codomain or domain
-        self.N_domain=domain.coords.shape[1]
         self.g=g
 
         self.fes_domain=domain.fes
@@ -24,17 +23,17 @@ class Reaction_Bdr(NonlinearOperator):
 
         self.gfu_bilinearform = GridFunction(self.fes_domain) #grid function for defining integrator (bilinearform)
         self.gfu_bilinearform_codomain = GridFunction(self.fes_codomain) #grid function for defining integrator of bilinearform
-        
+
         self.gfu_linearform_domain = GridFunction(self.fes_codomain) #grid function for defining linearform
         self.gfu_linearform_codomain=GridFunction(self.fes_domain)
-        
+
         self.gfu_deriv_toret=GridFunction(self.fes_codomain) #grid function: return value of derivative
-        
+
         self.gfu_adj=GridFunction(self.fes_domain) #grid function for inner computation in adjoint
         self.gfu_adj_toret=GridFunction(self.fes_domain) #grid function: return value of adjoint
 
         self.gfu_b = GridFunction(self.fes_codomain) #grid function for defining the boundary term
-        
+
         u = self.fes_codomain.TrialFunction()  # symbolic object
         v = self.fes_codomain.TestFunction()   # symbolic object
 
@@ -73,7 +72,7 @@ class Reaction_Bdr(NonlinearOperator):
         #if differentiate:
         #    sigma=CoefficientFunction(self.gfu_integrator)
         #    self.gfu_bdr.Set(self.g/sigma)
-        
+
         return self._get_boundary_values(self.gfu)
 
 

@@ -1,5 +1,4 @@
 from itreg.operators import NonlinearOperator
-#from itreg.spaces import NGSolveDiscretization, UniformGrid
 
 import numpy as np
 
@@ -39,7 +38,6 @@ class EIT(NonlinearOperator):
     def __init__(self, domain, g, codomain=None):
 
         codomain = codomain or domain
-        self.N_domain=domain.coords.shape[1]
         self.g=g
         #self.pts=pts
 

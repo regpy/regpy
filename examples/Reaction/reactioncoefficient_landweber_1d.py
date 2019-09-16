@@ -12,7 +12,8 @@ from itreg.spaces.ngsolve import FESpace
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
+)
 
 meshsize_domain = 100
 meshsize_codomain = 100
