@@ -48,7 +48,7 @@ class Matrix(Operator):
             return self._inverse
         else:
             self._inverse = Matrix(
-                self.domain.fespace,
+                self.domain,
                 self.mat.Inverse(freedofs=self.domain.fespace.FreeDofs())
             )
             self._inverse._inverse = self

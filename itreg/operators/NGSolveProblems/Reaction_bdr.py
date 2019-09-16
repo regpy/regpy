@@ -9,11 +9,11 @@ class Reaction_Bdr(NonlinearOperator):
     def __init__(self, domain, g, codomain=None):
 
         codomain = codomain or domain
-        self.N_domain=domain.coords.shape[1]
+        self.N_domain=domain.shape[0]
         self.g=g
 
-        self.fes_domain=domain.fes
-        self.fes_codomain=codomain.fes
+        self.fes_domain=domain.fespace
+        self.fes_codomain=codomain.fespace
 
         self.fes_in = H1(self.fes_codomain.mesh, order=1)
         self.gfu_in = GridFunction(self.fes_in)
