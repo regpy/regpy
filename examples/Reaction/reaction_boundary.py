@@ -5,7 +5,7 @@ import ngsolve as ngs
 import numpy as np
 
 import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.Reaction_bdr import ReactionBoundary
+from itreg.operators.NGSolveProblems.ReactionBoundary import ReactionBoundary
 from itreg.solvers import HilbertSpaceSetting, Landweber
 from itreg.spaces.hilbert import L2, SobolevBoundary
 from itreg.spaces.ngsolve import FESpace
