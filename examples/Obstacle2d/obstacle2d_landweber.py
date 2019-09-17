@@ -2,13 +2,13 @@ import setpath
 
 import itreg
 
-from itreg.operators.Obstacle2d import PotentialOp
+from itreg.operators.obstacle2d import PotentialOp
 
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
-from itreg.operators.Obstacle2d import plots
+from itreg.operators.obstacle2d import plots
 
 import numpy as np
 import logging

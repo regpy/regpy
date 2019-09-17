@@ -1,14 +1,12 @@
 from itreg.spaces.l2 import L2
-from itreg.solvers.landweber import Landweber
 # from itreg.util import test_adjoint
-from itreg.operators.MRI.MRI import parallel_MRI
+from itreg.operators.mri import ParallelMri
 import itreg.stoprules as rules
 from itreg.grids import User_Defined
-from itreg.operators.MRI.MRI import plots
+from itreg.operators.mri import plots
 
 import numpy as np
 import logging
-import matplotlib.pyplot as plt
 from itreg.solvers import Newton_CG_Frozen
 
 logging.basicConfig(
@@ -27,7 +25,7 @@ center=10
 coords=np.ones(Nx*Ny*(nr_coils+1))
 grid=User_Defined(coords, coords.shape)
 domain=L2(grid)
-op=parallel_MRI(domain)
+op=ParallelMri(domain)
 
 
 exact_solution=np.ones(Nx*Ny*(nr_coils+1))

@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.XrayPhaseContrast import XrayPhaseContrast, FresnelPropagator
+from itreg.operators.fresnel import FresnelPropagator, XrayPhaseContrast
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 import itreg.stoprules as rules
