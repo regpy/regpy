@@ -443,9 +443,9 @@ class Multiplication(Operator):
     def inverse(self):
         sav = np.seterr(divide='raise')
         try:
-            return Multiplication(1 / self.factor)
+            return Multiplication(self.domain, 1 / self.factor)
         finally:
-            np.seterr(*sav)
+            np.seterr(**sav)
 
     def __repr__(self):
         return util.make_repr(self, self.domain, self.factor)
