@@ -13,6 +13,7 @@ From: ubuntu:18.10
         python3-numpy python3-scipy python3-matplotlib python3-pynfft \
         ngsolve libpython3-dev
     apt-get clean
+    pip3 install pdoc3
 
 %runscript
     exec /usr/bin/python3 "$@"
