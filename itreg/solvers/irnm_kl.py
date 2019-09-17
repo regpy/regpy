@@ -1,13 +1,7 @@
 """IRNM_KL Solver """
 
-import logging
-import numpy as np # noqa
-
 from . import Solver
-from itreg.innersolvers import SQP
-
-
-__all__ = ['IRNM_KL']
+from itreg.solvers.sqp import SQP
 
 
 class IRNM_KL(Solver):
