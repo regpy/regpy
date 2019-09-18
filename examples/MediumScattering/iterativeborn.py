@@ -3,7 +3,6 @@ import setpath
 import numpy as np
 import matplotlib.pyplot as plt
 
-from itreg.operators import CoordinateProjection
 from itreg.operators.mediumscattering import MediumScatteringOneToMany, Normalization
 from itreg.solvers.iterative_born import IterativeBorn
 
@@ -23,7 +22,7 @@ inc_directions, farfield_directions = MediumScatteringOneToMany.generate_directi
     nfarfield=256
 )
 
-scattering = MediumScatteringOneToMany(
+op = MediumScatteringOneToMany(
     gridshape=(100, 100),
     radius=1,
     wave_number=10,
@@ -34,15 +33,7 @@ scattering = MediumScatteringOneToMany(
 
 noiselevel = 0.00
 
-contrast = potentials.bell(scattering.domain)
-
-projection = CoordinateProjection(
-    scattering.domain,
-    scattering.support
-)
-
-op = scattering * projection.adjoint
-exact_solution = projection(contrast)
+exact_solution = potentials.bell(op.domain)
 exact_data = op(exact_solution)
 noise = noiselevel * np.max(np.abs(exact_data)) * op.codomain.randn()
 data = exact_data + noise
@@ -50,14 +41,11 @@ data = exact_data + noise
 # Initializing the inversion method
 solver = IterativeBorn(
     op=op,
-    projection=projection,
     data=data,
-    inc_directions=inc_directions,
-    farfield_directions=farfield_directions,
     cutoffs=np.linspace(0.3, 0.5, 5),
     p=dict(
-        GRID_SHAPE=scattering.domain.shape,
-        WAVE_NUMBER=scattering.wave_number,
+        GRID_SHAPE=op.domain.shape,
+        WAVE_NUMBER=op.wave_number,
         SUPPORT_RADIUS=1,
     )
 )
@@ -71,17 +59,17 @@ for x, y in solver.until(stoprule):
     log.info('|r|={:.2g}, |e|={:.2g}'.format(r_norm, e_norm))
 
 plt.figure()
-plt.imshow(np.abs(contrast))
+plt.imshow(np.abs(exact_solution))
 plt.title('potential')
 plt.colorbar()
 
 plt.figure()
-plt.imshow(np.abs(projection.adjoint(x)))
+plt.imshow(np.abs(x))
 plt.title('solution')
 plt.colorbar()
 
 plt.figure()
-plt.imshow(np.abs(projection.adjoint(e)))
+plt.imshow(np.abs(e))
 plt.title('error')
 plt.colorbar()
 plt.show()

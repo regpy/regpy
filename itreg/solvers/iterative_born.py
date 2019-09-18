@@ -1,5 +1,7 @@
 from . import Solver
 from itreg.util.nfft_ewald import NFFT, Rep
+from ..operators import CoordinateProjection
+from ..operators.mediumscattering import MediumScatteringOneToMany
 
 
 class IterativeBorn(Solver):
@@ -11,10 +13,16 @@ class IterativeBorn(Solver):
     [2] <Add article where [1] is implemented>
     """
 
-    def __init__(self, op, projection, data, inc_directions, farfield_directions, cutoffs, p):
+    def __init__(self, op, data, cutoffs, p):
+        # TODO make useable for other operators
+        assert isinstance(op, MediumScatteringOneToMany)
         super().__init__()
         self.op = op
-        self.NFFT = NFFT(inc_directions, farfield_directions, projection, p)
+        self.projection = CoordinateProjection(
+            op.domain,
+            op.support
+        )
+        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, self.projection, p)
         self.rhs = self.NFFT.convert(data, Rep.PairsOfDirections, Rep.EwaldSphere)
         try:
             self.cutoffs = iter(cutoffs)
@@ -35,7 +43,7 @@ class IterativeBorn(Solver):
             # First iteration: compute the Born approximation to the solution
             # TODO: move to constructor
             self.x_hat = self.rhs * subind
-        self.x = self.NFFT.convert(self.x_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
+        self.x = self.projection.adjoint(self.NFFT.convert(self.x_hat, Rep.EwaldSphere, Rep.CoordinateDomain))
         self.y = self.NFFT.convert(self.op(self.x), Rep.PairsOfDirections, Rep.EwaldSphere)
 
     def display(self, f):
@@ -44,9 +52,9 @@ class IterativeBorn(Solver):
     def derivative(self, dx, cutoff=0.5):
         """Derivative of the map F: x[j] -> x[j+1]"""
         subind = self.NFFT.submanifold_indicator(cutoff)
-        dx_hat = self.NFFT.convert(dx, Rep.CoordinateDomain, Rep.EwaldSphere)
+        dx_hat = self.NFFT.convert(self.projection(dx), Rep.CoordinateDomain, Rep.EwaldSphere)
         _, deriv = self.op.linearize(self.x)
         dy = self.NFFT.convert(deriv(dx), Rep.PairsOfDirections, Rep.EwaldSphere)
         dw_hat = (dx_hat - dy) * subind
-        dw = self.NFFT.convert(dw_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
+        dw = self.projection.adjoint(self.NFFT.convert(dw_hat, Rep.EwaldSphere, Rep.CoordinateDomain))
         return dw
