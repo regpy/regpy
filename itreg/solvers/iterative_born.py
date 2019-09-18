@@ -13,7 +13,7 @@ class IterativeBorn(Solver):
     [2] <Add article where [1] is implemented>
     """
 
-    def __init__(self, op, data, cutoffs, p):
+    def __init__(self, op, data, cutoffs):
         # TODO make useable for other operators
         assert isinstance(op, MediumScatteringOneToMany)
         super().__init__()
@@ -22,7 +22,7 @@ class IterativeBorn(Solver):
             op.domain,
             op.support
         )
-        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, self.projection, p)
+        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, self.projection, op.domain, op.wave_number)
         self.rhs = self.NFFT.convert(data, Rep.PairsOfDirections, Rep.EwaldSphere)
         try:
             self.cutoffs = iter(cutoffs)

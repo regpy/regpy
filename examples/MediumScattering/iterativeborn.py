@@ -43,11 +43,6 @@ solver = IterativeBorn(
     op=op,
     data=data,
     cutoffs=np.linspace(0.3, 0.5, 5),
-    p=dict(
-        GRID_SHAPE=op.domain.shape,
-        WAVE_NUMBER=op.wave_number,
-        SUPPORT_RADIUS=1,
-    )
 )
 stoprule = CountIterations(20)
 

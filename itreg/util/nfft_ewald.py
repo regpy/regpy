@@ -52,7 +52,7 @@ def voronoi_box(nodes):
 
 
 class NFFT:
-    def __init__(self, inc_directions, meas_directions, proj, p):
+    def __init__(self, inc_directions, meas_directions, proj, grid, wave_number):
         # Computing nodes of the Ewald sphere scaled to [-0.5,0.5)
         all_nodes = np.array([(x - y) / 4 for x, Y in zip(inc_directions, meas_directions) for y in Y])
         # TODO just use the first return value, ignore indices?
@@ -62,11 +62,12 @@ class NFFT:
 
         # Computing the uniform grid surrounding the Ewald sphere
         # TODO what for?
-        x = np.arange(p['GRID_SHAPE'][0]) / p['GRID_SHAPE'][0] - 0.5
-        y = np.arange(p['GRID_SHAPE'][1]) / p['GRID_SHAPE'][1] - 0.5
-        X, Y = np.meshgrid(x, y)
-        outer_ind = X ** 2 + Y ** 2 > 0.25
-        outer_nodes = np.stack([X[outer_ind], Y[outer_ind]], axis=1)
+        # x = np.arange(p['GRID_SHAPE'][0]) / p['GRID_SHAPE'][0] - 0.5
+        # y = np.arange(p['GRID_SHAPE'][1]) / p['GRID_SHAPE'][1] - 0.5
+        # X, Y = np.meshgrid(x, y)
+        x, y = np.meshgrid(*(np.linspace(-1/2, 1/2, n, endpoint=False) for n in grid.shape))
+        outer_ind = x ** 2 + y ** 2 > 0.25
+        outer_nodes = np.stack([x[outer_ind], y[outer_ind]], axis=1)
         self.nodes = np.concatenate([self.nodes, outer_nodes])
 
         # Computing the weights of nodes to compute Riemann sums over the Ewald sphere
@@ -78,7 +79,8 @@ class NFFT:
         # Scaling the Ewald sphere to radius 2*wave_numver*support_radius / (pi*shape[0])
         # corresponds to scaling the x-domain to [-.5,.5)
         # TODO this is 2/pi*kappa*grid.spacing[0]
-        self.scaling_factor = 8 * p['WAVE_NUMBER'] * p['SUPPORT_RADIUS'] / (np.pi * p['GRID_SHAPE'][0])
+        # self.scaling_factor = 8 * p['WAVE_NUMBER'] * p['SUPPORT_RADIUS'] / (np.pi * p['GRID_SHAPE'][0])
+        self.scaling_factor = 2 / np.pi * wave_number * grid.spacing[0]
         # TODO we scale the nodes by something grid-related. what does this relation mean generically?
         self.nodes *= self.scaling_factor
 
@@ -94,7 +96,7 @@ class NFFT:
         )
 
         # Initialize the NFFT
-        self.plan = PYNFFT(N=p['GRID_SHAPE'], M=self.nodes.shape[0])
+        self.plan = PYNFFT(N=grid.shape, M=self.nodes.shape[0])
 
         # NFFT Precomputations
         self.plan.x = self.nodes
@@ -105,7 +107,8 @@ class NFFT:
         # which is equal to prod(grid.spacing) * (2pi)**-d
         # TODO using the inverse here is more natural (just for style, not important)
         # TODO does the factor really matter? It's just a rescaling of the unknown.
-        self.nfft_factor = (4 * p['SUPPORT_RADIUS'] / (2 * np.pi)) ** 2 / np.prod(p['GRID_SHAPE'])
+        # self.nfft_factor = (4 * p['SUPPORT_RADIUS'] / (2 * np.pi)) ** 2 / np.prod(p['GRID_SHAPE'])
+        self.nfft_factor = np.prod(grid.spacing) / (2 * np.pi) ** grid.ndim
 
         # Initialize the Solver for computing the inverse NFFT
         # TODO unused?
