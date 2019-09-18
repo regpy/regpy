@@ -31,7 +31,7 @@ class Rep(Enum):
 class NFFT:
     def __init__(self, inc_directions, meas_directions, grid, wave_number):
         # Computing nodes of the Ewald sphere scaled to [-0.5,0.5)
-        all_nodes = np.array([(x - y) / 4 for x, Y in zip(inc_directions, meas_directions) for y in Y])
+        all_nodes = np.array([wave_number * (x - y) for x, Y in zip(inc_directions, meas_directions) for y in Y])
         # TODO just use the first return value, ignore indices?
         _, self.node_indices = np.unique(all_nodes.round(decimals=6), axis=0, return_index=True)
         self.nodes = all_nodes[self.node_indices]
@@ -42,33 +42,31 @@ class NFFT:
         # x = np.arange(p['GRID_SHAPE'][0]) / p['GRID_SHAPE'][0] - 0.5
         # y = np.arange(p['GRID_SHAPE'][1]) / p['GRID_SHAPE'][1] - 0.5
         # X, Y = np.meshgrid(x, y)
-        x, y = np.meshgrid(*(np.linspace(-0.5, 0.5, n, endpoint=False) for n in grid.shape))
-        outer_ind = x ** 2 + y ** 2 > 0.25
+        x, y = np.meshgrid(*(np.linspace(-2*wave_number, 2*wave_number, n, endpoint=False) for n in grid.shape))
+        outer_ind = np.sqrt(x ** 2 + y ** 2) > 2*wave_number
         outer_nodes = np.stack([x[outer_ind], y[outer_ind]], axis=1)
         self.nodes = np.concatenate([self.nodes, outer_nodes])
 
+        self.wave_number = wave_number
+
         # Computing the weights of nodes to compute Riemann sums over the Ewald sphere
         # Compute the bounded by [-0.5,0.5)^2 Voronoi diagram of the Ewald sphere
-        # TODO how to handle nodes that are already scaled?
-        regions, vertices = bounded_voronoi(self.nodes, left=-0.5, down=-0.5, right=0.5, up=0.5)
+        regions, vertices = bounded_voronoi(self.nodes, left=-2*wave_number, down=-2*wave_number, right=2*wave_number, up=2*wave_number)
 
         # Physical Ewald sphere has radius 2sqrt(E)
         # Scaling the Ewald sphere to radius 2*wave_numver*support_radius / (pi*shape[0])
         # corresponds to scaling the x-domain to [-.5,.5)
-        # TODO this is 2/pi*kappa*grid.spacing[0]
         # self.scaling_factor = 8 * p['WAVE_NUMBER'] * p['SUPPORT_RADIUS'] / (np.pi * p['GRID_SHAPE'][0])
-        self.scaling_factor = 2 / np.pi * wave_number * grid.spacing[0]
-        # TODO we scale the nodes by something grid-related. what does this relation mean generically?
-        self.nodes *= self.scaling_factor
+        scaling_factor = 1 / (2*np.pi) * grid.extents[0] / grid.shape[0]
 
         # Computing areas of cells of the Voronoi diagram
-        self.weights = np.array(
-            [ConvexHull([vertices[i] * self.scaling_factor for i in reg]).volume for reg in regions]
+        self.weights = scaling_factor**2 * np.array(
+            [ConvexHull([vertices[i] for i in reg]).volume for reg in regions]
         )
 
         # Saving the patches of the Voronoi diagram
         self.patches = PatchCollection(
-            [Polygon([vertices[i] * self.scaling_factor for i in reg]) for reg in regions],
+            [Polygon([vertices[i] for i in reg]) for reg in regions],
             edgecolors=None
         )
 
@@ -76,14 +74,10 @@ class NFFT:
         self.plan = PYNFFT(N=grid.shape, M=self.nodes.shape[0])
 
         # NFFT Precomputations
-        self.plan.x = self.nodes
+        self.plan.x = scaling_factor * self.nodes
         self.plan.precompute()
 
         # NFFT scaling factor
-        # TODO: **2 for 2d case only? relation to scaling_factor? Then this would be  prod(4 rho / N_i) * (2pi)**-d
-        # which is equal to prod(grid.spacing) * (2pi)**-d
-        # TODO using the inverse here is more natural (just for style, not important)
-        # TODO does the factor really matter? It's just a rescaling of the unknown.
         # self.nfft_factor = (4 * p['SUPPORT_RADIUS'] / (2 * np.pi)) ** 2 / np.prod(p['GRID_SHAPE'])
         self.nfft_factor = grid.volume_elem / (2 * np.pi) ** grid.ndim
 
@@ -163,7 +157,7 @@ class NFFT:
             raise NotImplementedError('Can not convert from {} to {}'.format(from_rep, to_rep))
 
     def submanifold_indicator(self, radius):
-        return np.linalg.norm(self.nodes, axis=1) <= radius * self.scaling_factor
+        return np.linalg.norm(self.nodes, axis=1) <= 4 * radius * self.wave_number
 
     def display(self, f, ax=None):
         """Display a function on the Ewald sphere"""
@@ -172,8 +166,8 @@ class NFFT:
             ax = plt.gca()
         self.patches.set_array(np.real(f))
         ax.add_collection(copy(self.patches))
-        ax.set_xlim(-0.5 * self.scaling_factor, 0.5 * self.scaling_factor)
-        ax.set_ylim(-0.5 * self.scaling_factor, 0.5 * self.scaling_factor)
+        ax.set_xlim(-2 * self.wave_number, 2 * self.wave_number)
+        ax.set_ylim(-2 * self.wave_number, 2 * self.wave_number)
         # Return mappable for caller to be able to setup colorbar
         return self.patches
 
