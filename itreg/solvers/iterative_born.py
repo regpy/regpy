@@ -1,6 +1,5 @@
 from . import Solver
 from itreg.util.nfft_ewald import NFFT, Rep
-from ..operators import CoordinateProjection
 from ..operators.mediumscattering import MediumScatteringOneToMany
 
 
@@ -18,11 +17,7 @@ class IterativeBorn(Solver):
         assert isinstance(op, MediumScatteringOneToMany)
         super().__init__()
         self.op = op
-        self.projection = CoordinateProjection(
-            op.domain,
-            op.support
-        )
-        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, self.projection, op.domain, op.wave_number)
+        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, op.domain, op.wave_number)
         self.rhs = self.NFFT.convert(data, Rep.PairsOfDirections, Rep.EwaldSphere)
         try:
             self.cutoffs = iter(cutoffs)
@@ -43,7 +38,8 @@ class IterativeBorn(Solver):
             # First iteration: compute the Born approximation to the solution
             # TODO: move to constructor
             self.x_hat = self.rhs * subind
-        self.x = self.projection.adjoint(self.NFFT.convert(self.x_hat, Rep.EwaldSphere, Rep.CoordinateDomain))
+        self.x = self.NFFT.convert(self.x_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
+        self.x[~self.op.support] = 0
         self.y = self.NFFT.convert(self.op(self.x), Rep.PairsOfDirections, Rep.EwaldSphere)
 
     def display(self, f):
@@ -52,9 +48,12 @@ class IterativeBorn(Solver):
     def derivative(self, dx, cutoff=0.5):
         """Derivative of the map F: x[j] -> x[j+1]"""
         subind = self.NFFT.submanifold_indicator(cutoff)
-        dx_hat = self.NFFT.convert(self.projection(dx), Rep.CoordinateDomain, Rep.EwaldSphere)
+        dx = dx.copy()
+        dx[~self.op.support] = 0
+        dx_hat = self.NFFT.convert(dx, Rep.CoordinateDomain, Rep.EwaldSphere)
         _, deriv = self.op.linearize(self.x)
         dy = self.NFFT.convert(deriv(dx), Rep.PairsOfDirections, Rep.EwaldSphere)
         dw_hat = (dx_hat - dy) * subind
-        dw = self.projection.adjoint(self.NFFT.convert(dw_hat, Rep.EwaldSphere, Rep.CoordinateDomain))
+        dw = self.NFFT.convert(dw_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
+        dw[~self.op.support] = 0
         return dw

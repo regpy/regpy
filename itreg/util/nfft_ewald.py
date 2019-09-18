@@ -52,7 +52,7 @@ def voronoi_box(nodes):
 
 
 class NFFT:
-    def __init__(self, inc_directions, meas_directions, proj, grid, wave_number):
+    def __init__(self, inc_directions, meas_directions, grid, wave_number):
         # Computing nodes of the Ewald sphere scaled to [-0.5,0.5)
         all_nodes = np.array([(x - y) / 4 for x, Y in zip(inc_directions, meas_directions) for y in Y])
         # TODO just use the first return value, ignore indices?
@@ -115,9 +115,6 @@ class NFFT:
         self.solver = Solver(self.plan)
         self.solver.w = self.weights
 
-        # Projector onto support
-        self.proj = proj
-
     def forward(self, f_hat, cutoff=True):
         """Computes the forward NFFT
 
@@ -132,7 +129,7 @@ class NFFT:
         function on the Ewald sphere
         """
 
-        self.plan.f_hat = self.proj.adjoint(f_hat)
+        self.plan.f_hat = f_hat
         f = self.plan.trafo()
         if cutoff:
             f *= self.submanifold_indicator(0.5)
@@ -158,8 +155,7 @@ class NFFT:
         f : function on the Ewald sphere
         """
 
-        f_hat = self.adjoint(self.weights * f)
-        return self.proj(f_hat)
+        return self.adjoint(self.weights * f)
 
     def convert(self, x, from_rep, to_rep):
         """Changes the representation of data between different formats
