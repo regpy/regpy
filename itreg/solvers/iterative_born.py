@@ -8,8 +8,8 @@ from scipy.spatial.qhull import ConvexHull
 
 from . import Solver
 from ..operators.mediumscattering import MediumScatteringOneToMany
+from ..operators.nfft import NFFT
 from ..util import bounded_voronoi
-from ..util.nfft_ewald import NFFT
 
 
 class IterativeBorn(Solver):
@@ -53,10 +53,8 @@ class IterativeBorn(Solver):
             nodes, left=-self.bound, down=-self.bound,
             right=self.bound, up=self.bound
         )
-        # TODO this should be extracted from NNFTs domain, once that is turned into an operator
-        self.n_nodes = nodes.shape[0]
 
-        weights = np.array(
+        self.weights = np.array(
             [ConvexHull([vertices[i] for i in reg]).volume for reg in regions]
         )
 
@@ -69,7 +67,7 @@ class IterativeBorn(Solver):
             edgecolors=None
         )
 
-        self.NFFT = NFFT(nodes, op.domain, weights)
+        self.NFFT = NFFT(op.domain, nodes, self.weights)
 
         self.rhs = self._pad_data(data)
 
@@ -100,7 +98,7 @@ class IterativeBorn(Solver):
         return np.conj(self.NFFT.inverse(np.conj(x_hat)))
 
     def _pad_data(self, x):
-        y = np.zeros(self.n_nodes, dtype=complex)
+        y = np.zeros(self.NFFT.codomain.shape[0], dtype=complex)
         y[:len(self.node_indices)] = x.ravel('F')[self.node_indices]
         return y
 
@@ -141,3 +139,6 @@ class IterativeBorn(Solver):
         dw = self._inverse(dw_hat)
         dw[~self.op.support] = 0
         return dw
+
+    def datanorm(self, f):
+        return np.sqrt(np.sum(np.abs(f**2) * self.weights))

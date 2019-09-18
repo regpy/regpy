@@ -49,7 +49,7 @@ stoprule = CountIterations(20)
 for x, y in solver.until(stoprule):
     r = y - solver.rhs
     e = x - exact_solution
-    r_norm = solver.NFFT.norm(r) / solver.NFFT.norm(solver.rhs)
+    r_norm = solver.datanorm(r) / solver.datanorm(solver.rhs)
     e_norm = np.linalg.norm(e) / np.linalg.norm(exact_solution)
     log.info('|r|={:.2g}, |e|={:.2g}'.format(r_norm, e_norm))
 
