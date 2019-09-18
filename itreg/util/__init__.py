@@ -1,6 +1,7 @@
 from functools import wraps
 from logging import getLogger
 import numpy as np
+from scipy.spatial.qhull import Voronoi
 
 
 @property
@@ -96,3 +97,25 @@ def make_repr(self, *args, **kwargs):
 
 
 eps = np.finfo(float).eps
+
+
+def bounded_voronoi(nodes, left, down, up, right):
+    """Computes the Voronoi diagram with a bounding box
+    """
+
+    # Extend the set of nodes by reflecting along boundaries
+    nodes_left = 2 * np.array([left - 1e-6, 0]) - nodes
+    nodes_down = 2 * np.array([0, down - 1e-6]) - nodes
+    nodes_right = 2 * np.array([right + 1e-6, 0]) - nodes
+    nodes_up = 2 * np.array([0, up + 1e-6]) - nodes
+
+    # Compute the extended Voronoi diagram
+    evor = Voronoi(np.concatenate([nodes, nodes_up, nodes_down, nodes_left, nodes_right]))
+
+    # Shrink the Voronoi diagram
+    regions = [evor.regions[reg] for reg in evor.point_region[:nodes.shape[0]]]
+    used_vertices = np.unique([i for reg in regions for i in reg])
+    regions = [[np.where(used_vertices == i)[0][0] for i in reg] for reg in regions]
+    vertices = [evor.vertices[i] for i in used_vertices]
+
+    return regions, vertices

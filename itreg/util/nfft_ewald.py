@@ -1,17 +1,18 @@
 """Ewald sphere geometry framework for NFFT
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
-from scipy.spatial import Voronoi, ConvexHull
-
-from pynfft.nfft import NFFT as PYNFFT
-from pynfft.solver import Solver
+from copy import copy
 from enum import Enum, auto
 
-from copy import copy
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Polygon
+from pynfft.nfft import NFFT as PYNFFT
+from pynfft.solver import Solver
+from scipy.spatial import ConvexHull
+
+from . import bounded_voronoi
 
 
 class Rep(Enum):
@@ -25,30 +26,6 @@ class Rep(Enum):
 
     # Data defined in the coordinate (domain) space
     CoordinateDomain = auto()
-
-
-def voronoi_box(nodes):
-    """Computes the Voronoi diagram with a bounding box [-0.5,0.5)^2
-    """
-
-    # Extend the set of nodes by reflecting along boundaries
-    nodes_up = np.array([[x, 1 - y + 1e-6] for x, y in nodes])
-    nodes_down = np.array([[x, -1 - y - 1e-6] for x, y in nodes])
-    nodes_right = np.array([[1 - x + 1e-6, y] for x, y in nodes])
-    nodes_left = np.array([[-1 - x - 1e-6, y] for x, y in nodes])
-
-    enodes = np.concatenate([nodes, nodes_up, nodes_down, nodes_left, nodes_right])
-
-    # Computing the extended Voronoi diagram
-    evor = Voronoi(enodes)
-
-    # Shrinking the Voronoi diagram
-    regions = [evor.regions[reg] for reg in evor.point_region[:nodes.shape[0]]]
-    used_vertices = np.unique([i for reg in regions for i in reg])
-    regions = [[np.where(used_vertices == i)[0][0] for i in reg] for reg in regions]
-    vertices = [evor.vertices[i] for i in used_vertices]
-
-    return regions, vertices
 
 
 class NFFT:
@@ -65,7 +42,7 @@ class NFFT:
         # x = np.arange(p['GRID_SHAPE'][0]) / p['GRID_SHAPE'][0] - 0.5
         # y = np.arange(p['GRID_SHAPE'][1]) / p['GRID_SHAPE'][1] - 0.5
         # X, Y = np.meshgrid(x, y)
-        x, y = np.meshgrid(*(np.linspace(-1/2, 1/2, n, endpoint=False) for n in grid.shape))
+        x, y = np.meshgrid(*(np.linspace(-0.5, 0.5, n, endpoint=False) for n in grid.shape))
         outer_ind = x ** 2 + y ** 2 > 0.25
         outer_nodes = np.stack([x[outer_ind], y[outer_ind]], axis=1)
         self.nodes = np.concatenate([self.nodes, outer_nodes])
@@ -73,7 +50,7 @@ class NFFT:
         # Computing the weights of nodes to compute Riemann sums over the Ewald sphere
         # Compute the bounded by [-0.5,0.5)^2 Voronoi diagram of the Ewald sphere
         # TODO how to handle nodes that are already scaled?
-        regions, vertices = voronoi_box(self.nodes)
+        regions, vertices = bounded_voronoi(self.nodes, left=-0.5, down=-0.5, right=0.5, up=0.5)
 
         # Physical Ewald sphere has radius 2sqrt(E)
         # Scaling the Ewald sphere to radius 2*wave_numver*support_radius / (pi*shape[0])
@@ -108,32 +85,27 @@ class NFFT:
         # TODO using the inverse here is more natural (just for style, not important)
         # TODO does the factor really matter? It's just a rescaling of the unknown.
         # self.nfft_factor = (4 * p['SUPPORT_RADIUS'] / (2 * np.pi)) ** 2 / np.prod(p['GRID_SHAPE'])
-        self.nfft_factor = np.prod(grid.spacing) / (2 * np.pi) ** grid.ndim
+        self.nfft_factor = grid.volume_elem / (2 * np.pi) ** grid.ndim
 
         # Initialize the Solver for computing the inverse NFFT
         # TODO unused?
         self.solver = Solver(self.plan)
         self.solver.w = self.weights
 
-    def forward(self, f_hat, cutoff=True):
+    def forward(self, f_hat):
         """Computes the forward NFFT
 
         Parameters
         ----------
         f_hat : ndarray
             function on the rectangular grid
-        cutoff : bool
 
         Returns
         -------
         function on the Ewald sphere
         """
-
         self.plan.f_hat = f_hat
-        f = self.plan.trafo()
-        if cutoff:
-            f *= self.submanifold_indicator(0.5)
-        return f
+        return self.plan.trafo()
 
     def adjoint(self, f):
         """ Computes the adjoint NFFT
@@ -154,7 +126,6 @@ class NFFT:
         ----------
         f : function on the Ewald sphere
         """
-
         return self.adjoint(self.weights * f)
 
     def convert(self, x, from_rep, to_rep):
@@ -207,7 +178,7 @@ class NFFT:
         return self.patches
 
     def norm(self, f):
-        return np.sqrt(np.sum(np.abs(f**2) * self.weights))
+        return np.sqrt(np.sum(np.abs(f ** 2) * self.weights))
 
     def zeros(self, **kwargs):
         return np.zeros(self.nodes.shape[0], **kwargs)
