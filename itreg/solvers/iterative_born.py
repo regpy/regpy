@@ -1,6 +1,15 @@
+from copy import copy
+
+import numpy as np
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Polygon
+from matplotlib.pyplot import gca
+from scipy.spatial.qhull import ConvexHull
+
 from . import Solver
-from itreg.util.nfft_ewald import NFFT, Rep
 from ..operators.mediumscattering import MediumScatteringOneToMany
+from ..util import bounded_voronoi
+from ..util.nfft_ewald import NFFT
 
 
 class IterativeBorn(Solver):
@@ -17,43 +26,118 @@ class IterativeBorn(Solver):
         assert isinstance(op, MediumScatteringOneToMany)
         super().__init__()
         self.op = op
-        self.NFFT = NFFT(op.inc_directions, op.farfield_directions, op.domain, op.wave_number)
-        self.rhs = self.NFFT.convert(data, Rep.PairsOfDirections, Rep.EwaldSphere)
+
+        # Compute properly scaled scattering vectors on the Ewald sphere
+        scattering_vecs = np.array([
+            op.wave_number * (x - y)
+            for x, Y in zip(op.inc_directions, op.farfield_directions)
+            for y in Y
+        ])
+
+        scattering_vecs, self.node_indices = np.unique(scattering_vecs.round(decimals=6), axis=0, return_index=True)
+
+        # Compute uniform grid surrounding the Ewald sphere
+        self.bound = 2 * op.wave_number
+        # TODO is using the spatial grid shape here relevant?
+        x, y = np.meshgrid(*(np.linspace(-self.bound, self.bound, n, endpoint=False) for n in op.domain.shape))
+        outer_ind = np.sqrt(x**2 + y**2) > self.bound
+        outer_nodes = np.stack([x[outer_ind], y[outer_ind]], axis=1)
+
+        # Compute nodes, Voronoi diagram and approximate weights
+        nodes = np.concatenate([scattering_vecs, outer_nodes])
+        self.outer = np.concatenate([
+            np.zeros_like(scattering_vecs, dtype=bool),
+            np.ones_like(outer_nodes, dtype=bool)
+        ])
+        regions, vertices = bounded_voronoi(
+            nodes, left=-self.bound, down=-self.bound,
+            right=self.bound, up=self.bound
+        )
+        # TODO this should be extracted from NNFTs domain, once that is turned into an operator
+        self.n_nodes = nodes.shape[0]
+
+        weights = np.array(
+            [ConvexHull([vertices[i] for i in reg]).volume for reg in regions]
+        )
+
+        # For submanifold_indicator
+        self.node_dists = np.linalg.norm(nodes, axis=1) / (2 * self.bound)
+
+        # Save the patches of the Voronoi diagram for plotting
+        self.patches = PatchCollection(
+            [Polygon([vertices[i] for i in reg]) for reg in regions],
+            edgecolors=None
+        )
+
+        self.NFFT = NFFT(nodes, op.domain, weights)
+
+        self.rhs = self._pad_data(data)
+
         try:
             self.cutoffs = iter(cutoffs)
         except TypeError:
             self.cutoffs = iter([cutoffs])
-        self.cutoff = next(self.cutoffs)
-
-    def _next(self):
-        subind = self.NFFT.submanifold_indicator(self.cutoff)
         try:
             self.cutoff = next(self.cutoffs)
         except StopIteration:
+            raise ValueError('no cutoffs given') from None
+
+        self.subind = self._submanifold_indicator(self.cutoff)
+        self.x_hat = self.rhs * self.subind
+        self._update_xy()
+
+    def _update_xy(self):
+        self.x = self._inverse(self.x_hat)
+        self.x[~self.op.support] = 0
+        self.y = self._pad_data(self.op(self.x))
+
+    def _forward(self, x):
+        y = np.conj(self.NFFT(np.conj(x)))
+        y[self.outer] = 0
+        return y
+
+    def _inverse(self, x_hat):
+        return np.conj(self.NFFT.inverse(np.conj(x_hat)))
+
+    def _pad_data(self, x):
+        y = np.zeros(self.n_nodes, dtype=complex)
+        y[:len(self.node_indices)] = x.ravel('F')[self.node_indices]
+        return y
+
+    def _next(self):
+        try:
+            self.cutoff = next(self.cutoffs)
+            self.subind = self._submanifold_indicator(self.cutoff)
+            # TODO assert cutoff <= 0.5?
+        except StopIteration:
             # If no next cutoff is available, just keep the final one
             pass
-        try:
-            self.x_hat = (self.x_hat - self.y + self.rhs) * subind
-        except AttributeError:
-            # First iteration: compute the Born approximation to the solution
-            # TODO: move to constructor
-            self.x_hat = self.rhs * subind
-        self.x = self.NFFT.convert(self.x_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
-        self.x[~self.op.support] = 0
-        self.y = self.NFFT.convert(self.op(self.x), Rep.PairsOfDirections, Rep.EwaldSphere)
+        self.x_hat = (self.x_hat - self.y + self.rhs) * self.subind
+        self._update_xy()
 
-    def display(self, f):
-        return self.NFFT.display(f)
+    def _submanifold_indicator(self, radius):
+        return self.node_dists <= radius
+
+    def display(self, f, ax=None):
+        """Display a function on the Ewald sphere"""
+        if ax is None:
+            ax = gca()
+        self.patches.set_array(np.real(f))
+        ax.add_collection(copy(self.patches))
+        ax.set_xlim(-self.bound, self.bound)
+        ax.set_ylim(-self.bound, self.bound)
+        # Return mappable for caller to be able to setup colorbar
+        return self.patches
 
     def derivative(self, dx, cutoff=0.5):
         """Derivative of the map F: x[j] -> x[j+1]"""
-        subind = self.NFFT.submanifold_indicator(cutoff)
+        subind = self._submanifold_indicator(cutoff)
         dx = dx.copy()
         dx[~self.op.support] = 0
-        dx_hat = self.NFFT.convert(dx, Rep.CoordinateDomain, Rep.EwaldSphere)
+        dx_hat = self._forward(dx)
         _, deriv = self.op.linearize(self.x)
-        dy = self.NFFT.convert(deriv(dx), Rep.PairsOfDirections, Rep.EwaldSphere)
+        dy = self._pad_data(deriv(dx))
         dw_hat = (dx_hat - dy) * subind
-        dw = self.NFFT.convert(dw_hat, Rep.EwaldSphere, Rep.CoordinateDomain)
+        dw = self._inverse(dw_hat)
         dw[~self.op.support] = 0
         return dw
