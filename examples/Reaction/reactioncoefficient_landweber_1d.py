@@ -1,7 +1,7 @@
 import setpath
 
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.spaces import L2, NGSolveDiscretization
+from itreg.spaces.ngsolve import FESpace
 from itreg.solvers import Landweber, HilbertSpaceSetting
 
 from ngsolve.meshes import Make1DMesh
@@ -20,33 +20,33 @@ logging.basicConfig(
 meshsize_domain=100
 meshsize_codomain=100
 
-from ngsolve import *
+import ngsolve as ngs
 
 mesh = Make1DMesh(meshsize_domain)
-fes_domain = L2(mesh, order=2, dirichlet="left|right")
-domain = NGSolveDiscretization(fes_domain)
+fes_domain = ngs.L2(mesh, order=2, dirichlet="left|right")
+domain = FESpace(fes_domain)
 
 mesh = Make1DMesh(meshsize_codomain)
-fes_codomain = H1(mesh, order=2, dirichlet="left|right")
-codomain = NGSolveDiscretization(fes_codomain)
+fes_codomain = ngs.H1(mesh, order=2, dirichlet="left|right")
+codomain = FESpace(fes_codomain)
 
-rhs=10*x**2
+rhs=10*ngs.x**2
 op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
 
 #exact_solution = np.linspace(1, 2, 201)
-exact_solution_coeff = 1+x
-gfu_exact_solution=GridFunction(op.fes_domain)
+exact_solution_coeff = 1+ngs.x
+gfu_exact_solution=ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution=gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
-noise = 0.01 * op.codomain.randn()
+noise = 0.0001 * op.codomain.randn()
 data=exact_data+noise
 
-gfu=GridFunction(op.fes_codomain)
+gfu=ngs.GridFunction(op.fes_codomain)
 for i in range(201):
     gfu.vec[i]=data[i]
 
-Symfunc=CoefficientFunction(gfu)
+Symfunc=ngs.CoefficientFunction(gfu)
 func=np.zeros(201)
 for i in range(0, 201):
     mip=op.fes_codomain.mesh(i/200)
@@ -65,21 +65,21 @@ _, deriv = op.linearize(exact_solution)
 adj=deriv.adjoint(np.linspace(1, 2, 201))
 
 #init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
-init=1+x**3
-init_gfu=GridFunction(op.fes_domain)
+init=1+ngs.x**3
+init_gfu=ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution=init_gfu.vec.FV().NumPy().copy()
 init_plot=init_solution.copy()
 init_data=op(init_solution)
 
-from itreg.spaces import L2, NGSolveSpace
-setting = HilbertSpaceSetting(op=op, domain=NGSolveSpace, codomain=NGSolveSpace)
+from itreg.spaces.ngsolve import L2, Sobolev
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=Sobolev)
 
 landweber = Landweber(setting, data, init_solution, stepsize=1)
 #irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(1000) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -91,17 +91,17 @@ plt.show()
 
 N=op.fes_domain.ndof
 
-gfu=GridFunction(op.fes_domain)
-gfu2=GridFunction(op.fes_domain)
-gfu3=GridFunction(op.fes_domain)
+gfu=ngs.GridFunction(op.fes_domain)
+gfu2=ngs.GridFunction(op.fes_domain)
+gfu3=ngs.GridFunction(op.fes_domain)
 for i in range(N):
     gfu.vec[i]=reco[i]
     gfu2.vec[i]=exact_solution[i]
     gfu3.vec[i]=init_plot[i]
 
-Symfunc=CoefficientFunction(gfu)
-Symfunc2=CoefficientFunction(gfu2)
-Symfunc3=CoefficientFunction(gfu3)
+Symfunc=ngs.CoefficientFunction(gfu)
+Symfunc2=ngs.CoefficientFunction(gfu2)
+Symfunc3=ngs.CoefficientFunction(gfu3)
 func=np.zeros(N)
 func2=np.zeros(N)
 func3=np.zeros(N)
@@ -122,20 +122,20 @@ plt.show()
 
 
 
-gfu=GridFunction(op.fes_codomain)
-gfu2=GridFunction(op.fes_codomain)
-gfu3=GridFunction(op.fes_codomain)
-gfu4=GridFunction(op.fes_codomain)
+gfu=ngs.GridFunction(op.fes_codomain)
+gfu2=ngs.GridFunction(op.fes_codomain)
+gfu3=ngs.GridFunction(op.fes_codomain)
+gfu4=ngs.GridFunction(op.fes_codomain)
 for i in range(201):
     gfu.vec[i]=reco_data[i]
     gfu2.vec[i]=exact_data[i]
     gfu3.vec[i]=init_data[i]
     gfu4.vec[i]=data[i]
 
-Symfunc=CoefficientFunction(gfu)
-Symfunc2=CoefficientFunction(gfu2)
-Symfunc3=CoefficientFunction(gfu3)
-Symfunc4=CoefficientFunction(gfu4)
+Symfunc=ngs.CoefficientFunction(gfu)
+Symfunc2=ngs.CoefficientFunction(gfu2)
+Symfunc3=ngs.CoefficientFunction(gfu3)
+Symfunc4=ngs.CoefficientFunction(gfu4)
 func=np.zeros(201)
 func2=np.zeros(201)
 func3=np.zeros(201)
