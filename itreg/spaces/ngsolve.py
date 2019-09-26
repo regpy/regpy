@@ -6,7 +6,7 @@ from ..operators import Operator
 from ..util import memoized_property
 
 
-class FESpace(Discretization):
+class NgsSpace(Discretization):
     def __init__(self, fes):
         assert isinstance(fes, ngs.FESpace)
         super().__init__(fes.ndof)
@@ -18,7 +18,7 @@ class FESpace(Discretization):
 
 class Matrix(Operator):
     def __init__(self, domain, form):
-        assert isinstance(domain, FESpace)
+        assert isinstance(domain, NgsSpace)
         if isinstance(form, ngs.BilinearForm):
             assert domain.fes == form.space
             form.Assemble()
@@ -55,7 +55,7 @@ class Matrix(Operator):
             return self._inverse
 
 
-@L2.register(FESpace)
+@L2.register(NgsSpace)
 class L2FESpace(HilbertSpace):
     @memoized_property
     def gram(self):
@@ -65,7 +65,7 @@ class L2FESpace(HilbertSpace):
         return Matrix(self.discr, form)
 
 
-@Sobolev.register(FESpace)
+@Sobolev.register(NgsSpace)
 class SobolevFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
@@ -75,7 +75,7 @@ class SobolevFESpace(HilbertSpace):
         return Matrix(self.discr, form)
 
 
-@L2Boundary.register(FESpace)
+@L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
@@ -88,7 +88,7 @@ class L2BoundaryFESpace(HilbertSpace):
         return Matrix(self.discr, form)
 
 
-@SobolevBoundary.register(FESpace)
+@SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
     @memoized_property
     def gram(self):

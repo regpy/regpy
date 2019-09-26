@@ -9,7 +9,7 @@ import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.ReactionBoundary import ReactionBoundary
 from itreg.solvers import HilbertSpaceSetting, Landweber
 from itreg.spaces.hilbert import L2, SobolevBoundary
-from itreg.spaces.ngsolve import FESpace
+from itreg.spaces.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,10 +21,10 @@ geo.AddCircle((0, 0), r=1, bc="cyc", maxh=0.2)
 mesh = ngs.Mesh(geo.GenerateMesh())
 
 fes_domain = ngs.H1(mesh, order=2)
-domain = FESpace(fes_domain)
+domain = NgsSpace(fes_domain)
 
 fes_codomain = ngs.H1(mesh, order=2)
-codomain = FESpace(fes_codomain)
+codomain = NgsSpace(fes_codomain)
 
 g = ngs.x ** 2 * ngs.y
 op = ReactionBoundary(domain, g, codomain=codomain)

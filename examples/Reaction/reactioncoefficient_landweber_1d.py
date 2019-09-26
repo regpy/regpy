@@ -8,7 +8,7 @@ import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.solvers import HilbertSpaceSetting, Landweber
 from itreg.spaces import L2
-from itreg.spaces.ngsolve import FESpace
+from itreg.spaces.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,11 +20,11 @@ meshsize_codomain = 100
 
 mesh = Make1DMesh(meshsize_domain)
 fes_domain = ngs.L2(mesh, order=2, dirichlet="left|right")
-domain = FESpace(fes_domain)
+domain = NgsSpace(fes_domain)
 
 mesh = Make1DMesh(meshsize_codomain)
 fes_codomain = ngs.H1(mesh, order=2, dirichlet="left|right")
-codomain = FESpace(fes_codomain)
+codomain = NgsSpace(fes_codomain)
 
 rhs = 10 * ngs.x ** 2
 op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
