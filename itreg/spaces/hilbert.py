@@ -378,7 +378,6 @@ class SobolevUniformGrid(HilbertSpace):
     def __init__(self, discr, index=1):
         super().__init__(discr)
         self.index = index
-        self.weights = (1 + np.linalg.norm(discr.dualgrid.coords, axis=0)**2) ** index
 
     def __eq__(self, other):
         return (
@@ -390,7 +389,10 @@ class SobolevUniformGrid(HilbertSpace):
     @util.memoized_property
     def gram(self):
         ft = operators.FourierTransform(self.discr)
-        mul = operators.Multiplication(self.discr.dualgrid, self.weights)
+        mul = operators.Multiplication(
+            ft.codomain,
+            (1 + np.linalg.norm(ft.codomain.coords, axis=0)**2)**self.index
+        )
         return ft.adjoint * mul * ft
 
 

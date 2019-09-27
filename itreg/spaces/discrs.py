@@ -222,24 +222,21 @@ class UniformGrid(Grid):
         self.spacing = np.asarray(spacing)
         self.volume_elem = np.prod(self.spacing)
 
-    @util.memoized_property
-    def dualgrid(self):
-        # TODO check normalization
-        return UniformGrid(*(np.arange(-(s//2), (s+1)//2) / l
-                             for s, l in zip(self.shape, self.extents)),
-                           dtype=complex)
-
-    def fft(self, x):
-        # TODO this ignores non-centered grids
-        return np.fft.fftshift(np.fft.fftn(x, norm='ortho'))
-
-    def ifft(self, x):
-        y = np.fft.ifftn(np.fft.ifftshift(x), norm='ortho')
-        if self.is_complex:
-            return y
-        else:
-            # TODO use rfft?
-            return np.real(y)
+    def frequencies(self, centered=True, axes=None):
+        if axes is None:
+            axes = range(self.ndim)
+        axes = set(axes)
+        frqs = []
+        for i, (s, l) in enumerate(zip(self.shape, self.spacing)):
+            if i in axes:
+                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed to be periodic.
+                if centered:
+                    frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
+                else:
+                    frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
+            else:
+                frqs.append(self.axes[i])
+        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
 
 
 class DirectSum(Discretization):

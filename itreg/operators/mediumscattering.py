@@ -138,8 +138,7 @@ class MediumScatteringBase(Operator):
                   for c in coarseshape)
             )
             self.coarsekernel = compute_kernel(2*wave_number*radius, self.coarsegrid.shape),
-            # TODO use coarsegrid.dualgrid here, move fftshift down (and use
-            # coarsegrid.fft there)
+            # TODO use coarsegrid.frequencies() here, get rid of fftshift
             self.dualcoords = np.ix_(
                 *(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)
             )

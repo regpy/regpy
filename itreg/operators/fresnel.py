@@ -1,7 +1,7 @@
 import numpy as np
 
-from . import Multiplication, FourierTransform, RealPart, Exponential, SquaredModulus
 
+from . import Multiplication, FourierTransform, RealPart, Exponential, SquaredModulus
 
 def FresnelPropagator(domain, fresnel_number):
     """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
@@ -30,11 +30,12 @@ def FresnelPropagator(domain, fresnel_number):
     assert domain.ndim == 2
     assert domain.is_complex
 
-    propagation_factor = np.exp(
-        (-1j * np.pi / fresnel_number) * (domain.dualgrid.coords[0] ** 2 + domain.dualgrid.coords[1] ** 2)
-    )
-    fresnel_multiplier = Multiplication(domain.dualgrid, propagation_factor)
     ft = FourierTransform(domain)
+    frqs = ft.codomain.coords
+    propagation_factor = np.exp(
+        (-1j * np.pi / fresnel_number) * (frqs[0] ** 2 + frqs[1] ** 2)
+    )
+    fresnel_multiplier = Multiplication(ft.codomain, propagation_factor)
 
     return ft.adjoint * fresnel_multiplier * ft
 
@@ -82,8 +83,8 @@ def XrayPhaseContrast(domain, fresnel_number, absorption_fraction=0.0):
 
     # Operator that maps the phase-image to the corresponding wave-field behind the object
     # phi |--> psi_0 = exp(-(1j+absorption_fraction) * phi)
-    image_to_wavefield_op = Exponential(domain_complex) * Multiplication(domain_complex, -1j - absorption_fraction)
 
+    image_to_wavefield_op = Exponential(domain_complex) * Multiplication(domain_complex, -1j - absorption_fraction)
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
     fresnel_prop = FresnelPropagator(domain_complex, fresnel_number)

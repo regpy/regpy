@@ -452,15 +452,33 @@ class Multiplication(Operator):
 
 
 class FourierTransform(Operator):
-    def __init__(self, domain):
+    def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, spaces.UniformGrid)
-        super().__init__(domain, domain.dualgrid, linear=True)
+        frqs = domain.frequencies(centered=centered, axes=axes)
+        if centered:
+            codomain = discrs.UniformGrid(*frqs, dtype=complex)
+        else:
+            # In non-centered case, the frequencies are not ascencing, so even using Grid here is slighty questionable.
+            codomain = discrs.Grid(*frqs, dtype=complex)
+        super().__init__(domain, codomain, linear=True)
+        self.centered = centered
+        self.axes = axes
 
     def _eval(self, x):
-        return self.domain.fft(x)
+        y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        if self.centered:
+            return np.fft.fftshift(y, axes=self.axes)
+        else:
+            return y
 
     def _adjoint(self, y):
-        return self.domain.ifft(y)
+        if self.centered:
+            y = np.fft.ifftshift(y, axes=self.axes)
+        x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        if self.domain.is_complex:
+            return x
+        else:
+            return np.real(x)
 
     @property
     def inverse(self):
