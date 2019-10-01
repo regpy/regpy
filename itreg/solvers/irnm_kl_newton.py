@@ -4,7 +4,6 @@ import logging
 import numpy as np
 import numpy.linalg as LA
 
-import setpath
 from itreg.util.cg_methods import CG
 from . import Solver
 

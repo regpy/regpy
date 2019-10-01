@@ -6,21 +6,21 @@ from ..operators import Operator
 from ..util import memoized_property
 
 
-class FESpace(Discretization):
-    def __init__(self, fespace):
-        assert isinstance(fespace, ngs.FESpace)
-        super().__init__(fespace.ndof)
-        self.fespace = fespace
+class NgsSpace(Discretization):
+    def __init__(self, fes):
+        assert isinstance(fes, ngs.FESpace)
+        super().__init__(fes.ndof)
+        self.fes = fes
 
     def __eq__(self, other):
-        return isinstance(other, type(self)) and self.fespace == other.fespace
+        return isinstance(other, type(self)) and self.fes == other.fes
 
 
 class Matrix(Operator):
     def __init__(self, domain, form):
-        assert isinstance(domain, FESpace)
+        assert isinstance(domain, NgsSpace)
         if isinstance(form, ngs.BilinearForm):
-            assert domain.fespace == form.space
+            assert domain.fes == form.space
             form.Assemble()
             self.mat = form.mat
         elif isinstance(form, ngs.BaseMatrix):
@@ -28,8 +28,8 @@ class Matrix(Operator):
         else:
             raise TypeError('Invalid type: {}'.format(type(form)))
         super().__init__(domain, domain, linear=True)
-        self._gfu_in = ngs.GridFunction(domain.fespace)
-        self._gfu_out = ngs.GridFunction(domain.fespace)
+        self._gfu_in = ngs.GridFunction(domain.fes)
+        self._gfu_out = ngs.GridFunction(domain.fes)
         self._inverse = None
 
     def _eval(self, x):
@@ -49,53 +49,53 @@ class Matrix(Operator):
         else:
             self._inverse = Matrix(
                 self.domain,
-                self.mat.Inverse(freedofs=self.domain.fespace.FreeDofs())
+                self.mat.Inverse(freedofs=self.domain.fes.FreeDofs())
             )
             self._inverse._inverse = self
             return self._inverse
 
 
-@L2.register(FESpace)
+@L2.register(NgsSpace)
 class L2FESpace(HilbertSpace):
     @memoized_property
     def gram(self):
-        u, v = self.discr.fespace.TnT()
-        form = ngs.BilinearForm(self.discr.fespace, symmetric=True)
+        u, v = self.discr.fes.TnT()
+        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v)
         return Matrix(self.discr, form)
 
 
-@Sobolev.register(FESpace)
+@Sobolev.register(NgsSpace)
 class SobolevFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
-        u, v = self.discr.fespace.TnT()
-        form = ngs.BilinearForm(self.discr.fespace, symmetric=True)
+        u, v = self.discr.fes.TnT()
+        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v + ngs.grad(u) * ngs.grad(v))
         return Matrix(self.discr, form)
 
 
-@L2Boundary.register(FESpace)
+@L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
-        u, v = self.discr.fespace.TnT()
-        form = ngs.BilinearForm(self.discr.fespace, symmetric=True)
+        u, v = self.discr.fes.TnT()
+        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace(),
-            definedon=self.discr.fespace.mesh.Boundaries("cyc")
+            definedon=self.discr.fes.mesh.Boundaries("cyc")
         )
         return Matrix(self.discr, form)
 
 
-@SobolevBoundary.register(FESpace)
+@SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
-        u, v = self.discr.fespace.TnT()
-        form = ngs.BilinearForm(self.discr.fespace, symmetric=True)
+        u, v = self.discr.fes.TnT()
+        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace() + u.Trace().Deriv() * v.Trace().Deriv(),
-            definedon=self.discr.fespace.mesh.Boundaries("cyc")
+            definedon=self.discr.fes.mesh.Boundaries("cyc")
         )
         return Matrix(self.discr, form)

@@ -1,12 +1,45 @@
 import numpy as np
 
-from itreg.operators import (
-    Multiplication, SquaredModulus, Exponential, RealPart
-)
-from . import FresnelPropagator
+from . import Multiplication, FourierTransform, RealPart, Exponential, SquaredModulus
 
 
-def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
+def FresnelPropagator(domain, fresnel_number):
+    """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
+    diffraction in the regime of the free-space paraxial Helmholtz equation.
+
+    Parameters
+    ----------
+    domain : :class:`~itreg.spaces.Space`
+        The domain on which the operator is defined.
+    fresnel_number : float
+        Fresnel number of the imaging setup, defined with respect to the lengthscale
+        that corresponds to length 1 in domain.coords. Governs the strength of the
+        diffractive effects modeled by the Fresnel-propagator
+
+    Notes
+    -----
+    The Fresnel-propagator :math:`D_F` is a unitary Fourier-multiplier defined by
+
+    .. math:: D_F(f) = FT^{-1}(m_F \\cdot FT(f))
+
+    where :math:`FT(f)(\\nu) = \int_{\\mathbb R^2}` \exp(-i\\xi \\cdot x) f(x) Dx`
+    denotes the Fourier transform and the factor :math:`m_F` is defined by
+    :math:`m_F(\\xi) := \\exp(-i \\pi |\\nu|^2 / F)` with the Fresnel-number :math:`F`.
+    """
+
+    assert domain.ndim == 2
+    assert domain.is_complex
+
+    propagation_factor = np.exp(
+        (-1j * np.pi / fresnel_number) * (domain.dualgrid.coords[0] ** 2 + domain.dualgrid.coords[1] ** 2)
+    )
+    fresnel_multiplier = Multiplication(domain.dualgrid, propagation_factor)
+    ft = FourierTransform(domain)
+
+    return ft.adjoint * fresnel_multiplier * ft
+
+
+def XrayPhaseContrast(domain, fresnel_number, absorption_fraction=0.0):
     """Forward operator that models X-ray phase contrast imaging, also known as in-line
     holography or X-ray propagation imaging. Maps a given 2D-image phi, that describes
     the induced phase shifts in the X-ray wave-field directly behind the imaged sample,
@@ -18,7 +51,7 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
     ----------
     domain : :class:`~itreg.spaces.Space`
         The domain on which the operator is defined.
-    Fresnel_number : float
+    fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
         that corresponds to length 1 in domain.coords. Governs the strength of the
         diffractive effects.
@@ -49,12 +82,11 @@ def XrayPhaseContrast(domain, Fresnel_number, absorption_fraction = 0.0):
 
     # Operator that maps the phase-image to the corresponding wave-field behind the object
     # phi |--> psi_0 = exp(-(1j+absorption_fraction) * phi)
-    image_to_wavefield_op =   Exponential(domain_complex) \
-                            * Multiplication(domain_complex, -1j-absorption_fraction)
+    image_to_wavefield_op = Exponential(domain_complex) * Multiplication(domain_complex, -1j - absorption_fraction)
 
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
-    fresnel_prop = FresnelPropagator(domain_complex, Fresnel_number)
+    fresnel_prop = FresnelPropagator(domain_complex, fresnel_number)
 
     # Detection operator: Maps the wave-field psi_d at the detector onto the corresponding
     # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates

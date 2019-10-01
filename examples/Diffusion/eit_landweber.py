@@ -2,12 +2,13 @@ import setpath
 
 import logging
 import ngsolve as ngs
-from ngsolve.meshes import MakeQuadMesh
+import numpy as np
+from netgen.geom2d import SplineGeometry
 
 import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.Coefficient import Coefficient
+from itreg.operators.NGSolveProblems.EIT import EIT
 from itreg.solvers import HilbertSpaceSetting, Landweber
-from itreg.spaces import L2, Sobolev
+from itreg.spaces.hilbert import Sobolev, SobolevBoundary
 from itreg.spaces.ngsolve import NgsSpace
 
 logging.basicConfig(
@@ -15,42 +16,42 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-meshsize_domain = 10
-meshsize_codomain = 10
+geo = SplineGeometry()
+geo.AddCircle((0, 0), r=1, bc="cyc", maxh=0.2)
+mesh = ngs.Mesh(geo.GenerateMesh())
 
-mesh = MakeQuadMesh(meshsize_domain)
 fes_domain = ngs.L2(mesh, order=2)
 domain = NgsSpace(fes_domain)
 
-mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = ngs.H1(mesh, order=3, dirichlet="left|top|right|bottom")
+fes_codomain = ngs.H1(mesh, order=2)
 codomain = NgsSpace(fes_codomain)
 
-rhs = 10 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
-op = Coefficient(
-    domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False,
-    reaction=True, dim=2
-)
+g = 0.1 * (ngs.x - 0.5) * (ngs.y - 0.5)
+op = EIT(domain, g, codomain=codomain)
+pts = np.array(op.pts)
+nr_points = pts.shape[0]
 
-exact_solution_coeff = ngs.x + 1
+exact_solution_coeff = ngs.sin(ngs.y)
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution = gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 data = exact_data
 
-init = 1 + ngs.x ** 2
+init = 0.5 * ngs.y
 init_gfu = ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution = init_gfu.vec.FV().NumPy().copy()
+init_sol = init_solution.copy()
 init_data = op(init_solution)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
 
-landweber = Landweber(setting, data, init_solution, stepsize=1000)
+landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 stoprule = (
-        rules.CountIterations(10000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
+        rules.CountIterations(300) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1)
+)
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -76,3 +77,35 @@ coeff_reco_data = ngs.CoefficientFunction(gfu_reco_data)
 
 ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
+
+
+def der(x):
+    val2 = op(res1 + x * res2)
+    val1 = op(res1)
+    der = x * op._derivative(res2)
+    return setting.Hcodomain.norm(1 / x * (val2 - val1 - der))
+
+
+res1 = 0.001 * np.random.randn(804)
+res2 = 0.001 * np.random.randn(804)
+
+print(der(0.1))
+print(der(0.01))
+print(der(0.001))
+print(der(0.0001))
+
+
+def adj():
+    res1 = 0.001 * np.random.randn(804)
+    res2 = 0.001 * np.random.randn(804)
+    v = op(res1)
+    toret1 = setting.Hcodomain.inner(op._derivative(res1), v)
+    toret2 = 5.08 * setting.Hdomain.inner(res1, op._adjoint(v))
+    return [toret1, toret2]
+
+
+print(adj())
+print(adj())
+print(adj())
+print(adj())
+print(adj())

@@ -2,14 +2,14 @@ import setpath
 
 import itreg
 
-from itreg.operators.Obstacle2d import NeumannOp
-from itreg.operators.Obstacle2d.NeumannOp import create_synthetic_data
+from itreg.operators.obstacle2d import NeumannOp
+from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
 
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
 
 import itreg.stoprules as rules
-from itreg.operators.Obstacle2d import plots
+from itreg.operators.obstacle2d import plots
 
 import numpy as np
 import logging

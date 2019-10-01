@@ -1,12 +1,17 @@
-from functools import partial
+import enum
 import numpy as np
 from numpy.fft import fftn, ifftn, fftshift, ifftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
 from . import Operator
-from .. import spaces
+from ..spaces import discrs
 from .. import util
+
+
+class Normalization(enum.Enum):
+    Helmholtz = enum.auto()
+    Schroedinger = enum.auto()
 
 
 class MediumScatteringBase(Operator):
@@ -68,10 +73,11 @@ class MediumScatteringBase(Operator):
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
                  support=None, coarseshape=None, coarseiterations=3,
-                 gmres_args={},equation='HELMHOLTZ'):
+                 gmres_args=None,
+                 normalization=Normalization.Helmholtz):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
-        grid = spaces.UniformGrid(
+        grid = discrs.UniformGrid(
             *(np.linspace(-2*radius, 2*radius, s, endpoint=False)
               for s in gridshape),
             dtype=complex
@@ -84,6 +90,7 @@ class MediumScatteringBase(Operator):
         else:
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
+        # TODO assert support is contained in radius
         self.support = support
 
         self.wave_number = wave_number
@@ -95,29 +102,42 @@ class MediumScatteringBase(Operator):
         self.inc_directions = inc_directions
         self.inc_matrix = np.exp(1j * wave_number * (inc_directions @ grid.coords[:, support]))
 
-        assert equation in {'HELMHOLTZ','SCHROEDINGER'}
-        self.equation = equation
+        assert isinstance(normalization, Normalization)
+        self.normalization = normalization
 
+        compute_kernel = None  # Silence linter
         if grid.ndim == 2:
-            compute_kernel = partial(_compute_kernel_2D, 2 * wave_number * radius)
+            if self.normalization == Normalization.Helmholtz:
+                compute_kernel = _compute_kernel_2d
+                # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
+                self.normalization_factor = grid.volume_elem * self.wave_number**2
+
+            elif self.normalization == Normalization.Schroedinger:
+                def compute_kernel(*args):
+                    return _compute_kernel_2d(*args) / wave_number**2
+                self.normalization_factor = grid.volume_elem / (2*np.pi)**2
+
         elif grid.ndim == 3:
-            compute_kernel = partial(_compute_kernel_3D, 2 * wave_number * radius)
+            if self.normalization == Normalization.Helmholtz:
+                compute_kernel = _compute_kernel_3d
+                # TODO The sign appears to be wrong
+                self.normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)
 
-        self.kernel = compute_kernel(grid.shape)
+            elif self.normalization == Normalization.Schroedinger:
+                raise NotImplementedError('Schrödinger-Equation not implemented in 3d')
 
-        if self.equation == 'SCHROEDINGER':
-            self.kernel /= self.wave_number ** 2
+        self.kernel = compute_kernel(2*wave_number*radius, grid.shape)
 
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
                 raise ValueError('coarse grid is not coarser than fine grid')
             assert all(isinstance(c, int) for c in coarseshape)
             self.coarse = True
-            self.coarsegrid = spaces.UniformGrid(
+            self.coarsegrid = discrs.UniformGrid(
                 *(np.linspace(-2*radius, 2*radius, c, endpoint=False)
                   for c in coarseshape)
             )
-            self.coarsekernel = compute_kernel(self.coarsegrid.shape),
+            self.coarsekernel = compute_kernel(2*wave_number*radius, self.coarsegrid.shape),
             # TODO use coarsegrid.dualgrid here, move fftshift down (and use
             # coarsegrid.fft there)
             self.dualcoords = np.ix_(
@@ -141,6 +161,7 @@ class MediumScatteringBase(Operator):
         # pre-allocate to save time in _eval
         self._totalfield = np.empty((np.sum(self.support), self.inc_matrix.shape[0]),
                                     dtype=complex)
+        # noinspection PyArgumentList
         self._lippmann_schwinger = spla.LinearOperator(
             (self.domain.csize,) * 2,
             matvec=self._lippmann_schwinger_op,
@@ -148,6 +169,7 @@ class MediumScatteringBase(Operator):
             dtype=complex
         )
         if self.coarse:
+            # noinspection PyArgumentList
             self._lippmann_schwinger_coarse = spla.LinearOperator(
                 (self.coarsegrid.csize,) * 2,
                 matvec=self._lippmann_schwinger_coarse_op,
@@ -313,7 +335,8 @@ class MediumScatteringBase(Operator):
         return v.ravel()
 
 
-def _compute_kernel_2D(R, shape):
+# noinspection PyPep8Naming
+def _compute_kernel_2d(R, shape):
     J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
@@ -331,7 +354,8 @@ def _compute_kernel_2D(R, shape):
     return 2 * R * fftshift(K_hat)
 
 
-def _compute_kernel_3D(R, shape):
+# noinspection PyPep8Naming
+def _compute_kernel_3d(R, shape):
     J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
@@ -357,30 +381,20 @@ class MediumScatteringFixed(MediumScatteringBase):
         All other (keyword-only) arguments are passed to the base class, which
         see.
     """
+
     def __init__(self, *, farfield_directions, **kwargs):
         super().__init__(**kwargs)
 
         farfield_directions = np.asarray(farfield_directions)
         assert farfield_directions.ndim == 2
         assert farfield_directions.shape[1] == self.domain.ndim
-        assert np.allclose(np.linalg.norm(farfield_directions, axis=1), 1)
+        assert np.allclose(np.linalg.norm(farfield_directions, axis=-1), 1)
         self.farfield_directions = farfield_directions
-        self.farfield_matrix = np.exp(
+        self.farfield_matrix = self.normalization_factor * np.exp(
             -1j * self.wave_number * (farfield_directions @ self.domain.coords[:, self.support])
         )
 
-        if self.domain.ndim == 2:
-            # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
-            if self.equation == 'HELMHOLTZ':
-                self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem
-            elif self.equation == 'SCHROEDINGER':
-                self.farfield_matrix *= self.domain.volume_elem / (2*np.pi)**2
-
-        elif self.domain.ndim == 3:
-            # TODO The sign appears to be wrong
-            self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem / (4*np.pi)
-
-        self.codomain = spaces.UniformGrid(
+        self.codomain = discrs.UniformGrid(
             axisdata=(self.farfield_directions, self.inc_directions),
             dtype=complex
         )
@@ -392,57 +406,57 @@ class MediumScatteringFixed(MediumScatteringBase):
         v[self.support] = farfield[:, inc_idx] @ self.farfield_matrix.conj()
 
 
-
-
 class MediumScatteringOneToMany(MediumScatteringBase):
-    """Acoustic medium scattering with fixed measurement directions.
+    """Acoustic medium scattering with measurement directions depending on incident
+    direction.
 
     Parameters
     ----------
     farfield_directions : array-like
-        Array of measurement directions of the farfield, shape `(n, 2)` or
-        `(n, 3)` depending on the problem dimension. All directions must be
-        normalized.
+        Array of measurement directions of the farfield, shape `(n_inc, n, 2)`,
+        where `n_inc` is the number of incident directions. All directions must
+        be normalized.
     **kwargs
         All other (keyword-only) arguments are passed to the base class, which
         see.
     """
 
-    def __init__(self,*,farfield_directions,**kwargs):
-        """
-            Parameters:
-            -----------
-            farfield directions: Ninc x Nmeas x dim(=2)
-                directions must be normalized
-
-            Initialized quantities:
-            -----------------------
-            farfield_matrix:  Ninc x Nmeas x Nx
-            farfield: Nmeas x Ninc
-        """
-
+    def __init__(self, *, farfield_directions, **kwargs):
         super().__init__(**kwargs)
         assert self.domain.ndim == 2
 
-        # initializing the farfield matrix: exp(-ilx)
-        self.farfield_matrix = np.asarray(
-                [np.exp(-1j*self.wave_number * (M @ self.domain.coords[:,self.support]) )
-                 for M in farfield_directions])
-
-        if self.equation == 'HELMHOLTZ':
-            self.farfield_matrix *= self.wave_number**2 * self.domain.volume_elem
-        elif self.equation == 'SCHROEDINGER':
-            self.farfield_matrix *= self.domain.volume_elem / (2*np.pi)**2
-
-        self.codomain = spaces.OneToManyGrid(
-                shape = (len(farfield_directions[0]),
-                         len(farfield_directions)),
-                dtype = complex
+        farfield_directions = np.asarray(farfield_directions)
+        assert farfield_directions.ndim == 3
+        assert farfield_directions.shape[0] == self.inc_directions.shape[0]
+        assert farfield_directions.shape[2] == self.domain.ndim
+        assert np.allclose(np.linalg.norm(farfield_directions, axis=-1), 1)
+        self.farfield_directions = farfield_directions
+        self.farfield_matrix = self.normalization_factor * np.exp(
+            -1j * self.wave_number * (farfield_directions @ self.domain.coords[:, self.support])
         )
 
+        ninc, nfarfield = farfield_directions.shape[:2]
+        self.codomain = discrs.Discretization(
+            shape=(nfarfield, ninc),
+            dtype=complex
+        )
 
-    def _compute_farfield(self,farfield,inc_idx,v):
-        farfield[:,inc_idx] = self.farfield_matrix[inc_idx] @ v[self.support]
+    def _compute_farfield(self, farfield, inc_idx, v):
+        farfield[:, inc_idx] = self.farfield_matrix[inc_idx] @ v[self.support]
 
-    def _compute_farfield_adjoint(self,farfield,inc_idx,v):
-        v[self.support] = farfield[:,inc_idx] @ self.farfield_matrix[inc_idx].conj()
+    def _compute_farfield_adjoint(self, farfield, inc_idx, v):
+        v[self.support] = farfield[:, inc_idx] @ self.farfield_matrix[inc_idx].conj()
+
+    @staticmethod
+    def generate_directions(ninc, nfarfield, angle=np.pi):
+        """Computes the measuring directions for the experiment around the
+        incident direction.
+        """
+
+        phi = np.linspace(0, 2*np.pi, ninc, endpoint=False)
+        dphi = np.linspace(-angle, angle, nfarfield)
+
+        inc = util.complex2real(np.exp(1j * phi))
+        farfield = util.complex2real(np.exp(1j * (phi[:, np.newaxis] + dphi)))
+
+        return inc, farfield

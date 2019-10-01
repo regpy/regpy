@@ -4,7 +4,7 @@ import numpy as np
 import scipy as scp
 import matplotlib.pyplot as plt
 
-class parallel_MRI(NonlinearOperator):
+class ParallelMri(NonlinearOperator):
     def __init__(self,
                  domain,
                  codomain=None,

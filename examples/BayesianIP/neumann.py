@@ -9,7 +9,7 @@ import setpath
 
 import itreg
 
-from itreg.operators.Obstacle2d import NeumannOp
+from itreg.operators.obstacle2d import NeumannOp
 
 
 
@@ -24,7 +24,7 @@ from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
-from itreg.operators.Obstacle2d.NeumannOp import create_synthetic_data
+from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
 
 
 from itreg.BIP.mcmc import Settings

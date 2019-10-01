@@ -1,19 +1,20 @@
 import setpath
 
-from itreg.operators import NonlinearVolterra
-from itreg.spaces import L2, UniformGrid
-from itreg.solvers import Landweber, HilbertSpaceSetting
-import itreg.stoprules as rules
-
-import numpy as np
 import logging
+
 import matplotlib.pyplot as plt
+import numpy as np
+
+import itreg.stoprules as rules
+from itreg.operators import NonlinearVolterra
+from itreg.solvers import HilbertSpaceSetting, Landweber
+from itreg.spaces import L2, UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
+grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
 op = NonlinearVolterra(grid, exponent=3)
 
 exact_solution = np.sin(grid.coords[0])
@@ -22,14 +23,17 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
 landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
-    rules.CountIterations(1000) +
-    rules.Discrepancy(setting.codomain.norm, data,
-                      noiselevel=setting.codomain.norm(noise),
-                      tau=1.1))
+        rules.CountIterations(1000) +
+        rules.Discrepancy(
+            setting.Hcodomain.norm, data,
+            noiselevel=setting.Hcodomain.norm(noise),
+            tau=1.1
+        )
+)
 
 reco, reco_data = landweber.run(stoprule)
 
