@@ -375,9 +375,12 @@ def l2_direct_sum(discr):
 
 @Sobolev.register(discrs.UniformGrid)
 class SobolevUniformGrid(HilbertSpace):
-    def __init__(self, discr, index=1):
+    def __init__(self, discr, index=1, axes=None):
         super().__init__(discr)
         self.index = index
+        if axes is None:
+            axes = range(discr.ndim)
+        self.axes = list(axes)
 
     def __eq__(self, other):
         return (
@@ -388,10 +391,12 @@ class SobolevUniformGrid(HilbertSpace):
 
     @util.memoized_property
     def gram(self):
-        ft = operators.FourierTransform(self.discr)
+        ft = operators.FourierTransform(self.discr, axes=self.axes)
         mul = operators.Multiplication(
             ft.codomain,
-            (1 + np.linalg.norm(ft.codomain.coords, axis=0)**2)**self.index
+            self.discr.volume_elem * (
+                1 + np.linalg.norm(ft.codomain.coords[self.axes], axis=0)**2
+            )**self.index
         )
         return ft.adjoint * mul * ft
 

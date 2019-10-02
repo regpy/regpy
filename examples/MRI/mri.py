@@ -1,65 +1,99 @@
-from itreg.spaces.l2 import L2
-# from itreg.util import test_adjoint
-from itreg.operators.mri import ParallelMri
-import itreg.stoprules as rules
-from itreg.grids import User_Defined
-from itreg.operators.mri import plots
+import setpath
 
-import numpy as np
 import logging
-from itreg.solvers import Newton_CG_Frozen
+
+import matplotlib.colorbar as cbar
+import matplotlib.pyplot as plt
+import numpy as np
+
+import itreg.stoprules as rules
+import itreg.util as util
+from itreg.operators.mri import CartesianSampling, normalize, parallel_mri, sobolev_smoother
+from itreg.solvers import HilbertSpaceSetting, IrgnmCG
+from itreg.spaces.discrs import UniformGrid
+from itreg.spaces.hilbert import L2
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s')
-Nx=200
-Ny=20
-nr_coils=20
-center=10
+    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
+)
 
-#coords=np.zeros((Nx, Ny, nr_coils+1))
-#grid_x=np.arange(0, Nx, 1)/Nx
-#grid_y=np.arange(0, Ny, 1)/Ny
-#grid_xy, grid_xy=np.meshgrid(grid_x, grid_y)
+# TODO dtype=complex?
+grid = UniformGrid((-1, 1, 100), (-1, 1, 100))
 
-coords=np.ones(Nx*Ny*(nr_coils+1))
-grid=User_Defined(coords, coords.shape)
-domain=L2(grid)
-op=ParallelMri(domain)
+sobolev_index = 30
+noiselevel = 0.05
 
+# In real applications with data known before constructing the operator, estimate_sampling_pattern
+# can be used to determine the mask.
+mask = grid.zeros(dtype=bool)
+mask[::2] = True
+mask[:5] = True
+mask[-5:] = True
 
-exact_solution=np.ones(Nx*Ny*(nr_coils+1))
-#exact_solution=op.params.domain.rand()
-exact_data=op(exact_solution)
-#yscale=100/np.linalg.norm(exact_data)
-yscale=1
-data=yscale*exact_data
+mri_op = parallel_mri(grid=grid, ncoils=10)
+mri_op = CartesianSampling(mri_op.codomain, mask=mask) * mri_op
 
+exact_solution = mri_op.domain.zeros()
+exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case
 
-#init=op.domain.one()+1j*op.domain.zero()
-init=2*exact_solution+1j*op.domain.zero()
-init_sol=init.copy()
-init_data, deriv = op.linearize(init)
-#test_adjoint(deriv, tolerance=10**(-8))
+# Exact density is just a square shape
+exact_density[...] = (np.max(np.abs(grid.coords), axis=0) < 0.4)
 
+# Exact coils are Gaussians centered on points on a circle
+centers = util.linspace_circle(exact_coils.shape[0]) / np.sqrt(2)
+for coil, center in zip(exact_coils, centers):
+    r = np.linalg.norm(grid.coords - center[:, np.newaxis, np.newaxis], axis=0)
+    coil[...] = np.exp(-r**2 / 2)
 
-#irgnm_cg = IRGNM_CG(op, data, np.zeros(grid.shape), cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
+# Construct data (criminally), add noise
+exact_data = mri_op(exact_solution)
+data = exact_data + noiselevel * mri_op.codomain.randn()
 
-#stoprule = (
-#    rules.CountIterations(100) +
-#    rules.Discrepancy(op.codomain.norm, data, noiselevel=0.1, tau=1.1))
+# Substitute Sobolev weights into coil profiles
+smoother = sobolev_smoother(mri_op.domain, sobolev_index)
+smoothed_op = mri_op * smoother
 
-#reco, reco_data = irgnm_cg.run(stoprule)
+# Initial guess: constant density, zero coils
+init = smoothed_op.domain.zeros()
+init_density, _ = smoothed_op.domain.split(init)
+init_density[...] = 1
 
-newton= Newton_CG_Frozen(op, data, init)
-stoprule=(
-    rules.CountIterations(30)+
-    rules.Discrepancy(op.codomain.norm, data, noiselevel=0, tau=2))
+setting = HilbertSpaceSetting(op=smoothed_op, Hdomain=L2, Hcodomain=L2)
 
-reco, reco_data=newton.run(stoprule)
+solver = IrgnmCG(
+    setting=setting,
+    data=data,
+    regpar=10,
+    regpar_step=0.9,
+    init=init
+)
 
-plotting=plots(op, reco, reco_data, data, exact_solution)
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(
+        setting.Hcodomain.norm, data,
+        noiselevel=setting.Hcodomain.norm(exact_data - data),
+        tau=1.1
+    )
+)
 
-plotting.plot_samplingindex()
-plotting.plot_data()
-plotting.plot_rho()
+# Plotting setup
+plt.ion()
+fig, axes = plt.subplots(ncols=2, constrained_layout=True)
+bars = [cbar.make_axes(ax)[0] for ax in axes]
+
+# Plot exact solution
+im = axes[0].imshow(normalize(*mri_op.domain.split(exact_solution)))
+fig.colorbar(im, cax=bars[0])
+
+# Run the solver, plot iterates
+for reco, reco_data in solver.until(stoprule):
+    reco = smoother(reco)
+    im = axes[1].imshow(normalize(*mri_op.domain.split(reco)))
+    bars[1].clear()
+    fig.colorbar(im, cax=bars[1])
+    plt.pause(0.5)
+
+plt.ioff()
+plt.show()

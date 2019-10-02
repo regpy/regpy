@@ -239,6 +239,8 @@ class UniformGrid(Grid):
         return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
 
 
+# TODO subclassing direct sum doesn't work properly. Direct sums of Hilbert spaces and operators construct the sum
+#      on their own, using discrs.DirectSum explicitly, skipping the subclass.
 class DirectSum(Discretization):
     """The direct sum of an arbirtary number of discretizations.
 

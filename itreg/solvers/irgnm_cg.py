@@ -73,7 +73,7 @@ class IrgnmCG(Solver):
         self.data = data
         if init is None:
             init = self.setting.op.domain.zeros()
-        self.init = init
+        self.init = np.asarray(init)
         self.x = np.copy(self.init)
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar = regpar
@@ -81,6 +81,7 @@ class IrgnmCG(Solver):
         self.cgpars = cgpars
 
     def _next(self):
+        self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
             data=self.data - self.y,
