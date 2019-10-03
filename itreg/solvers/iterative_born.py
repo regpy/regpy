@@ -98,7 +98,7 @@ class IterativeBorn(Solver):
         return np.conj(self.NFFT.inverse(np.conj(x_hat)))
 
     def _pad_data(self, x):
-        y = np.zeros(self.NFFT.codomain.shape[0], dtype=complex)
+        y = self.NFFT.codomain.zeros()
         y[:len(self.node_indices)] = x.ravel('F')[self.node_indices]
         return y
 

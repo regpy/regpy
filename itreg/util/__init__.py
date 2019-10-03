@@ -119,3 +119,14 @@ def bounded_voronoi(nodes, left, down, up, right):
     vertices = [evor.vertices[i] for i in used_vertices]
 
     return regions, vertices
+
+
+def broadcast_shapes(*shapes):
+    a = np.ones((max(len(s) for s in shapes), len(shapes)), dtype=int)
+    for i, s in enumerate(shapes):
+        a[-len(s):, i] = s
+    result = np.max(a, axis=1)
+    for r, x in zip(result, a):
+        if np.any((x != 1) & (x != r)):
+            raise ValueError('Shapes can not be broadcast')
+    return result

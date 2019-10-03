@@ -1,4 +1,5 @@
 from copy import copy
+
 import numpy as np
 
 from . import discrs
@@ -115,7 +116,8 @@ class HilbertPullBack(HilbertSpace):
         assert op.codomain == space.discr
         self.op = op
         self.space = space
-        self.discr = op.domain
+        super().__init__(op.domain)
+        # TODO only compute on demand
         if not inverse:
             self.inverse = None
         elif inverse == 'conjugate':
