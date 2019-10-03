@@ -297,11 +297,14 @@ class AbstractSpaceDispatcher(AbstractSpace):
         self.name = name
         self.args = {}
 
-    def register(self, discr_type):
-        def decorator(impl):
+    def register(self, discr_type, impl=None):
+        if impl is None:
+            def decorator(i):
+                self._registry[discr_type] = i
+                return i
+            return decorator
+        else:
             self._registry[discr_type] = impl
-            return impl
-        return decorator
 
     def __call__(self, discr=None, **kwargs):
         if discr is None:
@@ -375,6 +378,18 @@ L2Boundary = AbstractSpaceDispatcher('L2Boundary')
 SobolevBoundary = AbstractSpaceDispatcher('SobolevBoundary')
 
 
+def componentwise(dispatcher, cls=DirectSum):
+    def factory(discr):
+        return cls(*(dispatcher(s) for s in discr), discr=discr)
+    return factory
+
+
+L2.register(discrs.DirectSum, componentwise(L2))
+Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
+L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
+SobolevBoundary.register(discrs.DirectSum, componentwise(SobolevBoundary))
+
+
 @L2.register(discrs.Discretization)
 class L2Generic(HilbertSpace):
     @property
@@ -390,11 +405,6 @@ class L2UniformGrid(HilbertSpace):
     @util.memoized_property
     def gram(self):
         return self.discr.volume_elem * self.discr.identity
-
-
-@L2.register(discrs.DirectSum)
-def l2_direct_sum(discr):
-    return DirectSum(*(L2(s) for s in discr.summands), flatten=False)
 
 
 @Sobolev.register(discrs.UniformGrid)
@@ -423,8 +433,3 @@ class SobolevUniformGrid(HilbertSpace):
             )**self.index
         )
         return ft.adjoint * mul * ft
-
-
-@Sobolev.register(discrs.DirectSum)
-def sobolev_direct_sum(discr):
-    return DirectSum(*(Sobolev(s) for s in discr.summands), flatten=False)
