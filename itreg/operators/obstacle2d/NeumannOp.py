@@ -195,6 +195,6 @@ def create_synthetic_data(self):
         noise=noise.reshape((2*np.size(self.op.inc_directions, 1), bd.zpabs.shape[0]))
         complex_noise=noise[0, :]+complex(0,1)*noise[1, :]
         data = farfield + self.op.noiselevel * complex_noise/ \
-                            np.sqrt(complex_noise*self.codomain.gram(complex_noise))
+                            np.sqrt(complex_noise*self.Hcodomain.gram(complex_noise))
 
         return data[0, :].real+complex(0, 1)*data[1, :].real

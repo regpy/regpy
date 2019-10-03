@@ -187,6 +187,6 @@ def create_synthetic_data(self):
 #            data = farfield + self.op.noiselevel * noise/np.sqrt(noise.T*self.codomain.gram(noise))
             data=farfield[0, :]+complex(0,1)*farfield[1, :]+self.op.noiselevel * \
                     complex_noise/np.sqrt(complex_noise.T*   \
-                    self.codomain.gram(complex_noise))
+                    self.Hcodomain.gram(complex_noise))
 
             return data

@@ -19,11 +19,12 @@ from itreg.operators.obstacle2d import NeumannOp
 #import itreg
 
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
-from itreg.spaces import H1, HilbertPullBack, UniformGrid
-from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
+from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
+from itreg.solvers import IrgnmCG, Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
+# TODO: What the hell?
 from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
 
 
@@ -79,7 +80,7 @@ init = 1*op.domain.ones()
 #_, deriv = op.linearize(init)
 #test_adjoint(deriv)
 
-setting=HilbertSpaceSetting(op=op, domain=partial(H1, index=2), codomain=L2)
+setting=HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 #setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 #exact_data=setting.op.create_synthetic_data()
 exact_data=create_synthetic_data(setting)
@@ -89,7 +90,7 @@ data=exact_data
 #exact_solution=op.obstacle.bd_ex.z
 #apple=create_synthetic_data(setting, 0)
 
-solver = IRGNM_CG(setting, data, init)
+solver = IrgnmCG(setting, data, init)
 stopping_rule = (
     rules.CountIterations(1) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))

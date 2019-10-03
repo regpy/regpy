@@ -160,7 +160,7 @@ def create_synthetic_data(self, noiselevel):
             qq = qq*q
             flux = flux + fac * np.cos(N/2*t_fl) * np.sum(qq*np.cos(N/2*t))
         noise = np.random.randn(len(flux))
-        data = flux + noiselevel * noise/self.codomain.norm(noise)
+        data = flux + noiselevel * noise/self.Hcodomain.norm(noise)
         return data
 
 def create_impulsive_noise(n,eta,var=None):

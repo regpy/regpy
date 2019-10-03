@@ -18,7 +18,7 @@ from itreg.operators.obstacle2d.PotentialOp import create_impulsive_noise
 #import itreg
 
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
-from itreg.spaces import H1, HilbertPullBack, UniformGrid
+from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
@@ -76,7 +76,7 @@ init = 1*op.domain.ones()
 #_, deriv = op.linearize(init)
 #test_adjoint(deriv)
 
-setting=HilbertSpaceSetting(op=op, domain=partial(H1, index=2), codomain=L2)
+setting=HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 #setting=HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 exact_data=create_synthetic_data(setting, noiselevel=0)
 data=exact_data
@@ -87,7 +87,7 @@ data=exact_data
 solver = Landweber(setting, data, init)
 stopping_rule = (
     rules.CountIterations(1e4) +
-    rules.Discrepancy(setting.codomain.norm, data, noiselevel=0, tau=1.1))
+    rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
 
 n_iter   = 1e5
 stepsize = [1e-2, 1e-1, 5e-1, 7e-1, 1e0, 1.2, 1.5, 2.5, 10, 20][5]
@@ -98,7 +98,7 @@ reg_parameter=0
 
 #prior=gaussian_prior(1/reg_parameter*np.eye(200), setting, np.zeros(200))
 #likelihood=gaussian_likelihood(setting, np.eye(64), exact_data)
-prior=tikhonov(setting, reg_parameter, exact_data, )
+prior=tikhonov(setting, reg_parameter)
 likelihood=unity(setting)
 
 
@@ -108,7 +108,7 @@ likelihood=unity(setting)
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 #stepsize_rule=fixed_stepsize
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature,
+bip=Settings(setting, data, prior, likelihood, Temperature, solver, stopping_rule,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
