@@ -1,6 +1,7 @@
 import numpy as np
 
 from . import CoordinateProjection, DirectSum, FourierTransform, Multiplication, Operator
+from .. import util
 from ..spaces import discrs
 
 
@@ -15,6 +16,7 @@ class CoilMult(Operator):
         assert grid.ndim == 2
         self.grid = grid
         self.coilgrid = discrs.UniformGrid(ncoils, *grid.axes, dtype=grid.dtype)
+        self.ncoils = ncoils
         super().__init__(
             domain=self.grid + self.coilgrid,
             codomain=self.coilgrid
@@ -43,6 +45,9 @@ class CoilMult(Operator):
             np.sum(coils * y, axis=0),
             density * y
         )
+
+    def __repr__(self):
+        return util.make_repr(self, self.grid, self.ncoils)
 
 
 def cartesian_sampling(domain, mask):
