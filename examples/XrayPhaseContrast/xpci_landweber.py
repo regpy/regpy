@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators.fresnel import FresnelPropagator, XrayPhaseContrast
+from itreg.operators.fresnel import fresnel_propagator, xray_phase_contrast
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 import itreg.stoprules as rules
@@ -26,7 +26,7 @@ max_iterations = 100    # Maximum number of Landweber iterations performed to re
 grid = UniformGrid(np.arange(1024), np.arange(1024))
 
 # Forward operator
-op = XrayPhaseContrast(grid, fresnelNumber)
+op = xray_phase_contrast(grid, fresnelNumber)
 
 # Create phantom phase-image (= padded example-image)
 exact_solution = ascent().astype(np.float64)

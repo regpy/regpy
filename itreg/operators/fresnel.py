@@ -1,9 +1,9 @@
 import numpy as np
 
+from . import Exponential, FourierTransform, Multiplication, RealPart, SquaredModulus
 
-from . import Multiplication, FourierTransform, RealPart, Exponential, SquaredModulus
 
-def FresnelPropagator(domain, fresnel_number):
+def fresnel_propagator(domain, fresnel_number):
     """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
     diffraction in the regime of the free-space paraxial Helmholtz equation.
 
@@ -33,14 +33,14 @@ def FresnelPropagator(domain, fresnel_number):
     ft = FourierTransform(domain)
     frqs = ft.codomain.coords
     propagation_factor = np.exp(
-        (-1j * np.pi / fresnel_number) * (frqs[0] ** 2 + frqs[1] ** 2)
+        (-1j * np.pi / fresnel_number) * (frqs[0]**2 + frqs[1]**2)
     )
     fresnel_multiplier = Multiplication(ft.codomain, propagation_factor)
 
     return ft.adjoint * fresnel_multiplier * ft
 
 
-def XrayPhaseContrast(domain, fresnel_number, absorption_fraction=0.0):
+def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
     """Forward operator that models X-ray phase contrast imaging, also known as in-line
     holography or X-ray propagation imaging. Maps a given 2D-image phi, that describes
     the induced phase shifts in the X-ray wave-field directly behind the imaged sample,
@@ -87,7 +87,7 @@ def XrayPhaseContrast(domain, fresnel_number, absorption_fraction=0.0):
     image_to_wavefield_op = Exponential(domain_complex) * Multiplication(domain_complex, -1j - absorption_fraction)
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
-    fresnel_prop = FresnelPropagator(domain_complex, fresnel_number)
+    fresnel_prop = fresnel_propagator(domain_complex, fresnel_number)
 
     # Detection operator: Maps the wave-field psi_d at the detector onto the corresponding
     # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates
