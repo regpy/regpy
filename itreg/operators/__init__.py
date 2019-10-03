@@ -623,7 +623,11 @@ class DirectSum(Operator):
 
     @util.memoized_property
     def inverse(self):
-        return DirectSum(*(op.inverse for op in self.ops))
+        return DirectSum(
+            *(op.inverse for op in self.ops),
+            domain=self.codomain,
+            codomain=self.domain
+        )
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)

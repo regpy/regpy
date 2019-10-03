@@ -88,7 +88,7 @@ def parallel_mri(grid, ncoils, centered=False):
     return ft * cmult
 
 
-def sobolev_smoother(domain, sobolev_index):
+def sobolev_smoother(codomain, sobolev_index):
     """
     Partial reimplementation of the Sobolev gram matrix. Can be composed with forward operator (from the right) to
     substitute
@@ -99,7 +99,7 @@ def sobolev_smoother(domain, sobolev_index):
     indices.
     """
     # TODO Combine with Sobolev space implementation as much as possible
-    grid, coilsgrid = domain
+    grid, coilsgrid = codomain
     ft = FourierTransform(coilsgrid, axes=(1, 2))
     mul = Multiplication(
         ft.codomain,
@@ -107,7 +107,7 @@ def sobolev_smoother(domain, sobolev_index):
             1 + np.linalg.norm(ft.codomain.coords[1:], axis=0)**2
         )**(-sobolev_index / 2)
     )
-    return DirectSum(grid.identity, ft.inverse * mul)
+    return DirectSum(grid.identity, ft.inverse * mul, codomain=codomain)
 
 
 def estimate_sampling_pattern(data):
