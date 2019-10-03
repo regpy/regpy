@@ -129,7 +129,7 @@ class tikhonov(object):
 #        return - 0.5 * (self.setting.codomain.inner(y, y)+self.regpar*self.setting.domain.inner(x, x))
 
     def tikhonov(self, x):
-        return -0.5*self.regpar*self.setting.domain.inner(x, x)
+        return -0.5*self.regpar*self.setting.Hdomain.inner(x, x)
 
 
 
@@ -139,7 +139,7 @@ class tikhonov(object):
 #        return -(deriv.adjoint(self.setting.codomain.gram(y))+self.regpar*self.setting.domain.gram(x))
 
     def gradient_tikhonov(self, x):
-        return -self.regpar*self.setting.domain.gram(x)
+        return -self.regpar*self.setting.Hdomain.gram(x)
 
     def hessian_tikhonov(self, m, x):
         grad_mx=self.gradient_tikhonov(m+x)

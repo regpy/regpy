@@ -4,8 +4,8 @@ import setpath
 
 from itreg.operators import NonlinearVolterra, Volterra
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
-from itreg.spaces import H1, HilbertPullBack, UniformGrid
-from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
+from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
+from itreg.solvers import IrgnmCG, Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
@@ -54,9 +54,9 @@ data = exact_data + noise
 
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, domain=H1, codomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
-noiselevel=setting.codomain.norm(noise)
+noiselevel=setting.Hcodomain.norm(noise)
 #solver = IRGNM_CG(setting, data, init)
 #stopping_rule = (
 #    rules.CountIterations(100) +

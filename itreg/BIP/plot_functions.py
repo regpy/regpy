@@ -9,15 +9,15 @@ import numpy as np
 
 
 def plot_lastiter(pdf, exact_solution, exact_data, data):
-    plt.plot(pdf.setting.domain.discr.coords[0, ], exact_solution.T, label='exact solution')
-    plt.plot(pdf.setting.domain.discr.coords[0, ], pdf.reco, label='reco')
+    plt.plot(pdf.setting.Hdomain.discr.coords[0, ], exact_solution.T, label='exact solution')
+    plt.plot(pdf.setting.Hdomain.discr.coords[0, ], pdf.reco, label='reco')
     plt.title('solution')
     plt.legend()
     plt.show()
 
-    plt.plot(pdf.setting.codomain.discr.coords[0, ], exact_data, label='exact data')
-    plt.plot(pdf.setting.codomain.discr.coords[0, ], data, label='data')
-    plt.plot(pdf.setting.codomain.discr.coords[0, ], pdf.reco_data, label='reco data')
+    plt.plot(pdf.setting.Hcodomain.discr.coords[0, ], exact_data, label='exact data')
+    plt.plot(pdf.setting.Hcodomain.discr.coords[0, ], data, label='data')
+    plt.plot(pdf.setting.Hcodomain.discr.coords[0, ], pdf.reco_data, label='reco data')
     plt.legend()
     plt.title('data')
     plt.show()
@@ -68,5 +68,5 @@ def plot_iter(pdf, statemanager, position):
     assert type(position)==int
     plt.plot(range(0, statemanager.N), [s.positions[position] for s in statemanager.states])
     plt.xlabel('iterations')
-    plt.ylabel('value at x='+str(round(pdf.setting.domain.discr.coords[0, position], 2)))
+    plt.ylabel('value at x='+str(round(pdf.setting.Hdomain.discr.coords[0, position], 2)))
     plt.show()

@@ -11,8 +11,6 @@ Prototypes for important MCMC algorithms
 """
 
 
-import progressbar
-
 from . import Solver_BIP
 from . import PDF
 from . import State
@@ -103,7 +101,7 @@ class Settings(PDF):
 
     def run(self, sampler, statemanager):
         logging.info('Start MCMC')
-        for i in progressbar.progressbar(range(int(self.n_iter))):
+        for i in range(int(self.n_iter)):
             accepted = sampler.next()
 #            print(sampler.stepsize)
             statemanager.statemanager(sampler.state, accepted)
