@@ -6,7 +6,6 @@ from itreg.solvers import IrgnmCG, HilbertSpaceSetting
 import itreg.stoprules as rules
 import itreg.util as util
 
-from functools import partial
 import numpy as np
 import logging
 
@@ -47,7 +46,7 @@ init = op.domain.zeros()
 
 setting = HilbertSpaceSetting(
     op=op,
-    Hdomain=HilbertPullBack(partial(Sobolev, index=2), embedding, inverse='cholesky'),
+    Hdomain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
     Hcodomain=L2
 )
 

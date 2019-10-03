@@ -6,7 +6,6 @@ from itreg.solvers import Landweber, HilbertSpaceSetting
 import itreg.stoprules as rules
 import itreg.util as util
 
-from functools import partial
 import numpy as np
 import logging
 
@@ -45,7 +44,7 @@ init = 1.1 * op.domain.ones()
 setting = HilbertSpaceSetting(
     op=op,
     # TODO
-    # Hdomain=HilbertPullBack(partial(Sobolev, index=1), embedding, inverse='cholesky'),
+    # Hdomain=HilbertPullBack(Sobolev(index=1), embedding, inverse='cholesky'),
     Hdomain=L2,
     Hcodomain=L2
 )
