@@ -398,9 +398,8 @@ class CholeskyInverse(Operator):
 
 class CoordinateProjection(Operator):
     def __init__(self, domain, mask):
-        mask = np.asarray(mask)
+        mask = np.broadcast_to(mask, domain.shape)
         assert mask.dtype == bool
-        assert mask.shape == domain.shape
         self.mask = mask
         super().__init__(
             domain=domain,

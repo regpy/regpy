@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import DirectSum, FourierTransform, Multiplication, Operator
+from . import CoordinateProjection, DirectSum, FourierTransform, Multiplication, Operator
 from ..spaces import discrs
 
 
@@ -45,25 +45,8 @@ class CoilMult(Operator):
         )
 
 
-# TODO merge with operators.CoordinateProjection
-class CartesianSampling(Operator):
-    def __init__(self, domain, mask):
-        assert mask.dtype == bool
-        assert mask.shape == domain.shape[1:]
-        self.mask = mask
-        super().__init__(
-            domain=domain,
-            codomain=discrs.Discretization((domain.shape[0], np.sum(mask)), dtype=domain.dtype),
-            linear=True
-        )
-
-    def _eval(self, x):
-        return x[:, self.mask]
-
-    def _adjoint(self, y):
-        x = self.domain.zeros()
-        x[:, self.mask] = y
-        return x
+def cartesian_sampling(domain, mask):
+    return CoordinateProjection(domain, mask)
 
 
 def parallel_mri(grid, ncoils, centered=False):

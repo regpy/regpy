@@ -8,7 +8,7 @@ import numpy as np
 
 import itreg.stoprules as rules
 import itreg.util as util
-from itreg.operators.mri import CartesianSampling, normalize, parallel_mri, sobolev_smoother
+from itreg.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
 from itreg.solvers import HilbertSpaceSetting, IrgnmCG
 from itreg.spaces.discrs import UniformGrid
 from itreg.spaces.hilbert import L2
@@ -31,8 +31,13 @@ mask[::2] = True
 mask[:5] = True
 mask[-5:] = True
 
-mri_op = parallel_mri(grid=grid, ncoils=10)
-mri_op = CartesianSampling(mri_op.codomain, mask=mask) * mri_op
+full_mri_op = parallel_mri(grid=grid, ncoils=10)
+sampling = cartesian_sampling(full_mri_op.codomain, mask=mask)
+mri_op = sampling * full_mri_op
+
+# Substitute Sobolev weights into coil profiles
+smoother = sobolev_smoother(mri_op.domain, sobolev_index)
+smoothed_op = mri_op * smoother
 
 exact_solution = mri_op.domain.zeros()
 exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case
@@ -49,10 +54,6 @@ for coil, center in zip(exact_coils, centers):
 # Construct data (criminally), add noise
 exact_data = mri_op(exact_solution)
 data = exact_data + noiselevel * mri_op.codomain.randn()
-
-# Substitute Sobolev weights into coil profiles
-smoother = sobolev_smoother(mri_op.domain, sobolev_index)
-smoothed_op = mri_op * smoother
 
 # Initial guess: constant density, zero coils
 init = smoothed_op.domain.zeros()
