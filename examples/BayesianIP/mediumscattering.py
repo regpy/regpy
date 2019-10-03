@@ -9,8 +9,8 @@ import setpath
 
 #import itreg
 
-from itreg.operators import MediumScattering, CoordinateProjection
-from itreg.spaces import L2, H1, HilbertPullBack, UniformGrid
+from itreg.operators import MediumScatteringFixed, CoordinateProjection
+from itreg.spaces import L2, Sobolev, HilbertPullBack, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
@@ -45,15 +45,15 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-scattering = MediumScattering(
+scattering = MediumScatteringFixed(
     gridshape=(65, 65),
     radius=1,
     wave_number=1,
     inc_directions=util.linspace_circle(16),
-    meas_directions=util.linspace_circle(16),
+    farfield_directions=util.linspace_circle(16),
     # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
     # coarseshape=(17, 17),
-    amplitude=False)
+)
 
 contrast = scattering.domain.zeros()
 r = np.linalg.norm(scattering.domain.coords, axis=0)
@@ -74,15 +74,15 @@ init = 1.1 * op.domain.ones()
 
 setting = HilbertSpaceSetting(
     op=op,
-    domain=HilbertPullBack(partial(H1, index=1), embedding, inverse='cholesky'),
-    codomain=L2)
+    Hdomain=HilbertPullBack(Sobolev(index=1), embedding, inverse='cholesky'),
+    Hcodomain=L2)
 
 
 solver = Landweber(setting, data, init, stepsize=0.01)
 stopping_rule = (
     rules.CountIterations(100) +
-    rules.Discrepancy(setting.codomain.norm, data,
-                      noiselevel=setting.codomain.norm(noise),
+    rules.Discrepancy(setting.Hcodomain.norm, data,
+                      noiselevel=setting.Hcodomain.norm(noise),
                       tau=1))
 
 
@@ -97,13 +97,13 @@ n_codomain=np.prod(op.codomain.shape)
 
 #prior=gaussian_prior(reg_parameter*np.eye(op.domain.shape[0]), setting, np.zeros(op.domain.shape[0]))
 #likelihood=gaussian_likelihood(setting, np.eye(n_codomain), exact_data)
-prior=tikhonov(setting, reg_parameter, exact_data)
+prior=tikhonov(setting, reg_parameter)
 likelihood=unity(setting)
 
 
 stepsize_rule=partial(adaptive_stepsize, stepsize_factor=1.05)
 
-bip=Settings(setting, data, prior, likelihood, solver, stopping_rule, Temperature,
+bip=Settings(setting, data, prior, likelihood, Temperature, solver, stopping_rule,
               n_iter=n_iter, stepsize_rule=stepsize_rule)
 
 statemanager=statemanager(bip.initial_state)
