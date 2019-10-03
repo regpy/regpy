@@ -559,13 +559,17 @@ class DirectSum(Operator):
 
     Parameters
     ----------
-    *ops : variable number of :class:`~itreg.operators.Operator`s
-    flatten : bool
+    *ops : Operator tuple
+    flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
+    domain, codomain : discrs.Discretization or callable, optional
+        Either the underlying discretizations or factory functions that will be
+        called with all summands' discretizations passed as arguments and should
+        return a discrs.DirectSum instance. Default: discrs.DirectSum.
     """
 
-    def __init__(self, *ops, flatten=False):
+    def __init__(self, *ops, flatten=False, domain=discrs.DirectSum, codomain=discrs.DirectSum):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
         for op in ops:
@@ -573,11 +577,24 @@ class DirectSum(Operator):
                 self.ops.extend(op.ops)
             else:
                 self.ops.append(op)
-        super().__init__(
-            domain=discrs.DirectSum(*(op.domain for op in self.ops), flatten=False),
-            codomain=discrs.DirectSum(*(op.codomain for op in self.ops), flatten=False),
-            linear=all(op.linear for op in ops)
-        )
+
+        if isinstance(domain, discrs.Discretization):
+            pass
+        elif callable(domain):
+            domain = domain(*(op.domain for op in self.ops))
+        else:
+            raise TypeError('domain={} is neither a Discretization nor callable'.format(domain))
+        assert all(op.domain == d for op, d in zip(ops, domain))
+
+        if isinstance(codomain, discrs.Discretization):
+            pass
+        elif callable(codomain):
+            codomain = codomain(*(op.codomain for op in self.ops))
+        else:
+            raise TypeError('codomain={} is neither a Discretization nor callable'.format(codomain))
+        assert all(op.codomain == c for op, c in zip(ops, codomain))
+
+        super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     def _eval(self, x, differentiate=False):
         elms = self.domain.split(x)
@@ -591,7 +608,8 @@ class DirectSum(Operator):
     def _derivative(self, x):
         elms = self.domain.split(x)
         return self.codomain.join(
-            *(deriv(elm) for deriv, elm in zip(self._derivs, elms)))
+            *(deriv(elm) for deriv, elm in zip(self._derivs, elms))
+        )
 
     def _adjoint(self, y):
         elms = self.codomain.split(y)
@@ -600,7 +618,8 @@ class DirectSum(Operator):
         else:
             ops = self._derivs
         return self.domain.join(
-            *(op.adjoint(elm) for op, elm in zip(ops, elms)))
+            *(op.adjoint(elm) for op, elm in zip(ops, elms))
+        )
 
     @util.memoized_property
     def inverse(self):
@@ -608,6 +627,12 @@ class DirectSum(Operator):
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
+
+    def __getitem__(self, item):
+        return self.ops[item]
+
+    def __iter__(self):
+        return iter(self.ops)
 
 
 class Exponential(Operator):

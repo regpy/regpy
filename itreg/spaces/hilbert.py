@@ -149,17 +149,21 @@ class DirectSum(HilbertSpace):
 
     Parameters
     ----------
-    *summands : variable number of :class:`~itreg.spaces.hilbert
+    *summands : HilbertSpace tuple
         The Hilbert spaces to be summed. Alternatively, summands can be given
         as tuples `(scalar, HilbertSpace)`, which will scale the norm the
         respective summand. The gram matrices and hence the inner products will
         be scaled by `scalar**2`.
     flatten : bool, optional
         Whether summands that are themselves DirectSums should be merged into
-        this instance.
+        this instance. Default: False.
+    discr : discrs.Discretization or callable, optional
+        Either the underlying discretization or a factory function that will be
+        called with all summands' discretizations passed as arguments and should
+        return a discrs.DirectSum instance. Default: discrs.DirectSum.
     """
 
-    def __init__(self, *args, flatten=False):
+    def __init__(self, *args, flatten=False, discr=discrs.DirectSum):
         self.summands = []
         self.weights = []
         for arg in args:
@@ -175,7 +179,16 @@ class DirectSum(HilbertSpace):
             else:
                 self.summands.append(s)
                 self.weights.append(w)
-        super().__init__(discrs.DirectSum(*(s.discr for s in self.summands), flatten=False))
+
+        if isinstance(discr, discrs.Discretization):
+            pass
+        elif callable(discr):
+            discr = discr(*(s.discr for s in self.summands))
+        else:
+            raise TypeError('discr={} is neither a Discretization nor callable'.format(discr))
+        assert all(s.discr == d for s, d in zip(self.summands, discr))
+
+        super().__init__(discr)
 
     def __eq__(self, other):
         return (
@@ -193,7 +206,13 @@ class DirectSum(HilbertSpace):
                 ops.append(s.gram)
             else:
                 ops.append(w**2 * s.gram)
-        return operators.DirectSum(*ops)
+        return operators.DirectSum(*ops, domain=self.discr, codomain=self.discr)
+
+    def __getitem__(self, item):
+        return self.summands[item]
+
+    def __iter__(self):
+        return iter(self.summands)
 
 
 class AbstractSpace:
@@ -338,11 +357,16 @@ class AbstractSum(AbstractSpace):
 
     def __call__(self, discr):
         assert isinstance(discr, discrs.DirectSum)
-        assert len(self.summands) == len(discr.summands)
         return DirectSum(
             *((w, s(d)) for w, s, d in zip(self.weights, self.summands, discr.summands)),
-            flatten=False
+            discr=discr
         )
+
+    def __getitem__(self, item):
+        return self.weights[item], self.summands[item]
+
+    def __iter__(self):
+        return iter(zip(self.weights, self.summands))
 
 
 L2 = AbstractSpaceDispatcher('L2')

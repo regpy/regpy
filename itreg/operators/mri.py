@@ -99,7 +99,7 @@ def sobolev_smoother(domain, sobolev_index):
     indices.
     """
     # TODO Combine with Sobolev space implementation as much as possible
-    grid, coilsgrid = domain.summands
+    grid, coilsgrid = domain
     ft = FourierTransform(coilsgrid, axes=(1, 2))
     mul = Multiplication(
         ft.codomain,
