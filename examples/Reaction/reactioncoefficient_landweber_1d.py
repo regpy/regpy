@@ -29,7 +29,9 @@ codomain = NgsSpace(fes_codomain)
 rhs = 10 * ngs.x ** 2
 op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
 
-# exact_solution = np.linspace(1, 2, 201)
+N_domain = op.fes_domain.ndof
+N_codomain = op.fes_codomain.ndof
+
 exact_solution_coeff = 1 + ngs.x
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
@@ -38,23 +40,6 @@ exact_data = op(exact_solution)
 noise = 0.01 * op.codomain.randn()
 data = exact_data + noise
 
-gfu = ngs.GridFunction(op.fes_codomain)
-for i in range(201):
-    gfu.vec[i] = data[i]
-
-Symfunc = ngs.CoefficientFunction(gfu)
-func = np.zeros(201)
-for i in range(0, 201):
-    mip = op.fes_codomain.mesh(i / 200)
-    func[i] = Symfunc(mip)
-
-plt.plot(func)
-plt.show()
-
-_, deriv = op.linearize(exact_solution)
-adj = deriv.adjoint(np.linspace(1, 2, 201))
-
-# init=np.concatenate((np.linspace(1, 2, 101), np.ones(100)))
 init = 1 + ngs.x ** 3
 init_gfu = ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
@@ -68,22 +53,14 @@ landweber = Landweber(setting, data, init_solution, stepsize=1)
 # irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
         rules.CountIterations(1000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
-
-plt.plot(reco, label='reco')
-plt.plot(exact_solution, label='exact')
-# plt.plot(init_solution, label='init')
-plt.legend()
-plt.show()
-
-N = op.fes_domain.ndof
 
 gfu = ngs.GridFunction(op.fes_domain)
 gfu2 = ngs.GridFunction(op.fes_domain)
 gfu3 = ngs.GridFunction(op.fes_domain)
-for i in range(N):
+for i in range(N_domain):
     gfu.vec[i] = reco[i]
     gfu2.vec[i] = exact_solution[i]
     gfu3.vec[i] = init_plot[i]
@@ -91,18 +68,17 @@ for i in range(N):
 Symfunc = ngs.CoefficientFunction(gfu)
 Symfunc2 = ngs.CoefficientFunction(gfu2)
 Symfunc3 = ngs.CoefficientFunction(gfu3)
-func = np.zeros(N)
-func2 = np.zeros(N)
-func3 = np.zeros(N)
-for i in range(0, N):
-    mip = op.fes_domain.mesh(i / N)
+func = np.zeros(N_domain)
+func2 = np.zeros(N_domain)
+func3 = np.zeros(N_domain)
+for i in range(0, N_domain):
+    mip = op.fes_domain.mesh(i / N_domain)
     func[i] = Symfunc(mip)
     func2[i] = Symfunc2(mip)
     func3[i] = Symfunc3(mip)
 
 plt.plot(func, label='reco')
 plt.plot(func2, label='exact')
-# plt.plot(func3, label='init')
 plt.legend()
 plt.show()
 
@@ -110,7 +86,7 @@ gfu = ngs.GridFunction(op.fes_codomain)
 gfu2 = ngs.GridFunction(op.fes_codomain)
 gfu3 = ngs.GridFunction(op.fes_codomain)
 gfu4 = ngs.GridFunction(op.fes_codomain)
-for i in range(201):
+for i in range(N_codomain):
     gfu.vec[i] = reco_data[i]
     gfu2.vec[i] = exact_data[i]
     gfu3.vec[i] = init_data[i]
@@ -120,12 +96,12 @@ Symfunc = ngs.CoefficientFunction(gfu)
 Symfunc2 = ngs.CoefficientFunction(gfu2)
 Symfunc3 = ngs.CoefficientFunction(gfu3)
 Symfunc4 = ngs.CoefficientFunction(gfu4)
-func = np.zeros(201)
-func2 = np.zeros(201)
-func3 = np.zeros(201)
-func4 = np.zeros(201)
-for i in range(0, 201):
-    mip = op.fes_codomain.mesh(i / 200)
+func = np.zeros(N_codomain)
+func2 = np.zeros(N_codomain)
+func3 = np.zeros(N_codomain)
+func4 = np.zeros(N_codomain)
+for i in range(0, N_codomain):
+    mip = op.fes_codomain.mesh(i / N_codomain)
     func[i] = Symfunc(mip)
     func2[i] = Symfunc2(mip)
     func3[i] = Symfunc3(mip)

@@ -37,7 +37,15 @@ gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution = gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
-data = exact_data
+
+fes_noise=ngs.L2(fes_codomain.mesh, order=1)
+gfu_noise_order1=ngs.GridFunction(fes_noise)
+gfu_noise_order1.vec.FV().NumPy()[:]=0.0001*np.random.randn(fes_noise.ndof)
+gfu_noise=ngs.GridFunction(fes_codomain)
+gfu_noise.Set(gfu_noise_order1)
+noise=gfu_noise.vec.FV().NumPy()
+
+data = exact_data+noise
 
 init = 1 + ngs.x ** 2
 init_gfu = ngs.GridFunction(op.fes_domain)
@@ -47,10 +55,10 @@ init_data = op(init_solution)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
-landweber = Landweber(setting, data, init_solution, stepsize=1000)
+landweber = Landweber(setting, data, init_solution, stepsize=1)
 stoprule = (
-        rules.CountIterations(10000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1))
+        rules.CountIterations(1000) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
