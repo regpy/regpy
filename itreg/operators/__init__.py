@@ -613,7 +613,7 @@ class DirectSum(Operator):
         return a discrs.DirectSum instance. Default: discrs.DirectSum.
     """
 
-    def __init__(self, *ops, flatten=False, domain=discrs.DirectSum, codomain=discrs.DirectSum):
+    def __init__(self, *ops, flatten=False, domain=None, codomain=None):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
         for op in ops:
@@ -622,6 +622,8 @@ class DirectSum(Operator):
             else:
                 self.ops.append(op)
 
+        if domain is None:
+            domain = discrs.Discretization
         if isinstance(domain, discrs.Discretization):
             pass
         elif callable(domain):
@@ -630,6 +632,8 @@ class DirectSum(Operator):
             raise TypeError('domain={} is neither a Discretization nor callable'.format(domain))
         assert all(op.domain == d for op, d in zip(ops, domain))
 
+        if codomain is None:
+            codomain = discrs.Discretization
         if isinstance(codomain, discrs.Discretization):
             pass
         elif callable(codomain):
