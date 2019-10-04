@@ -57,15 +57,20 @@ def real2complex(x, axis=-1):
 
 
 def is_real_dtype(obj):
+    if np.isscalar(obj):
+         obj = np.asarray(obj)
     try:
         dtype = obj.dtype
     except AttributeError:
         dtype = np.dtype(obj)
-    return (np.issubdtype(dtype, np.number) and not
-            np.issubdtype(dtype, np.complexfloating))
+    return (
+        np.issubdtype(dtype, np.number) and not np.issubdtype(dtype, np.complexfloating)
+    )
 
 
 def is_complex_dtype(obj):
+    if np.isscalar(obj):
+        obj = np.asarray(obj)
     try:
         dtype = obj.dtype
     except AttributeError:

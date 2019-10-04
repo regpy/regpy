@@ -3,7 +3,7 @@ from copy import copy
 import numpy as np
 
 from . import discrs
-from .. import util, operators
+from .. import util, operators, functionals
 
 
 class HilbertSpace:
@@ -58,6 +58,10 @@ class HilbertSpace:
             The norm.
         """
         return np.sqrt(self.inner(x, x))
+
+    @util.memoized_property
+    def norm_functional(self):
+        return functionals.HilbertNorm(self)
 
     def __add__(self, other):
         if isinstance(other, HilbertSpace):
