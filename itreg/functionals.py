@@ -48,6 +48,9 @@ class Functional:
                 return LinearCombination((other, self))
         return NotImplemented
 
+    def __truediv__(self, other):
+        return (1 / other) * self
+
     def __add__(self, other):
         if isinstance(other, Functional):
             return LinearCombination(self, other)
