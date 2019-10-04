@@ -124,29 +124,52 @@ class Operator:
         return np.sqrt(norm)
 
     def __mul__(self, other):
-        if isinstance(other, Operator):
+        if np.isscalar(other) and other == 1:
+            return self
+        elif isinstance(other, Operator):
             return Composition(self, other)
+        elif np.isscalar(other) or isinstance(other, np.ndarray):
+            return self * Multiplication(self.domain, other)
         else:
             return NotImplemented
 
     def __rmul__(self, other):
         if isinstance(other, Operator):
             return Composition(other, self)
-        elif other == 1:
-            return self
-        elif (
-            np.isreal(other) or
-            (np.iscomplex(other) and (not self.codomain or self.codomain.is_complex))
-        ):
-            return LinearCombination((other, self))
+        elif np.isscalar(other):
+            if other == 1:
+                return self
+            else:
+                return LinearCombination((other, self))
+        elif isinstance(other, np.ndarray):
+            return Multiplication(self.codomain, other) * self
         else:
             return NotImplemented
 
     def __add__(self, other):
-        if isinstance(other, Operator):
+        if np.isscalar(other) and other == 0:
+            return self
+        elif isinstance(other, Operator):
             return LinearCombination(self, other)
+        elif np.isscalar(other) or isinstance(other, np.ndarray):
+            return Shifted(self, other)
         else:
             return NotImplemented
+
+    def __radd__(self, other):
+        return self + other
+
+    def __sub__(self, other):
+        return self + (-other)
+
+    def __rsub__(self, other):
+        return (-self) + other
+
+    def __neg__(self):
+        return (-1) * self
+
+    def __pos__(self):
+        return self
 
 
 # NonlinearOperator and LinearOperator are added for compatibility, will be
@@ -425,9 +448,7 @@ class Multiplication(Operator):
         # Check that factor can broadcast against domain elements without
         # increasing their size.
         if domain:
-            assert factor.ndim <= domain.ndim
-            for sf, sd in zip(factor.shape[::-1], domain.shape[::-1]):
-                assert sf == sd or sf == 1
+            factor = np.broadcast_to(factor, domain.shape)
             assert domain.is_complex or not util.is_complex_dtype(factor)
         self.factor = factor
         super().__init__(domain, domain, linear=True)
@@ -448,6 +469,30 @@ class Multiplication(Operator):
 
     def __repr__(self):
         return util.make_repr(self, self.domain, self.factor)
+
+
+class Shifted(Operator):
+    def __init__(self, op, offset):
+        assert offset in op.codomain
+        super().__init__(op.domain, op.codomain)
+        if isinstance(op, type(self)):
+            offset = offset + op.offset
+            op = op.op
+        self.op = op
+        self.offset = offset
+
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            y, self._deriv = self.op.linearize(x)
+            return y + self.offset
+        else:
+            return self.op(x) + self.offset
+
+    def _derivative(self, x):
+        return self._deriv(x)
+
+    def _adjoint(self, y):
+        return self._deriv.adjoint(y)
 
 
 class FourierTransform(Operator):
