@@ -80,39 +80,3 @@ coeff_init_data = ngs.CoefficientFunction(gfu_init_data)
 ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
 ngs.Draw(coeff_init_data, op.fes_codomain.mesh, "init_data")
-
-
-def der(x):
-    val2 = op(res1 + x * res2)
-    val1 = op(res1)
-    der = x * op._derivative(res2)
-    return setting.Hcodomain.norm(1 / x * (val2 - val1 - der))
-
-
-N = domain.shape[0]
-
-res1 = 0.001 * np.random.randn(N)
-res2 = 0.001 * np.random.randn(N)
-
-print(der(0.1))
-print(der(0.01))
-print(der(0.001))
-print(der(0.0001))
-
-
-def adj():
-    res1 = 0.001 * np.random.randn(N)
-    res2 = 0.001 * np.random.randn(N)
-    res3 = 0.001 * np.random.randn(N)
-    v = op(res2)
-    u = op(res3)
-    toret1 = setting.Hcodomain.inner(op._derivative(res1), v)
-    toret2 = setting.Hdomain.inner(res1, op._adjoint(v))
-    return [toret1, toret2]
-
-
-print(adj())
-print(adj())
-print(adj())
-print(adj())
-print(adj())
