@@ -1,4 +1,4 @@
-# from .utils.SVD_methods import randomized_SVD
+# from itreg.util.svd import randomized_svd
 
 # class GaussianApproximation(object):
 #     def __init__(self, pdf):
@@ -28,7 +28,7 @@
 #                 self.pdf.likelihood.hessian(self.pdf.m_0, np.dot(self.gamma_prior_half, np.eye(N)[:, i]))
 #             )
 #         # construct randomized SVD of Hessian_prior
-#         self.L, self.V = randomized_SVD(self, self.Hessian_prior)
+#         self.L, self.V = randomized_svd(self, self.Hessian_prior)
 #         self.L = -self.L
 #         # define gamma_post
 #         self.gamma_post = np.dot(

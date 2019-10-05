@@ -3,7 +3,7 @@ import random as rd
 import numpy as np
 
 
-def randomized_SVD(self, H):
+def randomized_svd(self, H):
     r = np.linalg.matrix_rank(H)
     N = self.gamma_prior_half.shape[0]
     #    r=N
@@ -30,7 +30,7 @@ def randomized_SVD(self, H):
     return L, V
 
 
-def Lanzcos_SVD(self, H, number, basis=None, v_1=None):
+def lanzcos_svd(self, H, number, basis=None, v_1=None):
     #    assert number>1
     #    assert H.transpose()==H
     N = H.shape[0]
