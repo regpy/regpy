@@ -17,16 +17,12 @@ import itreg.stoprules as rules
 import itreg.util as util
 
 
-from itreg.BIP.mcmc import Settings
+from itreg.BIP.mcmc import Settings, RandomWalk, fixed_stepsize, adaptive_stepsize, HamiltonianMonteCarlo
 from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
 from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
 
-from itreg.BIP.MonteCarlo_basics import fixed_stepsize
-from itreg.BIP.MonteCarlo_basics import adaptive_stepsize
 from itreg.BIP.MonteCarlo_basics import statemanager
-from itreg.BIP.MonteCarlo_basics import RandomWalk
 #from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
-from itreg.BIP.MonteCarlo_basics import HamiltonianMonteCarlo
 from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
 from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior

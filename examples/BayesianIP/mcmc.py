@@ -6,9 +6,9 @@ from functools import partial
 import numpy as np
 
 # from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
-from itreg.BIP.MonteCarlo_basics import GaussianApproximation, adaptive_stepsize, statemanager
+from itreg.BIP.MonteCarlo_basics import GaussianApproximation, statemanager
 from itreg.BIP.likelihood_distribution.likelihood_distribution import tikhonov as tikhonov_likelihood
-from itreg.BIP.mcmc import Settings
+from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
 from itreg.BIP.prior_distribution.prior_distribution import tikhonov as tikhonov_prior
 from itreg.operators import Volterra
 from itreg.solvers import HilbertSpaceSetting
