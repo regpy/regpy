@@ -449,7 +449,7 @@ class Multiplication(Operator):
         # increasing their size.
         if domain:
             factor = np.broadcast_to(factor, domain.shape)
-            assert domain.is_complex or not util.is_complex_dtype(factor)
+            assert factor in domain
         self.factor = factor
         super().__init__(domain, domain, linear=True)
 
@@ -457,7 +457,12 @@ class Multiplication(Operator):
         return self.factor * x
 
     def _adjoint(self, x):
-        return np.conj(self.factor) * x
+        if self.domain.is_complex:
+            return np.conj(self.factor) * x
+        else:
+            # Avoid conj() when not needed (performs copy)
+            # TODO should we just store conj(factor) once?
+            return self.factor * x
 
     @util.memoized_property
     def inverse(self):

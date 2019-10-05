@@ -114,7 +114,7 @@ class MetropolisHastings:
             self.state = self.State().complete(logpdf)
 
     def next(self):
-        proposed = self._propose(self.state)
+        proposed = self._propose(self.state).complete(self.logpdf)
         accepted = (np.log(np.random.rand()) < proposed.logprop - self.state.logprob)
         self._update(proposed, accepted)
         return proposed, accepted
