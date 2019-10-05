@@ -2,14 +2,12 @@ import setpath
 
 import logging
 from functools import partial
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from itreg.mcmc import RandomWalk, StateHistory, adaptive_stepsize
-from itreg.functionals import tikhonov_functional
 from itreg.operators import Volterra
-from itreg.solvers import HilbertSpaceSetting
 from itreg.spaces import L2, Sobolev, UniformGrid
 
 logging.basicConfig(
@@ -30,11 +28,10 @@ data = exact_data + noise
 # Compute log probability functional as negative Tikhonov functional with Sobolev regularizer
 
 temperature = 1e-3
-prior, likelihood = tikhonov_functional(
-    setting=HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2),
-    data=data,
-    regpar=1e-1
-)
+regpar = 1e-1
+
+prior = regpar * Sobolev(op.domain).norm_functional
+likelihood = L2(op.codomain).norm_functional * (op - data)
 logpdf = -(likelihood + prior) / temperature
 
 # Initialize MCMC sampler
