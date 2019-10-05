@@ -41,6 +41,14 @@ class Functional:
         assert grad in self.domain
         return grad
 
+    def hessian(self, x):
+        assert x in self.domain
+        h = self._hessian(x)
+        assert isinstance(h, operators.Operator)
+        assert h.linear
+        assert h.domain == h.codomain == self.domain
+        return h
+
     def _eval(self, x):
         raise NotImplementedError
 
@@ -49,6 +57,9 @@ class Functional:
 
     def _gradient(self, x):
         raise NotImplementedError
+
+    def _hessian(self, x):
+        return ApproximateHessian(self, x)
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
@@ -93,6 +104,25 @@ class Functional:
         return self
 
 
+class ApproximateHessian(operators.Operator):
+    def __init__(self, func, x, stepsize=1e-8):
+        assert isinstance(func, Functional)
+        self.base = func.gradient(x)
+        self.func = func
+        self.x = x.copy()
+        self.stepsize = stepsize
+        # linear=True is a necessary lie
+        super().__init__(func.domain, func.domain, linear=True)
+        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
+
+    def _eval(self, x):
+        grad = self.func.gradient(self.x + self.stepsize * x)
+        return grad - self.base
+
+    def _adjoint(self, x):
+        return self._eval(x)
+
+
 class Composed(Functional):
     def __init__(self, func, op):
         assert isinstance(func, Functional)
@@ -116,6 +146,13 @@ class Composed(Functional):
     def _gradient(self, x):
         y, deriv = self.op.linearize(x)
         return deriv.adjoint(self.func.gradient(y))
+
+    def _hessian(self, x):
+        if self.op.linear:
+            return self.op.adjoint * self.func.hessian(x) * self.op
+        else:
+            # TODO this can be done slightly more efficiently
+            return super()._hessian(x)
 
 
 class LinearCombination(Functional):
@@ -169,6 +206,11 @@ class LinearCombination(Functional):
             grad += coeff * func.gradient(x)
         return grad
 
+    def _hessian(self, x):
+        return operators.LinearCombination(
+            *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
+        )
+
 
 class Shifted(Functional):
     def __init__(self, func, offset):
@@ -186,6 +228,9 @@ class Shifted(Functional):
 
     def _gradient(self, x):
         return self.func.gradient(x)
+
+    def _hessian(self, x):
+        return self.func.hessian(x)
 
 
 class HilbertNorm(Functional):
@@ -205,6 +250,9 @@ class HilbertNorm(Functional):
     def _gradient(self, x):
         return self.hspace.gram(x)
 
+    def _hessian(self, x):
+        return self.hspace.gram
+
 
 class Indicator(Functional):
     def __init__(self, domain, predicate):
@@ -221,3 +269,6 @@ class Indicator(Functional):
         # This is of course not correct, but lets us use an Indicator functional to force
         # rejecting an MCMC proposals without altering the gradient.
         return self.domain.zeros()
+
+    def _hessian(self, x):
+        return operators.Zero(self.domain)

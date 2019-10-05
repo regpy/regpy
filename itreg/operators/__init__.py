@@ -808,5 +808,18 @@ class SquaredModulus(Operator):
         return self._factor * y
 
 
+class Zero(Operator):
+    def __init__(self, domain, codomain=None):
+        if codomain is None:
+            codomain = domain
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        return self.codomain.zeros()
+
+    def _adjoint(self, x):
+        return self.domain.zeros()
+
+
 from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
 from .volterra import Volterra, NonlinearVolterra
