@@ -1,14 +1,12 @@
 import setpath
 
-from itertools import islice
-
 import logging
 from functools import partial
 import matplotlib.pyplot as plt
 
 import numpy as np
 
-from itreg.BIP.mcmc import RandomWalk, StateHistory, adaptive_stepsize
+from itreg.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from itreg.functionals import tikhonov_functional
 from itreg.operators import Volterra
 from itreg.solvers import HilbertSpaceSetting
