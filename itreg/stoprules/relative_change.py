@@ -1,5 +1,7 @@
-from . import StopRule, MissingValueError
 import numpy as np
+
+from itreg.stoprules import StopRule, MissingValueError
+
 
 class RelativeChangeData(StopRule):
 

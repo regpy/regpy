@@ -6,10 +6,10 @@ from matplotlib.patches import Polygon
 from matplotlib.pyplot import gca
 from scipy.spatial.qhull import ConvexHull
 
-from . import Solver
-from ..operators.mediumscattering import MediumScatteringOneToMany
-from ..operators.nfft import NFFT
-from ..util import bounded_voronoi
+from itreg.solvers import Solver
+from itreg.operators.mediumscattering import MediumScatteringOneToMany
+from itreg.operators.nfft import NFFT
+from itreg.util import bounded_voronoi
 
 
 class IterativeBorn(Solver):

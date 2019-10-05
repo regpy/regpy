@@ -2,7 +2,7 @@ from copy import copy
 import numpy as np
 from itertools import accumulate
 
-from .. import util, operators
+from itreg import util, operators
 
 
 class Discretization:

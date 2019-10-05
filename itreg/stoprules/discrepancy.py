@@ -1,4 +1,4 @@
-from . import StopRule, MissingValueError
+from itreg.stoprules import StopRule, MissingValueError
 
 
 class Discrepancy(StopRule):

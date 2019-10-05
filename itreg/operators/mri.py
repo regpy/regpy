@@ -1,8 +1,8 @@
 import numpy as np
 
-from . import CoordinateProjection, DirectSum, FourierTransform, Multiplication, Operator
-from .. import util
-from ..spaces import discrs
+from itreg.operators import CoordinateProjection, DirectSum, FourierTransform, Multiplication, Operator
+from itreg import util
+from itreg.spaces import discrs
 
 
 class CoilMult(Operator):

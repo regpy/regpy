@@ -1,9 +1,8 @@
-from . import Solver
-
 import logging
 import numpy as np
 
-from .. import util
+from itreg.solvers import Solver
+from itreg import util
 
 
 class TikhonovCG(Solver):

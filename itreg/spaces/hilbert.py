@@ -2,8 +2,8 @@ from copy import copy
 
 import numpy as np
 
-from . import discrs
-from .. import util, operators, functionals
+from itreg.spaces import discrs
+from itreg import util, operators, functionals
 
 
 class HilbertSpace:

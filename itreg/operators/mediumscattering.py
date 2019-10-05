@@ -4,9 +4,9 @@ from numpy.fft import fftn, ifftn, fftshift, ifftshift
 import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
-from . import Operator
-from ..spaces import discrs
-from .. import util
+from itreg.operators import Operator
+from itreg.spaces import discrs
+from itreg import util
 
 
 class Normalization(enum.Enum):

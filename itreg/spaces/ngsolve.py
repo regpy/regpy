@@ -1,9 +1,9 @@
 import ngsolve as ngs
 
-from . import Discretization
-from .hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
-from ..operators import Operator
-from ..util import memoized_property
+from itreg.spaces.discrs import Discretization
+from itreg.spaces.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
+from itreg.operators import Operator
+from itreg.util import memoized_property
 
 
 class NgsSpace(Discretization):

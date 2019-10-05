@@ -5,7 +5,7 @@ import numpy as np
 import scipy
 import scipy.optimize
 
-from . import Solver
+from itreg.solvers import Solver
 
 __all__ = ['IRGNM_L1_fid']
 

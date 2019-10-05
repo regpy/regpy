@@ -3,7 +3,7 @@
 import logging
 import numpy as np
 
-from . import Solver
+from itreg.solvers import Solver
 
 __all__ = ['Newton_CG']
 

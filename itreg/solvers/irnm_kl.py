@@ -1,6 +1,6 @@
 """IRNM_KL Solver """
 
-from . import Solver
+from itreg.solvers import Solver
 from itreg.solvers.sqp import SQP
 
 

@@ -4,8 +4,8 @@ from copy import deepcopy
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
-from .. import functionals, spaces, util
-from ..spaces import discrs
+from itreg import functionals, spaces, util
+from itreg.spaces import discrs
 
 
 class Revocable:
@@ -827,10 +827,6 @@ class Zero(Operator):
         return self.domain.zeros()
 
 
-from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
-from .volterra import Volterra, NonlinearVolterra
-
-
 class ApproximateHessian(Operator):
     def __init__(self, func, x, stepsize=1e-8):
         assert isinstance(func, functionals.Functional)
@@ -848,3 +844,7 @@ class ApproximateHessian(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+
+
+from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
+from .volterra import Volterra, NonlinearVolterra

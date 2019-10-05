@@ -5,7 +5,7 @@ import numpy as np
 import numpy.linalg as LA
 
 from itreg.util.cg_methods import CG
-from . import Solver
+from itreg.solvers import Solver
 
 
 __all__ = ['IRNM_KL_Newton']

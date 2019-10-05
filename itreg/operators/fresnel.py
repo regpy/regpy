@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import Exponential, FourierTransform, Multiplication, RealPart, SquaredModulus
+from itreg.operators import Exponential, FourierTransform, Multiplication, RealPart, SquaredModulus
 
 
 def fresnel_propagator(domain, fresnel_number):

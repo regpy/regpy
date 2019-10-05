@@ -1,4 +1,4 @@
-from . import Solver
+from itreg.solvers import Solver
 
 import logging
 import numpy as np

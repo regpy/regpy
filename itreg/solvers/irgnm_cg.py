@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import Solver, TikhonovCG, HilbertSpaceSetting
+from itreg.solvers import Solver, TikhonovCG, HilbertSpaceSetting
 
 
 class IrgnmCG(Solver):

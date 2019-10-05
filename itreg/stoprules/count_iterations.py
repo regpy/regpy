@@ -1,4 +1,4 @@
-from . import StopRule
+from itreg.stoprules import StopRule
 
 
 class CountIterations(StopRule):
