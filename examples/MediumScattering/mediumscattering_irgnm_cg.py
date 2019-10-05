@@ -1,6 +1,7 @@
 import setpath
 
-from itreg.operators import MediumScatteringFixed, CoordinateProjection
+from itreg.operators.mediumscattering import MediumScatteringFixed
+from itreg.operators import CoordinateProjection
 from itreg.spaces import L2, Sobolev, HilbertPullBack
 from itreg.solvers import IrgnmCG, HilbertSpaceSetting
 import itreg.stoprules as rules

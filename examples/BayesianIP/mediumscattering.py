@@ -9,7 +9,8 @@ import setpath
 
 #import itreg
 
-from itreg.operators import MediumScatteringFixed, CoordinateProjection
+from itreg.operators.mediumscattering import MediumScatteringFixed
+from itreg.operators import CoordinateProjection
 from itreg.spaces import L2, Sobolev, HilbertPullBack, UniformGrid
 from itreg.solvers import Landweber, HilbertSpaceSetting
 #from itreg.util import test_adjoint

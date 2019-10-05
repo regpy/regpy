@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itreg.mcmc import RandomWalk, StateHistory, adaptive_stepsize
-from itreg.operators import Volterra
+from itreg.operators.volterra import Volterra
 from itreg.spaces import L2, Sobolev, UniformGrid
 
 logging.basicConfig(

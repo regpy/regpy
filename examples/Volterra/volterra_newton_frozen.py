@@ -8,8 +8,7 @@
 
 import setpath  # NOQA
 
-#from itreg.operators.Volterra.volterra import Volterra
-from itreg.operators import Volterra
+from itreg.operators.volterra import Volterra
 
 
 from itreg.spaces import L2, UniformGrid

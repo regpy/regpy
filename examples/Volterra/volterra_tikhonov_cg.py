@@ -1,6 +1,6 @@
 import setpath
 
-from itreg.operators import Volterra
+from itreg.operators.volterra import Volterra
 from itreg.spaces import L2, UniformGrid
 from itreg.solvers import TikhonovCG, HilbertSpaceSetting
 import itreg.stoprules as rules

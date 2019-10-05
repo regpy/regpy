@@ -844,7 +844,3 @@ class ApproximateHessian(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
-
-
-from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
-from .volterra import Volterra, NonlinearVolterra

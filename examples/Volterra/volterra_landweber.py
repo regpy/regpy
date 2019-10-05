@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import itreg.stoprules as rules
-from itreg.operators import NonlinearVolterra
+from itreg.operators.volterra import NonlinearVolterra
 from itreg.solvers import HilbertSpaceSetting, Landweber
 from itreg.spaces import L2, UniformGrid
 
