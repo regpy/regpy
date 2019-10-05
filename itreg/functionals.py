@@ -275,6 +275,18 @@ class Indicator(Functional):
         return operators.Zero(self.domain)
 
 
+class L1Norm(Functional):
+    def _eval(self, x):
+        return np.sum(np.abs(x))
+
+    def _gradient(self, x):
+        return np.sign(x)
+
+    def _hessian(self, x):
+        # Even approximate Hessians don't work here.
+        raise NotImplementedError
+
+
 def tikhonov_functional(setting, data, regpar):
     assert isinstance(setting, HilbertSpaceSetting)
     assert data in setting.op.codomain
