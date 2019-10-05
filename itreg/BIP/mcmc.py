@@ -61,6 +61,7 @@ class MetropolisHastings:
             yield self.next()
 
     def run(self, niter, callback=None):
+        # TODO some convenience logging
         for state, accepted in islice(self, int(niter)):
             if callback is not None:
                 callback(state, accepted)
@@ -151,7 +152,7 @@ class StateHistory:
         self.accepted = 0
         self.rejected = 0
 
-    def __call__(self, state, accepted):
+    def add(self, state, accepted):
         if accepted:
             self.accepted += 1
             self.states.append(state)
