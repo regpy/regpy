@@ -14,21 +14,40 @@ class Functional:
 
     def __call__(self, x):
         assert x in self.domain
-        y = self._eval(x)
+        try:
+            y = self._eval(x)
+        except NotImplementedError:
+            y, _ = self._linearize(x)
         assert isinstance(y, float)
         return y
 
     def linearize(self, x):
         assert x in self.domain
-        y, grad = self._linearize(x)
+        try:
+            y, grad = self._linearize(x)
+        except NotImplementedError:
+            y = self._eval(x)
+            grad = self._gradient(x)
         assert isinstance(y, float)
         assert grad in self.domain
         return y, grad
+
+    def gradient(self, x):
+        assert x in self.domain
+        try:
+            grad = self._gradient(x)
+        except NotImplementedError:
+            _, grad = self._linearize(x)
+        assert grad in self.domain
+        return grad
 
     def _eval(self, x):
         raise NotImplementedError
 
     def _linearize(self, x):
+        raise NotImplementedError
+
+    def _gradient(self, x):
         raise NotImplementedError
 
     def __mul__(self, other):
@@ -94,6 +113,10 @@ class Composed(Functional):
         z, grad = self.func.linearize(y)
         return z, deriv.adjoint(grad)
 
+    def _gradient(self, x):
+        y, deriv = self.op.linearize(x)
+        return deriv.adjoint(self.func.gradient(y))
+
 
 class LinearCombination(Functional):
     def __init__(self, *args):
@@ -140,6 +163,12 @@ class LinearCombination(Functional):
             grad += coeff * g
         return y, grad
 
+    def _gradient(self, x):
+        grad = self.domain.zeros()
+        for coeff, func in zip(self.coeffs, self.funcs):
+            grad += coeff * func.gradient(x)
+        return grad
+
 
 class Shifted(Functional):
     def __init__(self, func, offset):
@@ -155,6 +184,9 @@ class Shifted(Functional):
     def _linearize(self, x):
         return self.func.linearize(x)
 
+    def _gradient(self, x):
+        return self.func.gradient(x)
+
 
 class HilbertNorm(Functional):
     def __init__(self, hspace):
@@ -169,3 +201,6 @@ class HilbertNorm(Functional):
         gx = self.hspace.gram(x)
         y = np.real(np.vdot(x, gx)) / 2
         return y, gx
+
+    def _gradient(self, x):
+        return self.hspace.gram(x)
