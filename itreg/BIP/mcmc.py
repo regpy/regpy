@@ -1,80 +1,10 @@
-import logging
+from collections import deque
 from copy import copy
+from itertools import islice
 
 import numpy as np
-import scipy.optimize as scio
 
 from itreg.util import classlogger
-
-
-class Settings:
-    """Bayesian inverse problems with Tikhonov-like exponential
-    """
-
-    def __init__(
-        self, setting, rhs, prior, likelihood, T, solver=None, stopping_rule=None,
-        n_iter=None, stepsize_rule=None,
-        n_steps=None, m_0=None, initial_stepsize=None, x_0=None
-    ):
-        self.setting = setting
-        self.rhs = rhs
-        self.prior = prior
-        self.likelihood = likelihood
-        self.T = T
-        self.x_0 = x_0 or self.setting.op.domain.zeros()
-
-        if solver is not None:
-            self.solver = solver
-        if stopping_rule is not None:
-            self.stopping_rule = stopping_rule
-
-        """The initial state is computed by the classical solver
-        """
-
-        self.initial_state = State()
-        if 'solver' and 'stopping_rule' in dir(self):
-            self.initial_state.positions, _ = self.solver.run(self.stopping_rule)
-        else:
-            res = scio.minimize(lambda x: -self.log_prob(x), self.x_0)
-            self.initial_state.positions = res.x
-        self.initial_state.log_prob = self.log_prob(self.initial_state.positions)
-        self.first_state = self.initial_state.positions
-        #        print(self.first_state)
-
-        # parameters for Random Walk
-        self.n_iter = n_iter or 2e4
-        self.stepsize_rule = stepsize_rule
-        self.n_steps = n_steps or 10
-        self.m_0 = m_0 or np.zeros(self.initial_state.positions.shape[0])
-        self.stepsize = initial_stepsize or 1e-1
-
-    def log_prob(self, x):
-        return (self.prior.prior(x) + self.likelihood.likelihood(x)) / self.T
-
-    def gradient(self, x):
-        return (self.prior.gradient(x) + self.likelihood.gradient(x)) / self.T
-
-    def run(self, sampler, statemanager):
-        logging.info('Start MCMC')
-        for i in range(int(self.n_iter)):
-            accepted = sampler.next()
-            #            print(sampler.stepsize)
-            statemanager.statemanager(sampler.state, accepted)
-
-        logging.info('MCMC finished')
-        self.points = np.array([state.positions for state in statemanager.states])
-
-        # accepted = [i for i in range(int(n_iter)) if statemanager.states[i]!=statemanager.states[i+1]]
-        # print('acceptance_rate : {0:.1f} %'.format(100. * len(accepted) / n_iter))
-        print('acceptance_rate : {0:.1f} %'.format(100. * statemanager.N / self.n_iter))
-        if type(sampler.stepsize) == float:
-            print('stepsize        : {0:.5f}'.format(sampler.stepsize))
-        else:
-            print('sampler.stepsize')
-
-        self.reco = np.mean([s.positions for s in statemanager.states[-int(statemanager.N / 2):]], axis=0)
-        self.std = np.std([s.positions for s in statemanager.states[-int(statemanager.N / 2):]], axis=0)
-        self.reco_data = self.setting.op(self.reco)
 
 
 class State:
@@ -99,7 +29,7 @@ class State:
         if not hasattr(self, 'pos'):
             self.pos = logpdf.domain.zeros()
         if not hasattr(self, 'logprob'):
-            self.logprob = logpdf.linearize(self.pos)
+            self.logprob = logpdf(self.pos)
 
 
 class MetropolisHastings:
@@ -114,14 +44,14 @@ class MetropolisHastings:
             self.state = self.State().complete(logpdf)
 
     def next(self):
-        proposed = self._propose(self.state).complete(self.logpdf)
-        accepted = (np.log(np.random.rand()) < proposed.logprop - self.state.logprob)
-        self._update(proposed, accepted)
-        return proposed, accepted
+        state = self._propose(self.state).complete(self.logpdf)
+        accepted = (np.log(np.random.rand()) < state.logprob - self.state.logprob)
+        self._update(state, accepted)
+        return state, accepted
 
-    def _update(self, proposed, accepted):
+    def _update(self, state, accepted):
         if accepted:
-            self.state = proposed
+            self.state = state
 
     def _propose(self, state):
         raise NotImplementedError
@@ -129,6 +59,11 @@ class MetropolisHastings:
     def __iter__(self):
         while True:
             yield self.next()
+
+    def run(self, niter, callback=None):
+        for state, accepted in islice(self, int(niter)):
+            if callback is not None:
+                callback(state, accepted)
 
 
 class RandomWalk(MetropolisHastings):
@@ -142,10 +77,10 @@ class RandomWalk(MetropolisHastings):
             pos=state.pos + self.stepsize * self.logpdf.domain.randn()
         ).complete(self.logpdf)
 
-    def _update(self, proposed, accepted):
+    def _update(self, state, accepted):
         if self.stepsize_rule is not None:
-            self.stepsize = self.stepsize_rule(self.stepsize, self.state, proposed, accepted)
-        super()._update(proposed, accepted)
+            self.stepsize = self.stepsize_rule(self.stepsize, self.state, state, accepted)
+        super()._update(state, accepted)
 
 
 def fixed_stepsize(stepsize, state, proposed, accepted):
@@ -208,3 +143,33 @@ def leapfrog(logpdf, state, stepsize, nsteps=10):
     momenta += 0.5 * stepsize * grad
 
     return HamiltonState(pos=pos, logprob=logprob, momenta=momenta, grad=grad)
+
+
+class StateHistory:
+    def __init__(self, maxlen=None):
+        self.states = deque(maxlen=int(maxlen))
+        self.accepted = 0
+        self.rejected = 0
+
+    def __call__(self, state, accepted):
+        if accepted:
+            self.accepted += 1
+            self.states.append(state)
+        else:
+            self.rejected += 1
+
+    @property
+    def total(self):
+        return self.rejected + self.accepted
+
+    @property
+    def acceptance_rate(self):
+        return self.accepted / self.total
+
+    def samples(self):
+        # TODO returning the entire array is a bad idea once we implement histroy managers
+        #      that store states on disk
+        return np.array([s.pos for s in self.states])
+
+    def logprobs(self):
+        return np.array([s.logprob for s in self.states])

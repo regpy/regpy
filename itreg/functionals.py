@@ -2,6 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 
+from itreg.solvers import HilbertSpaceSetting
 from .spaces import discrs, hilbert
 from . import util, operators
 
@@ -272,3 +273,11 @@ class Indicator(Functional):
 
     def _hessian(self, x):
         return operators.Zero(self.domain)
+
+
+def tikhonov_functional(setting, data, regpar):
+    assert isinstance(setting, HilbertSpaceSetting)
+    assert data in setting.op.codomain
+    likelihood = setting.Hcodomain.norm_functional * (setting.op - data)
+    prior = regpar * setting.Hdomain.norm_functional
+    return likelihood, prior

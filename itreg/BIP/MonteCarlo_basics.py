@@ -1,32 +1,5 @@
 # from .utils.SVD_methods import randomized_SVD
 
-
-# class statemanager(object):
-#     def __init__(self, initial_state, parameter_list=None):
-#         if parameter_list is not None:
-#             if 'log_prob' not in parameter_list:
-#                 parameter_list.append('log_prob')
-#             if 'positions' not in parameter_list:
-#                 parameter_list.append('positions')
-#
-#             class User_state(object):
-#                 __slots__ = tuple(parameter_list)
-#
-#             self.initial_state = User_state
-#             self.initial_state.log_prob = initial_state.log_prob
-#             self.initial_state.positions = initial_state.positions
-#         else:
-#             self.initial_state = initial_state
-#         self.states = [self.initial_state]
-#         self.N = 1
-#
-#     def statemanager(self, state, accepted):
-#         #        assert isinstance(self.initial_state, State), 'State expected'
-#         if accepted:
-#             self.states.append(state)
-#             self.N += 1
-
-
 # class GaussianApproximation(object):
 #     def __init__(self, pdf):
 #         # find m_MAP by Maximum-Likelihood
