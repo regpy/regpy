@@ -1,9 +1,10 @@
 from collections import defaultdict
 from copy import deepcopy
+
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
-from .. import spaces, util
+from .. import functionals, spaces, util
 from ..spaces import discrs
 
 
@@ -828,3 +829,22 @@ class Zero(Operator):
 
 from .mediumscattering import MediumScatteringFixed, MediumScatteringOneToMany
 from .volterra import Volterra, NonlinearVolterra
+
+
+class ApproximateHessian(Operator):
+    def __init__(self, func, x, stepsize=1e-8):
+        assert isinstance(func, functionals.Functional)
+        self.base = func.gradient(x)
+        self.func = func
+        self.x = x.copy()
+        self.stepsize = stepsize
+        # linear=True is a necessary lie
+        super().__init__(func.domain, func.domain, linear=True)
+        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
+
+    def _eval(self, x):
+        grad = self.func.gradient(self.x + self.stepsize * x)
+        return grad - self.base
+
+    def _adjoint(self, x):
+        return self._eval(x)

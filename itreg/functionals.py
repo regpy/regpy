@@ -60,7 +60,7 @@ class Functional:
         raise NotImplementedError
 
     def _hessian(self, x):
-        return ApproximateHessian(self, x)
+        return operators.ApproximateHessian(self, x)
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
@@ -103,25 +103,6 @@ class Functional:
 
     def __pos__(self):
         return self
-
-
-class ApproximateHessian(operators.Operator):
-    def __init__(self, func, x, stepsize=1e-8):
-        assert isinstance(func, Functional)
-        self.base = func.gradient(x)
-        self.func = func
-        self.x = x.copy()
-        self.stepsize = stepsize
-        # linear=True is a necessary lie
-        super().__init__(func.domain, func.domain, linear=True)
-        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
-
-    def _eval(self, x):
-        grad = self.func.gradient(self.x + self.stepsize * x)
-        return grad - self.base
-
-    def _adjoint(self, x):
-        return self._eval(x)
 
 
 class Composed(Functional):
