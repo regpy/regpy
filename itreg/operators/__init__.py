@@ -586,7 +586,7 @@ class Power(NonlinearOperator):
     def _eval(self, x, differentiate=False):
         if differentiate:
             self._factor = self.power * x**(self.power - 1)
-        return x ** self.power
+        return x**self.power
 
     def _derivative(self, x):
         return self._factor * x

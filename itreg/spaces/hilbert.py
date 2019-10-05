@@ -325,7 +325,9 @@ class AbstractSpaceDispatcher(AbstractSpace):
                 continue
             kws = copy(self.args)
             kws.update(kwargs)
-            return impl(discr, **kws)
+            result = impl(discr, **kws)
+            assert isinstance(result, HilbertSpace)
+            return result
         raise NotImplementedError(
             '{} not implemented on {}'.format(self.name, discr)
         )

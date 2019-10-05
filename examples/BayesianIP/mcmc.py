@@ -15,20 +15,17 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-grid = UniformGrid((0, 2 * np.pi, 200))
-op = Volterra(grid)
+op = Volterra(UniformGrid((0, 2 * np.pi, 200)))
 
 # Simulate data
-
-exact_solution = np.sin(grid.coords[0])
+exact_solution = np.sin(op.domain.coords[0])
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.randn()
-data = exact_data + noise
+data = exact_data + 0.03 * op.domain.randn()
 
 # Compute log probability functional as negative Tikhonov functional with Sobolev regularizer
 
-temperature = 1e-3
 regpar = 1e-1
+temperature = 1e-3
 
 prior = regpar * Sobolev(op.domain).norm_functional
 likelihood = L2(op.codomain).norm_functional * (op - data)
@@ -53,19 +50,19 @@ hist = StateHistory(maxlen=1e4)
 #
 #    sampler.run(niter=1e5, callback=hist.add)
 #
-# `run()` is a thin wrapper around iterating over the sampler, handing over each state to the callback.
+# `run()` is a thin wrapper around iterating over the sampler and handing over each state to the callback.
 # However, the StateHistory will only keep `maxlen` states. The following keeps the logprobs completely,
 # to allow plotting convergence.
 
 logprobs = []
 for n, (state, accepted) in zip(range(int(5e4)), sampler):
     hist.add(state, accepted)
+    if accepted:
+        logprobs.append(state.logprob)
     if n > 0 and n % 1000 == 0:
         logging.info(
             'MCMC step {}. Acceptance rate: {}'.format(n, hist.acceptance_rate)
         )
-    if accepted:
-        logprobs.append(state.logprob)
 
 logging.info(
     'MCMC finished. Acceptance rate: {} / {} = {}'.format(hist.accepted, hist.total, hist.acceptance_rate)
