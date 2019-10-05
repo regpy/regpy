@@ -6,7 +6,8 @@ from ngsolve.meshes import MakeQuadMesh
 
 import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.solvers import HilbertSpaceSetting, Landweber
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.landweber import Landweber
 from itreg.spaces import Sobolev
 from itreg.spaces.ngsolve import NgsSpace
 

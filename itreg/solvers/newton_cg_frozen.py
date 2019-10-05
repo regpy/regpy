@@ -6,8 +6,6 @@ import numpy as np
 
 from itreg.solvers import Solver
 
-__all__ = ['Newton_CG']
-
 
 class Newton_CG_Frozen(Solver):
 

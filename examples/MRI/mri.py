@@ -9,7 +9,8 @@ import numpy as np
 import itreg.stoprules as rules
 import itreg.util as util
 from itreg.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
-from itreg.solvers import HilbertSpaceSetting, IrgnmCG
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.irgnm_cg import IrgnmCG
 from itreg.spaces.discrs import UniformGrid
 from itreg.spaces.hilbert import L2
 

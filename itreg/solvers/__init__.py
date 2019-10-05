@@ -121,11 +121,3 @@ class HilbertSpaceSetting:
         self.op = op
         self.Hdomain = Hdomain
         self.Hcodomain = Hcodomain
-
-
-from .landweber import Landweber
-from .cg import TikhonovCG
-from .irgnm_cg import IrgnmCG
-from .newton_cg_frozen import Newton_CG_Frozen
-from .newton_semismooth import NewtonSemiSmooth
-from .irgnm_cg_lanczos import IRGNM_CG_Lanczos

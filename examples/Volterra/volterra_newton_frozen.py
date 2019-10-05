@@ -12,7 +12,8 @@ from itreg.operators.volterra import Volterra
 
 
 from itreg.spaces import L2, UniformGrid
-from itreg.solvers import Newton_CG_Frozen, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.newton_cg_frozen import Newton_CG_Frozen
 import itreg.stoprules as rules
 
 import numpy as np

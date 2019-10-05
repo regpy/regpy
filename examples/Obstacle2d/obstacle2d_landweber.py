@@ -5,7 +5,8 @@ import itreg
 from itreg.operators.obstacle2d import PotentialOp
 
 from itreg.spaces import L2, UniformGrid
-from itreg.solvers import Landweber, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.landweber import Landweber
 
 import itreg.stoprules as rules
 from itreg.operators.obstacle2d import plots

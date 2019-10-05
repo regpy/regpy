@@ -2,7 +2,8 @@ import setpath
 
 from itreg.operators.volterra import Volterra
 from itreg.spaces import L2, UniformGrid
-from itreg.solvers import NewtonSemiSmooth, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.newton_semismooth import NewtonSemiSmooth
 import itreg.stoprules as rules
 
 import numpy as np

@@ -7,7 +7,8 @@ import numpy as np
 
 import itreg.stoprules as rules
 from itreg.operators.volterra import NonlinearVolterra
-from itreg.solvers import HilbertSpaceSetting, Landweber
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.landweber import Landweber
 from itreg.spaces import L2, UniformGrid
 
 logging.basicConfig(

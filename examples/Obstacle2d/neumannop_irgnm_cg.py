@@ -6,7 +6,9 @@ from itreg.operators.obstacle2d import NeumannOp
 from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
 
 from itreg.spaces import L2, UniformGrid
-from itreg.solvers import IRGNM_CG, Landweber, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.landweber import Landweber
+from itreg.solvers.irgnm_cg import IrgnmCG
 
 import itreg.stoprules as rules
 from itreg.operators.obstacle2d import plots

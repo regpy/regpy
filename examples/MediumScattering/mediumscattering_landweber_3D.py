@@ -4,7 +4,7 @@ from itreg.operators.MediumScattering.mediumscattering import MediumScattering
 from itreg.spaces import Sobolev
 from itreg.spaces import L2
 from itreg.grids import Square_3D
-from itreg.solvers import Landweber
+from itreg.solvers.landweber import Landweber
 from itreg.util import test_adjoint
 import itreg.stoprules as rules
 

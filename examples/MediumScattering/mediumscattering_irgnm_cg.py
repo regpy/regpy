@@ -3,7 +3,8 @@ import setpath
 from itreg.operators.mediumscattering import MediumScatteringFixed
 from itreg.operators import CoordinateProjection
 from itreg.spaces import L2, Sobolev, HilbertPullBack
-from itreg.solvers import IrgnmCG, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.irgnm_cg import IrgnmCG
 import itreg.stoprules as rules
 import itreg.util as util
 

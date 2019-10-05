@@ -20,7 +20,8 @@ from itreg.operators.obstacle2d import DirichletOp
 
 from itreg.spaces import L2, HilbertPullBack, UniformGrid
 from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
-from itreg.solvers import Landweber, HilbertSpaceSetting
+from itreg.solvers import HilbertSpaceSetting
+from itreg.solvers.landweber import Landweber
 #from itreg.util import test_adjoint
 import itreg.stoprules as rules
 

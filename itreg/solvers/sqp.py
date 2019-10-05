@@ -3,7 +3,8 @@ import logging
 import numpy as np
 import scipy
 
-from itreg.solvers import Solver, TikhonovCG
+from itreg.solvers import Solver
+from itreg.solvers.cg import TikhonovCG
 
 
 class SQP(Solver):
