@@ -204,3 +204,20 @@ class HilbertNorm(Functional):
 
     def _gradient(self, x):
         return self.hspace.gram(x)
+
+
+class Indicator(Functional):
+    def __init__(self, domain, predicate):
+        super().__init__(domain)
+        self.predicate = predicate
+
+    def _eval(self, x):
+        if self.predicate(x):
+            return 0
+        else:
+            return np.inf
+
+    def _gradient(self, x):
+        # This is of course not correct, but lets us use an Indicator functional to force
+        # rejecting an MCMC proposals without altering the gradient.
+        return self.domain.zeros()
