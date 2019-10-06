@@ -305,13 +305,13 @@ class AbstractSpaceDispatcher(AbstractSpace):
         self.args = {}
 
     def register(self, discr_type, impl=None):
-        if impl is None:
+        if impl is not None:
+            self._registry.setdefault(discr_type, []).append(impl)
+        else:
             def decorator(i):
-                self._registry[discr_type] = i
+                self.register(discr_type, i)
                 return i
             return decorator
-        else:
-            self._registry[discr_type] = impl
 
     def __call__(self, discr=None, **kwargs):
         if discr is None:
@@ -321,14 +321,17 @@ class AbstractSpaceDispatcher(AbstractSpace):
             return clone
         for cls in type(discr).mro():
             try:
-                impl = self._registry[cls]
+                impls = self._registry[cls]
             except KeyError:
                 continue
             kws = copy(self.args)
             kws.update(kwargs)
-            result = impl(discr, **kws)
-            assert isinstance(result, HilbertSpace)
-            return result
+            for impl in impls:
+                result = impl(discr, **kws)
+                if result is NotImplemented:
+                    continue
+                assert isinstance(result, HilbertSpace)
+                return result
         raise NotImplementedError(
             '{} not implemented on {}'.format(self.name, discr)
         )
