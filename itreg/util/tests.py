@@ -37,4 +37,4 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
     h = op.domain.rand()
     normh = np.linalg.norm(h)
     g = deriv(h)
-    return [np.linalg.norm((op(x + step*h) - y) / step - g) / normh for step in steps]
+    return [np.linalg.norm((op(x + step * h) - y) / step - g) / normh for step in steps]

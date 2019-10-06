@@ -1,5 +1,6 @@
 from functools import wraps
 from logging import getLogger
+
 import numpy as np
 from scipy.spatial.qhull import Voronoi
 
@@ -58,7 +59,7 @@ def real2complex(x, axis=-1):
 
 def is_real_dtype(obj):
     if np.isscalar(obj):
-         obj = np.asarray(obj)
+        obj = np.asarray(obj)
     try:
         dtype = obj.dtype
     except AttributeError:
@@ -87,7 +88,7 @@ def is_uniform(x):
 
 def linspace_circle(num, *, start=0, stop=None, endpoint=False):
     if not stop:
-        stop = start + 2*np.pi
+        stop = start + 2 * np.pi
     angles = np.linspace(start, stop, num, endpoint)
     return np.stack((np.cos(angles), np.sin(angles)), axis=1)
 
