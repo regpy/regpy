@@ -10,7 +10,7 @@ from itreg.operators.NGSolveProblems.ReactionBoundary import ReactionBoundary
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 from itreg.spaces.hilbert import L2, SobolevBoundary
-from itreg.spaces.ngsolve import NgsSpace
+from itreg.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,
