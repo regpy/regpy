@@ -1,16 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Jul 14 20:40:58 2019
-
-@author: Björn Müller
-"""
 import numpy as np
 import scipy.linalg as scla
 
-from .functions.bessj0 import bessj0
-from .functions.bessj1 import bessj1
-from .functions.bessy0 import bessy0
-from .functions.bessy1 import bessy1
+from scipy.special import j0, j1, y0, y1
 
 def setup_iop_data(bd,kappa):
     """ computes data needed to set up the boundary integral matrices
@@ -23,12 +14,12 @@ def setup_iop_data(bd,kappa):
     t1=np.matlib.repmat(bd.z[0,:].T,1,dim).reshape(dim**2)-np.matlib.repmat(bd.z[0,:], dim, 1).reshape(dim**2)
     t2=np.matlib.repmat(bd.z[1,:].T,1,dim).reshape(dim**2)-np.matlib.repmat(bd.z[1,:], dim, 1).reshape(dim**2)
     kdist = kappa*np.sqrt(t1**2 + t2**2)
-    bessj0_kdist = bessj0(kdist)
-    bessH0 = bessj0_kdist+complex(0, 1)*bessy0(kdist,bessj0_kdist)
+    bessj0_kdist = j0(kdist)
+    bessH0 = bessj0_kdist + complex(0, 1) * y0(kdist, bessj0_kdist)
     bessH0=bessH0.reshape((dim, dim))
     #bessH0 = besselh(0,1,dat.kdist)
 
-    bessj1_kdist= bessj1(kdist)
+    bessj1_kdist= j1(kdist)
     """bessH1quot=np.zeros(dim**2)
     for i in range(0, dim):
         for j in range(0, dim):
@@ -36,7 +27,7 @@ def setup_iop_data(bd,kappa):
                 bessH1quot[dim*i+j]=0
             else:
                 bessH1quot[dim*i+j] = (bessj1_kdist[dim*i+j]+ complex(0,1)*bessy1(kdist[dim*i+j],bessj1_kdist[dim*i+j]))/kdist[dim*i+j]"""
-    bessH1quot = (bessj1_kdist+ complex(0,1)*bessy1(kdist,bessj1_kdist))/(kdist+1e-5)
+    bessH1quot = (bessj1_kdist + complex(0,1) * y1(kdist, bessj1_kdist)) / (kdist + 1e-5)
     bessH1quot=bessH1quot.reshape((dim, dim))
     #bessH1quot = besselh(1,1,dat.kdist) / dat.kdist
     for j in range(0, dim):
