@@ -433,3 +433,16 @@ class SobolevUniformGrid(HilbertSpace):
             )**self.index
         )
         return ft.adjoint * mul * ft
+
+
+def register_spaces():
+    L2.register(discrs.DirectSum, componentwise(L2))
+    L2.register(discrs.Discretization, L2Generic)
+    L2.register(discrs.UniformGrid, L2UniformGrid)
+
+    Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
+    Sobolev.register(discrs.UniformGrid, SobolevUniformGrid)
+
+    L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
+
+    SobolevBoundary.register(discrs.DirectSum, componentwise(SobolevBoundary))
