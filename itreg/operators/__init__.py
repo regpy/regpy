@@ -40,8 +40,8 @@ class Operator:
     log = util.classlogger
 
     def __init__(self, domain=None, codomain=None, linear=False):
-        assert not domain or isinstance(domain, spaces.Discretization)
-        assert not codomain or isinstance(codomain, spaces.Discretization)
+        assert not domain or isinstance(domain, discrs.Discretization)
+        assert not codomain or isinstance(codomain, discrs.Discretization)
         self.domain, self.codomain = domain, codomain
         self.linear = linear
         self._consts = {'domain', 'codomain'}
@@ -427,7 +427,7 @@ class CoordinateProjection(Operator):
         self.mask = mask
         super().__init__(
             domain=domain,
-            codomain=spaces.Discretization(np.sum(mask), dtype=domain.dtype),
+            codomain=discrs.Discretization(np.sum(mask), dtype=domain.dtype),
             linear=True
         )
 
@@ -503,7 +503,7 @@ class Shifted(Operator):
 
 class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
-        assert isinstance(domain, spaces.UniformGrid)
+        assert isinstance(domain, discrs.UniformGrid)
         frqs = domain.frequencies(centered=centered, axes=axes)
         if centered:
             codomain = discrs.UniformGrid(*frqs, dtype=complex)
@@ -547,8 +547,8 @@ class MatrixMultiplication(Operator):
     def __init__(self, matrix, inverse=None):
         self.matrix = matrix
         super().__init__(
-            domain=spaces.Discretization(matrix.shape[1]),
-            codomain=spaces.Discretization(matrix.shape[0]),
+            domain=discrs.Discretization(matrix.shape[1]),
+            codomain=discrs.Discretization(matrix.shape[0]),
             linear=True
         )
         self._inverse = inverse

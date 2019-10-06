@@ -4,7 +4,8 @@ import itreg
 
 from itreg.operators.obstacle2d import PotentialOp
 
-from itreg.spaces import L2, UniformGrid
+from itreg.spaces.hilbert import L2
+from itreg.spaces.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 

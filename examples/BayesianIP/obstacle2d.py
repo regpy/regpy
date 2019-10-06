@@ -17,8 +17,8 @@ from itreg.operators.obstacle2d.PotentialOp import create_impulsive_noise
 
 #import itreg
 
-from itreg.spaces import L2, HilbertPullBack, UniformGrid
-from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
+from itreg.spaces.hilbert import L2, HilbertPullBack, Sobolev
+from itreg.spaces.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 #from itreg.util import test_adjoint

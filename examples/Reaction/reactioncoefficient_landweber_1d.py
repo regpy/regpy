@@ -8,7 +8,7 @@ import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.Coefficient import Coefficient
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
-from itreg.spaces import L2
+from itreg.spaces.hilbert import L2
 from itreg.ngsolve import NgsSpace
 
 logging.basicConfig(

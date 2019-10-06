@@ -18,8 +18,8 @@ from itreg.operators.obstacle2d import NeumannOp
 
 #import itreg
 
-from itreg.spaces import L2, HilbertPullBack, UniformGrid
-from itreg.spaces import Sobolev, HilbertPullBack, UniformGrid
+from itreg.spaces.hilbert import L2, Sobolev, HilbertPullBack
+from itreg.spaces.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 from itreg.solvers.irgnm_cg import IrgnmCG

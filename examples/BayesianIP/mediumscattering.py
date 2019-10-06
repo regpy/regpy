@@ -11,7 +11,8 @@ import setpath
 
 from itreg.operators.mediumscattering import MediumScatteringFixed
 from itreg.operators import CoordinateProjection
-from itreg.spaces import L2, Sobolev, HilbertPullBack, UniformGrid
+from itreg.spaces.hilbert import L2, Sobolev, HilbertPullBack
+from itreg.spaces.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 #from itreg.util import test_adjoint

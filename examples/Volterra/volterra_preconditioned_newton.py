@@ -1,7 +1,8 @@
 import setpath  # NOQA
 
 from itreg.operators.volterra import Volterra
-from itreg.spaces import L2, UniformGrid
+from itreg.spaces.hilbert import L2
+from itreg.spaces.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.irgnm_cg_lanczos import IRGNM_CG_Lanczos
 from itreg.solvers.irgnm_cg import IRGNM_CG

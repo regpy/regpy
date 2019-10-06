@@ -8,7 +8,8 @@ import numpy as np
 
 from itreg.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from itreg.operators.volterra import Volterra
-from itreg.spaces import L2, Sobolev, UniformGrid
+from itreg.spaces.hilbert import L2, Sobolev
+from itreg.spaces.discrs import UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,

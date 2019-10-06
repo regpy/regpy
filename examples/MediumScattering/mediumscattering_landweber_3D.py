@@ -1,8 +1,7 @@
 import setpath
 
 from itreg.operators.MediumScattering.mediumscattering import MediumScattering
-from itreg.spaces import Sobolev
-from itreg.spaces import L2
+from itreg.spaces.hilbert import L2, Sobolev
 from itreg.grids import Square_3D
 from itreg.solvers.landweber import Landweber
 from itreg.util import test_adjoint
