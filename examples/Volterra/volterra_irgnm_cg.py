@@ -1,8 +1,8 @@
 import setpath
 
 from itreg.operators.volterra import NonlinearVolterra
-from itreg.spaces.hilbert import L2, Sobolev
-from itreg.spaces.discrs import UniformGrid
+from itreg.hilbert import L2, Sobolev
+from itreg.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.irgnm_cg import IrgnmCG
 import itreg.stoprules as rules

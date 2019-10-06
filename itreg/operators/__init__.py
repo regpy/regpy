@@ -4,8 +4,7 @@ from copy import deepcopy
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
-from itreg import functionals, spaces, util
-from itreg.spaces import discrs
+from itreg import functionals, util, discrs
 
 
 class Revocable:

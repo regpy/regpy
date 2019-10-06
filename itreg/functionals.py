@@ -2,8 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from itreg import operators, util
-from itreg.spaces import discrs, hilbert
+from itreg import operators, util, discrs, hilbert
 
 
 class Functional:

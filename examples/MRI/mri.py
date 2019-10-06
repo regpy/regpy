@@ -11,8 +11,8 @@ import itreg.util as util
 from itreg.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.irgnm_cg import IrgnmCG
-from itreg.spaces.discrs import UniformGrid
-from itreg.spaces.hilbert import L2
+from itreg.discrs import UniformGrid
+from itreg.hilbert import L2
 
 logging.basicConfig(
     level=logging.INFO,

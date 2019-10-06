@@ -18,8 +18,8 @@ from itreg.operators.obstacle2d import DirichletOp
 
 #import itreg
 
-from itreg.spaces.hilbert import L2, HilbertPullBack, Sobolev
-from itreg.spaces.discrs import UniformGrid
+from itreg.hilbert import L2, Sobolev
+from itreg.discrs import UniformGrid
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 #from itreg.util import test_adjoint
@@ -28,20 +28,13 @@ import itreg.stoprules as rules
 from itreg.operators.obstacle2d.Dirichlet_Op import create_synthetic_data
 
 
-from itreg.BIP.mcmc import Settings, RandomWalk, fixed_stepsize, adaptive_stepsize, HamiltonianMonteCarlo
-from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
-from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
+from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
 
 from itreg.BIP.MonteCarlo_basics import statemanager
 #from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
-from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
-from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
 from itreg.BIP.prior_distribution.prior_distribution import tikhonov as tikhonov_prior
-from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
 from itreg.BIP.likelihood_distribution.likelihood_distribution import tikhonov as tikhonov_likelihood
-from itreg.BIP import HMCState
-from itreg.BIP import State
 
 import numpy as np
 import logging
@@ -122,10 +115,6 @@ sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 
 bip.run(sampler, statemanager)
 
-
-
-from itreg.BIP.plot_functions import plot_lastiter
-from itreg.BIP.plot_functions import plot_mean
 from itreg.BIP.plot_functions import plot_verlauf
 from itreg.BIP.plot_functions import plot_iter
 

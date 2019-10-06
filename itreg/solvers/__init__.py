@@ -1,5 +1,5 @@
 from itreg.util import classlogger
-from itreg.spaces.hilbert import HilbertSpace
+from itreg.hilbert import HilbertSpace
 
 
 class Solver:

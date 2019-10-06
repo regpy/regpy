@@ -1,7 +1,7 @@
 import numpy as np
 
 from itreg.operators import LinearOperator, NonlinearOperator
-from itreg.spaces import discrs
+from itreg import discrs
 
 
 class Volterra(LinearOperator):

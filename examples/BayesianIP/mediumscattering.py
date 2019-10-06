@@ -11,8 +11,7 @@ import setpath
 
 from itreg.operators.mediumscattering import MediumScatteringFixed
 from itreg.operators import CoordinateProjection
-from itreg.spaces.hilbert import L2, Sobolev, HilbertPullBack
-from itreg.spaces.discrs import UniformGrid
+from itreg.hilbert import L2, Sobolev, HilbertPullBack
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 #from itreg.util import test_adjoint
@@ -20,16 +19,11 @@ import itreg.stoprules as rules
 import itreg.util as util
 
 
-from itreg.BIP.mcmc import Settings, RandomWalk, fixed_stepsize, adaptive_stepsize, HamiltonianMonteCarlo
-from itreg.BIP.prior_distribution.prior_distribution import gaussian as gaussian_prior
-from itreg.BIP.likelihood_distribution.likelihood_distribution import gaussian as gaussian_likelihood
+from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
 
 from itreg.BIP.MonteCarlo_basics import statemanager
 #from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
-from itreg.BIP.MonteCarlo_basics import GaussianApproximation
 
-from itreg.BIP.prior_distribution.prior_distribution import l1 as l1_prior
-from itreg.BIP.likelihood_distribution.likelihood_distribution import l1 as l1_likelihood
 from itreg.BIP.prior_distribution.prior_distribution import tikhonov
 from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
 

@@ -1,8 +1,7 @@
 import pytest
 import numpy as np
 
-from itreg import operators, spaces, util
-from itreg.spaces import discrs
+from itreg import operators, util, discrs
 from itreg.util import tests
 
 
@@ -24,13 +23,13 @@ def do_nonlinear_test(op):
 def test_linear_volterra():
     do_linear_test(
         operators.Volterra(
-            domain=discrs.UniformGrid(np.linspace(0, 2*np.pi, 200))))
+            domain=discrs.UniformGrid(np.linspace(0, 2 * np.pi, 200))))
 
 
 def test_nonlinear_volterra():
     do_nonlinear_test(
         operators.NonlinearVolterra(
-            domain=discrs.UniformGrid(np.linspace(0, 2*np.pi, 200)),
+            domain=discrs.UniformGrid(np.linspace(0, 2 * np.pi, 200)),
             exponent=3))
 
 

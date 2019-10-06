@@ -9,7 +9,7 @@ import itreg.stoprules as rules
 from itreg.operators.NGSolveProblems.EIT import EIT
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
-from itreg.spaces.hilbert import Sobolev, SobolevBoundary
+from itreg.hilbert import Sobolev, SobolevBoundary
 from itreg.ngsolve import NgsSpace
 
 logging.basicConfig(

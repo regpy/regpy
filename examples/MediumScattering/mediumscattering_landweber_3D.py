@@ -1,15 +1,13 @@
 import setpath
 
 from itreg.operators.MediumScattering.mediumscattering import MediumScattering
-from itreg.spaces.hilbert import L2, Sobolev
+from itreg.hilbert import Sobolev
 from itreg.grids import Square_3D
 from itreg.solvers.landweber import Landweber
-from itreg.util import test_adjoint
 import itreg.stoprules as rules
 
 import numpy as np
 import logging
-import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,

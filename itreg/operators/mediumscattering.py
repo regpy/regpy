@@ -5,8 +5,7 @@ import scipy.sparse.linalg as spla
 from scipy.special import hankel1, jv as besselj
 
 from itreg.operators import Operator
-from itreg.spaces import discrs
-from itreg import util
+from itreg import util, discrs
 
 
 class Normalization(enum.Enum):

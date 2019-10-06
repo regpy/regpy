@@ -2,7 +2,7 @@ import numpy as np
 import pynfft
 
 from itreg.operators import Operator
-from itreg.spaces.discrs import Discretization, UniformGrid
+from itreg.discrs import Discretization, UniformGrid
 from itreg.util import memoized_property
 
 
