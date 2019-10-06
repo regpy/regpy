@@ -169,7 +169,7 @@ class DirectSum(HilbertSpace):
         return a discrs.DirectSum instance. Default: discrs.DirectSum.
     """
 
-    def __init__(self, *args, flatten=False, discr=discrs.DirectSum):
+    def __init__(self, *args, flatten=False, discr=None):
         self.summands = []
         self.weights = []
         for arg in args:
@@ -186,6 +186,8 @@ class DirectSum(HilbertSpace):
                 self.summands.append(s)
                 self.weights.append(w)
 
+        if discr is None:
+            discr = discrs.DirectSum
         if isinstance(discr, discrs.Discretization):
             pass
         elif callable(discr):
@@ -392,13 +394,6 @@ def componentwise(dispatcher, cls=DirectSum):
     return factory
 
 
-L2.register(discrs.DirectSum, componentwise(L2))
-Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
-L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
-SobolevBoundary.register(discrs.DirectSum, componentwise(SobolevBoundary))
-
-
-@L2.register(discrs.Discretization)
 class L2Generic(HilbertSpace):
     @property
     def gram(self):
@@ -408,14 +403,12 @@ class L2Generic(HilbertSpace):
         return isinstance(other, type(self)) and self.discr == other.discr
 
 
-@L2.register(discrs.UniformGrid)
 class L2UniformGrid(HilbertSpace):
     @util.memoized_property
     def gram(self):
         return self.discr.volume_elem * self.discr.identity
 
 
-@Sobolev.register(discrs.UniformGrid)
 class SobolevUniformGrid(HilbertSpace):
     def __init__(self, discr, index=1, axes=None):
         super().__init__(discr)
