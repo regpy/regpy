@@ -228,16 +228,15 @@ class AbstractSpace:
 
     The motivation for using this construction is to be able to specify e.g. a
     Thikhonov penalty without requiring knowledge of the concrete discretization
-    the forward operator uses. See the documentation of
-    :class:`~itreg.spaces.hilbert.AbstractSpaceDispatcher` for more details.
+    the forward operator uses. See the documentation of `AbstractSpaceDispatcher`
+    for more details.
 
     Abstract spaces do not have elements, their sole purpose is to pick the
     proper concrete implementation for a given discretization.
 
     This class only implements operator overloads so that scaling and adding
     abstract spaces works analogously to the concrete
-    :class:`~itreg.spaces.hilbert.HilbertSpace` instances, returning
-    :class:`~itreg.spaces.hilbert.AbstractSum` instances.
+    `HilbertSpace` instances, returning `AbstractSum` instances.
     """
 
     def __add__(self, other):

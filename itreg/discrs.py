@@ -1,3 +1,28 @@
+"""The classes in this module implement various discretizations on which the
+`itreg.operators.Operator` implementations are defined. The base class is `Discretization`,
+which represents plain arrays of some shape and dtype.
+
+Discretizations serve the following main purposes:
+
+- Derived classes can contain additional data like grid coordinates, bundling metadata in one
+place instead of having every operator generate linspaces / basis functions / whatever on their
+own.
+
+- Providing methods for generating elements of the proper shape and dtype, like zero arrays,
+random arrays or iterators over a basis.
+
+- Checking whether a given array is an element of the discretization. This is used for
+consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
+elements do not need to carry additional structure. Real arrays are seen as elements of complex
+discretizations.
+
+- Checking whether two discretizations are considered equal. This is used in consistency checks
+e.g. for operator compositions.
+
+All discretizations are considered as real vector spaces, even when the dtype is complex. This
+affects iteration over a basis as well as functions returning the dimension or flattening arrays.
+"""
+
 from copy import copy
 import numpy as np
 from itertools import accumulate
@@ -6,8 +31,16 @@ from itreg import util, operators
 
 
 class Discretization:
-    """Discrete space R^shape or C^shape (viewed as a real space) without any
-    additional structure.
+    """Discrete space R^shape or C^shape (viewed as a real space) without any additional structure.
+
+    Discretizations can be added, producing `DirectSum` instances.
+
+    Parameters
+    ----------
+    shape : int or tuple of ints
+        The shape of the arrays representing elements of this discretization.
+    dtype : data-type, optional
+        The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
     """
 
     log = util.classlogger
@@ -27,20 +60,39 @@ class Discretization:
 
     def zeros(self, dtype=None):
         """Return the zero element of the space.
+
+        Parameters
+        ----------
+        dtype : data-type, optional
+            The dtype of the returned array. Default: the discretization's dtype.
         """
         return np.zeros(self.shape, dtype=dtype or self.dtype)
 
     def ones(self, dtype=None):
         """Return an element of the space initalized to 1.
+
+        Parameters
+        ----------
+        dtype : data-type, optional
+            The dtype of the returned array. Default: the discretization's dtype.
         """
         return np.ones(self.shape, dtype=dtype or self.dtype)
 
     def empty(self, dtype=None):
         """Return an uninitalized element of the space.
+
+        Parameters
+        ----------
+        dtype : data-type, optional
+            The dtype of the returned array. Default: the discretization's dtype.
         """
         return np.empty(self.shape, dtype=dtype or self.dtype)
 
     def iter_basis(self):
+        """Generator iterating over the standard basis of the discretization. For efficiency,
+        the same array is returned in each step, and subsequently modified in-place. If you need
+        the array longer than that, perform a copy.
+        """
         elm = self.zeros()
         for idx in np.ndindex(self.shape):
             elm[idx] = 1
@@ -50,18 +102,20 @@ class Discretization:
                 yield elm
             elm[idx] = 0
 
-    def rand(self, rand=np.random.rand, dtype=None):
+    def rand(self, rand=np.random.random_sample, dtype=None):
         """Return a random element of the space.
 
-        The random generator can be passed as argument. For complex dtypes,
-        real and imaginary parts are generated independently.
+        The random generator can be passed as argument. For complex dtypes, real and imaginary
+        parts are generated independently.
 
         Parameters
         ----------
-        rand : callable
-            The random function to use. Should accept the shape as integer
-            parameters and return a real array of that shape. The functions in
-            :mod:`numpy.random` conform to this.
+        rand : callable, optional
+            The random function to use. Should accept the shape as a tuple and return a real
+            array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
+            this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
+        dtype : data-type, optional
+            The dtype of the returned array. Default: the discretization's dtype.
         """
         dtype = dtype or self.dtype
         r = rand(*self.shape)
@@ -77,14 +131,18 @@ class Discretization:
             return np.asarray(r, dtype=dtype)
 
     def randn(self, dtype=None):
-        return self.rand(np.random.randn, dtype)
+        """Like `rand`, but using a standard normal distribution."""
+        return self.rand(np.random.standard_normal, dtype)
 
     @property
     def is_complex(self):
+        """Boolean indicating whether the dtype is complex"""
         return util.is_complex_dtype(self.dtype)
 
     @property
     def size(self):
+        """The dimension of the discretization as a real vector space. For complex dtypes,
+        this is twice the number of array elements. """
         if self.is_complex:
             return 2 * np.prod(self.shape)
         else:
@@ -92,10 +150,12 @@ class Discretization:
 
     @property
     def ndim(self):
+        """The number of array dimensions, i.e. the length of the shape. """
         return len(self.shape)
 
     @util.memoized_property
     def identity(self):
+        """The `itreg.operators.Identity` operator on this discretization. """
         return operators.Identity(self)
 
     def __contains__(self, x):
@@ -225,7 +285,8 @@ class UniformGrid(Grid):
         frqs = []
         for i, (s, l) in enumerate(zip(self.shape, self.spacing)):
             if i in axes:
-                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed to be periodic.
+                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
+                # to be periodic.
                 if centered:
                     frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
                 else:
@@ -240,24 +301,24 @@ class DirectSum(Discretization):
 
     Elements of the direct sum will always be 1d real arrays.
 
-    Note that constructing DirectSum instances can be done more comfortably
-    simply by adding :class:`~itreg.spaces.discrs.Discretization` instances.
-    However, for generic code, when it's not known whether the summands are
-    themselves direct sums, it's better to avoid the `+` overload due the
-    `flatten` parameter (see below), since otherwise the number of summands is
-    not fixed.
+    Note that constructing DirectSum instances can be done more comfortably simply by adding
+    `Discretization` instances. However, for generic code, when it's not known whether the summands
+    are themselves direct sums, it's better to avoid the `+` overload due the `flatten` parameter
+    (see below), since otherwise the number of summands is not fixed.
+
+    DirectSum instances can be indexed and iterated over, returning / yielding the component
+    discretizations.
 
     Parameters
     ----------
-    *summands : variable number of :class:`~itreg.spaces.discrs.Discretization`
+    *summands : tuple of Discretization instances
         The discretizations to be summed.
     flatten : bool, optional
-        Whether summands that are themselves DirectSums should be merged into
-        this instance. If False, DirectSum is not associative, but the join and
-        split methods behave more predictably. Default: False, but will be set
-        to True when constructing the DirectSum via Discretization.__add__,
-        i.e. when using the `+` operator, in order to make repeated sums like
-        `A + B + C` unambiguous.
+        Whether summands that are themselves `DirectSum`s should be merged into this instance. If
+        False, DirectSum is not associative, but the join and split methods behave more
+        predictably. Default: False, but will be set to True when constructing the DirectSum via
+        Discretization.__add__, i.e. when using the `+` operator, in order to make repeated sums
+        like `A + B + C` unambiguous.
     """
 
     def __init__(self, *summands, flatten=False):
@@ -279,19 +340,18 @@ class DirectSum(Discretization):
         )
 
     def join(self, *xs):
-        """Transform a collection of elements of the summands to an element of
-        the direct sum.
+        """Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
         ----------
-        *xs : variable number of arrays
-            The elements of the summands. The number should match the number of
-            summands, and for all i, xs[i] should be an element of
-            self.summands[i].
+        *xs : tuple of array-like
+            The elements of the summands. The number should match the number of summands,
+            and for all `i`, `xs[i]` should be an element of `self[i]`.
 
         Returns
         -------
-        1d real array representing and element of the direct sum.
+        1d array
+            An element of the direct sum
         """
         assert all(x in s for s, x in zip(self.summands, xs))
         elm = self.empty()
@@ -300,8 +360,11 @@ class DirectSum(Discretization):
         return elm
 
     def split(self, x):
-        """Split an element of the direct sum into a tuple of elements of the
-        summands.
+        """Split an element of the direct sum into a tuple of elements of the summands.
+
+        The result arrays may be views into `x`, if memory layout allows it. For complex
+        summands, a neccessary condition is that the elements' real and imaginary parts are
+        contiguous in memory.
 
         Parameters
         ----------
@@ -310,7 +373,7 @@ class DirectSum(Discretization):
 
         Returns
         -------
-        tuple of discretizations
+        tuple of arrays
             The components of x for the summands.
         """
         assert x in self
