@@ -5,7 +5,10 @@ Created on Mon Jul 15 23:31:36 2019
 @author: Björn Müller
 """
 
-class TransmissionOp(NonlinearOperator):
+from itreg.operators import Operator
+
+
+class TransmissionOp(Operator):
     """ 2 dimensional obstacle scattering problem with Neumann boundary condition
     % see T. Hohage & C. Schormann "A Newton-type method for a transmission
     % problem in inverse scattering Inverse Problems" Inverse Problems:14, 1207-1227, 1998."""
@@ -96,7 +99,8 @@ class TransmissionOp(NonlinearOperator):
             -self.wSL_in*op_S(self.bd,Iop_data_in) \
             -self.wDL_in*op_T(self.bd,Iop_data_in) \
             -self.wSL_in*op_K(self.bd,Iop_data_in).T+(2*self.rho-self.wSL_in)*np.diag(self.bd.zpabs)]
-        self.Iop = Iop\R
+        # TODO dont use matlabs \ operator
+        # self.Iop = Iop\R
 
         #set up the matrix mapping the density to the far field pattern
         self.FF_combined = farfield_matrix_trans(self.bd,self.meas_directions, \
@@ -161,7 +165,7 @@ class TransmissionOp(NonlinearOperator):
             return der
 
 
-        def _adjoint(self,g):
+    def _adjoint(self,g):
 
             #implementing the adjoint operator via the decomposition as described in theorem 15/16.
 
@@ -171,13 +175,13 @@ class TransmissionOp(NonlinearOperator):
             for l in range(0, np.size(self.inc_directions,1)):
 
                 g_complex = (g[2*(l)*N_FF+npa.arange(0, N_FF)]+ 1*complex(0, 1)*  \
-                               g[2*(l)*N_FF+np.arange(N_FF:2*N_FF))
+                               g[2*(l)*N_FF+np.arange(N_FF, 2*N_FF)])
                 #apply adjoint of the far field operator
                 phi = self.FF_combined.T.dot(g_complex)
                 #apply the adjoint of the integral operator
                 rhs   = self.Iop.T.dot(phi)
                 rhs_a = rhs[0:2*self.N_ieq]
-                rhs_b = rhs[(2*self.N_ieq),4*self.N_ieq)]
+                rhs_b = rhs[(2*self.N_ieq),4*self.N_ieq]
                 #apply the adjoint of M
                 res = res +np.real(np.conjugate(self.duednu[:,l]+self.duincdnu[:,l]-\
                                                 self.duidnu[:,l])*rhs_a \
@@ -212,9 +216,10 @@ def create_synthetic_data(self):
                 (self.op.wSL_in-2*self.op.rho-self.op.wSL_ex-2)*np.diag(bd.zpabs)).reshape()
             R  = np.append(-self.op.wDL_in*op_K(bd,Iop_data_in)+(self.op.wDL_in+2)*np.diag(bd.zpabs) \
                 -self.op.wSL_in*op_S(bd,Iop_data_in), \
-                -self.op.wDL_in*op_T(bd,Iop_data_in) ...
+                -self.op.wDL_in*op_T(bd,Iop_data_in) \
                 -self.op.wSL_in*op_K(bd,Iop_data_in).T+(2*self.op.rho-self.op.wSL_in)*np.diag(bd.zpabs)).reshape()
-            Iop = Iop\R  #here the extra factors of 2|z'(x)| cancel
+            # TODO this was probably supposed to be matlab's \ operator, which does not exist in python
+            # Iop = Iop\R  #here the extra factors of 2|z'(x)| cancel
 
             """set up the matrix mapping the density to the far field pattern"""
             FF_combined = farfield_matrix_trans(bd,self.op.meas_directions,self.op.kappa_ex,self.op.wSL_ex,self.op.wDL_ex)

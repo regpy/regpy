@@ -1,10 +1,8 @@
 """IRNM_KL_NEWTON solver """
 
-import logging
 import numpy as np
-import numpy.linalg as LA
 
-from itreg.util.cg_methods import CG
+# from itreg.util.cg_methods import CG
 from itreg.solvers import Solver
 
 
@@ -136,7 +134,7 @@ class IRNM_KL_Newton(Solver):
 #            print(np.mean(self._rhs))
             self._h_n += self._eta
             self._rhs = -self._grad(self._h_n)
-            self._res = LA.norm(self._rhs)
+            self._res = numpy.linalg.norm(self._rhs)
 
             self._n += 1
 #        print(np.mean(self._grad(self._h_n)))

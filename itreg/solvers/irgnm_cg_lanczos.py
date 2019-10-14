@@ -1,14 +1,11 @@
-import logging
 import numpy as np
 import scipy.optimize
 
 from itreg.solvers import Solver
 
-__all__ = ['IRGNM_CG']
-
 
 class IRGNM_CG_Lanczos(Solver):
-    """The IRGNM_CG method.
+    r"""The IRGNM_CG method.
 
     Solves the potentially non-linear, ill-posed equation:
 
@@ -173,7 +170,7 @@ class IRGNM_CG_Lanczos(Solver):
 
 
     def _next(self):
-        """Run a single IRGNM_CG iteration.
+        r"""Run a single IRGNM_CG iteration.
 
         The while loop is the CG method, it has four conditions to stop. The
         first three work with the tolerances given in ``self.cgtol``. The last

@@ -8,7 +8,7 @@ from itreg.solvers.cg import TikhonovCG
 
 
 class SQP(Solver):
-    """ The SQP method.
+    r""" The SQP method.
 
     Solves the inner problem
 

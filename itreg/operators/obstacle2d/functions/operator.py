@@ -10,7 +10,7 @@ import scipy.linalg as scla
 import scipy.sparse as scsp
 
 def op_S(bd,dat):
-    """ set up matrix representing the single layer potential operator
+    r""" set up matrix representing the single layer potential operator
     % (S\phi)(z(t)):=2|z'(t)|\int_0^{2\pi} \Phi(z(t),z(s)) |z'(s)| \phi(s) ds
     % Our implementation is based section 3.5 of the monograph "Inverse Acoustic
     % and Electomagnetic Scattering Theory" by R. Kress and D. Colton.
@@ -31,7 +31,7 @@ def op_S(bd,dat):
 
 
 def op_K(bd,dat):
-    """ set up matrix representing the double layer potential operator
+    r""" set up matrix representing the double layer potential operator
     % (K\phi)(z(t)):=2|z'(t)|\int_0^{2\pi}{\frac{\partial\Phi(z(t),z(s))}{\partial\nu(z(s))}
     % |z'(s)| \phi(z(s)) ds
     % Our implementation is based section 3.5 of the monograph "Inverse Acoustic
@@ -56,7 +56,7 @@ def op_K(bd,dat):
 
 
 def op_T(bd,dat):
-    """set up matrix representing the normal derivative of the double-layer potential
+    r"""set up matrix representing the normal derivative of the double-layer potential
     %(T\phi)(z(t)):=2|z'(t)|\frac{\partial}{\partial\nu(z(t))}
     %\int_0^{2\pi}{\frac{\partial\Phi(z(t),z(s))}{\partial\nu(z(s))}|z'(s)|%\phi(z(s))ds
     %Our implementation is based on the paper "On the numerical solution of a

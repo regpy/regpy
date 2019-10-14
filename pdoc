@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
@@ -22,9 +22,19 @@ class MockImporter(MetaPathFinder, Loader):
             return ModuleSpec(fullname, self, is_package=True)
 
 
-meta_path.append(MockImporter(
-    'foo',
-))
+mods = []
+
+try:
+    import ngsolve
+except ModuleNotFoundError:
+    mods.append('ngsolve')
+
+try:
+    import pynfft
+except ModuleNotFoundError:
+    mods.append('pynfft')
+
+meta_path.append(MockImporter(*mods))
 
 parser.set_defaults(modules=['itreg'])
 for action in parser._actions:

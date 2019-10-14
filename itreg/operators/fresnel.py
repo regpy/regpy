@@ -4,7 +4,7 @@ from itreg.operators import Exponential, FourierTransform, Multiplication, RealP
 
 
 def fresnel_propagator(domain, fresnel_number):
-    """Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
+    r"""Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
     diffraction in the regime of the free-space paraxial Helmholtz equation.
 
     Parameters

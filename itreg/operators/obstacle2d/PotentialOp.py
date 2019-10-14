@@ -177,7 +177,7 @@ def create_impulsive_noise(n,eta,var=None):
             break
 
     if var is None:
-        """Now create random noise on Mc such that noise = \pm 1/\eta with equal
+        r"""Now create random noise on Mc such that noise = \pm 1/\eta with equal
         probability"""
         res = np.zeros((n))
         res[np.asarry(list(Mc)).astype(int)] = (2*np.random.uniform(1,2,len(Mc))-3)/eta
