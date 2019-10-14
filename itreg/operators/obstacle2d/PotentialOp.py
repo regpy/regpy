@@ -1,4 +1,4 @@
-from .. import NonlinearOperator
+from .. import Operator
 
 from .Obstacle2dBaseOp import Obstacle2dBaseOp
 from .Obstacle2dBaseOp import bd_params
@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
 
-class PotentialOp(NonlinearOperator):
+class PotentialOp(Operator):
     """ identification of the shape of a heat source from measurements of the
      heat flux.
      see F. Hettlich & W. Rundell "Iterative methods for the reconstruction

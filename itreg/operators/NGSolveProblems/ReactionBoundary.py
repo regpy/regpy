@@ -1,9 +1,9 @@
 import ngsolve as ngs
 
-from itreg.operators import NonlinearOperator
+from itreg.operators import Operator
 
 
-class ReactionBoundary(NonlinearOperator):
+class ReactionBoundary(Operator):
     def __init__(self, domain, g, codomain=None):
         codomain = codomain or domain
         self.g = g

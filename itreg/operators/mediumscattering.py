@@ -167,7 +167,7 @@ class MediumScatteringBase(Operator):
                                     dtype=complex)
         # noinspection PyArgumentList
         self._lippmann_schwinger = spla.LinearOperator(
-            (self.domain.csize,) * 2,
+            (np.prod(self.domain.shape),) * 2,
             matvec=self._lippmann_schwinger_op,
             rmatvec=self._lippmann_schwinger_adjoint,
             dtype=complex
@@ -175,7 +175,7 @@ class MediumScatteringBase(Operator):
         if self.coarse:
             # noinspection PyArgumentList
             self._lippmann_schwinger_coarse = spla.LinearOperator(
-                (self.coarsegrid.csize,) * 2,
+                (np.prod(self.coarsegrid.shape),) * 2,
                 matvec=self._lippmann_schwinger_coarse_op,
                 rmatvec=self._lippmann_schwinger_coarse_adjoint,
                 dtype=complex

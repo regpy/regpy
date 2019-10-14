@@ -14,13 +14,13 @@ from .functions.farfieldmatrix import farfield_matrix
 from .functions.farfieldmatrix import farfield_matrix_trans
 from .set_up_iopdata import setup_iop_data
 
-from .. import NonlinearOperator
+from .. import Operator
 
 import numpy as np
 import scipy.linalg as scla
 
 
-class NeumannOp(NonlinearOperator):
+class NeumannOp(Operator):
     """ 2 dimensional obstacle scattering problem with Neumann boundary condition
      see T. Hohage "Convergence rates of a regularized Newton method
      in sound-hard inverse scattering" SIAM J. Numer. Anal. 36:125--142, 1999"""

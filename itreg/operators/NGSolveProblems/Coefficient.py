@@ -4,10 +4,10 @@
 
 import ngsolve as ngs
 
-from itreg.operators import NonlinearOperator
+from itreg.operators import Operator
 
 
-class Coefficient(NonlinearOperator):
+class Coefficient(Operator):
     def __init__(self, domain, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None,
                  diffusion=True, reaction=False, dim=1):
         assert dim in (1, 2)

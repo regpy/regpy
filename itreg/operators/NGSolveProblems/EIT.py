@@ -1,10 +1,10 @@
 import ngsolve as ngs
 import numpy as np
 
-from itreg.operators import NonlinearOperator
+from itreg.operators import Operator
 
 
-class EIT(NonlinearOperator):
+class EIT(Operator):
     """Electrical Impedance Tomography Problem
 
     PDE: -div(s grad u)=0       in Omega

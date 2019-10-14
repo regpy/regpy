@@ -12,7 +12,7 @@ class Solver:
     y : array or `None`
         The value at the current iterate. May be needed by stopping rules, but
         callers should handle the case when it is not available.
-    deriv : :class:`~itreg.operators.LinearOperator` or `None`
+    deriv : itreg.operators.Operator, optional
         The derivative of the operator at the current point. Optional.
     """
 

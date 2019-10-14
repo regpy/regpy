@@ -180,19 +180,6 @@ class Operator:
         return self
 
 
-# NonlinearOperator and LinearOperator are added for compatibility, will be
-# removed when possible.
-
-class NonlinearOperator(Operator):
-    def __init__(self, domain=None, codomain=None):
-        super().__init__(domain, codomain)
-
-
-class LinearOperator(Operator):
-    def __init__(self, domain=None, codomain=None):
-        super().__init__(domain, codomain, linear=True)
-
-
 class Adjoint(Operator):
     def __init__(self, op):
         assert op.linear
@@ -584,7 +571,7 @@ class MatrixMultiplication(Operator):
         return util.make_repr(self, self.matrix)
 
 
-class Power(NonlinearOperator):
+class Power(Operator):
     # TODO complex case
     def __init__(self, power, domain):
         self.power = power

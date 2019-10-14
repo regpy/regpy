@@ -12,13 +12,13 @@ from .functions.farfieldmatrix import farfield_matrix
 from .functions.farfieldmatrix import farfield_matrix_trans
 from .set_up_iopdata import setup_iop_data
 
-from .. import NonlinearOperator
+from .. import Operator
 
 import numpy as np
 import scipy.linalg as scla
 
 
-class DirichletOp(NonlinearOperator):
+class DirichletOp(Operator):
 
     def __init__(self, domain, codomain=None, **kwargs):
         codomain = codomain or domain

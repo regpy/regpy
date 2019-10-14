@@ -91,10 +91,6 @@ class Discretization:
             return np.prod(self.shape)
 
     @property
-    def csize(self):
-        return np.prod(self.shape)
-
-    @property
     def ndim(self):
         return len(self.shape)
 
@@ -328,3 +324,6 @@ class DirectSum(Discretization):
 
     def __iter__(self):
         return iter(self.summands)
+
+    def __len__(self):
+        return len(self.summands)

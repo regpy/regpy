@@ -12,7 +12,7 @@ def test_adjoint(op, tolerance=1e-10):
 
     Parameters
     ----------
-    op : :class:`~itreg.operators.LinearOperator`
+    op : itreg.operators.Operator
         The operator.
     tolerance : float, optional
         The maximum allowed difference between the inner products. Defaults to

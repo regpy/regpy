@@ -14,13 +14,13 @@ class HilbertSpace:
 
     @property
     def gram(self):
-        """The gram matrix as a LinearOperator
+        """The gram matrix as an `iterg.operators.Operator` instance
         """
         raise NotImplementedError
 
     @property
     def gram_inv(self):
-        """The inverse of the gram matrix as a LinearOperator
+        """The inverse of the gram matrix as an `iterg.operators.Operator` instance
         """
         return self.gram.inverse
 
