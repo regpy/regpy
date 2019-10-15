@@ -3,12 +3,12 @@ import ngsolve as ngs
 import numpy as np
 from netgen.geom2d import SplineGeometry
 
-import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.ReactionBoundary import ReactionBoundary
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-from itreg.hilbert import L2, SobolevBoundary
-from itreg.ngsolve import NgsSpace
+import regpy.stoprules as rules
+from regpy.operators.NGSolveProblems.ReactionBoundary import ReactionBoundary
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+from regpy.hilbert import L2, SobolevBoundary
+from regpy.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,

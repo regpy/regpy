@@ -1,8 +1,8 @@
-from itreg.operators.volterra import Volterra
-from itreg.hilbert import L2
-from itreg.grids import Square_1D
-from itreg.solvers import IRNM_KL_Newton
-import itreg.stoprules as rules
+from regpy.operators.volterra import Volterra
+from regpy.hilbert import L2
+from regpy.grids import Square_1D
+from regpy.solvers import IRNM_KL_Newton
+import regpy.stoprules as rules
 
 import numpy as np
 import logging

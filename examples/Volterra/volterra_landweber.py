@@ -3,12 +3,12 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-import itreg.stoprules as rules
-from itreg.operators.volterra import Volterra
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-from itreg.hilbert import L2
-from itreg.discrs import UniformGrid
+import regpy.stoprules as rules
+from regpy.operators.volterra import Volterra
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+from regpy.hilbert import L2
+from regpy.discrs import UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,

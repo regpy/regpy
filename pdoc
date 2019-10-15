@@ -36,7 +36,7 @@ except ModuleNotFoundError:
 
 meta_path.append(MockImporter(*mods))
 
-parser.set_defaults(modules=['itreg'])
+parser.set_defaults(modules=['regpy'])
 for action in parser._actions:
     if action.dest == 'modules':
         action.required = False

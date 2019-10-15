@@ -2,12 +2,12 @@ import logging
 import ngsolve as ngs
 from ngsolve.meshes import MakeQuadMesh
 
-import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-from itreg.hilbert import L2, Sobolev
-from itreg.ngsolve import NgsSpace
+import regpy.stoprules as rules
+from regpy.operators.NGSolveProblems.Coefficient import Coefficient
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+from regpy.hilbert import L2, Sobolev
+from regpy.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,

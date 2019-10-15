@@ -1,9 +1,9 @@
-from itreg.operators.volterra import Volterra
-from itreg.hilbert import L2, Sobolev
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.irgnm_cg import IrgnmCG
-import itreg.stoprules as rules
+from regpy.operators.volterra import Volterra
+from regpy.hilbert import L2, Sobolev
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.irgnm_cg import IrgnmCG
+import regpy.stoprules as rules
 
 import numpy as np
 import logging

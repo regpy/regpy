@@ -1,20 +1,20 @@
-from itreg.operators.mediumscattering import MediumScatteringFixed
-from itreg.operators import CoordinateProjection
-from itreg.hilbert import L2, Sobolev, HilbertPullBack
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-#from itreg.util import test_adjoint
-import itreg.stoprules as rules
-import itreg.util as util
+from regpy.operators.mediumscattering import MediumScatteringFixed
+from regpy.operators import CoordinateProjection
+from regpy.hilbert import L2, Sobolev, HilbertPullBack
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+#from regpy.util import test_adjoint
+import regpy.stoprules as rules
+import regpy.util as util
 
 
-from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
+from regpy.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
 
-from itreg.BIP.MonteCarlo_basics import statemanager
-#from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+from regpy.BIP.MonteCarlo_basics import statemanager
+#from regpy.BIP.MonteCarlo_basics import AdaptiveRandomWalk
 
-from itreg.BIP.prior_distribution.prior_distribution import tikhonov
-from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
+from regpy.BIP.prior_distribution.prior_distribution import tikhonov
+from regpy.BIP.likelihood_distribution.likelihood_distribution import unity
 
 import numpy as np
 import logging
@@ -113,10 +113,10 @@ solution=embedding(bip.first_state)
 plt.imshow(np.abs(solution))
 plt.show()
 
-#from itreg.BIP.plot_functions import plot_lastiter
-#from itreg.BIP.plot_functions import plot_mean
-from itreg.BIP.plot_functions import plot_verlauf
-#from itreg.BIP.plot_functions import plot_iter
+#from regpy.BIP.plot_functions import plot_lastiter
+#from regpy.BIP.plot_functions import plot_mean
+from regpy.BIP.plot_functions import plot_verlauf
+#from regpy.BIP.plot_functions import plot_iter
 
 #plot_lastiter(bip, exact_solution, exact_data, data)
 #plot_mean(statemanager, exact_solution, n_iter=1e4)

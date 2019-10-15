@@ -1,11 +1,11 @@
-from itreg.operators.volterra import Volterra
+from regpy.operators.volterra import Volterra
 
 
-from itreg.hilbert import L2
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.newton_cg_frozen import Newton_CG_Frozen
-import itreg.stoprules as rules
+from regpy.hilbert import L2
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.newton_cg_frozen import Newton_CG_Frozen
+import regpy.stoprules as rules
 
 import numpy as np
 import logging

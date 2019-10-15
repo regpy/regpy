@@ -1,11 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from itreg.operators.mediumscattering import MediumScatteringOneToMany, Normalization
-from itreg.solvers.iterative_born import IterativeBorn
+from regpy.operators.mediumscattering import MediumScatteringOneToMany, Normalization
+from regpy.solvers.iterative_born import IterativeBorn
 
-from itreg.util import potentials
-from itreg.stoprules import CountIterations
+from regpy.util import potentials
+from regpy.stoprules import CountIterations
 
 import logging
 

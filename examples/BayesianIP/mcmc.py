@@ -4,10 +4,10 @@ from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 
-from itreg.mcmc import RandomWalk, StateHistory, adaptive_stepsize
-from itreg.operators.volterra import Volterra
-from itreg.hilbert import L2, Sobolev
-from itreg.discrs import UniformGrid
+from regpy.mcmc import RandomWalk, StateHistory, adaptive_stepsize
+from regpy.operators.volterra import Volterra
+from regpy.hilbert import L2, Sobolev
+from regpy.discrs import UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,

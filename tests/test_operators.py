@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
 
-from itreg import operators, util, discrs
-from itreg.util import tests
+from regpy import operators, util, discrs
+from regpy.util import tests
 
 
 def do_linear_test(op):

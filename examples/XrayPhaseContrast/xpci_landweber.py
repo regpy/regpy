@@ -1,9 +1,9 @@
-from itreg.operators.fresnel import xray_phase_contrast
-from itreg.hilbert import L2
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-import itreg.stoprules as rules
+from regpy.operators.fresnel import xray_phase_contrast
+from regpy.hilbert import L2
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+import regpy.stoprules as rules
 
 import numpy as np
 from scipy.misc import ascent

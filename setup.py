@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name='itreg',
+    name='regpy',
     version='0.1',
     packages=setuptools.find_packages(),
     install_requires=[

@@ -1,31 +1,31 @@
-import itreg
+import regpy
 
-from itreg.operators.obstacle2d import DirichletOp
-
-
+from regpy.operators.obstacle2d import DirichletOp
 
 
 
 
-#import itreg
-
-from itreg.hilbert import L2, Sobolev
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-#from itreg.util import test_adjoint
-import itreg.stoprules as rules
-
-from itreg.operators.obstacle2d.Dirichlet_Op import create_synthetic_data
 
 
-from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
+#import regpy
 
-from itreg.BIP.MonteCarlo_basics import statemanager
-#from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+from regpy.hilbert import L2, Sobolev
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+#from regpy.util import test_adjoint
+import regpy.stoprules as rules
 
-from itreg.BIP.prior_distribution.prior_distribution import tikhonov as tikhonov_prior
-from itreg.BIP.likelihood_distribution.likelihood_distribution import tikhonov as tikhonov_likelihood
+from regpy.operators.obstacle2d.Dirichlet_Op import create_synthetic_data
+
+
+from regpy.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
+
+from regpy.BIP.MonteCarlo_basics import statemanager
+#from regpy.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+
+from regpy.BIP.prior_distribution.prior_distribution import tikhonov as tikhonov_prior
+from regpy.BIP.likelihood_distribution.likelihood_distribution import tikhonov as tikhonov_likelihood
 
 import numpy as np
 import logging
@@ -106,8 +106,8 @@ sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 
 bip.run(sampler, statemanager)
 
-from itreg.BIP.plot_functions import plot_verlauf
-from itreg.BIP.plot_functions import plot_iter
+from regpy.BIP.plot_functions import plot_verlauf
+from regpy.BIP.plot_functions import plot_iter
 
 #plot_lastiter(bip, exact_solution, exact_data, data)
 #plot_mean(statemanager, exact_solution, n_iter=15000)

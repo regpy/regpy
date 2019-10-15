@@ -1,10 +1,10 @@
-from itreg.operators.mediumscattering import MediumScatteringFixed
-from itreg.operators import CoordinateProjection
-from itreg.hilbert import L2
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-import itreg.stoprules as rules
-import itreg.util as util
+from regpy.operators.mediumscattering import MediumScatteringFixed
+from regpy.operators import CoordinateProjection
+from regpy.hilbert import L2
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+import regpy.stoprules as rules
+import regpy.util as util
 
 import numpy as np
 import logging

@@ -1,33 +1,33 @@
-import itreg
+import regpy
 
-from itreg.operators.obstacle2d import NeumannOp
-
-
+from regpy.operators.obstacle2d import NeumannOp
 
 
 
 
-#import itreg
 
-from itreg.hilbert import L2, Sobolev
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.irgnm_cg import IrgnmCG
-#from itreg.util import test_adjoint
-import itreg.stoprules as rules
+
+#import regpy
+
+from regpy.hilbert import L2, Sobolev
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.irgnm_cg import IrgnmCG
+#from regpy.util import test_adjoint
+import regpy.stoprules as rules
 
 # TODO: What the hell?
-from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
+from regpy.operators.obstacle2d.NeumannOp import create_synthetic_data
 
 
-from itreg.BIP.mcmc import Settings, adaptive_stepsize
+from regpy.BIP.mcmc import Settings, adaptive_stepsize
 
-from itreg.BIP.MonteCarlo_basics import statemanager
-#from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
-from itreg.BIP.MonteCarlo_basics import GaussianApproximation
+from regpy.BIP.MonteCarlo_basics import statemanager
+#from regpy.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+from regpy.BIP.MonteCarlo_basics import GaussianApproximation
 
-from itreg.BIP.prior_distribution.prior_distribution import tikhonov
-from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
+from regpy.BIP.prior_distribution.prior_distribution import tikhonov
+from regpy.BIP.likelihood_distribution.likelihood_distribution import unity
 
 import numpy as np
 import logging
@@ -108,8 +108,8 @@ sampler=GaussianApproximation(bip)
 
 bip.run(sampler, statemanager)
 
-from itreg.BIP.plot_functions import plot_verlauf
-from itreg.BIP.plot_functions import plot_iter
+from regpy.BIP.plot_functions import plot_verlauf
+from regpy.BIP.plot_functions import plot_iter
 
 #plot_lastiter(bip, exact_solution, exact_data, data)
 #plot_mean(statemanager, exact_solution, n_iter=15000)

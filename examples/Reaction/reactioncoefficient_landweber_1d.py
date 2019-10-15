@@ -4,12 +4,12 @@ import numpy as np
 import ngsolve as ngs
 from ngsolve.meshes import Make1DMesh
 
-import itreg.stoprules as rules
-from itreg.operators.NGSolveProblems.Coefficient import Coefficient
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-from itreg.hilbert import L2
-from itreg.ngsolve import NgsSpace
+import regpy.stoprules as rules
+from regpy.operators.NGSolveProblems.Coefficient import Coefficient
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+from regpy.hilbert import L2
+from regpy.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,

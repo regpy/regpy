@@ -1,10 +1,10 @@
-from itreg.operators.mediumscattering import MediumScatteringFixed
-from itreg.operators import CoordinateProjection
-from itreg.hilbert import L2, Sobolev, HilbertPullBack
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.irgnm_cg import IrgnmCG
-import itreg.stoprules as rules
-import itreg.util as util
+from regpy.operators.mediumscattering import MediumScatteringFixed
+from regpy.operators import CoordinateProjection
+from regpy.hilbert import L2, Sobolev, HilbertPullBack
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.irgnm_cg import IrgnmCG
+import regpy.stoprules as rules
+import regpy.util as util
 
 import numpy as np
 import logging

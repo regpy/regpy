@@ -4,13 +4,13 @@ import matplotlib.colorbar as cbar
 import matplotlib.pyplot as plt
 import numpy as np
 
-import itreg.stoprules as rules
-import itreg.util as util
-from itreg.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.irgnm_cg import IrgnmCG
-from itreg.discrs import UniformGrid
-from itreg.hilbert import L2
+import regpy.stoprules as rules
+import regpy.util as util
+from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.irgnm_cg import IrgnmCG
+from regpy.discrs import UniformGrid
+from regpy.hilbert import L2
 
 logging.basicConfig(
     level=logging.INFO,

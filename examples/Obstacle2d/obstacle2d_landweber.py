@@ -1,14 +1,14 @@
-import itreg
+import regpy
 
-from itreg.operators.obstacle2d import PotentialOp
+from regpy.operators.obstacle2d import PotentialOp
 
-from itreg.hilbert import L2
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
+from regpy.hilbert import L2
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
 
-import itreg.stoprules as rules
-from itreg.operators.obstacle2d import plots
+import regpy.stoprules as rules
+from regpy.operators.obstacle2d import plots
 
 import numpy as np
 import logging

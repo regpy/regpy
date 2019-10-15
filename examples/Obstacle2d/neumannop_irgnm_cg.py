@@ -1,14 +1,14 @@
-import itreg
+import regpy
 
-from itreg.operators.obstacle2d import NeumannOp
-from itreg.operators.obstacle2d.NeumannOp import create_synthetic_data
+from regpy.operators.obstacle2d import NeumannOp
+from regpy.operators.obstacle2d.NeumannOp import create_synthetic_data
 
-from itreg.hilbert import L2
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
+from regpy.hilbert import L2
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
 
-import itreg.stoprules as rules
-from itreg.operators.obstacle2d import plots
+import regpy.stoprules as rules
+from regpy.operators.obstacle2d import plots
 
 import numpy as np
 import logging

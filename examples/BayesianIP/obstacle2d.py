@@ -1,26 +1,26 @@
-import itreg
+import regpy
 
-from itreg.operators.obstacle2d import PotentialOp
+from regpy.operators.obstacle2d import PotentialOp
 
-from itreg.operators.obstacle2d.PotentialOp import create_synthetic_data
+from regpy.operators.obstacle2d.PotentialOp import create_synthetic_data
 
-#import itreg
+#import regpy
 
-from itreg.hilbert import L2, Sobolev
-from itreg.discrs import UniformGrid
-from itreg.solvers import HilbertSpaceSetting
-from itreg.solvers.landweber import Landweber
-#from itreg.util import test_adjoint
-import itreg.stoprules as rules
+from regpy.hilbert import L2, Sobolev
+from regpy.discrs import UniformGrid
+from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers.landweber import Landweber
+#from regpy.util import test_adjoint
+import regpy.stoprules as rules
 
 
-from itreg.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
+from regpy.BIP.mcmc import Settings, RandomWalk, adaptive_stepsize
 
-from itreg.BIP.MonteCarlo_basics import statemanager
-#from itreg.BIP.MonteCarlo_basics import AdaptiveRandomWalk
+from regpy.BIP.MonteCarlo_basics import statemanager
+#from regpy.BIP.MonteCarlo_basics import AdaptiveRandomWalk
 
-from itreg.BIP.prior_distribution.prior_distribution import tikhonov
-from itreg.BIP.likelihood_distribution.likelihood_distribution import unity
+from regpy.BIP.prior_distribution.prior_distribution import tikhonov
+from regpy.BIP.likelihood_distribution.likelihood_distribution import unity
 
 import numpy as np
 import logging
@@ -99,8 +99,8 @@ sampler=RandomWalk(bip, statemanager, stepsize_rule=stepsize_rule)
 
 bip.run(sampler, statemanager)
 
-from itreg.BIP.plot_functions import plot_verlauf
-from itreg.BIP.plot_functions import plot_iter
+from regpy.BIP.plot_functions import plot_verlauf
+from regpy.BIP.plot_functions import plot_iter
 
 #plot_lastiter(bip, exact_solution, exact_data, data)
 #plot_mean(statemanager, exact_solution, n_iter=15000)

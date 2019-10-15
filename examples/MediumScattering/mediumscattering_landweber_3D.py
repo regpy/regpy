@@ -1,8 +1,8 @@
-from itreg.operators.MediumScattering.mediumscattering import MediumScattering
-from itreg.hilbert import Sobolev
-from itreg.grids import Square_3D
-from itreg.solvers.landweber import Landweber
-import itreg.stoprules as rules
+from regpy.operators.MediumScattering.mediumscattering import MediumScattering
+from regpy.hilbert import Sobolev
+from regpy.grids import Square_3D
+from regpy.solvers.landweber import Landweber
+import regpy.stoprules as rules
 
 import numpy as np
 import logging
