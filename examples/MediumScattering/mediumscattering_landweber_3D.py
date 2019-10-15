@@ -1,5 +1,3 @@
-import setpath
-
 from itreg.operators.MediumScattering.mediumscattering import MediumScattering
 from itreg.hilbert import Sobolev
 from itreg.grids import Square_3D

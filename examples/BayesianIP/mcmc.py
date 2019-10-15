@@ -1,5 +1,3 @@
-import setpath
-
 import logging
 from functools import partial
 

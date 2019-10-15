@@ -1,5 +1,3 @@
-import setpath
-
 from itreg.operators.volterra import Volterra
 from itreg.hilbert import L2
 from itreg.discrs import UniformGrid

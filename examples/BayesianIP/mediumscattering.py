@@ -1,14 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jul  1 18:27:29 2019
-
-@author: Björn Müller
-"""
-
-import setpath
-
-#import itreg
-
 from itreg.operators.mediumscattering import MediumScatteringFixed
 from itreg.operators import CoordinateProjection
 from itreg.hilbert import L2, Sobolev, HilbertPullBack

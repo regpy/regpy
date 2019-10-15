@@ -1,13 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
-"""Example:
-    Solver: Newton_CG
-    Operator: Volterra
-"""
-
-import setpath  # NOQA
-
 from itreg.operators.volterra import Volterra
 
 

@@ -1,5 +1,3 @@
-import setpath
-
 import logging
 import ngsolve as ngs
 import numpy as np

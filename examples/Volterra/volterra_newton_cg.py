@@ -1,10 +1,3 @@
-"""Example:
-    Solver: Newton_CG
-    Operator: Volterra
-"""
-
-import setpath  # NOQA
-
 from itreg.operators.volterra import Volterra
 from itreg.hilbert import L2
 from itreg.grids import Square_1D

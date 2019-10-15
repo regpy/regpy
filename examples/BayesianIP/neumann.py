@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 22 23:59:00 2019
-
-@author: Björn Müller
-"""
-
-import setpath
-
 import itreg
 
 from itreg.operators.obstacle2d import NeumannOp

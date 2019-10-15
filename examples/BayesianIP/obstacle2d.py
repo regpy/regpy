@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
-import setpath
-
 import itreg
 
 from itreg.operators.obstacle2d import PotentialOp

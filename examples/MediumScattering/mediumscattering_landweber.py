@@ -1,5 +1,3 @@
-import setpath
-
 from itreg.operators.mediumscattering import MediumScatteringFixed
 from itreg.operators import CoordinateProjection
 from itreg.hilbert import L2

@@ -1,5 +1,3 @@
-import setpath
-
 import logging
 
 import matplotlib.pyplot as plt

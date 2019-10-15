@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Jul 20 10:35:55 2019
-
-@author: Björn Müller
-"""
-
-import setpath
-
 import itreg
 
 from itreg.operators.obstacle2d import DirichletOp
