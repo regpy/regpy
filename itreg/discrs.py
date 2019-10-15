@@ -118,14 +118,14 @@ class Discretization:
             The dtype of the returned array. Default: the discretization's dtype.
         """
         dtype = dtype or self.dtype
-        r = rand(*self.shape)
+        r = rand(self.shape)
         if not np.can_cast(r.dtype, dtype):
             raise ValueError(
                 'random generator {} can not produce values of dtype {}'.format(rand, dtype))
         if util.is_complex_dtype(dtype) and not util.is_complex_dtype(r.dtype):
             c = np.empty(self.shape, dtype=dtype)
             c.real = r
-            c.imag = rand(*self.shape)
+            c.imag = rand(self.shape)
             return c
         else:
             return np.asarray(r, dtype=dtype)

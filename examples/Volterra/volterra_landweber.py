@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import itreg.stoprules as rules
-from itreg.operators.volterra import NonlinearVolterra
+from itreg.operators.volterra import Volterra
 from itreg.solvers import HilbertSpaceSetting
 from itreg.solvers.landweber import Landweber
 from itreg.hilbert import L2
@@ -17,7 +17,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
 grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
-op = NonlinearVolterra(grid, exponent=3)
+op = Volterra(grid, exponent=3)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)

@@ -28,7 +28,7 @@ def test_linear_volterra():
 
 def test_nonlinear_volterra():
     do_nonlinear_test(
-        operators.NonlinearVolterra(
+        operators.Volterra(
             domain=discrs.UniformGrid(np.linspace(0, 2 * np.pi, 200)),
             exponent=3))
 
