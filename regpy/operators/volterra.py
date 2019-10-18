@@ -5,8 +5,7 @@ from regpy.discrs import UniformGrid
 
 
 class Volterra(Operator):
-    r"""The \(x\) discrete Volterra operator. The Volterra operator \(V_n\) is
-    defined as
+    r"""The discrete Volterra operator. The Volterra operator \(V_n\) is defined as
 
     \[ (V_n f)(x) = \int_0^x f(t)^n dt. \]
 
@@ -18,7 +17,7 @@ class Volterra(Operator):
 
     Parameters
     ----------
-    domain : regpy.spaces.discrs.UniformGrid
+    domain : regpy.discrs.UniformGrid
         The domain on which the operator is defined. Must be one-dimensional.
     exponent : float
         The exponent \(n\). Default is 1.
@@ -28,6 +27,7 @@ class Volterra(Operator):
         assert isinstance(domain, UniformGrid)
         assert domain.ndim == 1
         self.exponent = exponent
+        """The exponent."""
         super().__init__(domain, domain, linear=(exponent == 1))
 
     def _eval(self, x, differentiate=False):

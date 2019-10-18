@@ -8,11 +8,6 @@ from regpy.operators import Operator
 from regpy import util, discrs
 
 
-class Normalization(enum.Enum):
-    Helmholtz = enum.auto()
-    Schroedinger = enum.auto()
-
-
 class MediumScatteringBase(Operator):
     """Acoustic scattering problem for inhomogeneous medium.
 
@@ -21,10 +16,9 @@ class MediumScatteringBase(Operator):
 
     This is an abstract base class that computes the total field, but delegates
     farfield computation to subclasses, to allow implementing different
-    measurement geometries.
-
-    Child classes need to set the `codomain` attribute to the appropriate
-    farfield space.
+    measurement geometries. Child classes need to set the `codomain` attribute
+    to the appropriate farfield space, and overwrite the `_compute_farfield` and
+    `_compute_farfield_adoint` methods.
 
     Parameters
     ----------
@@ -57,6 +51,8 @@ class MediumScatteringBase(Operator):
         Arguments passed to [`scipy.sparse.linalg.gmres`][1] for solving the
         Lippmann Schwinger equation. Default values are `restart=10`,
         `tol=1e-14`, `maxiter=100` and `atol='legacy'`.
+    normalization : 'helmholtz' or 'schroedinger'
+        How to normalize the kernel and farfield matrix.
 
     [1]: https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.gmres.html
 
@@ -73,7 +69,7 @@ class MediumScatteringBase(Operator):
     def __init__(self, gridshape, radius, wave_number, inc_directions,
                  support=None, coarseshape=None, coarseiterations=3,
                  gmres_args=None,
-                 normalization=Normalization.Helmholtz):
+                 normalization='helmholtz'):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
         grid = discrs.UniformGrid(
@@ -107,31 +103,36 @@ class MediumScatteringBase(Operator):
 
         self.inc_matrix = np.exp(1j * wave_number * (inc_directions @ grid.coords[:, support]))
 
-        assert isinstance(normalization, Normalization)
+        assert normalization in {'helmholtz', 'schroedinger'}
         self.normalization = normalization
+        """The normalization"""
 
         compute_kernel = None  # Silence linter
         if grid.ndim == 2:
-            if self.normalization == Normalization.Helmholtz:
+            if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_2d
                 # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
-                self.normalization_factor = grid.volume_elem * self.wave_number**2
+                normalization_factor = grid.volume_elem * self.wave_number**2
 
-            elif self.normalization == Normalization.Schroedinger:
+            elif self.normalization == 'schroedinger':
                 def compute_kernel(*args):
                     return _compute_kernel_2d(*args) / wave_number**2
-                self.normalization_factor = grid.volume_elem / (2*np.pi)**2
+                normalization_factor = grid.volume_elem / (2*np.pi)**2
 
         elif grid.ndim == 3:
-            if self.normalization == Normalization.Helmholtz:
+            if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_3d
                 # TODO The sign appears to be wrong
-                self.normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)
+                normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)
 
-            elif self.normalization == Normalization.Schroedinger:
+            elif self.normalization == 'schroedinger':
                 raise NotImplementedError('Schrödinger-Equation not implemented in 3d')
 
+        self.normalization_factor = normalization_factor
+        """The normalization factor of the farfield matrix, to be used by subclasses."""
+
         self.kernel = compute_kernel(2*wave_number*radius, grid.shape)
+        """The Lippmann-Schwinger kernel in Fourier space."""
 
         if coarseshape:
             if not all(c < s for c, s in zip(coarseshape, gridshape)):
@@ -378,9 +379,8 @@ class MediumScatteringFixed(MediumScatteringBase):
     Parameters
     ----------
     farfield_directions : array-like
-        Array of measurement directions of the farfield, shape `(n, 2)` or
-        `(n, 3)` depending on the problem dimension. All directions must be
-        normalized.
+        Array of measurement directions of the farfield, shape `(n, 2)` or `(n, 3)` depending on
+        the problem dimension. All directions must be normalized.
     **kwargs
         All other (keyword-only) arguments are passed to the base class, which
         see.
@@ -394,9 +394,11 @@ class MediumScatteringFixed(MediumScatteringBase):
         assert farfield_directions.shape[1] == self.domain.ndim
         assert np.allclose(np.linalg.norm(farfield_directions, axis=-1), 1)
         self.farfield_directions = farfield_directions
+        """The farfield directions."""
         self.farfield_matrix = self.normalization_factor * np.exp(
             -1j * self.wave_number * (farfield_directions @ self.domain.coords[:, self.support])
         )
+        """The farfield matrix."""
 
         self.codomain = discrs.UniformGrid(
             axisdata=(self.farfield_directions, self.inc_directions),
@@ -411,15 +413,13 @@ class MediumScatteringFixed(MediumScatteringBase):
 
 
 class MediumScatteringOneToMany(MediumScatteringBase):
-    """Acoustic medium scattering with measurement directions depending on incident
-    direction.
+    """Acoustic medium scattering with measurement directions depending on incident direction.
 
     Parameters
     ----------
     farfield_directions : array-like
-        Array of measurement directions of the farfield, shape `(n_inc, n, 2)`,
-        where `n_inc` is the number of incident directions. All directions must
-        be normalized.
+        Array of measurement directions of the farfield, shape `(n_inc, n, 2)`, where `n_inc` is
+        the number of incident directions. All directions must be normalized.
     **kwargs
         All other (keyword-only) arguments are passed to the base class, which
         see.
@@ -435,9 +435,11 @@ class MediumScatteringOneToMany(MediumScatteringBase):
         assert farfield_directions.shape[2] == self.domain.ndim
         assert np.allclose(np.linalg.norm(farfield_directions, axis=-1), 1)
         self.farfield_directions = farfield_directions
+        """The farfield directions."""
         self.farfield_matrix = self.normalization_factor * np.exp(
             -1j * self.wave_number * (farfield_directions @ self.domain.coords[:, self.support])
         )
+        """The farfield matrix."""
 
         ninc, nfarfield = farfield_directions.shape[:2]
         self.codomain = discrs.Discretization(
@@ -453,8 +455,24 @@ class MediumScatteringOneToMany(MediumScatteringBase):
 
     @staticmethod
     def generate_directions(ninc, nfarfield, angle=np.pi):
-        """Computes the measuring directions for the experiment around the
-        incident direction.
+        """Computes the measuring directions for the experiment around the incident direction in 2d.
+
+        Parameters
+        ----------
+        ninc : int
+            Number of equispaced incident directions between 0 and `2pi`.
+        nfarfield : int
+            Number of measured farfield directions per incident directions.
+        angle : float
+            The maximum angle between incident and farfield direction. For each incident direction
+            `phi`, `nfarfield` measurement directions between `phi - angle` and `phi + angle` will
+            be generated.
+
+        Returns
+        -------
+        tuple of arrays
+            The array of incident directions (shape `(ninc, 2)`) and the array of farfield
+            directions (shape `(ninc, nfarfield, 2)`).
         """
 
         phi = np.linspace(0, 2*np.pi, ninc, endpoint=False)

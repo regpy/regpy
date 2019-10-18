@@ -1,4 +1,6 @@
-"""The classes in this module implement various discretizations on which the
+"""Discretizations on which operators are defined.
+
+The classes in this module implement various discretizations on which the
 `regpy.operators.Operator` implementations are defined. The base class is `Discretization`,
 which represents plain arrays of some shape and dtype.
 
@@ -13,8 +15,8 @@ random arrays or iterators over a basis.
 
 - Checking whether a given array is an element of the discretization. This is used for
 consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
-elements do not need to carry additional structure. Real arrays are seen as elements of complex
-discretizations.
+elements do not need to carry additional structure. Real arrays are considered as elements of
+complex discretizations.
 
 - Checking whether two discretizations are considered equal. This is used in consistency checks
 e.g. for operator compositions.
@@ -31,7 +33,8 @@ from regpy import util, operators
 
 
 class Discretization:
-    """Discrete space R^shape or C^shape (viewed as a real space) without any additional structure.
+    r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
+    space) without any additional structure.
 
     Discretizations can be added, producing `DirectSum` instances.
 
@@ -53,10 +56,13 @@ class Discretization:
         # or other fancy dtypes
         assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
+        """The discretization's dtype"""
         try:
-            self.shape = tuple(shape)
+            shape = tuple(shape)
         except TypeError:
-            self.shape = (shape,)
+            shape = (shape,)
+        self.shape = shape
+        """The discretization's shape"""
 
     def zeros(self, dtype=None):
         """Return the zero element of the space.
@@ -169,6 +175,19 @@ class Discretization:
             return False
 
     def flatten(self, x):
+        """Transform the array `x`, an element of the discretization, into a 1d real array. Inverse
+        to `fromflat`.
+
+        Parameters
+        ----------
+        x : array-like
+            The array to transform.
+
+        Returns
+        -------
+        array
+            The flattened array. If memory layout allows, it will be a view into `x`.
+        """
         x = np.asarray(x)
         assert self.shape == x.shape
         if self.is_complex:
@@ -183,6 +202,18 @@ class Discretization:
         return x.ravel()
 
     def fromflat(self, x):
+        """Transform a real 1d array into an element of the discretization. Inverse to `flatten`.
+
+        Parameters
+        ----------
+        x : array-like
+            The flat array to transform
+
+        Returns
+        -------
+        array
+            The reshaped array. If memory layout allows, this will be a view into `x`.
+        """
         x = np.asarray(x)
         assert util.is_real_dtype(x.dtype)
         if self.is_complex:
@@ -191,11 +222,27 @@ class Discretization:
             return x.reshape(self.shape)
 
     def complex_space(self):
+        """Compute the corresponding complex discretization.
+
+        Returns
+        -------
+        Discretization
+            The complex space corresponding to this discretization as a shallow copy with modified
+            dtype.
+        """
         other = copy(self)
         other.dtype = np.result_type(1j, self.dtype)
         return other
 
     def real_space(self):
+        """Compute the corresponding real discretization.
+
+        Returns
+        -------
+        Discretization
+            The real space corresponding to this discretization as a shallow copy with modified
+            dtype.
+        """
         other = copy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
         return other
@@ -225,6 +272,28 @@ class Discretization:
 
 
 class Grid(Discretization):
+    """A discretization representing a recangular grid.
+
+    Parameters
+    ----------
+    *coords
+         Axis specifications, one for each dimension. Each can be either
+
+         - an integer `n`, making the axis range from `0` to `n-1`,
+         - a tuple that is passed as arguments to `numpy.linspace`, or
+         - an array-like containing the axis coordinates.
+    axisdata : tuple of arrays, optional
+         If the axes represent indices into some auxiliary arrays, these can be passed via this
+         parameter. If given, there must be one array for each dimension, the size of the first axis
+         of which must match the respective dimension's length. Besides that, no further structure
+         is imposed or assumed, this parameter exists solely to keep everything related to the
+         discretization in one place.
+
+         If `axisdata` is given, the `coords` can be omitted.
+    dtype : data-type, optional
+        The dtype of the discretization.
+    """
+
     def __init__(self, *coords, axisdata=None, dtype=float):
         views = []
         if axisdata and not coords:
@@ -245,6 +314,8 @@ class Grid(Discretization):
             v.flags.writeable = False
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
+        """The coordinate arrays, broadcast to the shape of the grid. The shape will be
+        `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
         # TODO ensure coords are ascending?
 
@@ -259,16 +330,26 @@ class Grid(Discretization):
             axes.append(axis)
             extents.append(abs(axis[-1] - axis[0]))
         self.axes = np.asarray(axes)
+        """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
+        """The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if axisdata is not None:
-            self.axisdata = tuple(axisdata)
-            assert len(self.axisdata) == len(self.coords)
-            for i in range(len(self.axisdata)):
-                assert self.shape[i] == self.axisdata[i].shape[0]
+            axisdata = tuple(axisdata)
+            assert len(axisdata) == len(coords)
+            for i in range(len(axisdata)):
+                assert self.shape[i] == axisdata[i].shape[0]
+        self.axisdata = axisdata
+        """The axisdata, if given."""
 
 
 class UniformGrid(Grid):
+    """A discretization representing a rectangular grid with equidistant axes.
+
+    All arguments are passed to the `Grid` constructor, but an error will be produced if any axis
+    is not uniform.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         spacing = []
@@ -276,9 +357,29 @@ class UniformGrid(Grid):
             assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
         self.spacing = np.asarray(spacing)
+        """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
+        """The volumen element, i.e. `prod(spacing)`"""
 
-    def frequencies(self, centered=True, axes=None):
+    def frequencies(self, centered=False, axes=None):
+        """Compute the grid of frequencies for an FFT on this grid instance.
+
+        Parameters
+        ----------
+        centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGrid` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Default: `False`.
+        axes : tuple of ints, optional
+            Axes for which to compute the frequencies. All other axes will be returned as-is.
+            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
+            axes will be computed. Default: `None`.
+        Returns
+        -------
+        array
+        """
         if axes is None:
             axes = range(self.ndim)
         axes = set(axes)

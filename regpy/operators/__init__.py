@@ -1,3 +1,13 @@
+"""Forward operators
+
+This module provides the basis for defining forward operators, and implements some simple
+auxiliary operators. Actual forward problems are implemented in submodules.
+
+The base class is `Operator`.
+"""
+
+# TODO Document all instance variables, so they appear in pdoc's output.
+
 from collections import defaultdict
 from copy import deepcopy
 
@@ -36,6 +46,86 @@ class _Revocable:
 
 
 class Operator:
+    """Base class for forward operators. Both linear and non-linear operators are handled. Operator
+    instances are callable, calling them with an array argument evaluates the operator.
+
+    Subclasses implementing non-linear operators should implement the following methods:
+
+        _eval(self, x, differentiate=False)
+        _derivative(self, x)
+        _adjoint(self, y)
+
+    These methods are not intended for external use, but should be invoked indirectly via calling
+    the operator or using the `Operator.linearize` method. They must not modify their argument, and
+    should return arrays that can be freely modified by the caller, i.e. should not share data
+    with anything. Usually, this means they should allocate a new array for the return value.
+
+    Implementations can assume the arguments to be part of the specified discretizations, and return
+    values will be checked for consistency.
+
+    The mechanism for derivatives and their adjoints is this: whenever a derivative is to be
+    computed, `_eval` will be called first with `differentiate=True`, and should produce the
+    operator's value and perform any precomputation needed for evaluating the derivative. Any
+    subsequent invocation of `_derivative` and `_adjoint` should evaluate the derivative or its
+    adjoint at the same point `_eval` was called. The reasoning is this
+
+    - In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
+      operator around some point, so the value is almost always needed.
+    - Many expensive computations, e.g. assembling of finite element matrices, need to be carried
+      out only once per linearization point, and can be shared between the operator and the
+      derivative, so they should only be computed once (in `_eval`).
+
+    For callers, this means that since the derivative shares data with the operator, it can't be
+    reliably called after the operator has been evaluated somewhere else, since shared data may
+    have been overwritten. The `Operator`, `Derivative` and `Adjoint` classes ensure that an
+    exception is raised when an invalidated derivative is called.
+
+    If derivatives at multiple points are needed, a copy of the operator should be performed using
+    `copy.deepcopy`. For efficiency, subclasses can add the names of attributes that are considered
+    as constants and should not be deepcopied to `self._consts` (a `set`). By default, `domain` and
+    `codomain` will not be copied, since `regpy.discrs.Discretization` instances should never
+    change in-place.
+
+    If no derivative at some point is needed, `_eval` will be called with `differentiate=False`,
+    allowing it to save on precomputations. It does not need to ensure that data shared with some
+    derivative remains intact; all derivative instances will be invalidated regardless.
+
+    Linear operators should implement
+
+        _eval(self, x)
+        _adjoint(self, y)
+
+    Here the logic is simpler, and no sharing of precomputations is needed (unless it applies to the
+    operator as a whole, in which case it should be performed in `__init__`).
+
+    Note that the adjoint should be computed with respect to the standard real inner product on the
+    domain / codomain, given as
+
+        np.real(np.vdot(x, y))
+
+    Other inner product on discretizations are independent of both discretizations and operators,
+    and are implemented in the `regpy.hilbert` module.
+
+    Basic operator algebra is supported:
+
+        a * op1 + b * op2    # linear combination
+        op1 * op2            # composition
+        arr * op             # composition with array multiplication in codomain
+        op * arr             # composition with array multiplication in domain
+        op + arr             # operator shifted in codomain
+        op + scalar          # dto.
+
+    Parameters
+    ----------
+    domain, codomain : regpy.discrs.Discretization or None
+        The discretization on which the operator's arguements / values are defined. Using `None`
+        suppresses some consistency checks and is intended for ease of development, but should be
+        not be used except as a temporary measure. Some constructions like direct sums will fail
+        if the discretizations are unknown.
+    linear : bool, optional
+        Whether the operator is linear. Default: `False`.
+    """
+
     log = util.classlogger
 
     def __init__(self, domain=None, codomain=None, linear=False):
@@ -43,12 +133,12 @@ class Operator:
         assert not codomain or isinstance(codomain, discrs.Discretization)
         self.domain = domain
         """The discretization on which the operator is defined. Either a
-        subclass of `regpy.spaces.discrs.Discretization` or `None`"""
+        subclass of `regpy.discrs.Discretization` or `None`."""
         self.codomain = codomain
         """The discretization on which the operator values are defined. Either
-        a subclass of `regpy.spaces.discrs.Discretization` or `None`"""
+        a subclass of `regpy.discrs.Discretization` or `None`."""
         self.linear = linear
-        """Boolean indicating whether the operator is linear"""
+        """Boolean indicating whether the operator is linear."""
         self._consts = {'domain', 'codomain'}
 
     def __deepcopy__(self, memo):
@@ -64,6 +154,12 @@ class Operator:
 
     @property
     def attrs(self):
+        """The set of all instance attributes. Useful for updating the `_consts` attribute via
+
+            self._consts.update(self.attrs)
+
+        to declare every current attribute as constant for deep copies.
+        """
         return set(self.__dict__)
 
     def __call__(self, x):
@@ -77,6 +173,18 @@ class Operator:
         return y
 
     def linearize(self, x):
+        """Linearize the operator around some point.
+
+        Parameters
+        ----------
+        x : array-like
+            The point around which to linearize.
+
+        Returns
+        -------
+        array, Derivative
+            The value and the derivative at `x`, the latter as an `Operator` instance.
+        """
         if self.linear:
             return self(x), self
         else:
@@ -89,8 +197,8 @@ class Operator:
 
     @util.memoized_property
     def adjoint(self):
-        """For linear operators, this is the adjoint as a linear
-        `regpy.operators.Operator` instance
+        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        instance. Will only be computed on demand and saved for subsequent invocations.
         """
         return Adjoint(self)
 
@@ -118,9 +226,26 @@ class Operator:
 
     @property
     def inverse(self):
+        """A property containing the  inverse as an `Operator` instance. In most cases this will
+        just raise a `NotImplementedError`, but subclasses may override this if possible and useful.
+        To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
+        useful."""
         raise NotImplementedError
 
     def norm(self, iterations=10):
+        """For linear operators, estimate the operator norm with respect to the standard norm on its
+        domain / codomain using the power method.
+
+        Parameters
+        ----------
+        iterations : int, optional
+            The number of iterations. Default: 10.
+
+        Returns
+        -------
+        float
+            An estimate for the operator norm.
+        """
         assert self.linear
         h = self.domain.rand()
         norm = np.sqrt(np.real(np.vdot(h, h)))
@@ -181,9 +306,15 @@ class Operator:
 
 
 class Adjoint(Operator):
+    """An proxy class wrapping a linear operator. Calling it will evaluate the operator's
+    adjoint. This class should not be instantiated directly, but rather through the
+    `Operator.adjoint` property of a linear operator.
+    """
+
     def __init__(self, op):
         assert op.linear
         self.op = op
+        """The underlying operator."""
         super().__init__(op.codomain, op.domain, linear=True)
 
     def _eval(self, x):
@@ -205,12 +336,18 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
+    """An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
+    derivative. This class should not be instantiated directly, but rather through the
+    `Operator.linearize` method of a non-linear operator.
+    """
+
     def __init__(self, op):
         if not isinstance(op, _Revocable):
             # Wrap plain operators in a _Revocable that will never be revoked to
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
+        """The underlying operator."""
         _op = op.get()
         super().__init__(_op.domain, _op.codomain, linear=True)
 
@@ -225,6 +362,10 @@ class Derivative(Operator):
 
 
 class LinearCombination(Operator):
+    """A linear combination of operators. This class should normally not be instantiated directly,
+    but rather through adding and multipliying `Operator` instances and scalars.
+    """
+
     def __init__(self, *args):
         coeff_for_op = defaultdict(lambda: 0)
         for arg in args:
@@ -244,7 +385,9 @@ class LinearCombination(Operator):
             else:
                 coeff_for_op[op] += coeff
         self.coeffs = []
+        """List of coefficients of the combined operators."""
         self.ops = []
+        """List of combined operators."""
         for op, coeff in coeff_for_op.items():
             self.coeffs.append(coeff)
             self.ops.append(op)
@@ -314,10 +457,15 @@ class LinearCombination(Operator):
 
 
 class Composition(Operator):
+    """A composition of operators. This class should normally not be instantiated directly,
+    but rather through multipliying `Operator` instances.
+    """
+
     def __init__(self, *ops):
         for f, g in zip(ops, ops[1:]):
             assert not f.domain or not g.codomain or f.domain == g.codomain
         self.ops = []
+        """The list of composed operators."""
         for op in ops:
             assert isinstance(op, Operator)
             if isinstance(op, Composition):
@@ -365,6 +513,15 @@ class Composition(Operator):
 
 
 class Identity(Operator):
+    """The identity operator on a discretization. Performs a copy to prevent callers from
+    accidentally modifying the argument when modifying the return value.
+
+    Parameters
+    ----------
+    domain : regpy.discrs.Discretization
+        The underlying discretization.
+    """
+
     def __init__(self, domain):
         super().__init__(domain, domain, linear=True)
 
@@ -383,6 +540,16 @@ class Identity(Operator):
 
 
 class CholeskyInverse(Operator):
+    """Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
+    it needs to assemble a full matrix, this should not be used for high-dimensional operators.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator to invert.
+    matrix : array-like, optional
+        If a matrix of `op` is already available, it can be passed in to avoid recomputation.
+    """
     def __init__(self, op, matrix=None):
         assert op.linear
         assert op.domain and op.domain == op.codomain
@@ -392,6 +559,7 @@ class CholeskyInverse(Operator):
             for j, elm in enumerate(domain.iter_basis()):
                 matrix[j, :] = domain.flatten(op(elm))
         self.factorization = cho_factor(matrix)
+        """The Cholesky factorization for use with `scipy.linalg.cho_solve`"""
         super().__init__(
             domain=domain,
             codomain=domain,
@@ -408,6 +576,7 @@ class CholeskyInverse(Operator):
 
     @property
     def inverse(self):
+        """Returns the original operator."""
         return self.op
 
     def __repr__(self):
@@ -415,6 +584,16 @@ class CholeskyInverse(Operator):
 
 
 class CoordinateProjection(Operator):
+    """A projection operator onto a subset of the domain. The codomain is a one-dimensional
+    `regpy.discrs.Discretization` of the same dtype as the domain.
+
+    Parameters
+    ----------
+    domain : regpy.discrs.Discretization
+        The underlying discretization
+    mask : array-like
+        Boolean mask of the subset onto which to project.
+    """
     def __init__(self, domain, mask):
         mask = np.broadcast_to(mask, domain.shape)
         assert mask.dtype == bool
@@ -438,6 +617,15 @@ class CoordinateProjection(Operator):
 
 
 class Multiplication(Operator):
+    """A multiplication operator by a constant factor.
+
+    Parameters
+    ----------
+    domain : regpy.discrs.Discretization
+        The underlying discretization
+    factor : array-like
+        The factor by which to multiply. Can be anything that can be broadcast to `domain.shape`.
+    """
     def __init__(self, domain, factor):
         factor = np.asarray(factor)
         # Check that factor can broadcast against domain elements without
@@ -472,6 +660,15 @@ class Multiplication(Operator):
 
 
 class Shifted(Operator):
+    """Shift an operator by a constant offset in the codomain.
+
+    Parameters
+    ----------
+    op : Operator
+        The underlying operator.
+    offset : array-like
+        The offset by which to shift. Can be anything that can be broadcast to `op.codomain.shape`.
+    """
     def __init__(self, op, offset):
         assert offset in op.codomain
         super().__init__(op.domain, op.codomain)
@@ -533,8 +730,17 @@ class FourierTransform(Operator):
 
 
 class MatrixMultiplication(Operator):
-    """
-    Implements a matrix multiplication with a given matrix.
+    """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
+    `regpy.discrs.Discretization` instances.
+
+    Parameters
+    ----------
+    matrix : array-like
+        The matrix.
+    inverse : Operator, array-like, 'inv', 'cholesky' or None
+        How to implement the inverse operator. If available, this should be given as `Operator`
+        or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'`, a
+        `CholeskyInverse` instance will be returned.
     """
 
     # TODO complex case
@@ -572,6 +778,16 @@ class MatrixMultiplication(Operator):
 
 
 class Power(Operator):
+    r"""The operator \(x \mapsto x^n\).
+
+    Parameters
+    ----------
+    power : float
+        The exponent.
+    domain : regpy.discrs.Discretization
+        The underlying discretization
+    """
+
     # TODO complex case
     def __init__(self, power, domain):
         self.power = power
@@ -603,14 +819,15 @@ class DirectSum(Operator):
 
     Parameters
     ----------
-    *ops : Operator tuple
+    *ops : tuple of Operator
     flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
     domain, codomain : discrs.Discretization or callable, optional
-        Either the underlying discretizations or factory functions that will be
-        called with all summands' discretizations passed as arguments and should
-        return a discrs.DirectSum instance. Default: discrs.DirectSum.
+        Either the underlying discretization or a factory function that will be called with all
+        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        The resulting discretization should be iterable, yielding the individual summands.
+        Default: discrs.DirectSum.
     """
 
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
@@ -623,7 +840,7 @@ class DirectSum(Operator):
                 self.ops.append(op)
 
         if domain is None:
-            domain = discrs.Discretization
+            domain = discrs.DirectSum
         if isinstance(domain, discrs.Discretization):
             pass
         elif callable(domain):
@@ -633,7 +850,7 @@ class DirectSum(Operator):
         assert all(op.domain == d for op, d in zip(ops, domain))
 
         if codomain is None:
-            codomain = discrs.Discretization
+            codomain = discrs.DirectSum
         if isinstance(codomain, discrs.Discretization):
             pass
         elif callable(codomain):
@@ -671,6 +888,7 @@ class DirectSum(Operator):
 
     @util.memoized_property
     def inverse(self):
+        """The component-wise inverse as a `DirectSum`, if all of them exist."""
         return DirectSum(
             *(op.inverse for op in self.ops),
             domain=self.codomain,
@@ -688,22 +906,12 @@ class DirectSum(Operator):
 
 
 class Exponential(Operator):
-    """The pointwise exponential operator exp.
+    r"""The pointwise exponential operator.
 
     Parameters
     ----------
-    domain : :class:`~regpy.spaces.Space`
-        The domain on which the operator is defined.
-
-    Notes
-    -----
-    The pointwise exponential operator :math:`exp` is defined as
-
-    .. math:: exp(f)(x) = exp(f(x)).
-
-    Its discrete form is
-
-    .. math:: exp(x)_i = exp(x_i).
+    domain : regpy.discrs.Discretization
+        The underlying discretization.
     """
 
     def __init__(self, domain):
@@ -723,13 +931,13 @@ class Exponential(Operator):
 
 
 class RealPart(Operator):
-    """The pointwise real part operator
+    """The pointwise real part operator.
 
     Parameters
     ----------
-    domain : regpy.discrs.GenericDiscretization
-        The domain on which the operator is defined. The codomain will be the
-        corresponding real space.
+    domain : regpy.discrs.Discretization
+        The underlying discreization. The codomain will be the corresponding
+        `regpy.discrs.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -747,12 +955,13 @@ class RealPart(Operator):
 
 
 class ImaginaryPart(Operator):
-    """The pointwise imaginary part operator
+    """The pointwise imaginary part operator.
 
     Parameters
     ----------
-    domain : :class:`~regpy.spaces.Space`
-        The domain on which the operator is defined.
+    domain : regpy.discrs.Discretization
+        The underlying discreization. The codomain will be the corresponding
+        `regpy.discrs.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -775,19 +984,9 @@ class SquaredModulus(Operator):
 
     Parameters
     ----------
-    domain : :class:`~regpy.spaces.Space`
-        The domain on which the operator is defined.
-
-    Notes
-    -----
-    The pointwise exponential operator :math:`exp` is defined as
-
-    .. math:: (|f|^2)(x) = |f(x)|^2 = Re(f(x))^2 + Im(f(x))^2
-
-    where :math:`Re` and :math:`Im` denote the real- and imaginary parts.
-    Its discrete form is
-
-    .. math:: (|x|^2)_i = Re(x_i)^2 + Im(x_i)^2.
+    domain : regpy.discrs.Discretization
+        The underlying discreization. The codomain will be the corresponding
+        `regpy.discrs.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -810,6 +1009,15 @@ class SquaredModulus(Operator):
 
 
 class Zero(Operator):
+    """The constant zero operator.
+
+    Parameters
+    ----------
+    domain : regpy.discrs.Discretization
+        The underlying discretization.
+    domain : regpy.discrs.Discretization, optional
+        The discretization if the codomain. Defaults to `domain`.
+    """
     def __init__(self, domain, codomain=None):
         if codomain is None:
             codomain = domain
@@ -823,9 +1031,22 @@ class Zero(Operator):
 
 
 class ApproximateHessian(Operator):
+    """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
+    using finite differences of its `regpy.functionals.Functional.gradient`.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        The functional.
+    x : array-like
+        The point at which to evaluate the Hessian.
+    stepsize : float, optional
+        The stepsize for the finite difference approximation.
+    """
     def __init__(self, func, x, stepsize=1e-8):
         assert isinstance(func, functionals.Functional)
         self.base = func.gradient(x)
+        """The gradient at `x`"""
         self.func = func
         self.x = x.copy()
         self.stepsize = stepsize

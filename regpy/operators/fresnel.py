@@ -9,22 +9,28 @@ def fresnel_propagator(domain, fresnel_number):
 
     Parameters
     ----------
-    domain : :class:`~regpy.spaces.Space`
+    domain : regpy.discrs.Discretization
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
         that corresponds to length 1 in domain.coords. Governs the strength of the
         diffractive effects modeled by the Fresnel-propagator
 
+    Returns
+    -------
+    regpy.operators.Operator
+
     Notes
     -----
-    The Fresnel-propagator :math:`D_F` is a unitary Fourier-multiplier defined by
+    The Fresnel-propagator \(D_F\) is a unitary Fourier-multiplier defined by
 
-    .. math:: D_F(f) = FT^{-1}(m_F \\cdot FT(f))
+    \[
+        D_F(f) = FT^{-1}(m_F \cdot FT(f))
+    \]
 
-    where :math:`FT(f)(\\nu) = \int_{\\mathbb R^2}` \exp(-i\\xi \\cdot x) f(x) Dx`
-    denotes the Fourier transform and the factor :math:`m_F` is defined by
-    :math:`m_F(\\xi) := \\exp(-i \\pi |\\nu|^2 / F)` with the Fresnel-number :math:`F`.
+    where \(FT(f)(\nu) = \int_{\mathbb{R}^2} \exp(-i\xi \cdot x) f(x) Dx\)
+    denotes the Fourier transform and the factor \(m_F\) is defined by
+    \(m_F(\xi) := \exp(-i \pi |\nu|^2 / F)\) with the Fresnel-number \(F\).
     """
 
     assert domain.ndim == 2
@@ -41,7 +47,7 @@ def fresnel_propagator(domain, fresnel_number):
 
 
 def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
-    """Forward operator that models X-ray phase contrast imaging, also known as in-line
+    r"""Forward operator that models X-ray phase contrast imaging, also known as in-line
     holography or X-ray propagation imaging. Maps a given 2D-image phi, that describes
     the induced phase shifts in the X-ray wave-field directly behind the imaged sample,
     onto the intensities I of the near-field diffraction pattern (also known as hologram)
@@ -50,7 +56,7 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
 
     Parameters
     ----------
-    domain : :class:`~regpy.spaces.Space`
+    domain : regpy.discrs.Discretization
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -58,20 +64,22 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
         diffractive effects.
     absorption_fraction : float
         Assumed constant ratio of X-ray absorption compared to refractive phase shifts,
-        i.e. the value of the constant :math:`c_{\\beta/\\delta}` described in Notes.
+        i.e. the value of the constant \(c_{\beta/\delta}\) described in Notes.
         The default value 0 corresponds to assuming a completely non-absorbing sample,
         which is often a justified assumption for objects composed only of light chemical
         elements.
 
     Notes
     -----
-    The forward operator :math:`F` of X-ray phase contrast imaging is defined by
+    The forward operator \(F\) of X-ray phase contrast imaging is defined by
 
-    .. math:: F(phi) = |D_F(exp(-(i + c_{\\beta/\\delta}) \\cdot  phi))|^2 = I
+    \[
+        F(\phi) = |D_F(exp(-(i + c_{\beta/\delta}) \cdot  phi))|^2 = I
+    \]
 
-    where :math:`D_F` is the Fresnel-propagator and :math:`c_{\\beta/\\delta}` is
+    where \(D_F\) is the Fresnel-propagator and \(c_{\beta/\delta}\) is
     a constant that parametrizes the magnitude of X-ray absorption versus X-ray
-    refraction for the imaged sample (:math:`c_{\\beta/\\delta} = \\beta/\\delta`).
+    refraction for the imaged sample ( \(c_{\beta/\delta} = \beta/\delta\) ).
     """
 
     assert domain.ndim == 2

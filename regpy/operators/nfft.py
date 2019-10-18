@@ -53,10 +53,10 @@ class NFFT(Operator):
     @memoized_property
     def inverse(self):
         # TODO add solver-based inverse
-        return ApproInverseNFFT(self)
+        return ApproxInverseNFFT(self)
 
 
-class ApproInverseNFFT(Operator):
+class ApproxInverseNFFT(Operator):
     def __init__(self, op):
         self.op = op
         super().__init__(

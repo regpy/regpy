@@ -1,6 +1,7 @@
 import logging
 import ngsolve as ngs
 from ngsolve.meshes import MakeQuadMesh
+import numpy as np
 
 import regpy.stoprules as rules
 from regpy.operators.NGSolveProblems.Coefficient import Coefficient

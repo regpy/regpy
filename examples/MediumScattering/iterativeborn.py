@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from regpy.operators.mediumscattering import MediumScatteringOneToMany, Normalization
+from regpy.operators.mediumscattering import MediumScatteringOneToMany
 from regpy.solvers.iterative_born import IterativeBorn
 
 from regpy.util import potentials
@@ -26,7 +26,7 @@ op = MediumScatteringOneToMany(
     wave_number=10,
     inc_directions=inc_directions,
     farfield_directions=farfield_directions,
-    normalization=Normalization.Schroedinger
+    normalization='schroedinger'
 )
 
 noiselevel = 0.00

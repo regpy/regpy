@@ -97,9 +97,9 @@ class HilbertPullBack(HilbertSpace):
 
     Parameters
     ----------
-    space : `~regpy.spaces.hilbert.HilbertSpace`
+    space : regpy.hilbert.HilbertSpace
         Hilbert space on the codomain of `op`.
-    op : `~regpy.operators.Operator`
+    op : regpy.operators.Operator
         The operator along which to pull back `space`
     inverse : one of None, 'conjugate' or 'cholesky'
         How to compute the inverse gram matrix.
@@ -144,13 +144,12 @@ class HilbertPullBack(HilbertSpace):
 class DirectSum(HilbertSpace):
     """The direct sum of an arbirtary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying discretization will be the
-    :class:`regpy.spaces.discrs.DirectSum` of the underlying discretizations of the
-    summands.
+    `regpy.discrs.DirectSum` of the underlying discretizations of the summands.
 
     Note that constructing DirectSum instances can be done more comfortably
-    simply by adding :class:`~regpy.spaces.hilbert.HilbertSpace` instances and
+    simply by adding `regpy.hilbert.HilbertSpace` instances and
     by multiplying them with scalars, but see the documentation for
-    :class:`regpy.spaces.discrs.DirectSum` for the `flatten` parameter.
+    `regpy.discrs.DirectSum` for the `flatten` parameter.
 
     Parameters
     ----------
@@ -275,7 +274,7 @@ class AbstractSpaceDispatcher(AbstractSpace):
 
     - AbstractSpaces are callable. Calling them on a discretization and
       arbitrary optional keyword arguments finds the corresponding concrete
-      :class:`~regpy.spaces.hilbert.HilbertSpace` among all registered
+      `regpy.hilbert.HilbertSpace` among all registered
       implementations. If there are implementations for multiple base classes
       of the discretization type, the most specific one will be chosen. The
       chosen implementation will then be called with the discretization and the
@@ -340,13 +339,13 @@ class AbstractSum(AbstractSpace):
     """Weighted sum of abstract Hilbert spaces.
 
     The constructor arguments work like for concrete
-    :class:`~regpy.spaces.hilbert.HilbertSpace`s, which see. Adding and scaling
-    :class:`~regpy.spaces.hilbert.AbstractSpace` instances is again a more
+    `regpy.hilbert.HilbertSpace`s, which see. Adding and scaling
+    `regpy.hilbert.AbstractSpace` instances is again a more
     convenient way to construct AbstractSums.
 
     This abstract space can only be called on a
-    :class:`regpy.spaces.discrs.DirectSum`, in which case it constructs the
-    corresponding :class:`regpy.spaces.hilbert.DirectSum` obtained by matching
+    `regpy.discrs.DirectSum`, in which case it constructs the
+    corresponding `regpy.hilbert.DirectSum` obtained by matching
     up summands, e.g.
 
         (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
