@@ -5,7 +5,7 @@ import ngsolve as ngs
 from ngsolve.meshes import Make1DMesh
 
 import regpy.stoprules as rules
-from regpy.operators.NGSolveProblems.Coefficient import Coefficient
+from regpy.ngsolve.operators import Coefficient
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2
