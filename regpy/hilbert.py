@@ -1,3 +1,6 @@
+"""Concrete and abstract Hilbert spaces on discretizations.
+"""
+
 from copy import copy
 
 import numpy as np
@@ -6,6 +9,26 @@ from regpy import util, operators, functionals, discrs
 
 
 class HilbertSpace:
+    # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
+    #   gram property
+
+    """Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
+    should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
+    `regpy.util.memoized_property` can be used.
+
+    Hilbert spaces can be added, producing `DirectSum` instances on the direct sums of the
+    underlying disretizations (see `regpy.discrs.DirectSum` in the `regpy.discrs` module).
+
+    They can also be multiplied by scalars to scale the norm. Note that the Gram matrix will scale
+    by the square of the factor. This is for consistency with the (not yet implemented) Banach space
+    case.
+
+    Parameters
+    ----------
+    discr : regpy.discrs.Discretization
+        The underlying discretization. Should be the domain and codomain of the Gram matrix.
+    """
+
     log = util.classlogger
 
     def __init__(self, discr):
@@ -14,24 +37,25 @@ class HilbertSpace:
 
     @property
     def gram(self):
-        """The gram matrix as an `iterg.operators.Operator` instance
-        """
+        """The gram matrix as an `regpy.operators.Operator` instance."""
         raise NotImplementedError
 
     @property
     def gram_inv(self):
-        """The inverse of the gram matrix as an `iterg.operators.Operator` instance
+        """The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
+        to be implemented if the `gram` property does not return an invertible operator (i.e. one
+        that implements `regpy.operators.Operator.inverse`).
         """
         return self.gram.inverse
 
     def inner(self, x, y):
         """Compute the inner product between to elements.
 
-        This is a convenience wrapper around :meth:`gram`.
+        This is a convenience wrapper around `gram`.
 
         Parameters
         ----------
-        x, y : arrays
+        x, y : array-like
             The elements for which the inner product should be computed.
 
         Returns
@@ -44,11 +68,11 @@ class HilbertSpace:
     def norm(self, x):
         """Compute the norm of an element.
 
-        This is a convenience wrapper around :meth:`norm`.
+        This is a convenience wrapper around `norm`.
 
         Parameters
         ----------
-        x : array
+        x : array-like
             The elements for which the norm should be computed.
 
         Returns
@@ -60,6 +84,8 @@ class HilbertSpace:
 
     @util.memoized_property
     def norm_functional(self):
+        """The squared norm functional as a `regpy.functionals.Functional` instance.
+        """
         return functionals.HilbertNorm(self)
 
     def __add__(self, other):
@@ -82,18 +108,16 @@ class HilbertSpace:
 
 
 class HilbertPullBack(HilbertSpace):
-    """Pullback of a hilbert space on the codomain of an operator to its
-    domain.
+    """Pullback of a hilbert space on the codomain of an operator to its domain.
 
-    For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined
-    as
+    For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
 
         <a, b> := <op(x), op(b)>
 
-    (This really only works in finite dimensions due to completeness). The gram
-    matrix of the pullback space is simply `G_X = op^* G_Y op`.
+    (This really only works in finite dimensions due to completeness). The gram matrix of the
+    pullback space is simply `G_X = op.adjoint * G_Y * op`.
 
-    Note that computation of the inverse of `G_Y` is not trivial.
+    Note that computation of the inverse of `G_X` is not trivial.
 
     Parameters
     ----------
@@ -101,14 +125,14 @@ class HilbertPullBack(HilbertSpace):
         Hilbert space on the codomain of `op`.
     op : regpy.operators.Operator
         The operator along which to pull back `space`
-    inverse : one of None, 'conjugate' or 'cholesky'
+    inverse : 'conjugate', 'cholesky' or None
         How to compute the inverse gram matrix.
+
+        - 'conjugate': the inverse will be computed as `op.adjoint * G_Y.inverse * op`. **This is
+          in general not correct**, but may in some cases be an efficient approximation.
+        - 'cholesky': Implement the inverse via Cholesky decomposition. This requires assembling
+          the full matrix.
         - None: no inverse will be implemented.
-        - 'conjugate': the inverse will be computed as `op^* G_Y^{-1} op`.
-          **This is in general not correct**, but may in some cases be an
-          efficient approximation.
-        - 'cholesky': Implement the inverse via Cholesky decomposition. This
-          requires assembling the full matrix.
     """
 
     def __init__(self, space, op, inverse=None):
@@ -118,7 +142,9 @@ class HilbertPullBack(HilbertSpace):
         assert isinstance(space, HilbertSpace)
         assert op.codomain == space.discr
         self.op = op
+        """The operator."""
         self.space = space
+        """The codomain Hilbert space."""
         super().__init__(op.domain)
         # TODO only compute on demand
         if not inverse:
@@ -221,21 +247,19 @@ class DirectSum(HilbertSpace):
         return iter(self.summands)
 
 
-class AbstractSpace:
-    """Class representing abstract hilbert spaces without reference to a
-    concrete implementation.
+class AbstractSpaceBase:
+    """Class representing abstract hilbert spaces without reference to a concrete implementation.
 
-    The motivation for using this construction is to be able to specify e.g. a
-    Thikhonov penalty without requiring knowledge of the concrete discretization
-    the forward operator uses. See the documentation of `AbstractSpaceDispatcher`
-    for more details.
+    The motivation for using this construction is to be able to specify e.g. a Thikhonov penalty
+    without requiring knowledge of the concrete discretization the forward operator uses. See the
+    documentation of `AbstractSpace` for more details.
 
-    Abstract spaces do not have elements, their sole purpose is to pick the
-    proper concrete implementation for a given discretization.
+    Abstract spaces do not have elements, properties or any other structure, their sole purpose is
+    to pick the proper concrete implementation for a given discretization.
 
-    This class only implements operator overloads so that scaling and adding
-    abstract spaces works analogously to the concrete
-    `HilbertSpace` instances, returning `AbstractSum` instances.
+    This class only implements operator overloads so that scaling and adding abstract spaces works
+    analogously to the concrete `HilbertSpace` instances, returning `AbstractSum` instances. The
+    interesing stuff is in `AbstractSpace`.
     """
 
     def __add__(self, other):
@@ -257,44 +281,40 @@ class AbstractSpace:
             return NotImplemented
 
 
-class AbstractSpaceDispatcher(AbstractSpace):
-    """An abstract Hilbert space that can be called on a discretization to get
-    the corresponding concrete implementation.
+class AbstractSpace(AbstractSpaceBase):
+    """An abstract Hilbert space that can be called on a discretization to get the corresponding
+    concrete implementation.
 
-    AbstractSpaceDispatchers provide two kinds of functionality:
+    AbstractSpaces provide two kinds of functionality:
 
-    - A decorator method `register(discr_type)` that can be used to declare
-      some class or function as the concrete implementation of this abstract
-      space for discretizations of type `discr_type` or subclasses thereof,
-      e.g.:
+    - A decorator method `register(discr_type)` that can be used to declare some class or function
+      as the concrete implementation of this abstract space for discretizations of type `discr_type`
+      or subclasses thereof, e.g.:
 
           @Sobolev.register(discrs.UniformGrid)
           class SobolevUniformGrid(HilbertSpace):
               ...
 
-    - AbstractSpaces are callable. Calling them on a discretization and
-      arbitrary optional keyword arguments finds the corresponding concrete
-      `regpy.hilbert.HilbertSpace` among all registered
-      implementations. If there are implementations for multiple base classes
-      of the discretization type, the most specific one will be chosen. The
-      chosen implementation will then be called with the discretization and the
-      keyword arguments, and the result will be returned.
+    - AbstractSpaces are callable. Calling them on a discretization and arbitrary optional
+      keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
+      registered implementations. If there are implementations for multiple base classes of the
+      discretization type, the most specific one will be chosen. The chosen implementation will
+      then be called with the discretization and the keyword arguments, and the result will be
+      returned.
 
-      If called without a discretization as positional argument, it returns a
-      new abstract space with all passed keyword arguments remembered as
-      defaults. This allows one e.g. to write
+      If called without a discretization as positional argument, it returns a new abstract space
+      with all passed keyword arguments remembered as defaults. This allows one e.g. to write
 
           H = Sobolev(index=2)
 
-      after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in
-      turn will be the same as something like `SobolevUniformGrid(grid, index=2)`,
-      depending on the type of `grid`).
+      after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in turn will be the
+      same as something like `SobolevUniformGrid(grid, index=2)`, depending on the type of `grid`).
 
     Parameters
     ----------
     name : str
-        A name for this abstract space. Currently, this is only used in error
-        messages, when no implementation was found for some discretization.
+        A name for this abstract space. Currently, this is only used in error messages, when no
+        implementation was found for some discretization.
     """
 
     def __init__(self, name):
@@ -335,18 +355,15 @@ class AbstractSpaceDispatcher(AbstractSpace):
         )
 
 
-class AbstractSum(AbstractSpace):
+class AbstractSum(AbstractSpaceBase):
     """Weighted sum of abstract Hilbert spaces.
 
-    The constructor arguments work like for concrete
-    `regpy.hilbert.HilbertSpace`s, which see. Adding and scaling
-    `regpy.hilbert.AbstractSpace` instances is again a more
-    convenient way to construct AbstractSums.
+    The constructor arguments work like for concrete `regpy.hilbert.HilbertSpace`s, which see.
+    Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
+    construct AbstractSums.
 
-    This abstract space can only be called on a
-    `regpy.discrs.DirectSum`, in which case it constructs the
-    corresponding `regpy.hilbert.DirectSum` obtained by matching
-    up summands, e.g.
+    This abstract space can only be called on a `regpy.discrs.DirectSum`, in which case it
+    constructs the corresponding `regpy.hilbert.DirectSum` obtained by matching up summands, e.g.
 
         (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
     """
@@ -382,19 +399,52 @@ class AbstractSum(AbstractSpace):
         return iter(zip(self.weights, self.summands))
 
 
-L2 = AbstractSpaceDispatcher('L2')
-Sobolev = AbstractSpaceDispatcher('Sobolev')
-L2Boundary = AbstractSpaceDispatcher('L2Boundary')
-SobolevBoundary = AbstractSpaceDispatcher('SobolevBoundary')
+L2 = AbstractSpace('L2')
+"""L2 `AbstractSpace`."""
+
+Sobolev = AbstractSpace('Sobolev')
+"""Sobolev `AbstractSpace`"""
+
+L2Boundary = AbstractSpace('L2Boundary')
+"""L2 `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
+
+SobolevBoundary = AbstractSpace('SobolevBoundary')
+"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 
 def componentwise(dispatcher, cls=DirectSum):
+    """Return a callable that iterates over the components of some discretization, constructing a
+    `HilbertSpace` on each component, and joining the result. Inteded to be used like e.g.
+
+        L2.register(discrs.DirectSum, componentwise(L2))
+
+    to register a generic component-wise implementation of `L2` on `regpy.discrs.DirectSum`
+    discretizations. Any discretization that allows iterating over components using Python's
+    iterator protocol can be used, but `regpy.discrs.DirectSum` is the only example of that right
+    now.
+
+    Parameters
+    ----------
+    dispatcher : callable
+        The callable, most likely an `AbstractSpace`, to be applied in each component
+        discretization to construct the `HilberSpace` instances.
+    cls : callable, optional
+        The callable, most likely a `HilbertSpace` subclass, to combine the individual
+        `HilbertSpace` instances. Will be called with all spaces as arguments. Default: `DirectSum`.
+
+    Returns
+    -------
+    callable
+        A callable that can be used to register an `AbstractSpace` implementation on
+        direct sums.
+    """
     def factory(discr):
         return cls(*(dispatcher(s) for s in discr), discr=discr)
     return factory
 
 
 class L2Generic(HilbertSpace):
+    """`L2` implementation on a generic `regpy.discrs.Discretization`."""
     @property
     def gram(self):
         return self.discr.identity
@@ -404,12 +454,17 @@ class L2Generic(HilbertSpace):
 
 
 class L2UniformGrid(HilbertSpace):
+    """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
+    element.
+    """
     @util.memoized_property
     def gram(self):
         return self.discr.volume_elem * self.discr.identity
 
 
 class SobolevUniformGrid(HilbertSpace):
+    """`Sobolev` implementation on a `regpy.discrs.UniformGrid`.
+    """
     def __init__(self, discr, index=1, axes=None):
         super().__init__(discr)
         self.index = index
@@ -436,7 +491,14 @@ class SobolevUniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 
-def register_spaces():
+def _register_spaces():
+    """Auxiliary method to register abstract spaces for various discretizations. Using the decorator
+    method described in `AbstractSpace` does not work due to circular depenencies when
+    loading modules.
+
+    This is called from the `regpy` top-level module once, and can be ignored otherwise.
+    """
+
     L2.register(discrs.DirectSum, componentwise(L2))
     L2.register(discrs.Discretization, L2Generic)
     L2.register(discrs.UniformGrid, L2UniformGrid)

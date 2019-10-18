@@ -1,3 +1,9 @@
+"""PDE operators using NGSolve
+
+This module implements a `regpy.discrs.Discretization` instance for NGSolve spaces and corresponding
+Hilbert space structures. Operators are in the `operators` submodule.
+"""
+
 import ngsolve as ngs
 
 from regpy.discrs import Discretization
@@ -7,6 +13,14 @@ from regpy.util import memoized_property
 
 
 class NgsSpace(Discretization):
+    """A discretization wrapping an `ngsolve.FESpace`.
+
+    Parameters
+    ----------
+    fes : ngsolve.FESpace
+       The wrapped NGSolve discretization.
+    """
+
     def __init__(self, fes):
         assert isinstance(fes, ngs.FESpace)
         super().__init__(fes.ndof)
@@ -17,16 +31,27 @@ class NgsSpace(Discretization):
 
 
 class Matrix(Operator):
+    """An operator defined by an NGSolve bilinear form.
+
+    Parameters
+    ----------
+    domain : NgsSpace
+        The discretization.
+    form : ngsolve.BilinearForm or ngsolve.BaseMatrix
+        The bilinear form or matrix. A bilinear form will be assembled.
+    """
     def __init__(self, domain, form):
         assert isinstance(domain, NgsSpace)
         if isinstance(form, ngs.BilinearForm):
             assert domain.fes == form.space
             form.Assemble()
-            self.mat = form.mat
+            mat = form.mat
         elif isinstance(form, ngs.BaseMatrix):
-            self.mat = form
+            mat = form
         else:
             raise TypeError('Invalid type: {}'.format(type(form)))
+        self.mat = mat
+        """The assembled matrix."""
         super().__init__(domain, domain, linear=True)
         self._gfu_in = ngs.GridFunction(domain.fes)
         self._gfu_out = ngs.GridFunction(domain.fes)
@@ -44,6 +69,7 @@ class Matrix(Operator):
 
     @property
     def inverse(self):
+        """The inverse as a `Matrix` instance."""
         if self._inverse is not None:
             return self._inverse
         else:
@@ -57,6 +83,7 @@ class Matrix(Operator):
 
 @L2.register(NgsSpace)
 class L2FESpace(HilbertSpace):
+    """The implementation of `regpy.hilbert.L2` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
@@ -67,6 +94,7 @@ class L2FESpace(HilbertSpace):
 
 @Sobolev.register(NgsSpace)
 class SobolevFESpace(HilbertSpace):
+    """The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
@@ -77,6 +105,7 @@ class SobolevFESpace(HilbertSpace):
 
 @L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):
+    """The implementation of `regpy.hilbert.L2Boundary` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
@@ -90,6 +119,7 @@ class L2BoundaryFESpace(HilbertSpace):
 
 @SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
+    """The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
