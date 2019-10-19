@@ -17,7 +17,9 @@ release tarballs (see below).
 
 If you're on Linux, you can use a premade Ubuntu-based Singularity container that contains
 `regpy` and all of its dependencies and examples. Install instructions for Singularity can be
-found [here](asdf).
+found [here][1].
+
+[1]: https://sylabs.io/guides/3.4/user-guide/installation.html#distribution-packages-of-singularity
 
 To get the container image, use
 
