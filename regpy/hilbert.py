@@ -34,6 +34,7 @@ class HilbertSpace:
     def __init__(self, discr):
         assert isinstance(discr, discrs.Discretization)
         self.discr = discr
+        """The underlying discretization."""
 
     @property
     def gram(self):
