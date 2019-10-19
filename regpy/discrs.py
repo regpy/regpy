@@ -147,6 +147,11 @@ class Discretization:
 
     @property
     def size(self):
+        """The size of elements (as arrays) of this discretization."""
+        return np.prod(self.shape)
+
+    @property
+    def realsize(self):
         """The dimension of the discretization as a real vector space. For complex dtypes,
         this is twice the number of array elements. """
         if self.is_complex:
@@ -430,7 +435,7 @@ class DirectSum(Discretization):
                 self.summands.extend(s.summands)
             else:
                 self.summands.append(s)
-        self.idxs = [0] + list(accumulate(s.size for s in self.summands))
+        self.idxs = [0] + list(accumulate(s.realsize for s in self.summands))
         super().__init__(self.idxs[-1])
 
     def __eq__(self, other):
