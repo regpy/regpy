@@ -16,7 +16,8 @@ logging.basicConfig(
 
 op = PotentialOp(
     domain=UniformGrid(np.linspace(0, 2 * np.pi, 200)),
-    codomain=UniformGrid(np.linspace(0, 63, 64)),
+    radius=1.5,
+    nmeas=64,
 )
 
 exact_solution = np.ones(200)

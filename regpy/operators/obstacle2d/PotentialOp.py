@@ -2,8 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon
 
+from regpy.discrs import Discretization, UniformGrid
+from regpy.operators import Operator
 from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
-from .. import Operator
+
 
 # TODO This module needs to be cleaned up.
 
@@ -19,125 +21,105 @@ class PotentialOp(Operator):
      and an inverse scattering problem" Inverse Problems 13 (1997) 1279–1299
     """
 
-    def __init__(self, domain, codomain=None, error='deterministic', **kwargs):
+    def __init__(self, domain, radius, nmeas, nforward=64):
+        self.radius = radius
+        self.nforward = nforward
 
-        codomain = codomain or domain
-        self.radius = 1.5  # radius of outer circle
-        self.Nfwd = 64  # nr. of discretization points for forward solver
-        self.Nfwd_synth = 256  # nr of discretization points for computation of synthetic data
-        self.N_meas = 64  # number of measurement points
-        self.meas_angles = 2 * np.pi * np.linspace(
-            0, self.N_meas - 1, self.N_meas
-        ) / self.N_meas  # angles of measure points
-
-        self.cosin = np.zeros((self.Nfwd, self.Nfwd))
-        self.sinus = np.zeros((self.Nfwd, self.Nfwd))
-        self.sin_fl = np.zeros((self.Nfwd, self.Nfwd))
-        self.cos_fl = np.zeros((self.Nfwd, self.Nfwd))
         self.bd = StarTrig(64)
-        self.error = error
 
-        N = self.Nfwd
-        t = 2 * np.pi * np.linspace(0, N - 1, N) / N
-        t_fl = self.meas_angles
-
-        for j in range(0, N):
-            self.cosin[j, :] = np.cos((j + 1) * t)
-            self.sinus[j, :] = np.sin((j + 1) * t)
-            self.sin_fl[:, j] = np.sin((j + 1) * t_fl)
-            self.cos_fl[:, j] = np.cos((j + 1) * t_fl)
         super().__init__(
             domain=domain,
-            codomain=codomain)
+            codomain=UniformGrid(np.linspace(0, 2 * np.pi, nmeas, endpoint=False))
+        )
 
-    def _eval(self, coeff, **kwargs):
-        """self.bd.coeff"""
-        N = self.Nfwd
-        self.bd.bd_eval(coeff, N, 1)
+        k = 1 + np.arange(self.nforward)
+        k_t = np.outer(k, np.linspace(0, 2 * np.pi, self.nforward, endpoint=False))
+        k_tfl = np.outer(k, self.codomain.coords[0])
+        self.cosin = np.cos(k_t)
+        self.sinus = np.sin(k_t)
+        self.cos_fl = np.cos(k_tfl)
+        self.sin_fl = np.sin(k_tfl)
+
+    def _eval(self, coeff, differentiate=False):
+        nfwd = self.nforward
+        self.bd.bd_eval(coeff, nfwd, 1)
         q = self.bd.q[0, :]
         if q.max() >= self.radius:
-            raise ValueError('reconstructed object penetrates measurement circle')
-
+            raise ValueError('object penetrates measurement circle')
         if q.min() <= 0:
-            raise ValueError('reconstructed radial function negative')
+            raise ValueError('radial function negative')
 
         qq = q**2
-
-        flux = 1 / (2 * self.radius * N) * np.sum(qq) * np.ones(len(self.meas_angles))
-        fac = 2 / (N * self.radius)
-        for j in range(0, int((N - 1) / 2)):
-            fac = fac / self.radius
-            qq = qq * q
-            flux = (
-                flux + (fac / (j + 3)) * self.cos_fl[:, j] * np.sum(qq * self.cosin[j, :])
-                + (fac / (j + 3)) * self.sin_fl[:, j] * np.sum(qq * self.sinus[j, :])
+        flux = 1 / (2 * self.radius * nfwd) * np.sum(qq) * self.codomain.ones()
+        fac = 2 / (nfwd * self.radius)
+        for j in range(0, (nfwd - 1) // 2):
+            fac /= self.radius
+            qq *= q
+            flux += (
+                (fac / (j + 3)) * self.cos_fl[:, j] * np.sum(qq * self.cosin[j, :]) +
+                (fac / (j + 3)) * self.sin_fl[:, j] * np.sum(qq * self.sinus[j, :])
             )
 
-        if N % 2 == 0:
-            fac = fac / self.radius
-            qq = qq * q
-            flux = flux + fac * self.cos_fl[:, int(N / 2)] * np.sum(qq * self.cosin[int(N / 2), :])
+        if nfwd % 2 == 0:
+            fac /= self.radius
+            qq *= q
+            flux += fac * self.cos_fl[:, nfwd // 2] * np.sum(qq * self.cosin[nfwd // 2, :])
         return flux
 
-    def _derivative(self, h_coeff, **kwargs):
-
-        N = self.Nfwd
-        # transpose?
-        h = self.bd.der_normal(h_coeff).transpose()
+    def _derivative(self, h_coeff):
+        nfwd = self.nforward
+        h = self.bd.der_normal(h_coeff)
         q = self.bd.q[0, :]
         qq = self.bd.zpabs
 
-        der = 1 / (self.radius * N) * np.sum(qq * h) * np.ones(len(self.meas_angles))
-        fac = 2 / (N * self.radius)
-        for j in range(0, int((N - 1) / 2)):
-            fac = fac / self.radius
+        der = 1 / (self.radius * nfwd) * np.sum(qq * h) * self.codomain.ones()
+        fac = 2 / (nfwd * self.radius)
+        for j in range((nfwd - 1) // 2):
+            fac /= self.radius
             qq = qq * q
-            der = der + fac * self.cos_fl[:, j] * np.sum(qq * h * self.cosin[j, :]) \
-                  + fac * self.sin_fl[:, j] * np.sum(qq * h * self.sinus[j, :])
+            der += fac * (
+                self.cos_fl[:, j] * np.sum(qq * h * self.cosin[j, :]) +
+                self.sin_fl[:, j] * np.sum(qq * h * self.sinus[j, :])
+            )
 
-        if N % 2 == 0:
-            fac = fac / self.radius
+        if nfwd % 2 == 0:
+            fac /= self.radius
             qq = qq * q
-            der = der + fac * self.cos_fl[:, int(N / 2)] * np.sum(
-                qq * h * self.cosin[int(N / 2), :])
+            der += fac * self.cos_fl[:, nfwd // 2] * np.sum(qq * h * self.cosin[nfwd // 2, :])
         return der.real
 
-    def _adjoint(self, g, **kwargs):
-        N = self.Nfwd
+    def _adjoint(self, g):
+        nfwd = self.nforward
         q = self.bd.q[0, :]
         qq = self.bd.zpabs
 
-        # transpose?
-        adj = 1 / (self.radius * N) * np.sum(g) * qq.transpose()
-        fac = 2 / (N * self.radius)
-        for j in range(0, int((N - 1) / 2)):
-            fac = fac / self.radius
+        adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
+        fac = 2 / (nfwd * self.radius)
+        for j in range((nfwd - 1) // 2):
+            fac /= self.radius
             qq = qq * q
-            # transpose?
-            adj = adj + fac * np.sum(g * self.cos_fl[:, j]) * (self.cosin[j, :] * qq).transpose() \
-                  + fac * np.sum(g * self.sin_fl[:, j]) * (self.sinus[j, :] * qq).transpose()
+            adj += fac * (
+                np.sum(g * self.cos_fl[:, j]) * (self.cosin[j, :] * qq) +
+                np.sum(g * self.sin_fl[:, j]) * (self.sinus[j, :] * qq)
+            )
 
-        if N % 2 == 0:
-            fac = fac / self.radius
+        if nfwd % 2 == 0:
+            fac /= self.radius
             qq = qq * q
-            # transpose?
-            adj = adj + fac * np.sum(g * self.cos_fl[:, int(N / 2)]) * (
-                self.cosin[int(N / 2), :] * qq
-            ).transpose()
+            adj += fac * np.sum(g * self.cos_fl[:, nfwd // 2]) * (self.cosin[nfwd // 2, :] * qq)
 
         adj = self.bd.adjoint_der_normal(adj).real
         return adj
 
-    def accept_proposed(self, positions):
-        """self.bd.coeff"""
-        self.bd.bd_eval(positions, N, 1)
-        q = self.bd.q[0, :]
-        if q.max() >= self.radius:
-            return False
-
-        if q.min() <= 0:
-            return False
-        return True
+    # def accept_proposed(self, positions):
+    #     self.bd.bd_eval(positions, N, 1)
+    #     q = self.bd.q[0, :]
+    #     if q.max() >= self.radius:
+    #         return False
+    #
+    #     if q.min() <= 0:
+    #         return False
+    #     return True
 
 
 # def create_synthetic_data(self, noiselevel):
