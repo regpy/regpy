@@ -8,7 +8,7 @@ import regpy.stoprules as rules
 import regpy.util as util
 from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm_cg import IrgnmCG
+from regpy.solvers.irgnm import IrgnmCG
 from regpy.discrs import UniformGrid
 from regpy.hilbert import L2
 

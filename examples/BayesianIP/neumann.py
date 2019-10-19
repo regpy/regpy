@@ -12,7 +12,7 @@ from regpy.operators.obstacle2d import NeumannOp
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm_cg import IrgnmCG
+from regpy.solvers.irgnm import IrgnmCG
 #from regpy.util import test_adjoint
 import regpy.stoprules as rules
 
