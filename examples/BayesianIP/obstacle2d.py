@@ -1,6 +1,6 @@
 import regpy
 
-from regpy.operators.obstacle2d import Potential
+from regpy.operators.obstacles import Potential
 
 from regpy.operators.obstacle2d.PotentialOp import create_synthetic_data
 
