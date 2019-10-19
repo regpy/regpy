@@ -4,7 +4,7 @@ import numpy as np
 import scipy
 
 from regpy.solvers import Solver
-from regpy.solvers.cg import TikhonovCG
+from regpy.solvers.tikhonov import TikhonovCG
 
 
 class SQP(Solver):

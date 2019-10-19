@@ -1,7 +1,7 @@
 import numpy as np
 
 from regpy.solvers import Solver, HilbertSpaceSetting
-from regpy.solvers.cg import TikhonovCG
+from regpy.solvers.tikhonov import TikhonovCG
 
 
 class IrgnmCG(Solver):
