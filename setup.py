@@ -8,10 +8,5 @@ setuptools.setup(
         'numpy>=1.14,<2.0',
         'scipy>=1.1,<2.0',
     ],
-    extras_require={
-        'nfft': [
-            'pyNFFT>=1.3,<2.0',
-        ],
-    },
     python_requires='>=3.6,<4.0',
 )

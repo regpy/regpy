@@ -52,8 +52,6 @@ under `/opt/examples`.
 #### Optional dependencies
 
 - [`ngsolve`](https://ngsolve.org/) (for some forward operators that require solving PDEs)
-- [`bart`](https://mrirecon.github.io/bart/) (for the MRI operator)
-- `pynfft >= 1.3` (for the iterative born solver for medium scattering)
 - `matplotlib` (for some of the examples)
 - [`pdoc3`](https://pdoc3.github.io/pdoc) (for generating the documentation)
 
