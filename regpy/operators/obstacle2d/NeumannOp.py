@@ -85,10 +85,9 @@ class NeumannOp(Operator):
         % coeff. Quantities needed again for the computation of derivatives and
         % adjoints are stored as members of self."""
 
-        self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
         of the parametrization and save these quantities as members of F.bd"""
-        self.bd.bd_eval(2*self.N_ieq,3)
+        self.bd.bd_eval(coeff, 2*self.N_ieq,3)
         Iop_data = setup_iop_data(self.bd,self.kappa)
         #Iop = op_T(F.bd,Iop_data) - i*F.eta*op_K(F.bd,Iop_data).' + i*F.eta*diag(F.bd.zpabs);
         if self.wDL!=0:

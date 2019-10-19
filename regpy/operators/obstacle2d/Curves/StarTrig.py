@@ -17,10 +17,10 @@ class StarTrig:
     def __init__(self, N_fk):
         self.coeff = None
         self.type = None
-        self.coeff = None
         self.q = None
 
-    def bd_eval(self, n, der):
+    def bd_eval(self, coeff, n, der):
+        self.coeff = coeff
         coeffhat = trig_interpolate(self.coeff, n)
         self.q = np.zeros((der + 1, coeffhat.shape[0]))
         for d in range(0, der + 1):

@@ -52,9 +52,8 @@ class PotentialOp(Operator):
 
     def _eval(self, coeff, **kwargs):
         """self.bd.coeff"""
-        self.bd.coeff = coeff
         N = self.Nfwd
-        self.bd.bd_eval(N, 1)
+        self.bd.bd_eval(coeff, N, 1)
         q = self.bd.q[0, :]
         if q.max() >= self.radius:
             raise ValueError('reconstructed object penetrates measurement circle')
@@ -131,9 +130,7 @@ class PotentialOp(Operator):
 
     def accept_proposed(self, positions):
         """self.bd.coeff"""
-        self.bd.coeff = positions
-
-        self.bd.bd_eval(N, 1)
+        self.bd.bd_eval(positions, N, 1)
         q = self.bd.q[0, :]
         if q.max() >= self.radius:
             return False

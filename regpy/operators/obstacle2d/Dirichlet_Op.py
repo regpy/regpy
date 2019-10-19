@@ -92,10 +92,9 @@ class DirichletOp(Operator):
          coeff. Quantities needed again for the computation of derivatives and
          adjoints are stored as members of F."""
 
-        self.bd.coeff = coeff
         """compute the grid points of the boundary parameterized by coeff and derivatives
         of the parametrization and save these quantities as members of F.bd"""
-        self.bd.bd_eval(2*self.N_ieq,2)
+        self.bd.bd_eval(coeff, 2*self.N_ieq,2)
         Iop_data = setup_iop_data(self.bd,self.kappa)
         if self.wSL!=0:
             Iop = self.wSL*op_S(self.bd,Iop_data)
