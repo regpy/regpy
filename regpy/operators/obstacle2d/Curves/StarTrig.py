@@ -1,5 +1,7 @@
 import numpy as np
 
+from regpy.util import trig_interpolate
+
 
 class StarTrig:
     """ The class StarTrig describes boundaries of domains in R^2 which are
@@ -19,41 +21,12 @@ class StarTrig:
         self.type = None
         self.coeff = None
 
-    def compute_FK(self, val, n):
-
-        """ computes n Fourier coeffients to the point values given by by val
-         such that ifft(fftshift(coeffhat)) is an interpolation of val"""
-
-        if n % 2 == 1:
-            ValueError('length of t should be even')
-
-        N = len(val)
-        #        print(N)
-        coeffhat = np.fft.fft(val)
-        coeffhat2 = 1j * np.zeros(n)
-        if (n >= N):
-            coeffhat2[0:int(N / 2)] = coeffhat[0:int(N / 2)]
-            coeffhat2[n - int(N / 2) + 1:n] = coeffhat[int(N / 2) + 1:N]
-            if (n > N):
-                coeffhat2[int(N / 2)] = 0.5 * coeffhat[int(N / 2)]
-                coeffhat2[n - int(N / 2)] = 0.5 * coeffhat[int(N / 2)]
-            else:  # n==N
-                coeffhat2[int(N / 2)] = coeffhat[int(N / 2)]
-
-        else:
-            coeffhat2[0:int(n / 2)] = coeffhat[0:int(n / 2)]
-            coeffhat2[int(n / 2) + 1:n] = coeffhat[N - int(n / 2) + 1:N]
-            coeffhat2[int(n / 2)] = 0.5 * (coeffhat[int(n / 2)] + coeffhat[N - int(n / 2)])
-
-        coeffhat2 = n / N * np.fft.fftshift(coeffhat2)
-        return coeffhat2
-
     def radial(self, n, der):
 
         """ evaluates all derivatives of the radial function up to order der
         at n equidistant points"""
 
-        coeffhat = self.compute_FK(self.coeff, n)
+        coeffhat = trig_interpolate(self.coeff, n)
         self.q = np.zeros((der + 1, coeffhat.shape[0]))
         for d in range(0, der + 1):
             self.q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(
@@ -98,7 +71,7 @@ class StarTrig:
         perturbing the coefficient vector curve.coeff in direction h"""
 
         n = np.size(self.q[0, :])
-        h_long = np.fft.ifft(np.fft.fftshift(self.compute_FK(h, n)))
+        h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, n)))
         der = self.q[0, :].transpose() * h_long / self.zpabs.transpose()
         return der
 
@@ -109,7 +82,7 @@ class StarTrig:
         #        print(N)
         n = len(g)
         adj_long = g * self.q[0, :].transpose() / self.zpabs.transpose()
-        adj = np.fft.ifft(np.fft.fftshift(self.compute_FK(adj_long, N))) * n / N
+        adj = np.fft.ifft(np.fft.fftshift(trig_interpolate(adj_long, N))) * n / N
         return adj.real
 
     # """ The following two methods are not needed for operators depending
@@ -121,7 +94,7 @@ class StarTrig:
     #     """computes the perturbation of the curve caused by perturbing the coefficient
     #      vector curve.coeff in direction h"""
     #     n = np.size(self.q[0, :])
-    #     h_long = np.fft.ifft(np.fft.fftshift(self.compute_FK(h, n))).transpose()
+    #     h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, n))).transpose()
     #     t = 2 * np.pi * n.linspace(0, n - 1, n) / n
     #     der = np.append(h_long * np.cos(t), h_long * np.sin(t)).reshape(2, n)
     #     return der
@@ -133,24 +106,24 @@ class StarTrig:
     #     n = len(g)
     #     t = 2 * np.pi * np.linspace(0, n - 1) / n
     #     adj_long = g[0, :] * np.cos(t) + g[1, :] * np.sin(t)
-    #     adj = np.fft.ifft(np.fft.fftshift(self.compute_FK(adj_long, N))) * n / N
+    #     adj = np.fft.ifft(np.fft.fftshift(trig_interpolate(adj_long, N))) * n / N
     #     return adj
 
     def arc_length_der(self, h):
         """ computes the derivative of h with respect to arclength"""
         n = np.size(self.q[0, :])
         dhds = np.fft.ifft(np.fft.fftshift(
-            (1j * np.linspace(-n / 2, n / 2 - 1, n).transpose()) * self.compute_FK(h, n)
+            (1j * np.linspace(-n / 2, n / 2 - 1, n).transpose()) * trig_interpolate(h, n)
         )) / self.zpabs.transpose()
         return dhds
 
-    def L2err(self, q1, q2):
-        res = self.params.domain.norm(q1 - q2) / np.sqrt(len(q1))
-        return res
-
     def coeff2Curve(self, coeff, n):
-        radial = np.fft.ifft(np.fft.fftshift(self.compute_FK(coeff, n)))
+        # TODO this is the equivalent to bd_eval(der=0), except that bd_eval uses self.coeff and
+        #  insists on modifying instance attributes
+        radial = np.fft.ifft(np.fft.fftshift(trig_interpolate(coeff, n)))
         t = 2 * np.pi / n * np.linspace(0, n - 1, n)
-        pts = np.append(radial.transpose() * np.cos(t), \
-                        radial.transpose() * np.sin(t)).reshape(2, n)
+        pts = np.append(
+            radial.transpose() * np.cos(t),
+            radial.transpose() * np.sin(t)
+        ).reshape(2, n)
         return pts.real

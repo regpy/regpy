@@ -140,3 +140,29 @@ def broadcast_shapes(*shapes):
         if np.any((x != 1) & (x != r)):
             raise ValueError('Shapes can not be broadcast')
     return result
+
+
+def trig_interpolate(val, n):
+    # TODO get rid of fftshift
+    """Computes `n` Fourier coeffients to the point values given by by `val`
+     such that `ifft(fftshift(coeffs))` is an interpolation of `val`.
+     """
+    if n % 2 != 0:
+        ValueError('n should be even')
+    N = len(val)
+    coeffhat = np.fft.fft(val)
+    coeffs = 1j * np.zeros(n)
+    if n >= N:
+        coeffs[0:int(N / 2)] = coeffhat[0:int(N / 2)]
+        coeffs[n - int(N / 2) + 1:n] = coeffhat[int(N / 2) + 1:N]
+        if n > N:
+            coeffs[int(N / 2)] = 0.5 * coeffhat[int(N / 2)]
+            coeffs[n - int(N / 2)] = 0.5 * coeffhat[int(N / 2)]
+        else:
+            coeffs[int(N / 2)] = coeffhat[int(N / 2)]
+    else:
+        coeffs[0:int(n / 2)] = coeffhat[0:int(n / 2)]
+        coeffs[int(n / 2) + 1:n] = coeffhat[N - int(n / 2) + 1:N]
+        coeffs[int(n / 2)] = 0.5 * (coeffhat[int(n / 2)] + coeffhat[N - int(n / 2)])
+    coeffs = n / N * np.fft.fftshift(coeffs)
+    return coeffs

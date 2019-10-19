@@ -1,8 +1,9 @@
-from .GenCurve import GenCurve
 import numpy as np
 import numpy.matlib
 
-"""soll von GenCurve erben"""
+from regpy.util import trig_interpolate
+
+
 class GenTrig:
     """ The class GenTrig describes boundaries of domains in R^2 which are
      parameterized by
@@ -19,35 +20,6 @@ class GenTrig:
         self.type=None
         self.coeff=None  # coefficients of the trigonometric polynomials
 
-
-    def compute_FK(self, val, n):
-
-        # computes n Fourier coeffients to the point values given by by val.
-        # such that ifft(fftshift(coeffhat)) is an interpolation of val
-
-        if n%2==1:
-            ValueError('length of t should be even')
-
-        N = len(val)
-        coeffhat = np.fft.fft(val)
-        coeffhat2 = np.zeros(n)
-        if (n>=N):
-            coeffhat2[0:N/2]= coeffhat[0:N/2]
-            coeffhat2[n-N/2+1:n] = coeffhat[N/2+1:N]
-            if (n>N):
-                coeffhat2[N/2] = 0.5*coeffhat[N/2]
-                coeffhat2[n-N/2] = 0.5*coeffhat[N/2]
-            else: #n==N
-                coeffhat2[N/2] = coeffhat[N/2]
-
-        else:
-            coeffhat2[0:int(n/2)] = coeffhat[0:int(n/2)]
-            coeffhat2[int(n/2)+1:n] = coeffhat[N-int(n/2)+1:N]
-            coeffhat2[int(n/2)] = 0.5*(coeffhat[int(n/2)]+coeffhat[N-int(n/2)+1])
-
-        coeffhat2 = n/N*np.fft.fftshift(coeffhat2)
-        return coeffhat2
-
     def bd_eval(self, n, der):
 
         # evaluates the first der derivatives of the parametrization of
@@ -56,8 +28,10 @@ class GenTrig:
 
 
         """transpose ?"""
-        coeffhat = np.append(self.compute_FK(self.coeff[0:N],n), \
-            self.compute_FK(self.coeff[N:2*N],n)).reshape(2, n)
+        val = self.coeff[N:2*N]
+        val1 = self.coeff[0:N]
+        coeffhat = np.append(trig_interpolate(val1, n), \
+                             trig_interpolate(val, n)).reshape(2, n)
         self.z = np.append(np.real(np.fft.ifft(np.fft.fftshift( coeffhat[0,:]))), \
             np.real(np.fft.ifft(np.fft.fftshift( coeffhat[1,:])))).reshape(2, coeffhat[0,:].shape[0])
         if der>=1:
@@ -90,8 +64,10 @@ class GenTrig:
             """transpose ?"""
             hn= [h[0:n].transpose(), h[n:2*n].transpose()].reshape(2, n)
         else:
-            h_hat = [self.compute_FK(h[0:N],n), \
-                self.compute_FK(h[N:2*N],n)].transpose()
+            val = h[N:2 * N]
+            val1 = h[0:N]
+            h_hat = [trig_interpolate(val1, n), \
+                     trig_interpolate(val, n)].transpose()
             hn = [np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))), \
                 np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))].reshape(2, h_hat[0, :].shape[0])
         """transpose ?"""
@@ -109,8 +85,10 @@ class GenTrig:
         if N==n:
             adj = [adj_n[0,:].transpoe(), adj_n[1,:].transpose()].reshape(2, adj_n[0, :].shape[0])
         else:
-            adj_hat = [self.compute_FK(adj_n[0,:],N), \
-                self.compute_FK(adj_n[1,:],N)]*n/N.reshape(2, adj_n[0, :].shape[0])
+            val = adj_n[0, :]
+            val1 = adj_n[1,:]
+            adj_hat = [trig_interpolate(val, N), \
+                       trig_interpolate(val1, N)] * n / N.reshape(2, adj_n[0, :].shape[0])
             adj = [np.fft.ifft(np.fft.fftshift(adj_hat[:,0])), \
                 np.fft.ifft(np.fft.fftshift(adj_hat[:,1]))].reshape(2, adj_hat[:, 0].shape[0])
         return adj
@@ -120,20 +98,19 @@ class GenTrig:
             #computes the derivative of h with respect to arclength
             n=len(self.zpabs)
             """transpsoe ?"""
-            dhds = np.fft.ifft(np.fft.fftshift((1j*np.linspace(-n/2, n/2-1, n)).transpose()*self.compute_FK(h,n)))/self.zpabs.transpose()
+            dhds = np.fft.ifft(np.fft.fftshift((1j*np.linspace(-n/2, n/2-1, n)).transpose() * trig_interpolate(
+                h, n))) / self.zpabs.transpose()
             return dhds
-
-    def L2err(self, q1, q2):
-        res=self.params.domain.norm(q1-q2)/np.sqrt(len(q1))
-        return res
 
     def coeff2Curve(self, coeff, n):
 
 
         N = len(coeff)/2
         """transpose ?"""
-        coeffhat = [self.compute_FK(coeff[0:N],N), \
-            self.compute_FK(coeff[N:2*N],N)].transpose()
+        val = coeff[N:2*N]
+        val1 = coeff[0:N]
+        coeffhat = [trig_interpolate(val1, N), \
+                    trig_interpolate(val, N)].transpose()
         pts = [np.real(np.fft.ifft(np.fft.fftshift( coeffhat[0,:]))), \
             np.real(np.fft.ifft(np.fft.fftshift( coeffhat[1,:])))].reshape(2, coeffhat[0, :].shape[0])
         return pts
