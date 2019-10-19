@@ -8,7 +8,6 @@ from .Curves.StarTrig import StarTrig
 
 class Obstacle2dBaseOp():
     def __init__(self, **kwargs):
-
         self.op_name = 'PotentialOp'
         self.syntheticdata_flag = True
         self.sobo_Index = 1.6  # Sobolev index of preimage space
@@ -27,11 +26,6 @@ class Obstacle2dBaseOp():
         self.fig_rec = None
         self.rec_plot_handle = None
 
-    def Obstacle2dBasefunc(self):
-        """set_parameters ?"""
-
-        """compute precomputable quantities
-         initialize boundary curve structure"""
         self.other_X_err = {(lambda x: self.L2err(x)), 'L2err'}
 
         if self.syntheticdata_flag is True:

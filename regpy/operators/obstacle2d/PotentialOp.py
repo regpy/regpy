@@ -36,7 +36,6 @@ class PotentialOp(Operator):
         self.sin_fl = np.zeros((self.Nfwd, self.Nfwd))
         self.cos_fl = np.zeros((self.Nfwd, self.Nfwd))
         self.obstacle = Obstacle2dBaseOp()
-        self.obstacle.Obstacle2dBasefunc()
         self.bd = self.obstacle.bd
         self.error = error
 

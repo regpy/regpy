@@ -36,7 +36,6 @@ class NeumannOp(Operator):
         self.meas_directions = 64 # measurement directions
         self.inc_directions = np.asarray([1,0]).reshape((2,1))
         self.obstacle=Obstacle2dBaseOp()
-        self.obstacle.Obstacle2dBasefunc()
         self.bd=self.obstacle.bd
 
 
