@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon
 
-from .Obstacle2dBaseOp import Obstacle2dBaseOp
+from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
 from .. import Operator
 
 # TODO This module needs to be cleaned up.
@@ -26,17 +26,15 @@ class PotentialOp(Operator):
         self.Nfwd = 64  # nr. of discretization points for forward solver
         self.Nfwd_synth = 256  # nr of discretization points for computation of synthetic data
         self.N_meas = 64  # number of measurement points
-        """transpose"""
         self.meas_angles = 2 * np.pi * np.linspace(
             0, self.N_meas - 1, self.N_meas
-        ).transpose() / self.N_meas  # angles of measure points
+        ) / self.N_meas  # angles of measure points
 
         self.cosin = np.zeros((self.Nfwd, self.Nfwd))
         self.sinus = np.zeros((self.Nfwd, self.Nfwd))
         self.sin_fl = np.zeros((self.Nfwd, self.Nfwd))
         self.cos_fl = np.zeros((self.Nfwd, self.Nfwd))
-        self.obstacle = Obstacle2dBaseOp()
-        self.bd = self.obstacle.bd
+        self.bd = StarTrig(64)
         self.error = error
 
         N = self.Nfwd

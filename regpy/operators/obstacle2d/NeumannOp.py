@@ -4,9 +4,7 @@ Created on Mon Jul 15 12:52:57 2019
 
 @author: Björn Müller
 """
-
-from .Obstacle2dBaseOp import Obstacle2dBaseOp
-#from .Obstacle2dBaseOp import Obstacle2dBaseOp
+from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
 from .functions.operator import op_S
 from .functions.operator import op_T
 from .functions.operator import op_K
@@ -35,8 +33,7 @@ class NeumannOp(Operator):
          to N_ieq to avoid invere crime)"""
         self.meas_directions = 64 # measurement directions
         self.inc_directions = np.asarray([1,0]).reshape((2,1))
-        self.obstacle=Obstacle2dBaseOp()
-        self.bd=self.obstacle.bd
+        self.bd = StarTrig(64)
 
 
 

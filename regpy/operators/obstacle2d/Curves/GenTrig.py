@@ -14,23 +14,11 @@ class GenTrig:
      Application of the Gramian matrix and its inverse w.r.t. the
      Sobolev norm ||z||_{H^s} are implemented."""
 
-    def __init__(self, N_fk, sobo_Index, type=None, coeff=None, **kwargs):
-
+    def __init__(self, N_fk):
         self.N_fk=N_fk
-        self.sobo_index=sobo_Index
         self.type=None
         self.coeff=None  # coefficients of the trigonometric polynomials
 
-
-
-    def GenTrig(self, N, s):
-
-        self.GenCurve('GenTrig')
-        if N%2==1:
-            ValueError('N should be even')
-        self.type = 'GenTrig'
-        self.coeff = np.zeros(2*N)
-        self.sobo_Index = s
 
     def compute_FK(self, val, n):
 
