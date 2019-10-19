@@ -2,7 +2,7 @@ import numpy as np
 
 from regpy.discrs import UniformGrid
 from regpy.operators import Operator
-from regpy.operators.obstacle2d.Curves.StarTrig import StarTrigDiscr
+from regpy.discrs.obstacles import StarTrigDiscr
 
 
 class Potential(Operator):

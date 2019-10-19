@@ -3,6 +3,8 @@ import numpy as np
 from regpy.discrs import Discretization
 from regpy.util import trig_interpolate
 
+# TODO implement Sobolev spaces
+
 
 class StarTrigDiscr(Discretization):
     def __init__(self, n):
