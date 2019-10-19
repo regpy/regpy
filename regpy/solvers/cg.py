@@ -6,15 +6,42 @@ from regpy import util
 
 
 class TikhonovCG(Solver):
+    """The Tikhonov method for linear inverse problems. Minimizes
+
+        ||T x - data||**2 + regpar * ||x - xref||**2
+
+    using a conjugate gradient method.
+
+    Parameters
+    ----------
+    setting : regpy.solvers.HilbertSpaceSetting
+        The setting of the forward problem.
+    data : array-like
+        The measured data.
+    regpar : float
+        The regularization parameter. Must be positive.
+    tol : float, optional
+        The tolerance for the residual relative to the initial at which to stop. Default is
+        the machine epsilon. Iterating beyond this point produces `NaN`s.
+    reltolx, reltoly : float, optional
+        Relative tolerance in domain and codomain.
+    """
     def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None):
         assert setting.op.linear
 
         super().__init__()
         self.setting = setting
+        """The problem setting."""
         self.regpar = regpar
+        """The regularization parameter."""
         self.tol = tol
+        """The tolerance."""
+
+        # TODO Improve documentation for these two.
         self.reltolx = reltolx
+        """The relative tolerance in the domain."""
         self.reltoly = reltoly
+        """The relative tolerance in the codomain."""
 
         self.x = self.setting.op.domain.zeros()
         if self.reltolx is not None:
@@ -25,14 +52,22 @@ class TikhonovCG(Solver):
             self.norm_y = 0
 
         self.g_res = self.setting.op.adjoint(self.setting.Hcodomain.gram(data))
+        """The gram matrix applied to the residual."""
         if xref is not None:
             self.g_res += self.regpar * self.setting.Hdomain.gram(xref)
         res = self.setting.Hdomain.gram_inv(self.g_res)
+        """The residual."""
         self.norm_res = np.real(np.vdot(self.g_res, res))
+        """The norm of the residual."""
         self.norm_res_init = self.norm_res
+        """The norm of the residual in the first iteration, for `tol`."""
         self.dir = res
+        """The direction of descent."""
         self.g_dir = np.copy(self.g_res)
+        """The gram matrix applied to the direction of descent."""
+        # TODO Improve documentation
         self.kappa = 1
+        """Auxiliary parameter for estimating the relative tolerances."""
 
     def _next(self):
         Tdir = self.setting.op(self.dir)
