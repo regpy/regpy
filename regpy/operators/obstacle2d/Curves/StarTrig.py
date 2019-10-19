@@ -15,26 +15,18 @@ class StarTrig:
      Sobolev norm ||q||_{H^s} are implemented."""
 
     def __init__(self, N_fk):
-        # Fourier coefficients of q(t)
         self.coeff = None
-        # Sobolev index (for GramX)
         self.type = None
         self.coeff = None
+        self.q = None
 
-    def radial(self, n, der):
-
-        """ evaluates all derivatives of the radial function up to order der
-        at n equidistant points"""
-
+    def bd_eval(self, n, der):
         coeffhat = trig_interpolate(self.coeff, n)
         self.q = np.zeros((der + 1, coeffhat.shape[0]))
         for d in range(0, der + 1):
             self.q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(
                 (1j * np.linspace(-n / 2, n / 2 - 1, n).transpose())**d * coeffhat
             ))).transpose()
-
-    def bd_eval(self, n, der):
-        self.radial(n, der)
         q = self.q
         t = 2 * np.pi * np.linspace(0, n - 1, n) / n
         cost = np.cos(t)
