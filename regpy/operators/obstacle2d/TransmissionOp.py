@@ -194,54 +194,6 @@ class TransmissionOp(Operator):
             adj = self.bd.adjoint_der_normal(res)
             return adj
 
-def create_synthetic_data(self):
-            bd = self.op.bd_ex.bd_eval(2*self.N_ieq_synth,3)
-            """compute the grid points of the exact boundary and derivatives
-            (up to order 3) of the parametrization and save these quantities as
-            members of bd_ex"""
-
-            Iop_data_ex = setup_iop_data(bd,self.op.kappa_ex)
-            Iop_data_in = setup_iop_data(bd,self.op.kappa_in)
-
-            """constructing operator Iop=(A+L)^(-1)*R according to (4.9). Note that
-            the operators in 'int_op' have an additional factor of 2|z'(x)| compared
-            to the operators considered in the thesis."""
-            #Insert the correct rehsape here
-            Iop = np.append(self.op.wDL_ex*op_K(bd,Iop_data_ex)+self.op.wDL_in*op_K(bd,Iop_data_in)+\
-                   (self.op.wDL_ex-F.wDL_in-4)*diag(bd.zpabs)*\
-                self.op.wSL_ex*op_S(bd,Iop_data_ex)+self.op.wSL_in*op_S(bd,Iop_data_in), \
-                self.op.wDL_ex*op_T(bd,Iop_data_ex)+self.op.wDL_in*op_T(bd,Iop_data_in)* \
-                self.op.wSL_ex*op_K(bd,Iop_data_ex).T+self.op.wSL_in*op_K(bd,Iop_data_in).T+\
-                (self.op.wSL_in-2*self.op.rho-self.op.wSL_ex-2)*np.diag(bd.zpabs)).reshape()
-            R  = np.append(-self.op.wDL_in*op_K(bd,Iop_data_in)+(self.op.wDL_in+2)*np.diag(bd.zpabs) \
-                -self.op.wSL_in*op_S(bd,Iop_data_in), \
-                -self.op.wDL_in*op_T(bd,Iop_data_in) \
-                -self.op.wSL_in*op_K(bd,Iop_data_in).T+(2*self.op.rho-self.op.wSL_in)*np.diag(bd.zpabs)).reshape()
-            # TODO this was probably supposed to be matlab's \ operator, which does not exist in python
-            # Iop = Iop\R  #here the extra factors of 2|z'(x)| cancel
-
-            """set up the matrix mapping the density to the far field pattern"""
-            FF_combined = farfield_matrix_trans(bd,self.op.meas_directions,self.op.kappa_ex,self.op.wSL_ex,self.op.wDL_ex)
-            farfield = []
-
-            for l in range(0, np.size(self.op.inc_directions,1)):
-
-                """ implementation of inhomogenities f_1=rhs_a and f_2=rhs_b according to
-                 eq. (4.4)."""
-                rhs_a = np.exp(complex(0,1)*self.op.kappa_ex*self.op.inc_directions[:,l].T*bd.z)
-                rhs_b = exp(complex(0,1)*self.op.kappa_ex*self.op.inc_directions[:,l].T*bd.z)*  \
-                (complex(0,1)*self.op.kappa_ex*self.op.inc_directions[:,l].T*bd.normal)/bd.zpabs
-                #rhs   = [rhs_a rhs_b];
-                rhs=np.append(rhs_a, rhs_b).reshape((2, rhs_a.shape[0]))
-                """computing the far field operator (FF_combined) at phi=(A+L)^(-1)*Rf
-                according to eq. (4.12)"""
-                phi = Iop*rhs.T
-                complex_farfield = FF_combined * phi
-                #farfield = [farfield;real(complex_farfield);imag(complex_farfield)];
-
-            noise = np.random.randn(np.size(farfield))
-            data  = farfield + self.op.noiselevel * noise/np.sqrt(noise.T*self.codomain.gram(noise))
-            return data
 
 class default(object):
     def __init__(self, kappa_ex, wSL_in, wSL, wDL):
