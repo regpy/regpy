@@ -1,10 +1,12 @@
 import logging
 
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Polygon
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2
-from regpy.operators.obstacle2d import PotentialOp, plots
+from regpy.operators.obstacle2d import PotentialOp
 from regpy.operators.obstacle2d.Curves.StarTrig import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
@@ -41,4 +43,25 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-plots(op, reco, reco_data, data, exact_data, exact_solution)
+fig, axs = plt.subplots(1, 2, sharey=True, figsize=(8, 8))
+axs[0].set_title('Domain')
+axs[1].set_title('Heat source')
+axs[1].plot(exact_data)
+axs[1].plot(data)
+axs[1].plot(reco_data)
+ymin = 0.7 * min(reco_data.min(), data.min(), exact_data.min())
+ymax = 1.3 * max(reco_data.max(), data.max(), exact_data.max())
+axs[1].set_ylim((ymin, ymax))
+pts = op.domain.eval_curve(reco, 64).z
+pts_2 = op.domain.eval_curve(exact_solution, 64).z
+poly = Polygon(np.column_stack([pts[0, :], pts[1, :]]), animated=True, fill=False)
+poly_2 = Polygon(np.column_stack([pts_2[0, :], pts_2[1, :]]), animated=True, fill=False)
+axs[0].add_patch(poly)
+axs[0].add_patch(poly_2)
+xmin = 1.5 * min(pts[0, :].min(), pts_2[0, :].min())
+xmax = 1.5 * max(pts[0, :].max(), pts_2[0, :].max())
+ymin = 1.5 * min(pts[1, :].min(), pts_2[1, :].min())
+ymax = 1.5 * max(pts[1, :].max(), pts_2[1, :].max())
+axs[0].set_xlim((xmin, xmax))
+axs[0].set_ylim((ymin, ymax))
+plt.show()

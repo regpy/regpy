@@ -1,1 +1,1 @@
-from .PotentialOp import PotentialOp, plots
+from .PotentialOp import PotentialOp
