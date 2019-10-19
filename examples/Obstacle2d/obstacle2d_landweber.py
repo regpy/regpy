@@ -6,7 +6,7 @@ from matplotlib.patches import Polygon
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2
-from regpy.operators.obstacle2d import PotentialOp
+from regpy.operators.obstacle2d import Potential
 from regpy.operators.obstacle2d.Curves.StarTrig import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
@@ -16,7 +16,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-op = PotentialOp(
+op = Potential(
     domain=StarTrigDiscr(200),
     radius=1.5,
     nmeas=64,

@@ -1,6 +1,6 @@
 import regpy
 
-from regpy.operators.obstacle2d import PotentialOp
+from regpy.operators.obstacle2d import Potential
 
 from regpy.operators.obstacle2d.PotentialOp import create_synthetic_data
 
@@ -38,7 +38,7 @@ ys=np.linspace(0, 63, 64)
 grid=UniformGrid(xs)
 grid_codomain=UniformGrid(ys)
 
-op=PotentialOp(grid, codomain=grid_codomain)
+op=Potential(grid, codomain=grid_codomain)
 
 #op = PotentialOp(L2(grid))
 
