@@ -1,7 +1,7 @@
-"""PDE operators using NGSolve
+"""Finite element discretizations using NGSolve
 
 This module implements a `regpy.discrs.Discretization` instance for NGSolve spaces and corresponding
-Hilbert space structures. Operators are in the `operators` submodule.
+Hilbert space structures. Operators are in the `regpy.operators.ngsolve` module.
 """
 
 import ngsolve as ngs
@@ -40,6 +40,7 @@ class Matrix(Operator):
     form : ngsolve.BilinearForm or ngsolve.BaseMatrix
         The bilinear form or matrix. A bilinear form will be assembled.
     """
+
     def __init__(self, domain, form):
         assert isinstance(domain, NgsSpace)
         if isinstance(form, ngs.BilinearForm):

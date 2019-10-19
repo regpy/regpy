@@ -1,3 +1,6 @@
+"""PDE forward operators using NGSolve
+"""
+
 import ngsolve as ngs
 import numpy as np
 

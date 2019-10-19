@@ -5,11 +5,11 @@ import ngsolve as ngs
 from ngsolve.meshes import Make1DMesh
 
 import regpy.stoprules as rules
-from regpy.ngsolve.operators import Coefficient
+from regpy.operators.ngsolve import Coefficient
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2
-from regpy.ngsolve import NgsSpace
+from regpy.discrs.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,
