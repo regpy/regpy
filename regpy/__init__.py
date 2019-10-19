@@ -9,11 +9,11 @@ Numerical and Applied Mathematics Goettingen](https://num.math.uni-goettingen.de
 
 ## Usage examples
 
-To get an impression of how using this library looks, there are some examples it the [`examples`
-folder on GitHub](https://github.com/regpy/regpy/tree/master/examples), as well as inside the
+To get an impression of how using `regpy` looks, there are some examples it the [`examples`
+folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well as inside the
 release tarballs (see below).
 
-## Test it with Singularity
+## Test it with [Singularity](https://sylabs.io/singularity/)
 
 If you're on Linux, you can use a premade Ubuntu-based Singularity container that contains
 `regpy` and all of its dependencies and examples. Install instructions for Singularity can be

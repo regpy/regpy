@@ -1045,7 +1045,7 @@ class ApproximateHessian(Operator):
     """
     def __init__(self, func, x, stepsize=1e-8):
         assert isinstance(func, functionals.Functional)
-        self.base = func.gradient(x)
+        self.gradx = func.gradient(x)
         """The gradient at `x`"""
         self.func = func
         self.x = x.copy()
@@ -1054,9 +1054,9 @@ class ApproximateHessian(Operator):
         super().__init__(func.domain, func.domain, linear=True)
         self.log.info('Using approximate Hessian of functional {}'.format(self.func))
 
-    def _eval(self, x):
-        grad = self.func.gradient(self.x + self.stepsize * x)
-        return grad - self.base
+    def _eval(self, h):
+        grad = self.func.gradient(self.x + self.stepsize * h)
+        return grad - self.gradx
 
     def _adjoint(self, x):
         return self._eval(x)

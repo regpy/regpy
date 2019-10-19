@@ -292,9 +292,9 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for discretizations of type `discr_type`
       or subclasses thereof, e.g.:
 
-          @Sobolev.register(discrs.UniformGrid)
-          class SobolevUniformGrid(HilbertSpace):
-              ...
+              @Sobolev.register(discrs.UniformGrid)
+              class SobolevUniformGrid(HilbertSpace):
+                  ...
 
     - AbstractSpaces are callable. Calling them on a discretization and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
