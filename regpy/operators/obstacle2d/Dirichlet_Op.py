@@ -4,7 +4,7 @@ Created on Sun Jul 14 20:12:14 2019
 
 @author: Björn Müller
 """
-from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
+# from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
 from .functions.operator import op_S
 from .functions.operator import op_T
 from .functions.operator import op_K

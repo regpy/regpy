@@ -6,20 +6,57 @@ from regpy.discrs.obstacles import StarTrigDiscr
 
 
 class Potential(Operator):
-    """ identification of the shape of a heat source from measurements of the
-     heat flux.
-     see F. Hettlich & W. Rundell "Iterative methods for the reconstruction
-     of an inverse potential problem", Inverse Problems 12 (1996) 251–266
-     or
-     sec. 3 in T. Hohage "Logarithmic convergence rates of the iteratively
-     regularized Gauss–Newton method for an inverse potential
-     and an inverse scattering problem" Inverse Problems 13 (1997) 1279–1299
+    r"""Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
+    circle outside of the object. The heat distributions satisfies
+
+    \[
+        \begin{cases}
+            \Delta u = 1_K & \text{in } \Omega \\
+            u = 0          & \text{on } \partial\Omega
+        \end{cases}
+    \]
+
+    where \(\partial\Omega\) is the measurement circle and \(K\) is the heat source. The operator
+    maps the shape of the heat source to the Neumann data:
+
+    \[
+        \partial K \mapsto \left.\frac{\partial u}{\partial\nu}\right|_{\partial\Omega}.
+    \]
+
+    Attributes
+    ----------
+    domain : StarTrigDiscr
+        The domain that represents the boundary curves. Actually, any star shaped curve
+        discretization that can compute derivatives along the curve and derivatives wrt. coefficient
+        perturbations works, but `StarTrigDiscr` is the only implementation currently available.
+    radius : float
+        The radius of the measurement circle.
+    nmeas : int
+        The number of equispaced measurement points on the circle.
+    nforward : int, optional
+        The order of the Fourier expansion in the forward solver.
+
+    Raises
+    ------
+    ValueError
+        Will be raised on evaluating the operator if the object radius is negative or penetrates
+        the measurement circle.
+
+    References
+    ----------
+    - F. Hettlich & W. Rundell "Iterative methods for the reconstruction of an inverse potential
+      problem", Inverse Problems 12 (1996) 251–266
+    - sec. 3 in T. Hohage "Logarithmic convergence rates of the iteratively regularized
+      Gauss–Newton method for an inverse potential and an inverse scattering problem" Inverse
+      Problems 13 (1997) 1279–1299
     """
 
     def __init__(self, domain, radius, nmeas, nforward=64):
         assert isinstance(domain, StarTrigDiscr)
         self.radius = radius
+        """The measurement radius."""
         self.nforward = nforward
+        """The Fourier order of the forward solver."""
 
         super().__init__(
             domain=domain,
@@ -39,9 +76,9 @@ class Potential(Operator):
         self._bd = self.domain.eval_curve(coeff, nvals=nfwd, nderivs=1)
         q = self._bd.q[0, :]
         if q.max() >= self.radius:
-            raise ValueError('object penetrates measurement circle')
+            raise ValueError('Object penetrates measurement circle')
         if q.min() <= 0:
-            raise ValueError('radial function negative')
+            raise ValueError('Radial function negative')
 
         qq = q**2
         flux = 1 / (2 * self.radius * nfwd) * np.sum(qq) * self.codomain.ones()
