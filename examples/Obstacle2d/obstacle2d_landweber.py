@@ -3,9 +3,9 @@ import logging
 import numpy as np
 
 import regpy.stoprules as rules
-from regpy.discrs import UniformGrid
 from regpy.hilbert import L2
 from regpy.operators.obstacle2d import PotentialOp, plots
+from regpy.operators.obstacle2d.Curves.StarTrig import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 
@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 op = PotentialOp(
-    domain=UniformGrid(np.linspace(0, 2 * np.pi, 200)),
+    domain=StarTrigDiscr(200),
     radius=1.5,
     nmeas=64,
 )

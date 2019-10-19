@@ -2,12 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon
 
-from regpy.discrs import Discretization, UniformGrid
+from regpy.discrs import UniformGrid
 from regpy.operators import Operator
-from regpy.operators.obstacle2d.Curves.StarTrig import StarTrig
-
-
-# TODO This module needs to be cleaned up.
+from regpy.operators.obstacle2d.Curves.StarTrig import StarTrigDiscr
 
 
 class PotentialOp(Operator):
@@ -22,10 +19,9 @@ class PotentialOp(Operator):
     """
 
     def __init__(self, domain, radius, nmeas, nforward=64):
+        assert isinstance(domain, StarTrigDiscr)
         self.radius = radius
         self.nforward = nforward
-
-        self.bd = StarTrig(64)
 
         super().__init__(
             domain=domain,
@@ -42,8 +38,8 @@ class PotentialOp(Operator):
 
     def _eval(self, coeff, differentiate=False):
         nfwd = self.nforward
-        self.bd.bd_eval(coeff, nfwd, 1)
-        q = self.bd.q[0, :]
+        self._bd = self.domain.eval_curve(coeff, nvals=nfwd, nderivs=1)
+        q = self._bd.q[0, :]
         if q.max() >= self.radius:
             raise ValueError('object penetrates measurement circle')
         if q.min() <= 0:
@@ -68,9 +64,9 @@ class PotentialOp(Operator):
 
     def _derivative(self, h_coeff):
         nfwd = self.nforward
-        h = self.bd.der_normal(h_coeff)
-        q = self.bd.q[0, :]
-        qq = self.bd.zpabs
+        h = self._bd.der_normal(h_coeff)
+        q = self._bd.q[0, :]
+        qq = self._bd.zpabs
 
         der = 1 / (self.radius * nfwd) * np.sum(qq * h) * self.codomain.ones()
         fac = 2 / (nfwd * self.radius)
@@ -90,8 +86,8 @@ class PotentialOp(Operator):
 
     def _adjoint(self, g):
         nfwd = self.nforward
-        q = self.bd.q[0, :]
-        qq = self.bd.zpabs
+        q = self._bd.q[0, :]
+        qq = self._bd.zpabs
 
         adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
         fac = 2 / (nfwd * self.radius)
@@ -108,7 +104,7 @@ class PotentialOp(Operator):
             qq = qq * q
             adj += fac * np.sum(g * self.cos_fl[:, nfwd // 2]) * (self.cosin[nfwd // 2, :] * qq)
 
-        adj = self.bd.adjoint_der_normal(adj).real
+        adj = self._bd.adjoint_der_normal(adj).real
         return adj
 
     # def accept_proposed(self, positions):
@@ -181,9 +177,8 @@ def plots(op, reco, reco_data, data, exact_data, exact_solution, figsize=(8, 8),
     ymin = 0.7 * min(reco_data.min(), data.min(), exact_data.min())
     ymax = 1.3 * max(reco_data.max(), data.max(), exact_data.max())
     axs[1].set_ylim((ymin, ymax))
-    bd = op.bd
-    pts = bd.coeff2Curve(reco, n)
-    pts_2 = bd.coeff2Curve(exact_solution, n)
+    pts = op.domain.eval_curve(reco, n).z
+    pts_2 = op.domain.eval_curve(exact_solution, n).z
     poly = Polygon(np.column_stack([pts[0, :], pts[1, :]]), animated=True, fill=False)
     poly_2 = Polygon(np.column_stack([pts_2[0, :], pts_2[1, :]]), animated=True, fill=False)
     axs[0].add_patch(poly)

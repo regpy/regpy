@@ -1,121 +1,90 @@
 import numpy as np
 
+from regpy.discrs import Discretization
 from regpy.util import trig_interpolate
 
 
-class StarTrig:
-    """ The class StarTrig describes boundaries of domains in R^2 which are
-     star-shaped w.r.t. the origin and which are parameterized by
-          z(t) = q(t)[cos(t);sin(t)]      0<=t<=2pi
-     where q is a trigonometric polynomial with N coefficient.
-     Here N must be even, so the highest order monomial is cos(t*N/2),
-     but sin(t*N/2) does not occur.
-     z and its derivatives are sampled at n equidistant points.
-     Application of the Gramian matrix and its inverse w.r.t. the
-     Sobolev norm ||q||_{H^s} are implemented."""
+class StarTrigDiscr(Discretization):
+    def __init__(self, n):
+        assert isinstance(n, int)
+        # TODO Curves should be real. Use rfft?
+        super().__init__(n, dtype=complex)
 
-    def __init__(self, N_fk):
-        self.coeff = None
-        self.type = None
-        self.q = None
+    def eval_curve(self, coeffs, nvals=None, nderivs=0):
+        return StarTrigCurve(self, coeffs, nvals, nderivs)
 
-    def bd_eval(self, coeff, n, der):
-        self.coeff = coeff
-        coeffhat = trig_interpolate(self.coeff, n)
-        self.q = np.zeros((der + 1, coeffhat.shape[0]))
-        for d in range(0, der + 1):
-            self.q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(
-                (1j * np.linspace(-n / 2, n / 2 - 1, n).transpose())**d * coeffhat
-            ))).transpose()
+
+class StarTrigCurve:
+    # TODO Rename attributes. `q`, `z`, `zpabs`, etc are not good names.
+
+    def __init__(self, discr, coeffs, nvals=None, nderivs=0):
+        assert isinstance(nderivs, int) and 0 <= nderivs <= 3
+        self.discr = discr
+        self.coeffs = coeffs
+        self.nvals = nvals or self.discr.size
+        self.nderivs = nderivs
+
+        coeffhat = trig_interpolate(self.coeffs, self.nvals)
+        self.q = np.zeros((nderivs + 1, self.nvals))
+        self._frqs = 1j * np.linspace(-self.nvals / 2, self.nvals / 2 - 1, self.nvals)
+        for d in range(0, nderivs + 1):
+            self.q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(self._frqs**d * coeffhat)))
+
         q = self.q
-        t = 2 * np.pi * np.linspace(0, n - 1, n) / n
+        t = 2 * np.pi * np.linspace(0, self.nvals - 1, self.nvals) / self.nvals
         cost = np.cos(t)
         sint = np.sin(t)
 
         self.z = np.append(q[0, :] * cost, q[0, :] * sint).reshape(2, q[0, :].shape[0])
-        if der >= 1:
-            self.zp = np.append(
-                q[1, :] * cost - q[0, :] * sint,
-                q[1, :] * sint + q[0, :] * cost
-            ).reshape(2, q[0, :].shape[0])
-            self.zpabs = np.sqrt(self.zp[0, :]**2 + self.zp[1, :]**2)
-            # outer normal vector
-            self.normal = np.append(
-                self.zp[1, :], -self.zp[0, :]
-            ).reshape(2, self.zp[0, :].shape[0])
 
-        if der >= 2:
-            self.zpp = np.append(
-                q[2, :] * cost - 2 * q[1, :] * sint - q[0, :] * cost,
-                q[2, :] * sint + 2 * q[1, :] * cost - q[0, :] * sint
-            ).reshape(2, n)
+        if nderivs < 1:
+            return
 
-        if der >= 3:
-            self.zppp = np.append(
-                q[3, :] * cost - 3 * q[2, :] * sint - 3 * q[1, :] * cost + q[0, :] * sint,
-                q[3, :] * sint + 3 * q[2, :] * cost - 3 * q[1, :] * sint - q[0, :] * cost
-            ).reshape(2, n)
-        if der > 3:
-            raise ValueError('only derivatives up to order 3 implemented')
+        self.zp = np.append(
+            q[1, :] * cost - q[0, :] * sint,
+            q[1, :] * sint + q[0, :] * cost
+        ).reshape(2, q[0, :].shape[0])
+        self.zpabs = np.sqrt(self.zp[0, :]**2 + self.zp[1, :]**2)
+        # outer normal vector
+        self.normal = np.append(
+            self.zp[1, :], -self.zp[0, :]
+        ).reshape(2, self.zp[0, :].shape[0])
+
+        if nderivs < 2:
+            return
+
+        self.zpp = np.append(
+            q[2, :] * cost - 2 * q[1, :] * sint - q[0, :] * cost,
+            q[2, :] * sint + 2 * q[1, :] * cost - q[0, :] * sint
+        ).reshape(2, self.nvals)
+
+        if nderivs < 3:
+            return
+
+        self.zppp = np.append(
+            q[3, :] * cost - 3 * q[2, :] * sint - 3 * q[1, :] * cost + q[0, :] * sint,
+            q[3, :] * sint + 3 * q[2, :] * cost - 3 * q[1, :] * sint - q[0, :] * cost
+        ).reshape(2, self.nvals)
+
+    # TODO Should these be turned into an operator?
 
     def der_normal(self, h):
-        """computes the normal part of the perturbation of the curve caused by
-        perturbing the coefficient vector curve.coeff in direction h"""
-
-        n = np.size(self.q[0, :])
-        h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, n)))
-        der = self.q[0, :].transpose() * h_long / self.zpabs.transpose()
-        return der
+        """Computes the normal part of the perturbation of the curve caused by
+        perturbing the coefficient vector curve.coeff in direction `h`."""
+        h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, self.nvals)))
+        return self.q[0, :] * h_long / self.zpabs
 
     def adjoint_der_normal(self, g):
-        """applies the adjoint of the linear mapping h->der_normal(curve,h) to g"""
-
-        N = len(self.coeff)
-        #        print(N)
-        n = len(g)
-        adj_long = g * self.q[0, :].transpose() / self.zpabs.transpose()
-        adj = np.fft.ifft(np.fft.fftshift(trig_interpolate(adj_long, N))) * n / N
+        """Computes the adjoint of `der_normal`."""
+        adj_long = g * self.q[0, :] / self.zpabs
+        adj = (len(g) / self.nvals) * np.fft.ifft(np.fft.fftshift(
+            trig_interpolate(adj_long, self.discr.size))
+        )
+        # TODO Why real part? Do we use only real perturbations to the coefficients?
         return adj.real
 
-    # """ The following two methods are not needed for operators depending
-    #      only on the curve, but not on its parametrization.
-    #      They are included for test purposes."""
-    #
-    # def StarTrig_derivative(self, h):
-    #
-    #     """computes the perturbation of the curve caused by perturbing the coefficient
-    #      vector curve.coeff in direction h"""
-    #     n = np.size(self.q[0, :])
-    #     h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, n))).transpose()
-    #     t = 2 * np.pi * n.linspace(0, n - 1, n) / n
-    #     der = np.append(h_long * np.cos(t), h_long * np.sin(t)).reshape(2, n)
-    #     return der
-    #
-    # def StarTrig_adjoint_derivative(self, g):
-    #
-    #     """applies the adjoint of the linear mapping h->derivative(curve,h) to g"""
-    #     N = len(self.coeff)
-    #     n = len(g)
-    #     t = 2 * np.pi * np.linspace(0, n - 1) / n
-    #     adj_long = g[0, :] * np.cos(t) + g[1, :] * np.sin(t)
-    #     adj = np.fft.ifft(np.fft.fftshift(trig_interpolate(adj_long, N))) * n / N
-    #     return adj
-
     def arc_length_der(self, h):
-        """ computes the derivative of h with respect to arclength"""
-        n = np.size(self.q[0, :])
-        dhds = np.fft.ifft(np.fft.fftshift(
-            (1j * np.linspace(-n / 2, n / 2 - 1, n).transpose()) * trig_interpolate(h, n)
-        )) / self.zpabs.transpose()
-        return dhds
-
-    def coeff2Curve(self, coeff, n):
-        # TODO this is the equivalent to bd_eval(der=0), except that bd_eval uses self.coeff and
-        #  insists on modifying instance attributes
-        radial = np.fft.ifft(np.fft.fftshift(trig_interpolate(coeff, n)))
-        t = 2 * np.pi / n * np.linspace(0, n - 1, n)
-        pts = np.append(
-            radial.transpose() * np.cos(t),
-            radial.transpose() * np.sin(t)
-        ).reshape(2, n)
-        return pts.real
+        """Computes the derivative of `h` with respect to arclength"""
+        return np.fft.ifft(np.fft.fftshift(
+            self._frqs * trig_interpolate(h, self.nvals)
+        )) / self.zpabs
