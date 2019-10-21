@@ -254,6 +254,24 @@ class Indicator(Functional):
         return operators.Zero(self.domain)
 
 
+class ErrorToInfinity(Functional):
+    def __init__(self, func):
+        super().__init__(func.domain)
+        self.func = func
+
+    def _eval(self, x):
+        try:
+            return self.func(x)
+        except:
+            return np.inf
+
+    def _gradient(self, x):
+        try:
+            return self.func.gradient(x)
+        except:
+            return self.domain.zeros()
+
+
 class L1Norm(Functional):
     def _eval(self, x):
         return np.sum(np.abs(x))
