@@ -42,7 +42,7 @@ under `/opt/examples`.
 
 - The source code is on GitHub ([regpy/regpy](https://github.com/regpy/regpy)).
 - Releases are at the corresponding [release page](https://github.com/regpy/regpy/releases). The
-  current version is 0.0.1.
+  current version is 0.1.
 
 ### Dependencies
 

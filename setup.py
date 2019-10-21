@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='regpy',
-    version='0.0.1',
+    version='0.1',
     packages=setuptools.find_packages(),
     install_requires=[
         'numpy>=1.14,<2.0',
