@@ -27,8 +27,8 @@ def test_adjoint(op, tolerance=1e-10):
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
-    err = np.abs(np.vdot(y, fx) - np.vdot(fty, x))
-    assert err < tolerance, 'err = {}'.format(err)
+    err = np.real(np.vdot(y, fx) - np.vdot(fty, x))
+    assert np.abs(err) < tolerance, 'err = {}'.format(err)
 
 
 def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
