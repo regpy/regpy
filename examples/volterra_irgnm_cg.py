@@ -23,7 +23,7 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 
 solver = IrgnmCG(setting, data, regpar=1, regpar_step=0.9, init=init)
 stoprule = (
