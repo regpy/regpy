@@ -4,7 +4,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.newton_cg_frozen import Newton_CG_Frozen
+from regpy.solvers.newton import NewtonCGFrozen
 import regpy.stoprules as rules
 
 import numpy as np
@@ -28,7 +28,7 @@ init = op.domain.ones()
 
 setting = HilbertSpaceSetting(op=op, domain=L2, codomain=L2)
 
-newton_cg = Newton_CG_Frozen(setting, data, init, cgmaxit = 100, rho = 0.98)
+newton_cg = NewtonCGFrozen(setting, data, init, cgmaxit = 100, rho = 0.98)
 stoprule = (
     rules.CountIterations(1000) +
     rules.Discrepancy(setting.codomain.norm, data, noiselevel=0.03, tau=1.1))

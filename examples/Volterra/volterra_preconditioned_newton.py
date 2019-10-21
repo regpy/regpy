@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm_cg_lanczos import IRGNM_CG_Lanczos
+from regpy.solvers.irgnm import IrgnmCGLanczos
 import regpy.stoprules as rules
 
 import numpy as np
@@ -25,7 +25,7 @@ init=op.domain.ones()
 
 setting=HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-irgnm_cg = IRGNM_CG_Lanczos(setting, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
+irgnm_cg = IrgnmCGLanczos(setting, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
     rules.CountIterations(20) +
     rules.Discrepancy(setting.Hcodomain.norm, data,
