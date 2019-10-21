@@ -5,7 +5,7 @@ import numpy as np
 from regpy.solvers.irgnm import IrgnmCG
 
 import regpy.stoprules as rules
-from regpy.hilbert import L2
+from regpy.hilbert import L2, Sobolev
 from regpy.operators.obstacles import Potential
 from regpy.discrs.obstacles import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
@@ -28,7 +28,7 @@ data = exact_data + noise
 
 init = op.domain.sample(lambda t: 1)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
 solver = IrgnmCG(
     setting, data,
