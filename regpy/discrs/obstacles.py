@@ -1,12 +1,12 @@
 import numpy as np
 
-from regpy.discrs import Discretization
+from regpy.discrs import UniformGrid
 from regpy.util import trig_interpolate
 
-# TODO implement Sobolev spaces
 
-
-class StarTrigDiscr(Discretization):
+# The coefficients of this curve are actually equidistant samples of the radial function,
+# so we can simply inherit from UniformGrid to get the Sobolev implementation for free.
+class StarTrigDiscr(UniformGrid):
     """A discretization representing star-shaped obstacles parametrized in a trigonometric basis.
     Will always be 1d an complex.
 
