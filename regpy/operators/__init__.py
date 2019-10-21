@@ -555,7 +555,7 @@ class CholeskyInverse(Operator):
         assert op.domain and op.domain == op.codomain
         domain = op.domain
         if matrix is None:
-            matrix = np.empty((domain.size,) * 2, dtype=float)
+            matrix = np.empty((domain.realsize,) * 2, dtype=float)
             for j, elm in enumerate(domain.iter_basis()):
                 matrix[j, :] = domain.flatten(op(elm))
         self.factorization = cho_factor(matrix)
