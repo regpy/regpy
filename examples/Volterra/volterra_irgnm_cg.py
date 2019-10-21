@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
 op = Volterra(grid, exponent=3)
@@ -24,13 +25,13 @@ init = op.domain.ones()
 
 setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
-solver = IrgnmCG(setting, data, regpar=100, regpar_step=0.9, init=init)
+solver = IrgnmCG(setting, data, regpar=1, regpar_step=0.9, init=init)
 stoprule = (
-    rules.CountIterations(1000) +
+    rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=2
+        tau=1.1
     )
 )
 

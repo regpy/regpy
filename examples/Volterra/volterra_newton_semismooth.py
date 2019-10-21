@@ -11,27 +11,31 @@ import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
 op = Volterra(grid)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.3 * op.domain.randn()
+noise = 0.1 * op.domain.randn()
 data = exact_data + noise
-init = 0.9*np.sin(grid.coords[0])
-init_sol = init.copy()
-init_data = op(init)
+init = grid.zeros()
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-newton = NewtonSemiSmooth(setting, data, init, alpha=1, psi_minus=-1, psi_plus=1)
+# Run the solver with a `-1 <= reco <= 1` constraint. For illustration, you can also try a
+# constraint which is violated by the exact solution.
+newton = NewtonSemiSmooth(setting, data, init, alpha=0.1, psi_minus=-1, psi_plus=1)
 stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(setting.Hcodomain.norm, data,
-                      noiselevel=0,
-                      tau=1.1))
+    rules.CountIterations(1000) +
+    rules.Discrepancy(
+        setting.Hcodomain.norm, data,
+        noiselevel=setting.Hcodomain.norm(noise),
+        tau=1.1
+    )
+)
 
 reco, reco_data = newton.run(stoprule)
 

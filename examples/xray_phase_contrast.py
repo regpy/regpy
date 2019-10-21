@@ -1,8 +1,9 @@
+from regpy.solvers.irgnm import IrgnmCG
+
 from regpy.operators.fresnel import xray_phase_contrast
 from regpy.hilbert import L2
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.landweber import Landweber
 import regpy.stoprules as rules
 
 import numpy as np
@@ -12,14 +13,14 @@ import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 
 # Example parameters
 fresnelNumber = 5e-4    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                         # in grid (i.e. with the size of one pixel for the above choice of grid)
 noise_level = 0.01      # Noise level in the simulated data
-max_iterations = 100    # Maximum number of Landweber iterations performed to reconstruct the image
 
 
 # Uniform grid of unit-spacing
@@ -39,17 +40,20 @@ exact_data = op(exact_solution)
 noise = noise_level * op.codomain.randn()
 data = exact_data + noise
 
-
-# Image-reconstruction using Landweber's method
+# Image-reconstruction using the IRGNM method
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
-initial_guess = grid.zeros()
+solver = IrgnmCG(setting, data, regpar=10)
+stoprule = (
+    rules.CountIterations(max_iterations=10) +
+    rules.Discrepancy(
+        setting.Hcodomain.norm,
+        data,
+        noiselevel=setting.Hcodomain.norm(noise),
+        tau=1.1
+    )
+)
 
-landweber = Landweber(setting, data, initial_guess, stepsize=0.25)
-stoprule = (rules.CountIterations(max_iterations) +
-            rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
-
-reco, reco_data = landweber.run(stoprule)
-
+reco, reco_data = solver.run(stoprule)
 
 # Plot reults
 plt.figure()

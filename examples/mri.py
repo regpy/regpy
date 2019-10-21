@@ -27,8 +27,8 @@ noiselevel = 0.05
 # can be used to determine the mask.
 mask = grid.zeros(dtype=bool)
 mask[::2] = True
-mask[:5] = True
-mask[-5:] = True
+mask[:10] = True
+mask[-10:] = True
 
 full_mri_op = parallel_mri(grid=grid, ncoils=10)
 sampling = cartesian_sampling(full_mri_op.codomain, mask=mask)
@@ -65,12 +65,12 @@ solver = IrgnmCG(
     setting=setting,
     data=data,
     regpar=10,
-    regpar_step=0.9,
+    regpar_step=0.8,
     init=init
 )
 
 stoprule = (
-    rules.CountIterations(100) +
+    rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(exact_data - data),
@@ -82,6 +82,9 @@ stoprule = (
 plt.ion()
 fig, axes = plt.subplots(ncols=2, constrained_layout=True)
 bars = [cbar.make_axes(ax)[0] for ax in axes]
+
+axes[0].set_title('exact solution')
+axes[1].set_title('reconstruction')
 
 # Plot exact solution
 im = axes[0].imshow(normalize(*mri_op.domain.split(exact_solution)))
