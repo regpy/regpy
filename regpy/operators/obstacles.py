@@ -87,8 +87,8 @@ class Potential(Operator):
             fac /= self.radius
             qq *= q
             flux += (
-                (fac / (j + 3)) * self.cos_fl[:, j] * np.sum(qq * self.cosin[j, :]) +
-                (fac / (j + 3)) * self.sin_fl[:, j] * np.sum(qq * self.sinus[j, :])
+                (fac / (j + 3)) * self.cos_fl[j, :] * np.sum(qq * self.cosin[j, :]) +
+                (fac / (j + 3)) * self.sin_fl[j, :] * np.sum(qq * self.sinus[j, :])
             )
 
         if nfwd % 2 == 0:
@@ -101,43 +101,44 @@ class Potential(Operator):
         nfwd = self.nforward
         h = self._bd.der_normal(h_coeff)
         q = self._bd.q[0, :]
-        qq = self._bd.zpabs
+        # TODO why zpabs instead of q?
+        qqh = self._bd.zpabs * h
 
-        der = 1 / (self.radius * nfwd) * np.sum(qq * h) * self.codomain.ones()
+        der = 1 / (self.radius * nfwd) * np.sum(qqh) * self.codomain.ones()
         fac = 2 / (nfwd * self.radius)
         for j in range((nfwd - 1) // 2):
             fac /= self.radius
-            qq = qq * q
+            qqh *= q
             der += fac * (
-                self.cos_fl[:, j] * np.sum(qq * h * self.cosin[j, :]) +
-                self.sin_fl[:, j] * np.sum(qq * h * self.sinus[j, :])
+                self.cos_fl[j, :] * np.sum(qqh * self.cosin[j, :]) +
+                self.sin_fl[j, :] * np.sum(qqh * self.sinus[j, :])
             )
 
         if nfwd % 2 == 0:
             fac /= self.radius
-            qq = qq * q
-            der += fac * self.cos_fl[:, nfwd // 2] * np.sum(qq * h * self.cosin[nfwd // 2, :])
-        return der.real
+            qqh *= q
+            der += fac * self.cos_fl[nfwd // 2, :] * np.sum(qqh * self.cosin[nfwd // 2, :])
+        return der
 
     def _adjoint(self, g):
         nfwd = self.nforward
         q = self._bd.q[0, :]
-        qq = self._bd.zpabs
+        qq = self._bd.zpabs.copy()
 
         adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
         fac = 2 / (nfwd * self.radius)
         for j in range((nfwd - 1) // 2):
             fac /= self.radius
-            qq = qq * q
+            qq *= q
             adj += fac * (
-                np.sum(g * self.cos_fl[:, j]) * (self.cosin[j, :] * qq) +
-                np.sum(g * self.sin_fl[:, j]) * (self.sinus[j, :] * qq)
+                np.sum(g * self.cos_fl[j, :]) * (self.cosin[j, :] * qq) +
+                np.sum(g * self.sin_fl[j, :]) * (self.sinus[j, :] * qq)
             )
 
         if nfwd % 2 == 0:
             fac /= self.radius
-            qq = qq * q
-            adj += fac * np.sum(g * self.cos_fl[:, nfwd // 2]) * (self.cosin[nfwd // 2, :] * qq)
+            qq *= q
+            adj += fac * np.sum(g * self.cos_fl[nfwd // 2, :]) * (self.cosin[nfwd // 2, :] * qq)
 
-        adj = self._bd.adjoint_der_normal(adj).real
+        adj = self._bd.adjoint_der_normal(adj)
         return adj

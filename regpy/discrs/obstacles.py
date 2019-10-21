@@ -59,14 +59,14 @@ class StarTrigCurve:
 
         self.q = np.zeros((self.nderivs + 1, self.nvals))
         """The computed radii of the curve and its derivatives, shaped `(nderivs, nvals)`."""
+        q = self.q
 
         coeffhat = trig_interpolate(self.coeffs, self.nvals)
         self._frqs = 1j * np.linspace(-self.nvals / 2, self.nvals / 2 - 1, self.nvals)
         for d in range(0, nderivs + 1):
-            self.q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(self._frqs**d * coeffhat)))
+            q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(self._frqs**d * coeffhat)))
 
-        q = self.q
-        t = 2 * np.pi * np.linspace(0, self.nvals - 1, self.nvals) / self.nvals
+        t = np.linspace(0, 2 * np.pi, self.nvals, endpoint=False)
         cost = np.cos(t)
         sint = np.sin(t)
 
@@ -114,20 +114,19 @@ class StarTrigCurve:
     def der_normal(self, h):
         """Computes the normal part of the perturbation of the curve caused by
         perturbing the coefficient vector curve.coeff in direction `h`."""
-        h_long = np.fft.ifft(np.fft.fftshift(trig_interpolate(h, self.nvals)))
-        return self.q[0, :] * h_long / self.zpabs
+        return (self.q[0, :] / self.zpabs) * np.real(
+            np.fft.ifft(np.fft.fftshift(trig_interpolate(h, self.nvals)))
+        )
 
     def adjoint_der_normal(self, g):
         """Computes the adjoint of `der_normal`."""
         adj_long = g * self.q[0, :] / self.zpabs
-        adj = (len(g) / self.nvals) * np.fft.ifft(np.fft.fftshift(
+        return (self.nvals / self.discr.size) * np.fft.ifft(np.fft.fftshift(
             trig_interpolate(adj_long, self.discr.size))
         )
-        # TODO Why real part? Do we use only real perturbations to the coefficients?
-        return adj.real
 
     def arc_length_der(self, h):
         """Computes the derivative of `h` with respect to arclength."""
-        return np.fft.ifft(np.fft.fftshift(
+        return np.real(np.fft.ifft(np.fft.fftshift(
             self._frqs * trig_interpolate(h, self.nvals)
-        )) / self.zpabs
+        ))) / self.zpabs
