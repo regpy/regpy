@@ -26,6 +26,12 @@ class StarTrigDiscr(Discretization):
         """
         return StarTrigCurve(self, coeffs, nvals, nderivs)
 
+    def sample(self, f):
+        return np.asarray(
+            np.broadcast_to(f(np.linspace(0, 2*np.pi, self.size, endpoint=False)), self.shape),
+            dtype=self.dtype
+        )
+
 
 class StarTrigCurve:
     # TODO Rename attributes. `q`, `z`, `zpabs`, etc are not good names.
