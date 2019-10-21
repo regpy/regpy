@@ -15,25 +15,26 @@ import matplotlib.colorbar as cbar
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
+radius = 1
 scattering = MediumScatteringFixed(
     gridshape=(65, 65),
-    radius=1,
+    radius=radius,
     wave_number=1,
     inc_directions=util.linspace_circle(16),
     farfield_directions=util.linspace_circle(16),
-    # support=lambda grid, radius: np.max(np.abs(grid.coords), axis=0) <= radius,
-    # coarseshape=(17, 17),
 )
 
 contrast = scattering.domain.zeros()
 r = np.linalg.norm(scattering.domain.coords, axis=0)
-contrast[r < 1] = np.exp(-1/(1 - r[r < 1]**2))
+contrast[r < radius] = np.exp(-1/(radius - r[r < radius]**2))
 
 projection = CoordinateProjection(
     scattering.domain,
-    scattering.support)
+    scattering.support
+)
 embedding = projection.adjoint
 
 op = scattering * embedding
@@ -46,13 +47,14 @@ init = op.domain.zeros()
 
 setting = HilbertSpaceSetting(
     op=op,
+    # Define Sobolev norm on support via embedding
     Hdomain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
     Hcodomain=L2
 )
 
 solver = IrgnmCG(
     setting, data,
-    regpar=10, regpar_step=0.8,
+    regpar=1, regpar_step=0.8,
     init=init,
     cgpars=dict(
         tol=1e-8,
@@ -72,6 +74,12 @@ stoprule = (
 plt.ion()
 fig, axes = plt.subplots(ncols=3, nrows=2, constrained_layout=True)
 bars = np.vectorize(lambda ax: cbar.make_axes(ax)[0], otypes=[object])(axes)
+
+axes[0, 0].set_title('exact contrast')
+axes[1, 0].set_title('exact data')
+axes[0, 1].set_title('reco contrast')
+axes[1, 1].set_title('reco data')
+axes[0, 2].set_title('difference')
 
 def show(i, j, x):
     im = axes[i, j].imshow(x)
