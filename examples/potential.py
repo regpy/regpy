@@ -56,8 +56,8 @@ axs[1].set_title('Heat flux')
 for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
     if n % 10 == 0:
         axs[0].clear()
-        axs[0].plot(*op.domain.eval_curve(exact_solution).z)
-        axs[0].plot(*op.domain.eval_curve(reco).z)
+        axs[0].plot(*op.domain.eval_curve(exact_solution).curve[0])
+        axs[0].plot(*op.domain.eval_curve(reco).curve[0])
 
         axs[1].clear()
         axs[1].plot(exact_data, label='exact')

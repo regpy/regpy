@@ -64,63 +64,42 @@ class StarTrigCurve:
 
         self._frqs = 1j * np.arange(self.discr.size // 2 + 1)
         # (nvals / nx) * irfft(rfft(x), nvals) can be used for trig interpolation
-        self.q = (self.nvals / self.discr.size) * np.fft.irfft(
+        self.radius = (self.nvals / self.discr.size) * np.fft.irfft(
             (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis]) * np.fft.rfft(coeffs),
             self.nvals,
             axis=1
         )
-        """The computed radii of the curve and its derivatives, shaped `(nderivs, nvals)`."""
-        q = self.q
+        """The values of the radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
 
         t = np.linspace(0, 2 * np.pi, self.nvals, endpoint=False)
         cost = np.cos(t)
         sint = np.sin(t)
 
-        self.z = np.stack([
-            q[0, :] * cost,
-            q[0, :] * sint
-        ])
-        """The points on the curve as `(2, nvals)` array."""
+        self.curve = np.zeros((self.nderivs + 1, 2, self.nvals))
+        """The points on the curve and its derivatives, shaped `(nderivs + 1, 2, nvals)`."""
+        binom = np.ones(self.nderivs + 1, dtype=int)
+        for n in range(self.nderivs + 1):
+            binom[1:n] += binom[:n-1]
+            aux = binom[:n+1, np.newaxis] * self.radius[n::-1]
+            even = np.sum(aux[::4], axis=0) - np.sum(aux[2::4], axis=0)
+            odd = np.sum(aux[1::4], axis=0) - np.sum(aux[3::4], axis=0)
+            self.curve[n, 0] = even * cost - odd * sint
+            self.curve[n, 1] = even * sint + odd * cost
 
-        if nderivs < 1:
+        if self.nderivs == 0:
             return
 
-        self.zp = np.stack([
-            q[1, :] * cost - q[0, :] * sint,
-            q[1, :] * sint + q[0, :] * cost
-        ])
-        """The points on the first derivative as `(2, nvals)` array."""
-        self.zpabs = np.sqrt(self.zp[0, :]**2 + self.zp[1, :]**2)
+        self.zpabs = np.linalg.norm(self.curve[1], axis=0)
         """The absolute values of the first derivative as `(nvals,)` array."""
-        self.normal = np.stack([
-            self.zp[1, :], -self.zp[0, :]
-        ])
+        self.normal = np.stack([self.curve[1, 1], -self.curve[1, 1]])
         """The outer normal vector as `(2, nvals)` array."""
-
-        if nderivs < 2:
-            return
-
-        self.zpp = np.stack([
-            q[2, :] * cost - 2 * q[1, :] * sint - q[0, :] * cost,
-            q[2, :] * sint + 2 * q[1, :] * cost - q[0, :] * sint
-        ])
-        """The points on the second derivative as `(2, nvals)` array."""
-
-        if nderivs < 3:
-            return
-
-        self.zppp = np.stack([
-            q[3, :] * cost - 3 * q[2, :] * sint - 3 * q[1, :] * cost + q[0, :] * sint,
-            q[3, :] * sint + 3 * q[2, :] * cost - 3 * q[1, :] * sint - q[0, :] * cost
-        ])
-        """The points on the third derivative as `(2, nvals)` array."""
 
     # TODO Should these be turned into an operator?
 
     def der_normal(self, h):
         """Computes the normal part of the perturbation of the curve caused by
         perturbing the coefficient vector curve.coeff in direction `h`."""
-        return (self.q[0, :] / self.zpabs) * (self.nvals / self.discr.size) * np.fft.irfft(
+        return (self.radius[0] / self.zpabs) * (self.nvals / self.discr.size) * np.fft.irfft(
             np.fft.rfft(h), self.nvals
         )
 
@@ -128,7 +107,7 @@ class StarTrigCurve:
         """Computes the adjoint of `der_normal`."""
         return util.adjoint_rfft(
             util.adjoint_irfft(
-                (self.q[0, :] / self.zpabs) * (self.nvals / self.discr.size) * g,
+                (self.radius[0] / self.zpabs) * (self.nvals / self.discr.size) * g,
                 self.discr.size // 2 + 1
             ),
             self.discr.size

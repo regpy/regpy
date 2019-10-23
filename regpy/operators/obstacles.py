@@ -71,10 +71,10 @@ class Potential(Operator):
         self.cos_fl = np.cos(k_tfl)
         self.sin_fl = np.sin(k_tfl)
 
-    def _eval(self, coeff, differentiate=False):
+    def _eval(self, x, differentiate=False):
         nfwd = self.nforward
-        self._bd = self.domain.eval_curve(coeff, nvals=nfwd, nderivs=1)
-        q = self._bd.q[0, :]
+        self._bd = self.domain.eval_curve(x, nvals=nfwd, nderivs=1)
+        q = self._bd.radius[0]
         if q.max() >= self.radius:
             raise ValueError('Object penetrates measurement circle')
         if q.min() <= 0:
@@ -97,10 +97,10 @@ class Potential(Operator):
             flux += fac * self.cos_fl[:, nfwd // 2] * np.sum(qq * self.cosin[nfwd // 2, :])
         return flux
 
-    def _derivative(self, h_coeff):
+    def _derivative(self, h):
         nfwd = self.nforward
-        h = self._bd.der_normal(h_coeff)
-        q = self._bd.q[0, :]
+        h = self._bd.der_normal(h)
+        q = self._bd.radius[0]
         # TODO why zpabs instead of q?
         qqh = self._bd.zpabs * h
 
@@ -122,7 +122,7 @@ class Potential(Operator):
 
     def _adjoint(self, g):
         nfwd = self.nforward
-        q = self._bd.q[0, :]
+        q = self._bd.radius[0]
         qq = self._bd.zpabs.copy()
 
         adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
@@ -140,5 +140,4 @@ class Potential(Operator):
             qq *= q
             adj += fac * np.sum(g * self.cos_fl[nfwd // 2, :]) * (self.cosin[nfwd // 2, :] * qq)
 
-        adj = self._bd.adjoint_der_normal(adj)
-        return adj
+        return self._bd.adjoint_der_normal(adj)
