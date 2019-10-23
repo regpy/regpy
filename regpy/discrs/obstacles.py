@@ -1,7 +1,7 @@
 import numpy as np
 
 from regpy.discrs import UniformGrid
-from regpy.util import trig_interpolate
+import regpy.util as util
 
 
 # The coefficients of this curve are actually equidistant samples of the radial function,
@@ -17,8 +17,7 @@ class StarTrigDiscr(UniformGrid):
     """
     def __init__(self, n):
         assert isinstance(n, int)
-        # TODO Curves should be real. Use rfft?
-        super().__init__(n, dtype=complex)
+        super().__init__(np.linspace(0, 2 * np.pi, n, endpoint=False))
 
     def eval_curve(self, coeffs, nvals=None, nderivs=0):
         """Compute a curve for the given coefficients. All parameters will be passed to the
@@ -63,14 +62,15 @@ class StarTrigCurve:
         self.nderivs = nderivs
         """The number of computed derivatives."""
 
-        self.q = np.zeros((self.nderivs + 1, self.nvals))
+        self._frqs = 1j * np.arange(self.discr.size // 2 + 1)
+        # (nvals / nx) * irfft(rfft(x), nvals) can be used for trig interpolation
+        self.q = (self.nvals / self.discr.size) * np.fft.irfft(
+            (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis]) * np.fft.rfft(coeffs),
+            self.nvals,
+            axis=1
+        )
         """The computed radii of the curve and its derivatives, shaped `(nderivs, nvals)`."""
         q = self.q
-
-        coeffhat = trig_interpolate(self.coeffs, self.nvals)
-        self._frqs = 1j * np.linspace(-self.nvals / 2, self.nvals / 2 - 1, self.nvals)
-        for d in range(0, nderivs + 1):
-            q[d, :] = np.real(np.fft.ifft(np.fft.fftshift(self._frqs**d * coeffhat)))
 
         t = np.linspace(0, 2 * np.pi, self.nvals, endpoint=False)
         cost = np.cos(t)
@@ -120,19 +120,22 @@ class StarTrigCurve:
     def der_normal(self, h):
         """Computes the normal part of the perturbation of the curve caused by
         perturbing the coefficient vector curve.coeff in direction `h`."""
-        return (self.q[0, :] / self.zpabs) * np.real(
-            np.fft.ifft(np.fft.fftshift(trig_interpolate(h, self.nvals)))
+        return (self.q[0, :] / self.zpabs) * (self.nvals / self.discr.size) * np.fft.irfft(
+            np.fft.rfft(h), self.nvals
         )
 
     def adjoint_der_normal(self, g):
         """Computes the adjoint of `der_normal`."""
-        adj_long = g * self.q[0, :] / self.zpabs
-        return (self.nvals / self.discr.size) * np.fft.ifft(np.fft.fftshift(
-            trig_interpolate(adj_long, self.discr.size))
+        return util.adjoint_rfft(
+            util.adjoint_irfft(
+                (self.q[0, :] / self.zpabs) * (self.nvals / self.discr.size) * g,
+                self.discr.size // 2 + 1
+            ),
+            self.discr.size
         )
 
     def arc_length_der(self, h):
         """Computes the derivative of `h` with respect to arclength."""
-        return np.real(np.fft.ifft(np.fft.fftshift(
-            self._frqs * trig_interpolate(h, self.nvals)
-        ))) / self.zpabs
+        return (self.nvals / self.discr.size) * np.fft.irfft(
+            self._frqs * np.fft.rfft(h), self.nvals
+        ) / self.zpabs

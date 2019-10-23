@@ -168,3 +168,119 @@ def trig_interpolate(val, n):
         coeffs[n // 2] = 0.5 * (coeffhat[n // 2] + coeffhat[-(n // 2)])
     coeffs = n / N * np.fft.ifftshift(coeffs)
     return coeffs
+
+
+def adjoint_rfft(y, size, n=None):
+    """Compute the adjoint of `numpy.fft.rfft`. More concretely, the adjoint of
+
+        x |-> rfft(x, n)
+
+    is
+
+        y |-> adjoint_rfft(y, x.size, n)
+
+    Since the size of `x` can not be determined from `y` and `n`, it needs to be given explicitly.
+
+    Parameters
+    ----------
+    y : array-like
+        The input array.
+    size : int
+        The size of the output, i.e. the size of the original input to `rfft`.
+    n : int, optional
+        The same `n` given as optional parameter to `rfft`. If omitted, `size` will be used, so
+        `adjoint_rfft(y, x.size)` is adjoint to `rfft(x)`.
+
+    Returns
+    -------
+    array of shape (size,)
+    """
+
+    if n is None:
+        n = size
+    # y needs to be in the image of x |-> rfft(x, n), so its size must be this:
+    assert n // 2 + 1 == y.size
+    # The following is the adjoint of x |-> rfft(x, n=x.size), i.e. the "natural size" rfft,
+    # of size n
+    result = np.fft.irfft(y, n)
+    result *= n / 2
+    result += y[0].real / 2
+    if n % 2 == 0:
+        aux = y[-1].real / 2
+        result[::2] += aux
+        result[1::2] -= aux
+    # The general case is
+    #     rfft(x, n) = rfft(p(x, n), p(x, n).size)
+    # where p is a truncation or padding operator (and p(x, n).size == n), so the adjoint is the
+    # "natural" adjoint followed by (the adjoint of the self-adjoint) padding or truncation.
+    if n == size:
+        return result
+    elif size < n:
+        return result[:size]
+    else:
+        aux = np.zeros(size, dtype=result.dtype)
+        aux[:n] = result
+        return aux
+
+
+def adjoint_irfft(y, size=None):
+    """Compute the adjoint of `numpy.fft.irfft`. More concretely, the adjoint of
+
+        x |-> irfft(x, n)
+
+    is
+
+        y |-> adjoint_irfft(y, x.size)
+
+    Since the size of `x` can not be determined from `y`, it needs to be given explicitly. The
+    parameter `n`, however, is determined as the output size of `irfft`, so it does not not need to
+    be specified for the adjoint.
+
+    Parameters
+    ----------
+    y : array-like
+        The input array.
+    size : int, optional
+        The size of the output, i.e. the size of the original input to `irfft`. If omitted,
+        `x.size // 2 + 1` will be used, i.e. we assume the `irfft` is inverse to a plain `rfft(x)`,
+        without additional padding or truncation.
+
+    Returns
+    -------
+    array of shape (size,)
+    """
+
+    if size is None:
+        size = y.size // 2 + 1
+    # We proceed as in `adjoint_rfft`: first compute the adjoint of the "natural size" `irfft` by
+    # using `rfft(x)` without explicit `n`...
+    result = np.fft.rfft(y)
+    result[0] -= np.sum(y) / 2
+    if y.size % 2 == 0:
+        result[-1] -= (np.sum(y[::2]) - np.sum(y[1::2])) / 2
+    result *= 2 / y.size
+    # ... then pad or truncate.
+    if size == result.size:
+        return result
+    elif size < result.size:
+        return result[:size]
+    else:
+        aux = np.zeros(size, dtype=result.dtype)
+        aux[:result.size] = result
+        return aux
+
+
+def foo(n, m):
+    x = np.random.randn(n) + 1j * np.random.randn(n)
+    fx = np.fft.irfft(x, m)
+    y = np.random.randn(fx.size)
+    fty = adjoint_irfft(y, x.size)
+    return np.real(np.vdot(y, fx)) - np.real(np.vdot(fty, x))
+
+
+def asdf():
+    a = np.zeros((8, 8))
+    for i in range(8):
+        for j in range(8):
+            a[i, j] = foo(i + 6, j + 6)
+    return a
