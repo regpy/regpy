@@ -73,7 +73,10 @@ class Potential(Operator):
 
     def _eval(self, x, differentiate=False):
         nfwd = self.nforward
-        self._bd = self.domain.eval_curve(x, nvals=nfwd, nderivs=1)
+        # TODO This operator does not actually need to know about the curve at all,
+        #  it is effectively a composition with eval_curve (which is not a proper Operator yet). If
+        #  similar patterns work for the other obstacle operators, this should be made manifest.
+        self._bd = self.domain.eval_curve(x, nvals=nfwd)
         q = self._bd.radius[0]
         if q.max() >= self.radius:
             raise ValueError('Object penetrates measurement circle')
@@ -99,10 +102,8 @@ class Potential(Operator):
 
     def _derivative(self, h):
         nfwd = self.nforward
-        h = self._bd.der_normal(h)
         q = self._bd.radius[0]
-        # TODO why zpabs instead of q?
-        qqh = self._bd.zpabs * h
+        qqh = q * self._bd.derivative(h)
 
         der = 1 / (self.radius * nfwd) * np.sum(qqh) * self.codomain.ones()
         fac = 2 / (nfwd * self.radius)
@@ -123,7 +124,7 @@ class Potential(Operator):
     def _adjoint(self, g):
         nfwd = self.nforward
         q = self._bd.radius[0]
-        qq = self._bd.zpabs.copy()
+        qq = q.copy()
 
         adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
         fac = 2 / (nfwd * self.radius)
@@ -140,4 +141,4 @@ class Potential(Operator):
             qq *= q
             adj += fac * np.sum(g * self.cos_fl[nfwd // 2, :]) * (self.cosin[nfwd // 2, :] * qq)
 
-        return self._bd.adjoint_der_normal(adj)
+        return self._bd.adjoint(adj)

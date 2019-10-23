@@ -89,32 +89,36 @@ class StarTrigCurve:
         if self.nderivs == 0:
             return
 
-        self.zpabs = np.linalg.norm(self.curve[1], axis=0)
-        """The absolute values of the first derivative as `(nvals,)` array."""
         self.normal = np.stack([self.curve[1, 1], -self.curve[1, 1]])
-        """The outer normal vector as `(2, nvals)` array."""
+        """The (unnormalized) outer normal vector as `(2, nvals)` array. Its norm identical to that
+        of the tangent vector `curve[1]`."""
+        self.tangent_norm = np.linalg.norm(self.normal, axis=0)
+        """The absolute values of the tangent and normal vectors as `(nvals,)` array."""
 
-    # TODO Should these be turned into an operator?
+    # TODO Should these be turned into operators?
+
+    def derivative(self, h):
+        return (self.nvals / self.discr.size) * np.fft.irfft(
+            np.fft.rfft(h), self.nvals
+        )
+
+    def adjoint(self, g):
+        return (self.nvals / self.discr.size) * util.adjoint_rfft(
+            util.adjoint_irfft(g, self.discr.size // 2 + 1),
+            self.discr.size
+        )
 
     def der_normal(self, h):
         """Computes the normal part of the perturbation of the curve caused by
         perturbing the coefficient vector curve.coeff in direction `h`."""
-        return (self.radius[0] / self.zpabs) * (self.nvals / self.discr.size) * np.fft.irfft(
-            np.fft.rfft(h), self.nvals
-        )
+        return (self.radius[0] / self.tangent_norm) * self.derivative(h)
 
     def adjoint_der_normal(self, g):
         """Computes the adjoint of `der_normal`."""
-        return util.adjoint_rfft(
-            util.adjoint_irfft(
-                (self.radius[0] / self.zpabs) * (self.nvals / self.discr.size) * g,
-                self.discr.size // 2 + 1
-            ),
-            self.discr.size
-        )
+        return self.adjoint((self.radius[0] / self.tangent_norm) * g)
 
     def arc_length_der(self, h):
         """Computes the derivative of `h` with respect to arclength."""
         return (self.nvals / self.discr.size) * np.fft.irfft(
             self._frqs * np.fft.rfft(h), self.nvals
-        ) / self.zpabs
+        ) / self.tangent_norm
