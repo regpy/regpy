@@ -47,7 +47,7 @@ class CoilMult(Operator):
     def _adjoint(self, y):
         density = self._density
         coils = self._coils
-        if self.domain.is_complex:
+        if self.grid.is_complex:
             # Only conj() in complex case. For real case, we can avoid the copy.
             density = np.conj(density)
             coils = np.conj(coils)
