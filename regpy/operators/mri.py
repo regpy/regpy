@@ -89,7 +89,7 @@ def parallel_mri(grid, ncoils, centered=False):
     return ft * cmult
 
 
-def sobolev_smoother(codomain, sobolev_index):
+def sobolev_smoother(codomain, sobolev_index, centered=False):
     """Partial reimplementation of the Sobolev Gram matrix. Can be composed with forward operator
     (from the right) to substitute
 
@@ -100,7 +100,7 @@ def sobolev_smoother(codomain, sobolev_index):
     """
     # TODO Combine with Sobolev space implementation as much as possible
     grid, coilsgrid = codomain
-    ft = FourierTransform(coilsgrid, axes=(1, 2))
+    ft = FourierTransform(coilsgrid, axes=(1, 2), centered=centered)
     mul = Multiplication(
         ft.codomain,
         grid.volume_elem * (
