@@ -125,7 +125,7 @@ def estimate_sampling_pattern(data):
     boolean array
         The subsampling mask.
     """
-    return np.all(data == 0, axis=0)
+    return np.all(data != 0, axis=0)
 
 
 def normalize(density, coils):
