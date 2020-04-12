@@ -165,16 +165,16 @@ class EIT(Operator):
         -div (s grad w)=0
         s dw/dn=q
 
-    Adj: q \mapsto -grad(u) grad(w)
+    Adj: F'[s]^*: q \mapsto -grad(u) grad(w)
 
     proof:
     (F'h, q)=int_dOmega [trace(v) q] = int_dOmega [trace(v) s dw/dn] = int_Omega [div(v s grad w )]
     Note div(s grad w) = 0, thus above equation shows:
-    (F'h, q) = (grad v, grad w) = int_Omega [div( s grad v w)] +(-div (s grad v)), w)
+    (F'h, q) = (s grad v, grad w) = int_Omega [div( s grad v w)] +(-div (s grad v)), w)
     = int_dOmega [s dv/dn trace(w)]+(f, w) = (f, w)-int_dOmega [trace(w) h du/dn]
     = (h, -grad u grad w) + int_Omega [div(h grad u w)]-int_dOmega [trace(w) h du/dn]
     The last two terms are the same! It follows: (F'h, q) = (h, -grad u grad w). Hence:
-    Adjoint: q mapsto -grad u grad w
+    Adjoint: q \mapsto -grad u grad w
     """
 
     def __init__(self, domain, g, codomain=None):

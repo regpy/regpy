@@ -12,7 +12,7 @@ import regpy.stoprules as rules
 from regpy.operators.ngsolve import EIT
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
-from regpy.hilbert import Sobolev, SobolevBoundary
+from regpy.hilbert import Sobolev, SobolevBoundary, L2
 from regpy.discrs.ngsolve import NgsSpace
 
 logging.basicConfig(
@@ -24,7 +24,7 @@ geo = SplineGeometry()
 geo.AddCircle((0, 0), r=1, bc="cyc", maxh=0.2)
 mesh = ngs.Mesh(geo.GenerateMesh())
 
-fes_domain = ngs.H1(mesh, order=2)
+fes_domain = ngs.L2(mesh, order=2)
 domain = NgsSpace(fes_domain)
 
 fes_codomain = ngs.H1(mesh, order=2)
@@ -51,7 +51,7 @@ init_solution = init_gfu.vec.FV().NumPy().copy()
 init_sol = init_solution.copy()
 init_data = op(init_solution)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 stoprule = (
@@ -104,16 +104,18 @@ der5=der(0.00001)
 print(der1, der2, der3, der4, der5)
 
 def adj():
-    res1 = 0.001 * np.random.randn(op.codomain.shape[0])
-    res2 = 0.001 * np.random.randn(op.codomain.shape[0])
-    v = op(res1)
+    res1 = 0.001 * np.random.randn(op.domain.shape[0])
+    #res1=exact_solution
+    v = op._eval(res1, differentiate=True)
     toret1 = setting.Hcodomain.inner(op._derivative(res1), v)
     toret2 = setting.Hdomain.inner(res1, op._adjoint(v))
     return [toret1, toret2]
 
 
-#print(adj())
-#print(adj())
-#print(adj())
-#print(adj())
-#print(adj())
+adj1=adj()
+adj2=adj()
+adj3=adj()
+adj4=adj()
+adj5=adj()
+
+print(adj1, adj2, adj3, adj4, adj5)
