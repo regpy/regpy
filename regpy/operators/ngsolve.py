@@ -151,33 +151,33 @@ class Coefficient(Operator):
 class EIT(Operator):
     """Electrical Impedance Tomography Problem
 
-    PDE: -div(s grad u)=0       in Omega
+    PDE: -div(s grad u)+alpha*u=0       in Omega
          s du/dn = g            on dOmega
 
     Evaluate: F: s \mapsto trace(u)
     Derivative:
-        -div (s grad v)=div (h grad u) (=:f)
+        -div (s grad v)+alpha*v=div (h grad u) (=:f)
         s dv/dn = 0+(-h du/dn) [second term often omitted]
 
     Der: F'[s]: h \mapsto trace(v)
 
     Adjoint:
-        -div (s grad w)=0
+        -div (s grad w)+alpha*w=0
         s dw/dn=q
 
     Adj: F'[s]^*: q \mapsto -grad(u) grad(w)
 
     proof:
     (F'h, q)=int_dOmega [trace(v) q] = int_dOmega [trace(v) s dw/dn] = int_Omega [div(v s grad w )]
-    Note div(s grad w) = 0, thus above equation shows:
-    (F'h, q) = (s grad v, grad w) = int_Omega [div( s grad v w)] +(-div (s grad v)), w)
+    Note div(s grad w) = alpha*w, thus above equation shows:
+    (F'h, q) = (s grad v, grad w)+alpha (v, w) = int_Omega [div( s grad v w)] +(-div (s grad v)), w)+alpha (v, w)
     = int_dOmega [s dv/dn trace(w)]+(f, w) = (f, w)-int_dOmega [trace(w) h du/dn]
     = (h, -grad u grad w) + int_Omega [div(h grad u w)]-int_dOmega [trace(w) h du/dn]
     The last two terms are the same! It follows: (F'h, q) = (h, -grad u grad w). Hence:
     Adjoint: q \mapsto -grad u grad w
     """
 
-    def __init__(self, domain, g, codomain=None):
+    def __init__(self, domain, g, codomain=None, alpha=0.01):
         codomain = codomain or domain
         self.g = g
 
@@ -198,8 +198,7 @@ class EIT(Operator):
         self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # grid function return value of derivative
         self.gfu_adjoint = ngs.GridFunction(self.fes_domain) #grid function return value of adjoint
 
-        self.gfu_bdr = ngs.GridFunction(
-            self.fes_codomain)  # grid function holding boundary values, g/sigma=du/dn
+        self.gfu_bdr = ngs.GridFunction(self.fes_codomain)  # grid function holding boundary values, g/sigma=du/dn
 
         self.gfu_integrator_domain = ngs.GridFunction(self.fes_domain)  # grid function for defining integrator (bilinearform)
         self.gfu_integrator_codomain = ngs.GridFunction(self.fes_codomain)
@@ -217,12 +216,11 @@ class EIT(Operator):
 
         # Define Bilinearform, will be assembled later
         self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
-        self.a += ngs.SymbolicBFI(ngs.grad(u) * ngs.grad(v) * self.gfu_integrator_codomain)
+        self.a += ngs.SymbolicBFI(ngs.grad(u) * ngs.grad(v) * self.gfu_integrator_codomain+alpha*u*v)
 
         #Additional condition: The integral along the boundary vanishes
-        self.a += ngs.SymbolicBFI(u * s + v * r, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-        self.fes1 = ngs.H1(self.fes_codomain.mesh, order=2,
-                           definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        #self.a += ngs.SymbolicBFI(u * s + v * r, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.fes1 = ngs.H1(self.fes_codomain.mesh, order=4, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
 
         #Grid Functions for projecting solutions to Boundary values or reading them in from boundary
         self.gfu_getbdr = ngs.GridFunction(self.fes1)
@@ -230,22 +228,28 @@ class EIT(Operator):
 
         # Define Linearform for evaluation, will be assembled later
         
-        # Define Linearform, will be assembled later
-        #self.f = ngs.LinearForm(self.fes_codomain)
-        #self.f += ngs.SymbolicLFI(self.gfu_rhs * v)
-        #self.r = self.f.vec.CreateVector()
-        #self.gfu_dir = ngs.GridFunction(self.fes_domain)  # grid function for solving the dirichlet problem in adjoint
+            # Define Linearform, will be assembled later
+            #self.f = ngs.LinearForm(self.fes_codomain)
+            #self.f += ngs.SymbolicLFI(self.gfu_rhs * v)
+            #self.r = self.f.vec.CreateVector()
+            #self.gfu_dir = ngs.GridFunction(self.fes_domain)  # grid function for solving the dirichlet problem in adjoint
 
         self.b = ngs.LinearForm(self.fes_codomain)
         self.gfu_b = ngs.GridFunction(self.fes_codomain)
-        self.b += ngs.SymbolicLFI(self.gfu_b * v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        #self.b += ngs.SymbolicLFI(self.gfu_b * v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.b += self.gfu_b*v*ngs.ds("cyc")
 
         # Define Linearform for derivative, will be assembled later
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
-        self.f_deriv += ngs.SymbolicLFI(self.gfu_rhs * ngs.grad(self.gfu_eval) * ngs.grad(v))
+        self.f_deriv += ngs.SymbolicLFI(-self.gfu_rhs * ngs.grad(self.gfu_eval) * ngs.grad(v))
 
         super().__init__(domain, codomain)
 
+#Weak formulation:
+#0=int_Omega [-div(s grad u) v + alpha u v]=-int_dOmega [s du/dn trace(v)]+int_Omega [s grad u grad v + alpha u v]
+#Hence: int_Omega [s grad u grad v + alpha u v] = int_dOmega [g trace(v)]
+#Left term: Bilinearform self.a
+#Righ term: Linearform self.b
     def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
         self.gfu_integrator_domain.vec.FV().NumPy()[:] = diff
@@ -253,7 +257,8 @@ class EIT(Operator):
         self.a.Assemble()
 
         # Assemble Linearform, boundary term
-        self.gfu_b.Set(self.g)
+        self.gfu_b.Set(0)
+        self.gfu_b.Set(self.g, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         self.b.Assemble()
 
         # Solve system
@@ -264,8 +269,16 @@ class EIT(Operator):
             sigma = ngs.CoefficientFunction(self.gfu_integrator_domain)
             self.gfu_bdr.Set(self.g / sigma)
 
-        return self._get_boundary_values(self.gfu_eval)
+        return self.gfu_eval.vec.FV().NumPy().copy()
+        #return self._get_boundary_values(self.gfu_eval)
 
+#Weak Formulation:
+#0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]
+#=-int_dOmega [s dv/dn trace(w)] + int_Omega [s grad v grad w + alpha v w]-int_dOmega [h du/dn trace(w)]+int_Omega [h grad u grad w]
+#=int_Omega [s grad v grad w + alpha v w]+int_Omega [h grad u grad w]
+#Hence: int_Omega [s grad v grad w + alpha v w] = int_Omega [-h grad u grad w]
+#Left Term: Bilinearform self.a, already defined in _eval
+#Right Term: Linearform f_deriv
     def _derivative(self, h, **kwargs):
         # Bilinearform already defined from _eval
 
@@ -279,13 +292,15 @@ class EIT(Operator):
         self.f_deriv.Assemble()
 
         # Define boundary term
-        self.gfu_b.Set(-self.gfu_inner_codomain*self.gfu_bdr)
-        self.b.Assemble()
+        #self.gfu_b.Set(0)
+        #self.gfu_b.Set(-self.gfu_inner_codomain*self.gfu_bdr, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        #self.b.Assemble()
 
-        self.gfu_deriv.vec.data = self._solve(self.a, self.f_deriv.vec)+self.b.vec
+        self.gfu_deriv.vec.data = self._solve(self.a, self.f_deriv.vec)#+self._solve(self.a, self.b.vec)
 
         return self._get_boundary_values(self.gfu_deriv)
 
+#Same problem as in _eval
     def _adjoint(self, argument):
         # Bilinearform already defined from _eval
 
@@ -293,18 +308,18 @@ class EIT(Operator):
         # But it only needs to be defined on boundary
         self._set_boundary_values(argument)
 
-        #Dirichlet Problem
-        #self.gfu_dir.Set(self.gfu_in)
+            #Dirichlet Problem
+            #self.gfu_dir.Set(self.gfu_in)
 
-        # Note: Here the linearform f for the dirichlet problem is just zero
-        # Update for boundary values
-        #self.r.data=-self.a.mat * self.gfu_dir.vec
+            # Note: Here the linearform f for the dirichlet problem is just zero
+            # Update for boundary values
+            #self.r.data=-self.a.mat * self.gfu_dir.vec
 
-        # Solve system
-        #self.gfu_inner_adjoint.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
+            # Solve system
+            #self.gfu_inner_adjoint.vec.data=self.gfu_dir.vec.data+self._solve(self.a, self.r)
 
-        #self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint)*ngs.grad(self.gfu_eval))
-        #return self.gfu_adjoint.vec.FV().NumPy().copy()
+            #self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint)*ngs.grad(self.gfu_eval))
+            #return self.gfu_adjoint.vec.FV().NumPy().copy()
 
 
         self.gfu_b.Set(self.gfu_in)
@@ -376,7 +391,7 @@ class ReactionBoundary(Operator):
 
         # Linearform (only appears in derivative)
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
-        self.f_deriv += ngs.SymbolicLFI(-self.gfu_linearform_codomain * self.gfu * v)
+        self.f_deriv += ngs.SymbolicLFI(-self.gfu_linearform_codomain * self.gfu_eval * v)
 
         super().__init__(domain, codomain)
 
