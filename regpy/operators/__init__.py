@@ -706,6 +706,8 @@ class FourierTransform(Operator):
         self.axes = axes
 
     def _eval(self, x):
+        if self.centered:
+            x = np.fft.ifftshift(x, axes=self.axes)
         y = np.fft.fftn(x, axes=self.axes, norm='ortho')
         if self.centered:
             return np.fft.fftshift(y, axes=self.axes)
@@ -716,6 +718,8 @@ class FourierTransform(Operator):
         if self.centered:
             y = np.fft.ifftshift(y, axes=self.axes)
         x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        if self.centered:
+            x = np.fft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:
             return x
         else:

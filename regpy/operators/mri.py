@@ -47,7 +47,7 @@ class CoilMult(Operator):
     def _adjoint(self, y):
         density = self._density
         coils = self._coils
-        if self.domain.is_complex:
+        if self.grid.is_complex:
             # Only conj() in complex case. For real case, we can avoid the copy.
             density = np.conj(density)
             coils = np.conj(coils)
@@ -89,7 +89,7 @@ def parallel_mri(grid, ncoils, centered=False):
     return ft * cmult
 
 
-def sobolev_smoother(codomain, sobolev_index):
+def sobolev_smoother(codomain, sobolev_index, factor=None, centered=False):
     """Partial reimplementation of the Sobolev Gram matrix. Can be composed with forward operator
     (from the right) to substitute
 
@@ -97,16 +97,30 @@ def sobolev_smoother(codomain, sobolev_index):
 
     making `aux` the new unknown. This can be used to avoid the numerically unstable Gram matrix
     for high Sobolev indices.
+
+    Parameters
+    ----------
+    codomain :
+        Codomain of the operator
+    sobolev_index : int
+    centered : bool
+        Whether to use a centered FFT. If true, the operator will use fftshift.
+    factor : float
+        If factor is None (default): Implicit scaling based on the codomain. Otherwise,
+        the coordinates are normalized and this factor is applied.
     """
     # TODO Combine with Sobolev space implementation as much as possible
     grid, coilsgrid = codomain
-    ft = FourierTransform(coilsgrid, axes=(1, 2))
-    mul = Multiplication(
-        ft.codomain,
-        grid.volume_elem * (
-            1 + np.linalg.norm(ft.codomain.coords[1:], axis=0)**2
-        )**(-sobolev_index / 2)
-    )
+    ft = FourierTransform(coilsgrid, axes=(1, 2), centered=centered)
+    if factor is None:
+       mulfactor = grid.volume_elem * (
+                    1 + np.linalg.norm(ft.codomain.coords[1:], axis=0)**2
+                                      )**(-sobolev_index / 2)
+    else:
+        mulfactor = ( 1 + factor * np.linalg.norm(ft.codomain.coords[1:]/2./np.amax(np.abs(ft.codomain.coords[1:])), axis=0)**2
+                                                 )**(-sobolev_index / 2)
+
+    mul = Multiplication( ft.codomain, mulfactor)
     return DirectSum(grid.identity, ft.inverse * mul, codomain=codomain)
 
 
@@ -125,7 +139,7 @@ def estimate_sampling_pattern(data):
     boolean array
         The subsampling mask.
     """
-    return np.all(data == 0, axis=0)
+    return np.all(data != 0, axis=0)
 
 
 def normalize(density, coils):

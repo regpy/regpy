@@ -18,9 +18,9 @@ logging.basicConfig(
 )
 
 # TODO dtype=complex?
-grid = UniformGrid((-1, 1, 100), (-1, 1, 100))
+grid = UniformGrid((-1, 1, 100), (-1, 1, 100), dtype=complex)
 
-sobolev_index = 30
+sobolev_index = 32
 noiselevel = 0.05
 
 # In real applications with data known before constructing the operator, estimate_sampling_pattern
@@ -35,7 +35,7 @@ sampling = cartesian_sampling(full_mri_op.codomain, mask=mask)
 mri_op = sampling * full_mri_op
 
 # Substitute Sobolev weights into coil profiles
-smoother = sobolev_smoother(mri_op.domain, sobolev_index)
+smoother = sobolev_smoother(mri_op.domain, sobolev_index, factor=220.)
 smoothed_op = mri_op * smoother
 
 exact_solution = mri_op.domain.zeros()
@@ -87,13 +87,13 @@ axes[0].set_title('exact solution')
 axes[1].set_title('reconstruction')
 
 # Plot exact solution
-im = axes[0].imshow(normalize(*mri_op.domain.split(exact_solution)))
+im = axes[0].imshow(np.abs(normalize(*mri_op.domain.split(exact_solution))))
 fig.colorbar(im, cax=bars[0])
 
 # Run the solver, plot iterates
 for reco, reco_data in solver.until(stoprule):
-    reco = smoother(reco)
-    im = axes[1].imshow(normalize(*mri_op.domain.split(reco)))
+    reco2 = smoother(reco)
+    im = axes[1].imshow(np.abs(normalize(*mri_op.domain.split(reco2))))
     bars[1].clear()
     fig.colorbar(im, cax=bars[1])
     plt.pause(0.5)
