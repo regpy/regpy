@@ -13,7 +13,12 @@ def classlogger(self):
 
     [1]: https://docs.python.org/3/library/logging.html#logging.Logger
     """
-    return getLogger(type(self).__qualname__)
+    return getattr(self, '_log', None) or getLogger(type(self).__qualname__)
+
+
+@classlogger.setter
+def classlogger(self, log):
+    self._log = log
 
 
 def memoized_property(prop):
