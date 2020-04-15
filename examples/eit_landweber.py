@@ -33,9 +33,6 @@ codomain = NgsSpace(fes_codomain)
 g = 1#0.1 * (ngs.x - 0.5) * (ngs.y - 0.5)
 op = EIT(domain, g, codomain=codomain, alpha=10**(-2))
 
-pts = np.array(op.pts)
-nr_points = pts.shape[0]
-
 exact_solution_coeff = 1
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
