@@ -1,7 +1,10 @@
+import logging
+
 import numpy as np
 
 from regpy.solvers import HilbertSpaceSetting, Solver
 from regpy.solvers.tikhonov import TikhonovCG
+from regpy.stoprules import CountIterations
 
 
 class IrgnmCG(Solver):
@@ -28,7 +31,7 @@ class IrgnmCG(Solver):
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
     """
 
-    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None):
+    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None, cgstop=None):
         super().__init__()
         self.setting = setting
         """The problem setting."""
@@ -48,8 +51,18 @@ class IrgnmCG(Solver):
             cgpars = {}
         self.cgpars = cgpars
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
+        self.cgstop = cgstop
+        """Maximum number of iterations for inner CG solver, or None"""
 
     def _next(self):
+        if self.cgstop is not None:
+            stoprule = CountIterations(self.cgstop)
+            # Disable info logging, but don't override log level for all
+            # CountIterations instances.
+            stoprule.log = self.log.getChild('CountIterations')
+            stoprule.log.setLevel(logging.WARNING)
+        else:
+            stoprule = None
         self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
@@ -57,7 +70,7 @@ class IrgnmCG(Solver):
             regpar=self.regpar,
             xref=self.init - self.x,
             **self.cgpars
-        ).run()
+        ).run(stoprule=stoprule)
         self.x += step
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
