@@ -206,7 +206,7 @@ class EIT(Operator):
 
         self.gfu_inner_domain = ngs.GridFunction(self.fes_domain)  # grid function for reading in values in derivative
         self.gfu_inner_codomain = ngs.GridFunction(self.fes_codomain)  # grid function for inner computation in derivative
-        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for inner computations in adjoint
+        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_codomain)  # grid function for inner computations in adjoint
 
         self.Number = ngs.NumberSpace(self.fes_codomain.mesh)
         r, s = self.Number.TnT()
@@ -269,8 +269,8 @@ class EIT(Operator):
             sigma = ngs.CoefficientFunction(self.gfu_integrator_domain)
             self.gfu_bdr.Set(self.g / sigma)
 
-        return self.gfu_eval.vec.FV().NumPy().copy()
-        #return self._get_boundary_values(self.gfu_eval)
+        #return self.gfu_eval.vec.FV().NumPy().copy()
+        return self._get_boundary_values(self.gfu_eval)
 
 #Weak Formulation:
 #0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]

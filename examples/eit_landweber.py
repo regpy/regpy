@@ -89,54 +89,42 @@ coeff_reco_data = ngs.CoefficientFunction(gfu_reco_data)
 ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
 
+###############################################################################
+test_function_1_coeff = ngs.sin(ngs.y)+0.1
+gfu_test_function_1 = ngs.GridFunction(op.fes_domain)
+gfu_test_function_1.Set(test_function_1_coeff)
+test_function_1 = gfu_test_function_1.vec.FV().NumPy()
+
+test_function_2_coeff = 1+0.1*ngs.y
+gfu_test_function_2 = ngs.GridFunction(op.fes_domain)
+gfu_test_function_2.Set(test_function_2_coeff)
+test_function_2 = gfu_test_function_2.vec.FV().NumPy()
+
+#Create vector in codomain
+q = op._eval(test_function_2)
+
+#Initailize operator with s
+u = op._eval(exact_solution)
+
+#(F'[s]h, q)
+toret1 = setting.Hcodomain.inner(op._derivative(test_function_1), q)
+
+#(h, F'[s]^* q)
+toret2 = setting.Hdomain.inner(test_function_1, op._adjoint(q))
+print(toret1, toret2)
 
 def der(x):
-    val2 = op(res1 + x * res2)
-    val1 = op(res1)
-    der = x * op._derivative(res2)
+    val2 = op(test_function_2 + x * test_function_1)
+    val1 = op(test_function_2)
+    der = x * op._derivative(test_function_1)
     return setting.Hcodomain.norm(1 / x * (val2 - val1 - der))
 
-
-res1 = 0.001 * np.random.randn(op.domain.shape[0])
-res2 = 0.001 * np.random.randn(op.domain.shape[0])
-
-der1000=der(100)
-der100=der(10)
-der10=der(1)
+der0=der(1)
 der1=der(0.1)
 der2=der(0.01)
 der3=der(0.001)
 der4=der(0.0001)
 der5=der(0.00001)
-der6=der(0.000001)
-der7=der(0.0000001)
-der8=der(0.00000001)
 
-print(der1000, der100, der10, der1, der2, der3, der4, der5, der6, der7, der8)
+print(der0, der1, der2, der3, der4, der5)
 
-def adj():
-    s = 0.001 * np.random.randn(op.domain.shape[0])
-    h = 0.001 * np.random.randn(op.domain.shape[0])
-
-    #Create vector in codomain
-    create_data = 0.001 * np.random.randn(op.domain.shape[0])
-    q = op._eval(create_data, differentiate=False)
-
-    #Initailize operator with s
-    u = op._eval(s, differentiate=True)
-
-    #(F'[s]h, q)
-    toret1 = setting.Hcodomain.inner(op._derivative(h), q)
-
-    #(h, F'[s]^* q)
-    toret2 = setting.Hdomain.inner(h, op._adjoint(q))
-    return [toret1, toret2]
-
-
-#adj1=adj()
-#adj2=adj()
-#adj3=adj()
-#adj4=adj()
-#adj5=adj()
-
-#print(adj1, adj2, adj3, adj4, adj5)
