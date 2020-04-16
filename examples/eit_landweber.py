@@ -33,15 +33,22 @@ codomain = NgsSpace(fes_codomain)
 g = 1#0.1 * (ngs.x - 0.5) * (ngs.y - 0.5)
 op = EIT(domain, g, codomain=codomain, alpha=10**(-2))
 
-exact_solution_coeff = 1
+exact_solution_coeff = 1+0.1*ngs.y
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution = gfu_exact_solution.vec.FV().NumPy()
 exact_data = op(exact_solution)
 
-data = exact_data
+fes_noise=ngs.L2(fes_codomain.mesh, order=1)
+gfu_noise_order1=ngs.GridFunction(fes_noise)
+gfu_noise_order1.vec.FV().NumPy()[:]=0.01*np.random.randn(fes_noise.ndof)
+gfu_noise=ngs.GridFunction(fes_codomain)
+gfu_noise.Set(gfu_noise_order1)
+noise=op._get_boundary_values(gfu_noise)
 
-init = 1 +0.1 * ngs.y
+data = exact_data#+noise
+
+init = 1
 init_gfu = ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution = init_gfu.vec.FV().NumPy().copy()
@@ -55,9 +62,9 @@ ngs.Draw(coeff_init_data, op.fes_codomain.mesh, 'init_data')
 
 setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
 
-landweber = Landweber(setting, data, init_solution, stepsize=0.01)
+landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 stoprule = (
-        rules.CountIterations(30) +
+        rules.CountIterations(300) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1)
 )
 
@@ -87,7 +94,7 @@ ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
 
 ###############################################################################
-test_function_1_coeff = ngs.sin(ngs.y)+0.1
+test_function_1_coeff = 0.1+0.1*ngs.x
 gfu_test_function_1 = ngs.GridFunction(op.fes_domain)
 gfu_test_function_1.Set(test_function_1_coeff)
 test_function_1 = gfu_test_function_1.vec.FV().NumPy()
