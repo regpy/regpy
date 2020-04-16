@@ -33,7 +33,7 @@ codomain = NgsSpace(fes_codomain)
 g = 1#0.1 * (ngs.x - 0.5) * (ngs.y - 0.5)
 op = EIT(domain, g, codomain=codomain, alpha=10**(-2))
 
-exact_solution_coeff = 1+0.1*ngs.y
+exact_solution_coeff = 1+0.1*ngs.sqrt(ngs.y**2+ngs.x**2)
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
 gfu_exact_solution.Set(exact_solution_coeff)
 exact_solution = gfu_exact_solution.vec.FV().NumPy()
@@ -41,12 +41,12 @@ exact_data = op(exact_solution)
 
 fes_noise=ngs.L2(fes_codomain.mesh, order=1)
 gfu_noise_order1=ngs.GridFunction(fes_noise)
-gfu_noise_order1.vec.FV().NumPy()[:]=0.01*np.random.randn(fes_noise.ndof)
+gfu_noise_order1.vec.FV().NumPy()[:]=0.001*np.random.randn(fes_noise.ndof)
 gfu_noise=ngs.GridFunction(fes_codomain)
 gfu_noise.Set(gfu_noise_order1)
 noise=op._get_boundary_values(gfu_noise)
 
-data = exact_data#+noise
+data = exact_data+noise
 
 init = 1
 init_gfu = ngs.GridFunction(op.fes_domain)
@@ -62,10 +62,11 @@ ngs.Draw(coeff_init_data, op.fes_codomain.mesh, 'init_data')
 
 setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
 
+#Discrepancy Principle usually stops very early
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 stoprule = (
         rules.CountIterations(300) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=0, tau=1.1)
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise)*0, tau=1)
 )
 
 reco, reco_data = landweber.run(stoprule)
@@ -92,43 +93,3 @@ coeff_reco_data = ngs.CoefficientFunction(gfu_reco_data)
 
 ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
-
-###############################################################################
-test_function_1_coeff = 0.1+0.1*ngs.x
-gfu_test_function_1 = ngs.GridFunction(op.fes_domain)
-gfu_test_function_1.Set(test_function_1_coeff)
-test_function_1 = gfu_test_function_1.vec.FV().NumPy()
-
-test_function_2_coeff = 1+0.1*ngs.y
-gfu_test_function_2 = ngs.GridFunction(op.fes_domain)
-gfu_test_function_2.Set(test_function_2_coeff)
-test_function_2 = gfu_test_function_2.vec.FV().NumPy()
-
-#Create vector in codomain
-q = op._eval(test_function_2)
-
-#Initailize operator with s
-u = op._eval(exact_solution)
-
-#(F'[s]h, q)
-toret1 = setting.Hcodomain.inner(op._derivative(test_function_1), q)
-
-#(h, F'[s]^* q)
-toret2 = setting.Hdomain.inner(test_function_1, op._adjoint(q))
-print(toret1, toret2)
-
-def der(x):
-    val2 = op(test_function_2 + x * test_function_1)
-    val1 = op(test_function_2)
-    der = x * op._derivative(test_function_1)
-    return setting.Hcodomain.norm(1 / x * (val2 - val1 - der))
-
-der0=der(1)
-der1=der(0.1)
-der2=der(0.01)
-der3=der(0.001)
-der4=der(0.0001)
-der5=der(0.00001)
-
-print(der0, der1, der2, der3, der4, der5)
-
