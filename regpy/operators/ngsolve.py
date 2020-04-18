@@ -14,9 +14,8 @@ class Coefficient(Operator):
 
     def __init__(
         self, domain, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None,
-        diffusion=True, reaction=False, dim=1
+        diffusion=True, reaction=False
     ):
-        assert dim in (1, 2)
         assert diffusion or reaction
 
         codomain = codomain or domain
