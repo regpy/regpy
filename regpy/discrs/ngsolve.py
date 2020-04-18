@@ -29,6 +29,16 @@ class NgsSpace(Discretization):
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.fes == other.fes
 
+    def to_ngs(self, array):
+        gf = ngs.GridFunction(self.fes)
+        gf.vec.FV().NumPy()[:] = array
+        return gf
+
+    def from_ngs(self, coeff):
+        gf = ngs.GridFunction(self.fes)
+        gf.Set(coeff)
+        return gf.vec.FV().NumPy().copy()
+
 
 class Matrix(Operator):
     """An operator defined by an NGSolve bilinear form.
