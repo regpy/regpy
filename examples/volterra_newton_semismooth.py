@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.newton import NewtonSemiSmooth
+from regpy.solvers.irgnm_semismooth import IRGNMSemiSmooth
 import regpy.stoprules as rules
 
 import numpy as np
@@ -15,21 +15,19 @@ logging.basicConfig(
 )
 
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
-op = Volterra(grid)
+op = Volterra(grid, exponent=1)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.randn()
+noise = 0.5 * op.domain.randn()
 data = exact_data + noise
-init = grid.zeros()
+init = op.domain.zeros()
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-# Run the solver with a `-1 <= reco <= 1` constraint. For illustration, you can also try a
-# constraint which is violated by the exact solution.
-newton = NewtonSemiSmooth(setting, data, init, alpha=0.1, psi_minus=-1, psi_plus=1)
+solver = IRGNMSemiSmooth(setting, data, psi_minus=-1, psi_plus=1, regpar=1, regpar_step=0.9, init=init)
 stoprule = (
-    rules.CountIterations(1000) +
+    rules.CountIterations(100) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
@@ -37,7 +35,7 @@ stoprule = (
     )
 )
 
-reco, reco_data = newton.run(stoprule)
+reco, reco_data = solver.run(stoprule)
 
 plt.plot(grid.coords[0], exact_solution.T, label='exact solution')
 plt.plot(grid.coords[0], reco, label='reco')
