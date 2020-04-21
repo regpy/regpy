@@ -19,7 +19,7 @@ op = Volterra(grid, exponent=1)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.5 * op.domain.randn()
+noise = 0.1 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.zeros()
 

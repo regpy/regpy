@@ -1,9 +1,8 @@
-from . import Solver
-
 import logging
 import numpy as np
-import scipy.sparse.linalg as spla
-import scipy.optimize as sco
+
+from regpy.solvers import HilbertSpaceSetting, Solver
+from regpy.solvers.tikhonov import TikhonovCG
 
 class IRGNMSemiSmooth(Solver):
     """
@@ -89,24 +88,18 @@ class IRGNMSemiSmooth(Solver):
         self.lam_minus[self.inactive]=0
         self.lam_minus[self.active_plus]=0
 
-        #A as spla.LinearOperator constrained to inactive set
-        A_inactive=spla.LinearOperator(
-                (np.count_nonzero(self.inactive), np.count_nonzero(self.inactive)),
-                matvec=self._A_inactive,
-                dtype=float)
-        #Solve system on the different sets
-        self.x[self.inactive]=spla.gmres(A_inactive, self.b[self.inactive], maxiter=15)[0]
-        z=self._A(self.x)
-        """
+        project = Projection(self.setting.Hdomain.discr, self.inactive)
         self.log.info('Running Tikhonov solver.')
         f, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv @ projection, self.setting.Hdomain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.deriv * project, self.setting.Hdomain, self.setting.Hcodomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
             **self.cgpars
         ).run()
-        """
+        self.x[self.inactive] = f[self.inactive]
+        z = self._A(self.x)
+        
         self.lam_plus[self.active_plus]=self.b[self.active_plus]+self.lam_minus[self.active_plus]-z[self.active_plus]
         self.lam_minus[self.active_minus]=-self.b[self.active_minus]+self.lam_plus[self.active_minus]+z[self.active_minus]
 
@@ -117,9 +110,16 @@ class IRGNMSemiSmooth(Solver):
     def _A(self, u):
         return self.regpar*u+self.setting.Hdomain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.deriv(u))))
 
-    def _A_inactive(self, u):
-        projection=np.zeros(self.size)
-        projection[self.active_plus]=self.psi_plus
-        projection[self.active_minus]=self.psi_minus
-        projection[self.inactive]=u
-        return self._A(projection)[self.inactive]
+from regpy.operators import Operator
+
+class Projection(Operator):
+    def __init__(self, domain, indices):
+        super().__init__(domain, domain, linear=True)
+        self.indices = indices
+        assert np.size(self.indices) == np.prod(self.domain.shape)
+
+    def _eval(self, x):
+        return np.where(self.indices==False, 0, x)
+
+    def _adjoint(self, g):
+        return np.where(self.indices==False, 0, g)
