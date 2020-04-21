@@ -3,6 +3,7 @@ import numpy as np
 
 from regpy.solvers import HilbertSpaceSetting, Solver
 from regpy.solvers.tikhonov import TikhonovCG
+from regpy.operators import CoordinateMask
 
 class IRGNMSemiSmooth(Solver):
     """
@@ -88,7 +89,7 @@ class IRGNMSemiSmooth(Solver):
         self.lam_minus[self.inactive]=0
         self.lam_minus[self.active_plus]=0
 
-        project = Projection(self.setting.Hdomain.discr, self.inactive)
+        project = CoordinateMask(self.setting.Hdomain.discr, self.inactive)
         self.log.info('Running Tikhonov solver.')
         f, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv * project, self.setting.Hdomain, self.setting.Hcodomain),
@@ -109,17 +110,3 @@ class IRGNMSemiSmooth(Solver):
         
     def _A(self, u):
         return self.regpar*u+self.setting.Hdomain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.deriv(u))))
-
-from regpy.operators import Operator
-
-class Projection(Operator):
-    def __init__(self, domain, indices):
-        super().__init__(domain, domain, linear=True)
-        self.indices = indices
-        assert np.size(self.indices) == np.prod(self.domain.shape)
-
-    def _eval(self, x):
-        return np.where(self.indices==False, 0, x)
-
-    def _adjoint(self, g):
-        return np.where(self.indices==False, 0, g)
