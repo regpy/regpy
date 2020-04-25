@@ -64,9 +64,54 @@ class IrgnmCG(Solver):
         
 from regpy.operators import MatrixMultiplication
 from regpy import util
+from scipy.sparse.linalg import eigsh
         
 class IrgnmCGLanczos(Solver):
-    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None):
+    """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
+
+        ||F(x_n) + F'[x_n] h - data||**2 + regpar_n * ||x_n + h - init||**2
+
+    where `F` is a Frechet-differentiable operator, by solving in every iteration step the problem
+
+        Minimize    ||T (M @ g) - rhs||**2 + regpar * ||M @ (g - xref)||**2
+        M @ h = g
+
+    with `regpy.solvers.tikhonov.TikhonovCG' and spectral preconditioner M.
+    The spectral preconditioner M is chosen, such that:
+        M @ A @ M \approx Id
+    where A = (Gram_domain^(-1) T^t Gram_codomain T + regpar*Id) = T^* T + regpar Id 
+
+    Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
+    the order of the number of iterations: {v_j}
+    We approximate A by the operator:
+    C_k: v \mapsto regpar * v +\sum_{j=1}^k <v, v_j> lambda_j v_j
+    where lambda are the biggest eigenvalues of T*T.
+    
+    We choose: M = C_k^(-1/2) and M^(-1) = C_k^(1/2)
+
+    It is:
+    M     : v \mapsto 1/sqrt(regpar) v + \sum_{j=1}^{k} [1/sqrt(lambda_j+regpar)-1/sqrt(regpar)] <v_j, v> v_j 
+    M^(-1): v \mapsto sqrt(regpar) v + \sum_{j=1}^{k} [sqrt(lambda_j+regpar) -sqrt(regpar)] <v_j, v> v_j
+
+    Parameters
+    ----------
+    setting : regpy.solvers.HilbertSpaceSetting
+        The setting of the forward problem.
+    data : array-like
+        The measured data.
+    regpar : float
+        The initial regularization parameter. Must be positive.
+    regpar_step : float, optional
+        The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
+    init : array-like, optional
+        The initial guess. Default: the zero array.
+    cgpars : dict
+        Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+    precpars : dict
+        Parameter dictionary passed to the computation of the spectral preconditioner
+    """
+
+    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None, precpars=None):
         super().__init__()
         self.setting = setting
         """The problem setting."""
@@ -88,28 +133,39 @@ class IrgnmCGLanczos(Solver):
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
         
         self.k=0
-        self.eigval_num = 5
-        # orthonormalization computed in which krylov space
-        self.krylov_num = 5
-        self.orthonormal = np.zeros((self.krylov_num, self.data.shape[0]))
+        """Counts the number of iterations"""
+
+        if precpars is None:
+            self.krylov_order = 5
+            """Order of krylov space in which the spetcral preconditioner is computed"""
+            self.number_eigenvalues = 5
+            """Spectral preonditioner computed only from the biggest eigenvalues """
+        else: 
+            self.krylov_order = precpars['krylov_order']
+            self.number_eigenvalues = precpars['number_eigenvalues']
+
+        self.krylov_basis = np.zeros((self.krylov_order, self.data.shape[0]))
+        """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
+        """Is an update of the preconditioner needed"""
                 
     def _next(self):
         self.log.info('Running Tikhonov solver.')
         
         if self.need_prec_update:
+            self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = Tikhonov_need_update(
                 setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
-                orthonormal=self.orthonormal,
+                krylov_basis=self.krylov_basis,
                 xref=self.init - self.x,
                 **self.cgpars
             ).run()
             self.need_prec_update = False
-            self._lanzcos_update()
-
-#Needs to be updated          
+            self._preconditioner_update()
+            self.log.info('Spectral Preconditioner updated')
+          
         else:
             preconditioner = MatrixMultiplication(self.M, domain=self.setting.Hdomain.discr, codomain=self.setting.Hdomain.discr)
             step, _ = TikhonovCG(
@@ -130,33 +186,27 @@ class IrgnmCGLanczos(Solver):
             self.need_prec_update = True
             
             
-    def _lanzcos_update(self):
+    def _preconditioner_update(self):
         """perform lanzcos method to calculate the preconditioner"""
-        #print(self.orthonormal)
-        self.L = np.zeros((self.krylov_num, self.krylov_num))
-        for i in range(0, self.krylov_num):
-            self.L[i, :] = np.dot(self.orthonormal, self.setting.Hdomain.gram_inv(
+        L = np.zeros((self.krylov_order, self.krylov_order))
+        for i in range(0, self.krylov_order):
+            L[i, :] = np.dot(self.krylov_basis, self.setting.Hdomain.gram_inv(
                 self.deriv.adjoint(
-                    self.setting.Hcodomain.gram(self.deriv((self.orthonormal[i, :]))))))
-        # TODO: Only compute the three biggest eigenvalues with Lanczos method
-        # self.lamb, self.U=np.linalg.eig(self.L)
-        # self.diag_lamb=np.zeros(self.L.shape)
-        # for i in range(0, self.eigval_num):
-        #    self.diag_lamb[i, i]=1/(self._regpar+self.lamb[i])-1/self._regpar
-        #print(self.L)
-        from scipy.sparse.linalg import eigsh
-        self.lamb, self.U = eigsh(self.L, self.eigval_num, which='LM')
-        
-        self.diag_lamb = np.diag ( np.sqrt(self.lamb + self.regpar) - np.sqrt(self.regpar) )
-        self.diag_lamb_inverse = np.diag( np.sqrt(1 / (self.lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
+                    self.setting.Hcodomain.gram(self.deriv((self.krylov_basis[i, :]))))))
+        """Express T*T in Krylov_basis"""
 
-        self.lanczos_krylov = np.float64(self.U @ self.diag_lamb @ self.U.transpose())
-        self.lanczos_krylov_inverse = np.float64(self.U @ self.diag_lamb_inverse @ self.U.transpose())
+        lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
+        """Perform the computation of eigenvalues and eigenvectors"""
 
-#TODO: We need M^(1/2) and M^(-1/2) instead
-        self.M = self.orthonormal.transpose() @ self.lanczos_krylov_inverse @ self.orthonormal + np.sqrt(1/self.regpar) * np.identity(self.orthonormal.shape[1])
-        self.M_inverse = self.orthonormal.transpose() @ self.lanczos_krylov @ self.orthonormal + np.sqrt(self.regpar) * np.identity(self.orthonormal.shape[1]) 
-        
+        diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
+        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
+        self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        """Compute preconditioner"""
+
+        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - np.sqrt(self.regpar) )
+        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
+        self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        """Compute inverse preconditioner matrix"""
 
 class Tikhonov_need_update(Solver):
     """The Tikhonov method for linear inverse problems. Minimizes
@@ -179,7 +229,7 @@ class Tikhonov_need_update(Solver):
     reltolx, reltoly : float, optional
         Relative tolerance in domain and codomain.
     """
-    def __init__(self, setting, data, regpar, orthonormal, xref=None, tol=util.eps, reltolx=None, reltoly=None):
+    def __init__(self, setting, data, regpar, krylov_basis, xref=None, tol=util.eps, reltolx=None, reltoly=None):
         assert setting.op.linear
 
         super().__init__()
@@ -222,10 +272,11 @@ class Tikhonov_need_update(Solver):
         self.kappa = 1
         """Auxiliary parameter for estimating the relative tolerances."""
 #new        
-        self.orthonormal=orthonormal
-        self.inner_number=0
-        if self.inner_number <= self.orthonormal.shape[0]:
-            self.orthonormal[self.inner_number, :] = res / np.linalg.norm(res)
+        self.krylov_basis=krylov_basis
+        self.iteration_number=0
+        if self.iteration_number <= self.krylov_basis.shape[0]:
+            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
+        """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
     def _next(self):       
         Tdir = self.setting.op(self.dir)
@@ -250,9 +301,9 @@ class Tikhonov_need_update(Solver):
         self.norm_res = np.real(np.vdot(self.g_res, res))
         beta = self.norm_res / norm_res_old
 #new        
-        self.inner_number+=1
-        if self.inner_number < self.orthonormal.shape[0]:
-            self.orthonormal[self.inner_number, :] = res / np.linalg.norm(res)
+        self.iteration_number+=1
+        if self.iteration_number < self.krylov_basis.shape[0]:
+            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
 
         self.kappa = 1 + beta * self.kappa
 
