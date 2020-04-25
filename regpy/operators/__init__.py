@@ -771,11 +771,11 @@ class MatrixMultiplication(Operator):
     """
 
     # TODO complex case
-    def __init__(self, matrix, inverse=None):
+    def __init__(self, matrix, inverse=None, domain=None, codomain=None):
         self.matrix = matrix
         super().__init__(
-            domain=discrs.Discretization(matrix.shape[1]),
-            codomain=discrs.Discretization(matrix.shape[0]),
+            domain=domain or discrs.Discretization(matrix.shape[1]),
+            codomain=codomain or discrs.Discretization(matrix.shape[0]),
             linear=True
         )
         self._inverse = inverse
