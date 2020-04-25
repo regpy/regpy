@@ -66,7 +66,7 @@ from regpy.operators import MatrixMultiplication
 from regpy import util
 from scipy.sparse.linalg import eigsh
         
-class IrgnmCGLanczos(Solver):
+class IrgnmCGPrec(Solver):
     """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
         ||F(x_n) + F'[x_n] h - data||**2 + regpar_n * ||x_n + h - init||**2
@@ -154,7 +154,7 @@ class IrgnmCGLanczos(Solver):
         
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
-            step, _ = Tikhonov_need_update(
+            step, _ = TikhonovCG(
                 setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
@@ -175,7 +175,7 @@ class IrgnmCGLanczos(Solver):
                 xref=preconditioner(self.init - self.x),
                 **self.cgpars
             ).run()
-            step = self.M_inverse @ step
+            step = self.M @ step
             
         self.x += step
         self.y, self.deriv = self.setting.op.linearize(self.x)
@@ -184,8 +184,7 @@ class IrgnmCGLanczos(Solver):
         self.k+=1
         if (int(np.sqrt(self.k)))**2 == self.k:
             self.need_prec_update = True
-            
-            
+                       
     def _preconditioner_update(self):
         """perform lanzcos method to calculate the preconditioner"""
         L = np.zeros((self.krylov_order, self.krylov_order))
@@ -208,155 +207,3 @@ class IrgnmCGLanczos(Solver):
         self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 
-class Tikhonov_need_update(Solver):
-    """The Tikhonov method for linear inverse problems. Minimizes
-
-        ||T x - data||**2 + regpar * ||x - xref||**2
-
-    using a conjugate gradient method.
-
-    Parameters
-    ----------
-    setting : regpy.solvers.HilbertSpaceSetting
-        The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The regularization parameter. Must be positive.
-    tol : float, optional
-        The tolerance for the residual relative to the initial at which to stop. Default is
-        the machine epsilon. Iterating beyond this point produces `NaN`s.
-    reltolx, reltoly : float, optional
-        Relative tolerance in domain and codomain.
-    """
-    def __init__(self, setting, data, regpar, krylov_basis, xref=None, tol=util.eps, reltolx=None, reltoly=None):
-        assert setting.op.linear
-
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
-        self.regpar = regpar
-        """The regularization parameter."""
-        self.tol = tol
-        """The tolerance."""
-
-        # TODO Improve documentation for these two.
-        self.reltolx = reltolx
-        """The relative tolerance in the domain."""
-        self.reltoly = reltoly
-        """The relative tolerance in the codomain."""
-
-        self.x = self.setting.op.domain.zeros()
-        if self.reltolx is not None:
-            self.norm_x = 0
-        self.y = self.setting.op.codomain.zeros()
-        if self.reltoly is not None:
-            self.g_y = self.setting.op.codomain.zeros()
-            self.norm_y = 0
-
-        self.g_res = self.setting.op.adjoint(self.setting.Hcodomain.gram(data))
-        """The gram matrix applied to the residual."""
-        if xref is not None:
-            self.g_res += self.regpar * self.setting.Hdomain.gram(xref)
-        res = self.setting.Hdomain.gram_inv(self.g_res)
-        """The residual."""
-        self.norm_res = np.real(np.vdot(self.g_res, res))
-        """The norm of the residual."""
-        self.norm_res_init = self.norm_res
-        """The norm of the residual in the first iteration, for `tol`."""
-        self.dir = res
-        """The direction of descent."""
-        self.g_dir = np.copy(self.g_res)
-        """The gram matrix applied to the direction of descent."""
-        # TODO Improve documentation
-        self.kappa = 1
-        """Auxiliary parameter for estimating the relative tolerances."""
-#new        
-        self.krylov_basis=krylov_basis
-        self.iteration_number=0
-        if self.iteration_number <= self.krylov_basis.shape[0]:
-            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
-        """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
-
-    def _next(self):       
-        Tdir = self.setting.op(self.dir)
-        g_Tdir = self.setting.Hcodomain.gram(Tdir)
-        stepsize = self.norm_res / np.real(
-            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.g_dir, self.dir)
-        )
-
-        self.x += stepsize * self.dir
-        if self.reltolx is not None:
-            self.norm_x = np.real(np.vdot(self.x, self.setting.Hdomain.gram(self.x)))
-
-        self.y += stepsize * Tdir
-        if self.reltoly is not None:
-            self.g_y += stepsize * g_Tdir
-            self.norm_y = np.real(np.vdot(self.g_y, self.y))
-
-        self.g_res -= stepsize * (self.setting.op.adjoint(g_Tdir) + self.regpar * self.g_dir)
-        res = self.setting.Hdomain.gram_inv(self.g_res)
-
-        norm_res_old = self.norm_res
-        self.norm_res = np.real(np.vdot(self.g_res, res))
-        beta = self.norm_res / norm_res_old
-#new        
-        self.iteration_number+=1
-        if self.iteration_number < self.krylov_basis.shape[0]:
-            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
-
-        self.kappa = 1 + beta * self.kappa
-
-        if (
-            self.reltolx is not None and
-            np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
-                < self.reltolx / (1 + self.reltolx)
-        ):
-            return self.converge()
-
-        if (
-            self.reltoly is not None and
-            np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
-                < self.reltoly / (1 + self.reltoly)
-        ):
-            return self.converge()
-
-        if (
-            self.tol is not None and
-            np.sqrt(self.norm_res / self.norm_res_init / self.kappa) < self.tol
-        ):
-            return self.converge()
-
-        self.dir *= beta
-        self.dir += res
-        self.g_dir *= beta
-        self.g_dir += self.g_res       
-        
-
-def _lanczos(self, L, v, maxit):
-    """perform lanczos method to calculate tridiagonal decomposition"""
-    epsilon = np.dot(v, L @ v)
-    w = L @ v - epsilon * v
-    zeta = np.linalg.norm(w)
-    v_old = v
-
-    V = np.zeros((maxit, maxit))
-    Epsilon = np.zeros(maxit)
-    Zeta = np.zeros(maxit - 1)
-
-    V[0, :] = v
-    Epsilon[0] = epsilon
-
-    counter = 1
-    while (zeta != 0 and counter < maxit):
-        v = w / zeta
-        epsilon = np.dot(v, L @ v)
-        w = L @ v - epsilon * v - zeta * v_old
-        zeta = np.linalg.norm(w)
-        v_old = v
-
-        V[counter, :] = v
-        Epsilon[counter] = epsilon
-        Zeta[counter - 1] = zeta
-        counter += 1
-    return [V, Epsilon, Zeta]

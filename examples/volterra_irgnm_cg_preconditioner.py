@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm import IrgnmCGLanczos
+from regpy.solvers.irgnm import IrgnmCGPrec, IrgnmCG
 import regpy.stoprules as rules
 
 import numpy as np
@@ -25,9 +25,16 @@ init = op.domain.ones()
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-solver = IrgnmCGLanczos(setting, data, regpar=1, regpar_step=0.9, init=init)
+precpars = {
+        'krylov_order' : 5,
+        'number_eigenvalues': 3        
+        }
+
+#Fails if regpar_step is too small
+#The spectral preconditioner performs then a bad approximation to the forward operator
+solver = IrgnmCGPrec(setting, data, regpar=1, regpar_step=0.95, precpars=precpars)
 stoprule = (
-    rules.CountIterations(max_iterations=10) +
+    rules.CountIterations(max_iterations=30) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
@@ -43,13 +50,4 @@ plt.plot(grid.coords[0], exact_data, label='exact data')
 plt.plot(grid.coords[0], data, label='data')
 plt.plot(grid.coords[0], reco_data, label='reco data')
 plt.legend()
-plt.show()
-
-preconditioned = solver.M @ (solver.setting.Hdomain.gram_inv(solver.deriv.adjoint(solver.setting.Hcodomain.gram(solver.deriv(solver.M @ exact_solution))))+solver.regpar*solver.M @ exact_solution)
-    
-unpreconditioned = solver.setting.Hdomain.gram_inv(solver.deriv.adjoint(solver.setting.Hcodomain.gram(solver.deriv(exact_solution))))+solver.regpar*exact_solution
-
-plt.plot(preconditioned)
-#plt.plot(unpreconditioned)
-plt.plot(exact_solution)
 plt.show()
