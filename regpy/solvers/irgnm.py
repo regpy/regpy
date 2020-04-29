@@ -169,10 +169,11 @@ class IrgnmCGPrec(Solver):
         else:
             preconditioner = MatrixMultiplication(self.M, domain=self.setting.Hdomain.discr, codomain=self.setting.Hdomain.discr)
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv * preconditioner, self.setting.Hdomain, self.setting.Hcodomain),
+                setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
-                xref=preconditioner(self.init - self.x),
+                xref=self.init-self.x,
+                preconditioner=preconditioner,
                 **self.cgpars
             ).run()
             step = self.M @ step

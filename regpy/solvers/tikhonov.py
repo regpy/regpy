@@ -4,6 +4,8 @@ import numpy as np
 from regpy.solvers import Solver
 from regpy import util
 
+from regpy.operators import Identity
+
 
 class TikhonovCG(Solver):
     """The Tikhonov method for linear inverse problems. Minimizes
@@ -27,7 +29,7 @@ class TikhonovCG(Solver):
         Relative tolerance in domain and codomain.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
-    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None, krylov_basis=None):
+    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None, krylov_basis=None, preconditioner=None):
         assert setting.op.linear
 
         super().__init__()
@@ -52,10 +54,18 @@ class TikhonovCG(Solver):
             self.g_y = self.setting.op.codomain.zeros()
             self.norm_y = 0
 
-        self.g_res = self.setting.op.adjoint(self.setting.Hcodomain.gram(data))
+        
+        if preconditioner is None:
+            self.preconditioner = Identity (self.setting.Hdomain.discr)
+            self.penalty = Identity (self.setting.Hdomain.discr)
+        else: 
+            self.preconditioner = preconditioner
+            self.penalty = self.preconditioner * self.setting.Hdomain.gram * self.preconditioner * self.setting.Hdomain.gram_inv
+
+        self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.Hcodomain.gram(data)) )
         """The gram matrix applied to the residual."""
         if xref is not None:
-            self.g_res += self.regpar * self.setting.Hdomain.gram(xref)
+            self.g_res += self.regpar *self.preconditioner( self.setting.Hdomain.gram(xref) )
         res = self.setting.Hdomain.gram_inv(self.g_res)
         """The residual."""
         self.norm_res = np.real(np.vdot(self.g_res, res))
@@ -76,11 +86,12 @@ class TikhonovCG(Solver):
             self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
         """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
+
     def _next(self):
-        Tdir = self.setting.op(self.dir)
+        Tdir = self.setting.op( self.preconditioner(self.dir) )
         g_Tdir = self.setting.Hcodomain.gram(Tdir)
         stepsize = self.norm_res / np.real(
-            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.g_dir, self.dir)
+            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
         )
 
         self.x += stepsize * self.dir
@@ -92,7 +103,7 @@ class TikhonovCG(Solver):
             self.g_y += stepsize * g_Tdir
             self.norm_y = np.real(np.vdot(self.g_y, self.y))
 
-        self.g_res -= stepsize * (self.setting.op.adjoint(g_Tdir) + self.regpar * self.g_dir)
+        self.g_res -= stepsize * (self.preconditioner( self.setting.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.setting.Hdomain.gram_inv(self.g_res)
 
         norm_res_old = self.norm_res

@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
-op = Volterra(grid, exponent=1)
+op = Volterra(grid, exponent=3)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
@@ -23,16 +23,14 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 
 precpars = {
-        'krylov_order' : 5,
-        'number_eigenvalues': 3        
+        'krylov_order' : 3,
+        'number_eigenvalues': 2        
         }
 
-#Fails if regpar_step is too small
-#The spectral preconditioner performs then a bad approximation to the forward operator
-solver = IrgnmCGPrec(setting, data, regpar=1, regpar_step=0.95, precpars=precpars)
+solver = IrgnmCGPrec(setting, data, regpar=1, regpar_step=0.8, init=init, precpars=precpars)
 stoprule = (
     rules.CountIterations(max_iterations=30) +
     rules.Discrepancy(
