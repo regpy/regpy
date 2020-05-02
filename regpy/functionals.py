@@ -282,3 +282,37 @@ class L1Norm(Functional):
     def _hessian(self, x):
         # Even approximate Hessians don't work here.
         raise NotImplementedError
+
+'''
+Total Variation Norm: For C^1 functions the l1-norm of the gradient
+'''
+from regpy.util import gradient
+from regpy.util import divergence
+class TotalVariation(Functional):
+    def _eval(self, x, dim):
+        if dim==1:
+            return np.sum(np.abs(gradient(x)))
+        else:
+            return np.sum(np.linalg.norm(gradient(x), axis=0))
+
+    def _gradient(self, x, dim):
+        if dim==1:
+            return np.sign(gradient(x))
+        else:
+            grad = gradient(x)
+            grad_norm = np.linalg.norm(grad, axis=0)
+            toret = np.zeros(x.shape)
+            toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
+            return toret
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal:(self, x, tau, stepsize, dim):
+        shape = [dim]+list(x.shape)
+        p = np.zeros(shape)
+        maxiter = 10 
+        for i in range(maxiter):
+            update = stepsize*gradient( divergence(p, dim)-x/tau )
+            p = (p+update) / (1+np.linalg.norm(update))
+        return tau*divergence(p, dim)
