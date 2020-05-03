@@ -233,6 +233,9 @@ class HilbertNorm(Functional):
     def _hessian(self, x):
         return self.hspace.gram
 
+    def _proximal(self, x, tau):
+        return 1/(1+tau)*x
+
 
 class Indicator(Functional):
     def __init__(self, domain, predicate):
@@ -252,6 +255,14 @@ class Indicator(Functional):
 
     def _hessian(self, x):
         return operators.Zero(self.domain)
+
+    """
+    The proximal operator is the projection on the set predicate.
+    However, it is more natural to implement indicator function constraints in Tikhonov 
+    regularization by semismooth approaches. See semismooth Newton method.
+    """
+    def _proximal(self, x, tau):
+        return NotImplementedError
 
 
 class ErrorToInfinity(Functional):
@@ -273,6 +284,9 @@ class ErrorToInfinity(Functional):
 
 
 class L1Norm(Functional):
+    def __init__(self, domain):
+        super().__init__(domain)
+
     def _eval(self, x):
         return np.sum(np.abs(x))
 
@@ -282,6 +296,9 @@ class L1Norm(Functional):
     def _hessian(self, x):
         # Even approximate Hessians don't work here.
         raise NotImplementedError
+
+    def _proximal(self, x, tau):
+        return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
 '''
 Total Variation Norm: For C^1 functions the l1-norm of the gradient
@@ -308,7 +325,7 @@ class TotalVariation(Functional):
     def _hessian(self, x):
         raise NotImplementedError
 
-    def _proximal:(self, x, tau, stepsize, dim):
+    def _proximal(self, x, tau, stepsize, dim):
         shape = [dim]+list(x.shape)
         p = np.zeros(shape)
         maxiter = 10 
