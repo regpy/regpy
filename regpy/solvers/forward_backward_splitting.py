@@ -28,7 +28,7 @@ class Forward_Backward_Splitting(Solver):
         self.y = self.setting.op(self.x)
         
     def _next(self):
-        self.x-=self.tau*self.data_fidelity._gradient(self.x)
+        self.x-=self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity._gradient(self.x)) 
         self.x = self.penalty._proximal(self.x, self.regpar*self.tau)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         

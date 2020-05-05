@@ -325,10 +325,9 @@ class TotalVariation(Functional):
     def _hessian(self, x):
         raise NotImplementedError
 
-    def _proximal(self, x, tau, stepsize, dim):
+    def _proximal(self, x, tau, stepsize, dim, maxiter=10):
         shape = [dim]+list(x.shape)
         p = np.zeros(shape)
-        maxiter = 10 
         for i in range(maxiter):
             update = stepsize*gradient( divergence(p, dim)-x/tau )
             p = (p+update) / (1+np.linalg.norm(update))
