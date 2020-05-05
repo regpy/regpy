@@ -38,5 +38,5 @@ class FISTA(Solver):
         self.x_old = self.x
         self.t_old = self.t
 
-        self.x = self.penalty._proximal(h-self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity.gradient(h)))
+        self.x = self.penalty.proximal(h-self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity.gradient(h)))
         self.y = self.setting.op(self.x)

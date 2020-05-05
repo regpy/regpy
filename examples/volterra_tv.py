@@ -32,8 +32,8 @@ data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The data fidelity term: 1/2*||op(f)-data||^2"""
 penalty = L1Norm(setting.Hcodomain.discr)
 
-tau = 1
-alpha = 10**(-4)
+tau = 0.01
+alpha = 10**(-2)
 
 solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau, alpha)
 stoprule = (

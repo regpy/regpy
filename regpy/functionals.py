@@ -48,6 +48,12 @@ class Functional:
         assert h.domain == h.codomain == self.domain
         return h
 
+    def proximal(self, x, tau):
+        assert x in self.domain
+        proximal = self._proximal(x, tau)
+        assert proximal in self.domain
+        return proximal
+
     def _eval(self, x):
         raise NotImplementedError
 
@@ -59,6 +65,9 @@ class Functional:
 
     def _hessian(self, x):
         return operators.ApproximateHessian(self, x)
+
+    def _proximal(self, x, tau):
+        return NotImplementedError
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
