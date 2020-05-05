@@ -285,14 +285,14 @@ def asdf():
             a[i, j] = foo(i + 6, j + 6)
     return a
     
-def gradient(u):
+def gradient(u, spacing=1):
     """Computes the gradient of field given by 'u'. 'u' is defined on a 
     equidistant grid. Returns a list of vectors that are the derivatives in each 
     dimension."""
-    return np.array(np.gradient(u))
+    return 1/spacing*np.array(np.gradient(u))
 
-def divergence(u, dim):
+def divergence(u, dim, spacing=1):
     """Computes the divergence of a vector field 'u'. 'u' is assumed to be
     a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
     regular grid"""
-    return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i) for i in range(dim)])
+    return 1/spacing*np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i) for i in range(dim)])

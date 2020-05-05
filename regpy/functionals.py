@@ -311,21 +311,27 @@ class L1Norm(Functional):
 
 '''
 Total Variation Norm: For C^1 functions the l1-norm of the gradient
+Only implemented on a Uniform Grid for now
 '''
 from regpy.util import gradient
 from regpy.util import divergence
 class TotalVariation(Functional):
-    def _eval(self, x, dim):
-        if dim==1:
-            return np.sum(np.abs(gradient(x)))
-        else:
-            return np.sum(np.linalg.norm(gradient(x), axis=0))
+    def __init__(self, domain):
+        self.dim = np.size(domain.shape)
+        assert isinstance(domain, discrs.UniformGrid)
+        super().__init__(domain)
 
-    def _gradient(self, x, dim):
-        if dim==1:
-            return np.sign(gradient(x))
+    def _eval(self, x):
+        if self.dim==1:
+            return np.sum(np.abs(gradient(x, spacing=self.domain.spacing)))
         else:
-            grad = gradient(x)
+            return np.sum(np.linalg.norm(gradient(x, spacing=self.domain.spacing), axis=0))
+
+    def _gradient(self, x):
+        if self.dim==1:
+            return np.sign(gradient(x, spacing=self.domain.spacing))
+        else:
+            grad = gradient(x, spacing=self.domain.spacing)
             grad_norm = np.linalg.norm(grad, axis=0)
             toret = np.zeros(x.shape)
             toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
@@ -334,10 +340,10 @@ class TotalVariation(Functional):
     def _hessian(self, x):
         raise NotImplementedError
 
-    def _proximal(self, x, tau, stepsize, dim, maxiter=10):
-        shape = [dim]+list(x.shape)
+    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
+        shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradient( divergence(p, dim)-x/tau )
-            p = (p+update) / (1+np.linalg.norm(update))
-        return tau*divergence(p, dim)
+            update = stepsize*gradient( divergence(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
+            p = (p+update) / (1+np.abs(update))
+        return x-tau*divergence(p, self.dim, spacing=self.domain.spacing)

@@ -9,7 +9,7 @@ from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
-from regpy.functionals import HilbertNorm, L1Norm, Composed
+from regpy.functionals import HilbertNorm, L1Norm, Composed, TotalVariation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 
 grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
-op = Volterra(grid, exponent=1)
+op = Volterra(grid, exponent=3)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
@@ -25,15 +25,17 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The data fidelity term: 1/2*||op(f)-data||^2"""
-penalty = L1Norm(setting.Hcodomain.discr)
+#penalty = L1Norm(setting.Hdomain.discr)
+"""The penalty term: 1/2 * ||f||_{TV}^2"""
+penalty = TotalVariation(setting.Hdomain.discr)
 
 tau = 0.01
-alpha = 10**(-2)
+alpha = 10**(-1)
 
 solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau, alpha)
 stoprule = (
