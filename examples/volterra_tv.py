@@ -34,12 +34,18 @@ data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
 penalty = TotalVariation(setting.Hdomain.discr)
 
+proximal_pars = {
+        'stepsize' : 0.001,
+        'maxiter' : 1000
+        }
+"""Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
+
 tau = 0.01
 alpha = 10**(-1)
 
-solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau, alpha)
+solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
-    rules.CountIterations(max_iterations=3000) +
+    rules.CountIterations(max_iterations=1000) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),

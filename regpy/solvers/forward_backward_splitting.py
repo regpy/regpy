@@ -10,7 +10,7 @@ data_fidelity and penalty are functionals
 """
 
 class Forward_Backward_Splitting(Solver):
-    def __init__(self, setting, data_fidelity, penalty, init, tau = 1, regpar = 1):
+    def __init__(self, setting, data_fidelity, penalty, init, tau = 1, regpar = 1, proximal_pars = None):
         
         super().__init__()
         self.setting = setting
@@ -19,6 +19,7 @@ class Forward_Backward_Splitting(Solver):
         """The regularization parameter."""
         self.tau = tau
         """The proximal operator parameter"""
+        self.proximal_pars = proximal_pars
 
         self.data_fidelity = data_fidelity
         self.penalty = penalty
@@ -29,7 +30,7 @@ class Forward_Backward_Splitting(Solver):
         
     def _next(self):
         self.x-=self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity.gradient(self.x)) 
-        self.x = self.penalty.proximal(self.x, self.regpar*self.tau)
+        self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         
         self.y = self.setting.op(self.x)

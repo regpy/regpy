@@ -48,9 +48,12 @@ class Functional:
         assert h.domain == h.codomain == self.domain
         return h
 
-    def proximal(self, x, tau):
+    def proximal(self, x, tau, proximal_pars = None):
         assert x in self.domain
-        proximal = self._proximal(x, tau)
+        if proximal_pars == None:
+            proximal_pars = {}
+        self.proximal_pars = proximal_pars
+        proximal = self._proximal(x, tau, **proximal_pars)
         assert proximal in self.domain
         return proximal
 
