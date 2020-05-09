@@ -1,3 +1,8 @@
+'''
+The volterra operator inversion with forward-backward-splitting.
+TV is used as default for penalty term.
+'''
+
 import logging
 
 import matplotlib.pyplot as plt
@@ -9,7 +14,7 @@ from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
-from regpy.functionals import HilbertNorm, L1Norm, Composed, TotalVariation
+from regpy.functionals import HilbertNorm, L1Norm, TotalVariation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,22 +35,24 @@ setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The data fidelity term: 1/2*||op(f)-data||^2"""
+"""Uncomment to use L1 norm as penalty term instead"""
 #penalty = L1Norm(setting.Hdomain.discr)
 """The penalty term: 1/2 * ||f||_{TV}^2"""
 penalty = TotalVariation(setting.Hdomain.discr)
 
 proximal_pars = {
         'stepsize' : 0.001,
-        'maxiter' : 1000
+        'maxiter' : 100
         }
 """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
 tau = 0.01
-alpha = 10**(-1)
+alpha = 10**(-2)
 
 solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
-    rules.CountIterations(max_iterations=1000) +
+    # Method is slow, so need to use large number of iterations
+    rules.CountIterations(max_iterations=100000) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
