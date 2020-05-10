@@ -51,14 +51,21 @@ class IRGNMSemiSmooth(Solver):
         """sets where the upper constraint and the lower constarint are active"""
         self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
         self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
+
+        self.active_plus_old=self.active_plus
+        self.active_minus_old=self.active_minus
         
         """compute active and inactive sets, need to be computed in each step again"""
         self.active=np.zeros(self.size)
         self.inactive=np.zeros(self.size)
         
     def _next(self):
-        for i in range(10):
+        first_iteration = True
+        while first_iteration or not self.active_plus_old==self.active_plus or not self.active_minus_old==self.active_minus:
+            self.active_plus_old=self.active_plus
+            self.active_minus_old=self.active_minus
             self.inner_update()
+            first_iteration = False
         
         self.y, self.deriv = self.setting.op.linearize(self.x)
         
@@ -72,6 +79,9 @@ class IRGNMSemiSmooth(Solver):
         #sets where the upper constraint and the lower constarint are active
         self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
         self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
+
+        self.active_plus_old=self.active_plus
+        self.active_minus_old=self.active_minus
 
         self.regpar *= self.regpar_step
         

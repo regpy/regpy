@@ -195,6 +195,7 @@ class IrgnmCGPrec(Solver):
                     self.setting.Hcodomain.gram(self.deriv((self.krylov_basis[i, :]))))))
         """Express T*T in Krylov_basis"""
 
+        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
