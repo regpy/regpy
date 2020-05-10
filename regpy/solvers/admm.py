@@ -9,17 +9,40 @@ from regpy.solvers.tikhonov import TikhonovCG
 """The ADMM algorithm"""
 
 class ADMM(Solver):
-    def __init__(self,  setting, data_fidelity, penalty, init_v1, init_v2, init_p1, init_p2, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cgpars = None):
+    """The ADMM method for minimizing S(Tf) + regpar * R(f)
+
+    Parameters
+    ----------
+    setting : regpy.solvers.HilbertSpaceSetting
+        The setting of the forward problem.
+    data_fidelity : regpy.functionals.Functional
+        The data fidelity term. Needs to have a prox-operator defined. Matches S.
+    penalty : regpy.functionals.Functional
+        The penalty term. Needs to have a prox-operator defined. Matches R.
+    init : dict
+        The initial guess. Must contain v1, v2, p1 and p2 keys. 
+    gamma : float, optional
+        Must be strictly greater than zero. 
+    regpar : float
+        The regularization parameter. Must be positive.
+    proximal_pars_data_fidelity : dict, optional
+        Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
+    proximal_pars_penalty : dict, optional
+        Parameter dictionary passed to the computation of the prox-operator for the penalty term
+    cgpars : dict, optional
+        Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+    """
+    def __init__(self,  setting, data_fidelity, penalty, init, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cgpars = None):
         super().__init__()
         self.setting = setting
         assert self.setting.op.linear
         self.data_fidelity = data_fidelity
         self.penalty = penalty
 
-        self.v1 = init_v1
-        self.v2 = init_v2
-        self.p1 = init_p1
-        self.p2 = init_p2
+        self.v1 = init['v1']
+        self.v2 = init['v2']
+        self.p1 = init['p1']
+        self.p2 = init['p2']
 
         self.gamma = gamma
         self.regpar = regpar
