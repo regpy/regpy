@@ -25,9 +25,13 @@ logging.basicConfig(
 grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
 op = Volterra(grid, exponent=3)
 
+"""Impulsive Noise"""
+sigma = 0.01*np.ones(grid.coords.shape[1])
+sigma[100:110] = 0.5
+
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.randn()
+noise = sigma * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
