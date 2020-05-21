@@ -308,8 +308,36 @@ class EIT(Operator):
         return
 
 
-class ReactionBoundary(Operator):
+ 
+    """
+    Estimation of the reaction coefficient from boundary value measurements
+
+    PDE: -div(grad(u)) + s*u = 0 in Omega
+         du/dn = g on dOmega
+
+    Evaluate: F: s \mapsto trace(u)
+    Derivative:
+        -div(grad(v))+s*v = -h*u (=:f)
+        dv/dn = 0 
+
+    Der: F'[s]: h \mapsto trace(v)
+
+    Adjoint: 
+        -div(grad(w))+s*w = 0
+        dw/dn = q
+    Adj: F'[s]^*: q \mapsto -u*w
+
+    proof:
+    (F'h, q) = int_dOmega [trace(v) q] = int_dOmega [trace(v) dw/dn] = int_Omega [div(v grad w)] 
+    = int_Omega [grad v grad w] + int_Omega [v div( grad w)] = int_Omega [div(w grad v)] - int_Omega [div(grad v) w] + int_Omega [v div (grad w)]
+    = int_dOmega [trace(w) dv/dn] - int_Omega [h u w] - int_Omega [s v w] + int_Omega [v s w]
+    Note that dv/dn=0 on dOmega. Hence:
+    (F'h, q) = -int_Omega[h u w] = (h, -u w)
+    """
+
+class ReactionBoundary(NGSolveOperator):
     def __init__(self, domain, g, codomain=None):
+        super().__init__(domain, codomain)
         codomain = codomain or domain
         self.g = g
 
@@ -324,22 +352,22 @@ class ReactionBoundary(Operator):
         self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # grid function: return value of derivative
         self.gfu_adjoint = ngs.GridFunction(self.fes_domain)  # grid function: return value of adjoint
 
-        self.gfu_bilinearform_domain = ngs.GridFunction(self.fes_domain)  # grid function for defining integrator (bilinearform)
+        #self.gfu_bilinearform_domain = ngs.GridFunction(self.fes_domain)  # grid function for defining integrator (bilinearform)
         self.gfu_bilinearform_codomain = ngs.GridFunction(self.fes_codomain)  # grid function for defining integrator of bilinearform
 
-        self.gfu_linearform_domain = ngs.GridFunction(self.fes_codomain)  # grid function for defining linearform
+        #self.gfu_linearform_domain = ngs.GridFunction(self.fes_codomain)  # grid function for defining linearform
         self.gfu_linearform_codomain = ngs.GridFunction(self.fes_domain)
 
         self.gfu_b = ngs.GridFunction(self.fes_codomain)  # grid function for defining the boundary term
 
         self.gfu_inner_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for inner computation in adjoint
 
-        u = self.fes_codomain.TrialFunction()  # symbolic object
-        v = self.fes_codomain.TestFunction()  # symbolic object
+        #Test and Trial Function
+        u, v = self.fes_codomain.TnT()
 
         # Define Bilinearform, will be assembled later
         self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
-        self.a += ngs.SymbolicBFI(-ngs.grad(u) * ngs.grad(v) + u * v * self.gfu_bilinearform_codomain)
+        self.a += (ngs.grad(u) * ngs.grad(v) + u * v * self.gfu_bilinearform_codomain) * ngs.dx
 
         # Interaction with Trace
         self.fes_bdr = ngs.H1(self.fes_codomain.mesh, order=self.fes_codomain.globalorder, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
@@ -348,19 +376,23 @@ class ReactionBoundary(Operator):
 
         # Boundary term
         self.b = ngs.LinearForm(self.fes_codomain)
-        self.b += ngs.SymbolicLFI(-self.gfu_b * v.Trace(),
-                                  definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        #self.b += ngs.SymbolicLFI(-self.gfu_b * v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
+        self.b += -self.gfu_b * v.Trace() * ngs.ds("cyc")
 
         # Linearform (only appears in derivative)
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
-        self.f_deriv += ngs.SymbolicLFI(-self.gfu_linearform_codomain * self.gfu_eval * v)
+        self.f_deriv += -self.gfu_linearform_codomain * self.gfu_eval * v * ngs.dx
 
-        super().__init__(domain, codomain)
+        self.prec = ngs.Preconditioner(self.a, 'local')
+
+        self.gfu_eval.Set(0)
+        self.gfu_deriv.Set(0)
+        self.gfu_inner_adjoint.Set(0)
+
 
     def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
-        self.gfu_bilinearform_domain.vec.FV().NumPy()[:] = diff
-        self.gfu_bilinearform_codomain.Set(self.gfu_bilinearform_domain)
+        self._read_in(diff, self.gfu_bilinearform_codomain)
         self.a.Assemble()
 
         # Assemble Linearform of boundary term
@@ -368,7 +400,8 @@ class ReactionBoundary(Operator):
         self.b.Assemble()
 
         # Solve system
-        self.gfu_eval.vec.data = self._solve(self.a, self.b.vec)
+        #self.gfu_eval.vec.data = self._solve(self.a, self.b.vec)
+        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
         return self._get_boundary_values(self.gfu_eval)
 
@@ -376,16 +409,14 @@ class ReactionBoundary(Operator):
         # Bilinearform already defined from _eval
 
         # Translate arguments in Coefficient Function
-        self.gfu_linearform_domain.vec.FV().NumPy()[:] = h
-        self.gfu_linearform_codomain.Set(self.gfu_linearform_domain)
+        self._read_in(h, self.gfu_linearform_codomain)
 
         # Define rhs
         self.f_deriv.Assemble()
 
-        # Boundary term, often ignored
-
         # Solve system
-        self.gfu_deriv.vec.data = self._solve(self.a, self.f_deriv.vec)
+        #self.gfu_deriv.vec.data = self._solve(self.a, self.f_deriv.vec)
+        self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
         return self._get_boundary_values(self.gfu_deriv)
 
@@ -399,7 +430,8 @@ class ReactionBoundary(Operator):
         self.gfu_b.Set(self.gfu_in)
         self.b.Assemble()
 
-        self.gfu_inner_adjoint.vec.data = self._solve(self.a, self.b.vec)
+        #self.gfu_inner_adjoint.vec.data = self._solve(self.a, self.b.vec)
+        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
 
         self.gfu_adjoint.Set(self.gfu_inner_adjoint * self.gfu_eval)
 
