@@ -33,7 +33,7 @@ codomain = NgsSpace(fes_codomain)
 
 rhs = 10 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
 op = Coefficient(
-    domain, rhs, codomain=codomain, bc_left=0, bc_right=0, bc_bottom=0, bc_top=0, diffusion=False,
+    domain, rhs, codomain=codomain, bc_left=0.1, bc_right=0.1, bc_bottom=0.1, bc_top=0.1, diffusion=False,
     reaction=True, dim=2
 )
 
@@ -52,7 +52,7 @@ noise=gfu_noise.vec.FV().NumPy()
 
 data = exact_data+noise
 
-init = 1 + ngs.x ** 2
+init = 1
 init_gfu = ngs.GridFunction(op.fes_domain)
 init_gfu.Set(init)
 init_solution = init_gfu.vec.FV().NumPy().copy()
