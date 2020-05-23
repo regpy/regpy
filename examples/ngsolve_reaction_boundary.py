@@ -21,7 +21,8 @@ logging.basicConfig(
 )
 
 geo = SplineGeometry()
-geo.AddCircle((0, 0), r=1, bc="cyc", maxh=0.2)
+bc = "cyc"
+geo.AddCircle((0, 0), r=1, bc=bc, maxh=0.2)
 mesh = ngs.Mesh(geo.GenerateMesh())
 
 fes_domain = ngs.H1(mesh, order=2)
@@ -31,7 +32,7 @@ fes_codomain = ngs.H1(mesh, order=2)
 codomain = NgsSpace(fes_codomain)
 
 g = ngs.x ** 2 * ngs.y
-op = ReactionBoundary(domain, g, codomain=codomain)
+op = ReactionBoundary(domain, g, bc, codomain=codomain)
 
 exact_solution_coeff = ngs.sin(ngs.y) + 2
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
@@ -60,8 +61,8 @@ setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 landweber = Landweber(setting, data, init_solution, stepsize=0.001)
 # irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
 stoprule = (
-        rules.CountIterations(5000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=7))
+        rules.CountIterations(5) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -92,3 +93,46 @@ coeff_init_data = ngs.CoefficientFunction(gfu_init_data)
 ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
 ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")
 ngs.Draw(coeff_init_data, op.fes_codomain.mesh, "init_data")
+
+def der(x):
+    val2 = op(res1 + x * res2)
+    val1 = op(res1)
+    der = x * op._derivative(res2)
+    return setting.Hcodomain.norm((1 / x) * (val2 - val1 - der))
+
+
+res1 = 0.001 * np.random.randn(op.domain.shape[0])
+res2 = 0.001 * np.random.randn(op.domain.shape[0])
+
+der1=der(0.1)
+der2=der(0.01)
+der3=der(0.001)
+der4=der(0.0001)
+der5=der(0.00001)
+
+print(der1, der2, der3, der4, der5)
+
+def adj():
+    res1 = 0.001 * np.random.randn(op.domain.shape[0])
+    #res1=exact_solution
+    v = op._eval(res1, differentiate=True)
+    toret1 = setting.Hcodomain.inner(op._derivative(res1), v)
+    toret2 = setting.Hdomain.inner(res1, op._adjoint(v))
+    s = 0.001 * np.random.randn(op.domain.shape[0])
+    h = 0.001 * np.random.randn(op.domain.shape[0])
+
+    #Create vector in codomain
+    create_data = 0.001 * np.random.randn(op.domain.shape[0])
+    q = op._eval(create_data, differentiate=False)
+
+    #Initailize operator with s
+    u = op._eval(s, differentiate=True)
+
+    #(F'[s]h, q)
+    toret1 = setting.Hcodomain.inner(op._derivative(h), q)
+
+    #(h, F'[s]^* q)
+    toret2 = setting.Hdomain.inner(h, op._adjoint(q))
+    return [toret1, toret2]
+
+print(adj(), adj(), adj())
