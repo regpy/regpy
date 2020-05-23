@@ -7,13 +7,34 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
-    def __init__(self, domain, codomain):
-        self.gfu_read_in = ngs.GridFunction(domain.fes)
+    def __init__(self, domain, codomain, bdr=None):
         super().__init__(domain, codomain)
+        self.bdr = bdr
+        self.gfu_read_in = ngs.GridFunction(self.domain.fes)
+        if self.bdr is not None:
+            self.fes_bdr = ngs.H1(self.codomain.fes.mesh, order=self.codomain.fes.globalorder, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+            self.gfu_getbdr = ngs.GridFunction(self.fes_bdr)
+            self.gfu_setbdr = ngs.GridFunction(self.codomain.fes)
+
+            self.fes_in = ngs.H1(self.codomain.fes.mesh, order=1)
+            self.gfu_in = ngs.GridFunction(self.fes_in)
+
 
     def _read_in(self, vector, gfu):
         self.gfu_read_in.vec.FV().NumPy()[:] = vector
         gfu.Set(self.gfu_read_in)
+
+    def _get_boundary_values(self, gfu):
+        self.gfu_getbdr.Set(0)
+        self.gfu_getbdr.Set(gfu, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+        return self.gfu_getbdr.vec.FV().NumPy().copy()
+
+    def _set_boundary_values(self, gfu, vals):
+        self.gfu_setbdr.vec.FV().NumPy()[:] = vals
+        self.gfu_in.Set(0)
+        self.gfu_in.Set(self.gfu_setbdr, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+        gfu.Set(self.gfu_in)
+        return
 
     def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
         if prec_update:
@@ -337,27 +358,20 @@ class EIT(Operator):
 
 class ReactionBoundary(NGSolveOperator):
     def __init__(self, domain, g, codomain=None):
-        super().__init__(domain, codomain)
         codomain = codomain or domain
+        super().__init__(domain, codomain, bdr="cyc")
         self.g = g
 
         self.fes_domain = domain.fes
         self.fes_codomain = codomain.fes
-
-        self.fes_in = ngs.H1(self.fes_codomain.mesh, order=1)
-        self.gfu_in = ngs.GridFunction(self.fes_in)
 
         # grid functions for later use
         self.gfu_eval = ngs.GridFunction(self.fes_codomain)  # solution, return value of _eval
         self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # grid function: return value of derivative
         self.gfu_adjoint = ngs.GridFunction(self.fes_domain)  # grid function: return value of adjoint
 
-        #self.gfu_bilinearform_domain = ngs.GridFunction(self.fes_domain)  # grid function for defining integrator (bilinearform)
         self.gfu_bilinearform_codomain = ngs.GridFunction(self.fes_codomain)  # grid function for defining integrator of bilinearform
-
-        #self.gfu_linearform_domain = ngs.GridFunction(self.fes_codomain)  # grid function for defining linearform
-        self.gfu_linearform_codomain = ngs.GridFunction(self.fes_domain)
-
+        self.gfu_linearform_codomain = ngs.GridFunction(self.fes_domain) # grid function for defining linearform
         self.gfu_b = ngs.GridFunction(self.fes_codomain)  # grid function for defining the boundary term
 
         self.gfu_inner_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for inner computation in adjoint
@@ -369,14 +383,8 @@ class ReactionBoundary(NGSolveOperator):
         self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
         self.a += (ngs.grad(u) * ngs.grad(v) + u * v * self.gfu_bilinearform_codomain) * ngs.dx
 
-        # Interaction with Trace
-        self.fes_bdr = ngs.H1(self.fes_codomain.mesh, order=self.fes_codomain.globalorder, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-        self.gfu_getbdr = ngs.GridFunction(self.fes_bdr)
-        self.gfu_setbdr = ngs.GridFunction(self.fes_codomain)
-
         # Boundary term
         self.b = ngs.LinearForm(self.fes_codomain)
-        #self.b += ngs.SymbolicLFI(-self.gfu_b * v.Trace(), definedon=self.fes_codomain.mesh.Boundaries("cyc"))
         self.b += -self.gfu_b * v.Trace() * ngs.ds("cyc")
 
         # Linearform (only appears in derivative)
@@ -400,7 +408,6 @@ class ReactionBoundary(NGSolveOperator):
         self.b.Assemble()
 
         # Solve system
-        #self.gfu_eval.vec.data = self._solve(self.a, self.b.vec)
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
         return self._get_boundary_values(self.gfu_eval)
@@ -415,7 +422,6 @@ class ReactionBoundary(NGSolveOperator):
         self.f_deriv.Assemble()
 
         # Solve system
-        #self.gfu_deriv.vec.data = self._solve(self.a, self.f_deriv.vec)
         self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
         return self._get_boundary_values(self.gfu_deriv)
@@ -425,28 +431,16 @@ class ReactionBoundary(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self._set_boundary_values(argument)
+        self._set_boundary_values(self.gfu_b, argument)
 
-        self.gfu_b.Set(self.gfu_in)
         self.b.Assemble()
 
-        #self.gfu_inner_adjoint.vec.data = self._solve(self.a, self.b.vec)
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
 
         self.gfu_adjoint.Set(self.gfu_inner_adjoint * self.gfu_eval)
 
         return self.gfu_adjoint.vec.FV().NumPy().copy()
 
-    def _solve(self, bilinear, rhs, boundary=False):
-        return bilinear.mat.Inverse(freedofs=self.fes_codomain.FreeDofs()) * rhs
 
-    def _get_boundary_values(self, gfu):
-        self.gfu_getbdr.Set(0)
-        self.gfu_getbdr.Set(gfu, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-        return self.gfu_getbdr.vec.FV().NumPy().copy()
 
-    def _set_boundary_values(self, vals):
-        self.gfu_setbdr.vec.FV().NumPy()[:] = vals
-        self.gfu_in.Set(0)
-        self.gfu_in.Set(self.gfu_setbdr, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-        return
+
