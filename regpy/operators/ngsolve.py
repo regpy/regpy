@@ -358,9 +358,10 @@ class EIT(Operator):
     """
 
 class ReactionBoundary(NGSolveOperator):
-    def __init__(self, domain, g, bdr, codomain=None):
+    def __init__(self, domain, g, codomain=None):
         codomain = codomain or domain
-        super().__init__(domain, codomain, bdr=bdr)
+        assert codomain.bdr is not None
+        super().__init__(domain, codomain, bdr=codomain.bdr)
         self.g = g
 
         self.fes_domain = domain.fes

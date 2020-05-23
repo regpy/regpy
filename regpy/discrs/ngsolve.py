@@ -21,10 +21,11 @@ class NgsSpace(Discretization):
        The wrapped NGSolve discretization.
     """
 
-    def __init__(self, fes):
+    def __init__(self, fes, bdr=None):
         assert isinstance(fes, ngs.FESpace)
         super().__init__(fes.ndof)
         self.fes = fes
+        self.bdr = bdr
 
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.fes == other.fes
@@ -107,13 +108,17 @@ class SobolevFESpace(HilbertSpace):
 @L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.L2Boundary` on an `NgsSpace`."""
+    def __init__(self, discr):
+        assert discr.bdr is not None
+        super().__init__(discr)
+
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
         form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace(),
-            definedon=self.discr.fes.mesh.Boundaries("cyc")
+            definedon=self.discr.fes.mesh.Boundaries(self.discr.bdr)
         )
         return Matrix(self.discr, form)
 
@@ -121,12 +126,17 @@ class L2BoundaryFESpace(HilbertSpace):
 @SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsSpace`."""
+    def __init__(self, discr):
+        assert discr.bdr is not None
+        super().__init__(discr)
+
+
     @memoized_property
     def gram(self):
         u, v = self.discr.fes.TnT()
         form = ngs.BilinearForm(self.discr.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace() + u.Trace().Deriv() * v.Trace().Deriv(),
-            definedon=self.discr.fes.mesh.Boundaries("cyc")
+            definedon=self.discr.fes.mesh.Boundaries(self.discr.bdr)
         )
         return Matrix(self.discr, form)

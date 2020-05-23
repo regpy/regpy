@@ -29,10 +29,10 @@ fes_domain = ngs.H1(mesh, order=2)
 domain = NgsSpace(fes_domain)
 
 fes_codomain = ngs.H1(mesh, order=2)
-codomain = NgsSpace(fes_codomain)
+codomain = NgsSpace(fes_codomain, bdr=bc)
 
 g = ngs.x ** 2 * ngs.y
-op = ReactionBoundary(domain, g, bc, codomain=codomain)
+op = ReactionBoundary(domain, g, codomain=codomain)
 
 exact_solution_coeff = ngs.sin(ngs.y) + 2
 gfu_exact_solution = ngs.GridFunction(op.fes_domain)
