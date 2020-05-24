@@ -245,11 +245,6 @@ class EIT(NGSolveOperator):
         # Initialize preconditioner for solving the Dirichlet problems by ngs.BVP
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
-        # Initialize the computation of homogenous Dirichlet problems
-        self.gfu_eval.Set(0)
-        self.gfu_deriv.Set(0)
-        self.gfu_inner_adjoint.Set(0)
-
 
 
 #Weak formulation:
@@ -371,11 +366,6 @@ class ReactionBoundary(NGSolveOperator):
 
         # Initialize preconditioner for solving the Dirichlet problems by ngs.BVP
         self.prec = ngs.Preconditioner(self.a, 'direct')
-
-        # Initialize the computation of homogenous Dirichlet problems
-        self.gfu_eval.Set(0)
-        self.gfu_deriv.Set(0)
-        self.gfu_inner_adjoint.Set(0)
 
 
     def _eval(self, diff, differentiate=False):
