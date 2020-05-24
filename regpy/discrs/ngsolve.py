@@ -5,6 +5,7 @@ Hilbert space structures. Operators are in the `regpy.operators.ngsolve` module.
 """
 
 import ngsolve as ngs
+import numpy as np
 
 from regpy.discrs import Discretization
 from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
@@ -26,9 +27,30 @@ class NgsSpace(Discretization):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
+        self.fes_util = ngs.L2(fes.mesh, order=1)
+        self.gfu_util = ngs.GridFunction(self.fes_util)
+        self.gfu_fes = ngs.GridFunction(fes)
 
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.fes == other.fes
+
+    def ones(self):
+        self.gfu_fes.Set(1)
+        return self.gfu_fes.FV().NumPy()
+
+    def rand(self, rand=np.random.random_sample):
+        r = rand(self.fes_util.ndof)
+        self.gfu_util.vec.FV().NumPy()[:] = r
+        self.gfu_fes.Set(self.gfu_util)
+        return self.gfu_fes.vec.FV().NumPy()
+    
+    def randn(self):
+        return self.rand(np.random.standard_normal)
+
+    
+
+
+
 
 
 class Matrix(Operator):
