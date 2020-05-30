@@ -27,32 +27,32 @@ class NgsSpace(Discretization):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
-        self.fes_util = ngs.L2(fes.mesh, order=1)
-        self.gfu_util = ngs.GridFunction(self.fes_util)
-        self.gfu_fes = ngs.GridFunction(fes)
+        self._fes_util = ngs.L2(fes.mesh, order=1)
+        self._gfu_util = ngs.GridFunction(self._fes_util)
+        self._gfu_fes = ngs.GridFunction(fes)
 
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.fes == other.fes
 
     def ones(self):
-        self.gfu_fes.Set(1)
-        return self.gfu_fes.FV().NumPy()
+        self._gfu_fes.Set(1)
+        return self._gfu_fes.FV().NumPy().copy()
 
     def rand(self, rand=np.random.random_sample):
-        r = rand(self.fes_util.ndof)
-        self.gfu_util.vec.FV().NumPy()[:] = r
-        self.gfu_fes.Set(self.gfu_util)
-        return self.gfu_fes.vec.FV().NumPy()
+        r = rand(self._fes_util.ndof)
+        self._gfu_util.vec.FV().NumPy()[:] = r
+        self._gfu_fes.Set(self._gfu_util)
+        return self._gfu_fes.vec.FV().NumPy().copy()
     
     def randn(self):
         return self.rand(np.random.standard_normal)
 
+    def fromcoefficientfunction(self, coefficientfunction):
+        self._gfu_fes.Set(coefficientfunction)
+        return self._gfu_fes.vec.FV().NumPy().copy()
+
+
     
-
-
-
-
-
 class Matrix(Operator):
     """An operator defined by an NGSolve bilinear form.
 

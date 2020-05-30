@@ -33,84 +33,56 @@ op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=1, bc_right=1.1, di
 N_domain = op.fes_domain.ndof
 N_codomain = op.fes_codomain.ndof
 
-exact_solution_coeff = 1 + ngs.x
-gfu_exact_solution = ngs.GridFunction(op.fes_domain)
-gfu_exact_solution.Set(exact_solution_coeff)
-exact_solution = gfu_exact_solution.vec.FV().NumPy()
+#exact_solution and exact_data store the coefficient vector
+#of the exact solution and the exact data grid functions
+exact_solution = domain.fromcoefficientfunction( 1 + ngs.sin(2*np.pi*ngs.x) )
 exact_data = op(exact_solution)
-noise = 0.01 * op.codomain.randn()
+
+noise = 0.01*codomain.randn()
 data = exact_data + noise
 
-init = 1 + ngs.x ** 3
-init_gfu = ngs.GridFunction(op.fes_domain)
-init_gfu.Set(init)
-init_solution = init_gfu.vec.FV().NumPy().copy()
-init_plot = init_solution.copy()
-init_data = op(init_solution)
+init = domain.fromcoefficientfunction( 1 )
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
-landweber = Landweber(setting, data, init_solution, stepsize=1)
-# irgnm_cg = IRGNM_CG(op, data, init, cgmaxit = 50, alpha0 = 1, alpha_step = 0.9, cgtol = [0.3, 0.3, 1e-6])
+landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
-        rules.CountIterations(1000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
+        rules.CountIterations(10000) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1))
 
 reco, reco_data = landweber.run(stoprule)
 
-gfu = ngs.GridFunction(op.fes_domain)
-gfu2 = ngs.GridFunction(op.fes_domain)
-gfu3 = ngs.GridFunction(op.fes_domain)
-for i in range(N_domain):
-    gfu.vec[i] = reco[i]
-    gfu2.vec[i] = exact_solution[i]
-    gfu3.vec[i] = init_plot[i]
-
-Symfunc = ngs.CoefficientFunction(gfu)
-Symfunc2 = ngs.CoefficientFunction(gfu2)
-Symfunc3 = ngs.CoefficientFunction(gfu3)
-func = np.zeros(N_domain)
-func2 = np.zeros(N_domain)
-func3 = np.zeros(N_domain)
-for i in range(0, N_domain):
-    mip = op.fes_domain.mesh(i / N_domain)
-    func[i] = Symfunc(mip)
-    func2[i] = Symfunc2(mip)
-    func3[i] = Symfunc3(mip)
-
-plt.plot(func, label='reco')
-plt.plot(func2, label='exact')
+#For graphical output in matplotlib
+gfu_domain = ngs.GridFunction(op.fes_domain)
+func_domain = np.zeros(N_domain)
+def plot_domain(vec, label):
+    for i in range(N_domain):
+        gfu_domain.vec[i] = vec[i]
+    Symfunc_domain = ngs.CoefficientFunction(gfu_domain)
+    for i in range(0, N_domain):
+        mip = op.fes_domain.mesh(i / N_domain)
+        func_domain[i] = Symfunc_domain(mip)
+    plt.plot(func_domain, label=label)
+    
+plot_domain(reco, 'reco')
+plot_domain(exact_solution, 'exact')
 plt.legend()
 plt.show()
 
-gfu = ngs.GridFunction(op.fes_codomain)
-gfu2 = ngs.GridFunction(op.fes_codomain)
-gfu3 = ngs.GridFunction(op.fes_codomain)
-gfu4 = ngs.GridFunction(op.fes_codomain)
-for i in range(N_codomain):
-    gfu.vec[i] = reco_data[i]
-    gfu2.vec[i] = exact_data[i]
-    gfu3.vec[i] = init_data[i]
-    gfu4.vec[i] = data[i]
-
-Symfunc = ngs.CoefficientFunction(gfu)
-Symfunc2 = ngs.CoefficientFunction(gfu2)
-Symfunc3 = ngs.CoefficientFunction(gfu3)
-Symfunc4 = ngs.CoefficientFunction(gfu4)
-func = np.zeros(N_codomain)
-func2 = np.zeros(N_codomain)
-func3 = np.zeros(N_codomain)
-func4 = np.zeros(N_codomain)
-for i in range(0, N_codomain):
-    mip = op.fes_codomain.mesh(i / N_codomain)
-    func[i] = Symfunc(mip)
-    func2[i] = Symfunc2(mip)
-    func3[i] = Symfunc3(mip)
-    func4[i] = Symfunc4(mip)
-
-plt.plot(func, label='reco')
-plt.plot(func2, label='exact')
-plt.plot(func3, label='init')
-plt.plot(func4, label='data')
+#For graphical output in matplotlib
+gfu_codomain = ngs.GridFunction(op.fes_codomain)
+func_codomain = np.zeros(N_codomain)
+def plot_codomain(vec, label):
+    for i in range(N_codomain):
+        gfu_codomain.vec[i] = vec[i]
+    Symfunc_codomain = ngs.CoefficientFunction(gfu_codomain)
+    for i in range(0, N_codomain):
+        mip = op.fes_codomain.mesh(i / N_codomain)
+        func_codomain[i] = Symfunc_codomain(mip)
+    plt.plot(func_codomain, label=label)
+    
+plot_codomain(reco_data, 'reco_data')
+plot_codomain(exact_data, 'exact')
+plot_codomain(data, 'data')
 plt.legend()
 plt.show()
