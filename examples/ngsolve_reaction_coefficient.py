@@ -31,7 +31,7 @@ mesh = MakeQuadMesh(meshsize_codomain)
 fes_codomain = ngs.H1(mesh, order=3, dirichlet="left|top|right|bottom")
 codomain = NgsSpace(fes_codomain)
 
-rhs = 10 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
+rhs = 1 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
 op = Coefficient(
     domain, rhs, codomain=codomain, bc_left=0.1, bc_right=0.1, bc_bottom=0.1, bc_top=0.1, diffusion=False,
     reaction=True, dim=2
@@ -60,21 +60,9 @@ reco, reco_data = landweber.run(stoprule)
 ngs.Draw(exact_solution_coeff, op.fes_domain.mesh, "exact")
 
 # Draw reconstructed solution
-gfu_reco = ngs.GridFunction(op.fes_domain)
-gfu_reco.vec.FV().NumPy()[:] = reco
-coeff_reco = ngs.CoefficientFunction(gfu_reco)
-
-ngs.Draw(coeff_reco, op.fes_domain.mesh, "reco")
+domain.draw(reco, "reco")
 
 # Draw data space
-gfu_data = ngs.GridFunction(op.fes_codomain)
-gfu_reco_data = ngs.GridFunction(op.fes_codomain)
+codomain.draw(data, "data")
+codomain.draw(reco_data, "reco_data")
 
-gfu_data.vec.FV().NumPy()[:] = data
-coeff_data = ngs.CoefficientFunction(gfu_data)
-
-gfu_reco_data.vec.FV().NumPy()[:] = reco_data
-coeff_reco_data = ngs.CoefficientFunction(gfu_reco_data)
-
-ngs.Draw(coeff_data, op.fes_codomain.mesh, "data")
-ngs.Draw(coeff_reco_data, op.fes_codomain.mesh, "reco_data")

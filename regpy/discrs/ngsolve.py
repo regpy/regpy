@@ -50,6 +50,12 @@ class NgsSpace(Discretization):
     def fromcoefficientfunction(self, coefficientfunction):
         self._gfu_fes.Set(coefficientfunction)
         return self._gfu_fes.vec.FV().NumPy().copy()
+    
+    def draw(self, coefficient_array, name):
+        assert isinstance(name, str)
+        self._gfu_fes.vec.FV().NumPy()[:] = coefficient_array
+        coefficientfunction = ngs.CoefficientFunction( self._gfu_fes )
+        ngs.Draw(coefficientfunction, self.fes.mesh, name)
 
 
     
