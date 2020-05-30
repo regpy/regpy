@@ -347,7 +347,7 @@ class ReactionBoundary(NGSolveOperator):
         self.gfu_lf = ngs.GridFunction(self.fes_domain) # grid function for defining linearform
         self.gfu_b = ngs.GridFunction(self.fes_codomain)  # grid function for defining the boundary term
 
-        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for inner computation in adjoint
+        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_codomain)  # grid function for inner computation in adjoint
 
         #Test and Trial Function
         u, v = self.fes_codomain.TnT()
