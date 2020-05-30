@@ -24,7 +24,7 @@ meshsize_domain = 10
 meshsize_codomain = 10
 
 mesh = MakeQuadMesh(meshsize_domain)
-fes_domain = ngs.L2(mesh, order=2)
+fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
@@ -37,40 +37,29 @@ op = Coefficient(
     reaction=True, dim=2
 )
 
-exact_solution_coeff = ngs.x + 1
-gfu_exact_solution = ngs.GridFunction(op.fes_domain)
-gfu_exact_solution.Set(exact_solution_coeff)
-exact_solution = gfu_exact_solution.vec.FV().NumPy()
+exact_solution_coeff = 1+0.8*ngs.sin(2*np.pi*ngs.x) * ngs.sin(2*np.pi*ngs.y)
+exact_solution = domain.fromcoefficientfunction( exact_solution_coeff )
 exact_data = op(exact_solution)
 
-fes_noise=ngs.L2(fes_codomain.mesh, order=1)
-gfu_noise_order1=ngs.GridFunction(fes_noise)
-gfu_noise_order1.vec.FV().NumPy()[:]=0.0001*np.random.randn(fes_noise.ndof)
-gfu_noise=ngs.GridFunction(fes_codomain)
-gfu_noise.Set(gfu_noise_order1)
-noise=gfu_noise.vec.FV().NumPy()
+noise = 0.0001 * codomain.randn()
 
 data = exact_data+noise
 
-init = 1
-init_gfu = ngs.GridFunction(op.fes_domain)
-init_gfu.Set(init)
-init_solution = init_gfu.vec.FV().NumPy().copy()
-init_data = op(init_solution)
+init = domain.fromcoefficientfunction ( 1 )
+init_data = op(init)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
-landweber = Landweber(setting, data, init_solution, stepsize=1)
+landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
-        rules.CountIterations(1000) +
+        rules.CountIterations(50000) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
 ngs.Draw(exact_solution_coeff, op.fes_domain.mesh, "exact")
-ngs.Draw(init, op.fes_domain.mesh, "init")
 
-# Draw recondtructed solution
+# Draw reconstructed solution
 gfu_reco = ngs.GridFunction(op.fes_domain)
 gfu_reco.vec.FV().NumPy()[:] = reco
 coeff_reco = ngs.CoefficientFunction(gfu_reco)
