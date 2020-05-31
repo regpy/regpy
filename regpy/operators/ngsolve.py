@@ -7,34 +7,15 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
-    def __init__(self, domain, codomain, bdr=None):
+    def __init__(self, domain, codomain):
         super().__init__(domain, codomain)
-        self.bdr = bdr
         self.gfu_read_in = ngs.GridFunction(self.domain.fes)
-        if self.bdr is not None:
-            self.fes_bdr = ngs.H1(self.codomain.fes.mesh, order=self.codomain.fes.globalorder, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-            self.gfu_getbdr = ngs.GridFunction(self.fes_bdr)
-            self.gfu_setbdr = ngs.GridFunction(self.codomain.fes)
 
     '''Reads in a coefficient vector of the domain and interpolates in the codomain.
     The result is saved in gfu'''
     def _read_in(self, vector, gfu):
         self.gfu_read_in.vec.FV().NumPy()[:] = vector
         gfu.Set(self.gfu_read_in)
-
-    '''Gets the boundary values of a gridfunction. The boundary is specified by self.bdr.
-    Returns the full coefficient vector'''
-    def _get_boundary_values(self, gfu):
-        self.gfu_getbdr.Set(0)
-        self.gfu_getbdr.Set(gfu, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self.gfu_getbdr.vec.FV().NumPy().copy()
-
-    '''Takes a coefficient vector of a gridfunction defined on the codomain and return the 
-    projection on the boundary specified by self.bdr. The result is saved in gfu'''
-    def _set_boundary_values(self, gfu, vals):
-        self.gfu_setbdr.vec.FV().NumPy()[:] = vals
-        gfu.Set(0)
-        gfu.Set(self.gfu_setbdr, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
 
     '''Solves the dirichlet problem by ngsolve routines'''
     def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
@@ -186,10 +167,6 @@ class Coefficient(NGSolveOperator):
         return self.gfu_adjoint.vec.FV().NumPy().copy()
 
 
-
-
-
-
 class EIT(NGSolveOperator):
     """Electrical Impedance Tomography Problem
 
@@ -221,7 +198,9 @@ class EIT(NGSolveOperator):
 
     def __init__(self, domain, g, codomain=None, alpha=0.01):
         codomain = codomain or domain
-        super().__init__(domain, codomain, bdr=codomain.bdr)
+        #Need to know the boundary to calculate Neumann bdr condition
+        assert codomain.bdr is not None
+        super().__init__(domain, codomain)
         self.g = g
 
         self.fes_domain = domain.fes
@@ -257,7 +236,7 @@ class EIT(NGSolveOperator):
 
         # Define Linearform for evaluation, will be assembled later       
         self.b = ngs.LinearForm(self.fes_codomain)
-        self.b += self.gfu_b*v*ngs.ds(self.bdr)
+        self.b += self.gfu_b*v*ngs.ds(codomain.bdr)
 
         # Define Linearform for derivative, will be assembled later
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
@@ -285,7 +264,6 @@ class EIT(NGSolveOperator):
         # Solve system
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
-        #return self._get_boundary_values(self.gfu_eval)
         return self.gfu_eval.vec.FV().NumPy()[:].copy()
 
 #Weak Formulation:
@@ -305,7 +283,6 @@ class EIT(NGSolveOperator):
         self.gfu_deriv.Set(0)
         self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        #return self._get_boundary_values(self.gfu_deriv)
         return self.gfu_deriv.vec.FV().NumPy()[:].copy()
 
 #Same problem as in _eval
@@ -314,7 +291,6 @@ class EIT(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        #self._set_boundary_values(self.gfu_b, argument)
         self.gfu_b.vec.FV().NumPy()[:] = argument
         self.b.Assemble()
 
@@ -357,7 +333,7 @@ class ReactionNeumann(NGSolveOperator):
         codomain = codomain or domain
         #Need to know the boundary to calculate Neumann bdr condition
         assert codomain.bdr is not None
-        super().__init__(domain, codomain, bdr=codomain.bdr)
+        super().__init__(domain, codomain)
         self.g = g
 
         self.fes_domain = domain.fes
@@ -406,7 +382,6 @@ class ReactionNeumann(NGSolveOperator):
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
         return self.gfu_eval.vec.FV().NumPy()[:].copy()
-        #return self._get_boundary_values(self.gfu_eval)
 
     def _derivative(self, h):
         # Bilinearform already defined from _eval
@@ -419,14 +394,12 @@ class ReactionNeumann(NGSolveOperator):
         self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
         return self.gfu_deriv.vec.FV().NumPy()[:].copy()
-        #return self._get_boundary_values(self.gfu_deriv)
 
     def _adjoint(self, argument):
         # Bilinearform already defined from _eval
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        #self._set_boundary_values(self.gfu_b, argument)
         self.gfu_b.vec.FV().NumPy()[:] = argument
         self.b.Assemble()
 
