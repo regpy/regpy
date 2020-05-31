@@ -42,6 +42,27 @@ class NGSolveOperator(Operator):
             prec.Update()
         ngs.BVP(bf=bf, lf=lf, gf=gf, pre=prec).Do()
 
+class ProjectToBoundary(NGSolveOperator):
+
+    def __init__(self, domain, codomain=None):
+        codomain = codomain or domain
+        super().__init__(domain, codomain)
+        self.linear=True
+        self.bdr = codomain.bdr
+        self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
+        self.gfu_domain = ngs.GridFunction(self.domain.fes)
+
+    def _eval(self, x):
+        self.gfu_domain.vec.FV().NumPy()[:] = x
+        self.gfu_codomain.Set(0)
+        self.gfu_codomain.Set(self.gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+        return self.gfu_codomain.vec.FV().NumPy()[:].copy()
+
+    def _adjoint(self, g):
+        self.gfu_codomain.vec.FV().NumPy()[:] = g
+        self.gfu_domain.Set(0)
+        self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+        return self.gfu_domain.vec.FV().NumPy()[:].copy()
 
 class Coefficient(NGSolveOperator):
 
@@ -328,9 +349,10 @@ class EIT(NGSolveOperator):
     (F'h, q) = -int_Omega[h u w] = (h, -u w)
     """
 
-class ReactionBoundary(NGSolveOperator):
+class ReactionNeumann(NGSolveOperator):
     def __init__(self, domain, g, codomain=None):
         codomain = codomain or domain
+        #Need to know the boundary to calculate Neumann bdr condition
         assert codomain.bdr is not None
         super().__init__(domain, codomain, bdr=codomain.bdr)
         self.g = g
@@ -358,7 +380,7 @@ class ReactionBoundary(NGSolveOperator):
 
         # Boundary term
         self.b = ngs.LinearForm(self.fes_codomain)
-        self.b += -self.gfu_b * v.Trace() * ngs.ds("cyc")
+        self.b += -self.gfu_b * v.Trace() * ngs.ds(codomain.bdr)
 
         # Linearform (only appears in derivative)
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
@@ -380,7 +402,8 @@ class ReactionBoundary(NGSolveOperator):
         # Solve system
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
-        return self._get_boundary_values(self.gfu_eval)
+        return self.gfu_eval.vec.FV().NumPy()[:].copy()
+        #return self._get_boundary_values(self.gfu_eval)
 
     def _derivative(self, h):
         # Bilinearform already defined from _eval
@@ -392,14 +415,16 @@ class ReactionBoundary(NGSolveOperator):
         # Solve system
         self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        return self._get_boundary_values(self.gfu_deriv)
+        return self.gfu_deriv.vec.FV().NumPy()[:].copy()
+        #return self._get_boundary_values(self.gfu_deriv)
 
     def _adjoint(self, argument):
         # Bilinearform already defined from _eval
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self._set_boundary_values(self.gfu_b, argument)
+        #self._set_boundary_values(self.gfu_b, argument)
+        self.gfu_b.vec.FV().NumPy()[:] = argument
         self.b.Assemble()
 
         # Solve system
