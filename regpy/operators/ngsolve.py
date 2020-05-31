@@ -285,7 +285,8 @@ class EIT(NGSolveOperator):
         # Solve system
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
 
-        return self._get_boundary_values(self.gfu_eval)
+        #return self._get_boundary_values(self.gfu_eval)
+        return self.gfu_eval.vec.FV().NumPy()[:].copy()
 
 #Weak Formulation:
 #0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]
@@ -304,7 +305,8 @@ class EIT(NGSolveOperator):
         self.gfu_deriv.Set(0)
         self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        return self._get_boundary_values(self.gfu_deriv)
+        #return self._get_boundary_values(self.gfu_deriv)
+        return self.gfu_deriv.vec.FV().NumPy()[:].copy()
 
 #Same problem as in _eval
     def _adjoint(self, argument):
@@ -312,7 +314,8 @@ class EIT(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self._set_boundary_values(self.gfu_b, argument)
+        #self._set_boundary_values(self.gfu_b, argument)
+        self.gfu_b.vec.FV().NumPy()[:] = argument
         self.b.Assemble()
 
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
