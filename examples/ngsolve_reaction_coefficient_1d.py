@@ -35,13 +35,13 @@ N_codomain = op.fes_codomain.ndof
 
 #exact_solution and exact_data store the coefficient vector
 #of the exact solution and the exact data grid functions
-exact_solution = domain.fromcoefficientfunction( 1 + ngs.sin(2*np.pi*ngs.x) )
+exact_solution = domain.from_ngs( 1 + ngs.sin(2*np.pi*ngs.x) )
 exact_data = op(exact_solution)
 
 noise = 0.01*codomain.randn()
 data = exact_data + noise
 
-init = domain.fromcoefficientfunction( 1 )
+init = domain.from_ngs( 1 )
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 

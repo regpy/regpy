@@ -38,14 +38,14 @@ op = Coefficient(
 )
 
 exact_solution_coeff = 1+0.8*ngs.sin(2*np.pi*ngs.x) * ngs.sin(2*np.pi*ngs.y)
-exact_solution = domain.fromcoefficientfunction( exact_solution_coeff )
+exact_solution = domain.from_ngs( exact_solution_coeff )
 exact_data = op(exact_solution)
 
 noise = 0.0001 * codomain.randn()
 
 data = exact_data+noise
 
-init = domain.fromcoefficientfunction ( 1 )
+init = domain.from_ngs ( 1 )
 init_data = op(init)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)

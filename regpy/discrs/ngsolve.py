@@ -47,8 +47,13 @@ class NgsSpace(Discretization):
     def randn(self):
         return self.rand(np.random.standard_normal)
 
-    def fromcoefficientfunction(self, coefficientfunction):
-        self._gfu_fes.Set(coefficientfunction)
+    def to_ngs(self, array):
+        gf = ngs.GridFunction(self.fes)
+        gf.vec.FV().NumPy()[:] = array
+        return gf
+
+    def from_ngs(self, coeff):
+        self._gfu_fes.Set(coeff)
         return self._gfu_fes.vec.FV().NumPy().copy()
     
     def draw(self, coefficient_array, name):

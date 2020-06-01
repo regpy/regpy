@@ -42,14 +42,14 @@ proj = ProjectToBoundary(complete_codomain, codomain=codomain)
 op = proj * reac
 
 exact_solution_coeff =  ngs.x + 2
-exact_solution = domain.fromcoefficientfunction( exact_solution_coeff )
+exact_solution = domain.from_ngs( exact_solution_coeff )
 exact_data = op(exact_solution)
 
 noise = proj( 0*0.0005*complete_codomain.randn() )
 
 data = exact_data+noise
 
-init = domain.fromcoefficientfunction( 2 )
+init = domain.from_ngs( 2 )
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 

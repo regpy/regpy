@@ -37,14 +37,14 @@ proj = ProjectToBoundary(codomain)
 op = proj * eit
 
 exact_solution_coeff = 1+0.5*ngs.y
-exact_solution = domain.fromcoefficientfunction( exact_solution_coeff )
+exact_solution = domain.from_ngs( exact_solution_coeff )
 exact_data = op(exact_solution)
 
 noise = proj( 0*codomain.randn() )
 
 data = exact_data+noise
 
-init = domain.fromcoefficientfunction(1)
+init = domain.from_ngs(1)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
 
