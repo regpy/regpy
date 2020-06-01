@@ -49,10 +49,8 @@ class Coefficient(NGSolveOperator):
 
     def __init__(
         self, domain, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None,
-        diffusion=True, reaction=False, dim=1
+        diffusion=True, reaction=False
     ):
-        assert dim in (1, 2)
-        assert dim==domain.fes.mesh.dim
         assert diffusion or reaction
 
         codomain = codomain or domain
@@ -61,7 +59,7 @@ class Coefficient(NGSolveOperator):
 
         self.diffusion = diffusion
         self.reaction = reaction
-        self.dim = dim
+        self.dim = domain.fes.mesh.dim
 
         bc_left = bc_left or 0
         bc_right = bc_right or 0

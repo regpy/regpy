@@ -37,7 +37,7 @@ codomain = NgsSpace(fes_codomain)
 rhs = -2*ngs.exp(ngs.x+ngs.y)
 op = Coefficient(
     domain, rhs, codomain=codomain, bc_left=ngs.exp(ngs.x+ngs.y), bc_right= ngs.exp(ngs.x+ngs.y),
-    bc_bottom=ngs.exp(ngs.x+ngs.y), bc_top=ngs.exp(ngs.x+ngs.y), diffusion=True, reaction=False, dim=2
+    bc_bottom=ngs.exp(ngs.x+ngs.y), bc_top=ngs.exp(ngs.x+ngs.y), diffusion=True, reaction=False
 )
 
 exact_solution_coeff = 1
