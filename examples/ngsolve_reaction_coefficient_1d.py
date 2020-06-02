@@ -20,15 +20,16 @@ meshsize_domain = 100
 meshsize_codomain = 100
 
 mesh = Make1DMesh(meshsize_domain)
-fes_domain = ngs.L2(mesh, order=2, dirichlet="left|right")
+fes_domain = ngs.L2(mesh, order=2)
 domain = NgsSpace(fes_domain)
 
 mesh = Make1DMesh(meshsize_codomain)
-fes_codomain = ngs.H1(mesh, order=2, dirichlet="left|right")
-codomain = NgsSpace(fes_codomain)
+bdr = "left|right"
+fes_codomain = ngs.H1(mesh, order=2, dirichlet=bdr)
+codomain = NgsSpace(fes_codomain, bdr)
 
 rhs = 10 * ngs.x ** 2
-op = Coefficient(domain, codomain=codomain, rhs=rhs, bc_left=1, bc_right=1.1, diffusion=False, reaction=True)
+op = Coefficient(domain, codomain=codomain, rhs=rhs, bc=1+0.1*ngs.x, diffusion=False, reaction=True)
 
 N_domain = op.fes_domain.ndof
 N_codomain = op.fes_codomain.ndof

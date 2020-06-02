@@ -28,12 +28,13 @@ fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = ngs.H1(mesh, order=3, dirichlet="left|top|right|bottom")
-codomain = NgsSpace(fes_codomain)
+bdr = "left|top|right|bottom"
+fes_codomain = ngs.H1(mesh, order=3, dirichlet=bdr)
+codomain = NgsSpace(fes_codomain, bdr=bdr)
 
 rhs = 1 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
 op = Coefficient(
-    domain, rhs, codomain=codomain, bc_left=0.1, bc_right=0.1, bc_bottom=0.1, bc_top=0.1, diffusion=False,
+    domain, rhs, codomain=codomain, bc = 0.1, diffusion=False,
     reaction=True
 )
 

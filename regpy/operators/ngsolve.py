@@ -48,12 +48,15 @@ class ProjectToBoundary(NGSolveOperator):
 class Coefficient(NGSolveOperator):
 
     def __init__(
-        self, domain, rhs, bc_left=None, bc_right=None, bc_top=None, bc_bottom=None, codomain=None,
+        self, domain, rhs, bc=None, codomain=None,
         diffusion=True, reaction=False
     ):
         assert diffusion or reaction
-
+        assert (diffusion and reaction) is False
         codomain = codomain or domain
+        #Need to know the boundary to calculate Dirichlet bdr condition
+        assert codomain.bdr is not None
+
         self.rhs = rhs
         super().__init__(domain, codomain)
 
@@ -61,10 +64,7 @@ class Coefficient(NGSolveOperator):
         self.reaction = reaction
         self.dim = domain.fes.mesh.dim
 
-        bc_left = bc_left or 0
-        bc_right = bc_right or 0
-        bc_top = bc_top or 0
-        bc_bottom = bc_bottom or 0
+        bc = bc or 0
 
         # Define mesh and finite element space
         self.fes_domain = domain.fes
@@ -100,10 +100,11 @@ class Coefficient(NGSolveOperator):
             self.f_deriv += -self.gfu_lf * ngs.grad(self.gfu_eval) * ngs.grad(v) * ngs.dx
 
         # Precompute Boundary values and boundary valued corrected rhs
-        if self.dim == 1:
-            self.gfu_eval.Set([bc_left, bc_right], definedon=self.fes_codomain.mesh.Boundaries("left|right"))
-        elif self.dim == 2:
-            self.gfu_eval.Set([bc_left, bc_top, bc_right, bc_bottom], definedon=self.fes_codomain.mesh.Boundaries("left|top|right|bottom"))
+        #if self.dim == 1:
+        #    self.gfu_eval.Set([bc_left, bc_right], definedon=self.fes_codomain.mesh.Boundaries("left|right"))
+        #elif self.dim == 2:
+        #    self.gfu_eval.Set([bc_left, bc_top, bc_right, bc_bottom], definedon=self.fes_codomain.mesh.Boundaries("left|top|right|bottom"))
+        self.gfu_eval.Set(bc, definedon=self.fes_codomain.mesh.Boundaries(codomain.bdr))
 
         #Initialize Preconditioner for solving the Dirichlet problems
         self.prec = ngs.Preconditioner(self.a, 'local')

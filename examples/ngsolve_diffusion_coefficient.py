@@ -31,13 +31,13 @@ fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 mesh = MakeQuadMesh(meshsize_codomain)
-fes_codomain = ngs.H1(mesh, order=3, dirichlet="left|top|right|bottom")
-codomain = NgsSpace(fes_codomain)
+bdr = "left|top|right|bottom"
+fes_codomain = ngs.H1(mesh, order=3, dirichlet=bdr)
+codomain = NgsSpace(fes_codomain, bdr=bdr)
 
 rhs = -2*ngs.exp(ngs.x+ngs.y)
 op = Coefficient(
-    domain, rhs, codomain=codomain, bc_left=ngs.exp(ngs.x+ngs.y), bc_right= ngs.exp(ngs.x+ngs.y),
-    bc_bottom=ngs.exp(ngs.x+ngs.y), bc_top=ngs.exp(ngs.x+ngs.y), diffusion=True, reaction=False
+    domain, rhs, codomain=codomain, bc=ngs.exp(ngs.x+ngs.y), diffusion=True, reaction=False
 )
 
 exact_solution_coeff = 1
@@ -48,14 +48,14 @@ noise = 0 * 0.0001 * codomain.randn()
 
 data = exact_data+noise
 
-init = domain.from_ngs ( 1.2 )
+init = domain.from_ngs ( ngs.cos(ngs.x) )
 init_data = op(init)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
-landweber = Landweber(setting, data, init, stepsize=0.001)
+landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
-        rules.CountIterations(1000) +
+        rules.CountIterations(5000) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
