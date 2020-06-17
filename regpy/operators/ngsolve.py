@@ -35,15 +35,13 @@ class ProjectToBoundary(NGSolveOperator):
 
     def _eval(self, x):
         self.gfu_domain.vec.FV().NumPy()[:] = x
-        self.gfu_codomain.Set(0)
         self.gfu_codomain.Set(self.gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self.gfu_codomain.vec.FV().NumPy()[:].copy()
+        return self.gfu_codomain.vec.FV().NumPy().copy()
 
     def _adjoint(self, g):
         self.gfu_codomain.vec.FV().NumPy()[:] = g
-        self.gfu_domain.Set(0)
         self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self.gfu_domain.vec.FV().NumPy()[:].copy()
+        return self.gfu_domain.vec.FV().NumPy().copy()
 
 class Coefficient(NGSolveOperator):
 
