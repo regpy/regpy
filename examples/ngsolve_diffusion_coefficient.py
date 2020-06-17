@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 
 #WARNING: Only works if grad(exact_data) != 0 everywhere
-#This example file implements: exact_data = ngs.exp(ngs.x+ngs.y)
+#This example file implements: exact_data = (ngs.x-ngs.y)*ngs.exp(ngs.x+ngs.y)
 
 meshsize_domain = 10
 meshsize_codomain = 10
@@ -48,14 +48,15 @@ noise = 0 * 0.0001 * codomain.randn()
 
 data = exact_data+noise
 
-init = domain.from_ngs ( ngs.cos(ngs.x) )
+#init = domain.from_ngs ( ngs.cos(ngs.x) )
+init = domain.from_ngs (0.8)
 init_data = op(init)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
 landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
-        rules.CountIterations(5000) +
+        rules.CountIterations(10000) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)

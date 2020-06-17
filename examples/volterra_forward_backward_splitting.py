@@ -24,9 +24,9 @@ logging.basicConfig(
 grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
 op = Volterra(grid, exponent=3)
 
-exact_solution = np.sin(grid.coords[0])
+exact_solution = np.cos(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.randn()
+noise = 0.3 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
@@ -41,22 +41,22 @@ data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 penalty = TotalVariation(setting.Hdomain.discr)
 
 proximal_pars = {
-        'stepsize' : 0.001,
-        'maxiter' : 100
+        'stepsize' : 0.0001,
+        'maxiter' : 1000
         }
 """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
 tau = 0.01
-alpha = 10**(-2)
+alpha = 0.5
 
 solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
     # Method is slow, so need to use large number of iterations
-    rules.CountIterations(max_iterations=100000) +
+    rules.CountIterations(max_iterations=2000)+
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=1.1
+        tau=1.6
     )
 )
 

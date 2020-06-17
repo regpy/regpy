@@ -5,7 +5,7 @@ from regpy.solvers import Solver
 from regpy import util
 
 """The Chambolle-Pock Algorithm"""
-"""For theta==0 thisis the Arrow-Hurwicz-Uzawa algorithm"""
+"""For theta==0 this is the Arrow-Hurwicz-Uzawa algorithm"""
 class PDHG(Solver):
     def __init__(self,  setting, data_fidelity_conjugate, penalty, init_domain, init_codomain, tau = 1, sigma = 1, regpar = 1, theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None):
         super().__init__()

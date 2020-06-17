@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm import IrgnmCGPrec, IrgnmCG
+from regpy.solvers.irgnm import IrgnmCG
 import regpy.stoprules as rules
 
 import numpy as np
@@ -17,20 +17,19 @@ logging.basicConfig(
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
 op = Volterra(grid, exponent=3)
 
+"""Impulsive Noise"""
+sigma = 0.01*np.ones(grid.coords.shape[1])
+sigma[100:110] = 0.5
+
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.03 * op.domain.randn()
+noise = sigma * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
 setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 
-precpars = {
-        'krylov_order' : 3,
-        'number_eigenvalues': 2        
-        }
-
-solver = IrgnmCGPrec(setting, data, regpar=1, regpar_step=0.9, init=init, precpars=precpars)
+solver = IrgnmCG(setting, data, regpar=1, regpar_step=0.9, init=init)
 stoprule = (
     rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
@@ -49,3 +48,4 @@ plt.plot(grid.coords[0], data, label='data')
 plt.plot(grid.coords[0], reco_data, label='reco data')
 plt.legend()
 plt.show()
+
