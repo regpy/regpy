@@ -316,8 +316,8 @@ class L1Norm(Functional):
 Total Variation Norm: For C^1 functions the l1-norm of the gradient
 Only implemented on a Uniform Grid for now
 '''
-from regpy.util import gradient
-from regpy.util import divergence
+from regpy.util import gradient as gradient_grid
+from regpy.util import divergence as divergence_grid
 class TotalVariation(Functional):
     def __init__(self, domain):
         self.dim = np.size(domain.shape)
@@ -326,15 +326,15 @@ class TotalVariation(Functional):
 
     def _eval(self, x):
         if self.dim==1:
-            return np.sum(np.abs(gradient(x, spacing=self.domain.spacing)))
+            return np.sum(np.abs(gradient_grid(x, spacing=self.domain.spacing)))
         else:
-            return np.sum(np.linalg.norm(gradient(x, spacing=self.domain.spacing), axis=0))
+            return np.sum(np.linalg.norm(gradient_grid(x, spacing=self.domain.spacing), axis=0))
 
     def _gradient(self, x):
         if self.dim==1:
-            return np.sign(gradient(x, spacing=self.domain.spacing))
+            return np.sign(gradient_grid(x, spacing=self.domain.spacing))
         else:
-            grad = gradient(x, spacing=self.domain.spacing)
+            grad = gradient_grid(x, spacing=self.domain.spacing)
             grad_norm = np.linalg.norm(grad, axis=0)
             toret = np.zeros(x.shape)
             toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
@@ -347,6 +347,97 @@ class TotalVariation(Functional):
         shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradient( divergence(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
+            update = stepsize*gradient_grid( divergence_grid(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
             p = (p+update) / (1+np.abs(update))
-        return x-tau*divergence(p, self.dim, spacing=self.domain.spacing)
+        return x-tau*divergence_grid(p, self.dim, spacing=self.domain.spacing)
+
+
+'''Special NGSolve functionals'''
+import ngsolve as ngs
+class NGSL1Norm(Functional):
+    def __init__(self, domain):
+        self._gfu = ngs.GridFunction(domain.fes)
+        self._fes_util = ngs.L2(domain.fes.mesh, order=0)
+        self._gfu_util = ngs.GridFunction(self._fes_util)
+        super().__init__(domain)
+
+    def _eval(self, x):
+        self._gfu.vec.FV().NumPy()[:] = x
+        coeff = ngs.CoefficientFunction(self._gfu)
+        return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
+
+    def _gradient(self, x):
+        self._gfu.FV().NumPy()[:] = x
+        self._gfu_util.Set(self._gfu)
+        y = self._gfu_util.vec.FV().NumPy()
+        self._gfu_util.vec.FV().NumPy()[:] = np.sign(y)
+        self._gfu.Set(self._gfu_util)
+        return self._gfu.vec.FV().NumPy().copy()
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, tau): 
+        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu_util.Set(self._gfu)
+        y = self._gfu_util.vec.FV().NumPy()
+        self._gfu_util.vec.FV().NumPy()[:] = np.maximum(0, np.abs(y)-tau)*np.sign(y)
+        self._gfu.Set(self._gfu_util)
+        return self._gfu.vec.FV().NumPy().copy()
+
+class NGSTotalVariation(Functional):
+    def __init__(self, domain):
+        super().__init__(domain)
+        self._gfu = ngs.GridFunction(self.domain.fes)
+        self._gfu.Set(0)
+        self._p = list(ngs.grad(self._gfu))
+        self._q = list(ngs.grad(self._gfu))
+        self._gfu_div = ngs.GridFunction(domain.fes)
+        self._gfu_div.vec.FV().NumPy()[:] = self._divergence(self._p)
+        self._fes_util = ngs.L2(self.domain.fes.mesh, order=0)
+        self._gfu_util = ngs.GridFunction(self._fes_util)
+
+
+    def _eval(self, x):
+        self._gfu.vec.FV().NumPy()[:] = x
+        gradu = ngs.grad(self._gfu)
+        tvnorm = 0
+        for i in range(gradu.dim):
+            self._gfu_util.Set(gradu[i])
+            tvnorm += ngs.Integrate( ngs.Norm(self._gfu_util), self.domain.fes.mesh )
+        return tvnorm
+
+    def _gradient(self, x):
+        raise NotImplementedError
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
+        self._gfu.Set(0)
+        self._p = list(ngs.grad(self._gfu))
+
+        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu_update = ngs.GridFunction(self.domain.fes)
+        self._gfu_out = ngs.GridFunction(self.domain.fes)
+        for i in range(maxiter):
+            self._gfu_update.Set( self._gfu_div - self._gfu/tau )
+            update= stepsize * ngs.grad( self._gfu_update )
+            #Calculate |update|
+            for i in range(len(self._p)):
+                self._q[i] = 1+ngs.Norm(update[i])
+                self._p[i] = (self._p[i] + update[i]) / self._q[i]
+            self._gfu_div.vec.FV().NumPy()[:] = self._divergence(self._p)
+        self._gfu_out.Set(self._gfu - tau*self._gfu_div)
+        return self._gfu_out.vec.FV().NumPy().copy()        
+
+    def _divergence(self, gradp):
+        toret = self.domain.zeros()
+        gfu_in = ngs.GridFunction(self.domain.fes)
+        gfu_out = ngs.GridFunction(self.domain.fes)
+        for i in range(len(gradp)):
+            gfu_in.Set(gradp[i])
+            coeff = ngs.grad(gfu_in)[i]
+            gfu_out.Set(coeff)
+            toret += gfu_out.vec.FV().NumPy().copy()
+        return toret
