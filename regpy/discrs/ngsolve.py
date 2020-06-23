@@ -27,7 +27,7 @@ class NgsSpace(Discretization):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
-        self._fes_util = ngs.L2(fes.mesh, order=1)
+        self._fes_util = ngs.L2(fes.mesh, order=0)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(fes)
 
@@ -58,8 +58,9 @@ class NgsSpace(Discretization):
     
     def draw(self, coefficient_array, name):
         assert isinstance(name, str)
-        self._gfu_fes.vec.FV().NumPy()[:] = coefficient_array
-        coefficientfunction = ngs.CoefficientFunction( self._gfu_fes )
+        gfu_fes = ngs.GridFunction(self.fes)
+        gfu_fes.vec.FV().NumPy()[:] = coefficient_array
+        coefficientfunction = ngs.CoefficientFunction( gfu_fes )
         ngs.Draw(coefficientfunction, self.fes.mesh, name)
 
 

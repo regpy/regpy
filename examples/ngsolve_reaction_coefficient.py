@@ -58,7 +58,7 @@ stoprule = (
 
 reco, reco_data = landweber.run(stoprule)
 
-ngs.Draw(exact_solution_coeff, op.fes_domain.mesh, "exact")
+domain.draw(exact_solution, "exact")
 
 # Draw reconstructed solution
 domain.draw(reco, "reco")
