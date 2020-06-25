@@ -82,3 +82,4 @@ in case you want to install them via some other package manager.
 from regpy import discrs, functionals, hilbert, mcmc, operators, solvers, stoprules, util
 
 hilbert._register_spaces()
+functionals._register_functionals()

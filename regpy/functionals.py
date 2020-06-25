@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+from copy import copy
+
 import numpy as np
 
 from regpy import operators, util, discrs, hilbert
@@ -146,6 +148,94 @@ class Composed(Functional):
             # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
+#TODO: Add AbstractSum
+class AbstractFunctionalBase:
+    """Class representing abstract functionals without reference to a concrete implementation.
+
+    Abstract functionals do not have elements, properties or any other structure, their sole purpose is
+    to pick the proper concrete implementation for a given discretization.
+    """
+
+    def __add__(self, other):
+        return NotImplemented
+
+    def __radd__(self, other):
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return NotImplemented
+
+
+class AbstractFunctional(AbstractFunctionalBase):
+    """An abstract functional that can be called on a discretization to get the corresponding
+    concrete implementation.
+
+    AbstractFunctionals provides two kinds of functionality:
+
+    - A decorator method `register(discr_type)` that can be used to declare some class or function
+      as the concrete implementation of this abstract functional for discretizations of type `discr_type`
+      or subclasses thereof, e.g.:
+
+              @TV.register(discrs.UniformGrid)
+              class TVUniformGrid(HilbertSpace):
+                  ...
+
+    - AbstractFunctionals are callable. Calling them on a discretization and arbitrary optional
+      keyword arguments finds the corresponding concrete `regpy.functionals.Functional` among all
+      registered implementations. If there are implementations for multiple base classes of the
+      discretization type, the most specific one will be chosen. The chosen implementation will
+      then be called with the discretization and the keyword arguments, and the result will be
+      returned.
+
+      If called without a discretization as positional argument, it returns a new abstract functional
+      with all passed keyword arguments remembered as defaults.
+
+    Parameters
+    ----------
+    name : str
+        A name for this abstract functional. Currently, this is only used in error messages, when no
+        implementation was found for some discretization.
+    """
+
+    def __init__(self, name):
+        self._registry = {}
+        self.name = name
+        self.args = {}
+
+    def register(self, discr_type, impl=None):
+        if impl is not None:
+            self._registry.setdefault(discr_type, []).append(impl)
+        else:
+            def decorator(i):
+                self.register(discr_type, i)
+                return i
+            return decorator
+
+    def __call__(self, discr=None, **kwargs):
+        if discr is None:
+            clone = copy(self)
+            clone.args = copy(self.args)
+            clone.args.update(kwargs)
+            return clone
+        for cls in type(discr).mro():
+            try:
+                impls = self._registry[cls]
+            except KeyError:
+                continue
+            kws = copy(self.args)
+            kws.update(kwargs)
+            for impl in impls:
+                result = impl(discr, **kws)
+                if result is NotImplemented:
+                    continue
+                assert isinstance(result, Functional)
+                return result
+        raise NotImplementedError(
+            '{} not implemented on {}'.format(self.name, discr)
+        )
+
+L1 = AbstractFunctional('L1')
+TV = AbstractFunctional('TV')
 
 class LinearCombination(Functional):
     def __init__(self, *args):
@@ -295,7 +385,7 @@ class ErrorToInfinity(Functional):
             return self.domain.zeros()
 
 
-class L1Norm(Functional):
+class L1Generic(Functional):
     def __init__(self, domain):
         super().__init__(domain)
 
@@ -318,7 +408,7 @@ Only implemented on a Uniform Grid for now
 '''
 from regpy.util import gradient as gradient_grid
 from regpy.util import divergence as divergence_grid
-class TotalVariation(Functional):
+class TVGeneric(Functional):
     def __init__(self, domain):
         self.dim = np.size(domain.shape)
         assert isinstance(domain, discrs.UniformGrid)
@@ -351,93 +441,12 @@ class TotalVariation(Functional):
             p = (p+update) / (1+np.abs(update))
         return x-tau*divergence_grid(p, self.dim, spacing=self.domain.spacing)
 
+"""Auxiliary method to register abstract functionals for various discretizations. Using the decorator
+method described in `AbstractFunctional` does not work due to circular depenencies when
+loading modules.
 
-'''Special NGSolve functionals'''
-import ngsolve as ngs
-class NGSL1Norm(Functional):
-    def __init__(self, domain):
-        self._gfu = ngs.GridFunction(domain.fes)
-        self._fes_util = ngs.L2(domain.fes.mesh, order=0)
-        self._gfu_util = ngs.GridFunction(self._fes_util)
-        super().__init__(domain)
-
-    def _eval(self, x):
-        self._gfu.vec.FV().NumPy()[:] = x
-        coeff = ngs.CoefficientFunction(self._gfu)
-        return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
-
-    def _gradient(self, x):
-        self._gfu.FV().NumPy()[:] = x
-        self._gfu_util.Set(self._gfu)
-        y = self._gfu_util.vec.FV().NumPy()
-        self._gfu_util.vec.FV().NumPy()[:] = np.sign(y)
-        self._gfu.Set(self._gfu_util)
-        return self._gfu.vec.FV().NumPy().copy()
-
-    def _hessian(self, x):
-        raise NotImplementedError
-
-    def _proximal(self, x, tau): 
-        self._gfu.vec.FV().NumPy()[:] = x
-        self._gfu_util.Set(self._gfu)
-        y = self._gfu_util.vec.FV().NumPy()
-        self._gfu_util.vec.FV().NumPy()[:] = np.maximum(0, np.abs(y)-tau)*np.sign(y)
-        self._gfu.Set(self._gfu_util)
-        return self._gfu.vec.FV().NumPy().copy()
-
-class NGSTotalVariation(Functional):
-    def __init__(self, domain):
-        super().__init__(domain)
-        self._gfu = ngs.GridFunction(self.domain.fes)
-        self._gfu.Set(0)
-        self._p = list(ngs.grad(self._gfu))
-        self._q = list(ngs.grad(self._gfu))
-        self._gfu_div = ngs.GridFunction(domain.fes)
-        self._gfu_div.vec.FV().NumPy()[:] = self._divergence(self._p)
-        self._fes_util = ngs.L2(self.domain.fes.mesh, order=0)
-        self._gfu_util = ngs.GridFunction(self._fes_util)
-
-
-    def _eval(self, x):
-        self._gfu.vec.FV().NumPy()[:] = x
-        gradu = ngs.grad(self._gfu)
-        tvnorm = 0
-        for i in range(gradu.dim):
-            self._gfu_util.Set(gradu[i])
-            tvnorm += ngs.Integrate( ngs.Norm(self._gfu_util), self.domain.fes.mesh )
-        return tvnorm
-
-    def _gradient(self, x):
-        raise NotImplementedError
-
-    def _hessian(self, x):
-        raise NotImplementedError
-
-    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
-        self._gfu.Set(0)
-        self._p = list(ngs.grad(self._gfu))
-
-        self._gfu.vec.FV().NumPy()[:] = x
-        self._gfu_update = ngs.GridFunction(self.domain.fes)
-        self._gfu_out = ngs.GridFunction(self.domain.fes)
-        for i in range(maxiter):
-            self._gfu_update.Set( self._gfu_div - self._gfu/tau )
-            update= stepsize * ngs.grad( self._gfu_update )
-            #Calculate |update|
-            for i in range(len(self._p)):
-                self._q[i] = 1+ngs.Norm(update[i])
-                self._p[i] = (self._p[i] + update[i]) / self._q[i]
-            self._gfu_div.vec.FV().NumPy()[:] = self._divergence(self._p)
-        self._gfu_out.Set(self._gfu - tau*self._gfu_div)
-        return self._gfu_out.vec.FV().NumPy().copy()        
-
-    def _divergence(self, gradp):
-        toret = self.domain.zeros()
-        gfu_in = ngs.GridFunction(self.domain.fes)
-        gfu_out = ngs.GridFunction(self.domain.fes)
-        for i in range(len(gradp)):
-            gfu_in.Set(gradp[i])
-            coeff = ngs.grad(gfu_in)[i]
-            gfu_out.Set(coeff)
-            toret += gfu_out.vec.FV().NumPy().copy()
-        return toret
+This is called from the `regpy` top-level module once, and can be ignored otherwise.
+"""
+def _register_functionals():
+    L1.register(discrs.Discretization, L1Generic)
+    TV.register(discrs.Discretization, TVGeneric)

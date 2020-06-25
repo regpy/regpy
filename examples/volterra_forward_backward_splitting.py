@@ -14,7 +14,7 @@ from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
-from regpy.functionals import HilbertNorm, L1Norm, TotalVariation
+from regpy.functionals import HilbertNorm, L1, TV
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,9 +36,9 @@ data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The data fidelity term: 1/2*||op(f)-data||^2"""
 """Uncomment to use L1 norm as penalty term instead"""
-#penalty = L1Norm(setting.Hdomain.discr)
+#penalty = L1(setting.Hdomain.discr)
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TotalVariation(setting.Hdomain.discr)
+penalty = TV(setting.Hdomain.discr)
 
 proximal_pars = {
         'stepsize' : 0.0001,

@@ -15,7 +15,7 @@ from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.fista import FISTA
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
-from regpy.functionals import HilbertNorm, TotalVariation
+from regpy.functionals import HilbertNorm, TV
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +40,7 @@ setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TotalVariation(setting.Hdomain.discr)
+penalty = TV(setting.Hdomain.discr)
 
 proximal_pars = {
         'stepsize' : 0.001,

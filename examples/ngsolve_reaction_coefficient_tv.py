@@ -14,7 +14,7 @@ from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
 from regpy.discrs.ngsolve import NgsSpace
-from regpy.functionals import HilbertNorm, NGSTotalVariation
+from regpy.functionals import HilbertNorm, TV
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,7 +55,7 @@ setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = NGSTotalVariation(setting.Hdomain.discr)
+penalty = TV(setting.Hdomain.discr)
 
 proximal_pars = {
         'stepsize' : 0.1,
