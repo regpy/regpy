@@ -417,8 +417,8 @@ class TVGeneric(Functional):
 '''
 Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
 '''
-from regpy.util import gradient as gradient_grid
-from regpy.util import divergence as divergence_grid
+from regpy.util import gradientuniformgrid
+from regpy.util import divergenceuniformgrid
 class TVUniformGrid(Functional):
     def __init__(self, domain):
         self.dim = np.size(domain.shape)
@@ -427,15 +427,15 @@ class TVUniformGrid(Functional):
 
     def _eval(self, x):
         if self.dim==1:
-            return np.sum(np.abs(gradient_grid(x, spacing=self.domain.spacing)))
+            return np.sum(np.abs(gradientuniformgrid(x, spacing=self.domain.spacing)))
         else:
-            return np.sum(np.linalg.norm(gradient_grid(x, spacing=self.domain.spacing), axis=0))
+            return np.sum(np.linalg.norm(gradientuniformgrid(x, spacing=self.domain.spacing), axis=0))
 
     def _gradient(self, x):
         if self.dim==1:
-            return np.sign(gradient_grid(x, spacing=self.domain.spacing))
+            return np.sign(gradientuniformgrid(x, spacing=self.domain.spacing))
         else:
-            grad = gradient_grid(x, spacing=self.domain.spacing)
+            grad = gradientuniformgrid(x, spacing=self.domain.spacing)
             grad_norm = np.linalg.norm(grad, axis=0)
             toret = np.zeros(x.shape)
             toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
@@ -448,9 +448,9 @@ class TVUniformGrid(Functional):
         shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradient_grid( divergence_grid(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
+            update = stepsize*gradientuniformgrid( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
             p = (p+update) / (1+np.abs(update))
-        return x-tau*divergence_grid(p, self.dim, spacing=self.domain.spacing)
+        return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 
 """Auxiliary method to register abstract functionals for various discretizations. Using the decorator
 method described in `AbstractFunctional` does not work due to circular depenencies when
