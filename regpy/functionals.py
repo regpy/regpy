@@ -384,7 +384,6 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
-
 class L1Generic(Functional):
     def __init__(self, domain):
         super().__init__(domain)
@@ -402,13 +401,25 @@ class L1Generic(Functional):
     def _proximal(self, x, tau):
         return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
+class TVGeneric(Functional):
+    def __init__(self, domain):
+        super().__init__(domain)
+
+    def _gradient(self, x):
+        return NotImplementedError
+
+    def _hessian(self, x):
+        return NotImplementedError
+    
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 '''
-Total Variation Norm: For C^1 functions the l1-norm of the gradient
-Only implemented on a Uniform Grid for now
+Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
 '''
 from regpy.util import gradient as gradient_grid
 from regpy.util import divergence as divergence_grid
-class TVGeneric(Functional):
+class TVUniformGrid(Functional):
     def __init__(self, domain):
         self.dim = np.size(domain.shape)
         assert isinstance(domain, discrs.UniformGrid)
@@ -449,4 +460,6 @@ This is called from the `regpy` top-level module once, and can be ignored otherw
 """
 def _register_functionals():
     L1.register(discrs.Discretization, L1Generic)
+
     TV.register(discrs.Discretization, TVGeneric)
+    TV.register(discrs.UniformGrid, TVUniformGrid)
