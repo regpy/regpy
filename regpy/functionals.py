@@ -148,6 +148,9 @@ class Composed(Functional):
             # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 #TODO: Add AbstractSum
 class AbstractFunctionalBase:
     """Class representing abstract functionals without reference to a concrete implementation.
@@ -293,6 +296,9 @@ class LinearCombination(Functional):
             *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
         )
 
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 
 class Shifted(Functional):
     def __init__(self, func, offset):
@@ -313,6 +319,9 @@ class Shifted(Functional):
 
     def _hessian(self, x):
         return self.func.hessian(x)
+
+    def _proximal(self, x, tau):
+        return self.func.proximal(x, tau)
 
 
 class HilbertNorm(Functional):
