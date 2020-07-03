@@ -3,6 +3,7 @@ import numpy as np
 
 from regpy.solvers import Solver
 from regpy import util
+from regpy.functionals import Functional
 
 """
 The generalized FISTA algorithm for minimization of regpar * G+H (where G, H: Hdomain -> R are the penalty term and the data fidelity term respectively).
@@ -40,6 +41,9 @@ class FISTA(Solver):
         self.setting = setting
         self.data_fidelity = data_fidelity
         self.penalty = penalty
+        assert isinstance(self.data_fidelity, Functional)
+        assert isinstance(self.penalty, Functional)
+        assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.x = init
         self.y = self.setting.op(self.x)

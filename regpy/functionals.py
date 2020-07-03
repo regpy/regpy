@@ -12,6 +12,9 @@ class Functional:
         # TODO implement domain=None case
         assert isinstance(domain, discrs.Discretization)
         self.domain = domain
+        self.Hdomain = hilbert.L2(domain)
+        #Hdomain on which the proximal operator is evaluated
+        #Overloaded if Hdomain != L2
 
     def __call__(self, x):
         assert x in self.domain
@@ -393,6 +396,7 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
+'''Generic L1 Functional. Proximal implemented for default L2 hspace'''
 class L1Generic(Functional):
     def __init__(self, domain):
         super().__init__(domain)

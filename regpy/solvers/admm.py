@@ -3,6 +3,7 @@ import numpy as np
 
 from regpy.solvers import Solver
 from regpy import util
+from regpy.functionals import Functional
 
 from regpy.solvers.tikhonov import TikhonovCG
 
@@ -38,6 +39,9 @@ class ADMM(Solver):
         assert self.setting.op.linear
         self.data_fidelity = data_fidelity
         self.penalty = penalty
+        assert isinstance(self.data_fidelity, Functional)
+        assert isinstance(self.penalty, Functional)
+        assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.v1 = init['v1']
         self.v2 = init['v2']
@@ -57,7 +61,7 @@ class ADMM(Solver):
         self.x, self.y = TikhonovCG(
             setting=HilbertSpaceSetting(self.setting.op, self.setting.Hdomain, self.setting.Hcodomain),
             data=self.v1+self.p1,
-            xref=self.v2+self.p2
+            xref=self.v2+self.p2,
             regpar=1,
             **self.cgpars
         ).run()
@@ -71,7 +75,7 @@ class ADMM(Solver):
         self.x, self.y = TikhonovCG(
             setting=HilbertSpaceSetting(self.setting.op, self.setting.Hdomain, self.setting.Hcodomain),
             data=self.v1+self.p1,
-            xref=self.v2+self.p2
+            xref=self.v2+self.p2,
             regpar=1,
             **self.cgpars
         ).run()

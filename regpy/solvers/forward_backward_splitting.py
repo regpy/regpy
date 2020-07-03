@@ -3,6 +3,7 @@ import numpy as np
 
 from regpy.solvers import Solver
 from regpy import util
+from regpy.functionals import Functional
 
 """
 Minimizes data_fidelity(f)+regpar*penalty(f) with forward backward splitting
@@ -24,6 +25,9 @@ class Forward_Backward_Splitting(Solver):
         self.data_fidelity = data_fidelity
         self.penalty = penalty
         """The functional of the data fidelity term and the penalty term"""
+        assert isinstance(self.data_fidelity, Functional)
+        assert isinstance(self.penalty, Functional)
+        assert self.penalty.Hdomain == self.setting.Hdomain
         
         self.x = init
         self.y = self.setting.op(self.x)

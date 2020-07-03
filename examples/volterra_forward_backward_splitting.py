@@ -30,7 +30,7 @@ noise = 0.3 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator

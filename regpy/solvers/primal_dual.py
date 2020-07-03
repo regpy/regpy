@@ -3,6 +3,7 @@ import numpy as np
 
 from regpy.solvers import Solver
 from regpy import util
+from regpy.functionals import Functional
 
 """The Chambolle-Pock Algorithm"""
 """For theta==0 this is the Arrow-Hurwicz-Uzawa algorithm"""
@@ -13,6 +14,9 @@ class PDHG(Solver):
         assert self.setting.op.linear
         self.data_fidelity_conjugate = data_fidelity_conjugate
         self.penalty = penalty
+        assert isinstance(self.data_fidelity_conjugate, Functional)
+        assert isinstance(self.penalty, Functional)
+        assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.x = init_domain
         self.x_old = self.x
@@ -41,6 +45,9 @@ class Douglas_Rashford(Solver):
         self.setting = setting
         self.data_fidelity = data_fidelity
         self.penalty = penalty
+        assert isinstance(self.data_fidelity, Functional)
+        assert isinstance(self.penalty, Functional)
+        assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.h = init_h
 
