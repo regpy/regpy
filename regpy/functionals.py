@@ -242,6 +242,7 @@ class AbstractFunctional(AbstractFunctionalBase):
 
 L1 = AbstractFunctional('L1')
 TV = AbstractFunctional('TV')
+HilbertNorm = AbstractFunctional('HilbertNorm')
 
 class LinearCombination(Functional):
     def __init__(self, *args):
@@ -326,31 +327,6 @@ class Shifted(Functional):
     def _proximal(self, x, tau):
         return self.func.proximal(x, tau)
 
-
-class HilbertNorm(Functional):
-    def __init__(self, hspace):
-        assert isinstance(hspace, hilbert.HilbertSpace)
-        super().__init__(hspace.discr)
-        self.hspace = hspace
-
-    def _eval(self, x):
-        return np.real(np.vdot(x, self.hspace.gram(x))) / 2
-
-    def _linearize(self, x):
-        gx = self.hspace.gram(x)
-        y = np.real(np.vdot(x, gx)) / 2
-        return y, gx
-
-    def _gradient(self, x):
-        return self.hspace.gram(x)
-
-    def _hessian(self, x):
-        return self.hspace.gram
-
-    def _proximal(self, x, tau):
-        return 1/(1+tau)*x
-
-
 class Indicator(Functional):
     def __init__(self, domain, predicate):
         super().__init__(domain)
@@ -396,6 +372,38 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
+'''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on hspace.'''
+class HilbertNormGeneric(Functional):
+    def __init__(self, hspace, Hdomain=None):
+        assert isinstance(hspace, hilbert.HilbertSpace)
+        super().__init__(hspace.discr)
+        self.hspace = hspace
+        self.Hdomain = Hdomain or hspace 
+        '''overloads self.Hdomain from constructor'''
+
+    def _eval(self, x):
+        return np.real(np.vdot(x, self.hspace.gram(x))) / 2
+
+    def _linearize(self, x):
+        gx = self.hspace.gram(x)
+        y = np.real(np.vdot(x, gx)) / 2
+        return y, gx
+
+    def _gradient(self, x):
+        return self.hspace.gram(x)
+
+    def _hessian(self, x):
+        return self.hspace.gram
+
+    def _proximal(self, x, tau, cgpars=None):
+        if self.Hdomain == self.hspace:
+            return 1/(1+tau)*x
+        else:
+            op = self.Hdomain.gram+tau*self.hspace.gram
+            inverse = operators.CholeskyInverse(op)
+            return inverse(self.Hdomain.gram(x))
+
+
 '''Generic L1 Functional. Proximal implemented for default L2 hspace'''
 class L1Generic(Functional):
     def __init__(self, domain):
@@ -414,6 +422,7 @@ class L1Generic(Functional):
     def _proximal(self, x, tau):
         return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
+'''Generic TV Functional. Proximal implemented for default L2 hspace'''
 class TVGeneric(Functional):
     def __init__(self, domain):
         super().__init__(domain)
@@ -472,6 +481,8 @@ loading modules.
 This is called from the `regpy` top-level module once, and can be ignored otherwise.
 """
 def _register_functionals():
+    HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
+
     L1.register(discrs.Discretization, L1Generic)
 
     TV.register(discrs.Discretization, TVGeneric)
