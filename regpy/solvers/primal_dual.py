@@ -47,6 +47,7 @@ class Douglas_Rashford(Solver):
         self.penalty = penalty
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
+        assert self.data_fidelity.Hdomain == self.setting.Hcodomain
         assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.h = init_h

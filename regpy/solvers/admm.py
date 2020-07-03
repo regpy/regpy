@@ -4,6 +4,7 @@ import numpy as np
 from regpy.solvers import Solver
 from regpy import util
 from regpy.functionals import Functional
+from regpy.hilbert import HilbertSpaceSetting
 
 from regpy.solvers.tikhonov import TikhonovCG
 
@@ -41,6 +42,7 @@ class ADMM(Solver):
         self.penalty = penalty
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
+        assert self.data_fidelity.Hdomain == self.setting.Hcodomain
         assert self.penalty.Hdomain == self.setting.Hdomain
 
         self.v1 = init['v1']
