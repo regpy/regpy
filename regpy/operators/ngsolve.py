@@ -47,7 +47,7 @@ class Coefficient(NGSolveOperator):
 
     def __init__(
         self, domain, rhs, bc=None, codomain=None,
-        diffusion=True, reaction=False
+        diffusion=False, reaction=True
     ):
         assert diffusion or reaction
         assert (diffusion and reaction) is False

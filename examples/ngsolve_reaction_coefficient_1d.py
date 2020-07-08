@@ -20,7 +20,7 @@ meshsize_domain = 100
 meshsize_codomain = 100
 
 mesh = Make1DMesh(meshsize_domain)
-fes_domain = ngs.L2(mesh, order=2)
+fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 mesh = Make1DMesh(meshsize_codomain)

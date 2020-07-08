@@ -22,7 +22,7 @@ logging.basicConfig(
 
 geo = SplineGeometry()
 bc = "cyc"
-geo.AddCircle((0, 0), r=1, bc=bc, maxh=0.2)
+geo.AddCircle((0, 0), r=1, bc=bc, maxh=0.1)
 mesh = ngs.Mesh(geo.GenerateMesh())
 
 fes_domain = ngs.H1(mesh, order=1)
@@ -49,13 +49,13 @@ noise = proj( 0*0.0005*complete_codomain.randn() )
 
 data = exact_data+noise
 
-init = domain.from_ngs( 2 )
+init = domain.from_ngs( 2+0.8*ngs.x )
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
-        rules.CountIterations(1000) +
+        rules.CountIterations(3000) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=0))
 
 reco, reco_data = landweber.run(stoprule)
