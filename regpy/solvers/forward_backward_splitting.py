@@ -7,7 +7,23 @@ from regpy.functionals import Functional
 
 """
 Minimizes data_fidelity(f)+regpar*penalty(f) with forward backward splitting
-data_fidelity and penalty are functionals
+
+Parameters
+----------
+setting : regpy.solvers.HilbertSpaceSetting
+    The setting of the forward problem.
+data_fidelity : regpy.functionals.Functional
+    The data fidelity term. Needs to have a prox-operator defined. Matches S.
+penalty : regpy.functionals.Functional
+    The penalty term. Needs to have a prox-operator defined. Matches R.
+init : array-like
+    The initial guess. 
+tau : float , optional
+    The parameter to compute the proximal operator of the penalty term. Must be positive.
+regpar : float, optional
+    The regularization parameter. Must be positive.
+proximal_pars: dict, optional
+    Parameter dictionary passed to the computation of the prox-operator.
 """
 
 class Forward_Backward_Splitting(Solver):

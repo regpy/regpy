@@ -5,8 +5,37 @@ from regpy.solvers import Solver
 from regpy import util
 from regpy.functionals import Functional
 
-"""The Chambolle-Pock Algorithm"""
-"""For theta==0 this is the Arrow-Hurwicz-Uzawa algorithm"""
+"""The Primal-dual hybrid gradient (PDHG) or Chambolle-Pock Algorithm
+    For theta==0 this is the Arrow-Hurwicz-Uzawa algorithm.
+
+    Solves the minimization problem: data_fidelity(Tf)+regpar*penalty(f)
+    by solving the saddle-point problem: inf_f sup_p [ <Tf,p>+regpar*penalty(f)-Fenchel conjugate of data_fidelity(p) ]
+
+    Parameters
+    ----------
+    setting : regpy.solvers.HilbertSpaceSetting
+        The setting of the forward problem. The operator needs to be linear.
+    data_fidelity_conjugate : regpy.functionals.Functional
+        The Fenchel conjugate of the data fidelity functional. Needs to have a prox-operator defined.
+    penalty : regpy.functionals.Functional
+        The penalty term. Needs to have a prox-operator defined.
+    init_domain : array_like
+        The initial guess "f".
+    init_codomain : array-like
+        The initial guess "p". 
+    tau : float , optional
+        The parameter to compute the proximal operator of the penalty term. Must be positive. Stepsize of the primal step.
+    sigma : float , optional
+        The parameter to compute the proximal operator of the data-fidelity term. Must be positive. Stepsize of the dual step.
+    regpar : float, optional
+        The regularization parameter. Must be positive.
+    theta : float, optional
+        Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
+    proximal_pars_data_fidelity_conjugate : dict, optional
+        Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
+    proximal_pars_penalty : dict, optional
+        Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
+    """
 class PDHG(Solver):
     def __init__(self,  setting, data_fidelity_conjugate, penalty, init_domain, init_codomain, tau = 1, sigma = 1, regpar = 1, theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None):
         super().__init__()
@@ -38,7 +67,28 @@ class PDHG(Solver):
         self.x_old = self.x
         self.y = self.setting.op(self.x)
 
-"""The Douglas-Rashford Algorithm"""
+"""The Douglas-Rashford Splitting Algorithm
+
+    Minimizes Data_fidelity(f)+regpar*penalty(f)
+    Parameters
+        ----------
+        setting : regpy.solvers.HilbertSpaceSetting
+            The setting of the forward problem. The operator needs to be linear.
+        data_fidelity : regpy.functionals.Functional
+            The data fidelity functional. Needs to have a prox-operator defined.
+        penalty : regpy.functionals.Functional
+            The penalty term. Needs to have a prox-operator defined.
+        init_h : array_like
+            The initial guess "f".
+        tau : float , optional
+            The parameter to compute the proximal operator of the penalty term. Must be positive.
+        regpar : float, optional
+            The regularization parameter. Must be positive.
+        proximal_pars_data_fidelity : dict, optional
+            Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
+        proximal_pars_penalty : dict, optional
+            Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
+"""
 class Douglas_Rashford(Solver):
     def __init__(self,  setting, data_fidelity, penalty, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__()
