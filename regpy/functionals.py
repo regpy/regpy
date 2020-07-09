@@ -442,10 +442,14 @@ Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform
 from regpy.util import gradientuniformgrid
 from regpy.util import divergenceuniformgrid
 class TVUniformGrid(Functional):
-    def __init__(self, domain):
+    def __init__(self, domain, Hdomain=None):
         self.dim = np.size(domain.shape)
         assert isinstance(domain, discrs.UniformGrid)
         super().__init__(domain)
+        if Hdomain is not None:
+            self.Hdomain = Hdomain
+        """Overload Hdomain if needed"""
+        assert self.Hdomain.discr == self.domain
 
     def _eval(self, x):
         if self.dim==1:
@@ -470,7 +474,7 @@ class TVUniformGrid(Functional):
         shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradientuniformgrid( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)-x/tau, spacing=self.domain.spacing)
+            update = stepsize*gradientuniformgrid( self.Hdomain.gram_inv( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
             p = (p+update) / (1+np.abs(update))
         return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 

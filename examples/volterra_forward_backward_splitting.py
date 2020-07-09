@@ -30,7 +30,7 @@ noise = 0.3 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
@@ -38,7 +38,7 @@ data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """Uncomment to use L1 norm as penalty term instead"""
 #penalty = L1(setting.Hdomain.discr)
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TV(setting.Hdomain.discr)
+penalty = TV(setting.Hdomain.discr, Hdomain=setting.Hdomain)
 
 proximal_pars = {
         'stepsize' : 0.0001,
@@ -56,7 +56,7 @@ stoprule = (
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=1.6
+        tau=1.2
     )
 )
 

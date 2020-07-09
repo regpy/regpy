@@ -35,12 +35,12 @@ noise = sigma * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TV(setting.Hdomain.discr)
+penalty = TV(setting.Hdomain.discr, Hdomain=setting.Hdomain)
 
 proximal_pars = {
         'stepsize' : 0.001,
@@ -49,7 +49,7 @@ proximal_pars = {
 """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
 tau = 0.01
-alpha = 10**(-2)
+alpha = 0.01
 
 solver = FISTA(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
