@@ -1,8 +1,8 @@
 from regpy.operators.volterra import Volterra
-from regpy.hilbert import L2
+from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm_semismooth import IRGNMSemiSmooth
+from regpy.solvers.irgnm import IrgnmCGPrec, IrgnmCG
 import regpy.stoprules as rules
 
 import numpy as np
@@ -15,19 +15,24 @@ logging.basicConfig(
 )
 
 grid = UniformGrid(np.linspace(0, 2*np.pi, 200))
-op = Volterra(grid, exponent=1)
+op = Volterra(grid, exponent=3)
 
 exact_solution = np.sin(grid.coords[0])
 exact_data = op(exact_solution)
-noise = 0.1 * op.domain.randn()
+noise = 0.03 * op.domain.randn()
 data = exact_data + noise
-init = op.domain.zeros()
+init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
 
-solver = IRGNMSemiSmooth(setting, data, psi_minus=-1, psi_plus=1, regpar=1, regpar_step=0.9, init=init)
+precpars = {
+        'krylov_order' : 3,
+        'number_eigenvalues': 2        
+        }
+
+solver = IrgnmCGPrec(setting, data, regpar=1, regpar_step=0.9, init=init, precpars=precpars)
 stoprule = (
-    rules.CountIterations(100) +
+    rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),

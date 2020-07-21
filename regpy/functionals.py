@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+from copy import copy
+
 import numpy as np
 
 from regpy import operators, util, discrs, hilbert
@@ -10,6 +12,9 @@ class Functional:
         # TODO implement domain=None case
         assert isinstance(domain, discrs.Discretization)
         self.domain = domain
+        self.Hdomain = hilbert.L2(domain)
+        #Hdomain on which the proximal operator is evaluated
+        #Overloaded if Hdomain != L2
 
     def __call__(self, x):
         assert x in self.domain
@@ -48,6 +53,15 @@ class Functional:
         assert h.domain == h.codomain == self.domain
         return h
 
+    def proximal(self, x, tau, proximal_pars = None):
+        assert x in self.domain
+        if proximal_pars == None:
+            proximal_pars = {}
+        self.proximal_pars = proximal_pars
+        proximal = self._proximal(x, tau, **proximal_pars)
+        assert proximal in self.domain
+        return proximal
+
     def _eval(self, x):
         raise NotImplementedError
 
@@ -59,6 +73,9 @@ class Functional:
 
     def _hessian(self, x):
         return operators.ApproximateHessian(self, x)
+
+    def _proximal(self, x, tau):
+        return NotImplementedError
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
@@ -134,6 +151,98 @@ class Composed(Functional):
             # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
+#TODO: Add AbstractSum
+class AbstractFunctionalBase:
+    """Class representing abstract functionals without reference to a concrete implementation.
+
+    Abstract functionals do not have elements, properties or any other structure, their sole purpose is
+    to pick the proper concrete implementation for a given discretization.
+    """
+
+    def __add__(self, other):
+        return NotImplemented
+
+    def __radd__(self, other):
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return NotImplemented
+
+
+class AbstractFunctional(AbstractFunctionalBase):
+    """An abstract functional that can be called on a discretization to get the corresponding
+    concrete implementation.
+
+    AbstractFunctionals provides two kinds of functionality:
+
+    - A decorator method `register(discr_type)` that can be used to declare some class or function
+      as the concrete implementation of this abstract functional for discretizations of type `discr_type`
+      or subclasses thereof, e.g.:
+
+              @TV.register(discrs.UniformGrid)
+              class TVUniformGrid(HilbertSpace):
+                  ...
+
+    - AbstractFunctionals are callable. Calling them on a discretization and arbitrary optional
+      keyword arguments finds the corresponding concrete `regpy.functionals.Functional` among all
+      registered implementations. If there are implementations for multiple base classes of the
+      discretization type, the most specific one will be chosen. The chosen implementation will
+      then be called with the discretization and the keyword arguments, and the result will be
+      returned.
+
+      If called without a discretization as positional argument, it returns a new abstract functional
+      with all passed keyword arguments remembered as defaults.
+
+    Parameters
+    ----------
+    name : str
+        A name for this abstract functional. Currently, this is only used in error messages, when no
+        implementation was found for some discretization.
+    """
+
+    def __init__(self, name):
+        self._registry = {}
+        self.name = name
+        self.args = {}
+
+    def register(self, discr_type, impl=None):
+        if impl is not None:
+            self._registry.setdefault(discr_type, []).append(impl)
+        else:
+            def decorator(i):
+                self.register(discr_type, i)
+                return i
+            return decorator
+
+    def __call__(self, discr=None, **kwargs):
+        if discr is None:
+            clone = copy(self)
+            clone.args = copy(self.args)
+            clone.args.update(kwargs)
+            return clone
+        for cls in type(discr).mro():
+            try:
+                impls = self._registry[cls]
+            except KeyError:
+                continue
+            kws = copy(self.args)
+            kws.update(kwargs)
+            for impl in impls:
+                result = impl(discr, **kws)
+                if result is NotImplemented:
+                    continue
+                assert isinstance(result, Functional)
+                return result
+        raise NotImplementedError(
+            '{} not implemented on {}'.format(self.name, discr)
+        )
+
+L1 = AbstractFunctional('L1')
+TV = AbstractFunctional('TV')
+HilbertNorm = AbstractFunctional('HilbertNorm')
 
 class LinearCombination(Functional):
     def __init__(self, *args):
@@ -191,6 +300,9 @@ class LinearCombination(Functional):
             *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
         )
 
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 
 class Shifted(Functional):
     def __init__(self, func, offset):
@@ -212,27 +324,8 @@ class Shifted(Functional):
     def _hessian(self, x):
         return self.func.hessian(x)
 
-
-class HilbertNorm(Functional):
-    def __init__(self, hspace):
-        assert isinstance(hspace, hilbert.HilbertSpace)
-        super().__init__(hspace.discr)
-        self.hspace = hspace
-
-    def _eval(self, x):
-        return np.real(np.vdot(x, self.hspace.gram(x))) / 2
-
-    def _linearize(self, x):
-        gx = self.hspace.gram(x)
-        y = np.real(np.vdot(x, gx)) / 2
-        return y, gx
-
-    def _gradient(self, x):
-        return self.hspace.gram(x)
-
-    def _hessian(self, x):
-        return self.hspace.gram
-
+    def _proximal(self, x, tau):
+        return self.func.proximal(x, tau)
 
 class Indicator(Functional):
     def __init__(self, domain, predicate):
@@ -253,6 +346,14 @@ class Indicator(Functional):
     def _hessian(self, x):
         return operators.Zero(self.domain)
 
+    """
+    The proximal operator is the projection on the set predicate.
+    However, it is more natural to implement indicator function constraints in Tikhonov 
+    regularization by semismooth approaches. See semismooth Newton method.
+    """
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 
 class ErrorToInfinity(Functional):
     def __init__(self, func):
@@ -271,8 +372,43 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
+'''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on hspace.'''
+class HilbertNormGeneric(Functional):
+    def __init__(self, hspace, Hdomain=None):
+        assert isinstance(hspace, hilbert.HilbertSpace)
+        super().__init__(hspace.discr)
+        self.hspace = hspace
+        self.Hdomain = Hdomain or hspace 
+        '''overloads self.Hdomain from constructor'''
 
-class L1Norm(Functional):
+    def _eval(self, x):
+        return np.real(np.vdot(x, self.hspace.gram(x))) / 2
+
+    def _linearize(self, x):
+        gx = self.hspace.gram(x)
+        y = np.real(np.vdot(x, gx)) / 2
+        return y, gx
+
+    def _gradient(self, x):
+        return self.hspace.gram(x)
+
+    def _hessian(self, x):
+        return self.hspace.gram
+
+    def _proximal(self, x, tau, cgpars=None):
+        if self.Hdomain == self.hspace:
+            return 1/(1+tau)*x
+        else:
+            op = self.Hdomain.gram+tau*self.hspace.gram
+            inverse = operators.CholeskyInverse(op)
+            return inverse(self.Hdomain.gram(x))
+
+
+'''Generic L1 Functional. Proximal implemented for default L2 hspace'''
+class L1Generic(Functional):
+    def __init__(self, domain):
+        super().__init__(domain)
+
     def _eval(self, x):
         return np.sum(np.abs(x))
 
@@ -282,3 +418,76 @@ class L1Norm(Functional):
     def _hessian(self, x):
         # Even approximate Hessians don't work here.
         raise NotImplementedError
+
+    def _proximal(self, x, tau):
+        return np.maximum(0, np.abs(x)-tau)*np.sign(x)
+
+'''Generic TV Functional. Proximal implemented for default L2 hspace'''
+class TVGeneric(Functional):
+    def __init__(self, domain):
+        super().__init__(domain)
+
+    def _gradient(self, x):
+        return NotImplementedError
+
+    def _hessian(self, x):
+        return NotImplementedError
+    
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
+'''
+Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
+'''
+from regpy.util import gradientuniformgrid
+from regpy.util import divergenceuniformgrid
+class TVUniformGrid(Functional):
+    def __init__(self, domain, Hdomain=None):
+        self.dim = np.size(domain.shape)
+        assert isinstance(domain, discrs.UniformGrid)
+        super().__init__(domain)
+        if Hdomain is not None:
+            self.Hdomain = Hdomain
+        """Overload Hdomain if needed"""
+        assert self.Hdomain.discr == self.domain
+
+    def _eval(self, x):
+        if self.dim==1:
+            return np.sum(np.abs(gradientuniformgrid(x, spacing=self.domain.spacing)))
+        else:
+            return np.sum(np.linalg.norm(gradientuniformgrid(x, spacing=self.domain.spacing), axis=0))
+
+    def _gradient(self, x):
+        if self.dim==1:
+            return np.sign(gradientuniformgrid(x, spacing=self.domain.spacing))
+        else:
+            grad = gradientuniformgrid(x, spacing=self.domain.spacing)
+            grad_norm = np.linalg.norm(grad, axis=0)
+            toret = np.zeros(x.shape)
+            toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
+            return toret
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
+        shape = [self.dim]+list(x.shape)
+        p = np.zeros(shape)
+        for i in range(maxiter):
+            update = stepsize*gradientuniformgrid( self.Hdomain.gram_inv( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
+            p = (p+update) / (1+np.abs(update))
+        return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
+
+"""Auxiliary method to register abstract functionals for various discretizations. Using the decorator
+method described in `AbstractFunctional` does not work due to circular depenencies when
+loading modules.
+
+This is called from the `regpy` top-level module once, and can be ignored otherwise.
+"""
+def _register_functionals():
+    HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
+
+    L1.register(discrs.Discretization, L1Generic)
+
+    TV.register(discrs.Discretization, TVGeneric)
+    TV.register(discrs.UniformGrid, TVUniformGrid)

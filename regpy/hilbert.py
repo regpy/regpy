@@ -89,6 +89,12 @@ class HilbertSpace:
         """
         return functionals.HilbertNorm(self)
 
+    def __eq__(self, other):
+        if type(self) == type(other) and isinstance(self, HilbertSpace):
+            return self.discr == other.discr
+        else:
+            return NotImplemented
+
     def __add__(self, other):
         if isinstance(other, HilbertSpace):
             return DirectSum(self, other, flatten=True)

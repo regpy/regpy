@@ -615,6 +615,33 @@ class CoordinateProjection(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain, self.mask)
 
+class CoordinateMask(Operator):
+    """A projection operator onto a subset of the domain. The remaining array elements are set to zero.
+
+    Parameters
+    ----------
+    domain : regpy.discrs.Discretization
+        The underlying discretization
+    mask : array-like
+        Boolean mask of the subset onto which to project.
+    """
+    def __init__(self, domain, mask):
+        self.mask = mask
+        super().__init__(
+            domain=domain,
+            codomain=domain,
+            linear=True
+        )
+
+    def _eval(self, x):
+        return np.where(self.mask==False, 0, x)
+
+    def _adjoint(self, x):
+        return np.where(self.mask==False, 0, x)
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain, self.mask)
+
 
 class Multiplication(Operator):
     """A multiplication operator by a constant factor.
@@ -748,11 +775,11 @@ class MatrixMultiplication(Operator):
     """
 
     # TODO complex case
-    def __init__(self, matrix, inverse=None):
+    def __init__(self, matrix, inverse=None, domain=None, codomain=None):
         self.matrix = matrix
         super().__init__(
-            domain=discrs.Discretization(matrix.shape[1]),
-            codomain=discrs.Discretization(matrix.shape[0]),
+            domain=domain or discrs.Discretization(matrix.shape[1]),
+            codomain=codomain or discrs.Discretization(matrix.shape[0]),
             linear=True
         )
         self._inverse = inverse

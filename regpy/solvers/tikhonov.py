@@ -4,6 +4,8 @@ import numpy as np
 from regpy.solvers import Solver
 from regpy import util
 
+from regpy.operators import Identity
+
 
 class TikhonovCG(Solver):
     """The Tikhonov method for linear inverse problems. Minimizes
@@ -25,8 +27,9 @@ class TikhonovCG(Solver):
         the machine epsilon. Iterating beyond this point produces `NaN`s.
     reltolx, reltoly : float, optional
         Relative tolerance in domain and codomain.
+    krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
-    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None):
+    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None, krylov_basis=None, preconditioner=None):
         assert setting.op.linear
 
         super().__init__()
@@ -51,10 +54,18 @@ class TikhonovCG(Solver):
             self.g_y = self.setting.op.codomain.zeros()
             self.norm_y = 0
 
-        self.g_res = self.setting.op.adjoint(self.setting.Hcodomain.gram(data))
+        
+        if preconditioner is None:
+            self.preconditioner = Identity (self.setting.Hdomain.discr)
+            self.penalty = Identity (self.setting.Hdomain.discr)
+        else: 
+            self.preconditioner = preconditioner
+            self.penalty = self.preconditioner * self.setting.Hdomain.gram * self.preconditioner * self.setting.Hdomain.gram_inv
+
+        self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.Hcodomain.gram(data)) )
         """The gram matrix applied to the residual."""
         if xref is not None:
-            self.g_res += self.regpar * self.setting.Hdomain.gram(xref)
+            self.g_res += self.regpar *self.preconditioner( self.setting.Hdomain.gram(xref) )
         res = self.setting.Hdomain.gram_inv(self.g_res)
         """The residual."""
         self.norm_res = np.real(np.vdot(self.g_res, res))
@@ -69,11 +80,18 @@ class TikhonovCG(Solver):
         self.kappa = 1
         """Auxiliary parameter for estimating the relative tolerances."""
 
+        self.krylov_basis=krylov_basis
+        if self.krylov_basis is not None: 
+            self.iteration_number=0
+            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
+        """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
+
+
     def _next(self):
-        Tdir = self.setting.op(self.dir)
+        Tdir = self.setting.op( self.preconditioner(self.dir) )
         g_Tdir = self.setting.Hcodomain.gram(Tdir)
         stepsize = self.norm_res / np.real(
-            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.g_dir, self.dir)
+            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
         )
 
         self.x += stepsize * self.dir
@@ -85,34 +103,42 @@ class TikhonovCG(Solver):
             self.g_y += stepsize * g_Tdir
             self.norm_y = np.real(np.vdot(self.g_y, self.y))
 
-        self.g_res -= stepsize * (self.setting.op.adjoint(g_Tdir) + self.regpar * self.g_dir)
+        self.g_res -= stepsize * (self.preconditioner( self.setting.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.setting.Hdomain.gram_inv(self.g_res)
 
         norm_res_old = self.norm_res
         self.norm_res = np.real(np.vdot(self.g_res, res))
         beta = self.norm_res / norm_res_old
 
+        if self.krylov_basis is not None:
+            self.iteration_number+=1
+            if self.iteration_number < self.krylov_basis.shape[0]:
+                self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
+
         self.kappa = 1 + beta * self.kappa
 
-        if (
-            self.reltolx is not None and
-            np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
-                < self.reltolx / (1 + self.reltolx)
-        ):
-            return self.converge()
+        if self.krylov_basis is None or self.iteration_number > self.krylov_basis.shape[0]:
+            """If Krylov subspace basis is computed, then stop the iteration only if the number of iterations exceeds the order of the Krylov space"""
+            
+            if (
+                self.reltolx is not None and
+                np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
+                    < self.reltolx / (1 + self.reltolx)
+            ):
+                return self.converge()
 
-        if (
-            self.reltoly is not None and
-            np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
-                < self.reltoly / (1 + self.reltoly)
-        ):
-            return self.converge()
+            if (
+                self.reltoly is not None and
+                np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
+                    < self.reltoly / (1 + self.reltoly)
+            ):
+                return self.converge()
 
-        if (
-            self.tol is not None and
-            np.sqrt(self.norm_res / self.norm_res_init / self.kappa) < self.tol
-        ):
-            return self.converge()
+            if (
+                self.tol is not None and
+                np.sqrt(self.norm_res / self.norm_res_init / self.kappa) < self.tol
+            ):
+                return self.converge()
 
         self.dir *= beta
         self.dir += res

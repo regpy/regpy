@@ -20,6 +20,9 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
+#WARNING: Only works if grad(exact_data) != 0 everywhere
+#This example file implements: exact_data = (ngs.x-ngs.y)*ngs.exp(ngs.x+ngs.y)
+
 meshsize_domain = 10
 meshsize_codomain = 10
 
@@ -32,33 +35,33 @@ bdr = "left|top|right|bottom"
 fes_codomain = ngs.H1(mesh, order=3, dirichlet=bdr)
 codomain = NgsSpace(fes_codomain, bdr=bdr)
 
-rhs = 1 * ngs.sin(ngs.x) * ngs.sin(ngs.y)
+rhs = -2*ngs.exp(ngs.x+ngs.y)
 op = Coefficient(
-    domain, rhs, codomain=codomain, bc = 0.1, diffusion=False,
-    reaction=True
+    domain, rhs, codomain=codomain, bc=ngs.exp(ngs.x+ngs.y), diffusion=True, reaction=False
 )
 
-exact_solution_coeff = 1+0.8*ngs.sin(2*np.pi*ngs.x) * ngs.sin(2*np.pi*ngs.y)
+exact_solution_coeff = 1
 exact_solution = domain.from_ngs( exact_solution_coeff )
 exact_data = op(exact_solution)
 
-noise = 0.0001 * codomain.randn()
+noise = 0 * 0.0001 * codomain.randn()
 
 data = exact_data+noise
 
-init = domain.from_ngs ( 1 )
+#init = domain.from_ngs ( ngs.cos(ngs.x) )
+init = domain.from_ngs (0.8)
 init_data = op(init)
 
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
 
-landweber = Landweber(setting, data, init, stepsize=1)
+landweber = Landweber(setting, data, init, stepsize=0.01)
 stoprule = (
-        rules.CountIterations(50000) +
+        rules.CountIterations(10000) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
 
 reco, reco_data = landweber.run(stoprule)
 
-domain.draw(exact_solution, "exact")
+ngs.Draw(exact_solution_coeff, op.fes_domain.mesh, "exact")
 
 # Draw reconstructed solution
 domain.draw(reco, "reco")
@@ -67,3 +70,6 @@ domain.draw(reco, "reco")
 codomain.draw(data, "data")
 codomain.draw(reco_data, "reco_data")
 
+
+codomain.draw(reco_data, "reco_data")
+codomain.draw(data, "data")
