@@ -435,7 +435,7 @@ class DirectSum(Discretization):
                 self.summands.extend(s.summands)
             else:
                 self.summands.append(s)
-        self.idxs = [0] + list(accumulate(s.realsize for s in self.summands))
+        self.idxs = [0] + list(accumulate(s.realsize for s in self.summands))            
         super().__init__(self.idxs[-1])
 
     def __eq__(self, other):

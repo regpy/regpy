@@ -29,12 +29,18 @@ fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 fes_complete_codomain = ngs.H1(mesh, order=4)
-complete_codomain = NgsSpace(fes_complete_codomain, bdr=bc)
+complete_codomain_single = NgsSpace(fes_complete_codomain, bdr=bc)
+complete_codomain = complete_codomain_single + complete_codomain_single + complete_codomain_single + complete_codomain_single
+complete_codomain.fes = fes_complete_codomain
+complete_codomain.bdr = bc
 
 fes_codomain = ngs.H1(mesh, order=0)
-codomain = NgsSpace(fes_codomain, bdr=bc)
+codomain_single = NgsSpace(fes_codomain, bdr=bc)
+codomain = codomain_single+codomain_single+codomain_single+codomain_single
+codomain.fes = fes_codomain
+codomain.bdr = bc
 
-g = 0.1*ngs.y
+g = [0.1*ngs.y, 0.1*ngs.y, 0.1*ngs.y, 0.1*ngs.y]
 #The reaction coefficient operator with Neumann boundary conditions
 reac = ReactionNeumann(domain, g, codomain=complete_codomain)
 #Projection of distributed measurements to boundary
@@ -55,8 +61,8 @@ setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=SobolevBoundary)
 
 landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
-        rules.CountIterations(3000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=0))
+        rules.CountIterations(1000) +
+        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1))
 
 reco, reco_data = landweber.run(stoprule)
 
@@ -66,5 +72,5 @@ ngs.Draw(exact_solution_coeff, fes_domain.mesh, "exact")
 domain.draw(reco, 'reco')
 
 # Draw data space
-codomain.draw(reco_data, 'reco_data')
-codomain.draw(data, 'data')
+#codomain.draw(reco_data, 'reco_data')
+#codomain.draw(data, 'data')
