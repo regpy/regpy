@@ -208,6 +208,7 @@ class EIT(NGSolveOperator):
         assert codomain.bdr is not None
         super().__init__(domain, codomain)
         self.g = g
+        self.nr_bc = len(self.g)
 
         self.fes_domain = domain.fes
         self.fes_codomain = codomain.fes
@@ -264,13 +265,20 @@ class EIT(NGSolveOperator):
         self.a.Assemble()
 
         # Assemble Linearform, boundary term
-        self.gfu_b.Set(self.g)
-        self.b.Assemble()
+        toret = []
+        for i in range(self.nr_bc):
+            self.gfu_b.Set(self.g[i])
+            self.b.Assemble()
 
         # Solve system
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            if i == 0:
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            else: 
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 
-        return self.gfu_eval.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_eval.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
 #Weak Formulation:
 #0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]
@@ -283,13 +291,17 @@ class EIT(NGSolveOperator):
         # Bilinearform already defined from _eval
 
         # Assemble Linearform
-        self._read_in(h, self.gfu_lf)
-        self.f_deriv.Assemble()
+        toret = []
+        for i in range(nr_bc):
+            self._read_in(h[i], self.gfu_lf)
+            self.f_deriv.Assemble()
 
-        self.gfu_deriv.Set(0)
-        self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
+            self.gfu_deriv.Set(0)
+            self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        return self.gfu_deriv.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_deriv.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
 #Same problem as in _eval
     def _adjoint(self, argument):
@@ -297,14 +309,19 @@ class EIT(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self.gfu_b.vec.FV().NumPy()[:] = argument
-        self.b.Assemble()
+        argument_tuple = self.codomain.split(argument)
+        toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
+        for i in range(self.nr_bc):
+            self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
+            self.b.Assemble()
 
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
+            self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
 
-        self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint) * ngs.grad(self.gfu_eval))
+            self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint) * ngs.grad(self.gfu_eval))
 
-        return self.gfu_adjoint.vec.FV().NumPy().copy()
+            toret += self.gfu_adjoint.vec.FV().NumPy().copy()
+
+        return toret
 
 
  
@@ -342,7 +359,6 @@ class ReactionNeumann(NGSolveOperator):
         super().__init__(domain, codomain)
         self.g = g
         self.nr_bc = len(self.g)
-        self.codomain_single_size = int(self.codomain.size/self.nr_bc)
 
         self.fes_domain = domain.fes
         self.fes_codomain = codomain.fes

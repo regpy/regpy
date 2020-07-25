@@ -29,9 +29,14 @@ fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 fes_codomain = ngs.H1(mesh, order=4)
-codomain = NgsSpace(fes_codomain, bdr=bc)
+codomain_single = NgsSpace(fes_codomain, bdr=bc)
+codomain = codomain_single
+for i in range(9):
+    codomain = codomain+codomain_single
+codomain.fes = codomain_single.fes
+codomain.bdr = codomain_single.bdr
 
-g = 0.1
+g = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 eit = EIT(domain, g, codomain=codomain, alpha=10**(-2))
 proj = ProjectToBoundary(codomain)
 op = proj * eit
