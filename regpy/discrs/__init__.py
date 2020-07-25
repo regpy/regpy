@@ -275,6 +275,13 @@ class Discretization:
         else:
             return NotImplemented
 
+    def __pow__(self, power):
+        assert isinstance(power, int)
+        domain = self
+        for i in range(power-1):
+            domain = DirectSum(domain, self, flatten=True)
+        return domain
+
 
 class Grid(Discretization):
     """A discretization representing a recangular grid.

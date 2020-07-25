@@ -83,6 +83,15 @@ class NgsSpace(Discretization):
         else:
             return NotImplemented
 
+    def __pow__(self, power):
+        assert isinstance(power, int)
+        domain = self
+        for i in range(power-1):
+            domain = DirectSum(domain, self, flatten=True)
+        domain.fes = self.fes
+        domain.bdr = self.bdr
+        return domain
+
 
     
 class Matrix(Operator):

@@ -29,20 +29,10 @@ fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
 fes_complete_codomain = ngs.H1(mesh, order=4)
-complete_codomain_single = NgsSpace(fes_complete_codomain, bdr=bc)
-complete_codomain = complete_codomain_single
-for i in range(9):
-    complete_codomain = complete_codomain+complete_codomain_single
-complete_codomain.fes = fes_complete_codomain
-complete_codomain.bdr = bc
+complete_codomain = NgsSpace(fes_complete_codomain, bdr=bc)**10
 
 fes_codomain = ngs.H1(mesh, order=0)
-codomain_single = NgsSpace(fes_codomain, bdr=bc)
-codomain = codomain_single
-for i in range(9):
-    codomain = codomain + codomain_single
-codomain.fes = fes_codomain
-codomain.bdr = bc
+codomain = NgsSpace(fes_codomain, bdr=bc)**10
 
 g = [0.1*ngs.sin(2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.sin(2*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.sin(3*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.sin(4*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.sin(5*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.cos(2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.cos(2*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.cos(3*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.cos(4*2*np.pi*(ngs.y+1)/(ngs.x+1)), 0.1*ngs.cos(5*2*np.pi*(ngs.y+1)/(ngs.x+1))]
 #Reaction coefficient operator with Neumann boundary conditions
