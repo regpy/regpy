@@ -32,10 +32,16 @@ class ProjectToBoundary(NGSolveOperator):
         self.bdr = codomain.bdr
         self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
         self.gfu_domain = ngs.GridFunction(self.domain.fes)
-        self.nr_bc = len(self.codomain.summands)
+        try: 
+            self.nr_bc = len(self.codomain.summands)
+        except:
+            self.nr_bc = 1
 
     def _eval(self, x):
-        array = self.domain.split(x)
+        if self.nr_bc == 1:
+            array = [x]
+        else: 
+            array = self.domain.split(x)
         toret = []
         for i in range(self.nr_bc):
             self.gfu_domain.vec.FV().NumPy()[:] = array[i]
@@ -45,7 +51,10 @@ class ProjectToBoundary(NGSolveOperator):
 
     def _adjoint(self, g):
         toret = []
-        g_tuple = self.codomain.split(g)
+        if self.nr_bc == 1:
+            g_tuple = [g]
+        else: 
+            g_tuple = self.codomain.split(g)
         for i in range(self.nr_bc):
             self.gfu_codomain.vec.FV().NumPy()[:] = g_tuple[i]
             self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
@@ -292,7 +301,7 @@ class EIT(NGSolveOperator):
 
         # Assemble Linearform
         toret = []
-        for i in range(nr_bc):
+        for i in range(self.nr_bc):
             self._read_in(h[i], self.gfu_lf)
             self.f_deriv.Assemble()
 
@@ -309,7 +318,10 @@ class EIT(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        argument_tuple = self.codomain.split(argument)
+        if self.nr_bc==1:
+            argument_tuple = [argument]
+        else:
+            argument_tuple = self.codomain.split(argument)
         toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
         for i in range(self.nr_bc):
             self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
@@ -435,7 +447,10 @@ class ReactionNeumann(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        argument_tuple = self.codomain.split(argument)
+        if self.nr_bc==1:
+            argument_tuple = [argument]
+        else:
+            argument_tuple = self.codomain.split(argument)
         toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
         for i in range(self.nr_bc):
             self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
