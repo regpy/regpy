@@ -23,11 +23,11 @@ logging.basicConfig(
 meshsize_domain = 10
 meshsize_codomain = 10
 
-mesh = MakeQuadMesh(meshsize_domain)
+mesh = MakeQuadMesh(meshsize_domain, meshsize_domain)
 fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
-mesh = MakeQuadMesh(meshsize_codomain)
+mesh = MakeQuadMesh(meshsize_codomain, meshsize_codomain)
 bdr = "left|top|right|bottom"
 fes_codomain = ngs.H1(mesh, order=3, dirichlet=bdr)
 codomain = NgsSpace(fes_codomain, bdr=bdr)

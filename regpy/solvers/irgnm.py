@@ -157,7 +157,7 @@ class IrgnmCGPrec(Solver):
             self.krylov_order = precpars['krylov_order']
             self.number_eigenvalues = precpars['number_eigenvalues']
 
-        self.krylov_basis = np.zeros((self.krylov_order, self.data.shape[0]))
+        self.krylov_basis = np.zeros((self.krylov_order, self.setting.Hdomain.discr.size))
         """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""

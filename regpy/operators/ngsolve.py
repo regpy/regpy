@@ -32,16 +32,34 @@ class ProjectToBoundary(NGSolveOperator):
         self.bdr = codomain.bdr
         self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
         self.gfu_domain = ngs.GridFunction(self.domain.fes)
+        try: 
+            self.nr_bc = len(self.codomain.summands)
+        except:
+            self.nr_bc = 1
 
     def _eval(self, x):
-        self.gfu_domain.vec.FV().NumPy()[:] = x
-        self.gfu_codomain.Set(self.gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self.gfu_codomain.vec.FV().NumPy().copy()
+        if self.nr_bc == 1:
+            array = [x]
+        else: 
+            array = self.domain.split(x)
+        toret = []
+        for i in range(self.nr_bc):
+            self.gfu_domain.vec.FV().NumPy()[:] = array[i]
+            self.gfu_codomain.Set(self.gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+            toret.append(self.gfu_codomain.vec.FV().NumPy().copy())
+        return np.array(toret).flatten()
 
     def _adjoint(self, g):
-        self.gfu_codomain.vec.FV().NumPy()[:] = g
-        self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self.gfu_domain.vec.FV().NumPy().copy()
+        toret = []
+        if self.nr_bc == 1:
+            g_tuple = [g]
+        else: 
+            g_tuple = self.codomain.split(g)
+        for i in range(self.nr_bc):
+            self.gfu_codomain.vec.FV().NumPy()[:] = g_tuple[i]
+            self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+            toret.append(self.gfu_domain.vec.FV().NumPy().copy())
+        return np.array(toret).flatten()
 
 class Coefficient(NGSolveOperator):
 
@@ -199,6 +217,7 @@ class EIT(NGSolveOperator):
         assert codomain.bdr is not None
         super().__init__(domain, codomain)
         self.g = g
+        self.nr_bc = len(self.g)
 
         self.fes_domain = domain.fes
         self.fes_codomain = codomain.fes
@@ -255,13 +274,20 @@ class EIT(NGSolveOperator):
         self.a.Assemble()
 
         # Assemble Linearform, boundary term
-        self.gfu_b.Set(self.g)
-        self.b.Assemble()
+        toret = []
+        for i in range(self.nr_bc):
+            self.gfu_b.Set(self.g[i])
+            self.b.Assemble()
 
         # Solve system
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            if i == 0:
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            else: 
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 
-        return self.gfu_eval.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_eval.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
 #Weak Formulation:
 #0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]
@@ -274,13 +300,17 @@ class EIT(NGSolveOperator):
         # Bilinearform already defined from _eval
 
         # Assemble Linearform
-        self._read_in(h, self.gfu_lf)
-        self.f_deriv.Assemble()
+        toret = []
+        for i in range(self.nr_bc):
+            self._read_in(h[i], self.gfu_lf)
+            self.f_deriv.Assemble()
 
-        self.gfu_deriv.Set(0)
-        self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
+            self.gfu_deriv.Set(0)
+            self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        return self.gfu_deriv.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_deriv.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
 #Same problem as in _eval
     def _adjoint(self, argument):
@@ -288,14 +318,22 @@ class EIT(NGSolveOperator):
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self.gfu_b.vec.FV().NumPy()[:] = argument
-        self.b.Assemble()
+        if self.nr_bc==1:
+            argument_tuple = [argument]
+        else:
+            argument_tuple = self.codomain.split(argument)
+        toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
+        for i in range(self.nr_bc):
+            self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
+            self.b.Assemble()
 
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
+            self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
 
-        self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint) * ngs.grad(self.gfu_eval))
+            self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint) * ngs.grad(self.gfu_eval))
 
-        return self.gfu_adjoint.vec.FV().NumPy().copy()
+            toret += self.gfu_adjoint.vec.FV().NumPy().copy()
+
+        return toret
 
 
  
@@ -332,6 +370,7 @@ class ReactionNeumann(NGSolveOperator):
         assert codomain.bdr is not None
         super().__init__(domain, codomain)
         self.g = g
+        self.nr_bc = len(self.g)
 
         self.fes_domain = domain.fes
         self.fes_codomain = codomain.fes
@@ -372,40 +411,59 @@ class ReactionNeumann(NGSolveOperator):
         self.a.Assemble()
 
         # Assemble Linearform of boundary term
-        self.gfu_b.Set(self.g)
-        self.b.Assemble()
+        toret = []
+        for i in range(self.nr_bc):
+            self.gfu_b.Set(self.g[i])
+            self.b.Assemble()
 
         # Solve system
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            if i == 0:
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+            else:
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 
-        return self.gfu_eval.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_eval.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
     def _derivative(self, h):
         # Bilinearform already defined from _eval
 
         # Assemble Linearform of derivative
-        self._read_in(h, self.gfu_lf)
-        self.f_deriv.Assemble()
+        toret = []
+        for i in range(self.nr_bc):
+            self._read_in(h, self.gfu_lf)
+            self.f_deriv.Assemble()
 
-        # Solve system
-        self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
+            # Solve system
+            self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
 
-        return self.gfu_deriv.vec.FV().NumPy()[:].copy()
+            toret.append(self.gfu_deriv.vec.FV().NumPy()[:].copy())
+
+        return np.array(toret).flatten()
 
     def _adjoint(self, argument):
         # Bilinearform already defined from _eval
 
         # Definition of Linearform
         # But it only needs to be defined on boundary
-        self.gfu_b.vec.FV().NumPy()[:] = argument
-        self.b.Assemble()
+        if self.nr_bc==1:
+            argument_tuple = [argument]
+        else:
+            argument_tuple = self.codomain.split(argument)
+        toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
+        for i in range(self.nr_bc):
+            self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
+            self.b.Assemble()
 
         # Solve system
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
+            self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
 
-        self.gfu_adjoint.Set(self.gfu_inner_adjoint * self.gfu_eval)
+            self.gfu_adjoint.Set(self.gfu_inner_adjoint * self.gfu_eval)
+        
+            toret+=self.gfu_adjoint.vec.FV().NumPy().copy()
 
-        return self.gfu_adjoint.vec.FV().NumPy().copy()
+        return toret
 
 
 
