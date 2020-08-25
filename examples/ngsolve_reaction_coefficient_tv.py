@@ -21,14 +21,14 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-meshsize_domain = 10
-meshsize_codomain = 10
+meshsize_domain = 20
+meshsize_codomain = 20
 
-mesh = MakeQuadMesh(meshsize_domain)
+mesh = MakeQuadMesh(meshsize_domain, meshsize_domain)
 fes_domain = ngs.H1(mesh, order=1)
 domain = NgsSpace(fes_domain)
 
-mesh = MakeQuadMesh(meshsize_codomain)
+mesh = MakeQuadMesh(meshsize_codomain, meshsize_codomain)
 bdr = "left|top|right|bottom"
 fes_codomain = ngs.H1(mesh, order=3, dirichlet=bdr)
 codomain = NgsSpace(fes_codomain, bdr=bdr)
@@ -64,7 +64,7 @@ proximal_pars = {
 """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
 tau = 10
-alpha = 10**(-6)
+alpha = 5*10**(-6)
 
 solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
