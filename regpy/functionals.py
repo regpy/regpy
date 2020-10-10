@@ -303,6 +303,43 @@ class LinearCombination(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
+'''Helper to define Functionals with respective prox-operators on product spaces (discrs.DirectSum objects).
+The functionals are given as a list of the functionals on the summands of the product space.'''
+class FunctionalProductSpace(Functional):
+    def __init__(self, funcs, domain):
+        assert isinstance(domain, discrs.DirectSum)
+        self.length = len(domain.summands)
+        for i in range(self.length):
+            assert isinstance(funcs[i], Functional)
+            assert funcs[i].domain == domain.summands[i] 
+        self.funcs = funcs
+        super().__init__(domain)
+
+    def _eval(self, x):
+        splitted = self.domain.split(x)
+        toret = 0 
+        for i in range(self.length):
+            toret += self.funcs[i](splitted[i])
+        return toret
+
+    def _gradient(self, x):
+        splitted = self.domain.split(x)
+        gradients = []
+        for i in range(self.length):
+            gradients.append( self.funcs[i](splitted[i]) )
+        return np.asarray(gradients).flatten()
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, taus):
+        assert len(taus) == self.length
+        splitted = self.domain.split(x)
+        proximals = []
+        for i in range(self.length):
+            proximals.append( self.funcs[i].proximal(splitted[i], taus[i]) )
+        return np.asarray(proximals).flatten()
+
 
 class Shifted(Functional):
     def __init__(self, func, offset):
