@@ -12,6 +12,7 @@ from collections import defaultdict
 from copy import deepcopy
 
 import numpy as np
+from numpy.core.numeric import zeros_like
 from scipy.linalg import cho_factor, cho_solve
 
 from regpy import functionals, util, discrs
@@ -119,7 +120,7 @@ class Operator:
     ----------
     domain, codomain : regpy.discrs.Discretization or None
         The discretization on which the operator's arguements / values are defined. Using `None`
-        suppresses some consistency checks and is intended for ease of development, but should be
+        suppresses some consistency checks and is intended for ease of development, but should 
         not be used except as a temporary measure. Some constructions like direct sums will fail
         if the discretizations are unknown.
     linear : bool, optional
@@ -926,6 +927,86 @@ class DirectSum(Operator):
             codomain=self.domain
         )
 
+    def __repr__(self):
+        return util.make_repr(self, *self.ops)
+
+    def __getitem__(self, item):
+        return self.ops[item]
+
+    def __iter__(self):
+        return iter(self.ops)
+
+class Vector_of_operators(Operator):
+    """Vector of operators. For
+
+        T_i : X -> Y_i
+
+    we define
+
+        T := VectorOfOperators(T_i) : X -> DirectSum(Y_i)
+
+    by `T(x)_i := T_i(x)`. 
+    
+    Parameters
+    ----------
+    *ops : tuple of Operator
+    codomain : discrs.Discretization or callable, optional
+        Either the underlying discretization or a factory function that will be called with all
+        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        The resulting discretization should be iterable, yielding the individual summands.
+        Default: discrs.DirectSum.
+    """
+
+    def __init__(self, *ops,  domain=None, codomain=None):
+        assert all(isinstance(op, Operator) for op in ops)
+        assert ops
+        self.ops = []
+        for op in ops:
+            self.ops.append(op)
+
+        if domain is None:
+            self.domain = self.ops[0].domain
+        else:
+            self.domain = domain
+        assert all(op.domain == self.domain for op in self.ops)
+
+        if codomain is None:
+            codomain = discrs.DirectSum
+        if isinstance(codomain, discrs.Discretization):
+            pass
+        elif callable(codomain):
+            codomain = codomain(*(op.codomain for op in self.ops))
+        else:
+            raise TypeError('codomain={} is neither a Discretization nor callable'.format(codomain))
+        assert all(op.codomain == c for op, c in zip(ops, codomain))
+
+        super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
+
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            linearizations = [op.linearize(x) for op in self.ops]
+            self._derivs = [l[1] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
+        else:
+            return self.codomain.join(*(op(x) for op in self.ops))
+
+    def _derivative(self, x):
+        return self.codomain.join(
+            *(deriv(x) for deriv in self._derivs)
+        )
+
+    def _adjoint(self, y):
+        elms = self.codomain.split(y)
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        result = self.domain.zeros()    
+        for op, elm in zip(ops, elms):
+            result += op.adjoint(elm)
+        return result
+
+    @util.memoized_property
     def __repr__(self):
         return util.make_repr(self, *self.ops)
 
