@@ -164,7 +164,7 @@ class Operator:
         return set(self.__dict__)
 
     def __call__(self, x):
-        assert not self.domain or x in self.domain
+     #   assert not self.domain or x in self.domain
         if self.linear:
             y = self._eval(x)
         else:
@@ -957,18 +957,16 @@ class Vector_of_operators(Operator):
         Default: discrs.DirectSum.
     """
 
-    def __init__(self, *ops,  domain=None, codomain=None):
-        assert all(isinstance(op, Operator) for op in ops)
+    def __init__(self, ops,  domain=None, codomain=None):
+        assert all([isinstance(op, Operator) for op in ops])
         assert ops
-        self.ops = []
-        for op in ops:
-            self.ops.append(op)
+        self.ops = ops
 
         if domain is None:
             self.domain = self.ops[0].domain
         else:
             self.domain = domain
-        assert all(op.domain == self.domain for op in self.ops)
+#        assert all(op.domain == self.domain for op in self.ops)
 
         if codomain is None:
             codomain = discrs.DirectSum
@@ -1005,6 +1003,127 @@ class Vector_of_operators(Operator):
         for op, elm in zip(ops, elms):
             result += op.adjoint(elm)
         return result
+
+    @util.memoized_property
+    def __repr__(self):
+        return util.make_repr(self, *self.ops)
+
+    def __getitem__(self, item):
+        return self.ops[item]
+
+    def __iter__(self):
+        return iter(self.ops)
+
+class Matrix_of_operators(Operator):
+    """Matrix of operators. For
+
+        T_ij : X_j -> Y_i
+
+    we define
+
+        T := Matrix_of_operators(T_ij) : DirectSum(X_j) -> DirectSum(Y_i)
+
+    by `T(x)_i := \sum_j T_ij(x_j)`. 
+    
+    Parameters
+    ----------
+    *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
+           zero operators should be given by None's 
+    domain, codomain : discrs.Discretization or callable, optional
+        Either the underlying discretization or a factory function that will be called with all
+        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        The resulting discretization should be iterable, yielding the individual summands.
+        Default: discrs.DirectSum.
+    """
+
+    def __init__(self, ops,  domain=None, codomain=None):
+        ops_flat = [op for op_col in ops for op in op_col]
+        assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
+        self.ops = ops
+
+        domains = [None]*len(ops)
+        for j in range(len(ops)):
+            for i in range(len(ops[0])):
+                if ops[j][i]:
+                    if domains[j]:
+                        assert domains[j] == ops[j][i].domain
+                    else:    
+                        domains[j] = ops[j][i].domain
+        assert None not in domains
+
+        if domain is None:
+            domain = discrs.DirectSum
+        if isinstance(domain, discrs.Discretization):
+            pass
+        elif callable(domain):
+            domain = domain(*tuple(domains))
+        else:
+            raise TypeError('domain={} is neither a Discretization nor callable'.format(domain))
+ 
+        codomains = [None]*len(ops[0])
+        for i in range(len(ops[0])):
+            for j in range(len(ops)):
+                if ops[j][i]:
+                    if codomains[i]:
+                        assert codomains[i] == ops[j][i].codomain
+                    else:    
+                        codomains[i] = ops[j][i].codomain
+        assert None not in codomains
+        
+        if codomain is None:
+            codomain = discrs.DirectSum
+        if isinstance(codomain, discrs.Discretization):
+            pass
+        elif callable(codomain):
+            codomain = codomain(*tuple(codomains))
+        else:
+            raise TypeError('codomain={} is neither a Discretization nor callable'.format(domain))
+        
+        super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
+
+    def _eval(self, x, differentiate=False):
+        x_comp = self.domain.split(x)
+        res = self.codomain.split(self.codomain.zeros()) 
+        Tprime = []
+        for T_j, x_j in zip(self.ops,x_comp):
+            Tprime_j = []
+            for T_ij,res_i in zip(T_j,res):
+                if differentiate:
+                    if T_ij:
+                        res_ij, Tprime_ij = T_ij.linearize(x_j)
+                        res_i += res_ij
+                    else:
+                        Tprime_ij = None
+                    Tprime_j.append(Tprime_ij)
+                else:   
+                    if T_ij:
+                        res_i += T_ij(x_j)
+            Tprime.append(Tprime_j)
+        if differentiate:
+            self._derivs = Tprime
+        return self.codomain.join(*(res_i for res_i in res))
+           
+    def _derivative(self, x):
+        res = self.codomain.split(self.codomain.zeros())
+        x_comp = self.domain.split(x)
+        for Tprime_j, x_j in zip(self._derivs,x_comp):
+            for Tprime_ij,res_i in zip(Tprime_j,res):
+                if Tprime_ij:
+                    res_i += Tprime_ij(x_j)
+        return self.codomain.join(*(res_i for res_i in res))
+
+    def _adjoint(self, y):
+        y_comp = self.codomain.split(y)
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        res_comp = self.domain.split(self.domain.zeros())    
+        for Tprime_j, res_j in zip(ops, res_comp):
+            for Tprime_ij, y_i in zip(Tprime_j,y_comp):
+                if Tprime_ij:
+                    res_j += Tprime_ij.adjoint(y_i)
+        return self.domain.join(*(res_j for res_j in res_comp))
 
     @util.memoized_property
     def __repr__(self):
