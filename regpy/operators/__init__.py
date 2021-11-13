@@ -263,7 +263,7 @@ class Operator:
         elif isinstance(other, Operator):
             return Composition(self, other)
         elif np.isscalar(other) or isinstance(other, np.ndarray):
-            return self * Multiplication(self.domain, other)
+            return self * Ptw_Multiplication(self.domain, other)
         else:
             return NotImplemented
 
@@ -276,7 +276,7 @@ class Operator:
             else:
                 return LinearCombination((other, self))
         elif isinstance(other, np.ndarray):
-            return Multiplication(self.codomain, other) * self
+            return Ptw_Multiplication(self.codomain, other) * self
         else:
             return NotImplemented
 
@@ -539,6 +539,33 @@ class Identity(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
+class Matrix_Multiplication_Op(Operator):
+    """Linear operator given by multiplication with an np.matrix"""
+
+    def __init__(self,mat,domain=None,codomain=None,dtype=None):
+        assert type(mat) is np.matrix and len(mat.shape) == 2
+        if dtype==None:
+            if np.iscomplexobj(mat):
+                dtype=complex
+            else:
+                dtype=float
+        M,N = mat.shape
+        if domain==None:
+            domain = discrs.Discretization((M,),dtype)
+        if codomain==None:
+            codomain = discrs.Discretization((N,),dtype)
+        self.mat = mat
+        super().__init__(
+            domain=domain,
+            codomain=domain,
+            linear=True
+        )
+
+    def eval(self,x):
+        return self.mat*x
+
+    def adjoint(self,x):
+        return self.mat.H*x
 
 class CholeskyInverse(Operator):
     """Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
@@ -644,7 +671,7 @@ class CoordinateMask(Operator):
         return util.make_repr(self, self.domain, self.mask)
 
 
-class Multiplication(Operator):
+class Ptw_Multiplication(Operator):
     """A multiplication operator by a constant factor.
 
     Parameters
@@ -671,21 +698,18 @@ class Multiplication(Operator):
         if self.domain.is_complex:
             return np.conj(self.factor) * x
         else:
-            # Avoid conj() when not needed (performs copy)
-            # TODO should we just store conj(factor) once?
             return self.factor * x
 
     @util.memoized_property
     def inverse(self):
         sav = np.seterr(divide='raise')
         try:
-            return Multiplication(self.domain, 1 / self.factor)
+            return Ptw_Multiplication(self.domain, 1 / self.factor)
         finally:
             np.seterr(**sav)
 
     def __repr__(self):
         return util.make_repr(self, self.domain, self.factor)
-
 
 class Shifted(Operator):
     """Shift an operator by a constant offset in the codomain.
@@ -1065,7 +1089,8 @@ class Matrix_of_operators(Operator):
             for j in range(len(ops)):
                 if ops[j][i]:
                     if codomains[i]:
-                        assert codomains[i] == ops[j][i].codomain
+                        pass
+ #                       assert codomains[i] == ops[j][i].codomain
                     else:    
                         codomains[i] = ops[j][i].codomain
         assert None not in codomains

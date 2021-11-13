@@ -26,12 +26,18 @@ noise_level = 0.0001      # Noise level in the simulated data
 # Uniform grid
 Xdim= 256; Ydim= 256
 grid = UniformGrid(np.arange(Xdim), np.arange(Ydim))
+sum_of_grids = DirectSum(grid,grid)
 [Xco,Yco] = np.meshgrid(np.arange(-1,1,2/Xdim),np.arange(-1,1,2/Ydim))
 mask = (abs(Xco+0.2)<=0.2) & (abs(Yco)<=0.4)
 mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35))<=0.01)
+mask = mask.astype(float)
+mask_abs = mask # mask for abs_g
+mask_arg = mask # mask for arg_g 
+masks = sum_of_grids.join(mask_abs,mask_arg)
+A_Psi0_Multiplier = np.ones(grid.shape,complex)
 
 # Forward operator
-op = PINEM_g_to_data(grid,fresnelNumber,N=1)
+op = PINEM_g_to_data(grid,fresnelNumber,masks,A_Psi0_Multiplier,N=2)
 
 # Create phantom phase-image (= padded example-image)
 picture = ascent()
@@ -41,11 +47,10 @@ exact_solution /= 10*abs(exact_solution).max()
 exact_solution += ones_like(exact_solution)
 pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2, (grid.shape[1] - exact_solution.shape[1])//2])
 exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=1)
-exact_solution = exact_solution.astype(complex);
+exact_solution = exact_solution.astype(complex)*mask_abs;
 
 # Create exact and noisy data
-sgrid = DirectSum(grid.real_space(),grid.real_space())
-sexact_solution = sgrid.join(exact_solution.real, exact_solution.imag)
+sexact_solution = sum_of_grids.join(exact_solution.real, exact_solution.imag)
 exact_data = op(sexact_solution)
 #exact_data = op(exact_solution)
 noise = noise_level * op.codomain.randn()
@@ -53,8 +58,7 @@ data = exact_data + noise
 
 # Image-reconstruction using the IRGNM method
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
-init_vec = sgrid.join(grid.real_space().ones(), grid.real_space().zeros())
-#init_vec = sgrid.ones()
+init_vec = sum_of_grids.join(grid.ones(), grid.zeros())
 
 solver = IrgnmCG(setting, data, regpar=1e-4, regpar_step = 2/3, init = init_vec)
 stoprule = (
@@ -69,9 +73,9 @@ stoprule = (
 
 #reco, reco_data = solver.run(stoprule)
 reco, reco_data = solver.run(stoprule)
-reco1,reco2=sgrid.split(reco)
-reco_data1,reco_data2 = sgrid.split(reco_data)
-data1,data2 = sgrid.split(data)
+reco1,reco2=sum_of_grids.split(reco)
+reco_data1,reco_data2 = sum_of_grids.split(reco_data)
+data1,data2 = sum_of_grids.split(data)
 #reco = mask
 
 # Plot reults
