@@ -78,7 +78,7 @@ def PINEM_g_to_data(domain, fresnel_number,masks,A_Psi0_Multiplier,N=1):
  #           op_list.append(fresnel_propagator(cdomain, n*fresnel_number)*Nemitzky_op_for_g(cdomain,n)*masks)
             op_list.append(
                 Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
-                *fresnel_propagator(cdomain, n*fresnel_number)
+                *fresnel_propagator(cdomain, fresnel_number)
                 *Nemitzky_op_for_g(cdomain,n)
                 *masks
                 )
