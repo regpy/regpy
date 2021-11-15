@@ -30,14 +30,14 @@ sum_of_grids = DirectSum(grid,grid)
 [Xco,Yco] = np.meshgrid(np.arange(-1,1,2/Xdim),np.arange(-1,1,2/Ydim))
 mask = (abs(Xco+0.2)<=0.2) & (abs(Yco)<=0.4)
 mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35))<=0.01)
-mask = mask.astype(float)
-mask_abs = mask # mask for abs_g
-mask_arg = mask # mask for arg_g 
-masks = sum_of_grids.join(mask_abs,mask_arg)
+#mask = mask.astype(float)
+#mask_abs = mask # mask for abs_g
+#mask_arg = mask # mask for arg_g 
+#masks = sum_of_grids.join(mask_abs,mask_arg)
 A_Psi0_Multiplier = np.ones(grid.shape,complex)
 
 # Forward operator
-op = PINEM_g_to_data(grid,fresnelNumber,masks,A_Psi0_Multiplier,N=2)
+op = PINEM_g_to_data(grid,fresnelNumber,mask,A_Psi0_Multiplier,N=2)
 
 # Create phantom phase-image (= padded example-image)
 picture = ascent()
@@ -47,7 +47,7 @@ exact_solution /= 10*abs(exact_solution).max()
 exact_solution += ones_like(exact_solution)
 pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2, (grid.shape[1] - exact_solution.shape[1])//2])
 exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=1)
-exact_solution = exact_solution.astype(complex)*mask_abs;
+exact_solution = exact_solution.astype(complex)*mask;
 
 # Create exact and noisy data
 sexact_solution = sum_of_grids.join(exact_solution.real, exact_solution.imag)

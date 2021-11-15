@@ -1,9 +1,9 @@
 import numpy as np
 from numpy.core.defchararray import endswith
 
-from regpy.discrs import DirectSum
-from regpy.operators import Operator, Ptw_Multiplication, RealPart, SquaredModulus
-from regpy.operators import Vector_of_operators, Matrix_of_operators
+from regpy.discrs import DirectSum as DirectSumSpaces
+from regpy.operators import CoordinateProjection, Operator, Ptw_Multiplication, DirectSum, SquaredModulus
+from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint
 from regpy.operators.fresnel import fresnel_propagator
 from scipy.special import jv
 
@@ -19,7 +19,7 @@ class Nemitzky_op_for_g(Operator):
         assert domain.is_complex
         rdomain = domain.real_space()
         self.N =N
-        super().__init__(DirectSum(rdomain,rdomain), domain)
+        super().__init__(DirectSumSpaces(rdomain,rdomain), domain)
 
     def _eval(self, x, differentiate=False):
         abs_g,arg_g = self.domain.split(x)
@@ -68,18 +68,24 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask):
     return Vector_of_operators([detection_op1*fresnel_prop1*mask, detection_op2*fresnel_prop2*mask]) #, \
 #   detection_op0*mask)
 
-def PINEM_g_to_data(domain, fresnel_number,masks,A_Psi0_Multiplier,N=1):
+def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1):
     assert not domain.is_complex
     cdomain = domain.complex_space()
+    complexProjection = CoordinateProjection(cdomain,mask)
+    realProjection = DirectSum(
+        CoordinateProjection(domain,mask),
+        CoordinateProjection(domain,mask)
+        )
+    maskDomain = complexProjection.codomain
     op_list = []
     for n in range(-N,N+1):
         if not n==0:
- #           op_list.append(fresnel_propagator(cdomain, n*fresnel_number)*Nemitzky_op_for_g(cdomain,n)*masks)
             op_list.append(
                 Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *fresnel_propagator(cdomain, fresnel_number)
-                *Nemitzky_op_for_g(cdomain,n)
-                *masks
+                *Adjoint(complexProjection)
+                *Nemitzky_op_for_g(maskDomain,n)
+                *realProjection
                 )
     g_to_modes = Vector_of_operators(op_list)
 
