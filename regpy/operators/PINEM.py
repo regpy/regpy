@@ -1,4 +1,3 @@
-from io import open_code
 import numpy as np
 from numpy.core.defchararray import endswith
 
