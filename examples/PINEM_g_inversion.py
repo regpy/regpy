@@ -19,13 +19,13 @@ logging.basicConfig(
 )
 
 # Example parameters
-fresnelNumber = 1e-3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
+fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                         # in grid (i.e. with the size of one pixel for the above choice of grid)
 noise_level = 0.0001      # Noise level in the simulated data
 
 # Uniform grid
 Xdim= 256; Ydim= 256
-grid = UniformGrid(np.arange(Xdim), np.arange(Ydim))
+grid = UniformGrid(np.linspace(0,1,Xdim,endpoint=False), np.linspace(0,1,Ydim,endpoint=False))
 sum_of_grids = DirectSum(grid,grid)
 [Xco,Yco] = np.meshgrid(np.arange(-1,1,2/Xdim),np.arange(-1,1,2/Ydim))
 mask = (abs(Xco+0.2)<=0.2) & (abs(Yco)<=0.4)
@@ -41,16 +41,16 @@ op = PINEM_g_to_data(grid,fresnelNumber,mask,A_Psi0_Multiplier,N=2)
 
 # Create phantom phase-image (= padded example-image)
 picture = ascent()
-exact_solution = picture[-Xdim//2:,-Ydim//2:].astype(np.float64) \
-    + 1j*picture[:Xdim//2,:Ydim//2].astype(np.float64)
+exact_solution = picture[-Xdim//2:,-Ydim//2:].astype(np.float64)/255 \
+    * np.exp(1j*2*np.pi*picture[:Xdim//2,:Ydim//2].astype(np.float64)/255)
 exact_solution /= 10*abs(exact_solution).max()
 exact_solution += ones_like(exact_solution)
 pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2, (grid.shape[1] - exact_solution.shape[1])//2])
 exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=1)
-exact_solution = exact_solution.astype(complex)*mask;
+exact_solution = exact_solution.astype(complex)*mask
 
 # Create exact and noisy data
-sexact_solution = sum_of_grids.join(exact_solution.real, exact_solution.imag)
+sexact_solution = sum_of_grids.join(np.abs(exact_solution), np.angle(exact_solution))
 exact_data = op(sexact_solution)
 #exact_data = op(exact_solution)
 noise = noise_level * op.codomain.randn()
@@ -79,20 +79,20 @@ data1,data2 = sum_of_grids.split(data)
 #reco = mask
 
 # Plot reults
-fig, axs = plt.subplots(2, 2)
-axs[0,0].set_title('Exact solution (real part)')
-axs[0,0].imshow(exact_solution.real)
-axs[0,1].set_title('Exact solution (imag. part)')
-axs[0,1].imshow(exact_solution.imag)
-axs[1,0].set_title('Reconstruction (real part)')
+fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+axs[0,0].set_title('Exact solution (amplitude)')
+axs[0,0].imshow(np.abs(exact_solution))
+axs[0,1].set_title('Exact solution (phase)')
+axs[0,1].imshow(np.angle(exact_solution))
+axs[1,0].set_title('Reconstruction (amplitude)')
 axs[1,0].imshow(reco1)
 #axs[1,0].imshow(reco.real)
-axs[1,1].set_title('Reconstruction (imag. part)')
+axs[1,1].set_title('Reconstruction (phase)')
 axs[1,1].imshow(reco2)
 #axs[1,1].imshow(reco.imag)
 
-fig2, axs2 = plt.subplots(2, 2)
-axs2[0,0].imshow(reco_data1)
+fig2, axs2 = plt.subplots(2, 2, sharex=True, sharey=True)
+axs2[0,0].imshow(data1)
 axs2[0,0].set_title('Simulated data 1')
 axs2[1,0].imshow(reco_data1)
 axs2[1,0].set_title('reconstructed data 1')
