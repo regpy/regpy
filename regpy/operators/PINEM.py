@@ -65,7 +65,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask):
     detection_op2 = SquaredModulus(domain)
 #    return Vector_of_operators([[detection_op1*fresnel_prop1*mask, \
 #             detection_op2*fresnel_prop2*mask]])
-    return Vector_of_operators([detection_op1*fresnel_prop1*mask, detection_op2*fresnel_prop2*mask]) #, \
+    return Vector_of_operators([detection_op0*mask,detection_op1*fresnel_prop1*mask, detection_op2*fresnel_prop2*mask]) #, \
 #   detection_op0*mask)
 
 def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1):
