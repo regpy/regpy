@@ -60,7 +60,10 @@ data = exact_data + noise
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 init_vec = sum_of_grids.join(grid.ones(), grid.zeros())
 
-solver = IrgnmCG(setting, data, regpar=1e-4, regpar_step = 2/3, init = init_vec)
+solver = IrgnmCG(
+    setting, data, init = init_vec,
+    regpar=1e-4, regpar_step = 2/3,
+    inner_it_logging_level=logging.DEBUG)
 stoprule = (
     rules.CountIterations(max_iterations=5) +
     rules.Discrepancy(

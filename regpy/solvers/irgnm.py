@@ -31,7 +31,11 @@ class IrgnmCG(Solver):
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
     """
 
-    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None, cgstop=None):
+    def __init__(
+        self, setting, data, regpar, regpar_step=2 / 3, 
+         init=None, cgpars=None, cgstop=None, 
+         inner_it_logging_level = logging.INFO
+         ):
         super().__init__()
         self.setting = setting
         """The problem setting."""
@@ -53,6 +57,7 @@ class IrgnmCG(Solver):
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
+        self.inner_it_logging_level = inner_it_logging_level
 
     def _next(self):
         if self.cgstop is not None:
@@ -69,7 +74,8 @@ class IrgnmCG(Solver):
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
-            **self.cgpars
+            **self.cgpars,
+            logging_level = self.inner_it_logging_level
         ).run(stoprule=stoprule)
         self.x += step
         self.y, self.deriv = self.setting.op.linearize(self.x)
@@ -124,7 +130,10 @@ class IrgnmCGPrec(Solver):
         Parameter dictionary passed to the computation of the spectral preconditioner
     """
 
-    def __init__(self, setting, data, regpar, regpar_step=2 / 3, init=None, cgpars=None, precpars=None):
+    def __init__(
+        self, setting, data, regpar, regpar_step=2 / 3, 
+        init=None, cgpars=None, precpars=None
+        ):
         super().__init__()
         self.setting = setting
         """The problem setting."""

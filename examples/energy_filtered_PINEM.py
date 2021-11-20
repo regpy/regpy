@@ -49,7 +49,10 @@ data = exact_data + noise
 setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
 init_vec = np.ones_like(exact_solution)
 
-solver = IrgnmCG(setting, data, regpar=10, regpar_step = 2/3, init = init_vec)
+solver = IrgnmCG(
+    setting, data, regpar=10, regpar_step = 2/3, init = init_vec, 
+    inner_it_logging_level=logging.INFO
+    )
 stoprule = (
     rules.CountIterations(max_iterations=30) +
     rules.Discrepancy(

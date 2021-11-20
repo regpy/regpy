@@ -29,14 +29,21 @@ class TikhonovCG(Solver):
         Relative tolerance in domain and codomain.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
-    def __init__(self, setting, data, regpar, xref=None, tol=util.eps, reltolx=None, reltoly=None, krylov_basis=None, preconditioner=None):
+    def __init__(
+        self, setting, data, regpar, xref=None, 
+        tol=1e-6, reltolx=0.3, reltoly=0.3, 
+        krylov_basis=None, preconditioner=None,
+        logging_level = logging.INFO
+        ):
         assert setting.op.linear
 
         super().__init__()
+        self.log.setLevel(logging_level)
         self.setting = setting
         """The problem setting."""
         self.regpar = regpar
         """The regularization parameter."""
+        #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
         self.tol = tol
         """The tolerance."""
 
@@ -120,25 +127,26 @@ class TikhonovCG(Solver):
         if self.krylov_basis is None or self.iteration_number > self.krylov_basis.shape[0]:
             """If Krylov subspace basis is computed, then stop the iteration only if the number of iterations exceeds the order of the Krylov space"""
             
-            if (
-                self.reltolx is not None and
-                np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
-                    < self.reltolx / (1 + self.reltolx)
-            ):
-                return self.converge()
+            tol_report = 'it.{} err/Tol '.format(self.iteration_step_nr)
+            if self.reltolx is not None:
+                valx = np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
+                tol_report = tol_report+'X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
+                if valx < self.reltolx / (1 + self.reltolx):
+                    return self.converge()
 
-            if (
-                self.reltoly is not None and
-                np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
-                    < self.reltoly / (1 + self.reltoly)
-            ):
-                return self.converge()
+            if self.reltoly is not None:
+                valy = np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
+                tol_report = tol_report+"Y:{:1.1e}/{:1.1e} ".format(valy,self.reltoly / (1 + self.reltoly))
+                if valy < self.reltoly / (1 + self.reltoly):
+                    return self.converge()
 
-            if (
-                self.tol is not None and
-                np.sqrt(self.norm_res / self.norm_res_init / self.kappa) < self.tol
-            ):
-                return self.converge()
+            if self.tol is not None:
+                val = np.sqrt(self.norm_res / self.norm_res_init / self.kappa) 
+                tol_report = tol_report+"res.red: {:1.1e}/{:1.1e}".format(val,self.tol)
+                if val < self.tol: 
+                    return self.converge()
+
+            self.log.debug(tol_report)
 
         self.dir *= beta
         self.dir += res
