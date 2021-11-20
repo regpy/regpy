@@ -29,6 +29,7 @@ class Solver:
         """The value at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
         self.__converged = False
+        self.iteration_step_nr = 0
 
     def converge(self):
         """Mark the solver as converged. This is intended to be used by child classes
@@ -47,6 +48,7 @@ class Solver:
         """
         if self.__converged:
             return False
+        self.iteration_step_nr += 1    
         self._next()
         return True
 
@@ -60,7 +62,7 @@ class Solver:
         raise NotImplementedError
 
     def __iter__(self):
-        """Return and iterator on the iterates of the solver.
+        """Return an iterator on the iterates of the solver.
 
         Yields
         ------
@@ -71,7 +73,7 @@ class Solver:
             yield self.x, self.y
 
     def until(self, stoprule=None):
-        """Generator that runs the solver with the given stopping rule. This is convenience method
+        """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
 
@@ -90,11 +92,11 @@ class Solver:
         for x, y in self:
             yield x, y
             if stoprule is not None and stoprule.stop(x, y):
-                self.log.info('Stopping rule triggered.')
+                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
                 # TODO document this behaviour
                 yield x, y
                 return
-        self.log.info('Solver converged.')
+        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=None):
         """Run the solver with the given stopping rule. This method simply runs the generator

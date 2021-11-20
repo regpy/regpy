@@ -51,7 +51,7 @@ init_vec = np.ones_like(exact_solution)
 
 solver = IrgnmCG(
     setting, data, regpar=10, regpar_step = 2/3, init = init_vec, 
-    inner_it_logging_level=logging.INFO
+    inner_it_logging_level=logging.DEBUG
     )
 stoprule = (
     rules.CountIterations(max_iterations=30) +
@@ -63,11 +63,6 @@ stoprule = (
     )
 )
 
-#reco, reco_data = solver.run(stoprule)
-reco,reco_data = solver.run(stoprule)
-#reco = mask
-
-# Plot reults
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 axs[0,0].set_title('Exact solution (abs)')
 im = axs[0,0].imshow(mask*np.abs(exact_solution))
@@ -75,21 +70,30 @@ fig.colorbar(im,ax=axs[0,0])
 axs[0,1].set_title('Exact solution (phase)')
 im = axs[0,1].imshow(mask*np.angle(exact_solution))
 fig.colorbar(im,ax=axs[0,1])
-axs[1,0].set_title('Reconstruction (abs)')
-im = axs[1,0].imshow(mask*np.abs(reco))
-fig.colorbar(im,ax=axs[1,0])
-axs[1,1].set_title('Reconstruction (phase)')
-im = axs[1,1].imshow(mask*np.angle(reco))
-fig.colorbar(im,ax=axs[1,1])
 
 data_comp = op.codomain.split(data)
-reco_data_comp = op.codomain.split(reco_data)
 fig2, axs2 = plt.subplots(2, len(data_comp), sharex=True, sharey=True)
 for j in range(len(data_comp)):
     im = axs2[0,j].imshow(data_comp[j])
     fig2.colorbar(im,ax=axs2[0,j])
     axs2[0,j].set_title('Simulated data')
-    im = axs2[1,j].imshow(reco_data_comp[j])
-    fig2.colorbar(im,ax=axs2[1,j])
-    axs2[1,j].set_title('reconstructed data')
-plt.show()
+
+#reco, reco_data = solver.run(stoprule)
+for reco, reco_data in solver.until(stoprule):    
+    Newton_step = solver.iteration_step_nr  
+    # Plot reults
+    if Newton_step%2 == 0:
+        axs[1,0].set_title('Reco abs, step {}'.format(Newton_step))
+        im = axs[1,0].imshow(mask*np.abs(reco))
+        fig.colorbar(im,ax=axs[1,0])
+        axs[1,1].set_title('Reco phase, step {}'.format(Newton_step))
+        im = axs[1,1].imshow(mask*np.angle(reco))
+        fig.colorbar(im,ax=axs[1,1])
+
+        reco_data_comp = op.codomain.split(reco_data)
+        for j in range(len(data_comp)):
+            im = axs2[1,j].imshow(reco_data_comp[j])
+            fig2.colorbar(im,ax=axs2[1,j])
+            axs2[1,j].set_title('reconstructed data step {}'.format(Newton_step))
+    plt.show(block=False)
+    plt.pause(0.1)
