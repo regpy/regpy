@@ -82,18 +82,21 @@ for j in range(len(data_comp)):
 for reco, reco_data in solver.until(stoprule):    
     Newton_step = solver.iteration_step_nr  
     # Plot reults
-    if Newton_step%2 == 0:
+    if Newton_step%5 == 0:
         axs[1,0].set_title('Reco abs, step {}'.format(Newton_step))
         im = axs[1,0].imshow(mask*np.abs(reco))
-        fig.colorbar(im,ax=axs[1,0])
+        if Newton_step==5:
+            fig.colorbar(im,ax=axs[1,0])
         axs[1,1].set_title('Reco phase, step {}'.format(Newton_step))
         im = axs[1,1].imshow(mask*np.angle(reco))
-        fig.colorbar(im,ax=axs[1,1])
+        if Newton_step==5:
+            fig.colorbar(im,ax=axs[1,1])
 
         reco_data_comp = op.codomain.split(reco_data)
         for j in range(len(data_comp)):
             im = axs2[1,j].imshow(reco_data_comp[j])
-            fig2.colorbar(im,ax=axs2[1,j])
+            if Newton_step==5:
+                fig2.colorbar(im,ax=axs2[1,j])
             axs2[1,j].set_title('reconstructed data step {}'.format(Newton_step))
     plt.show(block=False)
     plt.pause(0.1)
