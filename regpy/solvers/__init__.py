@@ -2,7 +2,7 @@
 """
 
 from regpy.util import classlogger
-from regpy.hilbert import HilbertSpace
+from regpy.hilbert import as_hilbert_space
 
 
 class Solver:
@@ -131,19 +131,9 @@ class HilbertSpaceSetting:
         The Hilbert spaces or abstract spaces on the domain or codomain.
     """
     def __init__(self, op, Hdomain, Hcodomain):
-        if not isinstance(Hdomain, HilbertSpace) and callable(Hdomain):
-            Hdomain = Hdomain(op.domain)
-        assert isinstance(Hdomain, HilbertSpace)
-        assert Hdomain.discr == op.domain
-
-        if not isinstance(Hcodomain, HilbertSpace) and callable(Hcodomain):
-            Hcodomain = Hcodomain(op.codomain)
-        assert isinstance(Hcodomain, HilbertSpace)
-        assert Hcodomain.discr == op.codomain
-
         self.op = op
         """The operator."""
-        self.Hdomain = Hdomain
+        self.Hdomain = as_hilbert_space(Hdomain, op.domain)
         """The `regpy.hilbert.HilbertSpace` on the domain."""
-        self.Hcodomain = Hcodomain
+        self.Hcodomain = as_hilbert_space(Hcodomain, op.codomain)
         """The `regpy.hilbert.HilbertSpace` on the codomain."""

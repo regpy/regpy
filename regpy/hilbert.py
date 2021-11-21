@@ -6,6 +6,7 @@ from copy import copy
 import numpy as np
 
 from regpy import util, operators, functionals, discrs
+from regpy.operators import Operator
 
 
 class HilbertSpace:
@@ -424,6 +425,23 @@ class AbstractSum(AbstractSpaceBase):
 
     def __iter__(self):
         return iter(zip(self.weights, self.summands))
+
+
+def as_hilbert_space(h, discr):
+    """Convert h to HilbertSpace instance on discr.
+
+    - If h is an Operator, it's wrapped in a GramHilbertSpace.
+    - If h is callable, e.g. an AbstractSpace, it is called on discr to
+      construct the concrete space.
+    """
+    if not isinstance(h, HilbertSpace):
+        if isinstance(h, Operator):
+            h = GramHilbertSpace(h)
+        elif callable(h):
+            h = h(discr)
+    assert isinstance(h, HilbertSpace)
+    assert h.domain == discr
+    return h
 
 
 L2 = AbstractSpace('L2')
