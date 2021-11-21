@@ -114,6 +114,24 @@ class HilbertSpace:
             return NotImplemented
 
 
+class GramHilbertSpace:
+    def __init__(self, gram, gram_inv=None):
+        assert gram.domain == gram.codomain
+        if gram_inv is not None:
+            assert gram_inv.domain == gram_inv.codomain == gram.domain
+        self._gram = gram
+        self._gram_inv = gram.inv
+        super().__init__(gram.domain)
+
+    @property
+    def gram(self):
+        return self._gram
+
+    @property
+    def gram_inv(self):
+        return self._gram_inv or self._gram.inv
+
+
 class HilbertPullBack(HilbertSpace):
     """Pullback of a hilbert space on the codomain of an operator to its domain.
 
