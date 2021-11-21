@@ -454,30 +454,35 @@ def componentwise(dispatcher, cls=DirectSum):
 
 class L2Generic(HilbertSpace):
     """`L2` implementation on a generic `regpy.discrs.Discretization`."""
-    @property
+
+    def __init__(self, discr, weights=None):
+        super().__init__(discr)
+        self.weights = weights
+
+    @util.memoized_property
     def gram(self):
-        return self.discr.identity
+        if self.weights is None:
+            return self.discr.identity
+        else:
+            return operators.Ptw_Multiplication(self.discr, self.weights)
 
 
 class L2UniformGrid(HilbertSpace):
     """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
     element.
     """
-    @util.memoized_property
-    def gram(self):
-        return self.discr.volume_elem * self.discr.identity
 
-
-class weightedL2(HilbertSpace):
-    """Hilbert space where Gram matrix is given by a multiplication operator
-    """
-    def __init__(self,discr, multiplier):
+    def __init__(self, discr, weights=None):
         super().__init__(discr)
-        self.multiplier = multiplier
+        self.weights = weights
 
     @util.memoized_property
     def gram(self):
-        return operators.Ptw_Multiplication(self.discr,self.multiplier)
+        if self.weights is None:
+            return self.discr.volume_elem * self.discr.identity
+        else:
+            return self.discr.volume_elem * operators.Ptw_Multiplication(self.discr, self.weights)
+
 
 class SobolevUniformGrid(HilbertSpace):
     """`Sobolev` implementation on a `regpy.discrs.UniformGrid`.

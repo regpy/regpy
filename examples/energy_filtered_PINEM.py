@@ -2,7 +2,7 @@ from scipy.sparse import linalg
 from regpy.solvers.irgnm import IrgnmCG
 
 from regpy.operators.PINEM import wave_field_reco_PINEM
-from regpy.hilbert import L2, Sobolev, weightedL2
+from regpy.hilbert import L2, Sobolev
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
@@ -52,9 +52,9 @@ noise = data-exact_data
 
 # Image-reconstruction using the IRGNM method
 Hdomain = Sobolev(cgrid, index=0.5)
-Hcodomain0 = weightedL2(grid,(1+intensity*data[0])/intensity)
-Hcodomain1 = weightedL2(grid,(1+intensity*data[1])/intensity)
-Hcodomain2 = weightedL2(grid,(1+intensity*data[2])/intensity)
+Hcodomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
+Hcodomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)
+Hcodomain2 = L2(grid, weights=(1+intensity*data[2])/intensity)
 Hcodomain=Hcodomain0+Hcodomain1+Hcodomain2
 setting = HilbertSpaceSetting(
     op=op, Hdomain=Hdomain, 
