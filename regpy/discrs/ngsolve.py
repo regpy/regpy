@@ -32,7 +32,10 @@ class NgsSpace(Discretization):
         self._gfu_fes = ngs.GridFunction(fes)
 
     def __eq__(self, other):
-        return isinstance(other, type(self)) and self.fes == other.fes
+        if isinstance(other, type(self)):
+            return self.fes == other.fes
+        else:
+            return NotImplemented
 
     def ones(self):
         self._gfu_fes.Set(1)

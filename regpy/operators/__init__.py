@@ -164,7 +164,7 @@ class Operator:
         return set(self.__dict__)
 
     def __call__(self, x):
-     #   assert not self.domain or x in self.domain
+        assert not self.domain or x in self.domain
         if self.linear:
             y = self._eval(x)
         else:
@@ -990,7 +990,7 @@ class Vector_of_operators(Operator):
             self.domain = self.ops[0].domain
         else:
             self.domain = domain
-#        assert all(op.domain == self.domain for op in self.ops)
+        assert all(op.domain == self.domain for op in self.ops)
 
         if codomain is None:
             codomain = discrs.DirectSum
@@ -1083,18 +1083,17 @@ class Matrix_of_operators(Operator):
             domain = domain(*tuple(domains))
         else:
             raise TypeError('domain={} is neither a Discretization nor callable'.format(domain))
- 
+
         codomains = [None]*len(ops[0])
         for i in range(len(ops[0])):
             for j in range(len(ops)):
                 if ops[j][i]:
                     if codomains[i]:
-                        pass
- #                       assert codomains[i] == ops[j][i].codomain
-                    else:    
+                        assert codomains[i] == ops[j][i].codomain
+                    else:
                         codomains[i] = ops[j][i].codomain
         assert None not in codomains
-        
+
         if codomain is None:
             codomain = discrs.DirectSum
         if isinstance(codomain, discrs.Discretization):

@@ -90,7 +90,7 @@ class HilbertSpace:
         return functionals.HilbertNorm(self)
 
     def __eq__(self, other):
-        if type(self) == type(other) and isinstance(self, HilbertSpace):
+        if isinstance(other, type(self)):
             return self.discr == other.discr
         else:
             return NotImplemented
@@ -230,12 +230,14 @@ class DirectSum(HilbertSpace):
         super().__init__(discr)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            len(self.summands) == len(other.summands) and
-            all(s == t for s, t in zip(self.summands, other.summands)) and
-            all(v == w for v, w in zip(self.weights, other.weights))
-        )
+        if isinstance(other, type(self)):
+            return (
+                len(self.summands) == len(other.summands) and
+                all(s == t for s, t in zip(self.summands, other.summands)) and
+                all(v == w for v, w in zip(self.weights, other.weights))
+            )
+        else:
+            return NotImplemented
 
     @util.memoized_property
     def gram(self):
@@ -456,8 +458,6 @@ class L2Generic(HilbertSpace):
     def gram(self):
         return self.discr.identity
 
-    def __eq__(self, other):
-        return isinstance(other, type(self)) and self.discr == other.discr
 
 class L2UniformGrid(HilbertSpace):
     """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
@@ -490,11 +490,13 @@ class SobolevUniformGrid(HilbertSpace):
         self.axes = list(axes)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            self.discr == other.discr and
-            self.index == other.index
-        )
+        if isinstance(other, type(self)):
+            return (
+                self.discr == other.discr and
+                self.index == other.index
+            )
+        else:
+            return NotImplemented
 
     @util.memoized_property
     def gram(self):

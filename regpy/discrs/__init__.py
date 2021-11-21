@@ -253,9 +253,7 @@ class Discretization:
         return other
 
     def __eq__(self, other):
-        # Only handle the base class to avoid accidental equality of subclass
-        # instances.
-        if type(self) == type(other) == Discretization:
+        if isinstance(other, type(self)):
             return (
                 self.shape == other.shape and
                 self.dtype == other.dtype
@@ -446,11 +444,13 @@ class DirectSum(Discretization):
         super().__init__(self.idxs[-1])
 
     def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            len(self.summands) == len(other.summands) and
-            all(s == t for s, t in zip(self.summands, other.summands))
-        )
+        if isinstance(other, type(self)):
+            return (
+                len(self.summands) == len(other.summands) and
+                all(s == t for s, t in zip(self.summands, other.summands))
+            )
+        else:
+            return NotImplemented
 
     def join(self, *xs):
         """Transform a collection of elements of the summands to an element of the direct sum.
