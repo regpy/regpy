@@ -1,7 +1,8 @@
+from scipy.sparse import linalg
 from regpy.solvers.irgnm import IrgnmCG
 
 from regpy.operators.PINEM import wave_field_reco_PINEM
-from regpy.hilbert import L2
+from regpy.hilbert import L2, Sobolev, weightedL2
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
@@ -17,61 +18,74 @@ logging.basicConfig(
 )
 
 # Example parameters
-fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
+fresnelNumber = 5e-3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                         # in grid (i.e. with the size of one pixel for the above choice of grid)
-noise_level = 0.01      # Noise level in the simulated data
+noise_level = 0.001       # Noise level in the simulated data
+intensity = 1e1
 
 # Uniform grid
 Xdim= 256; Ydim= 256
-grid = UniformGrid(np.linspace(0,1,Xdim,endpoint=False), np.linspace(0,1,Ydim,endpoint=False)).complex_space()
+grid = UniformGrid(np.linspace(0,1,Xdim,endpoint=False), np.linspace(0,1,Ydim,endpoint=False)).real_space()
+cgrid = grid.complex_space()
 [Xco,Yco] = np.meshgrid(np.arange(-1,1,2/Xdim),np.arange(-1,1,2/Ydim))
 mask = (abs(Xco+0.2)<=0.2) & (abs(Yco)<=0.4)
 mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35))<=0.01)
 
 # Forward operator
-op = wave_field_reco_PINEM(grid, fresnelNumber,mask.astype(complex))
+op = wave_field_reco_PINEM(cgrid, fresnelNumber,mask.astype(complex))
 
 # Create phantom phase-image (= padded example-image)
 picture = ascent()
 exact_solution = picture[-Xdim//2:,-Ydim//2:].astype(np.float64)/255 \
-    * np.exp(1j*2*np.pi*picture[:Xdim//2,:Ydim//2].astype(np.float64)/255)
-exact_solution /= abs(exact_solution).max()
+    + 0.3j*2*np.pi*picture[:Xdim//2,:Ydim//2].astype(np.float64)/255 
 pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2, (grid.shape[1] - exact_solution.shape[1])//2])
 exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=0)
-exact_solution = exact_solution.astype(complex)
+exact_solution = exact_solution.astype(complex) * mask - 4*(1-mask)
 
 # Create exact and noisy data
 exact_data = op(exact_solution)
-noise = noise_level * op.codomain.randn()
-data = exact_data + noise
+#noise = noise_level * op.codomain.randn()
+#data = exact_data + noise
+data = np.random.poisson(intensity * exact_data)/intensity
+data_comp = op.codomain.split(data)
+noise = data-exact_data
 
 # Image-reconstruction using the IRGNM method
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
-init_vec = np.ones_like(exact_solution)
+Hdomain = Sobolev(cgrid, index=0.5)
+# Hcodomain0 = weightedL2(grid,(1+intensity*data[0])/intensity)
+# Hcodomain1 = weightedL2(grid,(1+intensity*data[1])/intensity)
+# Hcodomain2 = weightedL2(grid,(1+intensity*data[2])/intensity)
+# Hcodomain=Hcodomain0+Hcodomain1+Hcodomain2
+# print(op.codomain,Hcodomain.discr)
+Hcodomain = L2
+setting = HilbertSpaceSetting(
+    op=op, Hdomain=Hdomain, 
+    Hcodomain=Hcodomain)
+init_vec = np.zeros_like(exact_solution)
+#init_vec = np.zeros_like(exact_solution.real)
 
 solver = IrgnmCG(
     setting, data, regpar=10, regpar_step = 2/3, init = init_vec, 
-    inner_it_logging_level=logging.DEBUG
+    inner_it_logging_level=logging.INFO
     )
 stoprule = (
-    rules.CountIterations(max_iterations=30) +
+    rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
         setting.Hcodomain.norm,
         data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=1.1
+        tau= 1
     )
 )
 
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 axs[0,0].set_title('Exact solution (abs)')
-im = axs[0,0].imshow(mask*np.abs(exact_solution))
+im = axs[0,0].imshow(np.real(exact_solution))
 fig.colorbar(im,ax=axs[0,0])
 axs[0,1].set_title('Exact solution (phase)')
-im = axs[0,1].imshow(mask*np.angle(exact_solution))
+im = axs[0,1].imshow(np.imag(exact_solution))
 fig.colorbar(im,ax=axs[0,1])
 
-data_comp = op.codomain.split(data)
 fig2, axs2 = plt.subplots(2, len(data_comp), sharex=True, sharey=True)
 for j in range(len(data_comp)):
     im = axs2[0,j].imshow(data_comp[j])
@@ -81,14 +95,19 @@ for j in range(len(data_comp)):
 #reco, reco_data = solver.run(stoprule)
 for reco, reco_data in solver.until(stoprule):    
     Newton_step = solver.iteration_step_nr  
+    reco_error = reco-exact_solution
+    print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
+        Newton_step, 
+        np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
+        np.linalg.norm(reco_error.imag)/np.linalg.norm(exact_solution.imag)))
     # Plot reults
     if Newton_step%5 == 0:
         axs[1,0].set_title('Reco abs, step {}'.format(Newton_step))
-        im = axs[1,0].imshow(mask*np.abs(reco))
+        im = axs[1,0].imshow(np.real(reco))
         if Newton_step==5:
             fig.colorbar(im,ax=axs[1,0])
         axs[1,1].set_title('Reco phase, step {}'.format(Newton_step))
-        im = axs[1,1].imshow(mask*np.angle(reco))
+        im = axs[1,1].imshow(np.imag(reco))
         if Newton_step==5:
             fig.colorbar(im,ax=axs[1,1])
 
@@ -100,3 +119,4 @@ for reco, reco_data in solver.until(stoprule):
             axs2[1,j].set_title('reconstructed data step {}'.format(Newton_step))
     plt.show(block=False)
     plt.pause(0.1)
+plt.show(block=True)

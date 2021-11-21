@@ -151,7 +151,6 @@ class CountIterations(StopRule):
             .format(self.iteration, self.max_iterations))
         return self.iteration >= self.max_iterations
 
-
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
 
@@ -190,7 +189,7 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
-        self.log.info('relative discrepancy = {}, tolerance = {}'.format(rel, self.tau))
+        self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
 

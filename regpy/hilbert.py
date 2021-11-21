@@ -257,7 +257,7 @@ class DirectSum(HilbertSpace):
 class AbstractSpaceBase:
     """Class representing abstract hilbert spaces without reference to a concrete implementation.
 
-    The motivation for using this construction is to be able to specify e.g. a Thikhonov penalty
+    The motivation for using this construction is to be able to specify e.g. a Tikhonov penalty
     without requiring knowledge of the concrete discretization the forward operator uses. See the
     documentation of `AbstractSpace` for more details.
 
@@ -421,7 +421,7 @@ SobolevBoundary = AbstractSpace('SobolevBoundary')
 
 def componentwise(dispatcher, cls=DirectSum):
     """Return a callable that iterates over the components of some discretization, constructing a
-    `HilbertSpace` on each component, and joining the result. Inteded to be used like e.g.
+    `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
         L2.register(discrs.DirectSum, componentwise(L2))
 
@@ -459,7 +459,6 @@ class L2Generic(HilbertSpace):
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.discr == other.discr
 
-
 class L2UniformGrid(HilbertSpace):
     """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
     element.
@@ -468,6 +467,17 @@ class L2UniformGrid(HilbertSpace):
     def gram(self):
         return self.discr.volume_elem * self.discr.identity
 
+
+class weightedL2(HilbertSpace):
+    """Hilbert space where Gram matrix is given by a multiplication operator
+    """
+    def __init__(self,discr, multiplier):
+        super().__init__(discr)
+        self.multiplier = multiplier
+
+    @util.memoized_property
+    def gram(self):
+        return operators.Ptw_Multiplication(self.discr,self.multiplier)
 
 class SobolevUniformGrid(HilbertSpace):
     """`Sobolev` implementation on a `regpy.discrs.UniformGrid`.
@@ -489,7 +499,7 @@ class SobolevUniformGrid(HilbertSpace):
     @util.memoized_property
     def gram(self):
         ft = operators.FourierTransform(self.discr, axes=self.axes)
-        mul = operators.Multiplication(
+        mul = operators.Ptw_Multiplication(
             ft.codomain,
             self.discr.volume_elem * (
                 1 + np.linalg.norm(ft.codomain.coords[self.axes], axis=0)**2

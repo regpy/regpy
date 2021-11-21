@@ -2,7 +2,8 @@ import numpy as np
 from numpy.core.defchararray import endswith
 
 from regpy.discrs import DirectSum as DirectSumSpaces
-from regpy.operators import CoordinateProjection, Operator, Ptw_Multiplication, DirectSum, SquaredModulus
+from regpy.operators import CoordinateProjection, Operator, Composition, RealPart, ImaginaryPart
+from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential
 from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint
 from regpy.operators.fresnel import fresnel_propagator
 from scipy.special import jv
@@ -40,7 +41,7 @@ class Nemitzky_op_for_g(Operator):
         arg_res = self._factor_arg_g.real * y.real + self._factor_arg_g.imag * y.imag
         return self.domain.join(abs_res,arg_res)#abs_res + 1j*arg_res #
 
-def wave_field_reco_PINEM(domain, fresnel_number,mask):
+def wave_field_reco_PINEM(domain, fresnel_number,mask,type = None):
     r"""Wavefield to measurement operator
 
     Parameters
@@ -63,10 +64,13 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask):
     detection_op0 = SquaredModulus(domain)
     detection_op1 = SquaredModulus(domain)
     detection_op2 = SquaredModulus(domain)
-#    return Vector_of_operators([[detection_op1*fresnel_prop1*mask, \
-#             detection_op2*fresnel_prop2*mask]])
-    return Vector_of_operators([detection_op0*mask,detection_op1*fresnel_prop1*mask, detection_op2*fresnel_prop2*mask]) #, \
-#   detection_op0*mask)
+    vec = Vector_of_operators(
+        [detection_op0,
+        detection_op1*fresnel_prop1, 
+        detection_op2*fresnel_prop2]
+        ) * Exponential(domain) 
+    return vec * mask
+    #return Adjoint(ImaginaryPart(domain)) * mask.real
 
 def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1):
     assert not domain.is_complex
