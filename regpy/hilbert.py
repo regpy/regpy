@@ -6,7 +6,6 @@ from copy import copy
 import numpy as np
 
 from regpy import util, operators, functionals, discrs
-from regpy.operators import Operator
 
 
 class HilbertSpace:
@@ -434,13 +433,14 @@ def as_hilbert_space(h, discr):
     - If h is callable, e.g. an AbstractSpace, it is called on discr to
       construct the concrete space.
     """
+    from regpy.operators import Operator  # imported here to avoid circular dependency
     if not isinstance(h, HilbertSpace):
         if isinstance(h, Operator):
             h = GramHilbertSpace(h)
         elif callable(h):
             h = h(discr)
     assert isinstance(h, HilbertSpace)
-    assert h.domain == discr
+    assert h.discr == discr
     return h
 
 
