@@ -52,12 +52,10 @@ noise = data-exact_data
 
 # Image-reconstruction using the IRGNM method
 Hdomain = Sobolev(cgrid, index=0.5)
-# Hcodomain0 = weightedL2(grid,(1+intensity*data[0])/intensity)
-# Hcodomain1 = weightedL2(grid,(1+intensity*data[1])/intensity)
-# Hcodomain2 = weightedL2(grid,(1+intensity*data[2])/intensity)
-# Hcodomain=Hcodomain0+Hcodomain1+Hcodomain2
-# print(op.codomain,Hcodomain.discr)
-Hcodomain = L2
+Hcodomain0 = weightedL2(grid,(1+intensity*data[0])/intensity)
+Hcodomain1 = weightedL2(grid,(1+intensity*data[1])/intensity)
+Hcodomain2 = weightedL2(grid,(1+intensity*data[2])/intensity)
+Hcodomain=Hcodomain0+Hcodomain1+Hcodomain2
 setting = HilbertSpaceSetting(
     op=op, Hdomain=Hdomain, 
     Hcodomain=Hcodomain)
