@@ -18,13 +18,13 @@ logging.basicConfig(
 )
 
 # Example parameters
-fresnelNumber = 5e-14    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
+fresnelNumber = 5e2   # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                         # in grid (i.e. with the size of one pixel for the above choice of grid)
 noise_level = 0.001       # Noise level in the simulated data
 intensity = 1e3
-sol_type = 'phase' 
+#sol_type = 'phase' 
 #sol_type = 'modulus'
-#sol_type = None
+sol_type = None
 
 # define grid
 Xdim= 256; Ydim= 256
