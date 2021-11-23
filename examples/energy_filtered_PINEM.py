@@ -83,17 +83,17 @@ stoprule = (
 # plot exact solution
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 axs[0,0].set_title('Exact solution (abs)')
-im = axs[0,0].imshow(np.abs(exact_solution))
+im = axs[0,0].imshow(np.abs(exact_solution), interpolation='nearest')
 fig.colorbar(im,ax=axs[0,0])
 axs[0,1].set_title('Exact solution (phase)')
-im = axs[0,1].imshow(np.angle(exact_solution), cmap='twilight')
+im = axs[0,1].imshow(np.angle(exact_solution), cmap='twilight', interpolation='nearest')
 fig.colorbar(im,ax=axs[0,1])
 
 # plot data
 data_comp = op.codomain.split(data)
 fig2, axs2 = plt.subplots(2, len(data_comp), sharex=True, sharey=True)
 for j in range(len(data_comp)):
-    im = axs2[0,j].imshow(data_comp[j])
+    im = axs2[0,j].imshow(data_comp[j], interpolation='nearest')
     fig2.colorbar(im,ax=axs2[0,j])
     axs2[0,j].set_title('Simulated data')
 
@@ -109,17 +109,17 @@ for reco, reco_data in solver.until(stoprule):
     # Plot reults
     if Newton_step%5 == 0 or stoprule.triggered:
         axs[1,0].set_title('Reco abs, step {}'.format(Newton_step))
-        im = axs[1,0].imshow(np.real(reco))
+        im = axs[1,0].imshow(np.abs(reco), interpolation='nearest')
         if Newton_step==5:
             fig.colorbar(im,ax=axs[1,0])
         axs[1,1].set_title('Reco phase, step {}'.format(Newton_step))
-        im = axs[1,1].imshow(np.imag(reco))
+        im = axs[1,1].imshow(np.angle(reco), cmap='twilight', interpolation='nearest')
         if Newton_step==5:
             fig.colorbar(im,ax=axs[1,1])
 
         reco_data_comp = op.codomain.split(reco_data)
         for j in range(len(data_comp)):
-            im = axs2[1,j].imshow(reco_data_comp[j])
+            im = axs2[1,j].imshow(reco_data_comp[j], interpolation='nearest')
             if Newton_step==5:
                 fig2.colorbar(im,ax=axs2[1,j])
             axs2[1,j].set_title('reconstructed data step {}'.format(Newton_step))
