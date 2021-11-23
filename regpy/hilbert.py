@@ -120,7 +120,7 @@ class GramHilbertSpace:
         if gram_inv is not None:
             assert gram_inv.domain == gram_inv.codomain == gram.domain
         self._gram = gram
-        self._gram_inv = gram.inv
+        self._gram_inv = gram_inv
         super().__init__(gram.domain)
 
     @property
@@ -129,7 +129,7 @@ class GramHilbertSpace:
 
     @property
     def gram_inv(self):
-        return self._gram_inv or self._gram.inv
+        return self._gram_inv or self._gram.inverse
 
 
 class HilbertPullBack(HilbertSpace):
