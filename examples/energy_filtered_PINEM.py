@@ -83,10 +83,10 @@ stoprule = (
 # plot exact solution
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 axs[0,0].set_title('Exact solution (abs)')
-im = axs[0,0].imshow(np.real(exact_solution))
+im = axs[0,0].imshow(np.abs(exact_solution))
 fig.colorbar(im,ax=axs[0,0])
 axs[0,1].set_title('Exact solution (phase)')
-im = axs[0,1].imshow(np.imag(exact_solution))
+im = axs[0,1].imshow(np.angle(exact_solution), cmap='twilight')
 fig.colorbar(im,ax=axs[0,1])
 
 # plot data
