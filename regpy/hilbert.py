@@ -483,8 +483,8 @@ def componentwise(dispatcher, cls=DirectSum):
         A callable that can be used to register an `AbstractSpace` implementation on
         direct sums.
     """
-    def factory(discr):
-        return cls(*(dispatcher(s) for s in discr), discr=discr)
+    def factory(discr, **kwargs):
+        return cls(*(dispatcher(s, **kwargs) for s in discr), discr=discr)
     return factory
 
 
