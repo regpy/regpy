@@ -48,7 +48,7 @@ log_g = np.pad(log_g, pad_amount, 'constant', constant_values=1)
 log_g = log_g.astype(complex)*mask
 
 # Create exact and noisy data
-exact_solution = op.domain.join(np.exp(log_g.real), log_g.imag)
+exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
 exact_data = op(exact_solution)
 data = np.random.poisson(intensity * exact_data)/intensity
 
@@ -76,12 +76,15 @@ stoprule = (
 )
 
 # plot exact solution and data
+exact_amp, exact_phase = op.domain.split(exact_solution)
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
 axs[0,0].set_title('Exact |g|')
-im = axs[0,0].imshow(np.exp(log_g.real))
+# im = axs[0,0].imshow(np.exp(log_g.real))
+im = axs[0,0].imshow(exact_amp, interpolation='nearest')
 fig.colorbar(im,ax=axs[0,0])
 axs[0,1].set_title('Exact  arg(g)')
-im = axs[0,1].imshow(log_g.imag)
+# im = axs[0,1].imshow(log_g.imag)
+im = axs[0,1].imshow(exact_phase, interpolation='nearest')
 fig.colorbar(im,ax=axs[0,1])
 
 data_comp = op.codomain.split(data)
@@ -107,16 +110,16 @@ for reco, reco_data in solver.until(stoprule):
         reco_data_comp = op.codomain.split(reco_data)
 
         axs[1,0].set_title('Reco |g|, step {}'.format(Newton_step))
-        im = axs[1,0].imshow(reco1)
+        im = axs[1,0].imshow(reco1, interpolation='nearest')
         if Newton_step==2:
             fig.colorbar(im,ax=axs[1,0])
         axs[1,1].set_title('Reco arg(g), step {}'.format(Newton_step))
-        im = axs[1,1].imshow(reco2)
+        im = axs[1,1].imshow(reco2, cmap='twilight', interpolation='nearest')
         if Newton_step==2:
             fig.colorbar(im,ax=axs[1,1])
 
         for j in range(len(reco_data_comp)):
-            im = axs2[1,j].imshow(reco_data_comp[j])
+            im = axs2[1,j].imshow(reco_data_comp[j], interpolation='nearest')
             if Newton_step==2:
                 fig2.colorbar(im,ax=axs2[1,j])
             axs2[1,j].set_title('recon. data step {}'.format(Newton_step))
