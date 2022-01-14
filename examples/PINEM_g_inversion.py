@@ -9,6 +9,7 @@ from regpy.hilbert import L2, Sobolev
 from regpy.operators.PINEM import PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
+from scipy.io import loadmat
 from scipy.misc import ascent
 
 logging.basicConfig(
@@ -17,11 +18,43 @@ logging.basicConfig(
 )
 
 
-def main():
+def load_experimental_data(filename):
+    mat = loadmat(filename)
+    mask = mat['mask']
+    mask_binary = mat['mask_binary'].astype(bool)
+    px_size = 1e-9 * np.median(np.diff(mat['y_v'], axis=0))  # m/px
+    g_map = mat['beta_p'] # * 4 # for stronger interaction; linear combination with mat['beta_s'] for rotated polarization
+    pad_amount = (100, 100)
+    g_map = np.pad(g_map, pad_amount, 'constant', constant_values=1e-5)
+    mask = np.pad(mask, pad_amount, 'constant', constant_values=1)
+    mask_binary = np.pad(mask_binary, pad_amount, 'constant', constant_values=True)
+    return g_map, mask, mask_binary, px_size
+
+
+def simulated_data():
+    filename = r"./data/01_javier.mat"
+    g_map, mask, mask_binary, px_size = load_experimental_data(filename)
+    fov = tuple(x*px_size for x in mask.shape)
+    lambda_electron = 2.51e-12
+    defocus = 900e-6
+    fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
+    # Uniform grid
+    Xdim = mask.shape[0]
+    Ydim = mask.shape[1]
+    grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
+                       np.linspace(0, 1, Ydim, endpoint=False))
+    A_Psi0_Multiplier = mask.astype(complex)
+    op = PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=30, parallel=True)
+    log_g = np.log(np.abs(g_map)) + 1j * np.angle(g_map)
+    exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
+
+    return op, grid, exact_solution, log_g
+
+
+def synthetic_data():
     # Example parameters
     fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
     # in grid (i.e. with the size of one pixel for the above choice of grid)
-    intensity = 1e5
     # noise_level = 0.0001      # Noise level in the simulated data
 
     # define grid
@@ -35,8 +68,6 @@ def main():
     mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
     A_Psi0_Multiplier = np.ones(grid.shape, complex)
-    # Here we are weighting the penalty for the modulus a bit less
-    Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
     op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
 
     # Create phantom image (= padded example-image)
@@ -51,9 +82,23 @@ def main():
 
     # Create exact and noisy data
     exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
+    return op, grid, exact_solution, log_g
+
+
+def main():
+    real_data = False
+    if real_data:
+        op, grid, exact_solution, log_g = simulated_data()
+    else:
+        op, grid, exact_solution, log_g = synthetic_data()
+
     exact_data = op(exact_solution)
+
+    intensity = 1e5
     data = np.random.poisson(intensity * exact_data)/intensity
 
+    # Here we are weighting the penalty for the modulus a bit less
+    Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
     # define codomain Gram matrix based on observed data to approximate log-likelihood
     Hcodomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
     Hcodomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)
