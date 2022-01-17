@@ -1,3 +1,5 @@
+from numbers import Integral
+from math import factorial
 import numpy as np
 from numpy.core.defchararray import endswith
 
@@ -98,7 +100,7 @@ class ptw_divided_Bessel(Operator):
 
     Output of eval: 
     - A real vector of the same size with entries 
-            J_N(2r)*r^(-N ) * g^N.
+            J_N(2r)*r^(-N ) .
     """    
 
     def __init__(self, N,domain):
@@ -108,10 +110,16 @@ class ptw_divided_Bessel(Operator):
 
     def _eval(self, r, differentiate=False):
         N= self.N
+        absN = np.absolute(N)
         jv2r = jv(N,2*r)
+        # jv2r_at_null is the continuous extension of r|->jv(N,2*r)/r**N at r=0 
+        jv2r_at_null = 1./(factorial(abs(N)))
+        if N<0 and (N%2)==1:
+             jv2r_at_null = - jv2r_at_null
+
         if differentiate:
-            self._factor = (r*(jv(N-1,2*r)-jv(N+1,2*r)) - N* jv2r)/r**(N+1)
-        return jv2r/(r**N)
+            self._factor = np.nan_to_num((r*(jv(N-1,2*r)-jv(N+1,2*r)) - absN* jv2r)/r**(absN+1))
+        return np.nan_to_num(jv2r/(r**absN),nan=jv2r_at_null)
 
     def _derivative(self, dr):
         return self._factor * dr
@@ -130,12 +138,13 @@ class complex_Nemitzky_op_for_g(Operator):
 
     Output of eval: 
     - A complex vector of the same size as g with entries 
-            J_N(2|g|)*|g|^(-N ) * g^N  = J_N(2|g|) * exp(i N arg(g)).
+            J_N(2|g|) * exp(i N arg(g)) = J_N(2|g|)*|g|^(-N ) * g^N ,       N>=0,
+                                        = J_N(2|g|)*|g|^(-N ) * conj(g)^N , N <0
     """
     def __init__(self, N,domain):
         assert domain.is_complex
         self.N =N
-        self.pow = Power(N,domain)
+        self.pow = Power(np.uintc(np.absolute(N)),domain,integer=True)
         self.jv_div = ptw_divided_Bessel(N,domain.real_space())
         super().__init__(domain, domain)
 
@@ -146,17 +155,31 @@ class complex_Nemitzky_op_for_g(Operator):
             factor_pow, self._pow_lin = self.pow.linearize(g)
             self._factor_real, self._real_lin = self.jv_div.linearize(self._abs_g)
             self._factor_pow = self._real_lin(np.ones_like(self._abs_g)) * factor_pow
-            return self._factor_real * factor_pow
+            if self.N>=0:
+                return self._factor_real * factor_pow
+            else:
+                return self._factor_real * np.conjugate(factor_pow)
         else:
-            return  self.pow(g) * self.jv_div(np.absolute(g))
+            if self.N>=0:
+                return  self.jv_div(np.absolute(g)) * self.pow(g)
+            else: 
+                return   self.jv_div(np.absolute(g)) * np.conjugate(self.pow(g))
 
     def _derivative(self, dg):
-        return self._factor_real * self._pow_lin(dg) \
-            + self._factor_pow * np.real(np.conjugate(self._dir_g)*dg) 
+        if self.N>=0:
+            return self._factor_real * self._pow_lin(dg) \
+                +  np.real(np.conjugate(self._dir_g)*dg) * self._factor_pow 
+        else: 
+            return self._factor_real * np.conjugate(self._pow_lin(dg)) \
+                + np.real(np.conjugate(self._dir_g)*dg) * np.conjugate(self._factor_pow) 
 
     def _adjoint(self, y):
-        return  self._pow_lin.adjoint(np.conjugate(self._factor_real) *y) \
-            + self._dir_g*np.real(np.conjugate(self._factor_pow)*y)
+        if self.N>=0:
+            return  self._pow_lin.adjoint(np.conjugate(self._factor_real) *y) \
+                + self._dir_g*np.real(np.conjugate(self._factor_pow)*y)
+        else:
+            return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
+                + self._dir_g*np.real(self._factor_pow*y)
 
 
 
@@ -174,8 +197,8 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel =
         if not n==0:
             op_list.append(
                 SquaredModulus(cdomain)
-                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *fresnel_propagator(cdomain, fresnel_number)
+                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *Adjoint(complexProjection)
                 *Nemitzky_op_for_g(n,maskDomain)
                 *realProjection
@@ -203,8 +226,8 @@ def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,pa
         if not n==0:
             op_list.append(
                 SquaredModulus(cdomain)
-                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *fresnel_propagator(cdomain, fresnel_number)
+                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *Adjoint(complexProjection)
                 *complex_Nemitzky_op_for_g(n,maskDomain)
                 *complexProjection
