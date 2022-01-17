@@ -217,6 +217,7 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel =
     return modes_to_data*g_to_modes
 
 def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel = False):
+    # TODO Shouldn't the domain be complex?
     assert not domain.is_complex
     cdomain = domain.complex_space()
     complexProjection = CoordinateProjection(cdomain,mask)

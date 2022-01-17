@@ -21,17 +21,19 @@ logging.basicConfig(
 def load_experimental_data(filename):
     mat = loadmat(filename)
     mask = mat['mask']
-    mask_binary = mat['mask_binary'].astype(bool)
+    # mask_binary = mat['mask_binary'].astype(bool) # mask_binary does not mean the same in the context of the simulation as in the reconstruction
+    # define simulated FOV as mask for now
+    mask_binary = ones_like(mask).astype(bool)
     px_size = 1e-9 * np.median(np.diff(mat['y_v'], axis=0))  # m/px
     g_map = mat['beta_p'] # * 4 # for stronger interaction; linear combination with mat['beta_s'] for rotated polarization
     pad_amount = (100, 100)
     g_map = np.pad(g_map, pad_amount, 'constant', constant_values=1e-5)
     mask = np.pad(mask, pad_amount, 'constant', constant_values=1)
-    mask_binary = np.pad(mask_binary, pad_amount, 'constant', constant_values=True)
+    mask_binary = np.pad(mask_binary, pad_amount, 'constant', constant_values=False)
     return g_map, mask, mask_binary, px_size
 
 
-def simulated_data():
+def simulated_data(complex_g=True):
     filename = r"./data/01_javier.mat"
     g_map, mask, mask_binary, px_size = load_experimental_data(filename)
     fov = tuple(x*px_size for x in mask.shape)
@@ -41,17 +43,26 @@ def simulated_data():
     # Uniform grid
     Xdim = mask.shape[0]
     Ydim = mask.shape[1]
-    grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
-                       np.linspace(0, 1, Ydim, endpoint=False))
     A_Psi0_Multiplier = mask.astype(complex)
-    op = PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=30, parallel=True)
-    log_g = np.log(np.abs(g_map)) + 1j * np.angle(g_map)
-    exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
+    N = 30
+    parallel = True
+    if complex_g:
+        # TODO Shouldn't the domain be complex?
+        grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
+                        np.linspace(0, 1, Ydim, endpoint=False))
+        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=N, parallel=parallel)
+        return op, grid, g_map, g_map
+    else:
+        grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
+                       np.linspace(0, 1, Ydim, endpoint=False))
+        op = PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=N, parallel=parallel)
+        log_g = np.log(np.abs(g_map)) + 1j * np.angle(g_map)
+        exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
 
-    return op, grid, exact_solution, log_g
+        return op, grid, exact_solution, log_g
 
 
-def synthetic_data():
+def synthetic_data(complex_g=True):
     # Example parameters
     fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
     # in grid (i.e. with the size of one pixel for the above choice of grid)
@@ -68,7 +79,10 @@ def synthetic_data():
     mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
     A_Psi0_Multiplier = np.ones(grid.shape, complex)
-    op = complex_PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
+    if complex_g:
+        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
+    else:
+        op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
 
     # Create phantom image (= padded example-image)
     picture = ascent()
@@ -81,17 +95,20 @@ def synthetic_data():
     log_g = log_g.astype(complex)*mask
 
     # Create exact and noisy data
-    # exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
-    exact_solution = log_g
+    if complex_g:
+        exact_solution = log_g
+    else:
+        exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
     return op, grid, exact_solution, log_g
 
 
 def main():
-    real_data = False
+    real_data = True
+    complex_g = True
     if real_data:
-        op, grid, exact_solution, log_g = simulated_data()
+        op, grid, exact_solution, log_g = simulated_data(complex_g)
     else:
-        op, grid, exact_solution, log_g = synthetic_data()
+        op, grid, exact_solution, log_g = synthetic_data(complex_g)
 
     exact_data = op(exact_solution)
 
@@ -99,8 +116,10 @@ def main():
     data = np.random.poisson(intensity * exact_data)/intensity
 
     # Here we are weighting the penalty for the modulus a bit less
-    Hdomain = Sobolev(grid.complex_space(), index =0.5)
-    # Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
+    if complex_g:
+        Hdomain = Sobolev(grid.complex_space(), index=0.5)
+    else:
+        Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
     # define codomain Gram matrix based on observed data to approximate log-likelihood
     Hcodomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
     Hcodomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)
@@ -108,8 +127,10 @@ def main():
 
     # Image-reconstruction using the IRGNM method
     setting = HilbertSpaceSetting(op=op, Hdomain=Hdomain, Hcodomain=Hcodomain)
-    init_vec = grid.complex_space().ones()
-    #init_vec = op.domain.join(grid.ones(), grid.zeros())
+    if complex_g:
+        init_vec = grid.complex_space().ones()
+    else:
+        init_vec = op.domain.join(grid.ones(), grid.zeros())
 
     solver = IrgnmCG(
         setting, data, init=init_vec,
@@ -145,17 +166,21 @@ def main():
     for reco, reco_data in solver.until(stoprule):
         Newton_step = solver.iteration_step_nr
         # Print reconstruction error
-        #reco_error1, reco_error2 = op.domain.split(reco-exact_solution)
-        reco_error1 = reco.real-exact_solution.real
-        reco_error2 = reco.imag-exact_solution.imag 
+        if complex_g:
+            reco_error1 = reco.real-exact_solution.real
+            reco_error2 = reco.imag-exact_solution.imag 
+        else:
+            reco_error1, reco_error2 = op.domain.split(reco-exact_solution)
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             Newton_step,
             np.linalg.norm(reco_error1)/np.linalg.norm(np.exp(log_g.real)),
             np.linalg.norm(reco_error2)/np.linalg.norm(log_g.imag)))
         # Plot reults
         if Newton_step % 2 == 0 or stoprule.triggered:
-            #reco1, reco2 = op.domain.split(reco)
-            reco1 = reco.real; reco2 = reco.imag
+            if complex_g:
+                reco1 = reco.real; reco2 = reco.imag
+            else:
+                reco1, reco2 = op.domain.split(reco)
             reco_data_comp = op.codomain.split(reco_data)
 
             axs[1, 0].set_title('Reco |g|, step {}'.format(Newton_step))
