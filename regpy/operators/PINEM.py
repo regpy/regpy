@@ -3,7 +3,7 @@ from numpy.core.defchararray import endswith
 
 from regpy.discrs import DirectSum as DirectSumSpaces
 from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
-from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential
+from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint 
 from regpy.operators.parallel_operators import Parallel_vector_of_operators
 from regpy.operators.fresnel import fresnel_propagator
@@ -65,7 +65,7 @@ class Nemitzky_op_for_g(Operator):
     - A complex vector of the same size with entries 
             J_N(2|g|) * exp(i N arg(g)).
     """
-    def __init__(self, domain,N):
+    def __init__(self, N, domain):
         assert domain.is_complex
         rdomain = domain.real_space()
         self.N =N
@@ -87,6 +87,78 @@ class Nemitzky_op_for_g(Operator):
         arg_res = self._factor_arg_g.real * y.real + self._factor_arg_g.imag * y.imag
         return self.domain.join(abs_res,arg_res)#abs_res + 1j*arg_res #
 
+class ptw_divided_Bessel(Operator):
+    """
+    Parameters: 
+      - domain: A real regpy.discrs.Discretization
+      - N: an integer representing the order of Bessel functions
+
+    Input of eval: 
+    - A real-valued vector r on domain.  
+
+    Output of eval: 
+    - A real vector of the same size with entries 
+            J_N(2r)*r^(-N ) * g^N.
+    """    
+
+    def __init__(self, N,domain):
+        assert not domain.is_complex
+        self.N =N
+        super().__init__(domain, domain)
+
+    def _eval(self, r, differentiate=False):
+        N= self.N
+        jv2r = jv(N,2*r)
+        if differentiate:
+            self._factor = (r*(jv(N-1,2*r)-jv(N+1,2*r)) - N* jv2r)/r**(N+1)
+        return jv2r/(r**N)
+
+    def _derivative(self, dr):
+        return self._factor * dr
+
+    def _adjoint(self, y):
+        return self._factor * y
+
+class complex_Nemitzky_op_for_g(Operator):
+    """
+    Parameters: 
+      - domain: A complex regpy.discrs.Discretization
+      - N: an integer representing the order of Bessel functions
+
+    Input of eval: 
+    - A complex vector g on domain. 
+
+    Output of eval: 
+    - A complex vector of the same size as g with entries 
+            J_N(2|g|)*|g|^(-N ) * g^N  = J_N(2|g|) * exp(i N arg(g)).
+    """
+    def __init__(self, N,domain):
+        assert domain.is_complex
+        self.N =N
+        self.pow = Power(N,domain)
+        self.jv_div = ptw_divided_Bessel(N,domain.real_space())
+        super().__init__(domain, domain)
+
+    def _eval(self, g, differentiate=False): 
+        if differentiate:
+            self._abs_g = np.absolute(g)
+            self._dir_g = np.nan_to_num(g/self._abs_g)
+            factor_pow, self._pow_lin = self.pow.linearize(g)
+            self._factor_real, self._real_lin = self.jv_div.linearize(self._abs_g)
+            self._factor_pow = self._real_lin(np.ones_like(self._abs_g)) * factor_pow
+            return self._factor_real * factor_pow
+        else:
+            return  self.pow(g) * self.jv_div(np.absolute(g))
+
+    def _derivative(self, dg):
+        return self._factor_real * self._pow_lin(dg) \
+            + self._factor_pow * np.real(np.conjugate(self._dir_g)*dg) 
+
+    def _adjoint(self, y):
+        return  self._pow_lin.adjoint(np.conjugate(self._factor_real) *y) \
+            + self._dir_g*np.real(np.conjugate(self._factor_pow)*y)
+
+
 
 def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel = False):
     assert not domain.is_complex
@@ -105,8 +177,37 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel =
                 *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *fresnel_propagator(cdomain, fresnel_number)
                 *Adjoint(complexProjection)
-                *Nemitzky_op_for_g(maskDomain,n)
+                *Nemitzky_op_for_g(n,maskDomain)
                 *realProjection
+                )
+    if parallel:
+        g_to_modes = Parallel_vector_of_operators(op_list)
+    else:
+        g_to_modes = Vector_of_operators(op_list)
+    op_mat = []
+    for n in range(0,N):
+        op_mat.append([None,Identity(domain)])
+    for n in range(0,N):
+        op_mat.append([Identity(domain),None]) 
+    modes_to_data = Matrix_of_operators(op_mat)
+
+    return modes_to_data*g_to_modes
+
+def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel = False):
+    assert not domain.is_complex
+    cdomain = domain.complex_space()
+    complexProjection = CoordinateProjection(cdomain,mask)
+    maskDomain = complexProjection.codomain
+    op_list = []
+    for n in range(-N,N+1):
+        if not n==0:
+            op_list.append(
+                SquaredModulus(cdomain)
+                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
+                *fresnel_propagator(cdomain, fresnel_number)
+                *Adjoint(complexProjection)
+                *complex_Nemitzky_op_for_g(n,maskDomain)
+                *complexProjection
                 )
     if parallel:
         g_to_modes = Parallel_vector_of_operators(op_list)

@@ -844,21 +844,44 @@ class Power(Operator):
         The underlying discretization
     """
 
-    # TODO complex case
-    def __init__(self, power, domain):
+    def __init__(self, power, domain, integer = False):
+        self.integer = integer
+        if integer:
+            assert(isinstance(power,np.uintc))
+            self._power_bin = "{0:b}".format(power)
         self.power = power
         super().__init__(domain, domain)
 
     def _eval(self, x, differentiate=False):
-        if differentiate:
-            self._factor = self.power * x**(self.power - 1)
-        return x**self.power
+        if self.integer:
+            res = np.ones_like(x)
+            if differentiate:
+                self._factor = self.power*np.ones_like(x)
+                if self.power>0:
+                    self._dpow_bin = "{0:b}".format(self.power-1)
+                    if len(self._dpow_bin)< len(self._power_bin):
+                        self._dpow_bin = '0'+self._dpow_bin
+                else:
+                    self._dpow_bin = "{0:b}".format(0)
+            powx = np.ones_like(x)
+            for k in reversed(range(len(self._power_bin))):
+                powx *= x
+                if self._power_bin[k] == '1':
+                    res *= powx
+                if differentiate:
+                    if self._dpow_bin[k] == '1':
+                        self._factor *= powx
+        else:
+            if differentiate:
+                self._factor = self.power * x**(self.power - 1)
+            res = x**self.power
+        return res
 
     def _derivative(self, x):
         return self._factor * x
 
     def _adjoint(self, y):
-        return self._factor * y
+        return np.conjugate(self._factor) * y
 
 
 class DirectSum(Operator):

@@ -6,7 +6,7 @@ import regpy.stoprules as rules
 from numpy.core.numeric import ones_like
 from regpy.discrs import UniformGrid
 from regpy.hilbert import L2, Sobolev
-from regpy.operators.PINEM import PINEM_g_to_data
+from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
 from scipy.io import loadmat
@@ -68,7 +68,7 @@ def synthetic_data():
     mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
     A_Psi0_Multiplier = np.ones(grid.shape, complex)
-    op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
+    op = complex_PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
 
     # Create phantom image (= padded example-image)
     picture = ascent()
@@ -81,7 +81,8 @@ def synthetic_data():
     log_g = log_g.astype(complex)*mask
 
     # Create exact and noisy data
-    exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
+    # exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
+    exact_solution = log_g
     return op, grid, exact_solution, log_g
 
 
@@ -98,7 +99,8 @@ def main():
     data = np.random.poisson(intensity * exact_data)/intensity
 
     # Here we are weighting the penalty for the modulus a bit less
-    Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
+    Hdomain = Sobolev(grid.complex_space(), index =0.5)
+    # Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
     # define codomain Gram matrix based on observed data to approximate log-likelihood
     Hcodomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
     Hcodomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)
@@ -106,7 +108,8 @@ def main():
 
     # Image-reconstruction using the IRGNM method
     setting = HilbertSpaceSetting(op=op, Hdomain=Hdomain, Hcodomain=Hcodomain)
-    init_vec = op.domain.join(grid.ones(), grid.zeros())
+    init_vec = grid.complex_space().ones()
+    #init_vec = op.domain.join(grid.ones(), grid.zeros())
 
     solver = IrgnmCG(
         setting, data, init=init_vec,
@@ -142,14 +145,17 @@ def main():
     for reco, reco_data in solver.until(stoprule):
         Newton_step = solver.iteration_step_nr
         # Print reconstruction error
-        reco_error1, reco_error2 = op.domain.split(reco-exact_solution)
+        #reco_error1, reco_error2 = op.domain.split(reco-exact_solution)
+        reco_error1 = reco.real-exact_solution.real
+        reco_error2 = reco.imag-exact_solution.imag 
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             Newton_step,
             np.linalg.norm(reco_error1)/np.linalg.norm(np.exp(log_g.real)),
             np.linalg.norm(reco_error2)/np.linalg.norm(log_g.imag)))
         # Plot reults
         if Newton_step % 2 == 0 or stoprule.triggered:
-            reco1, reco2 = op.domain.split(reco)
+            #reco1, reco2 = op.domain.split(reco)
+            reco1 = reco.real; reco2 = reco.imag
             reco_data_comp = op.codomain.split(reco_data)
 
             axs[1, 0].set_title('Reco |g|, step {}'.format(Newton_step))
