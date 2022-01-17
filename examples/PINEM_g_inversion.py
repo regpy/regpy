@@ -18,6 +18,18 @@ logging.basicConfig(
 )
 
 
+def log2complex(log_z):
+    return np.exp(log_z.real) * np.exp(1j * log_z.imag)
+
+
+def complex2log(z):
+    return np.log(np.abs(z)) + 1j * np.angle(z)
+
+
+def ampphase2complex(amp, phase):
+    return amp * np.exp(1j * phase)
+
+
 def load_experimental_data(filename):
     mat = loadmat(filename)
     mask = mat['mask']
@@ -49,13 +61,15 @@ def simulated_data(complex_g=True):
     if complex_g:
         # TODO Shouldn't the domain be complex?
         grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
-                        np.linspace(0, 1, Ydim, endpoint=False))
-        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=N, parallel=parallel)
+                           np.linspace(0, 1, Ydim, endpoint=False))
+        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask_binary,
+                                     A_Psi0_Multiplier, N=N, parallel=parallel)
         return op, grid, g_map, g_map
     else:
         grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
-                       np.linspace(0, 1, Ydim, endpoint=False))
-        op = PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, N=N, parallel=parallel)
+                           np.linspace(0, 1, Ydim, endpoint=False))
+        op = PINEM_g_to_data(grid, fresnelNumber, mask_binary,
+                             A_Psi0_Multiplier, N=N, parallel=parallel)
         log_g = np.log(np.abs(g_map)) + 1j * np.angle(g_map)
         exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
 
@@ -79,27 +93,36 @@ def synthetic_data(complex_g=True):
     mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
     A_Psi0_Multiplier = np.ones(grid.shape, complex)
+    N = 8
     if complex_g:
-        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
+        op = complex_PINEM_g_to_data(grid, fresnelNumber, mask,
+                                     A_Psi0_Multiplier, N=N, parallel=True)
     else:
-        op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=2, parallel=True)
+        op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=N, parallel=True)
 
     # Create phantom image (= padded example-image)
     picture = ascent()
-    log_g = picture[-Xdim//2:, -Ydim//2:].astype(np.float64)/255 \
-        * np.exp(1j*2*np.pi*picture[:Xdim//2, :Ydim//2].astype(np.float64)/255)
-    log_g /= 10*abs(log_g).max()
-    log_g += ones_like(log_g)
-    pad_amount = tuple([(grid.shape[0] - log_g.shape[0])//2, (grid.shape[1] - log_g.shape[1])//2])
-    log_g = np.pad(log_g, pad_amount, 'constant', constant_values=1)
-    log_g = log_g.astype(complex)*mask
+    g_map_amp = picture[-Xdim//2:, -Ydim//2:].astype(np.float64)/255
+    g_map_amp *= 2
+    g_map_phase = picture[:Xdim//2, :Ydim//2].astype(np.float64)/255
+    g_map_phase *= 2*np.pi
+    pad_amount = tuple([(grid.shape[0] - g_map_amp.shape[0])//2,
+                       (grid.shape[1] - g_map_amp.shape[1])//2])
+    g_map_amp = np.pad(g_map_amp, pad_amount, 'constant', constant_values=0)
+    g_map_phase = np.pad(g_map_phase, pad_amount, 'constant', constant_values=0)
+    g_map_phase *= mask
+    g_map = ampphase2complex(g_map_amp, g_map_phase)
+    # g_map /= 10*abs(g_map).max()
+    # g_map += ones_like(g_map)
+    g_map = g_map.astype(complex)*mask
 
     # Create exact and noisy data
     if complex_g:
-        exact_solution = log_g
+        exact_solution = g_map
     else:
-        exact_solution = op.domain.join(np.exp(np.real(log_g)), np.imag(log_g))
-    return op, grid, exact_solution, log_g
+        exact_solution = op.domain.join(np.abs(g_map), np.angle(g_map))
+        g_map = complex2log(g_map)
+    return op, grid, exact_solution, g_map
 
 
 def main():
@@ -146,13 +169,18 @@ def main():
         )
     )
 
+    if not complex_g:  # g_map is in logarithmic form where real is log(abs) and imag is phase
+        g_map_exact = log2complex(log_g)
+    else:
+        g_map_exact = log_g
+
     # plot exact solution and data
     fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
     axs[0, 0].set_title('Exact |g|')
-    im = axs[0, 0].imshow(np.exp(log_g.real))
+    im = axs[0, 0].imshow(np.abs(g_map_exact))
     fig.colorbar(im, ax=axs[0, 0])
     axs[0, 1].set_title('Exact  arg(g)')
-    im = axs[0, 1].imshow(log_g.imag)
+    im = axs[0, 1].imshow(np.angle(g_map_exact))
     fig.colorbar(im, ax=axs[0, 1])
 
     data_comp = op.codomain.split(data)
@@ -168,7 +196,7 @@ def main():
         # Print reconstruction error
         if complex_g:
             reco_error1 = reco.real-exact_solution.real
-            reco_error2 = reco.imag-exact_solution.imag 
+            reco_error2 = reco.imag-exact_solution.imag
         else:
             reco_error1, reco_error2 = op.domain.split(reco-exact_solution)
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
@@ -178,17 +206,18 @@ def main():
         # Plot reults
         if Newton_step % 2 == 0 or stoprule.triggered:
             if complex_g:
-                reco1 = reco.real; reco2 = reco.imag
+                reco_amp = np.abs(reco)
+                reco_phase = np.angle(reco)
             else:
-                reco1, reco2 = op.domain.split(reco)
+                reco_amp, reco_phase = op.domain.split(reco)
             reco_data_comp = op.codomain.split(reco_data)
 
             axs[1, 0].set_title('Reco |g|, step {}'.format(Newton_step))
-            im = axs[1, 0].imshow(reco1)
+            im = axs[1, 0].imshow(reco_amp)
             if Newton_step == 2:
                 fig.colorbar(im, ax=axs[1, 0])
             axs[1, 1].set_title('Reco arg(g), step {}'.format(Newton_step))
-            im = axs[1, 1].imshow(reco2)
+            im = axs[1, 1].imshow(reco_phase)
             if Newton_step == 2:
                 fig.colorbar(im, ax=axs[1, 1])
 
