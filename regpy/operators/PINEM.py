@@ -3,7 +3,7 @@ from math import factorial
 import numpy as np
 from numpy.core.defchararray import endswith
 
-from regpy.discrs import DirectSum as DirectSumSpaces
+from regpy.discrs import DirectSum as DirectSumSpace 
 from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
 from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint 
@@ -71,7 +71,7 @@ class Nemitzky_op_for_g(Operator):
         assert domain.is_complex
         rdomain = domain.real_space()
         self.N =N
-        super().__init__(DirectSumSpaces(rdomain,rdomain), domain)
+        super().__init__(DirectSumSpace(rdomain,rdomain), domain)
 
     def _eval(self, x, differentiate=False):
         abs_g,arg_g = self.domain.split(x)
