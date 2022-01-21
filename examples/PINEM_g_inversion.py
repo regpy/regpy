@@ -61,9 +61,7 @@ def load_experimental_data(filename):
     return g_map, mask, mask_binary, px_size
 
 
-def simulated_data(complex_g=True,amplitude_known=False):
-    N = 30
-    parallel = True
+def simulated_data(complex_g=True,amplitude_known=False, parallel=True,N=30):
     filename = r"./data/01_javier.mat"
     g_map, mask, mask_binary, px_size = load_experimental_data(filename)
     fov = tuple(x*px_size for x in mask.shape)
@@ -88,11 +86,12 @@ def simulated_data(complex_g=True,amplitude_known=False):
                            np.linspace(0, 1, Ydim, endpoint=False))
         op = PINEM_g_to_data(grid, fresnelNumber, mask_binary,
                              A_Psi0_Multiplier, N=N, parallel=parallel)
-        exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
+        exact_solution = op.domain.join(np.log(np.abs(g_map)), \
+            np.unwrap(np.angle(g_map.T)).T)
 
         return op, grid, exact_solution, g_map, mask
 
-def synthetic_data(complex_g=True,amplitude_known=False):
+def synthetic_data(complex_g=True,amplitude_known=False,parallel = True):
     # Example parameters
     fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
     # in grid (i.e. with the size of one pixel for the above choice of grid)
@@ -129,7 +128,7 @@ def synthetic_data(complex_g=True,amplitude_known=False):
 
     if complex_g:
         op = complex_PINEM_g_to_data(grid, fresnelNumber, mask,
-                                     A_Psi0_Multiplier, N=N, parallel=True)
+                                     A_Psi0_Multiplier, N=N, parallel=parallel)
         if amplitude_known:
             op2 = SquaredModulus(grid.complex_space()) - np.abs(g_map)**2
             op = Vector_of_operators([op2,op])
@@ -148,9 +147,9 @@ def synthetic_data(complex_g=True,amplitude_known=False):
 
 def main():
     real_data = False
-    complex_g = True
+    complex_g = False
     amplitude_known = True
-    intensity = 1e8
+    intensity = 1e6
     if real_data:
         op, grid, exact_solution, g_map, mask = simulated_data(complex_g = complex_g, \
             amplitude_known = amplitude_known)
@@ -161,7 +160,7 @@ def main():
     if complex_g:
         Hdomain = Sobolev(grid.complex_space(), index=0.5)
     else:
-        Hdomain = 0.5 * Sobolev(grid, index=0.5) + Sobolev(grid, index=0.5)
+        Hdomain = 0.5 * Sobolev(grid, index=0.5) + L2(grid) #Sobolev(grid, index=0.5)
 
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)    
     if complex_g and amplitude_known:
@@ -194,16 +193,18 @@ def main():
             init_vec = grid.complex_space().ones() * mask
     else:
         if amplitude_known:
-            init_vec = op.domain.join(np.abs(g_map), np.zeros_like(np.angle(g_map)))
+            init_vec = op.domain.join(np.abs(g_map), \
+                    norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
         else:
-            init_vec = op.domain.join(mask, grid.zeros())
+            init_vec = op.domain.join(mask, \
+                norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
     
     solver = IrgnmCG(
         setting, data, init=init_vec,
-        regpar=5e-4, regpar_step=2/3,
+        regpar=5e-4, regpar_step=1/3,
         inner_it_logging_level=logging.INFO)
     stoprule = (
-        rules.CountIterations(max_iterations=20) +
+        rules.CountIterations(max_iterations=15) +
         rules.Discrepancy(
             setting.Hcodomain.norm,
             data,
@@ -214,13 +215,23 @@ def main():
 
     # plot exact solution and data
     fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+    if not complex_g:
+        ex_abs, ex_phase = op.domain.split(exact_solution)
     if not amplitude_known:
         axs[0, 0].set_title('Exact |g|')
         im = axs[0, 0].imshow(np.abs(g_map))
         fig.colorbar(im, ax=axs[0, 0])
         #axs[0, 1].set_title('Exact  arg(g)')
         #im = axs[0, 1].imshow(np.angle(g_map))
-        fig.colorbar(im, ax=axs[0, 1])
+        #fig.colorbar(im, ax=axs[0, 1])
+    else: 
+        if not complex_g:
+            axs[1,0].set_title('arg(g)')
+            im = axs[1,0].imshow(ex_phase)
+            _ = fig.colorbar(im, ax=axs[1, 0])
+            axs[1,1].set_title('arg(g_rec)')
+            im = axs[1,1].imshow(ex_phase)
+            _ = fig.colorbar(im, ax=axs[1, 1])
 
     data_comp = flat_codomain.split(data)
     fig2, axs2 = plt.subplots(2, len(data_comp), sharex=True, sharey=True)
@@ -231,29 +242,36 @@ def main():
 
     fig3, axs3 = plt.subplots(2,1, sharex=False, sharey=False)
 
-    #reco, reco_data = solver.run(stoprule)
-    stats ={'ampl_err':[], \
-        'phase_err':[], \
+    if complex_g: 
+        reco_error1 = norm(np.abs(init_vec)-np.abs(g_map))/norm(np.abs(g_map))
+        reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(init_vec)-1j*np.angle(g_map))))
+    else:
+        reco_abs, reco_phase = op.domain.split(init_vec)
+        reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
+        reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+    print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
+            0, reco_error1, reco_error2))
+    stats ={'ampl_err':[reco_error1], \
+            'phase_err':[reco_error2], \
             'residuals' : []}
+ 
     for reco, reco_data in solver.until(stoprule):
         Newton_step = solver.iteration_step_nr
         # Print reconstruction error
         if complex_g: 
             reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
-            #reco.real-exact_solution.real
-            reco_error2 = norm(np.angle(reco)-np.angle(exact_solution))/norm(np.angle(exact_solution))
-            #reco.imag-exact_solution.imag
+            reco_error2 =  norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
         else:
-            reco_err1, reco_err2 = op.domain.split(reco-exact_solution)
-            reco_error1 = norm(reco_err1)/norm(np.abs(g_map))
-            reco_error2 = norm(reco_err2)/norm(np.angle(g_map))
+            reco_abs, reco_phase = op.domain.split(reco)
+            reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
+            reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             Newton_step, reco_error1, reco_error2))
         stats['ampl_err'].append(reco_error1)
         stats['phase_err'].append(reco_error2)
         stats['residuals'].append(norm(reco_data-exact_data)/norm(exact_data))
         # Plot results
-        if Newton_step == 2  or stoprule.triggered:
+        if Newton_step%2 == 0  or stoprule.triggered:
             if complex_g:
                 reco_amp = np.abs(reco)
                 reco_phase = np.angle(reco)
@@ -262,29 +280,22 @@ def main():
             reco_data_comp = flat_codomain.split(reco_data)
 
             if amplitude_known and not complex_g:
-                axs[0, 0].set_title('1-|exp(i arg(g_rec)-i arg g)|, step {}'.format(Newton_step))
-                plot_map = 1-np.abs(np.exp(1j*reco_phase-1j*np.angle(g_map)))
+                axs[0, 0].set_title('|1-exp(i arg(g_rec)-i arg g)|, step {}'.format(Newton_step))
+                plot_map = np.abs(1-np.exp(1j*reco_phase-1j*np.angle(g_map)))
                 im = axs[0, 0].imshow(plot_map)
                 if Newton_step == 2:
                     fig.colorbar(im, ax=axs[0,0])
-            
-                axs[1,0].set_title('arg(g)')
-                im = axs[1,0].imshow(np.angle(g_map))
-                if Newton_step == 2:
-                    fig.colorbar(im, ax=axs[1, 0])
             else:
                 axs[1, 0].set_title('Reco |g|, step {}'.format(Newton_step))
                 im = axs[1, 0].imshow(reco_amp)
                 axs[0, 0].set_title('Error |g|, step {}'.format(Newton_step))
                 im = axs[0, 0].imshow(reco_amp-np.abs(g_map)) 
                 if Newton_step == 2:
-                    fig.colorbar(im, ax=axs[1, 0])
+                    fig.colorbar(im, ax=axs[0, 0])
 
             axs[1, 1].set_title('arg(g_rec), step {}'.format(Newton_step))
-            im = axs[1, 1].imshow(mask)
-            if Newton_step == 2:
-                fig.colorbar(im, ax=axs[1, 1])
-
+            im = axs[1, 1].imshow(reco_phase)
+        
             axs[0, 1].set_title('arg(g_rec)-arg g), step {}'.format(Newton_step))
             im = axs[0, 1].imshow(reco_phase-np.angle(g_map))
             if Newton_step == 2:
@@ -307,7 +318,7 @@ def main():
             plt.show(block=False)
             plt.pause(0.1)
     plt.show(block=True)
-
+    np.save('PINEM_tests/reco',reco)
 
 if __name__ == '__main__':
     main()
