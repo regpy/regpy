@@ -17,6 +17,7 @@ from regpy.solvers.irgnm import IrgnmCG
 from scipy.io import loadmat
 from scipy.misc import ascent
 from numpy.linalg import norm 
+from imshow_fig import imshow_fig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -147,7 +148,7 @@ def synthetic_data(complex_g=True,amplitude_known=False,parallel = True):
 
 def main():
     real_data = False
-    complex_g = False
+    complex_g = True
     amplitude_known = True
     intensity = 1e6
     if real_data:
@@ -214,31 +215,23 @@ def main():
     )
 
     # plot exact solution and data
-    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
     if not complex_g:
         ex_abs, ex_phase = op.domain.split(exact_solution)
+    else:
+        ex_abs = np.abs(g_map)
+        ex_phase = np.angle(g_map)
+    fig1 = imshow_fig(2,2)
     if not amplitude_known:
-        axs[0, 0].set_title('Exact |g|')
-        im = axs[0, 0].imshow(np.abs(g_map))
-        fig.colorbar(im, ax=axs[0, 0])
-        #axs[0, 1].set_title('Exact  arg(g)')
-        #im = axs[0, 1].imshow(np.angle(g_map))
-        #fig.colorbar(im, ax=axs[0, 1])
+        plotdata = [{'pos':(0,0), 'data':np.abs(g_map), 'title':'Exact |g|'}]   
     else: 
-        if not complex_g:
-            axs[1,0].set_title('arg(g)')
-            im = axs[1,0].imshow(ex_phase)
-            _ = fig.colorbar(im, ax=axs[1, 0])
-            axs[1,1].set_title('arg(g_rec)')
-            im = axs[1,1].imshow(ex_phase)
-            _ = fig.colorbar(im, ax=axs[1, 1])
+        plotdata =[{'pos':(1,0), 'data':ex_phase, 'title':'arg(g)'}]
+    fig1.plot(plotdata)
 
     data_comp = flat_codomain.split(data)
-    fig2, axs2 = plt.subplots(2, len(data_comp), sharex=True, sharey=True)
-    for j in range(len(data_comp)):
-        im = axs2[0, j].imshow(data_comp[j])
-        fig2.colorbar(im, ax=axs2[0, j])
-        axs2[0, j].set_title('Simulated data')
+
+    fig2 = imshow_fig(2, len(data_comp))
+    fig2.plot([{'pos':(0,j),'data':data_comp[j],'title':'Simulated data'} \
+        for j in range(len(data_comp)) ])
 
     fig3, axs3 = plt.subplots(2,1, sharex=False, sharey=False)
 
@@ -271,7 +264,7 @@ def main():
         stats['phase_err'].append(reco_error2)
         stats['residuals'].append(norm(reco_data-exact_data)/norm(exact_data))
         # Plot results
-        if Newton_step%2 == 0  or stoprule.triggered:
+        if Newton_step%1 == 0  or stoprule.triggered:
             if complex_g:
                 reco_amp = np.abs(reco)
                 reco_phase = np.angle(reco)
@@ -279,34 +272,23 @@ def main():
                 reco_amp, reco_phase = op.domain.split(reco)
             reco_data_comp = flat_codomain.split(reco_data)
 
+            plotdata = []
             if amplitude_known and not complex_g:
-                axs[0, 0].set_title('|1-exp(i arg(g_rec)-i arg g)|, step {}'.format(Newton_step))
-                plot_map = np.abs(1-np.exp(1j*reco_phase-1j*np.angle(g_map)))
-                im = axs[0, 0].imshow(plot_map)
-                if Newton_step == 2:
-                    fig.colorbar(im, ax=axs[0,0])
+                plotdata.append({'pos':(0,0),'data':np.abs(1-np.exp(1j*reco_phase-1j*np.angle(g_map))), \
+                    'title':'|1-exp(i arg(g_rec)-i arg g)|, step {}'.format(Newton_step)})
             else:
-                axs[1, 0].set_title('Reco |g|, step {}'.format(Newton_step))
-                im = axs[1, 0].imshow(reco_amp)
-                axs[0, 0].set_title('Error |g|, step {}'.format(Newton_step))
-                im = axs[0, 0].imshow(reco_amp-np.abs(g_map)) 
-                if Newton_step == 2:
-                    fig.colorbar(im, ax=axs[0, 0])
-
-            axs[1, 1].set_title('arg(g_rec), step {}'.format(Newton_step))
-            im = axs[1, 1].imshow(reco_phase)
-        
-            axs[0, 1].set_title('arg(g_rec)-arg g), step {}'.format(Newton_step))
-            im = axs[0, 1].imshow(reco_phase-np.angle(g_map))
-            if Newton_step == 2:
-                fig.colorbar(im, ax=axs[0, 1])
-
-            for j in range(len(reco_data_comp)):
-                im = axs2[1, j].imshow(reco_data_comp[j])
-                if Newton_step == 2:
-                    fig2.colorbar(im, ax=axs2[1, j])
-                axs2[1, j].set_title('recon. data step {}'.format(Newton_step))
-
+                plotdata.append({'pos':(1,0),'data':reco_amp,'title':'Reco |g|, step {}'.format(Newton_step)})
+                plotdata.append({'pos':(0,0),'data':reco_amp-np.abs(g_map), \
+                    'title':'Error |g|, step {}'.format(Newton_step)})
+            plotdata.append({'pos':(1,1),'data':reco_phase,'title':'arg(g_rec), step {}'.format(Newton_step)})
+            plotdata.append({'pos':(0,1),'data':reco_phase-np.angle(g_map), \
+                'title':'arg(g_rec)-arg g), step {}'.format(Newton_step)})
+            fig1.plot(plotdata)
+            
+            fig2.plot([{'pos':(1,j),'data':reco_data_comp[j],\
+                     'title':'recon. data step {}'.format(Newton_step)}  \
+                for j in range(len(reco_data_comp))])
+            
             axs3[0].cla()
             if not amplitude_known:
                 axs3[0].plot(stats['ampl_err'],label = 'amplitude error')
