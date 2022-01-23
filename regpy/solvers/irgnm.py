@@ -64,10 +64,10 @@ class IrgnmCG(Solver):
             stoprule = CountIterations(self.cgstop)
             # Disable info logging, but don't override log level for all
             # CountIterations instances.
-            stoprule.log = self.log.getChild('CountIterations')
-            stoprule.log.setLevel(logging.WARNING)
         else:
-            stoprule = None
+            stoprule = CountIterations(2**15)
+        stoprule.log = self.log.getChild('CountIterations')
+        stoprule.log.setLevel(logging.WARNING)
         self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
@@ -80,6 +80,10 @@ class IrgnmCG(Solver):
         self.x += step
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
+        self._nr_inner_steps = stoprule.iteration
+    
+    def nr_inner_its(self):
+        return self._nr_inner_steps
         
 from regpy.operators import MatrixMultiplication
 from regpy import util

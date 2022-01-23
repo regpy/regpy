@@ -14,6 +14,7 @@ from regpy.operators import Operator,SquaredModulus,Vector_of_operators
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.newton import NewtonCG
 from scipy.io import loadmat
 from scipy.misc import ascent
 from numpy.linalg import norm 
@@ -148,7 +149,7 @@ def synthetic_data(complex_g=True,amplitude_known=False,parallel = True):
 
 def main():
     real_data = False
-    complex_g = True
+    complex_g = False
     amplitude_known = True
     intensity = 1e6
     if real_data:
@@ -210,7 +211,7 @@ def main():
             setting.Hcodomain.norm,
             data,
             noiselevel=setting.Hcodomain.norm(np.sqrt(data/intensity)),
-            tau=1.0
+            tau= 1.0
         )
     )
 
@@ -228,13 +229,18 @@ def main():
     fig1.plot(plotdata)
 
     data_comp = flat_codomain.split(data)
+    nr_data = len(data_comp)
+    fig2 = imshow_fig(2, nr_data+1)
+    plot_data = [{'pos':(0,j),'data':data_comp[j],'title':'Simulated data'} \
+        for j in range(nr_data) ]
+    plot_data.append({'pos':(0,nr_data),'data':data_comp[nr_data-1]-data_comp[nr_data-2],'title':'diff'})
+    fig2.plot(plot_data)
 
-    fig2 = imshow_fig(2, len(data_comp))
-    fig2.plot([{'pos':(0,j),'data':data_comp[j],'title':'Simulated data'} \
-        for j in range(len(data_comp)) ])
-
-    fig3, axs3 = plt.subplots(2,1, sharex=False, sharey=False)
-
+    if hasattr(solver, "nr_inner_its"):
+        fig3, axs3 = plt.subplots(3,1, sharex=False, sharey=False)
+    else:
+        fig3, axs3 = plt.subplots(2,1, sharex=False, sharey=False)
+    
     if complex_g: 
         reco_error1 = norm(np.abs(init_vec)-np.abs(g_map))/norm(np.abs(g_map))
         reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(init_vec)-1j*np.angle(g_map))))
@@ -246,25 +252,29 @@ def main():
             0, reco_error1, reco_error2))
     stats ={'ampl_err':[reco_error1], \
             'phase_err':[reco_error2], \
-            'residuals' : []}
+            'residuals' : [norm(solver.y-exact_data)/norm(exact_data)], \
+            'nr_inner_steps' : [0]}
  
     for reco, reco_data in solver.until(stoprule):
-        Newton_step = solver.iteration_step_nr
-        # Print reconstruction error
-        if complex_g: 
-            reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
-            reco_error2 =  norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
-        else:
-            reco_abs, reco_phase = op.domain.split(reco)
-            reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
-            reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
-        print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
-            Newton_step, reco_error1, reco_error2))
-        stats['ampl_err'].append(reco_error1)
-        stats['phase_err'].append(reco_error2)
-        stats['residuals'].append(norm(reco_data-exact_data)/norm(exact_data))
-        # Plot results
-        if Newton_step%1 == 0  or stoprule.triggered:
+        if not stoprule.triggered:
+            Newton_step = solver.iteration_step_nr
+            if complex_g: 
+                reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
+                reco_error2 =  norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
+            else:
+                reco_abs, reco_phase = op.domain.split(reco)
+                reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
+                reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+            print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
+                Newton_step, reco_error1, reco_error2))
+            stats['ampl_err'].append(reco_error1)
+            stats['phase_err'].append(reco_error2)
+            stats['residuals'].append(norm(reco_data-exact_data)/norm(exact_data))
+            if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
+                stats['nr_inner_steps'].append(solver.nr_inner_its())
+
+
+        if Newton_step%2 == 0  or (stoprule.triggered and ((Newton_step-1)%2 !=0)):
             if complex_g:
                 reco_amp = np.abs(reco)
                 reco_phase = np.angle(reco)
@@ -285,9 +295,12 @@ def main():
                 'title':'arg(g_rec)-arg g), step {}'.format(Newton_step)})
             fig1.plot(plotdata)
             
-            fig2.plot([{'pos':(1,j),'data':reco_data_comp[j],\
+            plotdata = [{'pos':(1,j),'data':reco_data_comp[j],\
                      'title':'recon. data step {}'.format(Newton_step)}  \
-                for j in range(len(reco_data_comp))])
+                        for j in range(nr_data)]
+            plotdata.append({'pos':(1,nr_data),'data':reco_data_comp[nr_data-1]-reco_data_comp[nr_data-2], \
+                'title':'diff reco'} )
+            fig2.plot(plotdata)
             
             axs3[0].cla()
             if not amplitude_known:
@@ -297,10 +310,16 @@ def main():
             axs3[1].cla()
             axs3[1].semilogy(stats['residuals'], label = 'residuals')
             axs3[1].legend()
+            if hasattr(solver,"nr_inner_its") and callable(solver.nr_inner_its):
+                axs3[2].cla()
+                axs3[2].plot(stats['nr_inner_steps'], label = 'number of inner CG steps')
+                axs3[2].legend()
             plt.show(block=False)
             plt.pause(0.1)
     plt.show(block=True)
-    np.save('PINEM_tests/reco',reco)
+    reco = stoprule.x
+    reco_data = stoprule.y
+    #np.save('PINEM_tests/reco',reco)
 
 if __name__ == '__main__':
     main()

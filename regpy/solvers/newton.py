@@ -60,6 +60,9 @@ class NewtonCG(Solver):
         self.x += self._x_k
         self._outer_update()
 
+    def nr_inner_its(self):
+        return self._k
+
 
 class NewtonCGFrozen(Solver):
     def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
