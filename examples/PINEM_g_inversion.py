@@ -18,7 +18,7 @@ from regpy.solvers.newton import NewtonCG
 from scipy.io import loadmat
 from scipy.misc import ascent
 from numpy.linalg import norm
-from imshow_fig import imshow_fig
+from regpy.util.imshow_fig import imshow_fig
 
 logging.basicConfig(
     level=logging.INFO,
