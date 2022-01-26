@@ -261,13 +261,28 @@ def main():
     else:
         fig3, axs3 = plt.subplots(2, 1, sharex=False, sharey=False)
 
-    if complex_g:
-        reco_error1 = norm(np.abs(init_vec)-np.abs(g_map))/norm(np.abs(g_map))
-        reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(init_vec)-1j*np.angle(g_map))))
-    else:
-        reco_abs, reco_phase = op.domain.split(init_vec)
-        reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
-        reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+    def reconstruction_error(_exact, _reconstruction):
+        nonlocal complex_g
+        nonlocal mask
+        if complex_g:
+            reco_error1 = norm(mask*(np.abs(_reconstruction)-np.abs(_exact)))/norm(mask*np.abs(_exact))
+            reco_error2 = norm(np.abs(1-np.exp(1j*mask*np.angle(_reconstruction)-1j*mask*np.angle(_exact))))
+        else:
+            ex_abs, ex_phase = op.domain.split(_exact)
+            reco_abs, reco_phase = op.domain.split(_reconstruction)
+            reco_error1 = norm(mask*(reco_abs-ex_abs))/norm(mask*ex_abs)
+            reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+        return reco_error1, reco_error2
+
+    # if complex_g:
+    #     reco_error1 = norm(np.abs(init_vec)-np.abs(g_map))/norm(np.abs(g_map))
+    #     reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(init_vec)-1j*np.angle(g_map))))
+    # else:
+    #     reco_abs, reco_phase = op.domain.split(init_vec)
+    #     reco_error1 = norm(mask*(reco_abs-ex_abs))/norm(mask*ex_abs)
+    #     reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+    reco_error1, reco_error2 = reconstruction_error(exact_solution, init_vec)
+    
     print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
         0, reco_error1, reco_error2))
     stats = {'ampl_err': [reco_error1],
@@ -278,13 +293,14 @@ def main():
     for reco, reco_data in solver.until(stoprule):
         if not stoprule.triggered:
             Newton_step = solver.iteration_step_nr
-            if complex_g:
-                reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
-                reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
-            else:
-                reco_abs, reco_phase = op.domain.split(reco)
-                reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
-                reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+            reco_error1, reco_error2 = reconstruction_error(exact_solution, reco)
+            # if complex_g:
+            #     reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
+            #     reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
+            # else:
+            #     reco_abs, reco_phase = op.domain.split(reco)
+            #     reco_error1 = norm(reco_abs-ex_abs)/norm(ex_abs)
+            #     reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
             print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
                 Newton_step, reco_error1, reco_error2))
             stats['ampl_err'].append(reco_error1)
