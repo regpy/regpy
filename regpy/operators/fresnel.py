@@ -31,6 +31,12 @@ def fresnel_propagator(domain, fresnel_number):
     where \(FT(f)(\nu) = \int_{\mathbb{R}^2} \exp(-i\xi \cdot x) f(x) Dx\)
     denotes the Fourier transform and the factor \(m_F\) is defined by
     \(m_F(\xi) := \exp(-i \pi |\nu|^2 / F)\) with the Fresnel-number \(F\).
+    
+    It should be noted that if the grid is not dimensionless, 
+    the frequency vector (here defined in units of \(1/\text{length}\) instead of \(2\pi/\text{length}\) 
+    is not dimensionless either. 
+    In this case, the Fresnel number is \(F = 1 / (\lambda d)\)  
+    with wavelength  \(lambda\) and propagation distance \(d\).
     """
 
     assert domain.ndim == 2
