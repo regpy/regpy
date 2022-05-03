@@ -62,10 +62,18 @@ def load_experimental_data(filename):
     mask_binary = np.pad(mask_binary, pad_amount, 'constant', constant_values=False)
     return g_map, mask, mask_binary, px_size
 
+def load_experimental_data_2(filename):
+    mat = loadmat(filename)
+    g_map = mat['pm']['g_map'][0][0]
+    mask = mat['pm']['mask'][0][0]
+    mask_binary = mat['pm']['mask_binary'][0][0].astype(dtype=bool)
+    px_size = mat['pm']['px_sizes'][0][0]
+    return g_map, mask, mask_binary, px_size
 
 def simulated_data(complex_g=True,amplitude_known=False, parallel=True,N=30):
-    filename = r"./data/01_javier.mat"
-    g_map, mask, mask_binary, px_size = load_experimental_data(filename)
+    # filename = r"./data/01_javier.mat"
+    filename = r"./data/FresnelPinemMap_obj_javier.mat"
+    g_map, mask, mask_binary, px_size = load_experimental_data_2(filename)
     fov = tuple(x*px_size for x in mask.shape)
     lambda_electron = 2.51e-12
     defocus = 900e-6
