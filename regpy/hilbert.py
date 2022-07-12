@@ -6,6 +6,7 @@ from copy import copy
 import numpy as np
 
 from regpy import util, operators, functionals, discrs
+from scipy.sparse import csc_matrix
 
 
 class HilbertSpace:
@@ -114,7 +115,7 @@ class HilbertSpace:
             return NotImplemented
 
 
-class GramHilbertSpace:
+class GramHilbertSpace(HilbertSpace):
     def __init__(self, gram, gram_inv=None):
         assert gram.domain == gram.codomain
         if gram_inv is not None:
@@ -133,7 +134,7 @@ class GramHilbertSpace:
 
 
 class HilbertPullBack(HilbertSpace):
-    """Pullback of a hilbert space on the codomain of an operator to its domain.
+    """Pullback of a Hilbert space on the codomain of an operator to its domain.
 
     For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
 
@@ -450,6 +451,9 @@ L2 = AbstractSpace('L2')
 Sobolev = AbstractSpace('Sobolev')
 """Sobolev `AbstractSpace`"""
 
+Hm0 = AbstractSpace('Hm0')
+"""H^m_0 `AbstractSpace`"""
+
 L2Boundary = AbstractSpace('L2Boundary')
 """L2 `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
@@ -550,6 +554,65 @@ class SobolevUniformGrid(HilbertSpace):
         )
         return ft.adjoint * mul * ft
 
+class Hm0_domain(HilbertSpace):
+    """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
+    m=index is a non-negative integer, the order or index of the Sobolev space
+    TODO: implementation in dimensions n!=2 
+    """
+
+    def __init__(self,mask,dtype=float,h=None,index=1):
+        assert type(index)== int and index>=0
+        if len(mask.shape) != 2:
+            raise NotImplementedError
+        discr = discrs.Discretization((np.count_nonzero(mask),),dtype=dtype)
+        super().__init__(discr)
+        self.mask = mask
+        self.G = np.where(mask,1,0) # boolean to integer
+        k = np.nonzero(self.G)
+        self.G[k] = 1+np.arange(len(k[0]))
+        if h==None:
+            self.h=1/mask.shape[0]
+        else:
+            self.h = h
+        self.index = index
+
+    def I_minus_Delta(self):
+        """
+        Construct five-point finite difference Laplacian.
+        I_minus_Delta is the sparse form of the sum of the identity and the two-dimensional,
+        5-point discrete negative Laplacian on the grid G.
+        adapted from  C. Moler, 7-16-91.
+        Copyright (c) 1984-94 by The MathWorks, Inc.
+        """
+        [m,n] = self.G.shape
+        # Indices of interior points
+        G1 = self.G.flatten()
+        p = np.where(G1)[0]
+        N = len(p)
+        # Connect interior points to themselves with 4's.
+        i = G1[p]-1
+        j = G1[p]-1
+        s = (1+4./self.h**2)*np.ones(p.shape)
+
+        # for k = north, east, south, west
+        for k in [-1, m, 1, -m]:
+            # Possible neighbors in k-th direction
+            Q = G1[p+k]
+            # Index of points with interior neighbors
+            q = np.where(Q)[0]
+            # Connect interior points to neighbors with -1's.
+            i = np.concatenate([i, G1[p[q]]-1])
+            j = np.concatenate([j,Q[q]-1])
+            s = np.concatenate([s,(-1./self.h**2)*np.ones(q.shape)])
+        # sparse matrix with 5 diagonals
+        return csc_matrix((s, (i,j)),(N,N))
+
+    @util.memoized_property
+    def gram(self):
+        return operators.Pow(
+            operators.MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.discr.dtype),
+            self.index
+            )
 
 def _register_spaces():
     """Auxiliary method to register abstract spaces for various discretizations. Using the decorator
@@ -565,6 +628,8 @@ def _register_spaces():
 
     Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
     Sobolev.register(discrs.UniformGrid, SobolevUniformGrid)
+
+    Hm0.register(discrs.Discretization,Hm0)
 
     L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
 

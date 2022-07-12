@@ -8,9 +8,11 @@ import numpy as np
 import regpy.stoprules as rules
 from numpy.core.numeric import ones_like
 from regpy.discrs import UniformGrid, DirectSum
-from regpy.hilbert import L2, Sobolev
+from regpy.hilbert import L2, Sobolev, Hm0_domain
 import regpy.hilbert as hilbert
 from regpy.operators import Operator, SquaredModulus, Vector_of_operators
+from regpy.operators import CoordinateProjection, Identity
+from regpy.operators import DirectSum as opDirectSum
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
@@ -163,15 +165,14 @@ def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
 
 def main():
     real_data = False
-    complex_g = False
+    complex_g = True
     amplitude_known = True
     intensity = 1e6
     if real_data:
         op, grid, exact_solution, g_map, mask, A_Psi0 = simulated_data(complex_g=complex_g,
                                                                        amplitude_known=amplitude_known)
         # regpar = 5e-2; sobolev_index = 2
-        regpar = 1e-0
-        sobolev_index = 0
+        regpar = 1e-0; sobolev_index = 0
         regpar_step = 1/3
     else:
         op, grid, exact_solution, g_map, mask, A_Psi0 = synthetic_data(complex_g=complex_g,
@@ -181,13 +182,21 @@ def main():
         regpar_step = 1/3
 
     if complex_g:
-        Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
+        # Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
+        Hdomain = Hm0_domain(mask, dtype=complex, index = sobolev_index)
+        projection = CoordinateProjection(grid.complex_space(),mask)
     else:
-        Hdomain = 0.5 * Sobolev(grid, index=sobolev_index) + L2(grid)  # Sobolev(grid, index=0.5)
+        # Hdomain = 0.5 * Sobolev(grid, index=sobolev_index) + L2(grid)  # Sobolev(grid, index=0.5)
+        Hdomain = 0.5*Hm0_domain(mask, index = sobolev_index) + L2(grid)
+        projection = opDirectSum(*(CoordinateProjection(grid,mask),Identity(grid)))        
+    embedding = projection.adjoint
+    # op_emb = op
+    op_emb = op * embedding
 
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
     if complex_g and amplitude_known:
-        exact_data = op(exact_solution)
+        #exact_data = op(exact_solution)
+        exact_data = op_emb(projection(exact_solution))
         exact_data_comp = op.codomain.split(exact_data)
         noisy_data = np.random.poisson(intensity * exact_data_comp[1])/intensity
         data = op.codomain.join(np.zeros_like(exact_data_comp[0]), noisy_data)
@@ -198,7 +207,8 @@ def main():
             Hcodomain1 = Hcodomain1 + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
         Hcodomain = hilbert.DirectSum(Hcodomain0, Hcodomain1)
     else:
-        exact_data = op(exact_solution)
+        #exact_data = op(exact_solution)
+        exact_data = op_emb(projection(exact_solution))
         data = np.random.poisson(intensity * exact_data)/intensity
         data_comp = op.codomain.split(data)
         # define codomain Gram matrix based on observed data to approximate log-likelihood
@@ -207,7 +217,7 @@ def main():
             Hcodomain = Hcodomain + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
 
     # Image-reconstruction using the IRGNM method
-    setting = HilbertSpaceSetting(op=op, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    setting = HilbertSpaceSetting(op=op_emb, Hdomain=Hdomain, Hcodomain=Hcodomain)
     if complex_g:
         if amplitude_known:
             init_vec = abs(g_map).astype(complex)
@@ -227,9 +237,11 @@ def main():
             #     norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
             init_vec = op.domain.join(mask,
                                       init_phase_gradient * mask)
+    # init_vec_proj = init_vec
+    init_vec_proj = projection(init_vec)
 
     solver = IrgnmCG(
-        setting, data, init=init_vec,
+        setting, data, init=init_vec_proj,
         regpar=regpar, regpar_step=regpar_step,
         inner_it_logging_level=logging.INFO)
     stoprule = (
@@ -299,9 +311,11 @@ def main():
              'nr_inner_steps': [0]}
 
     for reco, reco_data in solver.until(stoprule):
+        # ereco = reco
+        ereco = embedding(reco)
         if not stoprule.triggered:
             Newton_step = solver.iteration_step_nr
-            reco_error1, reco_error2 = reconstruction_error(exact_solution, reco)
+            reco_error1, reco_error2 = reconstruction_error(exact_solution, ereco)
             # if complex_g:
             #     reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
             #     reco_error2 = norm(np.abs(1-np.exp(1j*np.angle(reco)-1j*np.angle(g_map))))
@@ -319,10 +333,10 @@ def main():
 
         if Newton_step % 2 == 0 or (stoprule.triggered and ((Newton_step-1) % 2 != 0)):
             if complex_g:
-                reco_amp = np.abs(reco)
-                reco_phase = np.angle(reco)
+                reco_amp = np.abs(ereco)
+                reco_phase = np.angle(ereco)
             else:
-                reco_amp, reco_phase = op.domain.split(reco)
+                reco_amp, reco_phase = op.domain.split(ereco)
             reco_data_comp = flat_codomain.split(reco_data)
 
             plotdata = []

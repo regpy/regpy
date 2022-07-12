@@ -1,8 +1,10 @@
+from xml.dom.minidom import Identified
 from scipy.sparse import linalg
 from regpy.solvers.irgnm import IrgnmCG
 
+from regpy.operators import CoordinateProjection
 from regpy.operators.PINEM import wave_field_reco_PINEM
-from regpy.hilbert import L2, Sobolev
+from regpy.hilbert import L2, Sobolev, Hm0_domain
 from regpy.discrs import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
@@ -39,11 +41,20 @@ def main():
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
 
     # Forward operator and its domain
-    if sol_type == None:
+    op = wave_field_reco_PINEM(cgrid, fresnelNumber, mask.astype(float), sol_type,parallel=True)  
+    """if sol_type == None:
         Hdomain = Sobolev(cgrid, index=0.5)
     else:
-        Hdomain = Sobolev(grid, index=0.5)
-    op = wave_field_reco_PINEM(cgrid, fresnelNumber, mask.astype(float), sol_type,parallel=True)  
+        Hdomain = Sobolev(grid, index=0.5)"""
+
+    if sol_type == None:
+        projection = CoordinateProjection(cgrid,mask)
+        Hdomain =  Hm0_domain(mask,dtype=complex,index=1)
+    else:
+        projection = CoordinateProjection(grid,mask)
+        Hdomain = Hm0_domain(mask,index=1)
+    embedding = projection.adjoint
+    op = op*embedding
 
     # Create phantom image (= padded example-image)
     picture = ascent()
@@ -57,7 +68,8 @@ def main():
     exact_solution = exact_solution * mask  # - 4*(1-mask)
 
     # Create exact data and Poisson data
-    exact_data = op(exact_solution)
+    #exact_data = op(exact_solution)
+    exact_data = op(projection(exact_solution))
     data = np.random.poisson(intensity * exact_data)/intensity
 
     # define codomain Gram matrix based on observed data to approximate log-likelihood
@@ -70,10 +82,11 @@ def main():
     setting = HilbertSpaceSetting(
         op=op, Hdomain=Hdomain,
         Hcodomain=Hcodomain)
-    init_vec = np.zeros_like(exact_solution)
+    #init_vec = np.zeros_like(exact_solution)
+    init_vec = np.zeros_like(projection(exact_solution))
 
     solver = IrgnmCG(
-        setting, data, regpar=10, regpar_step=2/3, init=init_vec,
+        setting, data, regpar=0.1, regpar_step=2/3, init=init_vec,
         inner_it_logging_level=logging.INFO
     )
     stoprule = (
@@ -107,7 +120,9 @@ def main():
     #reco, reco_data = solver.run(stoprule)
     for reco, reco_data in solver.until(stoprule):
         Newton_step = solver.iteration_step_nr
-        reco_error = reco-exact_solution
+        #ereco =reco
+        ereco = embedding(reco)
+        reco_error = ereco-exact_solution
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             Newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
@@ -115,11 +130,11 @@ def main():
         # Plot reults
         if Newton_step % 5 == 0 or stoprule.triggered:
             axs[1, 0].set_title('Reco abs, step {}'.format(Newton_step))
-            im = axs[1, 0].imshow(np.abs(reco), interpolation='nearest')
+            im = axs[1, 0].imshow(np.abs(ereco), interpolation='nearest')
             if Newton_step == 5:
                 fig.colorbar(im, ax=axs[1, 0])
             axs[1, 1].set_title('Reco phase, step {}'.format(Newton_step))
-            im = axs[1, 1].imshow(np.angle(reco), cmap='twilight', interpolation='nearest')
+            im = axs[1, 1].imshow(np.angle(ereco), cmap='twilight', interpolation='nearest')
             if Newton_step == 5:
                 fig.colorbar(im, ax=axs[1, 1])
 

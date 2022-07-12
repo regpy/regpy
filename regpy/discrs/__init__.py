@@ -282,7 +282,7 @@ class Discretization:
 
 
 class Grid(Discretization):
-    """A discretization representing a recangular grid.
+    """A discretization representing a rectangular grid.
 
     Parameters
     ----------

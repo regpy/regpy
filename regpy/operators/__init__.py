@@ -10,10 +10,13 @@ The base class is `Operator`.
 
 from collections import defaultdict
 from copy import deepcopy
+from re import A
 
 import numpy as np
 from numpy.core.numeric import zeros_like
 from scipy.linalg import cho_factor, cho_solve
+from scipy.sparse import csc_matrix
+import scipy.sparse.linalg as sla
 
 from regpy import functionals, util, discrs
 
@@ -512,6 +515,39 @@ class Composition(Operator):
     def __repr__(self):
         return util.make_repr(self, *self.ops)
 
+class Pow(Operator):
+    """Power of a linear operator A, mapping a domain into itself, i.e. 
+       A * A * ... * A
+
+       Parameters
+       -----------------
+       op : operator
+       exponent :  non-negative integer
+    """
+
+    def __init__(self, op, exponent):
+        assert op.linear
+        assert op.domain == op.codomain
+        assert type(exponent)==int and exponent>=0
+        super().__init__(op.domain,op.domain,linear=True)
+        self.op = op
+        self.exponent = exponent
+
+    def _eval(self,x):
+        res = x
+        for j in range(self.exponent):
+            res = self.op(res)
+        return res
+
+    def _adjoint(self,x):
+        res = x
+        for j in range(self.exponent):
+            res = self.op.adjoint(res)
+        return res
+    
+    @property
+    def inverse(self):
+        return Pow(self.op.inverse,self.exponent)
 
 class Identity(Operator):
     """The identity operator on a discretization. Performs a copy to prevent callers from
@@ -539,33 +575,58 @@ class Identity(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
-class Matrix_Multiplication_Op(Operator):
-    """Linear operator given by multiplication with an np.matrix"""
+class MatrixMultiplication(Operator):
+    """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
+    `regpy.discrs.Discretization` instances.
 
-    def __init__(self,mat,domain=None,codomain=None,dtype=None):
-        assert type(mat) is np.matrix and len(mat.shape) == 2
-        if dtype==None:
-            if np.iscomplexobj(mat):
-                dtype=complex
-            else:
-                dtype=float
-        M,N = mat.shape
-        if domain==None:
-            domain = discrs.Discretization((M,),dtype)
-        if codomain==None:
-            codomain = discrs.Discretization((N,),dtype)
-        self.mat = mat
+    Parameters
+    ----------
+    matrix : array-like
+        The matrix.
+    inverse : Operator, array-like, 'inv', 'cholesky' or None
+        How to implement the inverse operator. If available, this should be given as `Operator`
+        or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'´ or `'superLU'´, a
+        `CholeskyInverse´ or `SuperLU´´ instance will be returned.
+    """
+
+    def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
+        assert len(matrix.shape) == 2
+        self.matrix = matrix
+        if dtype == None:
+            dtype = matrix.dtype
         super().__init__(
-            domain=domain,
-            codomain=domain,
+            domain=domain or discrs.Discretization(matrix.shape[1],dtype = dtype),
+            codomain=codomain or discrs.Discretization(matrix.shape[0],dtype = dtype),
             linear=True
         )
+        self._inverse = inverse
 
-    def eval(self,x):
-        return self.mat*x
+    def _eval(self, x):
+        return self.matrix @ x
 
-    def adjoint(self,x):
-        return self.mat.H*x
+    def _adjoint(self, y):
+        if self.codomain.is_complex:
+            return np.conjugate(np.conjugate(y) @ self.matrix) 
+        else:
+            return y @ self.matrix
+
+    @util.memoized_property
+    def inverse(self):
+        if isinstance(self._inverse, Operator):
+            return self._inverse
+        elif isinstance(self._inverse, np.ndarray):
+            return MatrixMultiplication(self._inverse, inverse=self)
+        elif isinstance(self._inverse, str):
+            if self._inverse == 'inv':
+                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
+            if self._inverse == 'cholesky':
+                return CholeskyInverse(self, matrix=self.matrix)
+            if self._inverse == 'superLU':
+                return SuperLUInverse(self)
+        raise NotImplementedError
+
+    def __repr__(self):
+        return util.make_repr(self, self.matrix)
 
 class CholeskyInverse(Operator):
     """Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
@@ -574,7 +635,7 @@ class CholeskyInverse(Operator):
     Parameters
     ----------
     op : regpy.operators.Operator
-        The operator to invert.
+        The operator to be inverted.
     matrix : array-like, optional
         If a matrix of `op` is already available, it can be passed in to avoid recomputation.
     """
@@ -610,6 +671,42 @@ class CholeskyInverse(Operator):
     def __repr__(self):
         return util.make_repr(self, self.op)
 
+class SuperLUInverse(Operator):
+    """Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
+
+    Parameters:
+    ----------
+        op : MatrixMultiplication
+            The operator to be inverted.   
+    """
+    def __init__(self,op):
+        assert isinstance(op,MatrixMultiplication)
+        assert isinstance(op.matrix, csc_matrix)
+        super().__init__(
+            domain=op.codomain, 
+            codomain = op.domain,
+            linear=True)
+        self.lu = sla.splu(op.matrix)
+
+    def _eval(self,x):
+        if np.issubdtype(self.lu.U.dtype,np.complexfloating):
+            return self.lu.solve(x)
+        else: 
+            if np.isrealobj(x):
+                return self.lu.solve(x)
+            else:
+                return self.lu.solve(x.real) + 1j*self.lu.solve(x.imag) 
+
+    def _adjoint(self,x):
+        return self.lu.solve(x,trans='H')
+
+    @property
+    def inverse(self):
+        """Returns the original operator."""
+        return self.op
+
+    def __repr__(self):
+        return util.make_repr(self, self.op)
 
 class CoordinateProjection(Operator):
     """A projection operator onto a subset of the domain. The codomain is a one-dimensional
@@ -783,54 +880,6 @@ class FourierTransform(Operator):
 
     def __repr__(self):
         return util.make_repr(self, self.domain)
-
-
-class MatrixMultiplication(Operator):
-    """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
-    `regpy.discrs.Discretization` instances.
-
-    Parameters
-    ----------
-    matrix : array-like
-        The matrix.
-    inverse : Operator, array-like, 'inv', 'cholesky' or None
-        How to implement the inverse operator. If available, this should be given as `Operator`
-        or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'`, a
-        `CholeskyInverse` instance will be returned.
-    """
-
-    # TODO complex case
-    def __init__(self, matrix, inverse=None, domain=None, codomain=None):
-        self.matrix = matrix
-        super().__init__(
-            domain=domain or discrs.Discretization(matrix.shape[1]),
-            codomain=codomain or discrs.Discretization(matrix.shape[0]),
-            linear=True
-        )
-        self._inverse = inverse
-
-    def _eval(self, x):
-        return self.matrix @ x
-
-    def _adjoint(self, y):
-        return self.matrix.T @ y
-
-    @util.memoized_property
-    def inverse(self):
-        if isinstance(self._inverse, Operator):
-            return self._inverse
-        elif isinstance(self._inverse, np.ndarray):
-            return MatrixMultiplication(self._inverse, inverse=self)
-        elif isinstance(self._inverse, str):
-            if self._inverse == 'inv':
-                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
-            if self._inverse == 'cholesky':
-                # TODO LU, QR
-                return CholeskyInverse(self, matrix=self.matrix)
-        raise NotImplementedError
-
-    def __repr__(self):
-        return util.make_repr(self, self.matrix)
 
 
 class Power(Operator):
