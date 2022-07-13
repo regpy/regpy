@@ -550,7 +550,8 @@ class Pow(Operator):
         return Pow(self.op.inverse,self.exponent)
 
 class Identity(Operator):
-    """The identity operator on a discretization. Performs a copy to prevent callers from
+    """The identity operator on a discretization. 
+    By default, a copy is performed to prevent callers from
     accidentally modifying the argument when modifying the return value.
 
     Parameters
@@ -559,14 +560,21 @@ class Identity(Operator):
         The underlying discretization.
     """
 
-    def __init__(self, domain):
+    def __init__(self, domain, copy=True):
+        self.copy = copy
         super().__init__(domain, domain, linear=True)
 
     def _eval(self, x):
-        return x.copy()
+        if self.copy:
+            return x.copy()
+        else:
+            return x
 
     def _adjoint(self, x):
-        return x.copy()
+        if self.copy:
+            return x.copy()
+        else:
+            return x
 
     @property
     def inverse(self):

@@ -209,9 +209,9 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel =
         g_to_modes = Vector_of_operators(op_list)
     op_mat = []
     for n in range(0,N):
-        op_mat.append([None,Identity(domain)])
+        op_mat.append([None,Identity(domain,copy=False)])
     for n in range(0,N):
-        op_mat.append([Identity(domain),None]) 
+        op_mat.append([Identity(domain,copy=False),None]) 
     modes_to_data = Matrix_of_operators(op_mat)
 
     return modes_to_data*g_to_modes
@@ -239,9 +239,9 @@ def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,pa
         g_to_modes = Vector_of_operators(op_list)
     op_mat = []
     for n in range(0,N):
-        op_mat.append([None,Identity(domain)])
+        op_mat.append([None,Identity(domain,copy=False)])
     for n in range(0,N):
-        op_mat.append([Identity(domain),None]) 
+        op_mat.append([Identity(domain,copy=False),None]) 
     modes_to_data = Matrix_of_operators(op_mat)
 
     return modes_to_data*g_to_modes
