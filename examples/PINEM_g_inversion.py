@@ -3,8 +3,11 @@ import logging
 from multiprocessing.spawn import get_command_line
 from operator import ge
 
+from scipy.sparse import csc_matrix 
+from scipy.sparse.linalg import spsolve
 import matplotlib.pyplot as plt
 import numpy as np
+from copy import deepcopy
 import regpy.stoprules as rules
 from numpy.core.numeric import ones_like
 from regpy.discrs import UniformGrid, DirectSum
@@ -45,8 +48,36 @@ class FixAmplitude(Operator):
         return self.codomain.join(0*ampl, phase)
 
     def _adjoint(self, x):
+        ampl, phase = self.codomain.split(x)
+        return self.domain.join(0*ampl, phase)
+
+class FixPartsOfAmplitudeAndPhase(Operator):
+    # Operator (ampl|_mask_a,phase|_mask_p) |-> (E(ampl|_mask_a)+prior_ampl, E(phase|_mask_p)+prior_phase) 
+    # for some prior guess prior_ampl, prior_phase of amplitude and phase, masks (mask_a,mask_p)
+    # for the regions where phase and amplitude are supposed to be reconstructed/improved. 
+    # E extends functions by 0 
+    def __init__(self, prior_ampl, prior_phase,mask_a,mask_p,domain):
+        self.prior_ampl = prior_ampl
+        self.prior_phase = prior_phase
+        self.proj_a = CoordinateProjection(domain,mask_a)
+        self.proj_p = CoordinateProjection(domain, mask_p)
+        self.ext_a = self.proj_a.adjoint
+        self.ext_p = self.proj_p.adjoint
+        super().__init__(DirectSum(self.proj_a.codomain, self.proj_p.codomain), 
+            DirectSum(domain, domain))
+
+    def _eval(self, x, differentiate):
         ampl, phase = self.domain.split(x)
-        return self.codomain.join(0*ampl, phase)
+        return self.codomain.join(self.ext_a(ampl)+self.prior_ampl, 
+             self.ext_p(phase)+self.prior_phase)
+
+    def _derivative(self, x):
+        ampl, phase = self.domain.split(x)
+        return self.codomain.join(self.ext_a(ampl), self.ext_p(phase))
+
+    def _adjoint(self, x):
+        ampl, phase = self.codomain.split(x)
+        return self.domain.join(self.proj_a(ampl), self.proj_p(phase))
 
 
 def ampphase2complex(amp, phase):
@@ -77,7 +108,7 @@ def load_experimental_data_2(filename):
     px_size = mat['pm']['px_sizes'][0][0]
     return g_map, mask, mask_binary, px_size
 
-def simulated_data(complex_g=True,amplitude_known=False, parallel=True,N=30):
+def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=30):
     # filename = r"./data/01_javier.mat"
     filename = r"./data/FresnelPinemMap_obj_javier.mat"
     g_map, mask, mask_binary, px_size = load_experimental_data_2(filename)
@@ -94,7 +125,7 @@ def simulated_data(complex_g=True,amplitude_known=False, parallel=True,N=30):
                            np.linspace(0, 1, Ydim, endpoint=False))
         op = complex_PINEM_g_to_data(grid, fresnelNumber, mask_binary,
                                      A_Psi0_Multiplier, N=N, parallel=parallel)
-        if amplitude_known:
+        if amplitude_known==1:
             op2 = SquaredModulus(grid.complex_space()) - np.abs(g_map)**2
             op = Vector_of_operators([op2, op])
         return op, grid, g_map, g_map, mask
@@ -109,7 +140,7 @@ def simulated_data(complex_g=True,amplitude_known=False, parallel=True,N=30):
         return op, grid, exact_solution, g_map, mask_binary, A_Psi0_Multiplier
 
 
-def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
+def synthetic_data(complex_g=True, amplitude_known=1, parallel=True):
     # Example parameters
     fresnelNumber = 5e3    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
     # in grid (i.e. with the size of one pixel for the above choice of grid)
@@ -124,8 +155,10 @@ def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
 
     # define forward operator and its domain
     [Xco, Yco] = np.meshgrid(np.arange(-1, 1, 2/Xdim), np.arange(-1, 1, 2/Ydim))
-    mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
-    mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
+    mask_p = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
+    mask_p = mask_p | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
+
+    mask = (abs(Xco)<=0.8) & (abs(Yco)<=0.8)
     A_Psi0_Multiplier = np.ones(grid.shape, complex)
 
     # Create phantom image (= padded example-image)
@@ -138,7 +171,8 @@ def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
                        (grid.shape[1] - g_map_amp.shape[1])//2])
     g_map_amp = np.pad(g_map_amp, pad_amount, 'constant', constant_values=0)
     g_map_phase = np.pad(g_map_phase, pad_amount, 'constant', constant_values=0)
-    g_map_phase *= mask
+    g_map_phase = harmonic_extension(~mask | mask_p, g_map_phase*mask)
+    g_map_amp = harmonic_extension(~mask | mask_p, g_map_amp*mask)
     g_map = ampphase2complex(g_map_amp, g_map_phase)
     # g_map /= 10*abs(g_map).max()
     # g_map += ones_like(g_map)
@@ -147,12 +181,12 @@ def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
     if complex_g:
         op = complex_PINEM_g_to_data(grid, fresnelNumber, mask,
                                      A_Psi0_Multiplier, N=N, parallel=parallel)
-        if amplitude_known:
+        if amplitude_known==1:
             op2 = SquaredModulus(grid.complex_space()) - np.abs(g_map)**2
             op = Vector_of_operators([op2, op])
     else:
         op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=N, parallel=True)
-        if amplitude_known:
+        if amplitude_known==1:
             ampl_fix = FixAmplitude(np.abs(g_map), grid)
             op = op * ampl_fix
 
@@ -160,43 +194,120 @@ def synthetic_data(complex_g=True, amplitude_known=False, parallel=True):
         exact_solution = g_map
     else:
         exact_solution = op.domain.join(np.abs(g_map), np.angle(g_map))
-    return op, grid, exact_solution, g_map, mask, A_Psi0_Multiplier
+    return op, grid, exact_solution, g_map, mask & ~mask_p, mask_p
 
+def harmonic_extension(mask, values, damping = 0):
+    # harmonic extension of a function on part of a 2D regular grid  
+    # input: 
+    #     mask: binary mask with True at point where values are given.
+    #           At the boundary mask must have values True.
+    #     values: array of function values: only values at points where mask=True are relevant
+    #     damping: The extension satisfies (-Delta + damping)u =0, so only for the default 
+    #              damping = 0 the extension is harmonic. 
+    #              damping >0 may be used to create initial guesses for synthetic data generated with damping=0.  
+    # 
+    # output:
+    #     An array u which coincides with values at {mask=True}, and an approximation of a 
+    #     harmonic function on {mask=False} which is globally continuous
+    #   
+    u = values.flatten()
+    G = np.where(mask,0,1) # boolean to integer
+    k_int = np.nonzero(G)  # integer coordinates of interior points
+    k_ext = np.nonzero(1-G) # integer coordinates of exterior points
+    G[k_int] = 1+np.arange(len(k_int[0]))
+
+    G1 = G.flatten()
+    [m,n] = G.shape
+    # Indices of interior points
+    p = np.where(G1)[0] # list of numbers of interior points in flattened array
+    N = len(p)
+    f = np.zeros((N,)) # right hand side of matrix equation 
+
+    # Connect interior points to themselves with 4's.
+    i = G1[p]-1
+    j = G1[p]-1
+    s = (damping/(m*m) + 4.)*np.ones(p.shape)
+
+    # for k = north, east, south, west
+    for k in [-1, m, 1, -m]:
+        # Possible neighbors in k-th direction
+        Q = G1[p+k]
+        # Index of points with interior neighbors in k-th direction
+        q = np.where(Q)[0]
+        q_ext = np.where(Q==0)[0]
+        # Connect interior points to neighbors with -1's.
+        i = np.concatenate([i, G1[p[q]]-1])
+        j = np.concatenate([j,Q[q]-1])
+        s = np.concatenate([s,-np.ones(q.shape)])
+        i_ext = G1[p[q_ext]]-1
+        f[i_ext] = f[i_ext]+u[p[q_ext]+k]
+    # sparse matrix with 5 diagonals
+    negLap= csc_matrix((s, (i,j)),(N,N))
+    u = values.copy()
+    u[k_int]=spsolve(negLap,f)
+    return u
 
 def main():
     real_data = False
-    complex_g = True
-    amplitude_known = True
+    complex_g = False
+    ## amplitude_known == 0 -> no prior knowledge of amplitude
+    # amplitude_known == 1 -> prior knowledge of amplitude everywhere
+    # amplitude_known == 1 -> prior knowledge of amplitude only on mask_a
+    amplitude_known = -1
     intensity = 1e6
     if real_data:
-        op, grid, exact_solution, g_map, mask, A_Psi0 = simulated_data(complex_g=complex_g,
-                                                                       amplitude_known=amplitude_known)
+        op, grid, exact_solution, g_map, mask_a, mask_p \
+            = simulated_data(complex_g=complex_g, amplitude_known=amplitude_known)
         # regpar = 5e-2; sobolev_index = 2
         regpar = 1e-0; sobolev_index = 0
         regpar_step = 1/3
     else:
-        op, grid, exact_solution, g_map, mask, A_Psi0 = synthetic_data(complex_g=complex_g,
-                                                                       amplitude_known=amplitude_known)
-        regpar = 5e-4
-        sobolev_index = 2
+        op, grid, exact_solution, g_map, mask_a, mask_p \
+            = synthetic_data(complex_g=complex_g, amplitude_known=amplitude_known)
+        if amplitude_known == -1:
+            regpar = 1e-6 
+        else:
+            regpar = 5e-4
+        sobolev_index = 1
         regpar_step = 1/3
 
     if complex_g:
         # Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
-        Hdomain = Hm0_domain(mask, dtype=complex, index = sobolev_index)
-        projection = CoordinateProjection(grid.complex_space(),mask)
+        Hdomain = Hm0_domain(mask_a, dtype=complex, index = sobolev_index)
+        projection = CoordinateProjection(grid.complex_space(),mask_a)
     else:
+        ## for global Sobolev norm
         # Hdomain = 0.5 * Sobolev(grid, index=sobolev_index) + L2(grid)  # Sobolev(grid, index=0.5)
-        Hdomain = 0.5*Hm0_domain(mask, index = sobolev_index) + L2(grid)
-        projection = opDirectSum(*(CoordinateProjection(grid,mask),Identity(grid)))        
-    embedding = projection.adjoint
-    # op_emb = op
-    op_emb = op * embedding
+        if amplitude_known == 1:
+            Hdomain = 0.5*Hm0_domain(mask_p, index = sobolev_index) + L2(grid)
+            projection = opDirectSum(*(CoordinateProjection(grid,mask_p),Identity(grid))) 
+        if amplitude_known == -1: 
+            Hdomain = Hm0_domain(mask_a, index = sobolev_index) + Hm0_domain(mask_p, index = sobolev_index)
+    if amplitude_known == 1:
+        extension = projection.adjoint
+        op_ext = op * extension
+    if amplitude_known == -1: 
+        prior_ampl = harmonic_extension(~mask_a,np.abs(g_map),damping =1)
+        prior_phase = harmonic_extension(~mask_p,np.angle(g_map),damping =1)
+        extension = FixPartsOfAmplitudeAndPhase(prior_ampl,prior_phase, \
+            mask_a, mask_p, grid)
+        _,deriv = extension.linearize(extension.domain.zeros())
+        projection = deriv.adjoint
+
+        # as extension is also needed for plotting a copy is required to avoid errors 
+        # on the use of revoked copies 
+        extension2 = deepcopy(extension)
+        #extension2 = FixPartsOfAmplitudeAndPhase(abs(g_map) * (~mask_a),np.zeros(grid.shape), \
+        #    mask_a, mask_p, grid)
+        op_ext = op * extension2
+
+    ## for global Sobolev norm
+    # op_ext = op
 
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
-    if complex_g and amplitude_known:
+    if complex_g and amplitude_known==1:
         #exact_data = op(exact_solution)
-        exact_data = op_emb(projection(exact_solution))
+        exact_data = op_ext(projection(exact_solution))
         exact_data_comp = op.codomain.split(exact_data)
         noisy_data = np.random.poisson(intensity * exact_data_comp[1])/intensity
         data = op.codomain.join(np.zeros_like(exact_data_comp[0]), noisy_data)
@@ -208,7 +319,7 @@ def main():
         Hcodomain = hilbert.DirectSum(Hcodomain0, Hcodomain1)
     else:
         #exact_data = op(exact_solution)
-        exact_data = op_emb(projection(exact_solution))
+        exact_data = op_ext(projection(exact_solution))
         data = np.random.poisson(intensity * exact_data)/intensity
         data_comp = op.codomain.split(data)
         # define codomain Gram matrix based on observed data to approximate log-likelihood
@@ -217,26 +328,29 @@ def main():
             Hcodomain = Hcodomain + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
 
     # Image-reconstruction using the IRGNM method
-    setting = HilbertSpaceSetting(op=op_emb, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
     if complex_g:
-        if amplitude_known:
+        if amplitude_known==1:
             init_vec = abs(g_map).astype(complex)
         else:
-            init_vec = grid.complex_space().ones() * mask
+            init_vec = grid.complex_space().ones() * mask_a
     else:
         angle = np.deg2rad(10)
-        X, Y = np.meshgrid(np.linspace(0, 1, np.size(mask, 1)), np.linspace(0, 1, np.size(mask, 0)))
+        X, Y = np.meshgrid(np.linspace(0, 1, np.size(mask_a, 1)), np.linspace(0, 1, np.size(mask_a, 0)))
         init_phase_gradient = -1 * (np.sin(angle)*X + np.cos(angle)*Y) * 2*np.pi * 3 + 2.5
-        if amplitude_known:
+        if amplitude_known==1:
             # init_vec = op.domain.join(np.abs(g_map), \
             #         norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
             init_vec = op.domain.join(np.abs(g_map),
-                                      init_phase_gradient * mask)
-        else:
+                                      init_phase_gradient * mask_p)
+        elif amplitude_known == 0:
             # init_vec = op.domain.join(mask, \
             #     norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
-            init_vec = op.domain.join(mask,
-                                      init_phase_gradient * mask)
+            init_vec = op.domain.join(mask_a.astype(dtype=np.float),
+                                      init_phase_gradient * mask_p)
+        else:
+            init_vec = op.domain.join(np.zeros_like(prior_ampl),
+                                      np.zeros_like(prior_phase))
     # init_vec_proj = init_vec
     init_vec_proj = projection(init_vec)
 
@@ -245,7 +359,7 @@ def main():
         regpar=regpar, regpar_step=regpar_step,
         inner_it_logging_level=logging.INFO)
     stoprule = (
-        rules.CountIterations(max_iterations=15) +
+        rules.CountIterations(max_iterations=25) +
         rules.Discrepancy(
             setting.Hcodomain.norm,
             data,
@@ -261,7 +375,7 @@ def main():
         ex_abs = np.abs(g_map)
         ex_phase = np.angle(g_map)
     fig1 = imshow_fig(2, 2)
-    if not amplitude_known:
+    if amplitude_known==0:
         plotdata = [{'pos': (0, 0), 'data': np.abs(g_map), 'title': 'Exact |g|'}]
     else:
         plotdata = [{'pos': (1, 0), 'data': ex_phase, 'title': 'arg(g)'}]
@@ -283,15 +397,16 @@ def main():
 
     def reconstruction_error(_exact, _reconstruction):
         nonlocal complex_g
-        nonlocal mask
+        nonlocal mask_a
+        nonlocal mask_p
         if complex_g:
-            reco_error1 = norm(mask*(np.abs(_reconstruction)-np.abs(_exact)))/norm(mask*np.abs(_exact))
-            reco_error2 = norm(np.abs(1-np.exp(1j*mask*np.angle(_reconstruction)-1j*mask*np.angle(_exact))))
+            reco_error1 = norm(mask_a*(np.abs(_reconstruction)-np.abs(_exact)))/norm(mask_a*np.abs(_exact))
+            reco_error2 = norm(np.abs(1-np.exp(1j*mask_p*np.angle(_reconstruction)-1j*mask_p*np.angle(_exact))))
         else:
             ex_abs, ex_phase = op.domain.split(_exact)
             reco_abs, reco_phase = op.domain.split(_reconstruction)
-            reco_error1 = norm(mask*(reco_abs-ex_abs))/norm(mask*ex_abs)
-            reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
+            reco_error1 = norm(mask_a*(reco_abs-ex_abs))/norm(mask_a*ex_abs)
+            reco_error2 = norm(mask_p*(reco_phase-ex_phase))/norm(mask_p*ex_phase)
         return reco_error1, reco_error2
 
     # if complex_g:
@@ -312,7 +427,7 @@ def main():
 
     for reco, reco_data in solver.until(stoprule):
         # ereco = reco
-        ereco = embedding(reco)
+        ereco = extension(reco)
         if not stoprule.triggered:
             Newton_step = solver.iteration_step_nr
             reco_error1, reco_error2 = reconstruction_error(exact_solution, ereco)
@@ -340,7 +455,7 @@ def main():
             reco_data_comp = flat_codomain.split(reco_data)
 
             plotdata = []
-            if amplitude_known and not complex_g:
+            if amplitude_known==1 and not complex_g:
                 plotdata.append({'pos': (0, 0), 'data': np.abs(1-np.exp(1j*reco_phase-1j*np.angle(g_map))),
                                  'title': '|1-exp(i arg(g_rec)-i arg g)|, step {}'.format(Newton_step)})
             else:
@@ -362,7 +477,7 @@ def main():
             fig2.plot(plotdata)
 
             axs3[0].cla()
-            if not amplitude_known:
+            if not amplitude_known==1:
                 axs3[0].plot(stats['ampl_err'], label='amplitude error')
             axs3[0].plot(stats['phase_err'], label='phase error')
             axs3[0].legend()

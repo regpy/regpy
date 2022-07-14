@@ -568,8 +568,8 @@ class Hm0_domain(HilbertSpace):
         super().__init__(discr)
         self.mask = mask
         self.G = np.where(mask,1,0) # boolean to integer
-        k = np.nonzero(self.G)
-        self.G[k] = 1+np.arange(len(k[0]))
+        k = np.nonzero(self.G) # integer coordinates of interior points
+        self.G[k] = 1+np.arange(len(k[0])) # numbering of the interior points
         if h==None:
             self.h=1/mask.shape[0]
         else:
@@ -587,7 +587,7 @@ class Hm0_domain(HilbertSpace):
         [m,n] = self.G.shape
         # Indices of interior points
         G1 = self.G.flatten()
-        p = np.where(G1)[0]
+        p = np.where(G1)[0] # list of numbers of interior points in flattened array
         N = len(p)
         # Connect interior points to themselves with 4's.
         i = G1[p]-1
