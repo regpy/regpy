@@ -252,7 +252,7 @@ def main():
     complex_g = False
     ## amplitude_known == 0 -> no prior knowledge of amplitude
     # amplitude_known == 1 -> prior knowledge of amplitude everywhere
-    # amplitude_known == 1 -> prior knowledge of amplitude only on mask_a
+    # amplitude_known == -1 -> prior knowledge of amplitude only on mask_a
     amplitude_known = -1
     intensity = 1e6
     if real_data:
@@ -286,7 +286,8 @@ def main():
     if amplitude_known == 1:
         extension = projection.adjoint
         op_ext = op * extension
-    if amplitude_known == -1: 
+    if amplitude_known == -1:
+        print('computing harmonic extension') 
         prior_ampl = harmonic_extension(~mask_a,np.abs(g_map),damping =1)
         prior_phase = harmonic_extension(~mask_p,np.angle(g_map),damping =1)
         extension = FixPartsOfAmplitudeAndPhase(prior_ampl,prior_phase, \
@@ -359,7 +360,7 @@ def main():
         regpar=regpar, regpar_step=regpar_step,
         inner_it_logging_level=logging.INFO)
     stoprule = (
-        rules.CountIterations(max_iterations=25) +
+        rules.CountIterations(max_iterations=2) +
         rules.Discrepancy(
             setting.Hcodomain.norm,
             data,
