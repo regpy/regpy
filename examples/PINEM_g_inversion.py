@@ -110,7 +110,7 @@ def load_experimental_data_2(filename):
 
 def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=30):
     # filename = r"./data/01_javier.mat"
-    filename = r"./data/FresnelPinemMap_obj_javier.mat"
+    filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_experimental_data_2(filename)
     fov = tuple(x*px_size for x in mask.shape)
     lambda_electron = 2.51e-12
