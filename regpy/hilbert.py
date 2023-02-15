@@ -595,7 +595,7 @@ class Hm0_domain(HilbertSpace):
         s = (1+4./self.h**2)*np.ones(p.shape)
 
         # for k = north, east, south, west
-        for k in [-1, m, 1, -m]:
+        for k in [-1, n, 1, -n]:
             # Possible neighbors in k-th direction
             Q = G1[p+k]
             # Index of points with interior neighbors

@@ -72,6 +72,36 @@ class Solver:
         while self.next():
             yield self.x, self.y
 
+    def while_(self, stoprule=None):
+        """Generator that runs the solver with the given stopping rule. This is a convenience method
+        that implements a simple generator loop running the solver until it either converges or the
+        stopping rule triggers.
+
+        Parameters
+        ----------
+        stoprule : regpy.stoprules.StopRule, optional
+            The stopping rule to be used. If omitted, stopping will only be
+            based on the return value of `next`.
+
+        Yields
+        ------
+        tuple of arrays
+            The (x, y) pair of the current iteration, or the solution chosen by
+            the stopping rule.
+        """
+
+        if stoprule is not None and stoprule.stop(self.x,self.y):
+                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
+        for x, y in self:
+            yield x, y
+            if stoprule is not None and stoprule.stop(x, y):
+                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
+                # TODO document this behaviour
+                yield x, y
+                return
+        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+
+
     def until(self, stoprule=None):
         """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
@@ -100,9 +130,9 @@ class Solver:
 
     def run(self, stoprule=None):
         """Run the solver with the given stopping rule. This method simply runs the generator
-        `regpy.solvers.Solver.until` and returns the final `(x, y)` pair.
+        `regpy.solvers.Solver.while_` and returns the final `(x, y)` pair.
         """
-        for x, y in self.until(stoprule):
+        for x, y in self.while_(stoprule):
             pass
         return x, y
 

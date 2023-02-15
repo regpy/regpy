@@ -136,10 +136,13 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations):
+    def __init__(self, max_iterations, while_type = True):
         super().__init__()
         self.max_iterations = max_iterations
-        self.iteration = 0
+        if while_type:
+            self.iteration = -1
+        else:
+            self.iteration = 0
 
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)

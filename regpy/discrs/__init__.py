@@ -337,9 +337,9 @@ class Grid(Discretization):
             slc = [0] * self.ndim
             slc[i] = slice(None)
             axis = self.coords[i][tuple(slc)]
-            axes.append(axis)
+            axes.append(np.asarray(axis))
             extents.append(abs(axis[-1] - axis[0]))
-        self.axes = np.asarray(axes)
+        self.axes = axes
         """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
         """The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
