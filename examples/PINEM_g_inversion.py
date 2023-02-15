@@ -1,4 +1,4 @@
-from ast import operator
+#from ast import operator
 import logging
 from multiprocessing.spawn import get_command_line
 from operator import ge
@@ -108,7 +108,7 @@ def load_experimental_data_2(filename):
     px_size = mat['pm']['px_sizes'][0][0]
     return g_map, mask, mask_binary, px_size
 
-def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=30):
+def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=7):
     # filename = r"./data/01_javier.mat"
     filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_experimental_data_2(filename)
@@ -117,27 +117,31 @@ def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=30):
     defocus = 900e-6
     fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
     # Uniform grid
-    Xdim = mask.shape[0]
-    Ydim = mask.shape[1]
+    N1,N2 = mask.shape
     A_Psi0_Multiplier = mask.astype(complex)
+    boundary_mask = np.zeros_like(mask_binary)
+    boundary_mask[0,:]=True; boundary_mask[-1,:]=True
+    boundary_mask[:,0]=True; boundary_mask[:,-1]=True
+    mask_binary = mask_binary & ~boundary_mask
+
     if complex_g:
-        grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
-                           np.linspace(0, 1, Ydim, endpoint=False))
+        grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
+                           np.linspace(0, 1, N2, endpoint=False))
         op = complex_PINEM_g_to_data(grid, fresnelNumber, mask_binary,
                                      A_Psi0_Multiplier, N=N, parallel=parallel)
         if amplitude_known==1:
             op2 = SquaredModulus(grid.complex_space()) - np.abs(g_map)**2
             op = Vector_of_operators([op2, op])
-        return op, grid, g_map, g_map, mask
+        return op, grid, g_map, g_map, mask_binary
     else:
-        grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
-                           np.linspace(0, 1, Ydim, endpoint=False))
+        grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
+                           np.linspace(0, 1, N2, endpoint=False))
         op = PINEM_g_to_data(grid, fresnelNumber, mask_binary,
                              A_Psi0_Multiplier, N=N, parallel=parallel)
-        exact_solution = op.domain.join(np.log(np.abs(g_map)),
+        exact_solution = op.domain.join(np.log(np.abs(g_map)/10),
                                         np.unwrap(np.angle(g_map.T)).T)
 
-        return op, grid, exact_solution, g_map, mask_binary, A_Psi0_Multiplier
+        return op, grid, exact_solution, g_map, mask_binary, ~boundary_mask
 
 
 def synthetic_data(complex_g=True, amplitude_known=1, parallel=True):
@@ -226,10 +230,10 @@ def harmonic_extension(mask, values, damping = 0):
     # Connect interior points to themselves with 4's.
     i = G1[p]-1
     j = G1[p]-1
-    s = (damping/(m*m) + 4.)*np.ones(p.shape)
+    s = (damping/(m*n) + 4.)*np.ones(p.shape)
 
     # for k = north, east, south, west
-    for k in [-1, m, 1, -m]:
+    for k in [-1, n, 1, -n]:
         # Possible neighbors in k-th direction
         Q = G1[p+k]
         # Index of points with interior neighbors in k-th direction
@@ -248,7 +252,7 @@ def harmonic_extension(mask, values, damping = 0):
     return u
 
 def main():
-    real_data = False
+    real_data = True
     complex_g = False
     ## amplitude_known == 0 -> no prior knowledge of amplitude
     # amplitude_known == 1 -> prior knowledge of amplitude everywhere
@@ -259,7 +263,7 @@ def main():
         op, grid, exact_solution, g_map, mask_a, mask_p \
             = simulated_data(complex_g=complex_g, amplitude_known=amplitude_known)
         # regpar = 5e-2; sobolev_index = 2
-        regpar = 1e-0; sobolev_index = 0
+        regpar = 1e-10; sobolev_index = 1
         regpar_step = 1/3
     else:
         op, grid, exact_solution, g_map, mask_a, mask_p \
@@ -287,15 +291,17 @@ def main():
         extension = projection.adjoint
         op_ext = op * extension
     if amplitude_known == -1:
-        print('computing harmonic extension') 
-        prior_ampl = harmonic_extension(~mask_a,np.abs(g_map),damping =1)
-        prior_phase = harmonic_extension(~mask_p,np.angle(g_map),damping =1)
+        prior_ampl = harmonic_extension(~mask_a,np.abs(g_map),damping =400)
+        prior_phase = harmonic_extension(~mask_p,np.unwrap(np.angle(g_map.T)).T,damping =0)
+        #_, (ax1,ax2) = plt.subplots(1,2)
+        #ax1.imshow(prior_ampl)
+        #ax2.imshow(prior_phase)
         extension = FixPartsOfAmplitudeAndPhase(prior_ampl,prior_phase, \
             mask_a, mask_p, grid)
         _,deriv = extension.linearize(extension.domain.zeros())
         projection = deriv.adjoint
 
-        # as extension is also needed for plotting a copy is required to avoid errors 
+        # as extension is also needed for plotting, a copy is required to avoid errors 
         # on the use of revoked copies 
         extension2 = deepcopy(extension)
         #extension2 = FixPartsOfAmplitudeAndPhase(abs(g_map) * (~mask_a),np.zeros(grid.shape), \
@@ -310,7 +316,7 @@ def main():
         #exact_data = op(exact_solution)
         exact_data = op_ext(projection(exact_solution))
         exact_data_comp = op.codomain.split(exact_data)
-        noisy_data = np.random.poisson(intensity * exact_data_comp[1])/intensity
+        noisy_data = exact_data_comp #np.random.poisson(intensity * exact_data_comp[1])/intensity
         data = op.codomain.join(np.zeros_like(exact_data_comp[0]), noisy_data)
         Hcodomain0 = L2(grid)
         data_comp = flat_codomain.split(data)
@@ -319,8 +325,11 @@ def main():
             Hcodomain1 = Hcodomain1 + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
         Hcodomain = hilbert.DirectSum(Hcodomain0, Hcodomain1)
     else:
-        #exact_data = op(exact_solution)
-        exact_data = op_ext(projection(exact_solution))
+        exact_data = op(exact_solution)
+        #if amplitude_known = 0: 
+        #    exact_data = op_ext(projection(exact_solution))
+        #elif amplitude_known = -1: 
+        #    exact_data = op_ext(projection(exact_solution-))
         data = np.random.poisson(intensity * exact_data)/intensity
         data_comp = op.codomain.split(data)
         # define codomain Gram matrix based on observed data to approximate log-likelihood
@@ -355,26 +364,27 @@ def main():
     # init_vec_proj = init_vec
     init_vec_proj = projection(init_vec)
 
-    solver = IrgnmCG(
-        setting, data, init=init_vec_proj,
-        regpar=regpar, regpar_step=regpar_step,
-        inner_it_logging_level=logging.INFO)
     stoprule = (
-        rules.CountIterations(max_iterations=2) +
         rules.Discrepancy(
             setting.Hcodomain.norm,
             data,
             noiselevel=setting.Hcodomain.norm(np.sqrt(data/intensity)),
             tau=1.0
-        )
+        ) +
+        rules.CountIterations(max_iterations=50,while_type=True) 
     )
+    solver = IrgnmCG(
+        setting, data, init=init_vec_proj,
+        regpar=regpar, regpar_step=regpar_step,
+        inner_it_logging_level=logging.INFO
+        )
 
     # plot exact solution and data
     if not complex_g:
         ex_abs, ex_phase = op.domain.split(exact_solution)
     else:
         ex_abs = np.abs(g_map)
-        ex_phase = np.angle(g_map)
+        ex_phase = np.unwrap(np.angle(g_map.T)).T
     fig1 = imshow_fig(2, 2)
     if amplitude_known==0:
         plotdata = [{'pos': (0, 0), 'data': np.abs(g_map), 'title': 'Exact |g|'}]
@@ -417,7 +427,7 @@ def main():
     #     reco_abs, reco_phase = op.domain.split(init_vec)
     #     reco_error1 = norm(mask*(reco_abs-ex_abs))/norm(mask*ex_abs)
     #     reco_error2 = norm(mask*(reco_phase-ex_phase))/norm(mask*ex_phase)
-    reco_error1, reco_error2 = reconstruction_error(exact_solution, init_vec)
+    reco_error1, reco_error2 = reconstruction_error(exact_solution, extension(init_vec_proj))
     
     print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
         0, reco_error1, reco_error2))
@@ -426,7 +436,7 @@ def main():
              'residuals': [norm(solver.y-exact_data)/norm(exact_data)],
              'nr_inner_steps': [0]}
 
-    for reco, reco_data in solver.until(stoprule):
+    for reco, reco_data in solver.while_(stoprule):
         # ereco = reco
         ereco = extension(reco)
         if not stoprule.triggered:
@@ -450,10 +460,11 @@ def main():
         if Newton_step % 2 == 0 or (stoprule.triggered and ((Newton_step-1) % 2 != 0)):
             if complex_g:
                 reco_amp = np.abs(ereco)
-                reco_phase = np.angle(ereco)
+                reco_phase = np.unwrap(np.angle(ereco.T)).T
             else:
                 reco_amp, reco_phase = op.domain.split(ereco)
             reco_data_comp = flat_codomain.split(reco_data)
+            ex_data_comp = flat_codomain.split(data)
 
             plotdata = []
             if amplitude_known==1 and not complex_g:
@@ -466,15 +477,15 @@ def main():
                                  'title': 'Error |g|, step {}'.format(Newton_step)})
             plotdata.append({'pos': (1, 1), 'data': reco_phase,
                             'title': 'arg(g_rec), step {}'.format(Newton_step)})
-            plotdata.append({'pos': (0, 1), 'data': reco_phase-np.angle(g_map),
-                             'title': 'arg(g_rec)-arg g), step {}'.format(Newton_step)})
+            plotdata.append({'pos': (0, 1), 'data': reco_phase-np.unwrap(np.angle(g_map.T)).T,
+                             'title': 'arg(g_rec)-arg g, step {}'.format(Newton_step)})
             fig1.plot(plotdata)
 
             plotdata = [{'pos': (1, j), 'data': reco_data_comp[j],
                          'title':'recon. data step {}'.format(Newton_step)}
                         for j in range(nr_data)]
-            plotdata.append({'pos': (1, nr_data), 'data': reco_data_comp[nr_data-1]-reco_data_comp[nr_data-2],
-                             'title': 'diff reco'})
+            plotdata.append({'pos': (1, nr_data), 'data': reco_data_comp[nr_data-1]-ex_data_comp[nr_data-1],
+                             'title': 'exact_data'})
             fig2.plot(plotdata)
 
             axs3[0].cla()
