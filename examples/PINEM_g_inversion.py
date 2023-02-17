@@ -1,4 +1,3 @@
-#from ast import operator
 import logging
 from multiprocessing.spawn import get_command_line
 from operator import ge
@@ -252,6 +251,7 @@ def harmonic_extension(mask, values, damping = 0):
     return u
 
 def main():
+    # set parameters and initialize forward operator
     real_data = True
     complex_g = False
     ## amplitude_known == 0 -> no prior knowledge of amplitude
@@ -311,6 +311,7 @@ def main():
     ## for global Sobolev norm
     # op_ext = op
 
+    # define setting
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
     if complex_g and amplitude_known==1:
         #exact_data = op(exact_solution)
@@ -336,9 +337,9 @@ def main():
         Hcodomain = L2(grid, weights=(1+intensity*data_comp[0])/intensity)
         for j in range(1, len(data_comp)):
             Hcodomain = Hcodomain + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
-
-    # Image-reconstruction using the IRGNM method
     setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+
+
     if complex_g:
         if amplitude_known==1:
             init_vec = abs(g_map).astype(complex)
