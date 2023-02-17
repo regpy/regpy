@@ -105,6 +105,7 @@ def load_experimental_data_2(filename):
     mask = mat['pm']['mask'][0][0]
     mask_binary = mat['pm']['mask_binary'][0][0].astype(dtype=bool)
     px_size = mat['pm']['px_sizes'][0][0]
+    px_size = px_size * 1e-9 #convert nm to m
     return g_map, mask, mask_binary, px_size
 
 def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=7):
