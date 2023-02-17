@@ -251,7 +251,7 @@ def harmonic_extension(mask, values, damping = 0):
     return u
 
 def main():
-    # set parameters and initialize forward operator
+    ################################ set parameters and initialize forward operator
     real_data = True
     complex_g = False
     ## amplitude_known == 0 -> no prior knowledge of amplitude
@@ -311,7 +311,7 @@ def main():
     ## for global Sobolev norm
     # op_ext = op
 
-    # define setting
+    ############################### compute synthetic data and define setting
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
     if complex_g and amplitude_known==1:
         #exact_data = op(exact_solution)
@@ -339,7 +339,7 @@ def main():
             Hcodomain = Hcodomain + L2(grid, weights=(1+intensity*data_comp[j])/intensity)
     setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
 
-
+    ##################### define initial guess
     if complex_g:
         if amplitude_known==1:
             init_vec = abs(g_map).astype(complex)
@@ -365,6 +365,7 @@ def main():
     # init_vec_proj = init_vec
     init_vec_proj = projection(init_vec)
 
+    ############################### initialize regularization method and sotpping rule
     stoprule = (
         rules.Discrepancy(
             setting.Hcodomain.norm,
@@ -380,7 +381,7 @@ def main():
         inner_it_logging_level=logging.INFO
         )
 
-    # plot exact solution and data
+    ############################## plot exact solution and exact data
     if not complex_g:
         ex_abs, ex_phase = op.domain.split(exact_solution)
     else:
@@ -437,6 +438,7 @@ def main():
              'residuals': [norm(solver.y-exact_data)/norm(exact_data)],
              'nr_inner_steps': [0]}
 
+    ########################################## perform inversion
     for reco, reco_data in solver.while_(stoprule):
         # ereco = reco
         ereco = extension(reco)
