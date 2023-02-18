@@ -14,55 +14,50 @@ class NewtonCG(Solver):
     properties of CGNE with early stopping (see Hanke 1997).
     """
 
-    def __init__(self, op, data, init, cgmaxit=50, rho=0.8):
+    def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8):
         super().__init__()
-        self.op = op
+        self.setting = setting
         self.data = data
-        self.x = init
-        self._outer_update()
+        if init is None:
+            init = self.setting.op.domain.zeros()
+        self.x = np.copy(init)
+        self.y, self.deriv = self.setting.op.linearize(self.x)
         self.rho = rho
         self.cgmaxit = cgmaxit
-
-    def _outer_update(self):
-        self._x_k = np.zeros(np.shape(self.x))
-        self.y = self.op(self.x)
-        self._residual = self.data - self.y
-        _, self.deriv = self.op.linearize(self.x)
-        self._s = self._residual - self.deriv(self._x_k)
-        self._s2 = self.op.codomain.gram(self._s)
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.op.domain.gram_inv(self._rtilde)
-        self._d = self._r
-        self._innerProd = self.op.domain.inner(self._r, self._rtilde)
-        self._norms0 = np.sqrt(np.real(self.op.domain.inner(self._s2, self._s)))
-        self._k = 1
-
-    def _inner_update(self):
-        _, self.deriv = self.op.linearize(self.x)
-        self._aux = self.deriv(self._d)
-        self._aux2 = self.op.codomain.gram(self._aux)
-        self._alpha = (self._innerProd
-                       / np.real(self.op.codomain.inner(self._aux, self._aux2)))
-        self._s2 += -self._alpha * self._aux2
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.op.domain.gram_inv(self._rtilde)
-        self._beta = (np.real(self.op.codomain.inner(self._r, self._rtilde))
-                      / self._innerProd)
-
+    
     def _next(self):
-        while (np.sqrt(self.op.domain.inner(self._s2, self._s))
-               > self.rho * self._norms0 and
-               self._k <= self.cgmaxit):
-            self._inner_update()
+        self._k = 0
+        self._s = self.data - self.y  
+        # aux plays the role of s here to avoid storage for another vector in codomain
+        self._x_k = self.setting.op.domain.zeros()
+        # self._s += - self.deriv(self._x_k)
+        self._s2 = self.setting.Hcodomain.gram(self._s)
+        self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
+        self._rtilde = self.deriv.adjoint(self._s2)
+        self._r = self.setting.Hdomain.gram_inv(self._rtilde)
+        self._d = self._r
+        self._innerProd = np.vdot(self._r, self._rtilde).real
+     
+        while (self._k==0 or (np.sqrt(np.vdot(self._s2, self._s).real)
+               > self.rho * self._norms0 and self._k <= self.cgmaxit)):
+            self._q = self.deriv(self._d)
+            self._q2 = self.setting.Hcodomain.gram(self._q)
+            self._alpha = self._innerProd / np.vdot(self._q, self._q2).real
             self._x_k += self._alpha * self._d
+            self._s += -self._alpha * self._q
+            self._s2 += -self._alpha * self._q2
+            self._rtilde = self.deriv.adjoint(self._s2)
+            self._r = self.setting.Hdomain.gram_inv(self._rtilde)
+            self._innerProd = np.vdot(self._r, self._rtilde).real
+            self._beta = np.vdot(self._r, self._rtilde).real / self._innerProd
             self._d = self._r + self._beta * self._d
             self._k += 1
+        self.log.info('Inner CG iteration required {} steps.'.format(self._k))
         self.x += self._x_k
-        self._outer_update()
+        self.y , self.deriv = self.setting.op.linearize(self.x)
 
     def nr_inner_its(self):
         return self._k
-
 
 class NewtonCGFrozen(Solver):
     def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
@@ -97,11 +92,11 @@ class NewtonCGFrozen(Solver):
 
     def _inner_update(self):
         _, self.deriv = self.op.linearize(self.x)
-        self._aux = self.deriv(self._d)
-        self._aux2 = self.setting.codomain.gram(self._aux)
+        self._q = self.deriv(self._d)
+        self._q2 = self.setting.codomain.gram(self._q)
         self._alpha = (self._innerProd
-                       / np.real(self.setting.codomain.inner(self._aux, self._aux2)))
-        self._s2 += -self._alpha * self._aux2
+                       / np.real(self.setting.codomain.inner(self._q, self._q2)))
+        self._s2 += -self._alpha * self._q2
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.setting.domain.gram_inv(self._rtilde)
         self._beta = (np.real(self.setting.codomain.inner(self._r, self._rtilde))
