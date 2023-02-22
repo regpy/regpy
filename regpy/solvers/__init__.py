@@ -92,13 +92,14 @@ class Solver:
 
         if stoprule is not None and stoprule.stop(self.x,self.y):
                 self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
-        for x, y in self:
-            yield x, y
-            if stoprule is not None and stoprule.stop(x, y):
-                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
-                # TODO document this behaviour
+        else:
+            for x, y in self:
                 yield x, y
-                return
+                if stoprule is not None and stoprule.stop(x, y):
+                    self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
+                    # TODO document this behaviour
+                    yield x, y
+                    return
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
 

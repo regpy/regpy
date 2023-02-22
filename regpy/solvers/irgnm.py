@@ -68,7 +68,7 @@ class IrgnmCG(Solver):
             stoprule = CountIterations(2**15)
         stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(logging.WARNING)
-        self.log.info('Running Tikhonov solver.')
+        # self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
             data=self.data - self.y,
@@ -190,7 +190,7 @@ class IrgnmCGPrec(Solver):
             ).run()
             self.need_prec_update = False
             self._preconditioner_update()
-            self.log.info('Spectral Preconditioner updated')
+            self.log.info('Spectral preconditioner updated')
           
         else:
             preconditioner = MatrixMultiplication(self.M, domain=self.setting.Hdomain.discr, codomain=self.setting.Hdomain.discr)
