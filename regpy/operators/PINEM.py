@@ -181,9 +181,8 @@ class complex_Nemitzky_op_for_g(Operator):
             return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
                 + self._dir_g*np.real(self._factor_pow*y)
 
-
-
-def old_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel = False):
+def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
+     N=1,list_of_filters=None,parallel = False):
     assert not domain.is_complex
     cdomain = domain.complex_space()
     complexProjection = CoordinateProjection(cdomain,mask)
@@ -192,50 +191,14 @@ def old_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parall
         CoordinateProjection(domain,mask)
         )
     maskDomain = complexProjection.codomain
-    op_list = []
-    for n in range(-N,N+1):
-        if not n==0:
-            op_list.append(
-                SquaredModulus(cdomain)
-                *fresnel_propagator(cdomain, fresnel_number)
-                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
-                *Adjoint(complexProjection)
-                *Nemitzky_op_for_g(n,maskDomain)
-                *realProjection
-                )
-    if parallel:
-        g_to_modes = Parallel_vector_of_operators(op_list)
-    else:
-        g_to_modes = Vector_of_operators(op_list)
-    op_mat = []
-    for n in range(0,N):
-        op_mat.append([None,Identity(domain,copy=False)])
-    for n in range(0,N):
-        op_mat.append([Identity(domain,copy=False),None]) 
-    modes_to_data = Matrix_of_operators(op_mat)
-
-    return modes_to_data*g_to_modes
-
-
-def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,
-    N=1,list_of_filters=None,parallel = False):
-    assert not domain.is_complex
-    cdomain = domain.complex_space()
-    complexProjection = CoordinateProjection(cdomain,mask)
-    realProjection = DirectSum(
-        CoordinateProjection(domain,mask),
-        CoordinateProjection(domain,mask)
-        )
-    maskDomain = complexProjection.codomain
-    if N:
-
-            list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
+    if list_of_filters == None:
+        list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
     modes = set()
     for filter in list_of_filters:
         modes.update(filter)
     modes = list(modes)
     op_list = []
-    for n in range(-N,N+1):
+    for n in modes:
         if not n==0:
             op_list.append(
                 SquaredModulus(cdomain)
@@ -250,41 +213,9 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier,
     else:
         g_to_modes = Vector_of_operators(op_list)
     op_mat = []
-#    for n in range(0,N):
-#        op_mat.append([None,Identity(domain,copy=False)])
-#   for n in range(0,N):
-#        op_mat.append([Identity(domain,copy=False),None]) 
     for fil in list_of_filters:
         op_mat.append([Identity(domain,copy=False) if n in fil else None for n in modes])
-    modes_to_data = Matrix_of_operators(op_mat)
-
-    return modes_to_data*g_to_modes
-
-def complex_PINEM_g_to_data_old(domain, fresnel_number,mask,A_Psi0_Multiplier,N=1,parallel = False):
-    assert not domain.is_complex
-    cdomain = domain.complex_space()
-    complexProjection = CoordinateProjection(cdomain,mask)
-    maskDomain = complexProjection.codomain
-    op_list = []
-    for n in range(-N,N+1):
-        if not n==0:
-            op_list.append(
-                SquaredModulus(cdomain)
-                *fresnel_propagator(cdomain, fresnel_number)
-                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
-                *Adjoint(complexProjection)
-                *complex_Nemitzky_op_for_g(n,maskDomain)
-                *complexProjection
-                )
-    if parallel:
-        g_to_modes = Parallel_vector_of_operators(op_list)
-    else:
-        g_to_modes = Vector_of_operators(op_list)
-    op_mat = []
-    for n in range(0,N):
-        op_mat.append([None,Identity(domain,copy=False)])
-    for n in range(0,N):
-        op_mat.append([Identity(domain,copy=False),None]) 
+    op_mat = list(map(list, zip(*op_mat)))
     modes_to_data = Matrix_of_operators(op_mat)
 
     return modes_to_data*g_to_modes
@@ -297,8 +228,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
     cdomain = domain.complex_space()
     complexProjection = CoordinateProjection(cdomain,mask)
     maskDomain = complexProjection.codomain
-    if N:
-        assert ~list_of_filters
+    if list_of_filters == None:
         list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
     modes = set()
     for filter in list_of_filters:
@@ -321,11 +251,8 @@ def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
     op_mat = []
     for fil in list_of_filters:
         op_mat.append([Identity(domain,copy=False) if n in fil else None for n in modes])
-    #print(op_mat)
-    #for n in range(0,N):
-    #    op_mat.append([None,Identity(domain,copy=False)])
-    #for n in range(0,N):
-    #    op_mat.append([Identity(domain,copy=False),None]) 
+    op_mat = list(map(list, zip(*op_mat)))
+
     modes_to_data = Matrix_of_operators(op_mat)
 
     return modes_to_data*g_to_modes
