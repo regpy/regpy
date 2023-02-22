@@ -236,29 +236,11 @@ class Operator:
         useful."""
         raise NotImplementedError
 
-    def norm(self, iterations=10):
-        """For linear operators, estimate the operator norm with respect to the standard norm on its
-        domain / codomain using the power method.
-
-        Parameters
-        ----------
-        iterations : int, optional
-            The number of iterations. Default: 10.
-
-        Returns
-        -------
-        float
-            An estimate for the operator norm.
-        """
-        assert self.linear
-        h = self.domain.rand()
-        norm = np.sqrt(np.real(np.vdot(h, h)))
-        for _ in range(iterations):
-            h = h / norm
-            # TODO gram matrices
-            h = self.adjoint(self(h))
-            norm = np.sqrt(np.real(np.vdot(h, h)))
-        return np.sqrt(norm)
+    def asLinearOperator(self):
+        if self.linear:
+            return SciPyLinearOperator(self)
+        else:
+            raise RuntimeError('Operator is not linear.')
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
@@ -514,6 +496,19 @@ class Composition(Operator):
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
+
+class SciPyLinearOperator(sla.LinearOperator):
+    def __init__(self, op2):
+        self.op2 = op2
+        super().__init__(op2.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+    
+    def _matvec(self, x):
+        op2 = self.op2
+        return op2.codomain.flatten(op2(op2.domain.fromflat(x)))
+    
+    def _rmatvec(self, y):
+        op2 = self.op2
+        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
 
 class Pow(Operator):
     """Power of a linear operator A, mapping a domain into itself, i.e. 

@@ -1,6 +1,6 @@
 import numpy as np
-from operators import Operator
-from discrs import Discretization
+from regpy.operators import Operator
+from regpy.discrs import UniformGrid
 class TensorBasis(Operator):
     """
     We consider a rectangular grid grid = \{(x_{1,j_1},....x_{n_j_n}): j_1=0:M_1-1, ... j_n=0:M_n-1\} 
@@ -14,17 +14,22 @@ class TensorBasis(Operator):
                of the basis \{b^l_0, b^l_{M_l-1}} of the l-th coordinate: 
                B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
     """
-    def __init__(self,degrees,grid,bases,dtype=float): 
-        domain = Discretization(degrees,dtype=dtype)
+    def __init__(self,coeff_domain,grid,bases,dtype=float): 
+        if type(coeff_domain) == tuple:
+            domain = UniformGrid(*coeff_domain,dtype=dtype)
+            self.ndim = len(coeff_domain)
+            self.degrees = coeff_domain
+        else:
+            domain = coeff_domain
+            self.ndim = len(domain.shape)
+            self.degrees = coeff_domain.shape
         super().__init__(domain,grid, linear=True)
-        self.ndim = len(degrees)
         assert len(bases) == self.ndim
         assert len(grid.axes) == self.ndim
         assert grid.dtype == dtype
-        assert np.all(bases[n].shape[1]== degrees.shape[n] for n in range(self.ndim)) 
+        assert np.all(bases[n].shape[1]== self.degrees.shape[n] for n in range(self.ndim)) 
         assert np.all(bases[n].shape[0]== len(grid.axes[n]) for n in range(self.ndim)) 
         self.dtype = dtype 
-        self.degrees = degrees
         self.grid = grid
         self.bases = bases
         
@@ -39,7 +44,7 @@ class TensorBasis(Operator):
         elif self.ndim == 3:
             result = np.einsum('ijk,ai,bj,ck->abc',Coeff,self.bases[0],self.bases[1],self.bases[2])
         else:
-            Raise(NotImplementedError)
+            raise(NotImplementedError)
         return result
 
     def _adjoint(self, G):
@@ -54,22 +59,44 @@ class TensorBasis(Operator):
             result = np.einsum('abc,ai,bj,ck->ijk',G,self.bases[0].conj(), 
                 self.bases[1].conj(),self.bases[2].conj())
         else:
-            Raise(NotImplementedError)
+            raise(NotImplementedError)
         return result
 
-def ChebyshevBasis(degrees,grid,dtype=float):
+def ChebyshevBasis(coeff_domain,grid,dtype=float):
     """ Implements a tensor basis of Chebyshev polynomials
     """ 
     bases = []  
-    for l in range(len(degrees)):
+    for l in range(grid.ndim):
         x = grid.axes[l]
         intv = (grid.axes[l][0],grid.axes[l][-1])
-        Nl = degrees[l]
+        if type(coeff_domain) ==  tuple:
+            Nl = coeff_domain[l]
+        else:
+            Nl = coeff_domain.shape[l] 
         Bl = np.zeros((len(x),Nl))
         Id = np.eye(Nl)
         for k in range(Nl):
             pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = intv)
             Bl[:,k] = pol(x)
         bases.append(Bl) 
-    return TensorBasis(degrees,grid,bases,dtype)
+    return TensorBasis(coeff_domain,grid,bases,dtype)
+
+def LegendreBasis(coeff_domain,grid,dtype=float):
+    """ Implements a tensor basis of Chebyshev polynomials
+    """ 
+    bases = []  
+    for l in range(grid.ndim):
+        x = grid.axes[l]
+        intv = (grid.axes[l][0],grid.axes[l][-1])
+        if type(coeff_domain) ==  tuple:
+            Nl = coeff_domain[l]
+        else:
+            Nl = coeff_domain.shape[l] 
+        Bl = np.zeros((len(x),Nl))
+        Id = np.eye(Nl)
+        for k in range(Nl):
+            pol = np.polynomial.legendre.Legendre(Id[k,:],domain = intv)
+            Bl[:,k] = pol(x)
+        bases.append(Bl) 
+    return TensorBasis(coeff_domain,grid,bases,dtype)
  

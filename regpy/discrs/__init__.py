@@ -319,16 +319,14 @@ class Grid(Discretization):
                 s = [1] * len(coords)
                 s[n] = -1
                 v = v.reshape(s)
-            # TODO is this really necessary given that we probably perform a
-            # copy using asarray anyway?
             v.flags.writeable = False
+            #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
         """The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
-        # TODO ensure coords are ascending?
-
+        
         super().__init__(self.coords[0].shape, dtype)
 
         axes = []
