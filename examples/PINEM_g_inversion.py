@@ -4,12 +4,14 @@ from operator import ge
 
 from scipy.sparse import csc_matrix 
 from scipy.sparse.linalg import spsolve
+from scipy.optimize import lsq_linear
 import matplotlib.pyplot as plt
 import numpy as np
 from copy import deepcopy
 import regpy.stoprules as rules
 from numpy.core.numeric import ones_like
 from regpy.discrs import UniformGrid, DirectSum
+from regpy.discrs.tensor_bases import ChebyshevBasis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, Hm0_domain
 import regpy.hilbert as hilbert
 from regpy.operators import Operator, SquaredModulus, Vector_of_operators
@@ -132,13 +134,18 @@ def simulated_data(complex_g=True,amplitude_known=1, parallel=True,N=7):
         if amplitude_known==1:
             op2 = SquaredModulus(grid.complex_space()) - np.abs(g_map)**2
             op = Vector_of_operators([op2, op])
-        return op, grid, g_map, g_map, mask_binary
+        return op, grid, g_map, g_map, mask_binary, ~boundary_mask
     else:
         grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
                            np.linspace(0, 1, N2, endpoint=False))
-        op = PINEM_g_to_data(grid, fresnelNumber, mask_binary,
-                             A_Psi0_Multiplier, N=N, parallel=parallel)
-        exact_solution = op.domain.join(np.log(np.abs(g_map)/10),
+        op = PINEM_g_to_data(grid, fresnelNumber, mask_binary, A_Psi0_Multiplier, 
+                    parallel=parallel
+                    )
+        if amplitude_known==1:
+            ampl_fix = FixAmplitude(np.abs(g_map), grid)
+            op = op * ampl_fix
+
+        exact_solution = op.domain.join(np.abs(g_map),
                                         np.unwrap(np.angle(g_map.T)).T)
 
         return op, grid, exact_solution, g_map, mask_binary, ~boundary_mask
@@ -258,14 +265,16 @@ def main():
     ## amplitude_known == 0 -> no prior knowledge of amplitude
     # amplitude_known == 1 -> prior knowledge of amplitude everywhere
     # amplitude_known == -1 -> prior knowledge of amplitude only on mask_a
-    amplitude_known = -1
+    amplitude_known = 1
+    polynomial_basis = False
+    pol_degrees = (20,7)
     intensity = 1e6
     if real_data:
         op, grid, exact_solution, g_map, mask_a, mask_p \
-            = simulated_data(complex_g=complex_g, amplitude_known=amplitude_known)
+            = simulated_data(complex_g=complex_g, amplitude_known=amplitude_known,N=8,parallel=True)
         # regpar = 5e-2; sobolev_index = 2
         regpar = 1e-10; sobolev_index = 1
-        regpar_step = 1/3
+        regpar_step = 1/2
     else:
         op, grid, exact_solution, g_map, mask_a, mask_p \
             = synthetic_data(complex_g=complex_g, amplitude_known=amplitude_known)
@@ -280,16 +289,24 @@ def main():
         # Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
         Hdomain = Hm0_domain(mask_a, dtype=complex, index = sobolev_index)
         projection = CoordinateProjection(grid.complex_space(),mask_a)
+        extension = projection.adjoint
     else:
         ## for global Sobolev norm
         # Hdomain = 0.5 * Sobolev(grid, index=sobolev_index) + L2(grid)  # Sobolev(grid, index=0.5)
         if amplitude_known == 1:
-            Hdomain = 0.5*Hm0_domain(mask_p, index = sobolev_index) + L2(grid)
-            projection = opDirectSum(*(CoordinateProjection(grid,mask_p),Identity(grid))) 
+            if polynomial_basis:
+                coeff_grid = UniformGrid(np.arange(pol_degrees[0]),np.arange(pol_degrees[1]))
+                Bas =  LegendreBasis(coeff_grid,grid)                
+                Hdomain = L2(grid) + L2(coeff_grid)
+                extension = opDirectSum(Identity(grid),Bas)
+                projection = extension.adjoint
+            else:
+                Hdomain = L2(grid) + Hm0_domain(mask_p, index = sobolev_index)  
+                projection = opDirectSum(Identity(grid),CoordinateProjection(grid,mask_p)) 
+                extension = projection.adjoint
         if amplitude_known == -1: 
             Hdomain = Hm0_domain(mask_a, index = sobolev_index) + Hm0_domain(mask_p, index = sobolev_index)
     if amplitude_known == 1:
-        extension = projection.adjoint
         op_ext = op * extension
     if amplitude_known == -1:
         prior_ampl = harmonic_extension(~mask_a,np.abs(g_map),damping =400)
@@ -318,7 +335,7 @@ def main():
         #exact_data = op(exact_solution)
         exact_data = op_ext(projection(exact_solution))
         exact_data_comp = op.codomain.split(exact_data)
-        noisy_data = exact_data_comp #np.random.poisson(intensity * exact_data_comp[1])/intensity
+        noisy_data = exact_data_comp[1] #np.random.poisson(intensity * exact_data_comp[1])/intensity
         data = op.codomain.join(np.zeros_like(exact_data_comp[0]), noisy_data)
         Hcodomain0 = L2(grid)
         data_comp = flat_codomain.split(data)
@@ -353,8 +370,12 @@ def main():
         if amplitude_known==1:
             # init_vec = op.domain.join(np.abs(g_map), \
             #         norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
-            init_vec = op.domain.join(np.abs(g_map),
-                                      init_phase_gradient * mask_p)
+            if polynomial_basis:
+                T = Bas.asLinearOperator()
+                init_phase = lsq_linear(T,grid.flatten(init_phase_gradient)).x
+                init_vec_proj =  op_ext.domain.join(np.abs(g_map),Bas.domain.fromflat(init_phase))
+            else:
+                init_vec = op.domain.join(np.abs(g_map),init_phase_gradient * mask_p)
         elif amplitude_known == 0:
             # init_vec = op.domain.join(mask, \
             #     norm(np.angle(g_map).ravel(),1)/norm(mask.ravel(),1) * mask)
@@ -364,7 +385,8 @@ def main():
             init_vec = op.domain.join(np.zeros_like(prior_ampl),
                                       np.zeros_like(prior_phase))
     # init_vec_proj = init_vec
-    init_vec_proj = projection(init_vec)
+    if not polynomial_basis:
+        init_vec_proj = projection(init_vec)
 
     ############################### initialize regularization method and sotpping rule
     stoprule = (
@@ -374,8 +396,12 @@ def main():
             noiselevel=setting.Hcodomain.norm(np.sqrt(data/intensity)),
             tau=1.0
         ) +
-        rules.CountIterations(max_iterations=50,while_type=True) 
+        rules.CountIterations(max_iterations=100,while_type=True) 
     )
+#    solver = NewtonCG(
+#        setting, data, init=init_vec_proj,
+#        cgmaxit=50, rho=0.9
+#    )
     solver = IrgnmCG(
         setting, data, init=init_vec_proj,
         regpar=regpar, regpar_step=regpar_step,
@@ -419,8 +445,10 @@ def main():
         else:
             ex_abs, ex_phase = op.domain.split(_exact)
             reco_abs, reco_phase = op.domain.split(_reconstruction)
+            reco_phase += np.mean(ex_phase-reco_phase) # fix unidentified constant global phase
             reco_error1 = norm(mask_a*(reco_abs-ex_abs))/norm(mask_a*ex_abs)
-            reco_error2 = norm(mask_p*(reco_phase-ex_phase))/norm(mask_p*ex_phase)
+            #reco_error2 = norm(mask_p*(reco_phase-ex_phase))/norm(mask_p*ex_phase)
+            reco_error2 = norm((reco_phase-ex_phase))/norm(mask_a*ex_phase)
         return reco_error1, reco_error2
 
     # if complex_g:
@@ -440,11 +468,10 @@ def main():
              'nr_inner_steps': [0]}
 
     ########################################## perform inversion
-    for reco, reco_data in solver.while_(stoprule):
+    for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule)):
         # ereco = reco
         ereco = extension(reco)
         if not stoprule.triggered:
-            Newton_step = solver.iteration_step_nr
             reco_error1, reco_error2 = reconstruction_error(exact_solution, ereco)
             # if complex_g:
             #     reco_error1 = norm(np.abs(reco)-np.abs(exact_solution))/norm(np.abs(exact_solution))
@@ -467,6 +494,7 @@ def main():
                 reco_phase = np.unwrap(np.angle(ereco.T)).T
             else:
                 reco_amp, reco_phase = op.domain.split(ereco)
+            reco_phase += np.mean(ex_phase-reco_phase)
             reco_data_comp = flat_codomain.split(reco_data)
             ex_data_comp = flat_codomain.split(data)
 
@@ -481,7 +509,7 @@ def main():
                                  'title': 'Error |g|, step {}'.format(Newton_step)})
             plotdata.append({'pos': (1, 1), 'data': reco_phase,
                             'title': 'arg(g_rec), step {}'.format(Newton_step)})
-            plotdata.append({'pos': (0, 1), 'data': reco_phase-np.unwrap(np.angle(g_map.T)).T,
+            plotdata.append({'pos': (0, 1), 'data': (reco_phase-np.unwrap(np.angle(g_map.T)).T),
                              'title': 'arg(g_rec)-arg g, step {}'.format(Newton_step)})
             fig1.plot(plotdata)
 
