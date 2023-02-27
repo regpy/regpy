@@ -114,7 +114,6 @@ class Operator:
 
         a * op1 + b * op2    # linear combination
         op1 * op2            # composition
-        arr * op             # composition with array multiplication in codomain
         op * arr             # composition with array multiplication in domain
         op + arr             # operator shifted in codomain
         op + scalar          # dto.
@@ -271,7 +270,7 @@ class Operator:
         elif isinstance(other, Operator):
             return LinearCombination(self, other)
         elif np.isscalar(other) or isinstance(other, np.ndarray):
-            return Shifted(self, other)
+            return OuterShift(self, other)
         else:
             return NotImplemented
 
@@ -811,7 +810,7 @@ class Ptw_Multiplication(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain, self.factor)
 
-class Shifted(Operator):
+class OuterShift(Operator):
     """Shift an operator by a constant offset in the codomain.
 
     Parameters
@@ -839,6 +838,38 @@ class Shifted(Operator):
 
     def _derivative(self, x):
         return self._deriv(x)
+
+    def _adjoint(self, y):
+        return self._deriv.adjoint(y)
+
+class InnerShift(Operator):
+    """Shift an operator by a constant offset in the domain.
+
+    Parameters
+    ----------
+    op : Operator
+        The underlying operator.
+    offset : array-like
+        The offset by which to shift. Can be anything that can be broadcast to `op.domain.shape`.
+    """
+    def __init__(self, op, offset):
+        assert offset in op.domain
+        super().__init__(op.domain, op.codomain)
+        if isinstance(op, type(self)):
+            offset = offset + op.offset
+            op = op.op
+        self.op = op
+        self.offset = offset
+
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            y, self._deriv = self.op.linearize(x-self.offset)
+            return y 
+        else:
+            return self.op(x - self.offset)
+
+    def _derivative(self, h):
+        return self._deriv(h)
 
     def _adjoint(self, y):
         return self._deriv.adjoint(y)
@@ -884,7 +915,6 @@ class FourierTransform(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
-
 class Power(Operator):
     r"""The operator \(x \mapsto x^n\).
 
@@ -915,14 +945,15 @@ class Power(Operator):
                         self._dpow_bin = '0'+self._dpow_bin
                 else:
                     self._dpow_bin = "{0:b}".format(0)
-            powx = np.ones_like(x)
+            powx = x.copy()
             for k in reversed(range(len(self._power_bin))):
-                powx *= x
                 if self._power_bin[k] == '1':
                     res *= powx
                 if differentiate:
                     if self._dpow_bin[k] == '1':
                         self._factor *= powx
+                if k>0:
+                    powx *= powx
         else:
             if differentiate:
                 self._factor = self.power * x**(self.power - 1)
@@ -934,7 +965,6 @@ class Power(Operator):
 
     def _adjoint(self, y):
         return np.conjugate(self._factor) * y
-
 
 class DirectSum(Operator):
     """The direct sum of operators. For
