@@ -1361,8 +1361,8 @@ class SquaredModulus(Operator):
             self._factor = 2 * x
         return x.real**2 + x.imag**2
 
-    def _derivative(self, x):
-        return (self._factor.conj() * x).real
+    def _derivative(self, h):
+        return (self._factor.conj() * h).real
 
     def _adjoint(self, y):
         return self._factor * y

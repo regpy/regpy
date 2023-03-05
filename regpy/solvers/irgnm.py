@@ -58,6 +58,7 @@ class IrgnmCG(Solver):
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
         self.inner_it_logging_level = inner_it_logging_level
+        self._nr_inner_steps = 0
 
     def _next(self):
         if self.cgstop is not None:

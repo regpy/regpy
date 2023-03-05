@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 
 def complex_to_rgb_log(z):
-    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.log(np.abs(z))/np.log(np.max((np.abs(z[:])))), ))
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.log(np.abs(z))/np.max(np.log((np.abs(z[:])))), ))
     return hsv_to_rgb(HSV)
 
 def complex_to_rgb(z):
@@ -271,13 +271,13 @@ def harmonic_extension(mask, values, damping = 0):
 
 def main():
     ################################ set parameters and initialize forward operator
-    output_filename = 'test2_'
+    output_filename = 'reco_phase_param'
     real_data = True
-    complex_g = True
+    complex_g = False
     ## amplitude_known == 0 -> no prior knowledge of amplitude
     # amplitude_known == 1 -> prior knowledge of amplitude everywhere
     # amplitude_known == -1 -> prior knowledge of amplitude only on mask_a
-    amplitude_known = 1
+    amplitude_known = -1
     polynomial_basis = False
     pol_degrees = (20,7)
     intensity = 1e6  
@@ -285,13 +285,13 @@ def main():
     if real_data:
         op, grid, exact_solution, g_map, mask_a, mask_p \
             = simulated_data(complex_g=complex_g, amplitude_known=amplitude_known,
-            list_of_filters= [ [1,3,5,7],[-1,-3,-5,-7]],
+            #list_of_filters= [ [1,3,5,7],[-1,-3,-5,-7]],
             #N=8,
             parallel=True)
         # regpar = 5e-2; sobolev_index = 2
         sobolev_index = 1
         if complex_g:
-            regpar = 1e-7; regpar_step = 1/2
+            regpar = 1e-10; regpar_step = 1/2
         else:
             regpar = 1e-10; regpar_step = 1/2
     else:
@@ -354,12 +354,12 @@ def main():
         exact_data = op(exact_solution)
         #exact_data = op_ext(projection(exact_solution))
         exact_data_comp = op.codomain.split(exact_data)
-        noisy_data0 = exact_data_comp[0]
-        #np.random.poisson(intensity_mod * exact_data_comp[0])/intensity_mod
-        noisy_data1 = exact_data_comp[1]
-        #np.random.poisson(intensity * exact_data_comp[1])/intensity
+        #noisy_data0 = exact_data_comp[0]
+        np.random.poisson(intensity_mod * exact_data_comp[0])/intensity_mod
+        #noisy_data1 = exact_data_comp[1]
+        np.random.poisson(intensity * exact_data_comp[1])/intensity
         data = op.codomain.join(noisy_data0, noisy_data1)
-        Hcodomain0 = L2(grid, weights=(1+intensity_mod*exact_data_comp[0])/intensity_mod)
+        Hcodomain0 = L2(grid, weights=1e-7*(1+intensity_mod*exact_data_comp[0])/intensity_mod)
         data_comp = flat_codomain.split(data)
         Hcodomain1 = L2(grid, weights=(1+intensity*data_comp[1])/intensity)
         for j in range(2, len(flat_codomain)):
@@ -426,9 +426,9 @@ def main():
             setting.Hcodomain.norm,
             data,
             noiselevel= setting.Hcodomain.norm(sqrtdata),
-            tau=0
+            tau=1
         ) +
-        rules.CountIterations(max_iterations=12,while_type=True) 
+        rules.CountIterations(max_iterations=100,while_type=True) 
     )
 #    solver = NewtonCG(
 #        setting, data, init=init_vec_proj,
@@ -439,35 +439,7 @@ def main():
         regpar=regpar, regpar_step=regpar_step,
         inner_it_logging_level=logging.INFO
         )
-
-    ############################## plot exact solution and exact data
-    if not complex_g:
-        ex_abs, ex_phase = op.domain.split(exact_solution)
-    else:
-        ex_abs = np.abs(g_map)
-        ex_phase = np.unwrap(np.angle(g_map.T)).T
-    fig1 = imshow_fig(2, 2)
-    if amplitude_known==0:
-        plotdata = [{'pos': (0, 0), 'data': np.abs(g_map), 'title': 'Exact |g|'}]
-    else:
-        #plotdata = [{'pos': (1, 0), 'data': ex_phase, 'title': 'arg(g)'}]
-        plotdata =  [{'pos': (1, 0), 'data': complex_to_rgb_log(np.abs(g_map)*np.exp(1j*ex_phase)), 'title': 'g'}]
-    fig1.plot(plotdata)
-
-    data_comp = flat_codomain.split(data)
-    nr_data = len(data_comp)
-    fig2 = imshow_fig(2, nr_data+1)
-    plot_data = [{'pos': (0, j), 'data': data_comp[j], 'title':'sim. data'}
-                 for j in range(nr_data)]
-    plot_data.append(
-        {'pos': (0, nr_data), 'data': data_comp[nr_data-1]-data_comp[nr_data-2], 'title': 'sim. gain-loss'})
-    fig2.plot(plot_data)
-
-    if hasattr(solver, "nr_inner_its"):
-        fig3, axs3 = plt.subplots(3, 1, sharex=False, sharey=False)
-    else:
-        fig3, axs3 = plt.subplots(2, 1, sharex=False, sharey=False)
-
+        
     ############################## routines for reconstruction error evaluation and for plotting 
     def reconstruction_error(_exact, _reconstruction):
         def fnorm(arr):
@@ -479,108 +451,84 @@ def main():
         if complex_g:
             reco_error1 = fnorm((np.abs(_reconstruction)-np.abs(_exact)))/fnorm(_exact)
             ex_phase = np.unwrap(np.angle(_exact.T)).T
-            rec_phase = np.unwrap(np.angle(_reconstruction.T)).T
-            phase_correction = np.median(ex_phase[~mask_a])-np.median(rec_phase[~mask_a]) # fix unidentified constant global phase
-            print('phase correction:',phase_correction)
-            rec_phase += phase_correction
-            reco_error2 = fnorm(np.exp(1j*rec_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(_exact.shape))
-            reco_error3 = fnorm(np.exp(1j*phase_correction)*_reconstruction-_exact)/fnorm(_exact)
+            reco_phase = np.unwrap(np.angle(_reconstruction.T)).T
+            reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(_exact.shape))
+            reco_error3 = fnorm(_reconstruction-_exact)/fnorm(_exact)
         else:
-            ex_abs, ex_phase = op.domain.split(_exact)
-            reco_abs, reco_phase = op.domain.split(_reconstruction)
-            reco_phase += np.mean(ex_phase-reco_phase) # fix unidentified constant global phase
-            reco_error1 = fnorm(mask_a*(reco_abs-ex_abs))/fnorm(mask_a*ex_abs)
+            ex_amp, ex_phase = op.domain.split(_exact)
+            reco_amp, reco_phase = op.domain.split(_reconstruction)
+            reco_error1 = fnorm(reco_amp-ex_amp)/fnorm(ex_amp)
             #reco_error2 = norm(mask_p*(reco_phase-ex_phase))/fnorm(mask_p*ex_phase)
-            reco_error2 = fnorm((reco_phase-ex_phase))/fnorm(ex_phase)
-            reco_error3 = fnorm(reco_abs*np.exp(1j*reco_phase) -ex_abs*np.exp(1j*ex_phase))/fnorm(ex_abs)
+            reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(ex_phase.shape))
+            # fnorm((reco_phase-ex_phase))/fnorm(ex_phase)
+            reco_error3 = fnorm(reco_amp*np.exp(1j*reco_phase) -ex_amp*np.exp(1j*ex_phase))/fnorm(ex_amp)
         return reco_error1, reco_error2, reco_error3
 
     def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step):
         plotdata = []
         if amplitude_known==1 and not complex_g:
-            plotdata.append({'pos': (0, 0), 'data': np.abs(reco_amp*np.exp(1j*reco_phase)-g_map),
+            plotdata.append({'pos': (1, 1), 'data': np.abs(reco_amp*np.exp(1j*reco_phase)-g_map).T,
                                 'title': '| |g_rec|*exp(i arg(g_rec))- g|, step {}'.format(Newton_step)})
-            plotdata.append({'pos': (1, 0), 'data': np.abs(g_map),
+            plotdata.append({'pos': (1, 0), 'data': np.abs(g_map.T),
                                 'title': '|g|, step {}'.format(Newton_step)})
         else:
-            plotdata.append({'pos': (1, 0), 'data': reco_amp,
+            plotdata.append({'pos': (1, 0), 'data': reco_amp.T,
                             'title': 'Reco |g|, step {}'.format(Newton_step)})
-            plotdata.append({'pos': (0, 0), 'data': reco_amp-np.abs(g_map),
+            plotdata.append({'pos': (2, 0), 'data': reco_amp.T-np.abs(g_map.T),
                                 'title': 'Error |g|, step {}'.format(Newton_step)})
-        #plotdata.append({'pos': (1, 1), 'data': reco_phase,
-        #                'title': 'arg(g_rec), step {}'.format(Newton_step)})
-        plotdata.append({'pos': (1, 1), 'data': complex_to_rgb_log(reco_amp*np.exp(1j*reco_phase)),
+        plotdata.append({'pos': (1, 1), 'data': complex_to_rgb(reco_amp.T*np.exp(1j*reco_phase.T)),
                         'title': 'g_rec, step {}'.format(Newton_step)})
-        plotdata.append({'pos': (0, 1), 'data': (np.abs(g_map)>=0.1)*(reco_phase-np.unwrap(np.angle(g_map.T)).T),
-                            'title': 'arg(g_rec)-arg g, step {}'.format(Newton_step)})
+        plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
+                            'title': '|g_rec/|g_rec|-g/|g||, step {}'.format(Newton_step)})
         fig1.plot(plotdata)
 
-        plotdata = [{'pos': (1, j), 'data': reco_data_comp[j],
-                        'title':'recon. data step {}'.format(Newton_step)}
+        plotdata = [{'pos': (1, j), 'data': reco_data_comp[j].T,
+                        'title':'rec. data step {}'.format(Newton_step)}
                     for j in range(nr_data)]
-        plotdata.append({'pos': (1, nr_data), 'data': reco_data_comp[nr_data-1]-ex_data_comp[nr_data-1],
-                            'title': 'gain: rec-sim'})
+        for j in range(nr_data):
+            plotdata.append({'pos': (2, j), 'data': reco_data_comp[j].T-ex_data_comp[j].T,
+                            'title': 'diff'})
         fig2.plot(plotdata)
 
+    def plot_write_safe(reco,reco_data,fig1,fig2,axs3, Newton_step,
+        do_plottings=True, stats =None,output_filename = 'test'
+        ):
 
-    ################ plot and evaluate initial error
-    reco_error1, reco_error2, reco_error3 = reconstruction_error(exact_solution, extension(init_vec_proj))
-    
-    logging.info('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}'.format(
-        0, reco_error1, reco_error2, reco_error3))
-    stats = {'ampl_err': [reco_error1],
-             'phase_err': [reco_error2],
-             'complex_err': [reco_error3],
-             'residuals': [norm(solver.y-exact_data)/norm(exact_data)],
-             'nr_inner_steps': [0]}
-
-    reco = solver.x
-    ereco = extension(reco)
-    reco_data = solver.y
-
-    if complex_g:
-        reco_amp = np.abs(ereco)
-        reco_phase = np.unwrap(np.angle(ereco.T)).T
-    else:
-        reco_amp, reco_phase = op.domain.split(ereco)
-    reco_phase += np.mean(ex_phase-reco_phase)
-    reco_data_comp = flat_codomain.split(reco_data)
-    ex_data_comp = flat_codomain.split(data)
-
-    plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,0)
-
-    savemat('./PINEM_tests/'+output_filename+'{}.mat'.format(0),
-            {'reco_amp':reco_amp, 'reco_phase': reco_phase, 'stats': stats}
-    )
-
-    ########################################## perform inversion
-    for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
         ereco = extension(reco)
-        if not stoprule.triggered:
-            reco_error1, reco_error2, reco_error3 = reconstruction_error(exact_solution, ereco)
-            logging.info('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}'.format(
-                Newton_step, reco_error1, reco_error2, reco_error3))
-            stats['ampl_err'].append(reco_error1)
-            stats['phase_err'].append(reco_error2)
-            stats['complex_err'].append(reco_error3)
-            stats['residuals'].append(norm(reco_data-exact_data)/norm(exact_data))
-            if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
-                stats['nr_inner_steps'].append(solver.nr_inner_its())
-        
+
+        # fix unidentified constant global phase 
         if complex_g:
-            reco_amp = np.abs(ereco)
+            ex_phase = np.unwrap(np.angle(exact_solution.T)).T
             reco_phase = np.unwrap(np.angle(ereco.T)).T
+            reco_amp = np.abs(ereco)
         else:
+            _, ex_phase = op.domain.split(exact_solution)
             reco_amp, reco_phase = op.domain.split(ereco)
-        reco_phase += np.mean(ex_phase-reco_phase)
-        reco_data_comp = flat_codomain.split(reco_data)
-        ex_data_comp = flat_codomain.split(data)
+        phase_correction = np.median(ex_phase[~mask_a])-np.median(reco_phase[~mask_a]) 
+        reco_phase += phase_correction
+        if complex_g:
+            ereco = reco_amp * np.exp(1j*reco_phase)
+        else:
+            ereco = op.domain.join(reco_amp,reco_phase)
+            
+        reco_error1, reco_error2, reco_error3 = reconstruction_error(exact_solution, ereco)
+        logging.info('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}'.format(
+            Newton_step, reco_error1, reco_error2, reco_error3))
+        stats['ampl_err'].append(reco_error1)
+        stats['phase_err'].append(reco_error2)
+        stats['complex_err'].append(reco_error3)
+        stats['residuals'].append(setting.Hcodomain.norm(reco_data-exact_data))
+        if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
+            stats['nr_inner_steps'].append(solver.nr_inner_its())
 
         savemat('./PINEM_tests/'+output_filename+'{}.mat'.format(Newton_step),
             {'reco_amp':reco_amp, 'reco_phase': reco_phase, 'stats': stats}
         )
 
-        if True or (stoprule.triggered and ((Newton_step-1) % 2 != 0)):
+        reco_data_comp = flat_codomain.split(reco_data)
+        ex_data_comp = flat_codomain.split(data)
+
+        if do_plottings:
             plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step)
             axs3[0].cla()
             if not amplitude_known==1:
@@ -597,6 +545,43 @@ def main():
                 axs3[2].legend()
             plt.show(block=False)
             plt.pause(0.1)
+
+    ################ plot and evaluate exact solution and exact data and initial error
+    if not complex_g:
+        ex_abs, ex_phase = op.domain.split(exact_solution)
+    else:
+        ex_abs = np.abs(g_map)
+        ex_phase = np.unwrap(np.angle(g_map.T)).T
+    fig1 = imshow_fig(3, 2)
+    plotdata1 = [{'pos': (0, 0), 'data': np.abs(g_map.T), 'title': 'Exact |g|'},
+                {'pos': (0, 1), 'data': complex_to_rgb_log(g_map.T), 'title': 'g with phase'}]
+    fig1.plot(plotdata1)
+
+    data_comp = flat_codomain.split(data)
+    nr_data = len(data_comp)
+    fig2 = imshow_fig(3, nr_data)
+    plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
+                    for j in range(nr_data)]
+    if nr_data ==3:
+        plot_data2[0]['title'] = 'sim. ampl'
+        plot_data2[1]['title'] = 'sim. gain'
+        plot_data2[2]['title'] = 'sim. loss'    
+    fig2.plot(plot_data2)
+
+    if hasattr(solver, "nr_inner_its"):
+        fig3, axs3 = plt.subplots(3, 1, sharex=False, sharey=False)
+    else:
+        fig3, axs3 = plt.subplots(2, 1, sharex=False, sharey=False)
+
+    stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': []}
+    plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,0,
+        do_plottings=True,stats=stats,output_filename= output_filename)
+
+    ########################################## perform inversion
+    for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
+        plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+            do_plottings=~stoprule.triggered,stats=stats,output_filename= output_filename)
+ 
     plt.show(block=True)
     reco = stoprule.x
     reco_data = stoprule.y
