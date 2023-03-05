@@ -118,8 +118,16 @@ class ptw_divided_Bessel(Operator):
              jv2r_at_null = - jv2r_at_null
 
         if differentiate:
-            self._factor = np.nan_to_num((r*(jv(N-1,2*r)-jv(N+1,2*r)) - absN* jv2r)/r**(absN+1))
-        return np.nan_to_num(jv2r/(r**absN),nan=jv2r_at_null)
+            mask = np.abs(r)>10**(-16./(absN+1))
+            rmask = r[mask]
+            self._factor = np.zeros_like(r)
+            self._factor[mask]= (rmask*(jv(N-1,2*rmask)-jv(N+1,2*rmask)) - absN* jv2r[mask])/rmask**(absN+1) 
+            self._factor[~mask] = 0.   
+        result = np.zeros_like(r)
+        mask = np.abs(r)>10**(-12./absN) 
+        result[mask] = jv2r[mask]/r[mask]**absN
+        result[~mask] = jv2r_at_null
+        return result
 
     def _derivative(self, dr):
         return self._factor * dr

@@ -3,6 +3,7 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
@@ -21,16 +22,21 @@ op = Potential(
     nmeas=64,
 )
 
+setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+
 exact_solution = op.domain.sample(lambda t: np.sqrt(3 * np.cos(t)**2 + 1) / 2)
 exact_data = op(exact_solution)
-noise = 0 * op.codomain.randn()
+noise = op.codomain.randn()
+noise = 0.01*setting.Hcodomain.norm(exact_data)/setting.Hcodomain.norm(noise) * noise
 data = exact_data + noise
 
 init = op.domain.sample(lambda t: 1)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
-
-solver = IrgnmCG(
+solver = NewtonCG(
+    setting, data, init = init,
+        cgmaxit=50, rho=0.8
+)
+"""solver = IrgnmCG(
     setting, data,
     regpar=10,
     regpar_step=0.8,
@@ -38,13 +44,13 @@ solver = IrgnmCG(
     cgpars=dict(
         tol=1e-4
     )
-)
+)"""
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(
         setting.Hcodomain.norm, data,
         noiselevel=setting.Hcodomain.norm(noise),
-        tau=1.1
+        tau=2.1
     )
 )
 
@@ -54,7 +60,7 @@ axs[0].set_title('Obstacle')
 axs[1].set_title('Heat flux')
 
 for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
-    if n % 10 == 0:
+    if n % 1 == 0:
         axs[0].clear()
         axs[0].plot(*op.domain.eval_curve(exact_solution).curve[0])
         axs[0].plot(*op.domain.eval_curve(reco).curve[0])
