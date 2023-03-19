@@ -1375,7 +1375,7 @@ class Zero(Operator):
     ----------
     domain : regpy.discrs.Discretization
         The underlying discretization.
-    domain : regpy.discrs.Discretization, optional
+    codomain : regpy.discrs.Discretization, optional
         The discretization if the codomain. Defaults to `domain`.
     """
     def __init__(self, domain, codomain=None):
