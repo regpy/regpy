@@ -252,15 +252,15 @@ class Operator:
             return NotImplemented
 
     def __rmul__(self, other):
-        if isinstance(other, Operator):
-            return Composition(other, self)
-        elif np.isscalar(other):
+        if np.isscalar(other):
             if other == 1:
                 return self
             else:
-                return LinearCombination((other, self))
+                return LinearCombination((other, self))         
         elif isinstance(other, np.ndarray):
             return Ptw_Multiplication(self.codomain, other) * self
+        elif isinstance(other, Operator):
+            return Composition(other, self) 
         else:
             return NotImplemented
 
@@ -417,7 +417,7 @@ class LinearCombination(Operator):
             ops = self.ops
         else:
             ops = self._derivs
-        x = self.codomain.zeros()
+        x = self.domain.zeros()
         for coeff, op in zip(self.coeffs, ops):
             x += np.conj(coeff) * op.adjoint(y)
         return x
@@ -827,7 +827,7 @@ class OuterShift(Operator):
             offset = offset + op.offset
             op = op.op
         self.op = op
-        self.offset = offset
+        self.offset = np.copy(offset)
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -859,7 +859,7 @@ class InnerShift(Operator):
             offset = offset + op.offset
             op = op.op
         self.op = op
-        self.offset = offset
+        self.offset = np.copy(offset)
 
     def _eval(self, x, differentiate=False):
         if differentiate:
