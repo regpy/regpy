@@ -557,10 +557,13 @@ class SobolevUniformGrid(HilbertSpace):
 class Hm0_domain(HilbertSpace):
     """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
     m=index is a non-negative integer, the order or index of the Sobolev space
-    TODO: implementation in dimensions n!=2 
+
+    If weight is specified, the Gram matrix will approximated (I-weight*Delta)**index, otherwise weight == h**(-2).
+
+    only implemented in dimension n=2 
     """
 
-    def __init__(self,mask,dtype=float,h=None,index=1):
+    def __init__(self,mask,dtype=float,h=None,index=1,weight=None):
         assert type(index)== int and index>=0
         if len(mask.shape) != 2:
             raise NotImplementedError
@@ -575,36 +578,48 @@ class Hm0_domain(HilbertSpace):
         else:
             self.h = h
         self.index = index
+        self.weight = weight
 
     def I_minus_Delta(self):
         """
         Construct five-point finite difference Laplacian.
         I_minus_Delta is the sparse form of the sum of the identity and the two-dimensional,
         5-point discrete negative Laplacian on the grid G.
-        adapted from  C. Moler, 7-16-91.
-        Copyright (c) 1984-94 by The MathWorks, Inc.
         """
         [m,n] = self.G.shape
+        if self.weight is None:
+            weight = (1./self.h**2) *np.ones((m,n))
+        else: 
+            weight = self.weight
+        w = weight.flatten()
         # Indices of interior points
         G1 = self.G.flatten()
         p = np.where(G1)[0] # list of numbers of interior points in flattened array
         N = len(p)
         # Connect interior points to themselves with 4's.
-        i = G1[p]-1
-        j = G1[p]-1
-        s = (1+4./self.h**2)*np.ones(p.shape)
-
+        i = []   # row indices of matrix entries
+        j = []   # column indices of matrix entries
+        s = []   # values of matrix entries
+        dia = np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
         # for k = north, east, south, west
         for k in [-1, n, 1, -n]:
             # Possible neighbors in k-th direction
             Q = G1[p+k]
-            # Index of points with interior neighbors
+            # Indices of points with interior neighbors
             q = np.where(Q)[0]
-            # Connect interior points to neighbors with -1's.
+            # Connect interior points to neighbors 
             i = np.concatenate([i, G1[p[q]]-1])
             j = np.concatenate([j,Q[q]-1])
-            s = np.concatenate([s,(-1./self.h**2)*np.ones(q.shape)])
-        # sparse matrix with 5 diagonals
+            entries = np.sqrt(w[p[q]]*w[p[q]+k])
+            s = np.concatenate([s,-entries ])
+            dia[G1[p[q]]-1] += entries 
+            # Indices of points with neighbors on Dirichlet boundary
+            q_diri = np.where(Q==0)[0]
+            entries = np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
+            dia[G1[p[q_diri]]-1] += entries
+        i = np.concatenate([i, G1[p]-1])
+        j = np.concatenate([j, G1[p]-1])
+        s = np.concatenate([s,dia]) 
         return csc_matrix((s, (i,j)),(N,N))
 
     @util.memoized_property

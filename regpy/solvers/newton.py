@@ -24,6 +24,7 @@ class NewtonCG(Solver):
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.rho = rho
         self.cgmaxit = cgmaxit
+        self._k = 0
     
     def _next(self):
         self._k = 0
