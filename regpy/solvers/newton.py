@@ -40,7 +40,7 @@ class NewtonCG(Solver):
         self._innerProd = np.vdot(self._r, self._rtilde).real
      
         while (self._k==0 or (np.sqrt(np.vdot(self._s2, self._s).real)
-               > self.rho * self._norms0 and self._k <= self.cgmaxit)):
+               > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
             self._q2 = self.setting.Hcodomain.gram(self._q)
             self._alpha = self._innerProd / np.vdot(self._q, self._q2).real
