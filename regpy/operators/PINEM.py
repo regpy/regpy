@@ -195,7 +195,7 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
     cdomain = domain.complex_space()
     complexProjection = CoordinateProjection(cdomain,mask)
     realProjection = DirectSum(
-        CoordinateProjection(domain,mask),
+        Exponential(complexProjection.codomain.real_space()) * CoordinateProjection(domain,mask),
         CoordinateProjection(domain,mask)
         )
     maskDomain = complexProjection.codomain

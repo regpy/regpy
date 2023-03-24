@@ -5,6 +5,7 @@ from operator import ge
 from scipy.sparse import csc_matrix 
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import lsq_linear
+from scipy.interpolate import RegularGridInterpolator
 import matplotlib.pyplot as plt
 from matplotlib.colors import hsv_to_rgb
 import numpy as np
@@ -15,7 +16,7 @@ from regpy.discrs import UniformGrid, DirectSum
 from regpy.discrs.tensor_bases import ChebyshevBasis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, Hm0_domain
 import regpy.hilbert as hilbert
-from regpy.operators import Operator, SquaredModulus, Ptw_Multiplication, Vector_of_operators
+from regpy.operators import Operator, SquaredModulus, Exponential, Ptw_Multiplication, Vector_of_operators
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
@@ -110,6 +111,48 @@ def harmonic_extension(mask, values, damping = 0):
     u[k_int]=spsolve(negLap,f)
     return u
 
+def extension_along_lines(log_g_map,mask):
+    # extrapolate log(g_map) from nanotip along straight lines. Damping is modeled by linear decay on these lines
+    m,n = log_g_map.shape
+    N_center=707  # origin is place at pixel (N_center,(n-1)/2)
+    # artificial coordinate system for g_map; cut through nanotip is line eta = 1
+    xi =  (N_center-np.arange(m))/(N_center-1)
+    eta = np.linspace(-1,1,n)
+    a = 0.1  # the origin is connected to the points (-a,1) and (-a,-1) by two of the straight lines
+             # Furthermore (1,0) is connected to (1,1) and (1,-1)
+    # Extrapolation into two trapezoids above and below eta=0 axis is based on values of log(g_map) on the lines 
+    # eta = \pm d \pm alpha \xi
+    d = 0.02
+    alpha = 0.27
+    Xi,Eta = np.meshgrid(xi,eta,indexing='ij', sparse=True)  
+    log_g = RegularGridInterpolator((xi,eta),log_g_map)
+    Z = log_g_map
+
+    t = (1+a*Eta) *(alpha*Xi-Eta +d) / (1+a*Eta - alpha*a*Xi + alpha*a)
+    Xpro = Xi + (a*t)*(Xi-1)/(1+a*Eta)
+    Ypro = Eta + t
+    ind = np.logical_and(np.logical_and(Eta>0,  mask>0.5), (np.abs(Eta)>= (-1/a)*Xi))
+    Z[ind] = log_g(np.array([np.clip(Xpro[ind],xi[-1],xi[0]),Ypro[ind]]).T) + 7*t[ind]
+
+    t = (1+a*Eta)*(-alpha*Xi-Eta -d) / (-1-a*Eta + alpha*a*Xi - alpha*a)
+    Xpro = Xi + (a*t)*(Xi-1)/(1-a*Eta)
+    Ypro = Eta - t
+    ind = np.logical_and(np.logical_and(Eta<0, mask>0.5), (np.abs(Eta)>= (-1/a)*Xi))
+    Z[ind] = log_g(np.array([np.clip(Xpro[ind],xi[-1],xi[0]),Ypro[ind]]).T)+7*t[ind]
+
+    mask_apex = np.logical_and(mask>0.5, (np.abs(Eta)<=(-1/(a-0.03))*Xi))
+    mask_apex[0,:] = False; mask_apex[-1,:] = False; mask_apex[:,-1] = False
+    Z = harmonic_extension(~mask_apex,Z)
+    # on a sector centered at the apex extrapolation is chosen constant on some ellipses such that it matches 
+    # to the values on the trapezoids
+    #ind = np.logical_and(mask, (np.abs(Eta)<=(-1/(a-0.03))*Xi))
+    #a_red = a-0.06 # to provide some overlap of regions
+    #r = np.sqrt(14*Xi**2+Eta**2)
+    #interp_Z = RegularGridInterpolator((xi,eta),Z)
+    #arg = np.array([(- a_red/np.sqrt(1+a_red**2))*r[ind],np.clip((1./np.sqrt(1+a_red**2))*r[ind],0,eta[-1])]).T 
+    #Z[ind] = interp_Z( arg) 
+    return Z
+
 ############################# simulated solutions and setups for testing inversion methods
 
 def load_simulated_g(filename):
@@ -121,7 +164,7 @@ def load_simulated_g(filename):
     px_size = px_size * 1e-9 #convert nm to m
     return g_map, mask, mask_binary, px_size
 
-def setup_simulated_g(g_is_complex=True,using_g_squared_measurement=True, parallel=True,list_of_filters=None,N=7):
+def setup_simulated_g(g_is_complex=True,using_g_squared_measurement=True, parallel=True,list_of_filters=None,N=30):
     filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_simulated_g(filename)
     fov = tuple(x*px_size for x in mask.shape)
@@ -138,6 +181,7 @@ def setup_simulated_g(g_is_complex=True,using_g_squared_measurement=True, parall
 
     grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
                            np.linspace(0, 1, N2, endpoint=False))
+    opdata = {'grid':grid, 'fresnel_nr':fresnelNumber,'mask':mask_binary,'A_Psi0':A_Psi0_Multiplier}
     if g_is_complex:
         op = complex_PINEM_g_to_data(grid, fresnelNumber,mask_binary_bd,A_Psi0_Multiplier, 
             list_of_filters = list_of_filters,
@@ -147,20 +191,21 @@ def setup_simulated_g(g_is_complex=True,using_g_squared_measurement=True, parall
         if using_g_squared_measurement:
             op2 = Ptw_Multiplication(grid,1.0-mask_binary) * SquaredModulus(grid.complex_space())
             op = Vector_of_operators([op2, op])
-        return op, grid, g_map, g_map, mask_binary_bd, ~boundary_mask
+        return op, grid, g_map, g_map, mask_binary_bd, ~boundary_mask,opdata
     else:
         op = PINEM_g_to_data(grid, fresnelNumber, mask_binary_bd, A_Psi0_Multiplier, 
                     list_of_filters = list_of_filters,
                     N=N, 
                     parallel=parallel
                     )
-        exact_solution = op.domain.join(np.abs(g_map),
+        exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                         np.unwrap(np.angle(g_map.T)).T)
         if using_g_squared_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_binary) * SquaredModulus(grid.real_space()) * ForgetSecond(grid,grid)
+            op2 = Ptw_Multiplication(grid,1.0-mask_binary) * SquaredModulus(grid.real_space()) \
+                * Exponential(grid.real_space) * ForgetSecond(grid,grid)
             op = Vector_of_operators([op2, op])
 
-        return op, grid, exact_solution, g_map, mask_binary_bd, ~boundary_mask
+        return op, grid, exact_solution, g_map, mask_binary_bd, ~boundary_mask, opdata
 
 def setup_synthetic_g(g_is_complex=True, using_g_squared_measurement=True, parallel=True):
     # Example parameters
@@ -209,13 +254,14 @@ def setup_synthetic_g(g_is_complex=True, using_g_squared_measurement=True, paral
     else:
         op = PINEM_g_to_data(grid, fresnelNumber, mask, A_Psi0_Multiplier, N=N, parallel=True)
         if using_g_squared_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_p) * SquaredModulus(grid.real_space()) * ForgetSecond(grid,grid)
+            op2 = Ptw_Multiplication(grid,1.0-mask_p) * SquaredModulus(grid.real_space()) \
+                * Exponential(grid.real_space()) * ForgetSecond(grid,grid)
             op = Vector_of_operators([op2, op])
 
     if g_is_complex:
         exact_solution = g_map
     else:
-        exact_solution = op.domain.join(np.abs(g_map), np.angle(g_map))
+        exact_solution = op.domain.join(np.log(np.abs(g_map)), np.angle(g_map))
     return op, grid, exact_solution, g_map, mask & ~mask_p, mask_p
 
 def main():
@@ -231,7 +277,7 @@ def main():
     # Name of file containing experimental data. 
     # If this is not None, data (i.e. the right hand side of the operator equation) will be loaded from this file rather 
     # then generated by simulation, i.e. application of the forward operator to g and adding noise.
-    experimental_data_filename = None 
+    experimental_data_filename = None #r'./PINEM_tests/data_N30.mat'
     # If true, a true solution g from simulations will be used to test inversion methods, otherwise a picture
     g_is_from_simulation = True                        
     # If true, the unknown g will be parameterized as a usual complex-valued grid function, 
@@ -257,7 +303,7 @@ def main():
     plot_log_g = True
 
     if g_is_from_simulation:
-        op, grid, exact_solution, g_map, mask_a, mask_p \
+        op, grid, exact_solution, g_map, mask_a, mask_p, opdata \
             = setup_simulated_g(g_is_complex=g_is_complex, 
                                 using_g_squared_measurement = using_g_squared_measurement,
                                 list_of_filters= [ [1,3,5,7],[-1,-3,-5,-7]],
@@ -270,9 +316,9 @@ def main():
         if g_is_complex:
             regpar = 1e-4; regpar_step = 0.8
         else:
-            sobolev_index_phase = 3; sobolev_index_ampl = 1; regpar = 1e-8;
+            sobolev_index_phase = 3; sobolev_index_ampl = 2; regpar = 1e-6;
             #sobolev_index_phase = 1; regpar = 1e-3;
-            regpar_step = 0.8
+            regpar_step = 0.7
     else:
         op, grid, exact_solution, g_map, mask_a, mask_p \
             = setup_synthetic_g(g_is_complex=g_is_complex, 
@@ -295,15 +341,18 @@ def main():
     else:
         if abs_g_is_partly_known:
             if mask_a.any():
-                prior_ampl = np.abs(g_map) # harmonic_extension(~mask_a,np.abs(g_map),damping =400)
-                ampl_proj = 1.*CoordinateProjection(grid, mask_a)
+                #prior_ampl = harmonic_extension(~mask_a,np.log(np.abs(g_map)),damping =0)
+                mask = mask_a.copy()
+                mask[0,:]=1; mask[-1,:]=1; mask[:,-1] = 1
+                prior_ampl = extension_along_lines(np.log(np.abs(g_map)),mask)
+                ampl_proj = CoordinateProjection(grid, mask_a)
                 ampl_domain = Hm0_domain(mask_a, index = sobolev_index_ampl)
             else: # amplitude is known everywhere
-                prior_ampl = np.abs(g_map)
+                prior_ampl = np.log(np.abs(g_map))
                 ampl_proj = Zero(grid)
                 ampl_domain = L2(grid) # irrelevant, only needed formally
         else:
-            prior_ampl = harmonic_extension(~mask_p,np.abs(g_map),damping =0)
+            prior_ampl = harmonic_extension(~mask_p,np.log(np.abs(g_map)),damping =0)
             ampl_proj = CoordinateProjection(grid, mask_p)
             ampl_domain = Hm0_domain(mask_p, index = sobolev_index_ampl)
         ampl_projection = InnerShift(ampl_proj,prior_ampl)
@@ -320,10 +369,10 @@ def main():
             phase_proj = CoordinateProjection(grid, mask_p)
             phase_projection = InnerShift(phase_proj,prior_phase)
             phase_extension = OuterShift(phase_proj.adjoint,prior_phase)
-            weight = (prior_ampl/np.max(prior_ampl))*g_map.shape[0]**2
+            weight = (0.02+np.exp(prior_ampl)/np.exp(np.max(prior_ampl)))*g_map.shape[0]**2
             #weight = np.ones_like(g_map.real)*g_map.shape[0]**2
             #weight[mask_p] = 0  # impose Neumann conditions at outer boundaries
-            phase_domain = Hm0_domain(mask_p, index = sobolev_index_phase)# weight = weight)
+            phase_domain = Hm0_domain(mask_p, index = sobolev_index_phase, weight = weight)
 
         Hdomain = ampl_domain + phase_domain
         projection =  opDirectSum(ampl_projection, phase_projection)
@@ -332,12 +381,23 @@ def main():
     # as extension is also needed for plotting, a copy is required to avoid errors 
     # on the use of revoked copies 
     extension2 = deepcopy(extension)
+    extension3 = deepcopy(extension)
     op_ext = op * extension2
- 
+
     ############################### compute synthetic data or load experimental data from file
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
     if experimental_data_filename:
-        raise NotImplementedError
+        dat = loadmat(experimental_data_filename)
+        data = dat['data']
+        data = np.reshape(data,(data.shape[1],))
+        if using_g_squared_measurement:
+            raise NotImplemented
+        else:
+            if isfinite(total_nr_counts):
+                scal = np.sum(data)/total_nr_counts
+            else:
+                scal = 1
+        data_comp = op.codomain.split(data)
     else:
         if using_g_squared_measurement:
             exact_data = op(exact_solution)
@@ -366,6 +426,7 @@ def main():
                 scal =1
             data_comp = op.codomain.split(data)
 
+
     ################################## define Hilbert space setting
     if using_g_squared_measurement:
         Hcodomain0 = L2(grid, weights = 1/(scal_EELS**2 + scal_EELS*data_comp[0]))
@@ -379,7 +440,7 @@ def main():
         Hcodomain = L2(grid, weights=1/(scal**2+scal*data_comp[0])) 
         for j in range(1, len(data_comp)):
             Hcodomain = Hcodomain + L2(grid, weights=1/(scal**2 + scal*data_comp[j]))
-    setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    #setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
 
     ##################### define initial guess
     if init_guess_filename:
@@ -415,7 +476,7 @@ def main():
     if not using_polynomial_basis_for_phase:
         init_vec_proj = projection(init_vec)
 
-    ############################### initialize regularization method and stopping rule
+    ############################### initialize stopping rule
    
     if using_g_squared_measurement:
         data_comp = flat_codomain.split(data)
@@ -424,25 +485,15 @@ def main():
             *[np.sqrt(scal*data_comp[k]) for k in range(1,nr_data)]])
     else:
         sqrtdata = np.sqrt(scal*data) 
-    stoprule = (
-        rules.Discrepancy(
-            setting.Hcodomain.norm,
+
+    discrepancy_rule = rules.Discrepancy(
+            Hcodomain.norm,
             data,
-            noiselevel= setting.Hcodomain.norm(sqrtdata),
+            noiselevel= Hcodomain.norm(sqrtdata),
             tau=1
-        ) +
-        rules.CountIterations(max_iterations=1,while_type=True) 
-    )
-    solver = NewtonCG(
-        setting, data, init=init_vec_proj,
-        cgmaxit=10, rho=0.95
-    )
-#    solver = IrgnmCG(
-#        setting, data, init=init_vec_proj,
-#        regpar=regpar, regpar_step=regpar_step,
-#        inner_it_logging_level=logging.INFO
-#        )
-        
+        )
+    stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=100,while_type=True))
+      
     ############################## routines for reconstruction error evaluation and for plotting 
     def reconstruction_error(_exact, _reconstruction):
         def fnorm(arr):
@@ -458,8 +509,9 @@ def main():
             reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(_exact.shape))
             reco_error3 = fnorm(_reconstruction-_exact)/fnorm(_exact)
         else:
-            ex_amp, ex_phase = op.domain.split(_exact)
+            log_ex_amp, ex_phase = op.domain.split(_exact)
             reco_amp, reco_phase = op.domain.split(_reconstruction)
+            ex_amp = np.exp(log_ex_amp)
             reco_error1 = fnorm(reco_amp-ex_amp)/fnorm(ex_amp)
             #reco_error2 = norm(mask_p*(reco_phase-ex_phase))/fnorm(mask_p*ex_phase)
             reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(ex_phase.shape))
@@ -469,10 +521,15 @@ def main():
 
     def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step):
         plotdata = []
-        plotdata.append({'pos': (1, 0), 'data': reco_amp.T,
+        if plot_log_g:
+            plotdata.append({'pos': (1, 0), 'data': np.log(reco_amp.T),
+                        'title': 'log(|g_rec|) it.{}'.format(Newton_step)})
+        else:
+            plotdata.append({'pos': (1, 0), 'data': reco_amp.T,
                         'title': '|g_rec| it.{}'.format(Newton_step)})
         plotdata.append({'pos': (2, 0), 'data': reco_amp.T-np.abs(g_map.T),
-                            'title': 'Error ||g|-|g_rec||  it.{}'.format(Newton_step)})
+                            'title': 'Error |g|-|g_rec|  it.{}'.format(Newton_step),
+                            'kwargs' : {'vmax':2.5}})
         if plot_log_g:
             plotdata.append({'pos': (1, 1), 'data': complex_to_rgb_log(reco_amp.T*np.exp(1j*reco_phase.T)),
                             'title': 'log(g_rec) it.{}'.format(Newton_step)})
@@ -481,7 +538,8 @@ def main():
                             'title': 'g_rec it.{}'.format(Newton_step)})
 
         plotdata.append({'pos': (2, 1), 'data': np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
-                            'title': 'error |g_rec-g| it.{}'.format(Newton_step)})
+                            'title': 'error |g_rec-g| it.{}'.format(Newton_step),
+                            'kwargs' : {'vmax':15}})
         #plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
         #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(Newton_step)})
         fig1.plot(plotdata)
@@ -508,6 +566,7 @@ def main():
         else:
             _, ex_phase = op.domain.split(exact_solution)
             reco_amp, reco_phase = op.domain.split(ereco)
+            reco_amp = np.exp(reco_amp)
         phase_correction = np.median(ex_phase[~mask_a])-np.median(reco_phase[~mask_a]) 
         reco_phase += phase_correction
         if g_is_complex:
@@ -521,7 +580,7 @@ def main():
         stats['ampl_err'].append(reco_error1)
         stats['phase_err'].append(reco_error2)
         stats['complex_err'].append(reco_error3)
-        stats['residuals'].append(setting.Hcodomain.norm(reco_data-exact_data))
+        stats['residuals'].append(setting.Hcodomain.norm(reco_data-data))
         if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
             stats['nr_inner_steps'].append(solver.nr_inner_its())
 
@@ -551,14 +610,9 @@ def main():
             plt.pause(0.1)
 
     ################ plot and evaluate exact solution and exact data and initial error
-    if not g_is_complex:
-        ex_abs, ex_phase = op.domain.split(exact_solution)
-    else:
-        ex_abs = np.abs(g_map)
-        ex_phase = np.unwrap(np.angle(g_map.T)).T
     fig1 = imshow_fig(3, 2)
     if plot_log_g:
-        plotdata1 = [{'pos': (0, 0), 'data': np.abs(g_map.T), 'title': 'exact |g|'},
+        plotdata1 = [{'pos': (0, 0), 'data': np.log(np.abs(g_map.T)), 'title': 'log |g|'},
                     {'pos': (0, 1), 'data': complex_to_rgb_log(g_map.T), 'title': 'log(g) with phase'}]
     else:
         plotdata1 = [{'pos': (0, 0), 'data': np.abs(g_map.T), 'title': 'exact |g|'},
@@ -579,25 +633,55 @@ def main():
         plot_data2[1]['title'] = 'sim. loss'  
     fig2.plot(plot_data2)
 
-    if hasattr(solver, "nr_inner_its"):
-        fig3, axs3 = plt.subplots(3, 1, sharex=False, sharey=False)
-    else:
-        fig3, axs3 = plt.subplots(2, 1, sharex=False, sharey=False)
+    fig3, axs3 = plt.subplots(3, 1, sharex=False, sharey=False)
+
+    ########################################## perform inversion
+
+    setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+#    solver = NewtonCG(
+#        setting, data, init=init_vec_proj,
+#        cgmaxit=50, rho=0.9
+#     )
+    solver = IrgnmCG(
+        setting, data, init=init_vec_proj,
+        regpar=regpar, regpar_step=regpar_step,
+        inner_it_logging_level=logging.INFO
+        )
 
     stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': []}
     plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,0,
         do_plottings=True,stats=stats,output_filename= output_filename)
-
-    ########################################## perform inversion
+      
     for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
         plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
             do_plottings=~stoprule.triggered,stats=stats,output_filename= output_filename)
- 
+
+    """
+    extension2 = deepcopy(extension3)
+    #aux,deriv = extension2.linearize(extension2.domain.zeros())
+    #deriv(extension2.domain.ones())
+    op2 = PINEM_g_to_data(opdata['grid'], opdata['fresnel_nr'], opdata['mask'], opdata['A_Psi0'], N=2)
+    aux, deriv2 = op2.linearize(exact_solution)
+    deriv2(exact_solution)
+    op_ext2 = op * extension2
+    aux,deriv = op_ext2.linearize(op_ext2.domain.zeros())
+    deriv(op_ext2.domain.ones())
+    setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    solver = NewtonCG(
+        setting, data, init=stoprule.x,
+        cgmaxit=5, rho=0.9
+     )
+    stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=2,while_type=True))
+
+    for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),Newton_step):
+        plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+            do_plottings=~stoprule.triggered,stats=stats,output_filename= output_filename)
+    """
+        
     plt.show(block=True)
     reco = stoprule.x
     reco_data = stoprule.y
     # np.save('PINEM_tests/reco',reco)
-
 
 if __name__ == '__main__':
     main()
