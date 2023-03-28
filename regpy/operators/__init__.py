@@ -767,7 +767,7 @@ class CoordinateMask(Operator):
         return np.where(self.mask==False, 0, x)
 
     def __repr__(self):
-        return util.make_repr(self, self.domain, self.mask)
+        return util.make_repr(self, self.domain)
 
 
 class Ptw_Multiplication(Operator):
@@ -808,7 +808,7 @@ class Ptw_Multiplication(Operator):
             np.seterr(**sav)
 
     def __repr__(self):
-        return util.make_repr(self, self.domain, self.factor)
+        return util.make_repr(self, self.domain)
 
 class OuterShift(Operator):
     """Shift an operator by a constant offset in the codomain.
