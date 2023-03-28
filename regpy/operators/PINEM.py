@@ -194,10 +194,6 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
     assert not domain.is_complex
     cdomain = domain.complex_space()
     complexProjection = CoordinateProjection(cdomain,mask)
-    realProjection = DirectSum(
-        Exponential(complexProjection.codomain.real_space()) * CoordinateProjection(domain,mask),
-        CoordinateProjection(domain,mask)
-        )
     maskDomain = complexProjection.codomain
     if list_of_filters == None:
         list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
@@ -214,7 +210,10 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
                 *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
                 *Adjoint(complexProjection)
                 *Nemitzky_op_for_g(n,maskDomain)
-                *realProjection
+                *DirectSum(
+                    Exponential(complexProjection.codomain.real_space()) * CoordinateProjection(domain,mask),
+                    CoordinateProjection(domain,mask)
+        )
                 )
     if parallel:
         g_to_modes = Parallel_vector_of_operators(op_list)
