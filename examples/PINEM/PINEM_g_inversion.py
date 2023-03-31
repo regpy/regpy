@@ -1,16 +1,13 @@
 import logging
-from multiprocessing.spawn import get_command_line
-from operator import ge
+#from multiprocessing.spawn import get_command_line
 
-from scipy.sparse import csc_matrix 
-from scipy.sparse.linalg import spsolve
-from scipy.optimize import lsq_linear
-from scipy.interpolate import RegularGridInterpolator
-import matplotlib.pyplot as plt
 import numpy as np
+from numpy.linalg import norm
+from math import isfinite
+from scipy.io import loadmat, savemat
+from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
-from numpy.core.numeric import ones_like
 from regpy.discrs import UniformGrid, DirectSum
 from regpy.discrs.tensor_bases import ChebyshevBasis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, Hm0_domain
@@ -22,169 +19,18 @@ from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
 from regpy.solvers.newton import NewtonCG
-from scipy.io import loadmat, savemat
-from scipy.misc import ascent
-from numpy.linalg import norm
 from regpy.util.imshow_fig import imshow_fig, complex_to_rgb, complex_to_rgb_log 
-from math import isfinite
-
-##################### operator needed for fixing g on parts of the grid where its values are known
-
-class ForgetSecond(Operator):
-    def __init__(self,domain1,domain2):
-        self.domain2 = domain2
-        super().__init__(DirectSum(domain1, domain2),domain2,linear=True)
-
-    def _eval(self,x):
-        x1,x2 = self.domain.split(x)
-        return x1
-   
-    def _adjoint(self,y):
-        return self.domain.join(y,self.domain2.zeros())
-        
-""" harmonic extension of a function on part of a 2D regular grid  
-input: 
-        mask: binary mask with True at point where values are given.
-            At the boundary mask must have values True.
-    values: array of function values: only values at points where mask=True are relevant
-    damping: The extension satisfies (-Delta + damping)u =0, so only for the default 
-                damping = 0 the extension is harmonic. 
-                damping >0 may be used to create initial guesses for synthetic data generated with damping=0.       
-output:
-        An array u which coincides with values at {mask=True}, and an approximation of a 
-        harmonic function on {mask=False} which is globally continuous
-"""
-def harmonic_extension(mask, values, damping = 0):
-    u = values.flatten()
-    G = np.where(mask,0,1) # boolean to integer
-    k_int = np.nonzero(G)  # integer coordinates of interior points
-    k_ext = np.nonzero(1-G) # integer coordinates of exterior points
-    G[k_int] = 1+np.arange(len(k_int[0]))
-
-    G1 = G.flatten()
-    [m,n] = G.shape
-    # Indices of interior points
-    p = np.where(G1)[0] # list of numbers of interior points in flattened array
-    N = len(p)
-    f = np.zeros((N,),dtype=u.dtype) # right hand side of matrix equation 
-
-    # Connect interior points to themselves with 4's.
-    i = G1[p]-1
-    j = G1[p]-1
-    s = (damping/(m*n) + 4.)*np.ones(p.shape)
-
-    # for k = north, east, south, west
-    for k in [-1, n, 1, -n]:
-        # Possible neighbors in k-th direction
-        Q = G1[p+k]
-        # Index of points with interior neighbors in k-th direction
-        q = np.where(Q)[0]
-        q_ext = np.where(Q==0)[0]
-        # Connect interior points to neighbors with -1's.
-        i = np.concatenate([i, G1[p[q]]-1])
-        j = np.concatenate([j,Q[q]-1])
-        s = np.concatenate([s,-np.ones(q.shape)])
-        i_ext = G1[p[q_ext]]-1
-        f[i_ext] = f[i_ext]+u[p[q_ext]+k]
-    # sparse matrix with 5 diagonals
-    negLap= csc_matrix((s, (i,j)),(N,N))
-    u = values.copy()
-    u[k_int]=spsolve(negLap,f)
-    return u
-
-def extension_along_lines(log_g_map,mask):
-    # extrapolate log(g_map) from nanotip along straight lines. Damping is modeled by linear decay on these lines
-    m,n = log_g_map.shape
-    N_center=707  # origin is place at pixel (N_center,(n-1)/2)
-    # artificial coordinate system for g_map; cut through nanotip is line eta = 1
-    xi =  (N_center-np.arange(m))/(N_center-1)
-    eta = np.linspace(-1,1,n)
-    a = 0.1  # the origin is connected to the points (-a,1) and (-a,-1) by two of the straight lines
-             # Furthermore (1,0) is connected to (1,1) and (1,-1)
-    # Extrapolation into two trapezoids above and below eta=0 axis is based on values of log(g_map) on the lines 
-    # eta = \pm d \pm alpha \xi
-    d = 0.02
-    alpha = 0.27
-    Xi,Eta = np.meshgrid(xi,eta,indexing='ij', sparse=True)  
-    log_g = RegularGridInterpolator((xi,eta),log_g_map)
-    Z = log_g_map
-
-    t = (1+a*Eta) *(alpha*Xi-Eta +d) / (1+a*Eta - alpha*a*Xi + alpha*a)
-    Xpro = Xi + (a*t)*(Xi-1)/(1+a*Eta)
-    Ypro = Eta + t
-    ind = np.logical_and(np.logical_and(Eta>0,  mask>0.5), (np.abs(Eta)>= (-1/a)*Xi))
-    Z[ind] = log_g(np.array([np.clip(Xpro[ind],xi[-1],xi[0]),Ypro[ind]]).T) + 7*(t[ind]+0.008)
-
-    t = (1+a*Eta)*(-alpha*Xi-Eta -d) / (-1-a*Eta + alpha*a*Xi - alpha*a)
-    Xpro = Xi + (a*t)*(Xi-1)/(1-a*Eta)
-    Ypro = Eta - t
-    ind = np.logical_and(np.logical_and(Eta<0, mask>0.5), (np.abs(Eta)>= (-1/a)*Xi))
-    Z[ind] = log_g(np.array([np.clip(Xpro[ind],xi[-1],xi[0]),Ypro[ind]]).T)+7*(t[ind]+0.007)
-
-    # around the apex a harmonic extension is used
-    mask_apex = np.logical_and(mask>0.5, (np.abs(Eta)<=(-1/(a-0.03))*Xi))
-    mask_apex[0,:] = False; mask_apex[-1,:] = False; mask_apex[:,-1] = False
-    Z = harmonic_extension(~mask_apex,Z)
-    return Z
-
-############################# simulated solutions and setups for testing inversion methods
-
-def load_simulated_g(filename):
-    mat = loadmat(filename)
-    g_map = mat['pm']['g_map'][0][0]
-    mask = mat['pm']['mask'][0][0]
-    mask_binary = mat['pm']['mask_binary'][0][0].astype(dtype=bool)
-    px_size = mat['pm']['px_sizes'][0][0]
-    px_size = px_size * 1e-9 #convert nm to m
-    return g_map, mask, mask_binary, px_size
-
-def setup_simulated_g(g_is_complex=True,using_g_squared_measurement=True, parallel=True,list_of_filters=None,N=30):
-    filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
-    g_map, mask, mask_binary, px_size = load_simulated_g(filename)
-    fov = tuple(x*px_size for x in mask.shape)
-    lambda_electron = 2.51e-12
-    defocus = 900e-6
-    fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
-    # Uniform grid
-    N1,N2 = mask.shape
-    A_Psi0_Multiplier = mask.astype(complex)
-    boundary_mask = np.zeros_like(mask_binary)
-    boundary_mask[0,:]=True; boundary_mask[-1,:]=True
-    boundary_mask[:,0]=True; boundary_mask[:,-1]=True
-
-    grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
-                           np.linspace(0, 1, N2, endpoint=False))
-    opdata = [grid, fresnelNumber,mask_binary & ~boundary_mask,A_Psi0_Multiplier]
-    if g_is_complex:
-        op = complex_PINEM_g_to_data(*opdata, 
-            list_of_filters = list_of_filters,
-            N=N, 
-            parallel=parallel
-        )
-        if using_g_squared_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_binary) * SquaredModulus(grid.complex_space())
-            op = Vector_of_operators([op2, op])
-        return op, grid, g_map, g_map, mask_binary, ~boundary_mask,opdata
-    else:
-        op = PINEM_g_to_data(*opdata, 
-                    list_of_filters = list_of_filters,
-                    N=N, 
-                    parallel=parallel
-                    )
-        exact_solution = op.domain.join(np.log(np.abs(g_map)),
-                                        np.unwrap(np.angle(g_map.T)).T)
-        if using_g_squared_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_binary) * SquaredModulus(grid.real_space()) \
-                * Exponential(grid.real_space) * ForgetSecond(grid,grid)
-            op = Vector_of_operators([op2, op])
-
-        return op, grid, exact_solution, g_map, mask_binary, ~boundary_mask, opdata
+import sys
+sys.path.append('./PINEM')
+from PINEM_plots import plot_exactSolution_data,plot_reco, plot_stats, init_plot_stats
+from PINEM_setup import setup_simulated_g, ForgetSecond
+from PINEM_extensions import harmonic_extension, extension_along_lines
 
 def main():
     ################################ set parameters 
 
     # intermediate results will be written to file names starting with output_filename
-    output_filename = r'./PINEM_tests/test'
+    output_filename = r'./test'
     logging.basicConfig(
        level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)-20s :: %(message)s",
@@ -196,12 +42,12 @@ def main():
     # If None, the initial guess is either zero (for synthetic g) or constructed from initial 
     # partial knowledge of |g| and phase(g)
     # Otherwise, if it is an output of a previous inversion method, this reconstruction is used as initial guess
-    init_guess_filename = None #r'./PINEM_tests/test46.mat'
+    init_guess_filename = None #r'./adaptive_IRGNM/test46.mat'
     # Name of file containing experimental data. 
     # If this is not None, data (i.e. the right hand side of the operator equation) will be loaded from this file rather 
     # then generated by simulation, i.e. application of the forward operator to g and adding noise.
     # experimental_data_filename = None
-    experimental_data_filename = r'./PINEM_tests/data_N30.mat'                      
+    experimental_data_filename = r'./data/data_N30.mat'                      
     # If true, the unknown g will be parameterized as a usual complex-valued grid function, 
     # otherwise by its modulus and phase: (ex_amp,ex_phase)|-> ex_amp * exp(1j*ex_phase) = g
     g_is_complex = False
@@ -224,7 +70,7 @@ def main():
     # use log(|g|) instead of |g| for darkness in phase plots of g and g_rec. Makes phase visible everywhere
     plot_log_g = True
     # number of modes used for evaluations of forward operator and generation of simulated data
-    N_data = 30
+    N_data = 4
     # values of N used for evaluation of the derivative of the forward operator
     # This value should gradually be increased to save computation time. 
     N_deriv = [1,2,4,8,16,30]
@@ -419,14 +265,12 @@ def main():
         )
     stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=max_Newton_its,while_type=True))
       
-    ############################## routines for reconstruction error evaluation and for plotting 
+    ############################## routines for reconstruction error evaluation  
     def reconstruction_error(_exact, _reconstruction):
         def fnorm(arr):
             return norm(arr[:])
 
         nonlocal g_is_complex
-        nonlocal mask_a
-        nonlocal mask_p
         if g_is_complex:
             reco_error1 = fnorm((np.abs(_reconstruction)-np.abs(_exact)))/fnorm(_exact)
             ex_phase = np.unwrap(np.angle(_exact.T)).T
@@ -438,40 +282,10 @@ def main():
             reco_amp, reco_phase = op.domain.split(_reconstruction)
             ex_amp = np.exp(log_ex_amp)
             reco_error1 = fnorm(reco_amp-ex_amp)/fnorm(ex_amp)
-            #reco_error2 = norm(mask_p*(reco_phase-ex_phase))/fnorm(mask_p*ex_phase)
             reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(ex_phase.shape))
             # fnorm((reco_phase-ex_phase))/fnorm(ex_phase)
             reco_error3 = fnorm(reco_amp*np.exp(1j*reco_phase) -ex_amp*np.exp(1j*ex_phase))/fnorm(ex_amp)
         return reco_error1, reco_error2, reco_error3
-
-    def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step):
-        plotdata = []
-        if plot_log_g:
-            plotdata.append({'pos': (1, 0), 'data': np.log(reco_amp.T),
-                        'title': 'log(|g_rec|) it.{}'.format(Newton_step)})
-        else:
-            plotdata.append({'pos': (1, 0), 'data': reco_amp.T,
-                        'title': '|g_rec| it.{}'.format(Newton_step)})
-        plotdata.append({'pos': (2, 0), 'data': reco_amp.T-np.abs(g_map.T),
-                            'title': 'Error |g|-|g_rec|  it.{}'.format(Newton_step)})
-        plotdata.append({'pos': (1, 1), 'data': complex_to_rgb(reco_amp.T*np.exp(1j*reco_phase.T)),
-                            'title': 'g_rec with phase it.{}'.format(Newton_step)})
-        plotdata.append({'pos': (1, 2), 'data': complex_to_rgb_log(reco_amp.T*np.exp(1j*reco_phase.T)),
-                            'title': 'log(g_rec) it.{}'.format(Newton_step)})
-
-        plotdata.append({'pos': (2, 1), 'data': np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
-                            'title': 'error |g_rec-g| it.{}'.format(Newton_step)})
-        #plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
-        #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(Newton_step)})
-        fig1.plot(plotdata)
-
-        plotdata = [{'pos': (1, j), 'data': reco_data_comp[j].T,
-                        'title':'rec. data it.{}'.format(Newton_step)}
-                    for j in range(nr_data)]
-        for j in range(nr_data):
-            plotdata.append({'pos': (2, j), 'data': reco_data_comp[j].T-ex_data_comp[j].T,
-                            'title': 'diff'})
-        fig2.plot(plotdata)
 
     def plot_write_safe(reco,reco_data,fig1,fig2,axs3, Newton_step,
         do_plottings=True, stats =None,output_filename = None,N=None
@@ -523,48 +337,9 @@ def main():
 
         if do_plottings:
             plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step)
-            axs3[0].cla()
-            
-            axs3[0].plot(stats['Newton step'],stats['ampl_err']/stats['ampl_err'][0], label='amplitude error')
-            axs3[0].plot(stats['Newton step'],stats['phase_err']/stats['phase_err'][0], label='phase error')
-            axs3[0].plot(stats['Newton step'],stats['complex_err']/stats['complex_err'][0], label='complex error')
-            axs3[0].legend()
-            axs3[1].cla()
-            axs3[1].semilogy(stats['Newton step'],stats['residuals'], label='residuals')
-            axs3[1].legend()
-            if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
-                axs3[2].cla()
-                axs3[2].plot(stats['Newton step'],stats['nr_inner_steps'], label='number of inner CG steps')
-                axs3[2].legend()
-            plt.show(block=False)
-            plt.pause(1e-4)
-            return residual_reduction
+            plot_stats(axs3,stats,plot_inner_its = hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its))
 
-    ################ plot and evaluate exact solution and exact data and initial error
-    fig1 = imshow_fig(3, 3)
-    if plot_log_g:
-        plotdata1 = [{'pos': (0, 0), 'data': np.log(np.abs(g_map.T)), 'title': 'log(|g|)'}]
-    else:
-        plotdata1 = [{'pos': (0, 0), 'data': np.abs(g_map.T), 'title': '|g|'}]                    
-    plotdata1.append({'pos': (0, 1), 'data': complex_to_rgb(g_map.T), 'title': 'g with phase'})
-    plotdata1.append({'pos': (0, 2), 'data': complex_to_rgb_log(g_map.T), 'title': 'log(g) with phase'})                  
-
-    fig1.plot(plotdata1)
-    data_comp = flat_codomain.split(data)
-    nr_data = len(data_comp)
-    fig2 = imshow_fig(3, nr_data)
-    plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
-                    for j in range(nr_data)]
-    if using_g_squared_measurement and nr_data ==3:
-        plot_data2[0]['title'] = 'sim. ampl'
-        plot_data2[1]['title'] = 'sim. gain'
-        plot_data2[2]['title'] = 'sim. loss'    
-    if not using_g_squared_measurement and nr_data ==2:
-        plot_data2[0]['title'] = 'sim. gain'
-        plot_data2[1]['title'] = 'sim. loss'  
-    fig2.plot(plot_data2)
-
-    fig3, axs3 = plt.subplots(3, 1, sharex=False, sharey=False)
+        return residual_reduction
 
     ########################################## perform inversion
 
@@ -590,6 +365,10 @@ def main():
             simplified_op = op_simple
             )
 
+    fig1,fig2 = plot_exactSolution_data(g_map,data_comp,
+                            using_g_squared_measurement = using_g_squared_measurement,plot_log_g = plot_log_g)       
+    fig3, axs3 = init_plot_stats()
+    
     stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': [], \
         'N': [], 'Newton step' : []}
     Newton_step=0
@@ -630,8 +409,6 @@ def main():
                 do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
             if residual_reduction > minimal_residual_reduction and stats['residuals'][-1] < residual_last_N*NewtonCG_rho:
                 break
-      
-    plt.show(block=True)
 
 if __name__ == '__main__':
     main()
