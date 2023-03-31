@@ -212,8 +212,7 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
                 *Nemitzky_op_for_g(n,maskDomain)
                 *DirectSum(
                     Exponential(complexProjection.codomain.real_space()) * CoordinateProjection(domain,mask),
-                    CoordinateProjection(domain,mask)
-        )
+                    CoordinateProjection(domain,mask))
                 )
     if parallel:
         g_to_modes = Parallel_vector_of_operators(op_list)

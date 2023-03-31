@@ -1,5 +1,21 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import hsv_to_rgb
+
+####################### conversion routines for plotting complex-valued fields
+
+def complex_to_rgb(z):
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.abs(z)/np.max((np.abs(z[:]))), ))
+    return hsv_to_rgb(HSV)
+
+def complex_to_rgb_log(z):
+    logdat = np.log(np.abs(z))
+    minlog = np.min(logdat)
+    maxlog = np.max(logdat)
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), (logdat-minlog)/(maxlog-minlog) ))
+    return hsv_to_rgb(HSV)
+
+###################### imshow_fig
 
 class imshow_fig:
     def __init__(self,nr_rows,nr_cols):

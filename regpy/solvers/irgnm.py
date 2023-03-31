@@ -29,12 +29,16 @@ class IrgnmCG(Solver):
         The initial guess. Default: the zero array.
     cgpars : dict
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+    simplified_op : Operator
+        An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
+        It is used for the derivative in the Newton equation. 
+        Default: None - then the derivative of setting.op is used.
     """
 
     def __init__(
         self, setting, data, regpar, regpar_step=2 / 3, 
          init=None, cgpars=None, cgstop=None, 
-         inner_it_logging_level = logging.INFO
+         inner_it_logging_level = logging.INFO, simplified_op = None
          ):
         super().__init__()
         self.setting = setting
@@ -46,7 +50,12 @@ class IrgnmCG(Solver):
         self.init = np.asarray(init)
         """The initial guess."""
         self.x = np.copy(self.init)
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        if simplified_op:
+            self.simplified_op = simplified_op
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.setting.op(self.x)
+        else:
+            self.y, self.deriv = self.setting.op.linearize(self.x)
         self.regpar = regpar
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
@@ -79,7 +88,11 @@ class IrgnmCG(Solver):
             logging_level = self.inner_it_logging_level
         ).run(stoprule=stoprule)
         self.x += step
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        if hasattr(self,'simplified_op'):
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.setting.op(self.x)
+        else:
+            self.y , self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
         self._nr_inner_steps = stoprule.iteration
     

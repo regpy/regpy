@@ -12,16 +12,25 @@ class NewtonCG(Solver):
     where T is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
+
+    If simplified_op is specified, it will be used to generate an approximation of the derivative 
+    of the forward operator setting.op, which may be cheaper to evaluate. E.g., it may be the 
+    derivative at the initial guess, which would yield a frozen Newton method. 
     """
 
-    def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8):
+    def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
         super().__init__()
         self.setting = setting
         self.data = data
         if init is None:
             init = self.setting.op.domain.zeros()
         self.x = np.copy(init)
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        if simplified_op:
+            self.simplified_op = simplified_op
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.setting.op(self.x)
+        else:
+            self.y, self.deriv = self.setting.op.linearize(self.x)
         self.rho = rho
         self.cgmaxit = cgmaxit
         self._k = 0
@@ -55,7 +64,11 @@ class NewtonCG(Solver):
             self._k += 1
         self.log.info('Inner CG iteration required {} steps.'.format(self._k))
         self.x += self._x_k
-        self.y , self.deriv = self.setting.op.linearize(self.x)
+        if hasattr(self,'simplified_op'):
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.setting.op(self.x)
+        else:
+            self.y , self.deriv = self.setting.op.linearize(self.x)
 
     def nr_inner_its(self):
         return self._k
