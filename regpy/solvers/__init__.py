@@ -72,7 +72,7 @@ class Solver:
         while self.next():
             yield self.x, self.y
 
-    def while_(self, stoprule=None):
+    def while_(self, stoprule):
         """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
@@ -90,20 +90,13 @@ class Solver:
             the stopping rule.
         """
 
-        if stoprule is not None and stoprule.stop(self.x,self.y):
-                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
-        else:
-            for x, y in self:
-                yield x, y
-                if stoprule is not None and stoprule.stop(x, y):
-                    self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
-                    # TODO document this behaviour
-                    yield x, y
-                    return
+        while not stoprule.stop(self.x,self.y) and self.next(): 
+            yield self.x, self.y
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+ 
 
 
-    def until(self, stoprule=None):
+    def until(self, stoprule):
         """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
@@ -120,13 +113,11 @@ class Solver:
             The (x, y) pair of the current iteration, or the solution chosen by
             the stopping rule.
         """
-        for x, y in self:
-            yield x, y
-            if stoprule is not None and stoprule.stop(x, y):
-                self.log.info('Stopping rule triggered after {} iterations.'.format(self.iteration_step_nr))
-                # TODO document this behaviour
-                yield x, y
-                return
+        self.next()
+        yield self.x, self.y
+        while not stoprule.stop(self.x,self.y) and self.next(): 
+            yield self.x, self.y
+
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=None):
