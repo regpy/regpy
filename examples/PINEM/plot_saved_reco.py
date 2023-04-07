@@ -4,22 +4,22 @@ from scipy.io import loadmat
 import matplotlib.pyplot as plt
 import numpy as np
 
-filename = './tests_adaptive_IRGNM/test_z5.mat'
+filename = './test8.mat'
 rec = loadmat(filename)
 stats = {'ampl_err': rec['ampl_err'][0], 'phase_err': rec['phase_err'][0], \
        'complex_err': rec['complex_err'][0], 'residuals': rec['residuals'][0], \
         'nr_inner_steps': rec['nr_inner_steps'][0], 'N': rec['N'][0], 'Newton step' : rec['Newton step'][0]}
 op, grid, exact_solution, g_map, mask_a_org, mask_p, opdata \
-        = setup_simulated_g(g_is_complex=False,using_g_squared_measurement=False,N=30,parallel=False)
+        = setup_simulated_g(g_is_complex=False,using_gabs_measurement=False,N=30,parallel=False)
 data = loadmat('./data/data_N30.mat')['data'][0]
 data_comp = op.codomain.split(data)
 fig1,fig2 = plot_exactSolution_data(g_map,data_comp,
-                            using_g_squared_measurement = False,plot_log_g = True)      
+                            using_gabs_measurement = False,plot_log_g = True)      
 fig3, axs3 = init_plot_stats()
 reco_ampl = rec['reco_amp']
 reco_phase = rec['reco_phase']
 reco_data = op(op.domain.join(np.log(reco_ampl),reco_phase))
 reco_data_comp = op.codomain.split(reco_data)
-plot_reco(fig1,fig2,reco_ampl,reco_phase,reco_data_comp,g_map,data_comp,0)
+plot_reco(fig1,fig2,reco_ampl,reco_phase,reco_data_comp,g_map,data_comp,stats['Newton step'][-1],mask_a = mask_a_org)
 plot_stats(axs3,stats,plot_inner_its = True)
 plt.show(block=True)

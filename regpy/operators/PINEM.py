@@ -189,12 +189,12 @@ class complex_Nemitzky_op_for_g(Operator):
             return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
                 + self._dir_g*np.real(self._factor_pow*y)
 
-def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
+def PINEM_g_to_data(domain, fresnel_number,A_Psi0_Multiplier, \
      N=1,list_of_filters=None,parallel = False):
     assert not domain.is_complex
     cdomain = domain.complex_space()
-    complexProjection = CoordinateProjection(cdomain,mask)
-    maskDomain = complexProjection.codomain
+    #complexProjection = CoordinateProjection(cdomain,mask)
+    #maskDomain = complexProjection.codomain
     if list_of_filters == None:
         list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
     modes = set()
@@ -208,12 +208,8 @@ def PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
                 SquaredModulus(cdomain)
                 *fresnel_propagator(cdomain, fresnel_number)
                 *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
-                *Adjoint(complexProjection)
-                *Nemitzky_op_for_g(n,maskDomain)
-                *DirectSum(
-                    Exponential(complexProjection.codomain.real_space()) * CoordinateProjection(domain,mask),
-                    CoordinateProjection(domain,mask))
-                )
+                *Nemitzky_op_for_g(n,cdomain)
+                *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
         g_to_modes = Parallel_vector_of_operators(op_list)
     else:

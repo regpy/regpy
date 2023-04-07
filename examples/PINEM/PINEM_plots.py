@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from regpy.util.imshow_fig import imshow_fig, complex_to_rgb, complex_to_rgb_log
 
-def plot_exactSolution_data(g_map,data_comp,using_g_squared_measurement = False,plot_log_g = True):
+def plot_exactSolution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
     fig1 = imshow_fig(3, 3)
     if plot_log_g:
         plotdata1 = [{'pos': (0, 0), 'data': np.log(np.abs(g_map.T)), 'title': 'log(|g|)'}]
@@ -16,18 +16,18 @@ def plot_exactSolution_data(g_map,data_comp,using_g_squared_measurement = False,
     fig2 = imshow_fig(3, nr_data)
     plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
                     for j in range(nr_data)]
-    if using_g_squared_measurement and nr_data ==3:
+    if using_gabs_measurement and nr_data ==3:
         plot_data2[0]['title'] = 'sim. ampl'
         plot_data2[1]['title'] = 'sim. gain'
         plot_data2[2]['title'] = 'sim. loss'    
-    if not using_g_squared_measurement and nr_data ==2:
+    if not using_gabs_measurement and nr_data ==2:
         plot_data2[0]['title'] = 'sim. gain'
         plot_data2[1]['title'] = 'sim. loss'  
     fig2.plot(plot_data2)
     return fig1, fig2
 
 def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,Newton_step,
-              plot_log_g = True
+              plot_log_g = True, mask_a = None
               ):
         plotdata = []
         if plot_log_g:
@@ -43,8 +43,14 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,Newto
         plotdata.append({'pos': (1, 2), 'data': complex_to_rgb_log(reco_amp.T*np.exp(1j*reco_phase.T)),
                             'title': 'log(g_rec) it.{}'.format(Newton_step)})
 
-        plotdata.append({'pos': (2, 1), 'data': np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
+        if mask_a is None:
+            plotdata.append({'pos': (2, 1), 'data': np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
                             'title': 'error |g_rec-g| it.{}'.format(Newton_step)})
+        else:
+            plotdata.append({'pos': (2, 1), 'data': (1.-mask_a.T) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
+                            'title': 'ext. error |g_rec-g| it.{}'.format(Newton_step)})
+            plotdata.append({'pos': (2, 2), 'data': mask_a.T * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
+                            'title': 'int. error |g_rec-g| it.{}'.format(Newton_step)})
         #plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
         #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(Newton_step)})
         fig1.plot(plotdata)
