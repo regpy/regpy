@@ -14,24 +14,24 @@ def load_simulated_g(filename):
     px_size = px_size * 1e-9 #convert nm to m
     return g_map, mask, mask_binary, px_size
 
-def setup_simulated_g(g_is_complex=True,using_gabs_measurement=True, parallel=True,list_of_filters=None,N=30):
+def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=True,list_of_filters=None,N=30):
     filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_simulated_g(filename)
     mask_a = ~mask_binary
-    fov = tuple(x*px_size for x in mask.shape)
+    #fov = tuple(x*px_size for x in mask.shape)
     lambda_electron = 2.51e-12
     defocus = 900e-6
-    fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
+    #fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
+    fresnelNumber = 1./(defocus * lambda_electron)
     # Uniform grid
     N1,N2 = mask.shape
     A_Psi0_Multiplier = mask.astype(complex)
-    boundary_mask = np.zeros_like(mask_a)
-    boundary_mask[0,:]=True; boundary_mask[-1,:]=True
-    boundary_mask[:,0]=True; boundary_mask[:,-1]=True
 
-    grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
-                           np.linspace(0, 1, N2, endpoint=False))
+    #grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
+    #                       np.linspace(0, 1, N2, endpoint=False))
+    grid = UniformGrid(np.arange(N1)*px_size[0][0],np.arange(N2)*px_size[0][1])
     opdata = [grid, fresnelNumber,A_Psi0_Multiplier]
+    
     if g_is_complex:
         op = complex_PINEM_g_to_data(*opdata, 
             list_of_filters = list_of_filters,
@@ -41,7 +41,7 @@ def setup_simulated_g(g_is_complex=True,using_gabs_measurement=True, parallel=Tr
         if using_gabs_measurement:
             op2 = Ptw_Multiplication(grid,1.0-mask_a) * SquaredModulus(grid.complex_space())
             op = Vector_of_operators([op2, op])
-        return op, grid, g_map, g_map, mask_a, ~boundary_mask,opdata
+        return op, grid, g_map, g_map, mask_a, np.ones_like(mask_a), opdata
     else:
         op = PINEM_g_to_data(*opdata, 
                     list_of_filters = list_of_filters,
@@ -54,7 +54,7 @@ def setup_simulated_g(g_is_complex=True,using_gabs_measurement=True, parallel=Tr
             op2 = Ptw_Multiplication(grid,1.0-mask_a) * Exponential(grid.real_space) * ForgetSecond(grid,grid)
             op = Vector_of_operators([op2, op])
 
-        return op, grid, exact_solution, g_map, mask_a, ~boundary_mask, opdata
+        return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata
 
 ##################### operator needed for fixing g on parts of the grid where its values are known
 

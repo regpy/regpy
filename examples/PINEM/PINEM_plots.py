@@ -49,20 +49,21 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,Newto
         else:
             plotdata.append({'pos': (2, 1), 'data': (1.-mask_a.T) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
                             'title': 'ext. error |g_rec-g| it.{}'.format(Newton_step)})
-            plotdata.append({'pos': (2, 2), 'data': mask_a.T * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
+            plotdata.append({'pos': (2, 2), 'data': mask_a.T.astype(float) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
                             'title': 'int. error |g_rec-g| it.{}'.format(Newton_step)})
         #plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
         #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(Newton_step)})
         fig1.plot(plotdata)
 
-        nr_data = len(reco_data_comp)
-        plotdata = [{'pos': (1, j), 'data': reco_data_comp[j].T,
-                        'title':'rec. data it.{}'.format(Newton_step)}
-                    for j in range(nr_data)]
-        for j in range(nr_data):
-            plotdata.append({'pos': (2, j), 'data': reco_data_comp[j].T-data_comp[j].T,
-                            'title': 'diff'})
-        fig2.plot(plotdata)
+        if not reco_data_comp is None:
+            nr_data = len(reco_data_comp)
+            plotdata = [{'pos': (1, j), 'data': reco_data_comp[j].T,
+                            'title':'rec. data it.{}'.format(Newton_step)}
+                        for j in range(nr_data)]
+            for j in range(nr_data):
+                plotdata.append({'pos': (2, j), 'data': reco_data_comp[j].T-data_comp[j].T,
+                                'title': 'diff'})
+            fig2.plot(plotdata)
 
 def init_plot_stats():
     return plt.subplots(3, 1, sharex=False, sharey=False)

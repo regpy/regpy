@@ -222,14 +222,12 @@ def PINEM_g_to_data(domain, fresnel_number,A_Psi0_Multiplier, \
 
     return modes_to_data*g_to_modes
 
-def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
+def complex_PINEM_g_to_data(domain, fresnel_number,A_Psi0_Multiplier, \
     N=1,list_of_filters=None,parallel = False):
 # the elements of list_of_filters are lists of modes which are incoherently superposed, 
 # i.e. the squares or the propagated fields are added
     assert not domain.is_complex
     cdomain = domain.complex_space()
-    complexProjection = CoordinateProjection(cdomain,mask)
-    maskDomain = complexProjection.codomain
     if list_of_filters == None:
         list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
     modes = set()
@@ -242,9 +240,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,mask,A_Psi0_Multiplier, \
             SquaredModulus(cdomain)
             *fresnel_propagator(cdomain, fresnel_number)
             *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
-            *Adjoint(complexProjection)
-            *complex_Nemitzky_op_for_g(n,maskDomain)
-            *complexProjection
+            *complex_Nemitzky_op_for_g(n,cdomain)
             )
     if parallel:
         g_to_modes = Parallel_vector_of_operators(op_list)

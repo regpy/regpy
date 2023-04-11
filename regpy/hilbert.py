@@ -451,6 +451,7 @@ L2 = AbstractSpace('L2')
 Sobolev = AbstractSpace('Sobolev')
 """Sobolev `AbstractSpace`"""
 
+Hm = AbstractSpace('Hm')
 Hm0 = AbstractSpace('Hm0')
 """H^m_0 `AbstractSpace`"""
 
@@ -554,6 +555,121 @@ class SobolevUniformGrid(HilbertSpace):
         )
         return ft.adjoint * mul * ft
 
+class Hm_domain(HilbertSpace):
+    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGrid grid. 
+    D is characterized by a binary or integer-valued mask: D={mask==1}. 
+    {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries. 
+    mask may also be boolean, in this case there are only Dirichlet boundaries.
+    Boundary condition at the exterior boundaries are specified by ext_bd_cond, default is Neumann ('Neum') 
+    
+    m=index is a non-negative integer, the order or index of the Sobolev space. 
+    The gram matrix is (alpha I - Delta)**(-m).
+
+    By default it is assumed that the lenghts in grid are given in physical dimensions, 
+    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1. 
+
+    If weight is specified, the Gram matrix will approximate (I-weight*Delta)**index. weight should be slowly varying.
+    """
+
+    def __init__(self,grid, mask, 
+                h='normalized',
+                index=1,
+                weight=None,
+                ext_bd_cond = 'Neum',
+                alpha = 1,
+                dtype = float):
+        assert grid is None or isinstance(grid,discrs.UniformGrid)
+        if not (grid is None or mask is None):
+            assert grid.shape == mask.shape
+        assert type(index)== int and index>=0
+        self.ndim = mask.ndim
+        if type(h) == tuple:
+            self.h_val = h
+        elif grid is None:
+            self.h_val=1./np.max(mask.shape)*np.ones((self.ndim,))
+        elif h=='physical':
+            self.h_val = grid.extents/(np.array(grid.shape)-1)
+        elif h=='normalized':
+            self.h_val = (1./np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
+        else:
+            raise NotImplemented
+            
+        self.index = index
+        self.alpha = alpha
+        self.grid = grid
+        self.mask = (mask==1)
+        self.dtype = grid.dtype if grid else dtype
+        # impose exterior Neumann boundary conditions
+        mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
+        discr = discrs.Discretization((np.count_nonzero(mask==1),),dtype= self.dtype)
+        super().__init__(discr)
+        self.G = np.zeros(mask.shape,dtype=int)
+        interior_ind = mask==1
+        self.G[interior_ind] = 1+np.arange(np.count_nonzero(interior_ind))
+        self.G[mask==-1] = -1
+
+        if weight is None:
+            self.weight = None
+        else:
+            self.weight = np.pad(weight,1,'edge')
+
+    def I_minus_Delta(self):
+        """
+        I_minus_Delta is the sparse form of the sum of the alpha*identity and the negative Laplacian on the domain {mask
+        """
+        if not self.weight is None:
+            w = self.weight.ravel()
+        # Indices of interior points
+        G1 = self.G.ravel()
+        p = np.where(G1>0)[0] # list of numbers of interior points in flattened array
+        N = len(p)
+        # Connect interior points to themselves with 4's.
+        i = []   # row indices of matrix entries
+        j = []   # column indices of matrix entries
+        s = []   # values of matrix entries
+        dia = self.alpha * np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
+        # for k = north, east, south, west
+
+        kval= [1]
+        for d in range(self.ndim-1,0,-1):
+            kval = np.concatenate([kval,[kval[-1]*self.G.shape[d]] ])
+        # If G.shape = [m,n], then kval= [1,n]. 
+        # If G.shape = [l,m,n], then kval = [1,n,m*n]
+
+        for dir,h in enumerate(self.h_val):
+            for k in  kval[dir]*np.array([-1,1]):
+                # Possible neighbors in k-th direction
+                Q=np.zeros_like(p)
+                Q = G1[p+k]
+                # Indices of points with interior neighbors
+                q = np.where(Q>0)[0]
+                # Connect interior points to neighbors 
+                i = np.concatenate([i, G1[p[q]]-1])
+                j = np.concatenate([j,Q[q]-1])
+                entries = np.ones(q.shape)/h**2
+                if not self.weight is None:
+                    entries = entries * np.sqrt(w[p[q]]*w[p[q]+k])
+                s = np.concatenate([s,-entries ])
+                dia[G1[p[q]]-1] += entries 
+                # Indices of points with neighbors on Dirichlet boundary
+                q_diri = np.where(Q==0)[0]
+                entries = np.ones(q_diri.shape)/h**2
+                if not self.weight is None:
+                    entries = entries * np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
+                dia[G1[p[q_diri]]-1] += entries
+        i = np.concatenate([i, G1[p]-1])
+        j = np.concatenate([j, G1[p]-1])
+        s = np.concatenate([s,dia]) 
+        return csc_matrix((s, (i,j)),(N,N))
+
+    @util.memoized_property
+    def gram(self):
+        return operators.Pow(
+            operators.MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.dtype),
+            self.index
+            )
+
+## TODO: old version, to be deleted
 class Hm0_domain(HilbertSpace):
     """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
     m=index is a non-negative integer, the order or index of the Sobolev space
@@ -644,6 +760,7 @@ def _register_spaces():
     Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
     Sobolev.register(discrs.UniformGrid, SobolevUniformGrid)
 
+    Hm.register(discrs.Discretization,Hm)
     Hm0.register(discrs.Discretization,Hm0)
 
     L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
