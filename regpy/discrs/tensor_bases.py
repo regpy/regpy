@@ -1,102 +1,92 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.discrs import UniformGrid
+from regpy.discrs import Discretization,Grid,UniformGrid, Prod
+
 class TensorBasis(Operator):
     """
-    We consider a rectangular grid grid = \{(x_{1,j_1},....x_{n_j_n}): j_1=0:M_1-1, ... j_n=0:M_n-1\} 
-    and a tensor basis for grid function f:grid -> dtype:
-        f(x_1,... x_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n)
-    The operator TensorBasis maps the coefficient tensor c = (c_{k_1,....k_n}) to the tensor of function values 
-    (f(x))_{x in grid}
-    degrees:   the tuple (N_1,...N_n) of dimensions of the coefficient vector
-    grid:      an instance of the class Grid in discretizations of size M_1 x .... x M_n
-    bases:     a list of matrices [B_1,..., B_n] where the M_l x N_l matrix contains the function values 
-               of the basis \{b^l_0, b^l_{M_l-1}} of the l-th coordinate: 
-               B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
+    Consider an evaluation domain given as eval_domain = Prod(D_1,...,D_n) with D_1,...,D_n being n Discretizations
+    and a tensor in the coefficiants domain coef_domain = Prod(V_1,...,V_n) then we define an operator to map coeficiants
+    by a given basis to a function f: eval_domain -> dtype:
+        f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n)
+    So that the operator TensorBasis maps the coefficient tensor c = (c_{k_1,....k_n}) to the tensor of function values
+    (f(x))_{x in eval_domain}
+    eval_domain:    an instance of the class Prod in discretizations of size where each D_i has size M_i
+    coef_domain:    an instance of the class Prod in discretizations of size where each V_i has size N_i
+    bases:          a list of matrices [B_1,..., B_n] where thematrix B_lis of size M_l x N_l and contains the function values
+                    of the basis \{b^l_0, b^l_{M_l-1}} of the l-th coordinate:
+                        B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
     """
-    def __init__(self,coeff_domain,grid,bases,dtype=float): 
-        if type(coeff_domain) == tuple:
-            domain = UniformGrid(*coeff_domain,dtype=dtype)
-            self.ndim = len(coeff_domain)
-            self.degrees = coeff_domain
-        else:
-            domain = coeff_domain
-            self.ndim = len(domain.shape)
-            self.degrees = coeff_domain.shape
-        super().__init__(domain,grid, linear=True)
-        assert len(bases) == self.ndim
-        assert len(grid.axes) == self.ndim
-        assert grid.dtype == dtype
-        assert np.all(bases[n].shape[1]== self.degrees.shape[n] for n in range(self.ndim)) 
-        assert np.all(bases[n].shape[0]== len(grid.axes[n]) for n in range(self.ndim)) 
-        self.dtype = dtype 
-        self.grid = grid
+    def __init__(self,coef_domain,eval_domain,bases,dtype=float):
+        assert isinstance(coef_domain,Prod)
+        assert isinstance(eval_domain,Prod)
+        assert len(bases) == eval_domain.ndim
+        assert coef_domain.ndim == eval_domain.ndim
+        assert len(bases) <= 26
+        assert coef_domain.dtype == dtype and eval_domain.dtype == dtype
+        assert np.all(basis.shape[1]== eval.size for (basis,eval) in zip(bases,eval_domain))
+        assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
+        super().__init__(coef_domain,eval_domain, linear=True)
+        self.dtype = dtype
+        self.ndim = coef_domain.ndim
         self.bases = bases
-        
-    def _eval(self, Coeff):
-        if self.ndim == 1:
-            result = self.bases[0] @ Coeff
-            # same as result = np.einsum('i,ai->a',Coeff,self.bases[0])
-        elif self.ndim == 2:
-            result = np.linalg.multi_dot([self.bases[0], Coeff, self.bases[1].T]) 
-            # same as result = np.einsum('ij,ai,bj->ab',Coeff,self.bases[0],self.bases[1])   
-            # or result = self.bases[0] @ Coeff @ self.bases[1].T
-        elif self.ndim == 3:
-            result = np.einsum('ijk,ai,bj,ck->abc',Coeff,self.bases[0],self.bases[1],self.bases[2])
+
+    def _eval(self, Coef):
+        ## separate 1-D and 2-D because of performance
+        if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
+            return self.bases[0] @ Coef
+        elif self.ndim == 1 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
+            return np.linalg.multi_dot([self.bases[0], Coef, self.bases[1].T])
         else:
-            raise(NotImplementedError)
-        return result
+            self.sumrule = "".join(chr(k) for k in range(65,65+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(97,97+self.ndim))
+            self.einsum_path = np.einsum_path(self.sumrule,Coef,*self.bases, optimize='optimal')[0]
+            return np.einsum(self.sumrule,Coef,*self.bases,optimize=self.einsum_path)
 
     def _adjoint(self, G):
-        if self.ndim == 1:
-            result = self.bases[0].H @ G
-            # same as result = np.einsum('a,ai->i',G,self.bases[0])
-        elif self.ndim == 2:
-            result = np.linalg.multi_dot([self.bases[0].conj().T, G, self.bases[1].conj()]) 
-            # same as result = np.einsum('ab,ai,bj->ij',G,np.conj(self.bases[0]),np.conj(self.bases[1]))   
-            # or result = self.bases[0].T @ G @ np.conj(self.bases[1])
-        elif self.ndim == 3:
-            result = np.einsum('abc,ai,bj,ck->ijk',G,self.bases[0].conj(), 
-                self.bases[1].conj(),self.bases[2].conj())
+        ## separate 1-D and 2-D because of performance
+        if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
+            return self.bases[0].H @ G
+        elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
+            return np.linalg.multi_dot([self.bases[0].conj().T, G, self.bases[1].conj()])
         else:
-            raise(NotImplementedError)
-        return result
+            self.sumrule = "".join(chr(k) for k in range(97,97+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(65,65+self.ndim))
+            self.einsum_path = np.einsum_path(self.sumrule,G,*self.bases, optimize='optimal')[0]
+            return np.einsum(self.sumrule,G,*self.bases,optimize=self.path)
 
-def ChebyshevBasis(coeff_domain,grid,dtype=float):
-    """ Implements a tensor basis of Chebyshev polynomials
-    """ 
-    bases = []  
-    for l in range(grid.ndim):
-        x = grid.axes[l]
-        intv = (grid.axes[l][0],grid.axes[l][-1])
-        if type(coeff_domain) ==  tuple:
-            Nl = coeff_domain[l]
-        else:
-            Nl = coeff_domain.shape[l] 
-        Bl = np.zeros((len(x),Nl))
-        Id = np.eye(Nl)
-        for k in range(Nl):
-            pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = intv)
-            Bl[:,k] = pol(x)
-        bases.append(Bl) 
-    return TensorBasis(coeff_domain,grid,bases,dtype)
 
-def LegendreBasis(coeff_domain,grid,dtype=float):
+def ChebyshevBasis(coef_domain,eval_domain,dtype=float):
     """ Implements a tensor basis of Chebyshev polynomials
-    """ 
-    bases = []  
-    for l in range(grid.ndim):
-        x = grid.axes[l]
-        intv = (grid.axes[l][0],grid.axes[l][-1])
-        if type(coeff_domain) ==  tuple:
-            Nl = coeff_domain[l]
-        else:
-            Nl = coeff_domain.shape[l] 
-        Bl = np.zeros((len(x),Nl))
-        Id = np.eye(Nl)
-        for k in range(Nl):
-            pol = np.polynomial.legendre.Legendre(Id[k,:],domain = intv)
-            Bl[:,k] = pol(x)
-        bases.append(Bl) 
-    return TensorBasis(coeff_domain,grid,bases,dtype)
- 
+    """
+    assert isinstance(coef_domain,Prod)
+    assert isinstance(eval_domain,Prod)
+    assert coef_domain.ndim == eval_domain.ndim
+    bases = []
+    for D_i, V_i in zip(eval_domain,coef_domain):
+        assert isinstance(D_i,Grid)
+        x = D_i.axes[0]
+        N_i=V_i.size
+        B_i = np.zeros((len(x),N_i))
+        Id = np.eye(N_i)
+        for k in range(N_i):
+            pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
+            B_i[:,k] = pol(x)
+        bases.append(B_i)
+    return TensorBasis(coef_domain,eval_domain,bases,dtype)
+
+def LegendreBasis(coef_domain,eval_domain,dtype=float):
+    """ Implements a tensor basis of Legendre polynomials
+    """
+    assert isinstance(coef_domain,Prod)
+    assert isinstance(eval_domain,Prod)
+    assert coef_domain.ndim == eval_domain.ndim
+    bases = []
+    for D_i, V_i in zip(eval_domain,coef_domain):
+        assert isinstance(D_i,Grid)
+        x = D_i.axes[0]
+        N_i=V_i.size
+        B_i = np.zeros((len(x),N_i))
+        Id = np.eye(N_i)
+        for k in range(N_i):
+            pol = np.polynomial.legendre.Legendre(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
+            B_i[:,k] = pol(x)
+        bases.append(B_i)
+    return TensorBasis(coef_domain,eval_domain,bases,dtype)

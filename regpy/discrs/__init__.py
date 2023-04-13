@@ -326,7 +326,7 @@ class Grid(Discretization):
         """The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
-        
+
         super().__init__(self.coords[0].shape, dtype)
 
         axes = []
@@ -438,7 +438,7 @@ class DirectSum(Discretization):
                 self.summands.extend(s.summands)
             else:
                 self.summands.append(s)
-        self.idxs = [0] + list(accumulate(s.realsize for s in self.summands))            
+        self.idxs = [0] + list(accumulate(s.realsize for s in self.summands))
         super().__init__(self.idxs[-1])
 
     def __eq__(self, other):
@@ -501,3 +501,76 @@ class DirectSum(Discretization):
 
     def __len__(self):
         return len(self.summands)
+
+class Prod(Discretization):
+    """The tensor product of an arbirtary number of discretizations.
+
+    Elements of the tensor product will always be real arrays with in n-dim where n is number of factors.
+
+    Prod instances can be indexed and iterated over, returning / yielding the component discretizations.
+
+    Parameters
+    ----------
+    *factors : tuple of Discretization instances
+        The discretizations to be factored.
+    flatten : bool, optional
+        Whether factors that are themselves `Prod`s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
+        Default: False
+    """
+
+    def __init__(self, *factors, flatten=False):
+        assert all(isinstance(s, Discretization) for s in factors)
+        assert all(s.is_complex for s in factors) or all(not s.is_complex for s in factors)
+        self.factors = []
+        shape = ()
+        self.volume_elem = 1
+        if factors[0].is_complex:
+            dt=np.complex128
+        else:
+            dt=np.float64
+        for s in factors:
+            if hasattr(s, 'volume_elem'):
+                self.volume_elem *= s.volume_elem
+            if flatten and isinstance(s, type(self)):
+                self.factors.extend(s.factors)
+                shape += s.shape
+            else:
+                self.factors.append(s)
+                shape += (s.size,)
+        super().__init__(shape,dtype=dt)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and
+            len(self.factors) == len(other.factors) and
+            all(s == t for s, t in zip(self.factors, other.factors))
+        )
+
+    def product(self, *xs):
+        """Transform a collection of elements of the factors into an element of the tensor product by an outer product.
+
+        Parameters
+        ----------
+        *xs : tuple of array-like
+            The elements of the factors. The number should match the number of factors,
+            and for all `i`, `xs[i]` should be an element of `self[i]`.
+
+        Returns
+        -------
+        n-dim array
+            An element of the tensor product
+        """
+        assert all(x in s for s, x in zip(self.factors, xs))
+        elm = 1
+        for s, x in zip(self.factors, xs):
+            elm = np.ma.outer(elm,x)
+        return elm
+
+    def __getitem__(self, item):
+        return self.factors[item]
+
+    def __iter__(self):
+        return iter(self.factors)
+
+    def __len__(self):
+        return len(self.factors)
