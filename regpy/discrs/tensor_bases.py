@@ -1,6 +1,7 @@
 import numpy as np
 from regpy.operators import Operator
 from regpy.discrs import Discretization,Grid,UniformGrid, Prod
+from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):
     """
@@ -90,3 +91,37 @@ def LegendreBasis(coef_domain,eval_domain,dtype=float):
             B_i[:,k] = pol(x)
         bases.append(B_i)
     return TensorBasis(coef_domain,eval_domain,bases,dtype)
+
+def BSplineBasis(k,t,dim=1,add_points=10):
+    """ Implements a B-Spline basis in an arbirtary Dimension (given by dim)
+    the splines are generated via BSpline from scipy.interpolate.
+    In each dimension it uses the knots given in t to generate a B-Spline Basis.
+    The evalutaion domain is a refined grid determined by the point added between points
+    given by add_points, the endpoint has to be excluded since BSpline would evaluate it with nan:
+        np.linspace(t[0],t[-1],t.size*add_points,endpoint=False)
+    Note, that to do that accuratly construct Splines, we use the key extrapolate=False and extend the
+    orignal knot points given in t by additionally 2k points with equidistante distance to T.
+    that is:
+                t[0]    ...     t[-1=n+k+1]
+    T[0]        T[k]    ...     T[-k]       T[n+3k+1]
+    """
+    assert t.ndim == 1 and isinstance(k,int) and isinstance(dim,int) and isinstance(add_points,int)
+    assert t.size > k + 1
+    n = t.size - k -1
+    coef_domain = Prod(*[UniformGrid(np.arange(n)) for i in range(dim)])
+    eval_domain = Prod(*[UniformGrid(np.linspace(t[0],t[-1],t.size*add_points,endpoint=False)) for i in range(dim)])
+    basis = np.zeros((t.size*add_points,n))
+    j=0
+    axis = eval_domain[0].axes[0]
+    # added points to to t since BSpline only gives back data in t[k] to t[n]=t[-k] and t of size n+k+1
+    #assuming t to be equidistibuted points
+    diff = t[1]-t[0]
+    # T has t_size + 2*k points hence T[k] = t[0] and T[-k] = t[-1] hence full interval under consideration
+    T = np.linspace(-k*diff+t[0],t[-1]+k*diff,t.size+2*k)
+    c = np.zeros(t.size+k-1)
+    for c_i in UniformGrid(np.arange(n)).iter_basis():
+        c[k:-k] = c_i
+        spl_i = BSpline(T,c,k,extrapolate=False)
+        basis[:,j] = spl_i(axis)
+        j += 1
+    return TensorBasis(coef_domain,eval_domain,[basis for i in range(dim)])

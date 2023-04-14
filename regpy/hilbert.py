@@ -274,6 +274,108 @@ class DirectSum(HilbertSpace):
     def __iter__(self):
         return iter(self.summands)
 
+class TensorProd(HilbertSpace):
+    """The Tensor product of an arbirtary number of hilbert spaces, with optional
+    scaling of the respective norms. The underlying discretization will be the
+    `regpy.discrs.Prod` of the underlying discretisations of the factors.
+
+    Important note! The implementation of the Gram operator makes use of the
+    TensorBasis Operator from regpy.discrs.tensor_bases in the sense, that
+    the Gram matrix of the Tensor Product of discretised Hilbert spaces
+    would be given as the Kronecker-product of all Gram matrices. Which is
+    exacly given by the TensorBasis operator given that we interpret the
+    Gram matrices as basis changes in each discretised Hilbert space.
+
+    Therefore, please pay attention that to do that we have to actually evaluate
+    the Gram-matrix for each Hilbert and store it.
+
+    We want $H_1 \otimes \dots H_l$ and each $H_i$ is discretised by a basis
+    of size $n_i$ then we get a memory consumption for the Gram matrices of
+    $O(\sum_{i=1}^l n_i)<=O(l\cdot n)$ with $n = \max(n_i)$.
+
+    Computing the Gram property itself can be easily seen to have the complexity
+    $O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n)))$. with $\phi_i$ being
+    the complexity for evaluation the Gram operator of the Hilbert space $H_i$.
+    Note that in the case that each Gram operator is a dense matrix this would be
+    given by $\phi_i(n_i)=n_i^2$ leading to a complexity of $O(l\cdot n^3)$.
+
+
+    Parameters
+    ----------
+    *factors : HilbertSpace tuple
+        The Hilbert spaces to be tensored. Alternatively, factors can be given
+        as tuples `(scalar, HilbertSpace)`, which will scale the norm of the
+        respective factor. The gram matrices and hence the inner products will
+        be scaled by `scalar**2`.
+    flatten : bool, optional
+        Whether factors that are themselves TensorProds should be merged into
+        this instance. Default: False.
+    discr : discrs.Discretization or callable, optional
+        Either the underlying discretization or a factory function that will be
+        called with all factors' discretizations passed as arguments and should
+        return a discrs.Prod instance. Default: discrs.Prod.
+    """
+
+    def __init__(self, *args, flatten=False, discr=None):
+        self.factors = []
+        self.weights = []
+        for arg in args:
+            if isinstance(arg, tuple):
+                w, s = arg
+            else:
+                w, s = 1, arg
+            assert w > 0
+            assert isinstance(s, HilbertSpace)
+            if flatten and isinstance(s, type(self)):
+                self.factors.extend(s.factors)
+                self.weights.extend(w * sw for sw in s.weights)
+            else:
+                self.factors.append(s)
+                self.weights.append(w)
+
+        if discr is None:
+            discr = discrs.Prod
+        if isinstance(discr, discrs.Discretization):
+            pass
+        elif callable(discr):
+            discr = discr(*(s.discr for s in self.factors))
+        else:
+            raise TypeError('discr={} is neither a Discretization nor callable'.format(discr))
+        assert all(s.discr == d for s, d in zip(self.factors, discr))
+
+        super().__init__(discr)
+
+    def __eq__(self, other):
+        if isinstance(other, type(self)):
+            return (
+                len(self.factors) == len(other.factors) and
+                all(s == t for s, t in zip(self.factors, other.factors)) and
+                all(v == w for v, w in zip(self.weights, other.weights))
+            )
+        else:
+            return NotImplemented
+
+    @util.memoized_property
+    def gram(self):
+        bases = []
+        domains = []
+        for w, s in zip(self.weights, self.factors):
+            basis =[]
+            domains.append(s.gram.domain)
+            for v in s.gram.domain.iter_basis():
+                if w == 1:
+                    basis.append(s.gram(v))
+                else:
+                    basis.append((w**2 * s.gram)(v))
+            bases.append(np.array(basis))
+        return discrs.tensor_bases.TensorBasis(discrs.Prod(*domains),discrs.Prod(*domains),bases)
+
+    def __getitem__(self, item):
+        return self.factors[item]
+
+    def __iter__(self):
+        return iter(self.factors)
+
 
 class AbstractSpaceBase:
     """Class representing abstract hilbert spaces without reference to a concrete implementation.
@@ -556,22 +658,22 @@ class SobolevUniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class Hm_domain(HilbertSpace):
-    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGrid grid. 
-    D is characterized by a binary or integer-valued mask: D={mask==1}. 
-    {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries. 
+    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGrid grid.
+    D is characterized by a binary or integer-valued mask: D={mask==1}.
+    {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries.
     mask may also be boolean, in this case there are only Dirichlet boundaries.
-    Boundary condition at the exterior boundaries are specified by ext_bd_cond, default is Neumann ('Neum') 
-    
-    m=index is a non-negative integer, the order or index of the Sobolev space. 
+    Boundary condition at the exterior boundaries are specified by ext_bd_cond, default is Neumann ('Neum')
+
+    m=index is a non-negative integer, the order or index of the Sobolev space.
     The gram matrix is (alpha I - Delta)**(-m).
 
-    By default it is assumed that the lenghts in grid are given in physical dimensions, 
-    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1. 
+    By default it is assumed that the lenghts in grid are given in physical dimensions,
+    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
 
     If weight is specified, the Gram matrix will approximate (I-weight*Delta)**index. weight should be slowly varying.
     """
 
-    def __init__(self,grid, mask, 
+    def __init__(self,grid, mask,
                 h='normalized',
                 index=1,
                 weight=None,
@@ -593,7 +695,7 @@ class Hm_domain(HilbertSpace):
             self.h_val = (1./np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
         else:
             raise NotImplemented
-            
+
         self.index = index
         self.alpha = alpha
         self.grid = grid
@@ -633,7 +735,7 @@ class Hm_domain(HilbertSpace):
         kval= [1]
         for d in range(self.ndim-1,0,-1):
             kval = np.concatenate([kval,[kval[-1]*self.G.shape[d]] ])
-        # If G.shape = [m,n], then kval= [1,n]. 
+        # If G.shape = [m,n], then kval= [1,n].
         # If G.shape = [l,m,n], then kval = [1,n,m*n]
 
         for dir,h in enumerate(self.h_val):
@@ -643,14 +745,14 @@ class Hm_domain(HilbertSpace):
                 Q = G1[p+k]
                 # Indices of points with interior neighbors
                 q = np.where(Q>0)[0]
-                # Connect interior points to neighbors 
+                # Connect interior points to neighbors
                 i = np.concatenate([i, G1[p[q]]-1])
                 j = np.concatenate([j,Q[q]-1])
                 entries = np.ones(q.shape)/h**2
                 if not self.weight is None:
                     entries = entries * np.sqrt(w[p[q]]*w[p[q]+k])
                 s = np.concatenate([s,-entries ])
-                dia[G1[p[q]]-1] += entries 
+                dia[G1[p[q]]-1] += entries
                 # Indices of points with neighbors on Dirichlet boundary
                 q_diri = np.where(Q==0)[0]
                 entries = np.ones(q_diri.shape)/h**2
@@ -659,7 +761,7 @@ class Hm_domain(HilbertSpace):
                 dia[G1[p[q_diri]]-1] += entries
         i = np.concatenate([i, G1[p]-1])
         j = np.concatenate([j, G1[p]-1])
-        s = np.concatenate([s,dia]) 
+        s = np.concatenate([s,dia])
         return csc_matrix((s, (i,j)),(N,N))
 
     @util.memoized_property
@@ -676,7 +778,7 @@ class Hm0_domain(HilbertSpace):
 
     If weight is specified, the Gram matrix will approximated (I-weight*Delta)**index, otherwise weight == h**(-2).
 
-    only implemented in dimension n=2 
+    only implemented in dimension n=2
     """
 
     def __init__(self,mask,dtype=float,h=None,index=1,weight=None):
@@ -705,7 +807,7 @@ class Hm0_domain(HilbertSpace):
         [m,n] = self.G.shape
         if self.weight is None:
             weight = (1./self.h**2) *np.ones((m,n))
-        else: 
+        else:
             weight = self.weight
         w = weight.flatten()
         # Indices of interior points
@@ -723,19 +825,19 @@ class Hm0_domain(HilbertSpace):
             Q = G1[p+k]
             # Indices of points with interior neighbors
             q = np.where(Q)[0]
-            # Connect interior points to neighbors 
+            # Connect interior points to neighbors
             i = np.concatenate([i, G1[p[q]]-1])
             j = np.concatenate([j,Q[q]-1])
             entries = np.sqrt(w[p[q]]*w[p[q]+k])
             s = np.concatenate([s,-entries ])
-            dia[G1[p[q]]-1] += entries 
+            dia[G1[p[q]]-1] += entries
             # Indices of points with neighbors on Dirichlet boundary
             q_diri = np.where(Q==0)[0]
             entries = np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
             dia[G1[p[q_diri]]-1] += entries
         i = np.concatenate([i, G1[p]-1])
         j = np.concatenate([j, G1[p]-1])
-        s = np.concatenate([s,dia]) 
+        s = np.concatenate([s,dia])
         return csc_matrix((s, (i,j)),(N,N))
 
     @util.memoized_property
@@ -753,6 +855,7 @@ def _register_spaces():
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
 
+    L2.register(discrs.Prod, componentwise(L2,cls=TensorProd))
     L2.register(discrs.DirectSum, componentwise(L2))
     L2.register(discrs.Discretization, L2Generic)
     L2.register(discrs.UniformGrid, L2UniformGrid)
