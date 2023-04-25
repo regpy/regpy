@@ -22,7 +22,9 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
     lambda_electron = 2.51e-12
     defocus = 900e-6
     #fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
-    fresnelNumber = 1./(defocus * lambda_electron)
+    theta_divergence = 5e-6
+    fresnelNumber = 1./(defocus * lambda_electron - 1j*np.pi*theta_divergence**2 * defocus**2/np.log(2))
+    #fresnelNumber = 1./(defocus * lambda_electron)
     # Uniform grid
     N1,N2 = mask.shape
     A_Psi0_Multiplier = mask.astype(complex)
@@ -30,7 +32,8 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
     #grid = UniformGrid(np.linspace(0, 1, N1, endpoint=False),
     #                       np.linspace(0, 1, N2, endpoint=False))
     grid = UniformGrid(np.arange(N1)*px_size[0][0],np.arange(N2)*px_size[0][1])
-    opdata = [grid, fresnelNumber,A_Psi0_Multiplier]
+    pad_amount = ((50,0),(0,0))
+    opdata = [grid, fresnelNumber,pad_amount,A_Psi0_Multiplier]
     
     if g_is_complex:
         op = complex_PINEM_g_to_data(*opdata, 

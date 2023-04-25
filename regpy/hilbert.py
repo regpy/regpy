@@ -692,7 +692,7 @@ class Hm_domain(HilbertSpace):
         elif h=='physical':
             self.h_val = grid.extents/(np.array(grid.shape)-1)
         elif h=='normalized':
-            self.h_val = (1./np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
+            self.h_val = (2.*np.pi/np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
         else:
             raise NotImplemented
 

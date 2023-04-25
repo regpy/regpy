@@ -25,7 +25,7 @@ sys.path.append('./PINEM')
 from PINEM_plots import plot_exactSolution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g, ForgetSecond
 from PINEM_extensions import harmonic_extension, extension_along_lines
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 def main():
     ################################ set parameters 
@@ -81,8 +81,8 @@ def main():
         sobolev_index = 2
         IRGNM_regpar = 1e-4; IRGNM_regpar_step = 0.8
     else:
-        sobolev_index_phase = 3; sobolev_index_ampl = 2
-        IRGNM_regpar = 1e-6
+        sobolev_index_phase = 2; sobolev_index_ampl = 2
+        IRGNM_regpar = 1e-7
         IRGNM_regpar_step = 2/3
         IRGNM_cgstop = 1000
         NewtonCG_rho = 0.95
@@ -410,6 +410,6 @@ def main():
                 do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
             if residual_reduction > minimal_residual_reduction and stats['residuals'][-1] < residual_last_N*NewtonCG_rho:
                 break
-
+    plt.show(block=True)
 if __name__ == '__main__':
     main()
