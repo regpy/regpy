@@ -23,7 +23,7 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
     defocus = 900e-6
     #fresnelNumber = np.prod(fov)/(defocus * lambda_electron)
     theta_divergence = 5e-6
-    fresnelNumber = 1./(defocus * lambda_electron - 1j*np.pi*theta_divergence**2 * defocus**2/np.log(2))
+    fresnelNumber = 1./(defocus * lambda_electron - 1j*theta_divergence**2 * defocus**2/np.log(2))
     #fresnelNumber = 1./(defocus * lambda_electron)
     # Uniform grid
     N1,N2 = mask.shape
