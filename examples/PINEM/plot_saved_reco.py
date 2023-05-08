@@ -4,16 +4,17 @@ from scipy.io import loadmat
 import matplotlib.pyplot as plt
 import numpy as np
 
-filename = './test0.mat'
+filename = './NewtonCG_2e9/testA34.mat'
+#filename = './NewtonCG_damped/test37.mat'
 # If False, the simulated data corresponding to the displayed iterate are not shown to save time
-show_reco_data = False
+show_reco_data = True
 rec = loadmat(filename)
 stats = {'ampl_err': rec['ampl_err'][0], 'phase_err': rec['phase_err'][0], \
        'complex_err': rec['complex_err'][0], 'residuals': rec['residuals'][0], \
         'nr_inner_steps': rec['nr_inner_steps'][0], 'N': rec['N'][0], 'Newton step' : rec['Newton step'][0]}
 op, grid, exact_solution, g_map, mask_a_org, mask_p, opdata \
         = setup_simulated_g(g_is_complex=False,using_gabs_measurement=False,N=30,parallel=False)
-data = loadmat('./data/data_N30.mat')['data'][0]
+data = loadmat('./NewtonCG_5e7/test_data.mat')['data'][0]
 data_comp = op.codomain.split(data)
 fig1,fig2 = plot_exactSolution_data(g_map,data_comp,
                             using_gabs_measurement = False,plot_log_g = True)      
