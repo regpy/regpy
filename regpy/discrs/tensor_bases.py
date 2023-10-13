@@ -97,19 +97,20 @@ def BSplineBasis(k,t,dim=1,add_points=10):
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
     The evalutaion domain is a refined grid determined by the point added between points
-    given by add_points, the endpoint has to be excluded since BSpline would evaluate it with nan:
-        np.linspace(t[0],t[-1],t.size*add_points,endpoint=False)
+    given by add_points:
+        np.linspace(t[0],t[-1],t.size*add_points)
     Note, that to do that accuratly construct Splines, we use the key extrapolate=False and extend the
     orignal knot points given in t by additionally 2k points with equidistante distance to T.
     that is:
-                t[0]    ...     t[-1=n+k+1]
-    T[0]        T[k]    ...     T[-k]       T[n+3k+1]
+                t[0]    ...     t[-1=n+1]
+    T[0]        T[k]    ...     T[-k]       T[n+2k+1]
+    In the end the spline will be zero at the boundary by contruction.
     """
     assert t.ndim == 1 and isinstance(k,int) and isinstance(dim,int) and isinstance(add_points,int)
-    assert t.size > k + 1
-    n = t.size - k -1
+    assert t.size > k+1
+    n = t.size -k-1
     coef_domain = Prod(*[UniformGrid(np.arange(n)) for i in range(dim)])
-    eval_domain = Prod(*[UniformGrid(np.linspace(t[0],t[-1],t.size*add_points,endpoint=False)) for i in range(dim)])
+    eval_domain = Prod(*[UniformGrid(np.linspace(t[0],t[-1],t.size*add_points)) for i in range(dim)])
     basis = np.zeros((t.size*add_points,n))
     j=0
     axis = eval_domain[0].axes[0]
@@ -118,10 +119,10 @@ def BSplineBasis(k,t,dim=1,add_points=10):
     diff = t[1]-t[0]
     # T has t_size + 2*k points hence T[k] = t[0] and T[-k] = t[-1] hence full interval under consideration
     T = np.linspace(-k*diff+t[0],t[-1]+k*diff,t.size+2*k)
-    c = np.zeros(t.size+k-1)
-    for c_i in UniformGrid(np.arange(n)).iter_basis():
-        c[k:-k] = c_i
-        spl_i = BSpline(T,c,k,extrapolate=False)
+    c = np.zeros(t.size+k+1)
+    for c_i in coef_domain.factors[0].iter_basis():
+        c[k:k+n] = c_i
+        spl_i = BSpline(T,c,k)
         basis[:,j] = spl_i(axis)
         j += 1
     return TensorBasis(coef_domain,eval_domain,[basis for i in range(dim)])
