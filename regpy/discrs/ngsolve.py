@@ -10,7 +10,7 @@ import numpy as np
 from regpy.discrs import Discretization, DirectSum
 from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
 from regpy.operators import Operator
-from regpy.util import memoized_property
+from regpy.util import memoized_property, is_complex_dtype
 
 
 class NgsSpace(Discretization):
@@ -27,7 +27,7 @@ class NgsSpace(Discretization):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
-        self._fes_util = ngs.L2(fes.mesh, order=0)
+        self._fes_util = ngs.L2(fes.mesh, order=0, complex = fes.is_complex)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(fes)
 
@@ -43,7 +43,13 @@ class NgsSpace(Discretization):
 
     def rand(self, rand=np.random.random_sample):
         r = rand(self._fes_util.ndof)
-        self._gfu_util.vec.FV().NumPy()[:] = r
+        if self.is_complex and not is_complex_dtype(r.dtype):
+            c = np.empty(self._fes_util.ndof, dtype=complex)
+            c.real = r
+            c.imag = rand(self.fes_util.ndof)
+            self._gfu_util.vec.FV().NumPy()[:] = c            
+        else:
+            self._gfu_util.vec.FV().NumPy()[:] = r
         self._gfu_fes.Set(self._gfu_util)
         return self._gfu_fes.vec.FV().NumPy().copy()
     
@@ -94,6 +100,13 @@ class NgsSpace(Discretization):
         domain.fes = self.fes
         domain.bdr = self.bdr
         return domain
+
+    @property
+    # By default, even a complex fes would read as a real discretization,
+    # since NGSolve parses complexes as double-sized reals.
+    # This overwrites the usual check.
+    def is_complex(self):
+        return self.fes.is_complex
 
 
     
