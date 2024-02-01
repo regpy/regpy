@@ -7,8 +7,8 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
-    def __init__(self, domain, codomain):
-        super().__init__(domain, codomain)
+    def __init__(self, domain, codomain, linear = False):
+        super().__init__(domain = domain, codomain = codomain, linear = linear)
         self.gfu_read_in = ngs.GridFunction(self.domain.fes)
 
     '''Reads in a coefficient vector of the domain and interpolates in the codomain.
@@ -21,7 +21,7 @@ class NGSolveOperator(Operator):
     def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
         if prec_update:
             prec.Update()
-        ngs.BVP(bf=bf, lf=lf, gf=gf, pre=prec).Do()
+        ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec)
 
 class ProjectToBoundary(NGSolveOperator):
 
@@ -258,7 +258,7 @@ class EIT(NGSolveOperator):
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
         self.f_deriv += -self.gfu_lf * ngs.grad(self.gfu_eval) * ngs.grad(v) * ngs.dx
 
-        # Initialize preconditioner for solving the Dirichlet problems by ngs.BVP
+        # Initialize preconditioner for solving the Dirichlet problems by ngs.solvers.BVP
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
 
@@ -401,7 +401,7 @@ class ReactionNeumann(NGSolveOperator):
         self.f_deriv = ngs.LinearForm(self.fes_codomain)
         self.f_deriv += -self.gfu_lf * self.gfu_eval * v * ngs.dx
 
-        # Initialize preconditioner for solving the Dirichlet problems by ngs.BVP
+        # Initialize preconditioner for solving the Dirichlet problems by ngs.solvers.BVP
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
 
