@@ -29,14 +29,14 @@ class PaddingOperator2D(Operator):
                         )
         super().__init__(domain=grid,codomain=padded_grid,linear =True)
 
-    def _eval(self,x):
+    def _eval(self,x):    
         return np.pad(x,((self.pad_top,self.pad_bottom),(self.pad_left,self.pad_right)),'constant')
     
     def _adjoint(self,y):
         return y[self.pad_top:None if self.pad_bottom == 0 else -self.pad_bottom, \
                  self.pad_left:None if self.pad_right == 0 else -self.pad_right]
 
-def fresnel_propagator(domain, fresnel_number, pad_amount):
+def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
     r"""Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
     diffraction in the regime of the free-space paraxial Helmholtz equation.
 

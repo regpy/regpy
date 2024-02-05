@@ -3,7 +3,8 @@ import numpy as np
 
 from regpy import operators, util, discrs
 from regpy.util import tests
-
+from regpy.operators import volterra 
+from regpy.operators import mediumscattering
 
 def do_linear_test(op):
     for _ in range(10):
@@ -22,23 +23,24 @@ def do_nonlinear_test(op):
 
 def test_linear_volterra():
     do_linear_test(
-        operators.Volterra(
+        volterra.Volterra(
             domain=discrs.UniformGrid(np.linspace(0, 2 * np.pi, 200))))
 
 
 def test_nonlinear_volterra():
     do_nonlinear_test(
-        operators.Volterra(
+        volterra.Volterra(
             domain=discrs.UniformGrid(np.linspace(0, 2 * np.pi, 200)),
             exponent=3))
 
 
 def test_mediumscattering():
     do_nonlinear_test(
-        operators.MediumScattering(
+        mediumscattering.MediumScatteringBase(
             gridshape=(65, 65),
             radius=1,
             wave_number=1,
-            inc_directions=util.linspace_circle(16),
-            meas_directions=util.linspace_circle(16),
-            amplitude=False))
+            inc_directions=util.linspace_circle(16)))
+            # meas_directions=util.linspace_circle(16),
+            # amplitude=False)
+            

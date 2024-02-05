@@ -32,7 +32,8 @@ op = xray_phase_contrast(grid, fresnelNumber)
 # Create phantom phase-image (= padded example-image)
 exact_solution = ascent().astype(np.float64)
 exact_solution /= exact_solution.max()
-pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2, (grid.shape[1] - exact_solution.shape[1])//2])
+pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2,
+                    (grid.shape[1] - exact_solution.shape[1])//2])
 exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=0)
 
 # Create exact and noisy data
