@@ -15,9 +15,9 @@ def complex_to_rgb_log(z):
     HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), (logdat-minlog)/(maxlog-minlog) ))
     return hsv_to_rgb(HSV)
 
-###################### imshow_fig
+###################### ImShowFig
 
-class imshow_fig:
+class ImShowFig:
     def __init__(self,nr_rows,nr_cols):
         self.nr_rows = nr_rows
         self.nr_cols = nr_cols

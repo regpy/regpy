@@ -19,7 +19,7 @@ from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
 from regpy.solvers.newton import NewtonCG
-from regpy.util.imshow_fig import imshow_fig, complex_to_rgb, complex_to_rgb_log 
+from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
 import sys
 sys.path.append('./PINEM')
 from PINEM_plots import plot_exactSolution_data,plot_reco, plot_stats, init_plot_stats

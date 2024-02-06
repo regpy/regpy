@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from regpy.util.imshow_fig import imshow_fig, complex_to_rgb, complex_to_rgb_log
+from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log
 
 def plot_exactSolution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
-    fig1 = imshow_fig(3, 3)
+    fig1 = ImShowFig(3, 3)
     if plot_log_g:
         plotdata1 = [{'pos': (0, 0), 'data': np.log(np.abs(g_map.T)), 'title': 'log(|g|)'}]
     else:
@@ -13,7 +13,7 @@ def plot_exactSolution_data(g_map,data_comp,using_gabs_measurement = False,plot_
     fig1.plot(plotdata1)
 
     nr_data = len(data_comp)
-    fig2 = imshow_fig(3, nr_data)
+    fig2 = ImShowFig(3, nr_data)
     plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
                     for j in range(nr_data)]
     if using_gabs_measurement and nr_data ==3:
