@@ -1,6 +1,6 @@
 from regpy.operators.mediumscattering import MediumScatteringFixed
 from regpy.operators import CoordinateProjection
-from regpy.hilbert import L2, Hm0_domain, Sobolev, HilbertPullBack
+from regpy.hilbert import L2, Hm0Domain, Sobolev, HilbertPullBack
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
 import regpy.stoprules as rules
@@ -45,7 +45,7 @@ noise = 0.01 * op.codomain.randn()
 data = exact_data + noise
 init = op.domain.zeros()
 
-myHdomain = Hm0_domain(scattering.support,dtype=complex,index=2)
+myHdomain = Hm0Domain(scattering.support,dtype=complex,index=2)
 setting = HilbertSpaceSetting(
     op=op,
     # Define Sobolev norm on support via embedding

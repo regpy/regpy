@@ -772,7 +772,7 @@ class HmDomain(HilbertSpace):
             )
 
 ## TODO: old version, to be deleted
-class Hm0_domain(HilbertSpace):
+class Hm0Domain(HilbertSpace):
     """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
     m=index is a non-negative integer, the order or index of the Sobolev space
 

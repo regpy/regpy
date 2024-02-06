@@ -4,7 +4,7 @@ from regpy.solvers.irgnm import IrgnmCG
 
 from regpy.operators import CoordinateProjection
 from regpy.operators.PINEM import wave_field_reco_PINEM
-from regpy.hilbert import L2, Sobolev, Hm0_domain
+from regpy.hilbert import L2, Sobolev, Hm0Domain
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
@@ -49,10 +49,10 @@ def main():
 
     if sol_type == None:
         projection = CoordinateProjection(cgrid,mask)
-        Hdomain =  Hm0_domain(mask,dtype=complex,index=1)
+        Hdomain =  Hm0Domain(mask,dtype=complex,index=1)
     else:
         projection = CoordinateProjection(grid,mask)
-        Hdomain = Hm0_domain(mask,index=1)
+        Hdomain = Hm0Domain(mask,index=1)
     embedding = projection.adjoint
     op = op*embedding
 
