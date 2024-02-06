@@ -1,10 +1,10 @@
-"""IRNM_KL Solver """
+"""IrnmKl Solver """
 
 from regpy.solvers import Solver
 from regpy.solvers.sqp import SQP
 
 
-class IRNM_KL(Solver):
+class IrnmKl(Solver):
 
     """The iteratively regularized Newton method with shifted Kullback-Leibler
     divergence
@@ -70,12 +70,12 @@ class IRNM_KL(Solver):
         self.alpha = alpha0 * self.intensity
 
     def next(self):
-        """Run a single IRNM_KL iteration.
+        """Run a single IrnmKl iteration.
 
         Returns
         -------
         bool
-            Always True, as the IRNM_KL method never stops on its own.
+            Always True, as the IrnmKl method never stops on its own.
 
         """
         self._sqp = SQP(self.op, self.data, self.init, self.x, self.y,

@@ -1,4 +1,4 @@
-"""IRNM_KL_NEWTON solver """
+"""IrnmKl_NEWTON solver """
 
 import numpy as np
 
