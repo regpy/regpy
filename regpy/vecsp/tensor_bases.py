@@ -1,6 +1,6 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.vecsp import VectorSpace,Grid,UniformGridFcts, Prod
+from regpy.vecsp import VectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):
@@ -62,7 +62,7 @@ def ChebyshevBasis(coef_domain,eval_domain,dtype=float):
     assert coef_domain.ndim == eval_domain.ndim
     bases = []
     for D_i, V_i in zip(eval_domain,coef_domain):
-        assert isinstance(D_i,Grid)
+        assert isinstance(D_i,GridFcts)
         x = D_i.axes[0]
         N_i=V_i.size
         B_i = np.zeros((len(x),N_i))
@@ -81,7 +81,7 @@ def LegendreBasis(coef_domain,eval_domain,dtype=float):
     assert coef_domain.ndim == eval_domain.ndim
     bases = []
     for D_i, V_i in zip(eval_domain,coef_domain):
-        assert isinstance(D_i,Grid)
+        assert isinstance(D_i,GridFcts)
         x = D_i.axes[0]
         N_i=V_i.size
         B_i = np.zeros((len(x),N_i))

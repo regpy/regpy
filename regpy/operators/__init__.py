@@ -882,8 +882,8 @@ class FourierTransform(Operator):
         if centered:
             codomain = vecsp.UniformGridFcts(*frqs, dtype=complex)
         else:
-            # In non-centered case, the frequencies are not ascencing, so even using Grid here is slighty questionable.
-            codomain = vecsp.Grid(*frqs, dtype=complex)
+            # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
+            codomain = vecsp.GridFcts(*frqs, dtype=complex)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes

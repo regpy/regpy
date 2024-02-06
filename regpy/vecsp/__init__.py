@@ -281,7 +281,7 @@ class VectorSpace:
         return domain
 
 
-class Grid(VectorSpace):
+class GridFcts(VectorSpace):
     """A discretization representing a rectangular grid.
 
     Parameters
@@ -351,10 +351,10 @@ class Grid(VectorSpace):
         """The axisdata, if given."""
 
 
-class UniformGridFcts(Grid):
+class UniformGridFcts(GridFcts):
     """A discretization representing a rectangular grid with equidistant axes.
 
-    All arguments are passed to the `Grid` constructor, but an error will be produced if any axis
+    All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
     is not uniform.
     """
 
