@@ -89,7 +89,7 @@ class PDHG(Solver):
         proximal_pars_penalty : dict, optional
             Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
 """
-class Douglas_Rashford(Solver):
+class DouglasRashford(Solver):
     def __init__(self,  setting, data_fidelity, penalty, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__()
         self.setting = setting
