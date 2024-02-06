@@ -26,14 +26,14 @@ class HilbertSpace:
 
     Parameters
     ----------
-    discr : regpy.vecsp.Discretization
+    discr : regpy.vecsp.VectorSpace
         The underlying discretization. Should be the domain and codomain of the Gram matrix.
     """
 
     log = util.classlogger
 
     def __init__(self, discr):
-        assert isinstance(discr, vecsp.Discretization)
+        assert isinstance(discr, vecsp.VectorSpace)
         self.discr = discr
         """The underlying discretization."""
 
@@ -213,7 +213,7 @@ class DirectSum(HilbertSpace):
     flatten : bool, optional
         Whether summands that are themselves DirectSums should be merged into
         this instance. Default: False.
-    discr : vecsp.Discretization or callable, optional
+    discr : vecsp.VectorSpace or callable, optional
         Either the underlying discretization or a factory function that will be
         called with all summands' discretizations passed as arguments and should
         return a vecsp.DirectSum instance. Default: vecsp.DirectSum.
@@ -238,12 +238,12 @@ class DirectSum(HilbertSpace):
 
         if discr is None:
             discr = vecsp.DirectSum
-        if isinstance(discr, vecsp.Discretization):
+        if isinstance(discr, vecsp.VectorSpace):
             pass
         elif callable(discr):
             discr = discr(*(s.discr for s in self.summands))
         else:
-            raise TypeError('discr={} is neither a Discretization nor callable'.format(discr))
+            raise TypeError('discr={} is neither a VectorSpace nor callable'.format(discr))
         assert all(s.discr == d for s, d in zip(self.summands, discr))
 
         super().__init__(discr)
@@ -310,7 +310,7 @@ class TensorProd(HilbertSpace):
     flatten : bool, optional
         Whether factors that are themselves TensorProds should be merged into
         this instance. Default: False.
-    discr : vecsp.Discretization or callable, optional
+    discr : vecsp.VectorSpace or callable, optional
         Either the underlying discretization or a factory function that will be
         called with all factors' discretizations passed as arguments and should
         return a vecsp.Prod instance. Default: vecsp.Prod.
@@ -335,12 +335,12 @@ class TensorProd(HilbertSpace):
 
         if discr is None:
             discr = vecsp.Prod
-        if isinstance(discr, vecsp.Discretization):
+        if isinstance(discr, vecsp.VectorSpace):
             pass
         elif callable(discr):
             discr = discr(*(s.discr for s in self.factors))
         else:
-            raise TypeError('discr={} is neither a Discretization nor callable'.format(discr))
+            raise TypeError('discr={} is neither a VectorSpace nor callable'.format(discr))
         assert all(s.discr == d for s, d in zip(self.factors, discr))
 
         super().__init__(discr)
@@ -596,7 +596,7 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.vecsp.Discretization`."""
+    """`L2` implementation on a generic `regpy.vecsp.VectorSpace`."""
 
     def __init__(self, discr, weights=None):
         super().__init__(discr)
@@ -703,7 +703,7 @@ class Hm_domain(HilbertSpace):
         self.dtype = grid.dtype if grid else dtype
         # impose exterior Neumann boundary conditions
         mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        discr = vecsp.Discretization((np.count_nonzero(mask==1),),dtype= self.dtype)
+        discr = vecsp.VectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
         super().__init__(discr)
         self.G = np.zeros(mask.shape,dtype=int)
         interior_ind = mask==1
@@ -785,7 +785,7 @@ class Hm0_domain(HilbertSpace):
         assert type(index)== int and index>=0
         if len(mask.shape) != 2:
             raise NotImplementedError
-        discr = vecsp.Discretization((np.count_nonzero(mask),),dtype=dtype)
+        discr = vecsp.VectorSpace((np.count_nonzero(mask),),dtype=dtype)
         super().__init__(discr)
         self.mask = mask
         self.G = np.where(mask,1,0) # boolean to integer
@@ -857,14 +857,14 @@ def _register_spaces():
 
     L2.register(vecsp.Prod, componentwise(L2,cls=TensorProd))
     L2.register(vecsp.DirectSum, componentwise(L2))
-    L2.register(vecsp.Discretization, L2Generic)
+    L2.register(vecsp.VectorSpace, L2Generic)
     L2.register(vecsp.UniformGrid, L2UniformGrid)
 
     Sobolev.register(vecsp.DirectSum, componentwise(Sobolev))
     Sobolev.register(vecsp.UniformGrid, SobolevUniformGrid)
 
-    Hm.register(vecsp.Discretization,Hm)
-    Hm0.register(vecsp.Discretization,Hm0)
+    Hm.register(vecsp.VectorSpace,Hm)
+    Hm0.register(vecsp.VectorSpace,Hm0)
 
     L2Boundary.register(vecsp.DirectSum, componentwise(L2Boundary))
 

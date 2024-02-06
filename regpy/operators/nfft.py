@@ -2,7 +2,7 @@ import numpy as np
 import pynfft
 
 from regpy.operators import Operator
-from regpy.vecsp import Discretization, UniformGrid
+from regpy.vecsp import VectorSpace, UniformGrid
 from regpy.util import memoized_property
 
 
@@ -25,7 +25,7 @@ class NFFT(Operator):
 
         super().__init__(
             domain=grid,
-            codomain=Discretization(nodes.shape[0], dtype=complex),
+            codomain=VectorSpace(nodes.shape[0], dtype=complex),
             linear=True
         )
 

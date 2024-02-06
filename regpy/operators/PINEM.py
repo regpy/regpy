@@ -16,7 +16,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
 
     Parameters
     ----------
-    domain : regpy.vecsp.Discretization
+    domain : regpy.vecsp.VectorSpace
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -56,7 +56,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
 class Nemitzky_op_for_g(Operator):
     """
     Parameters: 
-      - domain: A complex regpy.vecsp.Discretization
+      - domain: A complex regpy.vecsp.VectorSpace
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 
@@ -92,7 +92,7 @@ class Nemitzky_op_for_g(Operator):
 class ptw_divided_Bessel(Operator):
     """
     Parameters: 
-      - domain: A real regpy.vecsp.Discretization
+      - domain: A real regpy.vecsp.VectorSpace
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 
@@ -138,7 +138,7 @@ class ptw_divided_Bessel(Operator):
 class complex_Nemitzky_op_for_g(Operator):
     """
     Parameters: 
-      - domain: A complex regpy.vecsp.Discretization
+      - domain: A complex regpy.vecsp.VectorSpace
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 

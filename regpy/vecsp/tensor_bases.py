@@ -1,11 +1,11 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.vecsp import Discretization,Grid,UniformGrid, Prod
+from regpy.vecsp import VectorSpace,Grid,UniformGrid, Prod
 from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):
     """
-    Consider an evaluation domain given as eval_domain = Prod(D_1,...,D_n) with D_1,...,D_n being n Discretizations
+    Consider an evaluation domain given as eval_domain = Prod(D_1,...,D_n) with D_1,...,D_n being n VectorSpaces
     and a tensor in the coefficiants domain coef_domain = Prod(V_1,...,V_n) then we define an operator to map coeficiants
     by a given basis to a function f: eval_domain -> dtype:
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n)

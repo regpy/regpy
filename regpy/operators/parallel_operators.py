@@ -50,7 +50,7 @@ class Parallel_vector_of_operators(Operator):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : vecsp.Discretization or callable, optional
+    codomain : vecsp.VectorSpace or callable, optional
         Either the underlying discretization or a factory function that will be called with all
         summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
         The resulting discretization should be iterable, yielding the individual summands.
@@ -69,12 +69,12 @@ class Parallel_vector_of_operators(Operator):
 
         if codomain is None:
             codomain = vecsp.DirectSum
-        if isinstance(codomain, vecsp.Discretization):
+        if isinstance(codomain, vecsp.VectorSpace):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
         else:
-            raise TypeError('codomain={} is neither a Discretization nor callable'.format(codomain))
+            raise TypeError('codomain={} is neither a VectorSpace nor callable'.format(codomain))
         assert all(op.codomain == c for op, c in zip(ops, codomain))
 
         self.conn = []

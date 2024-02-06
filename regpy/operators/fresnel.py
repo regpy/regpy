@@ -42,7 +42,7 @@ def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
 
     Parameters
     ----------
-    domain : regpy.vecsp.Discretization
+    domain : regpy.vecsp.VectorSpace
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -107,7 +107,7 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
 
     Parameters
     ----------
-    domain : regpy.vecsp.Discretization
+    domain : regpy.vecsp.VectorSpace
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale

@@ -442,7 +442,7 @@ class MediumScatteringOneToMany(MediumScatteringBase):
         """The farfield matrix."""
 
         ninc, nfarfield = farfield_directions.shape[:2]
-        self.codomain = vecsp.Discretization(
+        self.codomain = vecsp.VectorSpace(
             shape=(nfarfield, ninc),
             dtype=complex
         )

@@ -1,10 +1,10 @@
-"""Discretizations on which operators are defined.
+"""VectorSpaces on which operators are defined.
 
 The classes in this module implement various discretizations on which the
-`regpy.operators.Operator` implementations are defined. The base class is `Discretization`,
+`regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`,
 which represents plain arrays of some shape and dtype.
 
-Discretizations serve the following main purposes:
+VectorSpaces serve the following main purposes:
 
 - Derived classes can contain additional data like grid coordinates, bundling metadata in one
 place instead of having every operator generate linspaces / basis functions / whatever on their
@@ -32,11 +32,11 @@ from itertools import accumulate
 from regpy import util, operators
 
 
-class Discretization:
+class VectorSpace:
     r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
     space) without any additional structure.
 
-    Discretizations can be added, producing `DirectSum` instances.
+    VectorSpaces can be added, producing `DirectSum` instances.
 
     Parameters
     ----------
@@ -231,7 +231,7 @@ class Discretization:
 
         Returns
         -------
-        Discretization
+        VectorSpace
             The complex space corresponding to this discretization as a shallow copy with modified
             dtype.
         """
@@ -244,7 +244,7 @@ class Discretization:
 
         Returns
         -------
-        Discretization
+        VectorSpace
             The real space corresponding to this discretization as a shallow copy with modified
             dtype.
         """
@@ -262,13 +262,13 @@ class Discretization:
             return NotImplemented
 
     def __add__(self, other):
-        if isinstance(other, Discretization):
+        if isinstance(other, VectorSpace):
             return DirectSum(self, other, flatten=True)
         else:
             return NotImplemented
 
     def __radd__(self, other):
-        if isinstance(other, Discretization):
+        if isinstance(other, VectorSpace):
             return DirectSum(other, self, flatten=True)
         else:
             return NotImplemented
@@ -281,7 +281,7 @@ class Discretization:
         return domain
 
 
-class Grid(Discretization):
+class Grid(VectorSpace):
     """A discretization representing a rectangular grid.
 
     Parameters
@@ -405,13 +405,13 @@ class UniformGrid(Grid):
         return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
 
 
-class DirectSum(Discretization):
+class DirectSum(VectorSpace):
     """The direct sum of an arbirtary number of discretizations.
 
     Elements of the direct sum will always be 1d real arrays.
 
     Note that constructing DirectSum instances can be done more comfortably simply by adding
-    `Discretization` instances. However, for generic code, when it's not known whether the summands
+    `VectorSpace` instances. However, for generic code, when it's not known whether the summands
     are themselves direct sums, it's better to avoid the `+` overload due the `flatten` parameter
     (see below), since otherwise the number of summands is not fixed.
 
@@ -420,18 +420,18 @@ class DirectSum(Discretization):
 
     Parameters
     ----------
-    *summands : tuple of Discretization instances
+    *summands : tuple of VectorSpace instances
         The discretizations to be summed.
     flatten : bool, optional
         Whether summands that are themselves `DirectSum`s should be merged into this instance. If
         False, DirectSum is not associative, but the join and split methods behave more
         predictably. Default: False, but will be set to True when constructing the DirectSum via
-        Discretization.__add__, i.e. when using the `+` operator, in order to make repeated sums
+        VectorSpace.__add__, i.e. when using the `+` operator, in order to make repeated sums
         like `A + B + C` unambiguous.
     """
 
     def __init__(self, *summands, flatten=False):
-        assert all(isinstance(s, Discretization) for s in summands)
+        assert all(isinstance(s, VectorSpace) for s in summands)
         self.summands = []
         for s in summands:
             if flatten and isinstance(s, type(self)):
@@ -502,7 +502,7 @@ class DirectSum(Discretization):
     def __len__(self):
         return len(self.summands)
 
-class Prod(Discretization):
+class Prod(VectorSpace):
     """The tensor product of an arbirtary number of discretizations.
 
     Elements of the tensor product will always be real arrays with in n-dim where n is number of factors.
@@ -511,7 +511,7 @@ class Prod(Discretization):
 
     Parameters
     ----------
-    *factors : tuple of Discretization instances
+    *factors : tuple of VectorSpace instances
         The discretizations to be factored.
     flatten : bool, optional
         Whether factors that are themselves `Prod`s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
@@ -519,7 +519,7 @@ class Prod(Discretization):
     """
 
     def __init__(self, *factors, flatten=False):
-        assert all(isinstance(s, Discretization) for s in factors)
+        assert all(isinstance(s, VectorSpace) for s in factors)
         assert all(s.is_complex for s in factors) or all(not s.is_complex for s in factors)
         self.factors = []
         shape = ()

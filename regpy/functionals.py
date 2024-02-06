@@ -10,7 +10,7 @@ from regpy import operators, util, vecsp, hilbert
 class Functional:
     def __init__(self, domain):
         # TODO implement domain=None case
-        assert isinstance(domain, vecsp.Discretization)
+        assert isinstance(domain, vecsp.VectorSpace)
         self.domain = domain
         self.Hdomain = hilbert.L2(domain)
         #Hdomain on which the proximal operator is evaluated
@@ -524,7 +524,7 @@ This is called from the `regpy` top-level module once, and can be ignored otherw
 def _register_functionals():
     HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
 
-    L1.register(vecsp.Discretization, L1Generic)
+    L1.register(vecsp.VectorSpace, L1Generic)
 
-    TV.register(vecsp.Discretization, TVGeneric)
+    TV.register(vecsp.VectorSpace, TVGeneric)
     TV.register(vecsp.UniformGrid, TVUniformGrid)

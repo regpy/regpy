@@ -1,19 +1,19 @@
 """Finite element discretizations using NGSolve
 
-This module implements a `regpy.vecsp.Discretization` instance for NGSolve spaces and corresponding
+This module implements a `regpy.vecsp.VectorSpace` instance for NGSolve spaces and corresponding
 Hilbert space structures. Operators are in the `regpy.operators.ngsolve` module.
 """
 
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsp import Discretization, DirectSum
+from regpy.vecsp import VectorSpace, DirectSum
 from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
 from regpy.operators import Operator
 from regpy.util import memoized_property, is_complex_dtype
 
 
-class NgsSpace(Discretization):
+class NgsSpace(VectorSpace):
     """A discretization wrapping an `ngsolve.FESpace`.
 
     Parameters
@@ -73,7 +73,7 @@ class NgsSpace(Discretization):
         ngs.Draw(coefficientfunction, self.fes.mesh, name)
 
     def __add__(self, other):
-        if isinstance(other, Discretization):
+        if isinstance(other, VectorSpace):
             product_space = DirectSum(self, other, flatten=True)
             if all(product_space.summands[i]==product_space.summands[0] for i in range(len(product_space.summands))):
                 product_space.fes = product_space.summands[0].fes
@@ -83,7 +83,7 @@ class NgsSpace(Discretization):
             return NotImplemented
 
     def __radd__(self, other):
-        if isinstance(other, Discretization):
+        if isinstance(other, VectorSpace):
             product_space = DirectSum(other, self, flatten=True)
             if all(product_space.summands[i]==product_space.summands[0] for i in range(len(product_space.summands))):
                 product_space.fes = product_space.summands[0].fes
