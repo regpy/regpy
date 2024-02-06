@@ -6,10 +6,10 @@ import numpy as np
 from regpy.solvers import Solver
 
 
-__all__ = ['IRNM_KL_Newton']
+__all__ = ['IrnmKlNewton']
 
 
-class IRNM_KL_Newton(Solver):
+class IrnmKlNewton(Solver):
 
     """The iteratively regularized Newton method with quadratic approximation
     of KL (Kullback-Leibler) divergence as data misfit term
@@ -96,12 +96,12 @@ class IRNM_KL_Newton(Solver):
         self.cgmaxit = cgmaxit
 
     def next(self):
-        """Run a single IRNM_KL_Newton iteration.
+        """Run a single IrnmKlNewton iteration.
 
         Returns
         -------
         bool
-            Always True, as the IRNM_KL_Newton method never stops on its own.
+            Always True, as the IrnmKlNewton method never stops on its own.
 
         """
 
