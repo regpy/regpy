@@ -7,7 +7,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp import UniformGridFcts
+from regpy.vecsps import UniformGridFcts
 
 
 def test_volterra_landweber():

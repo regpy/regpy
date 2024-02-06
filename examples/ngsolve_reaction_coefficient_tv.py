@@ -13,7 +13,7 @@ from regpy.operators.ngsolve import Coefficient
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp.ngsolve import NgsSpace
+from regpy.vecsps.ngsolve import NgsSpace
 from regpy.functionals import HilbertNorm, TV
 
 logging.basicConfig(

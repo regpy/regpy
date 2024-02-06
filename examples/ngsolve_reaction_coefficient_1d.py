@@ -9,7 +9,7 @@ from regpy.operators.ngsolve import Coefficient
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2
-from regpy.vecsp.ngsolve import NgsSpace
+from regpy.vecsps.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,

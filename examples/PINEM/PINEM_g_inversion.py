@@ -8,8 +8,8 @@ from scipy.io import loadmat, savemat
 from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
-from regpy.vecsp import UniformGridFcts, DirectSum
-from regpy.vecsp.tensor_bases import ChebyshevBasis, LegendreBasis
+from regpy.vecsps import UniformGridFcts, DirectSum
+from regpy.vecsps.tensor_bases import ChebyshevBasis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, Hm_domain
 import regpy.hilbert as hilbert
 from regpy.operators import Identity

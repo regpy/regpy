@@ -18,7 +18,7 @@ from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix
 import scipy.sparse.linalg as sla
 
-from regpy import functionals, util, vecsp
+from regpy import functionals, util, vecsps
 
 
 class _Revocable:
@@ -87,7 +87,7 @@ class Operator:
     If derivatives at multiple points are needed, a copy of the operator should be performed using
     `copy.deepcopy`. For efficiency, subclasses can add the names of attributes that are considered
     as constants and should not be deepcopied to `self._consts` (a `set`). By default, `domain` and
-    `codomain` will not be copied, since `regpy.vecsp.VectorSpace` instances should never
+    `codomain` will not be copied, since `regpy.vecsps.VectorSpace` instances should never
     change in-place.
 
     If no derivative at some point is needed, `_eval` will be called with `differentiate=False`,
@@ -120,7 +120,7 @@ class Operator:
 
     Parameters
     ----------
-    domain, codomain : regpy.vecsp.VectorSpace or None
+    domain, codomain : regpy.vecsps.VectorSpace or None
         The vector space on which the operator's arguements / values are defined. Using `None`
         suppresses some consistency checks and is intended for ease of development, but should 
         not be used except as a temporary measure. Some constructions like direct sums will fail
@@ -132,14 +132,14 @@ class Operator:
     log = util.classlogger
 
     def __init__(self, domain=None, codomain=None, linear=False):
-        assert not domain or isinstance(domain, vecsp.VectorSpace)
-        assert not codomain or isinstance(codomain, vecsp.VectorSpace)
+        assert not domain or isinstance(domain, vecsps.VectorSpace)
+        assert not codomain or isinstance(codomain, vecsps.VectorSpace)
         self.domain = domain
         """The vector space on which the operator is defined. Either a
-        subclass of `regpy.vecsp.VectorSpace` or `None`."""
+        subclass of `regpy.vecsps.VectorSpace` or `None`."""
         self.codomain = codomain
         """The vector space on which the operator values are defined. Either
-        a subclass of `regpy.vecsp.VectorSpace` or `None`."""
+        a subclass of `regpy.vecsps.VectorSpace` or `None`."""
         self.linear = linear
         """Boolean indicating whether the operator is linear."""
         self._consts = {'domain', 'codomain'}
@@ -550,7 +550,7 @@ class Identity(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space.
     """
 
@@ -579,7 +579,7 @@ class Identity(Operator):
 
 class MatrixMultiplication(Operator):
     """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
-    `regpy.vecsp.VectorSpace` instances.
+    `regpy.vecsps.VectorSpace` instances.
 
     Parameters
     ----------
@@ -597,8 +597,8 @@ class MatrixMultiplication(Operator):
         if dtype == None:
             dtype = matrix.dtype
         super().__init__(
-            domain=domain or vecsp.VectorSpace(matrix.shape[1],dtype = dtype),
-            codomain=codomain or vecsp.VectorSpace(matrix.shape[0],dtype = dtype),
+            domain=domain or vecsps.VectorSpace(matrix.shape[1],dtype = dtype),
+            codomain=codomain or vecsps.VectorSpace(matrix.shape[0],dtype = dtype),
             linear=True
         )
         self._inverse = inverse
@@ -712,11 +712,11 @@ class SuperLUInverse(Operator):
 
 class CoordinateProjection(Operator):
     """A projection operator onto a subset of the domain. The codomain is a one-dimensional
-    `regpy.vecsp.VectorSpace` of the same dtype as the domain.
+    `regpy.vecsps.VectorSpace` of the same dtype as the domain.
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space
     mask : array-like
         Boolean mask of the subset onto which to project.
@@ -727,7 +727,7 @@ class CoordinateProjection(Operator):
         self.mask = mask
         super().__init__(
             domain=domain,
-            codomain=vecsp.VectorSpace(np.sum(mask), dtype=domain.dtype),
+            codomain=vecsps.VectorSpace(np.sum(mask), dtype=domain.dtype),
             linear=True
         )
 
@@ -747,7 +747,7 @@ class CoordinateMask(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space
     mask : array-like
         Boolean mask of the subset onto which to project.
@@ -775,7 +775,7 @@ class Ptw_Multiplication(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space
     factor : array-like
         The factor by which to multiply. Can be anything that can be broadcast to `domain.shape`.
@@ -877,13 +877,13 @@ class InnerShift(Operator):
 
 class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
-        assert isinstance(domain, vecsp.UniformGridFcts)
+        assert isinstance(domain, vecsps.UniformGridFcts)
         frqs = domain.frequencies(centered=centered, axes=axes)
         if centered:
-            codomain = vecsp.UniformGridFcts(*frqs, dtype=complex)
+            codomain = vecsps.UniformGridFcts(*frqs, dtype=complex)
         else:
             # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
-            codomain = vecsp.GridFcts(*frqs, dtype=complex)
+            codomain = vecsps.GridFcts(*frqs, dtype=complex)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes
@@ -922,7 +922,7 @@ class Power(Operator):
     ----------
     power : float
         The exponent.
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space
     """
 
@@ -984,11 +984,11 @@ class DirectSum(Operator):
     flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
-    domain, codomain : vecsp.VectorSpace or callable, optional
+    domain, codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
-        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsp.DirectSum.
+        Default: vecsps.DirectSum.
     """
 
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
@@ -1001,8 +1001,8 @@ class DirectSum(Operator):
                 self.ops.append(op)
 
         if domain is None:
-            domain = vecsp.DirectSum
-        if isinstance(domain, vecsp.VectorSpace):
+            domain = vecsps.DirectSum
+        if isinstance(domain, vecsps.VectorSpace):
             pass
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
@@ -1011,8 +1011,8 @@ class DirectSum(Operator):
         assert all(op.domain == d for op, d in zip(ops, domain))
 
         if codomain is None:
-            codomain = vecsp.DirectSum
-        if isinstance(codomain, vecsp.VectorSpace):
+            codomain = vecsps.DirectSum
+        if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
@@ -1079,11 +1079,11 @@ class Vector_of_operators(Operator):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : vecsp.VectorSpace or callable, optional
+    codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
-        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsp.DirectSum.
+        Default: vecsps.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -1098,8 +1098,8 @@ class Vector_of_operators(Operator):
         assert all(op.domain == self.domain for op in self.ops)
 
         if codomain is None:
-            codomain = vecsp.DirectSum
-        if isinstance(codomain, vecsp.VectorSpace):
+            codomain = vecsps.DirectSum
+        if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
@@ -1158,11 +1158,11 @@ class Matrix_of_operators(Operator):
     ----------
     *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
            zero operators should be given by None's 
-    domain, codomain : vecsp.VectorSpace or callable, optional
+    domain, codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
-        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsp.DirectSum.
+        Default: vecsps.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -1181,8 +1181,8 @@ class Matrix_of_operators(Operator):
         assert None not in domains
 
         if domain is None:
-            domain = vecsp.DirectSum
-        if isinstance(domain, vecsp.VectorSpace):
+            domain = vecsps.DirectSum
+        if isinstance(domain, vecsps.VectorSpace):
             pass
         elif callable(domain):
             domain = domain(*tuple(domains))
@@ -1200,8 +1200,8 @@ class Matrix_of_operators(Operator):
         assert None not in codomains
 
         if codomain is None:
-            codomain = vecsp.DirectSum
-        if isinstance(codomain, vecsp.VectorSpace):
+            codomain = vecsps.DirectSum
+        if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):
             codomain = codomain(*tuple(codomains))
@@ -1270,7 +1270,7 @@ class Exponential(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space.
     """
 
@@ -1295,9 +1295,9 @@ class RealPart(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying discreization. The codomain will be the corresponding
-        `regpy.vecsp.VectorSpace.real_space`.
+        `regpy.vecsps.VectorSpace.real_space`.
     """
 
     def __init__(self, domain):
@@ -1319,9 +1319,9 @@ class ImaginaryPart(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying discreization. The codomain will be the corresponding
-        `regpy.vecsp.VectorSpace.real_space`.
+        `regpy.vecsps.VectorSpace.real_space`.
     """
 
     def __init__(self, domain):
@@ -1344,9 +1344,9 @@ class SquaredModulus(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying discreization. The codomain will be the corresponding
-        `regpy.vecsp.VectorSpace.real_space`.
+        `regpy.vecsps.VectorSpace.real_space`.
     """
 
     def __init__(self, domain):
@@ -1373,9 +1373,9 @@ class Zero(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The underlying vector space.
-    codomain : regpy.vecsp.VectorSpace, optional
+    codomain : regpy.vecsps.VectorSpace, optional
         The vector space if the codomain. Defaults to `domain`.
     """
     def __init__(self, domain, codomain=None):

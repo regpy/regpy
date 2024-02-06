@@ -1,4 +1,4 @@
-from regpy.vecsp import *
+from regpy.vecsps import *
 from regpy import hilbert
 
 

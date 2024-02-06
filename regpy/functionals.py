@@ -4,13 +4,13 @@ from copy import copy
 
 import numpy as np
 
-from regpy import operators, util, vecsp, hilbert
+from regpy import operators, util, vecsps, hilbert
 
 
 class Functional:
     def __init__(self, domain):
         # TODO implement domain=None case
-        assert isinstance(domain, vecsp.VectorSpace)
+        assert isinstance(domain, vecsps.VectorSpace)
         self.domain = domain
         self.Hdomain = hilbert.L2(domain)
         #Hdomain on which the proximal operator is evaluated
@@ -182,7 +182,7 @@ class AbstractFunctional(AbstractFunctionalBase):
       as the concrete implementation of this abstract functional for vector spaces of type `discr_type`
       or subclasses thereof, e.g.:
 
-              @TV.register(vecsp.UniformGridFcts)
+              @TV.register(vecsps.UniformGridFcts)
               class TVUniformGridFcts(HilbertSpace):
                   ...
 
@@ -303,11 +303,11 @@ class LinearCombination(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-'''Helper to define Functionals with respective prox-operators on product spaces (vecsp.DirectSum objects).
+'''Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
 The functionals are given as a list of the functionals on the summands of the product space.'''
 class FunctionalProductSpace(Functional):
     def __init__(self, funcs, domain):
-        assert isinstance(domain, vecsp.DirectSum)
+        assert isinstance(domain, vecsps.DirectSum)
         self.length = len(domain.summands)
         for i in range(self.length):
             assert isinstance(funcs[i], Functional)
@@ -481,7 +481,7 @@ from regpy.util import divergenceuniformgrid
 class TVUniformGridFcts(Functional):
     def __init__(self, domain, Hdomain=None):
         self.dim = np.size(domain.shape)
-        assert isinstance(domain, vecsp.UniformGridFcts)
+        assert isinstance(domain, vecsps.UniformGridFcts)
         super().__init__(domain)
         if Hdomain is not None:
             self.Hdomain = Hdomain
@@ -524,7 +524,7 @@ This is called from the `regpy` top-level module once, and can be ignored otherw
 def _register_functionals():
     HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
 
-    L1.register(vecsp.VectorSpace, L1Generic)
+    L1.register(vecsps.VectorSpace, L1Generic)
 
-    TV.register(vecsp.VectorSpace, TVGeneric)
-    TV.register(vecsp.UniformGridFcts, TVUniformGridFcts)
+    TV.register(vecsps.VectorSpace, TVGeneric)
+    TV.register(vecsps.UniformGridFcts, TVUniformGridFcts)

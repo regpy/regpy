@@ -1,14 +1,14 @@
 import numpy as np
 
 from regpy.operators import Exponential, FourierTransform, Ptw_Multiplication, RealPart, SquaredModulus, Operator
-from regpy.vecsp import UniformGridFcts
+from regpy.vecsps import UniformGridFcts
 
 class PaddingOperator2D(Operator):
     r"""Operator that implements zero-padding for 2-dimensional numpy arrays.
 
     Parameters
     ----------
-    grid : regpy.vecsp.UniformGridFcts
+    grid : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined.
     pad_top=,pad_bottom,pad_left,pad_right: amount of padding in different directions
 
@@ -42,7 +42,7 @@ def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -107,7 +107,7 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
 
     Parameters
     ----------
-    domain : regpy.vecsp.VectorSpace
+    domain : regpy.vecsps.VectorSpace
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale

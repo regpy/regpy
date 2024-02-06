@@ -2,7 +2,7 @@ import numpy as np
 import pynfft
 
 from regpy.operators import Operator
-from regpy.vecsp import VectorSpace, UniformGridFcts
+from regpy.vecsps import VectorSpace, UniformGridFcts
 from regpy.util import memoized_property
 
 

@@ -9,7 +9,7 @@ import regpy.util as util
 from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
-from regpy.vecsp import UniformGridFcts
+from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
 
 logging.basicConfig(

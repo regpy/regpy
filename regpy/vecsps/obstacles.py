@@ -1,6 +1,6 @@
 import numpy as np
 
-from regpy.vecsp import UniformGridFcts
+from regpy.vecsps import UniformGridFcts
 import regpy.util as util
 
 

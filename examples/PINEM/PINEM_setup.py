@@ -3,7 +3,7 @@ from scipy.io import loadmat
 from regpy.operators import Operator
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.operators import Operator, SquaredModulus, Exponential, Ptw_Multiplication, Vector_of_operators
-from regpy.vecsp import UniformGridFcts, DirectSum
+from regpy.vecsps import UniformGridFcts, DirectSum
 
 def load_simulated_g(filename):
     mat = loadmat(filename)

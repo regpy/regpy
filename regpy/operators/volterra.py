@@ -1,7 +1,7 @@
 import numpy as np
 
 from regpy.operators import Operator
-from regpy.vecsp import UniformGridFcts
+from regpy.vecsps import UniformGridFcts
 
 
 class Volterra(Operator):
@@ -17,7 +17,7 @@ class Volterra(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.UniformGridFcts
+    domain : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined. Must be one-dimensional.
     exponent : float
         The exponent \(n\). Default is 1.

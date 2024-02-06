@@ -1,4 +1,4 @@
-from regpy import util, vecsp
+from regpy import util, vecsps
 from regpy.operators import Operator
 import multiprocessing as mp 
 from regpy.util import classlogger
@@ -50,11 +50,11 @@ class Parallel_vector_of_operators(Operator):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : vecsp.VectorSpace or callable, optional
+    codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
-        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsp.DirectSum.
+        Default: vecsps.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -68,8 +68,8 @@ class Parallel_vector_of_operators(Operator):
         assert all(op.domain == self.domain for op in ops)
 
         if codomain is None:
-            codomain = vecsp.DirectSum
-        if isinstance(codomain, vecsp.VectorSpace):
+            codomain = vecsps.DirectSum
+        if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))

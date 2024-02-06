@@ -8,7 +8,7 @@ from regpy.solvers.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.operators.obstacles import Potential
-from regpy.vecsp.obstacles import StarTrigDiscr
+from regpy.vecsps.obstacles import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 
 logging.basicConfig(

@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from regpy import operators, util, vecsp
+from regpy import operators, util, vecsps
 from regpy.util import tests
 from regpy.operators import volterra 
 from regpy.operators import mediumscattering
@@ -24,13 +24,13 @@ def do_nonlinear_test(op):
 def test_linear_volterra():
     do_linear_test(
         volterra.Volterra(
-            domain=vecsp.UniformGridFcts(np.linspace(0, 2 * np.pi, 200))))
+            domain=vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 200))))
 
 
 def test_nonlinear_volterra():
     do_nonlinear_test(
         volterra.Volterra(
-            domain=vecsp.UniformGridFcts(np.linspace(0, 2 * np.pi, 200)),
+            domain=vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 200)),
             exponent=3))
 
 
