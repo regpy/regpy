@@ -3,10 +3,10 @@ from regpy.operators import Operator
 import multiprocessing as mp 
 from regpy.util import classlogger
 
-class Operator_as_worker(mp.Process):
+class OperatorAsWorker(mp.Process):
     log = classlogger
     def __init__(self, name, conn,F):
-        super(Operator_as_worker, self).__init__()
+        super(OperatorAsWorker, self).__init__()
         self.F = F
         self.name = name
         self.conn = conn
@@ -82,7 +82,7 @@ class Parallel_vectorOfOperators(Operator):
         for op in ops:
             conn_m, conn_w = mp.Pipe()
             self.conn.append(conn_m)
-            G = Operator_as_worker(type(op).__name__+' as worker '+str(it),conn_w,op)
+            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op)
             G.start()
             it += 1
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
