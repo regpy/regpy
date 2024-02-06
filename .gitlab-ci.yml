@@ -1,0 +1,13 @@
+image: python:latest
+
+stages:          # List of stages for jobs, and their order of execution
+  - test
+
+before_script:
+  - python install .
+
+test:   # This job runs in the test stage.
+  stage: test    # It only starts when the job in the build stage completes successfully.
+  script:
+    - pytest tests/test_operators.py
+    - pytest tests/test_spaces.py
