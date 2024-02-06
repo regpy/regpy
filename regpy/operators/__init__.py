@@ -1296,7 +1296,7 @@ class RealPart(Operator):
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpace
-        The underlying discreization. The codomain will be the corresponding
+        The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpace.real_space`.
     """
 
@@ -1320,7 +1320,7 @@ class ImaginaryPart(Operator):
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpace
-        The underlying discreization. The codomain will be the corresponding
+        The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpace.real_space`.
     """
 
@@ -1345,7 +1345,7 @@ class SquaredModulus(Operator):
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpace
-        The underlying discreization. The codomain will be the corresponding
+        The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpace.real_space`.
     """
 

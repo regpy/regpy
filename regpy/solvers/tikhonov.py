@@ -63,8 +63,8 @@ class TikhonovCG(Solver):
 
         
         if preconditioner is None:
-            self.preconditioner = Identity (self.setting.Hdomain.discr)
-            self.penalty = Identity (self.setting.Hdomain.discr)
+            self.preconditioner = Identity (self.setting.Hdomain.vecsp)
+            self.penalty = Identity (self.setting.Hdomain.vecsp)
         else: 
             self.preconditioner = preconditioner
             self.penalty = self.preconditioner * self.setting.Hdomain.gram * self.preconditioner * self.setting.Hdomain.gram_inv

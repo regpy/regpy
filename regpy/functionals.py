@@ -178,8 +178,8 @@ class AbstractFunctional(AbstractFunctionalBase):
 
     AbstractFunctionals provides two kinds of functionality:
 
-    - A decorator method `register(discr_type)` that can be used to declare some class or function
-      as the concrete implementation of this abstract functional for vector spaces of type `discr_type`
+    - A decorator method `register(vecsp_type)` that can be used to declare some class or function
+      as the concrete implementation of this abstract functional for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
 
               @TV.register(vecsps.UniformGridFcts)
@@ -208,22 +208,22 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.name = name
         self.args = {}
 
-    def register(self, discr_type, impl=None):
+    def register(self, vecsp_type, impl=None):
         if impl is not None:
-            self._registry.setdefault(discr_type, []).append(impl)
+            self._registry.setdefault(vecsp_type, []).append(impl)
         else:
             def decorator(i):
-                self.register(discr_type, i)
+                self.register(vecsp_type, i)
                 return i
             return decorator
 
-    def __call__(self, discr=None, **kwargs):
-        if discr is None:
+    def __call__(self, vecsp=None, **kwargs):
+        if vecsp is None:
             clone = copy(self)
             clone.args = copy(self.args)
             clone.args.update(kwargs)
             return clone
-        for cls in type(discr).mro():
+        for cls in type(vecsp).mro():
             try:
                 impls = self._registry[cls]
             except KeyError:
@@ -231,13 +231,13 @@ class AbstractFunctional(AbstractFunctionalBase):
             kws = copy(self.args)
             kws.update(kwargs)
             for impl in impls:
-                result = impl(discr, **kws)
+                result = impl(vecsp, **kws)
                 if result is NotImplemented:
                     continue
                 assert isinstance(result, Functional)
                 return result
         raise NotImplementedError(
-            '{} not implemented on {}'.format(self.name, discr)
+            '{} not implemented on {}'.format(self.name, vecsp)
         )
 
 L1 = AbstractFunctional('L1')
@@ -413,7 +413,7 @@ class ErrorToInfinity(Functional):
 class HilbertNormGeneric(Functional):
     def __init__(self, hspace, Hdomain=None):
         assert isinstance(hspace, hilbert.HilbertSpace)
-        super().__init__(hspace.discr)
+        super().__init__(hspace.vecsp)
         self.hspace = hspace
         self.Hdomain = Hdomain or hspace 
         '''overloads self.Hdomain from constructor'''
@@ -486,7 +486,7 @@ class TVUniformGridFcts(Functional):
         if Hdomain is not None:
             self.Hdomain = Hdomain
         """Overload Hdomain if needed"""
-        assert self.Hdomain.discr == self.domain
+        assert self.Hdomain.vecsp == self.domain
 
     def _eval(self, x):
         if self.dim==1:

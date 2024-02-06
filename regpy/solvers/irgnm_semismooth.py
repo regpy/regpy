@@ -99,7 +99,7 @@ class IRGNMSemiSmooth(Solver):
         self.lam_minus[self.inactive]=0
         self.lam_minus[self.active_plus]=0
 
-        project = CoordinateMask(self.setting.Hdomain.discr, self.inactive)
+        project = CoordinateMask(self.setting.Hdomain.vecsp, self.inactive)
         self.log.info('Running Tikhonov solver.')
         f, _ = TikhonovCG(
             setting=HilbertSpaceSetting(self.deriv * project, self.setting.Hdomain, self.setting.Hcodomain),

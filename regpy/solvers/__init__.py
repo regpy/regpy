@@ -138,7 +138,7 @@ class HilbertSpaceSetting:
     - a Hilbert space structur on its codomain for the data misfit.
 
     This class  is mostly a container that keeps all of this data in one place and makes sure that
-    the `regpy.hilbert.HilbertSpace.discr`s match the operator's domain and codomain.
+    the `regpy.hilbert.HilbertSpace.vecsp`s match the operator's domain and codomain.
 
     It also handles the case when the specified Hilbert space is actually an
     `regpy.hilbert.AbstractSpace` (or actually any callable) instead of a

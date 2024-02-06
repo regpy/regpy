@@ -167,10 +167,10 @@ class L2FESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.L2` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
-        u, v = self.discr.fes.TnT()
-        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
+        u, v = self.vecsp.fes.TnT()
+        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v)
-        return Matrix(self.discr, form)
+        return Matrix(self.vecsp, form)
 
 
 @Sobolev.register(NgsSpace)
@@ -178,47 +178,47 @@ class SobolevFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
     @memoized_property
     def gram(self):
-        u, v = self.discr.fes.TnT()
-        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
+        u, v = self.vecsp.fes.TnT()
+        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v + ngs.grad(u) * ngs.grad(v))
-        return Matrix(self.discr, form)
+        return Matrix(self.vecsp, form)
 
 
 @L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.L2Boundary` on an `NgsSpace`."""
-    def __init__(self, discr):
-        assert discr.bdr is not None
-        super().__init__(discr)
+    def __init__(self, vecsp):
+        assert vecsp.bdr is not None
+        super().__init__(vecsp)
 
     @memoized_property
     def gram(self):
-        u, v = self.discr.fes.TnT()
-        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
+        u, v = self.vecsp.fes.TnT()
+        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace(),
-            definedon=self.discr.fes.mesh.Boundaries(self.discr.bdr)
+            definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return Matrix(self.discr, form)
+        return Matrix(self.vecsp, form)
 
 
 @SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsSpace`."""
-    def __init__(self, discr):
-        assert discr.bdr is not None
-        super().__init__(discr)
+    def __init__(self, vecsp):
+        assert vecsp.bdr is not None
+        super().__init__(vecsp)
 
 
     @memoized_property
     def gram(self):
-        u, v = self.discr.fes.TnT()
-        form = ngs.BilinearForm(self.discr.fes, symmetric=True)
+        u, v = self.vecsp.fes.TnT()
+        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(
             u.Trace() * v.Trace() + u.Trace().Deriv() * v.Trace().Deriv(),
-            definedon=self.discr.fes.mesh.Boundaries(self.discr.bdr)
+            definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return Matrix(self.discr, form)
+        return Matrix(self.vecsp, form)
 
 '''Special NGSolve functionals'''
 from regpy.functionals import Functional

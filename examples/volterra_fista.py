@@ -40,7 +40,7 @@ setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TV(setting.Hdomain.discr, Hdomain=setting.Hdomain)
+penalty = TV(setting.Hdomain.vecsp, Hdomain=setting.Hdomain)
 
 proximal_pars = {
         'stepsize' : 0.001,

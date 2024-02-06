@@ -40,7 +40,7 @@ class StarTrigCurve:
 
     Parameters
     ----------
-    discr : StarTrigDiscr
+    vecsp : StarTrigDiscr
         The underlying vector space.
     coeffs : array-like
         The coefficient array of the radial function.
@@ -51,20 +51,20 @@ class StarTrigCurve:
         How many derivatives to compute. At most 3 derivatives are implemented.
     """
 
-    def __init__(self, discr, coeffs, nvals=None, nderivs=0):
+    def __init__(self, vecsp, coeffs, nvals=None, nderivs=0):
         assert isinstance(nderivs, int) and 0 <= nderivs <= 3
-        self.discr = discr
+        self.vecsp = vecsp
         """The vector space."""
         self.coeffs = coeffs
         """The coefficients."""
-        self.nvals = nvals or self.discr.size
+        self.nvals = nvals or self.vecsp.size
         """The number of computed values."""
         self.nderivs = nderivs
         """The number of computed derivatives."""
 
-        self._frqs = 1j * np.arange(self.discr.size // 2 + 1)
+        self._frqs = 1j * np.arange(self.vecsp.size // 2 + 1)
         # (nvals / nx) * irfft(rfft(x), nvals) can be used for trig interpolation
-        self.radius = (self.nvals / self.discr.size) * np.fft.irfft(
+        self.radius = (self.nvals / self.vecsp.size) * np.fft.irfft(
             (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis]) * np.fft.rfft(coeffs),
             self.nvals,
             axis=1
@@ -98,14 +98,14 @@ class StarTrigCurve:
     # TODO Should these be turned into operators?
 
     def derivative(self, h):
-        return (self.nvals / self.discr.size) * np.fft.irfft(
+        return (self.nvals / self.vecsp.size) * np.fft.irfft(
             np.fft.rfft(h), self.nvals
         )
 
     def adjoint(self, g):
-        return (self.nvals / self.discr.size) * util.adjoint_rfft(
-            util.adjoint_irfft(g, self.discr.size // 2 + 1),
-            self.discr.size
+        return (self.nvals / self.vecsp.size) * util.adjoint_rfft(
+            util.adjoint_irfft(g, self.vecsp.size // 2 + 1),
+            self.vecsp.size
         )
 
     def der_normal(self, h):
@@ -119,6 +119,6 @@ class StarTrigCurve:
 
     def arc_length_der(self, h):
         """Computes the derivative of `h` with respect to arclength."""
-        return (self.nvals / self.discr.size) * np.fft.irfft(
+        return (self.nvals / self.vecsp.size) * np.fft.irfft(
             self._frqs * np.fft.rfft(h), self.nvals
         ) / self.tangent_norm

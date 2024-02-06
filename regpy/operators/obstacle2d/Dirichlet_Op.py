@@ -22,7 +22,7 @@ class DirichletOp(Operator):
 
     def __init__(self, domain, codomain=None, **kwargs):
         codomain = codomain or domain
-#        codomain.discr.iscomplex()
+#        codomain.vecsp.iscomplex()
         self.kappa = 3            # wave number
         self.N_ieq = 32           # 2*F_ieq is the number of vector space points
         self.N_ieq_synth = 32     # 2*N_ieq is the number of vector space points for
