@@ -10,7 +10,7 @@ from copy import deepcopy
 import regpy.stoprules as rules
 from regpy.vecsps import UniformGridFcts, DirectSum
 from regpy.vecsps.tensor_bases import ChebyshevBasis, LegendreBasis
-from regpy.hilbert import L2, Sobolev, Hm_domain
+from regpy.hilbert import L2, Sobolev, HmDomain
 import regpy.hilbert as hilbert
 from regpy.operators import Identity
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
@@ -109,7 +109,7 @@ def main():
     ################################################   initialize forward operator
     if g_is_complex:
         # Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
-        Hdomain = Hm_domain(grid.complex_space(),mask_p, index = sobolev_index)
+        Hdomain = HmDomain(grid.complex_space(),mask_p, index = sobolev_index)
         g0 = harmonic_extension(1-mask_p,g_map)
         proj = CoordinateProjection(grid.complex_space(),mask_p)
         projection = InnerShift(proj,g0)
@@ -122,7 +122,7 @@ def main():
                 #mask[-1,:]=1; mask[-1,:]=1; mask[:,-1] = 1
                 # prior_ampl = extension_along_lines(np.log(np.abs(g_map)),mask)
                 ampl_proj = CoordinateProjection(grid, mask_a)
-                ampl_domain = Hm_domain(grid.real_space(),mask_a, index = sobolev_index_ampl)
+                ampl_domain = HmDomain(grid.real_space(),mask_a, index = sobolev_index_ampl)
             else: # amplitude is known everywhere
                 prior_ampl = np.log(np.abs(g_map))
                 ampl_proj = Zero(grid)
@@ -130,7 +130,7 @@ def main():
         else:
             prior_ampl = harmonic_extension(~mask_p,np.log(np.abs(g_map)),damping =0)
             ampl_proj = CoordinateProjection(grid, mask_p)
-            ampl_domain = Hm_domain(grid.real_space(), np.ones(grid.shape,dtype=int), index = sobolev_index_ampl)
+            ampl_domain = HmDomain(grid.real_space(), np.ones(grid.shape,dtype=int), index = sobolev_index_ampl)
         ampl_projection = InnerShift(ampl_proj,prior_ampl)
         ampl_extension = OuterShift(ampl_proj.adjoint,prior_ampl)
 
@@ -150,7 +150,7 @@ def main():
             #phase_extension = OuterShift(Identity(grid),prior_phase)
             weight = (0.02+np.exp(prior_ampl)/np.exp(np.max(prior_ampl)))
             #weight = np.ones_like(g_map.real)*g_map.shape[0]**2
-            phase_domain = Hm_domain(grid.real_space(),mask_p, index = sobolev_index_phase, weight = weight)
+            phase_domain = HmDomain(grid.real_space(),mask_p, index = sobolev_index_phase, weight = weight)
 
         Hdomain = ampl_domain + phase_domain
         projection =  opDirectSum(ampl_projection, phase_projection)

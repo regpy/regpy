@@ -657,7 +657,7 @@ class SobolevUniformGridFcts(HilbertSpace):
         )
         return ft.adjoint * mul * ft
 
-class Hm_domain(HilbertSpace):
+class HmDomain(HilbertSpace):
     """implementation of a Sobolev space H^m(D) for a subset D of a UniformGridFcts grid.
     D is characterized by a binary or integer-valued mask: D={mask==1}.
     {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries.
