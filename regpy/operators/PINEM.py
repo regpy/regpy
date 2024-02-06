@@ -53,7 +53,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
     else:
         return vec * mask
 
-class Nemitzky_op_for_g(Operator):
+class NemitzkyOpForG(Operator):
     """
     Parameters: 
       - domain: A complex regpy.vecsps.VectorSpace
@@ -89,7 +89,7 @@ class Nemitzky_op_for_g(Operator):
         arg_res = self._factor_arg_g.real * y.real + self._factor_arg_g.imag * y.imag
         return self.domain.join(abs_res,arg_res)#abs_res + 1j*arg_res #
 
-class ptw_divided_Bessel(Operator):
+class PtwDividedBessel(Operator):
     """
     Parameters: 
       - domain: A real regpy.vecsps.VectorSpace
@@ -135,7 +135,7 @@ class ptw_divided_Bessel(Operator):
     def _adjoint(self, y):
         return self._factor * y
 
-class complex_Nemitzky_op_for_g(Operator):
+class ComplexNemitzkyOpForG(Operator):
     """
     Parameters: 
       - domain: A complex regpy.vecsps.VectorSpace
@@ -153,7 +153,7 @@ class complex_Nemitzky_op_for_g(Operator):
         assert domain.is_complex
         self.N =N
         self.pow = Power(np.uintc(np.absolute(N)),domain,integer=True)
-        self.jv_div = ptw_divided_Bessel(N,domain.real_space())
+        self.jv_div = PtwDividedBessel(N,domain.real_space())
         super().__init__(domain, domain)
 
     def _eval(self, g, differentiate=False): 
@@ -208,7 +208,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
                 SquaredModulus(cdomain)
                 *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
                 *PtwMultiplication(cdomain,A_Psi0_Multiplier)
-                *Nemitzky_op_for_g(n,cdomain)
+                *NemitzkyOpForG(n,cdomain)
                 *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
         g_to_modes = ParallelVectorOfOperators(op_list)
@@ -240,7 +240,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier,
             SquaredModulus(cdomain)
             *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
             *PtwMultiplication(cdomain,A_Psi0_Multiplier)
-            *complex_Nemitzky_op_for_g(n,cdomain)
+            *ComplexNemitzkyOpForG(n,cdomain)
             )
     if parallel:
         g_to_modes = ParallelVectorOfOperators(op_list)
