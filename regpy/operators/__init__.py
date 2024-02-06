@@ -18,7 +18,7 @@ from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix
 import scipy.sparse.linalg as sla
 
-from regpy import functionals, util, discrs
+from regpy import functionals, util, vecsp
 
 
 class _Revocable:
@@ -87,7 +87,7 @@ class Operator:
     If derivatives at multiple points are needed, a copy of the operator should be performed using
     `copy.deepcopy`. For efficiency, subclasses can add the names of attributes that are considered
     as constants and should not be deepcopied to `self._consts` (a `set`). By default, `domain` and
-    `codomain` will not be copied, since `regpy.discrs.Discretization` instances should never
+    `codomain` will not be copied, since `regpy.vecsp.Discretization` instances should never
     change in-place.
 
     If no derivative at some point is needed, `_eval` will be called with `differentiate=False`,
@@ -120,7 +120,7 @@ class Operator:
 
     Parameters
     ----------
-    domain, codomain : regpy.discrs.Discretization or None
+    domain, codomain : regpy.vecsp.Discretization or None
         The discretization on which the operator's arguements / values are defined. Using `None`
         suppresses some consistency checks and is intended for ease of development, but should 
         not be used except as a temporary measure. Some constructions like direct sums will fail
@@ -132,14 +132,14 @@ class Operator:
     log = util.classlogger
 
     def __init__(self, domain=None, codomain=None, linear=False):
-        assert not domain or isinstance(domain, discrs.Discretization)
-        assert not codomain or isinstance(codomain, discrs.Discretization)
+        assert not domain or isinstance(domain, vecsp.Discretization)
+        assert not codomain or isinstance(codomain, vecsp.Discretization)
         self.domain = domain
         """The discretization on which the operator is defined. Either a
-        subclass of `regpy.discrs.Discretization` or `None`."""
+        subclass of `regpy.vecsp.Discretization` or `None`."""
         self.codomain = codomain
         """The discretization on which the operator values are defined. Either
-        a subclass of `regpy.discrs.Discretization` or `None`."""
+        a subclass of `regpy.vecsp.Discretization` or `None`."""
         self.linear = linear
         """Boolean indicating whether the operator is linear."""
         self._consts = {'domain', 'codomain'}
@@ -550,7 +550,7 @@ class Identity(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization.
     """
 
@@ -579,7 +579,7 @@ class Identity(Operator):
 
 class MatrixMultiplication(Operator):
     """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
-    `regpy.discrs.Discretization` instances.
+    `regpy.vecsp.Discretization` instances.
 
     Parameters
     ----------
@@ -597,8 +597,8 @@ class MatrixMultiplication(Operator):
         if dtype == None:
             dtype = matrix.dtype
         super().__init__(
-            domain=domain or discrs.Discretization(matrix.shape[1],dtype = dtype),
-            codomain=codomain or discrs.Discretization(matrix.shape[0],dtype = dtype),
+            domain=domain or vecsp.Discretization(matrix.shape[1],dtype = dtype),
+            codomain=codomain or vecsp.Discretization(matrix.shape[0],dtype = dtype),
             linear=True
         )
         self._inverse = inverse
@@ -712,11 +712,11 @@ class SuperLUInverse(Operator):
 
 class CoordinateProjection(Operator):
     """A projection operator onto a subset of the domain. The codomain is a one-dimensional
-    `regpy.discrs.Discretization` of the same dtype as the domain.
+    `regpy.vecsp.Discretization` of the same dtype as the domain.
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization
     mask : array-like
         Boolean mask of the subset onto which to project.
@@ -727,7 +727,7 @@ class CoordinateProjection(Operator):
         self.mask = mask
         super().__init__(
             domain=domain,
-            codomain=discrs.Discretization(np.sum(mask), dtype=domain.dtype),
+            codomain=vecsp.Discretization(np.sum(mask), dtype=domain.dtype),
             linear=True
         )
 
@@ -747,7 +747,7 @@ class CoordinateMask(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization
     mask : array-like
         Boolean mask of the subset onto which to project.
@@ -775,7 +775,7 @@ class Ptw_Multiplication(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization
     factor : array-like
         The factor by which to multiply. Can be anything that can be broadcast to `domain.shape`.
@@ -877,13 +877,13 @@ class InnerShift(Operator):
 
 class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
-        assert isinstance(domain, discrs.UniformGrid)
+        assert isinstance(domain, vecsp.UniformGrid)
         frqs = domain.frequencies(centered=centered, axes=axes)
         if centered:
-            codomain = discrs.UniformGrid(*frqs, dtype=complex)
+            codomain = vecsp.UniformGrid(*frqs, dtype=complex)
         else:
             # In non-centered case, the frequencies are not ascencing, so even using Grid here is slighty questionable.
-            codomain = discrs.Grid(*frqs, dtype=complex)
+            codomain = vecsp.Grid(*frqs, dtype=complex)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes
@@ -922,7 +922,7 @@ class Power(Operator):
     ----------
     power : float
         The exponent.
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization
     """
 
@@ -984,11 +984,11 @@ class DirectSum(Operator):
     flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
-    domain, codomain : discrs.Discretization or callable, optional
+    domain, codomain : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
         The resulting discretization should be iterable, yielding the individual summands.
-        Default: discrs.DirectSum.
+        Default: vecsp.DirectSum.
     """
 
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
@@ -1001,8 +1001,8 @@ class DirectSum(Operator):
                 self.ops.append(op)
 
         if domain is None:
-            domain = discrs.DirectSum
-        if isinstance(domain, discrs.Discretization):
+            domain = vecsp.DirectSum
+        if isinstance(domain, vecsp.Discretization):
             pass
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
@@ -1011,8 +1011,8 @@ class DirectSum(Operator):
         assert all(op.domain == d for op, d in zip(ops, domain))
 
         if codomain is None:
-            codomain = discrs.DirectSum
-        if isinstance(codomain, discrs.Discretization):
+            codomain = vecsp.DirectSum
+        if isinstance(codomain, vecsp.Discretization):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
@@ -1079,11 +1079,11 @@ class Vector_of_operators(Operator):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : discrs.Discretization or callable, optional
+    codomain : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
         The resulting discretization should be iterable, yielding the individual summands.
-        Default: discrs.DirectSum.
+        Default: vecsp.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -1098,8 +1098,8 @@ class Vector_of_operators(Operator):
         assert all(op.domain == self.domain for op in self.ops)
 
         if codomain is None:
-            codomain = discrs.DirectSum
-        if isinstance(codomain, discrs.Discretization):
+            codomain = vecsp.DirectSum
+        if isinstance(codomain, vecsp.Discretization):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
@@ -1158,11 +1158,11 @@ class Matrix_of_operators(Operator):
     ----------
     *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
            zero operators should be given by None's 
-    domain, codomain : discrs.Discretization or callable, optional
+    domain, codomain : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
         The resulting discretization should be iterable, yielding the individual summands.
-        Default: discrs.DirectSum.
+        Default: vecsp.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -1181,8 +1181,8 @@ class Matrix_of_operators(Operator):
         assert None not in domains
 
         if domain is None:
-            domain = discrs.DirectSum
-        if isinstance(domain, discrs.Discretization):
+            domain = vecsp.DirectSum
+        if isinstance(domain, vecsp.Discretization):
             pass
         elif callable(domain):
             domain = domain(*tuple(domains))
@@ -1200,8 +1200,8 @@ class Matrix_of_operators(Operator):
         assert None not in codomains
 
         if codomain is None:
-            codomain = discrs.DirectSum
-        if isinstance(codomain, discrs.Discretization):
+            codomain = vecsp.DirectSum
+        if isinstance(codomain, vecsp.Discretization):
             pass
         elif callable(codomain):
             codomain = codomain(*tuple(codomains))
@@ -1270,7 +1270,7 @@ class Exponential(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization.
     """
 
@@ -1295,9 +1295,9 @@ class RealPart(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discreization. The codomain will be the corresponding
-        `regpy.discrs.Discretization.real_space`.
+        `regpy.vecsp.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -1319,9 +1319,9 @@ class ImaginaryPart(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discreization. The codomain will be the corresponding
-        `regpy.discrs.Discretization.real_space`.
+        `regpy.vecsp.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -1344,9 +1344,9 @@ class SquaredModulus(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discreization. The codomain will be the corresponding
-        `regpy.discrs.Discretization.real_space`.
+        `regpy.vecsp.Discretization.real_space`.
     """
 
     def __init__(self, domain):
@@ -1373,9 +1373,9 @@ class Zero(Operator):
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The underlying discretization.
-    codomain : regpy.discrs.Discretization, optional
+    codomain : regpy.vecsp.Discretization, optional
         The discretization if the codomain. Defaults to `domain`.
     """
     def __init__(self, domain, codomain=None):

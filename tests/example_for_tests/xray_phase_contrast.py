@@ -2,7 +2,7 @@ from regpy.solvers.irgnm import IrgnmCG
 
 from regpy.operators.fresnel import xray_phase_contrast
 from regpy.hilbert import L2
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
 

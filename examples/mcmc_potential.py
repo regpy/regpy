@@ -8,7 +8,7 @@ from regpy.solvers import HilbertSpaceSetting
 
 from regpy.solvers.irgnm import IrgnmCG
 
-from regpy.discrs.obstacles import StarTrigDiscr
+from regpy.vecsp.obstacles import StarTrigDiscr
 from regpy.functionals import ErrorToInfinity
 
 from regpy.operators.obstacles import Potential
@@ -16,7 +16,7 @@ from regpy.operators.obstacles import Potential
 from regpy.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 import regpy.stoprules as rules
 
 

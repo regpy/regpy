@@ -1,6 +1,6 @@
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCGPrec, IrgnmCG
 import regpy.stoprules as rules

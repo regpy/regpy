@@ -5,7 +5,7 @@ from regpy.solvers.irgnm import IrgnmCG
 from regpy.operators import CoordinateProjection
 from regpy.operators.PINEM import wave_field_reco_PINEM
 from regpy.hilbert import L2, Sobolev, Hm0_domain
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
 

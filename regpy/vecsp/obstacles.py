@@ -1,6 +1,6 @@
 import numpy as np
 
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 import regpy.util as util
 
 

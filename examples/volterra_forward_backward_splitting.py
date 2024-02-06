@@ -13,7 +13,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 from regpy.functionals import HilbertNorm, L1, TV
 
 logging.basicConfig(

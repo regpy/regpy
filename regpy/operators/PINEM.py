@@ -3,7 +3,7 @@ from math import factorial
 import numpy as np
 from numpy.core.defchararray import endswith
 
-from regpy.discrs import DirectSum as DirectSumSpace 
+from regpy.vecsp import DirectSum as DirectSumSpace 
 from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
 from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint 
@@ -16,7 +16,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
 
     Parameters
     ----------
-    domain : regpy.discrs.Discretization
+    domain : regpy.vecsp.Discretization
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -56,7 +56,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
 class Nemitzky_op_for_g(Operator):
     """
     Parameters: 
-      - domain: A complex regpy.discrs.Discretization
+      - domain: A complex regpy.vecsp.Discretization
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 
@@ -92,7 +92,7 @@ class Nemitzky_op_for_g(Operator):
 class ptw_divided_Bessel(Operator):
     """
     Parameters: 
-      - domain: A real regpy.discrs.Discretization
+      - domain: A real regpy.vecsp.Discretization
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 
@@ -138,7 +138,7 @@ class ptw_divided_Bessel(Operator):
 class complex_Nemitzky_op_for_g(Operator):
     """
     Parameters: 
-      - domain: A complex regpy.discrs.Discretization
+      - domain: A complex regpy.vecsp.Discretization
       - N: an integer representing the order of Bessel functions
 
     Input of eval: 

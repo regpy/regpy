@@ -13,7 +13,7 @@ from regpy.operators.ngsolve import ReactionNeumann, ProjectToBoundary
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2, SobolevBoundary
-from regpy.discrs.ngsolve import NgsSpace
+from regpy.vecsp.ngsolve import NgsSpace
 
 logging.basicConfig(
     level=logging.INFO,

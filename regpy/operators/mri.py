@@ -1,17 +1,17 @@
 import numpy as np
 
 from regpy.operators import CoordinateProjection, DirectSum, FourierTransform, Ptw_Multiplication, Operator
-from regpy import util, discrs
+from regpy import util, vecsp
 
 
 class CoilMult(Operator):
     """Operator that implements the multiplication between density and coil profiles. The domain
-    is a direct sum of the `grid` (for the densitiy) and a `regpy.discrs.UniformGrid` of `ncoils`
+    is a direct sum of the `grid` (for the densitiy) and a `regpy.vecsp.UniformGrid` of `ncoils`
     copies of `grid`, stacked along the 0th dimension.
 
     Parameters
     ----------
-    grid : regpy.discrs.UniformGrid
+    grid : regpy.vecsp.UniformGrid
         The grid on which the density is defined.
     ncoils : int
         The number of coils.
@@ -19,11 +19,11 @@ class CoilMult(Operator):
 
     def __init__(self, grid, ncoils):
         # TODO: are density and/or coil profiles complex?
-        assert isinstance(grid, discrs.UniformGrid)
+        assert isinstance(grid, vecsp.UniformGrid)
         assert grid.ndim == 2
         self.grid = grid
         """The density grid."""
-        self.coilgrid = discrs.UniformGrid(ncoils, *grid.axes, dtype=grid.dtype)
+        self.coilgrid = vecsp.UniformGrid(ncoils, *grid.axes, dtype=grid.dtype)
         """The coil grid, a stack of copies of `grid`."""
         self.ncoils = ncoils
         """The number of coils."""
@@ -73,7 +73,7 @@ def parallel_mri(grid, ncoils, centered=False):
 
     Parameters
     ----------
-    grid : discrs.UniformGrid
+    grid : vecsp.UniformGrid
         The grid on which the density is defined.
     ncoils : int
         The number of coils.

@@ -1,13 +1,13 @@
 """Finite element discretizations using NGSolve
 
-This module implements a `regpy.discrs.Discretization` instance for NGSolve spaces and corresponding
+This module implements a `regpy.vecsp.Discretization` instance for NGSolve spaces and corresponding
 Hilbert space structures. Operators are in the `regpy.operators.ngsolve` module.
 """
 
 import ngsolve as ngs
 import numpy as np
 
-from regpy.discrs import Discretization, DirectSum
+from regpy.vecsp import Discretization, DirectSum
 from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
 from regpy.operators import Operator
 from regpy.util import memoized_property, is_complex_dtype

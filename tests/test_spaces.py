@@ -1,4 +1,4 @@
-from regpy.discrs import *
+from regpy.vecsp import *
 from regpy import hilbert
 
 
@@ -8,7 +8,7 @@ def test_L2_uniform_grid():
     grid = UniformGrid(10,11)
     hilbert.L2(grid)
 
-def test_Sobolev_uniform_grid():
+def test_sobolev_uniform_grid():
     grid = UniformGrid(10,11)
     hilbert.Sobolev(grid)
 
@@ -22,7 +22,7 @@ def test_L2_directsum():
     grid = grid1 + grid2
     hilbert.L2(grid)
 
-def test_Sobolev_directsum():
+def test_sobolev_directsum():
     grid = UniformGrid(10,11)
     grid = grid + grid
     hilbert.Sobolev(grid)

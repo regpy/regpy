@@ -8,7 +8,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,

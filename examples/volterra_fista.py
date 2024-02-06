@@ -14,7 +14,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.fista import FISTA
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 from regpy.functionals import HilbertNorm, TV
 
 logging.basicConfig(

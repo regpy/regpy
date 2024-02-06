@@ -7,7 +7,7 @@ import numpy as np
 from regpy.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid
+from regpy.vecsp import UniformGrid
 
 logging.basicConfig(
     level=logging.INFO,

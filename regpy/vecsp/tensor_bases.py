@@ -1,6 +1,6 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.discrs import Discretization,Grid,UniformGrid, Prod
+from regpy.vecsp import Discretization,Grid,UniformGrid, Prod
 from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):

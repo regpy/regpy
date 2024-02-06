@@ -1,4 +1,4 @@
-from regpy import util, discrs
+from regpy import util, vecsp
 from regpy.operators import Operator
 import multiprocessing as mp 
 from regpy.util import classlogger
@@ -50,11 +50,11 @@ class Parallel_vector_of_operators(Operator):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : discrs.Discretization or callable, optional
+    codomain : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a discrs.DirectSum instance.
+        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
         The resulting discretization should be iterable, yielding the individual summands.
-        Default: discrs.DirectSum.
+        Default: vecsp.DirectSum.
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
@@ -68,8 +68,8 @@ class Parallel_vector_of_operators(Operator):
         assert all(op.domain == self.domain for op in ops)
 
         if codomain is None:
-            codomain = discrs.DirectSum
-        if isinstance(codomain, discrs.Discretization):
+            codomain = vecsp.DirectSum
+        if isinstance(codomain, vecsp.Discretization):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))

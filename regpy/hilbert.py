@@ -5,7 +5,7 @@ from copy import copy
 
 import numpy as np
 
-from regpy import util, operators, functionals, discrs
+from regpy import util, operators, functionals, vecsp
 from scipy.sparse import csc_matrix
 
 
@@ -18,7 +18,7 @@ class HilbertSpace:
     `regpy.util.memoized_property` can be used.
 
     Hilbert spaces can be added, producing `DirectSum` instances on the direct sums of the
-    underlying disretizations (see `regpy.discrs.DirectSum` in the `regpy.discrs` module).
+    underlying disretizations (see `regpy.vecsp.DirectSum` in the `regpy.vecsp` module).
 
     They can also be multiplied by scalars to scale the norm. Note that the Gram matrix will scale
     by the square of the factor. This is for consistency with the (not yet implemented) Banach space
@@ -26,14 +26,14 @@ class HilbertSpace:
 
     Parameters
     ----------
-    discr : regpy.discrs.Discretization
+    discr : regpy.vecsp.Discretization
         The underlying discretization. Should be the domain and codomain of the Gram matrix.
     """
 
     log = util.classlogger
 
     def __init__(self, discr):
-        assert isinstance(discr, discrs.Discretization)
+        assert isinstance(discr, vecsp.Discretization)
         self.discr = discr
         """The underlying discretization."""
 
@@ -196,12 +196,12 @@ class HilbertPullBack(HilbertSpace):
 class DirectSum(HilbertSpace):
     """The direct sum of an arbirtary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying discretization will be the
-    `regpy.discrs.DirectSum` of the underlying discretizations of the summands.
+    `regpy.vecsp.DirectSum` of the underlying discretizations of the summands.
 
     Note that constructing DirectSum instances can be done more comfortably
     simply by adding `regpy.hilbert.HilbertSpace` instances and
     by multiplying them with scalars, but see the documentation for
-    `regpy.discrs.DirectSum` for the `flatten` parameter.
+    `regpy.vecsp.DirectSum` for the `flatten` parameter.
 
     Parameters
     ----------
@@ -213,10 +213,10 @@ class DirectSum(HilbertSpace):
     flatten : bool, optional
         Whether summands that are themselves DirectSums should be merged into
         this instance. Default: False.
-    discr : discrs.Discretization or callable, optional
+    discr : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be
         called with all summands' discretizations passed as arguments and should
-        return a discrs.DirectSum instance. Default: discrs.DirectSum.
+        return a vecsp.DirectSum instance. Default: vecsp.DirectSum.
     """
 
     def __init__(self, *args, flatten=False, discr=None):
@@ -237,8 +237,8 @@ class DirectSum(HilbertSpace):
                 self.weights.append(w)
 
         if discr is None:
-            discr = discrs.DirectSum
-        if isinstance(discr, discrs.Discretization):
+            discr = vecsp.DirectSum
+        if isinstance(discr, vecsp.Discretization):
             pass
         elif callable(discr):
             discr = discr(*(s.discr for s in self.summands))
@@ -277,10 +277,10 @@ class DirectSum(HilbertSpace):
 class TensorProd(HilbertSpace):
     """The Tensor product of an arbirtary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying discretization will be the
-    `regpy.discrs.Prod` of the underlying discretisations of the factors.
+    `regpy.vecsp.Prod` of the underlying discretisations of the factors.
 
     Important note! The implementation of the Gram operator makes use of the
-    TensorBasis Operator from regpy.discrs.tensor_bases in the sense, that
+    TensorBasis Operator from regpy.vecsp.tensor_bases in the sense, that
     the Gram matrix of the Tensor Product of discretised Hilbert spaces
     would be given as the Kronecker-product of all Gram matrices. Which is
     exacly given by the TensorBasis operator given that we interpret the
@@ -310,10 +310,10 @@ class TensorProd(HilbertSpace):
     flatten : bool, optional
         Whether factors that are themselves TensorProds should be merged into
         this instance. Default: False.
-    discr : discrs.Discretization or callable, optional
+    discr : vecsp.Discretization or callable, optional
         Either the underlying discretization or a factory function that will be
         called with all factors' discretizations passed as arguments and should
-        return a discrs.Prod instance. Default: discrs.Prod.
+        return a vecsp.Prod instance. Default: vecsp.Prod.
     """
 
     def __init__(self, *args, flatten=False, discr=None):
@@ -334,8 +334,8 @@ class TensorProd(HilbertSpace):
                 self.weights.append(w)
 
         if discr is None:
-            discr = discrs.Prod
-        if isinstance(discr, discrs.Discretization):
+            discr = vecsp.Prod
+        if isinstance(discr, vecsp.Discretization):
             pass
         elif callable(discr):
             discr = discr(*(s.discr for s in self.factors))
@@ -368,7 +368,7 @@ class TensorProd(HilbertSpace):
                 else:
                     basis.append((w**2 * s.gram)(v))
             bases.append(np.array(basis))
-        return discrs.tensor_bases.TensorBasis(discrs.Prod(*domains),discrs.Prod(*domains),bases)
+        return vecsp.tensor_bases.TensorBasis(vecsp.Prod(*domains),vecsp.Prod(*domains),bases)
 
     def __getitem__(self, item):
         return self.factors[item]
@@ -421,7 +421,7 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for discretizations of type `discr_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(discrs.UniformGrid)
+              @Sobolev.register(vecsp.UniformGrid)
               class SobolevUniformGrid(HilbertSpace):
                   ...
 
@@ -492,7 +492,7 @@ class AbstractSum(AbstractSpaceBase):
     Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
     construct AbstractSums.
 
-    This abstract space can only be called on a `regpy.discrs.DirectSum`, in which case it
+    This abstract space can only be called on a `regpy.vecsp.DirectSum`, in which case it
     constructs the corresponding `regpy.hilbert.DirectSum` obtained by matching up summands, e.g.
 
         (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
@@ -516,7 +516,7 @@ class AbstractSum(AbstractSpaceBase):
                 self.weights.append(w)
 
     def __call__(self, discr):
-        assert isinstance(discr, discrs.DirectSum)
+        assert isinstance(discr, vecsp.DirectSum)
         return DirectSum(
             *((w, s(d)) for w, s, d in zip(self.weights, self.summands, discr.summands)),
             discr=discr
@@ -568,11 +568,11 @@ def componentwise(dispatcher, cls=DirectSum):
     """Return a callable that iterates over the components of some discretization, constructing a
     `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
-        L2.register(discrs.DirectSum, componentwise(L2))
+        L2.register(vecsp.DirectSum, componentwise(L2))
 
-    to register a generic component-wise implementation of `L2` on `regpy.discrs.DirectSum`
+    to register a generic component-wise implementation of `L2` on `regpy.vecsp.DirectSum`
     discretizations. Any discretization that allows iterating over components using Python's
-    iterator protocol can be used, but `regpy.discrs.DirectSum` is the only example of that right
+    iterator protocol can be used, but `regpy.vecsp.DirectSum` is the only example of that right
     now.
 
     Parameters
@@ -596,7 +596,7 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.discrs.Discretization`."""
+    """`L2` implementation on a generic `regpy.vecsp.Discretization`."""
 
     def __init__(self, discr, weights=None):
         super().__init__(discr)
@@ -611,7 +611,7 @@ class L2Generic(HilbertSpace):
 
 
 class L2UniformGrid(HilbertSpace):
-    """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
+    """`L2` implementation on a `regpy.vecsp.UniformGrid`, taking into account the volume
     element.
     """
 
@@ -628,7 +628,7 @@ class L2UniformGrid(HilbertSpace):
 
 
 class SobolevUniformGrid(HilbertSpace):
-    """`Sobolev` implementation on a `regpy.discrs.UniformGrid`.
+    """`Sobolev` implementation on a `regpy.vecsp.UniformGrid`.
     """
     def __init__(self, discr, index=1, axes=None):
         super().__init__(discr)
@@ -680,7 +680,7 @@ class Hm_domain(HilbertSpace):
                 ext_bd_cond = 'Neum',
                 alpha = 1,
                 dtype = float):
-        assert grid is None or isinstance(grid,discrs.UniformGrid)
+        assert grid is None or isinstance(grid,vecsp.UniformGrid)
         if not (grid is None or mask is None):
             assert grid.shape == mask.shape
         assert type(index)== int and index>=0
@@ -703,7 +703,7 @@ class Hm_domain(HilbertSpace):
         self.dtype = grid.dtype if grid else dtype
         # impose exterior Neumann boundary conditions
         mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        discr = discrs.Discretization((np.count_nonzero(mask==1),),dtype= self.dtype)
+        discr = vecsp.Discretization((np.count_nonzero(mask==1),),dtype= self.dtype)
         super().__init__(discr)
         self.G = np.zeros(mask.shape,dtype=int)
         interior_ind = mask==1
@@ -785,7 +785,7 @@ class Hm0_domain(HilbertSpace):
         assert type(index)== int and index>=0
         if len(mask.shape) != 2:
             raise NotImplementedError
-        discr = discrs.Discretization((np.count_nonzero(mask),),dtype=dtype)
+        discr = vecsp.Discretization((np.count_nonzero(mask),),dtype=dtype)
         super().__init__(discr)
         self.mask = mask
         self.G = np.where(mask,1,0) # boolean to integer
@@ -855,17 +855,17 @@ def _register_spaces():
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
 
-    L2.register(discrs.Prod, componentwise(L2,cls=TensorProd))
-    L2.register(discrs.DirectSum, componentwise(L2))
-    L2.register(discrs.Discretization, L2Generic)
-    L2.register(discrs.UniformGrid, L2UniformGrid)
+    L2.register(vecsp.Prod, componentwise(L2,cls=TensorProd))
+    L2.register(vecsp.DirectSum, componentwise(L2))
+    L2.register(vecsp.Discretization, L2Generic)
+    L2.register(vecsp.UniformGrid, L2UniformGrid)
 
-    Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
-    Sobolev.register(discrs.UniformGrid, SobolevUniformGrid)
+    Sobolev.register(vecsp.DirectSum, componentwise(Sobolev))
+    Sobolev.register(vecsp.UniformGrid, SobolevUniformGrid)
 
-    Hm.register(discrs.Discretization,Hm)
-    Hm0.register(discrs.Discretization,Hm0)
+    Hm.register(vecsp.Discretization,Hm)
+    Hm0.register(vecsp.Discretization,Hm0)
 
-    L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
+    L2Boundary.register(vecsp.DirectSum, componentwise(L2Boundary))
 
-    SobolevBoundary.register(discrs.DirectSum, componentwise(SobolevBoundary))
+    SobolevBoundary.register(vecsp.DirectSum, componentwise(SobolevBoundary))

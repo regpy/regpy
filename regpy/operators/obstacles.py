@@ -1,7 +1,7 @@
 import numpy as np
 
-from regpy.discrs import UniformGrid
-from regpy.discrs.obstacles import StarTrigDiscr
+from regpy.vecsp import UniformGrid
+from regpy.vecsp.obstacles import StarTrigDiscr
 from regpy.operators import Operator
 
 
