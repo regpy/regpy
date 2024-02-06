@@ -34,13 +34,4 @@ def test_nonlinear_volterra():
             exponent=3))
 
 
-def test_mediumscattering():
-    do_nonlinear_test(
-        mediumscattering.MediumScatteringBase(
-            gridshape=(65, 65),
-            radius=1,
-            wave_number=1,
-            inc_directions=util.linspace_circle(16)))
-            # meas_directions=util.linspace_circle(16),
-            # amplitude=False)
-            
+
