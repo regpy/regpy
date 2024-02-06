@@ -26,7 +26,7 @@ proximal_pars: dict, optional
     Parameter dictionary passed to the computation of the prox-operator.
 """
 
-class Forward_Backward_Splitting(Solver):
+class ForwardBackwardSplitting(Solver):
     def __init__(self, setting, data_fidelity, penalty, init, tau = 1, regpar = 1, proximal_pars = None):
         
         super().__init__()

@@ -11,7 +11,7 @@ import numpy as np
 import regpy.stoprules as rules
 from regpy.operators.ngsolve import Coefficient
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.forward_backward_splitting import Forward_Backward_Splitting
+from regpy.solvers.forward_backward_splitting import ForwardBackwardSplitting
 from regpy.hilbert import L2, Sobolev
 from regpy.vecsps.ngsolve import NgsSpace
 from regpy.functionals import HilbertNorm, TV
@@ -66,7 +66,7 @@ proximal_pars = {
 tau = 10
 alpha = 5*10**(-6)
 
-solver = Forward_Backward_Splitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
+solver = ForwardBackwardSplitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
         rules.CountIterations(500) +
         rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
