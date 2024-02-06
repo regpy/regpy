@@ -182,8 +182,8 @@ class AbstractFunctional(AbstractFunctionalBase):
       as the concrete implementation of this abstract functional for discretizations of type `discr_type`
       or subclasses thereof, e.g.:
 
-              @TV.register(vecsp.UniformGrid)
-              class TVUniformGrid(HilbertSpace):
+              @TV.register(vecsp.UniformGridFcts)
+              class TVUniformGridFcts(HilbertSpace):
                   ...
 
     - AbstractFunctionals are callable. Calling them on a discretization and arbitrary optional
@@ -478,10 +478,10 @@ Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform
 '''
 from regpy.util import gradientuniformgrid
 from regpy.util import divergenceuniformgrid
-class TVUniformGrid(Functional):
+class TVUniformGridFcts(Functional):
     def __init__(self, domain, Hdomain=None):
         self.dim = np.size(domain.shape)
-        assert isinstance(domain, vecsp.UniformGrid)
+        assert isinstance(domain, vecsp.UniformGridFcts)
         super().__init__(domain)
         if Hdomain is not None:
             self.Hdomain = Hdomain
@@ -527,4 +527,4 @@ def _register_functionals():
     L1.register(vecsp.VectorSpace, L1Generic)
 
     TV.register(vecsp.VectorSpace, TVGeneric)
-    TV.register(vecsp.UniformGrid, TVUniformGrid)
+    TV.register(vecsp.UniformGridFcts, TVUniformGridFcts)

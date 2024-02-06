@@ -2,7 +2,7 @@ from regpy.solvers.irgnm import IrgnmCG
 
 from regpy.operators.fresnel import xray_phase_contrast
 from regpy.hilbert import L2
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
 
@@ -24,7 +24,7 @@ noise_level = 0.01      # Noise level in the simulated data
 
 
 # Uniform grid of unit-spacing
-grid = UniformGrid(np.arange(1024), np.arange(1024))
+grid = UniformGridFcts(np.arange(1024), np.arange(1024))
 
 # Forward operator
 op = xray_phase_contrast(grid, fresnelNumber)

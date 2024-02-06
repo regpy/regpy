@@ -421,8 +421,8 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for discretizations of type `discr_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(vecsp.UniformGrid)
-              class SobolevUniformGrid(HilbertSpace):
+              @Sobolev.register(vecsp.UniformGridFcts)
+              class SobolevUniformGridFcts(HilbertSpace):
                   ...
 
     - AbstractSpaces are callable. Calling them on a discretization and arbitrary optional
@@ -438,7 +438,7 @@ class AbstractSpace(AbstractSpaceBase):
           H = Sobolev(index=2)
 
       after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in turn will be the
-      same as something like `SobolevUniformGrid(grid, index=2)`, depending on the type of `grid`).
+      same as something like `SobolevUniformGridFcts(grid, index=2)`, depending on the type of `grid`).
 
     Parameters
     ----------
@@ -610,8 +610,8 @@ class L2Generic(HilbertSpace):
             return operators.Ptw_Multiplication(self.discr, self.weights)
 
 
-class L2UniformGrid(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsp.UniformGrid`, taking into account the volume
+class L2UniformGridFcts(HilbertSpace):
+    """`L2` implementation on a `regpy.vecsp.UniformGridFcts`, taking into account the volume
     element.
     """
 
@@ -627,8 +627,8 @@ class L2UniformGrid(HilbertSpace):
             return self.discr.volume_elem * operators.Ptw_Multiplication(self.discr, self.weights)
 
 
-class SobolevUniformGrid(HilbertSpace):
-    """`Sobolev` implementation on a `regpy.vecsp.UniformGrid`.
+class SobolevUniformGridFcts(HilbertSpace):
+    """`Sobolev` implementation on a `regpy.vecsp.UniformGridFcts`.
     """
     def __init__(self, discr, index=1, axes=None):
         super().__init__(discr)
@@ -658,7 +658,7 @@ class SobolevUniformGrid(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class Hm_domain(HilbertSpace):
-    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGrid grid.
+    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGridFcts grid.
     D is characterized by a binary or integer-valued mask: D={mask==1}.
     {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries.
     mask may also be boolean, in this case there are only Dirichlet boundaries.
@@ -680,7 +680,7 @@ class Hm_domain(HilbertSpace):
                 ext_bd_cond = 'Neum',
                 alpha = 1,
                 dtype = float):
-        assert grid is None or isinstance(grid,vecsp.UniformGrid)
+        assert grid is None or isinstance(grid,vecsp.UniformGridFcts)
         if not (grid is None or mask is None):
             assert grid.shape == mask.shape
         assert type(index)== int and index>=0
@@ -858,10 +858,10 @@ def _register_spaces():
     L2.register(vecsp.Prod, componentwise(L2,cls=TensorProd))
     L2.register(vecsp.DirectSum, componentwise(L2))
     L2.register(vecsp.VectorSpace, L2Generic)
-    L2.register(vecsp.UniformGrid, L2UniformGrid)
+    L2.register(vecsp.UniformGridFcts, L2UniformGridFcts)
 
     Sobolev.register(vecsp.DirectSum, componentwise(Sobolev))
-    Sobolev.register(vecsp.UniformGrid, SobolevUniformGrid)
+    Sobolev.register(vecsp.UniformGridFcts, SobolevUniformGridFcts)
 
     Hm.register(vecsp.VectorSpace,Hm)
     Hm0.register(vecsp.VectorSpace,Hm0)

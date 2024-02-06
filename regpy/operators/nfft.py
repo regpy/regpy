@@ -2,13 +2,13 @@ import numpy as np
 import pynfft
 
 from regpy.operators import Operator
-from regpy.vecsp import VectorSpace, UniformGrid
+from regpy.vecsp import VectorSpace, UniformGridFcts
 from regpy.util import memoized_property
 
 
 class NFFT(Operator):
     def __init__(self, grid, nodes, weights):
-        assert isinstance(grid, UniformGrid)
+        assert isinstance(grid, UniformGridFcts)
         assert nodes.shape[1] == grid.ndim
 
         # pynfft computes a sum of the form

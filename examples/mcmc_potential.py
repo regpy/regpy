@@ -16,7 +16,7 @@ from regpy.operators.obstacles import Potential
 from regpy.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 import regpy.stoprules as rules
 
 

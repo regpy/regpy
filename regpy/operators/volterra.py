@@ -1,7 +1,7 @@
 import numpy as np
 
 from regpy.operators import Operator
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 
 
 class Volterra(Operator):
@@ -17,14 +17,14 @@ class Volterra(Operator):
 
     Parameters
     ----------
-    domain : regpy.vecsp.UniformGrid
+    domain : regpy.vecsp.UniformGridFcts
         The domain on which the operator is defined. Must be one-dimensional.
     exponent : float
         The exponent \(n\). Default is 1.
     """
 
     def __init__(self, domain, exponent=1):
-        assert isinstance(domain, UniformGrid)
+        assert isinstance(domain, UniformGridFcts)
         assert domain.ndim == 1
         self.exponent = exponent
         """The exponent."""

@@ -1,6 +1,6 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.vecsp import VectorSpace,Grid,UniformGrid, Prod
+from regpy.vecsp import VectorSpace,Grid,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):
@@ -109,8 +109,8 @@ def BSplineBasis(k,t,dim=1,add_points=10):
     assert t.ndim == 1 and isinstance(k,int) and isinstance(dim,int) and isinstance(add_points,int)
     assert t.size > k+1
     n = t.size -k-1
-    coef_domain = Prod(*[UniformGrid(np.arange(n)) for i in range(dim)])
-    eval_domain = Prod(*[UniformGrid(np.linspace(t[0],t[-1],t.size*add_points)) for i in range(dim)])
+    coef_domain = Prod(*[UniformGridFcts(np.arange(n)) for i in range(dim)])
+    eval_domain = Prod(*[UniformGridFcts(np.linspace(t[0],t[-1],t.size*add_points)) for i in range(dim)])
     basis = np.zeros((t.size*add_points,n))
     j=0
     axis = eval_domain[0].axes[0]

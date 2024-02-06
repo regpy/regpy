@@ -1,12 +1,12 @@
 import numpy as np
 
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 import regpy.util as util
 
 
 # The coefficients of this curve are actually equidistant samples of the radial function,
-# so we can simply inherit from UniformGrid to get the Sobolev implementation for free.
-class StarTrigDiscr(UniformGrid):
+# so we can simply inherit from UniformGridFcts to get the Sobolev implementation for free.
+class StarTrigDiscr(UniformGridFcts):
     """A discretization representing star-shaped obstacles parametrized in a trigonometric basis.
     Will always be 1d an complex.
 

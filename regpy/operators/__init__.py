@@ -877,10 +877,10 @@ class InnerShift(Operator):
 
 class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
-        assert isinstance(domain, vecsp.UniformGrid)
+        assert isinstance(domain, vecsp.UniformGridFcts)
         frqs = domain.frequencies(centered=centered, axes=axes)
         if centered:
-            codomain = vecsp.UniformGrid(*frqs, dtype=complex)
+            codomain = vecsp.UniformGridFcts(*frqs, dtype=complex)
         else:
             # In non-centered case, the frequencies are not ascencing, so even using Grid here is slighty questionable.
             codomain = vecsp.Grid(*frqs, dtype=complex)

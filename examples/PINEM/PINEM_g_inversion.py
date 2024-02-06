@@ -8,7 +8,7 @@ from scipy.io import loadmat, savemat
 from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
-from regpy.vecsp import UniformGrid, DirectSum
+from regpy.vecsp import UniformGridFcts, DirectSum
 from regpy.vecsp.tensor_bases import ChebyshevBasis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, Hm_domain
 import regpy.hilbert as hilbert
@@ -135,7 +135,7 @@ def main():
         ampl_extension = OuterShift(ampl_proj.adjoint,prior_ampl)
 
         if using_polynomial_basis_for_phase:
-            coeff_grid = UniformGrid(np.arange(pol_degrees[0]),np.arange(pol_degrees[1]))
+            coeff_grid = UniformGridFcts(np.arange(pol_degrees[0]),np.arange(pol_degrees[1]))
             phase_domain = L2(coeff_grid)         
             phase_extension =  LegendreBasis(coeff_grid,grid)
             phase_projection = phase_extension.adjoint

@@ -1,6 +1,6 @@
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.tikhonov import TikhonovCG
 import regpy.stoprules as rules
@@ -13,7 +13,7 @@ def test_volterra_tikhonov_cg():
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s')
 
-    grid = UniformGrid((0, 2*np.pi, 200))
+    grid = UniformGridFcts((0, 2*np.pi, 200))
     op = Volterra(grid)
 
     exact_solution = np.sin(grid.coords[0])

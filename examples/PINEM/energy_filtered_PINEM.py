@@ -5,7 +5,7 @@ from regpy.solvers.irgnm import IrgnmCG
 from regpy.operators import CoordinateProjection
 from regpy.operators.PINEM import wave_field_reco_PINEM
 from regpy.hilbert import L2, Sobolev, Hm0_domain
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
 
@@ -33,7 +33,7 @@ def main():
     # define grid
     Xdim = 256
     Ydim = 256
-    grid = UniformGrid(np.linspace(0, 1, Xdim, endpoint=False),
+    grid = UniformGridFcts(np.linspace(0, 1, Xdim, endpoint=False),
                        np.linspace(0, 1, Ydim, endpoint=False)).real_space()
     cgrid = grid.complex_space()
     [Xco, Yco] = np.meshgrid(np.arange(-1, 1, 2/Xdim), np.arange(-1, 1, 2/Ydim))

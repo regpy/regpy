@@ -7,14 +7,14 @@ import numpy as np
 from regpy.mcmc import RandomWalk, StateHistory, adaptive_stepsize
 from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-op = Volterra(UniformGrid((0, 2 * np.pi, 200)))
+op = Volterra(UniformGridFcts((0, 2 * np.pi, 200)))
 
 # Simulate data
 exact_solution = np.sin(op.domain.coords[0])

@@ -1,14 +1,14 @@
 import numpy as np
 
 from regpy.operators import Exponential, FourierTransform, Ptw_Multiplication, RealPart, SquaredModulus, Operator
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 
 class PaddingOperator2D(Operator):
     r"""Operator that implements zero-padding for 2-dimensional numpy arrays.
 
     Parameters
     ----------
-    grid : regpy.vecsp.UniformGrid
+    grid : regpy.vecsp.UniformGridFcts
         The domain on which the operator is defined.
     pad_top=,pad_bottom,pad_left,pad_right: amount of padding in different directions
 
@@ -18,12 +18,12 @@ class PaddingOperator2D(Operator):
     """
 
     def __init__(self,grid, pad_amount = None):
-        assert isinstance(grid, UniformGrid)
+        assert isinstance(grid, UniformGridFcts)
         N1,N2 = grid.shape
         if pad_amount is None:
             pad_amount = ((0,0),(0,0))
         (self.pad_top,self.pad_bottom), (self.pad_left,self.pad_right) = pad_amount
-        padded_grid = UniformGrid(np.arange(N1+self.pad_top+self.pad_bottom)*grid.spacing[0] + grid.axes[0][0] - self.pad_bottom*grid.spacing[0],
+        padded_grid = UniformGridFcts(np.arange(N1+self.pad_top+self.pad_bottom)*grid.spacing[0] + grid.axes[0][0] - self.pad_bottom*grid.spacing[0],
                         np.arange(N2+self.pad_left+self.pad_right)*grid.spacing[1] + grid.axes[1][0] - self.pad_left*grid.spacing[1],
                         dtype=grid.dtype
                         )

@@ -24,13 +24,13 @@ def do_nonlinear_test(op):
 def test_linear_volterra():
     do_linear_test(
         volterra.Volterra(
-            domain=vecsp.UniformGrid(np.linspace(0, 2 * np.pi, 200))))
+            domain=vecsp.UniformGridFcts(np.linspace(0, 2 * np.pi, 200))))
 
 
 def test_nonlinear_volterra():
     do_nonlinear_test(
         volterra.Volterra(
-            domain=vecsp.UniformGrid(np.linspace(0, 2 * np.pi, 200)),
+            domain=vecsp.UniformGridFcts(np.linspace(0, 2 * np.pi, 200)),
             exponent=3))
 
 

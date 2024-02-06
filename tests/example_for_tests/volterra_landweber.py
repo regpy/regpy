@@ -7,7 +7,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.landweber import Landweber
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 
 
 def test_volterra_landweber():
@@ -16,7 +16,7 @@ def test_volterra_landweber():
         format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
     )
 
-    grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
+    grid = UniformGridFcts(np.linspace(0, 2 * np.pi, 200))
     op = Volterra(grid, exponent=3)
 
     exact_solution = np.sin(grid.coords[0])

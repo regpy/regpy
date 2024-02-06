@@ -9,7 +9,7 @@ import regpy.util as util
 from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.irgnm import IrgnmCG
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.hilbert import L2
 
 logging.basicConfig(
@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 
 # TODO dtype=complex?
-grid = UniformGrid((-1, 1, 100), (-1, 1, 100), dtype=complex)
+grid = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
 
 sobolev_index = 32
 noiselevel = 0.05

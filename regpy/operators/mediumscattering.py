@@ -72,7 +72,7 @@ class MediumScatteringBase(Operator):
                  normalization='helmholtz'):
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
-        grid = vecsp.UniformGrid(
+        grid = vecsp.UniformGridFcts(
             *(np.linspace(-2*radius, 2*radius, s, endpoint=False)
               for s in gridshape),
             dtype=complex
@@ -139,7 +139,7 @@ class MediumScatteringBase(Operator):
                 raise ValueError('coarse grid is not coarser than fine grid')
             assert all(isinstance(c, int) for c in coarseshape)
             self.coarse = True
-            self.coarsegrid = vecsp.UniformGrid(
+            self.coarsegrid = vecsp.UniformGridFcts(
                 *(np.linspace(-2*radius, 2*radius, c, endpoint=False)
                   for c in coarseshape)
             )
@@ -400,7 +400,7 @@ class MediumScatteringFixed(MediumScatteringBase):
         )
         """The farfield matrix."""
 
-        self.codomain = vecsp.UniformGrid(
+        self.codomain = vecsp.UniformGridFcts(
             axisdata=(self.farfield_directions, self.inc_directions),
             dtype=complex
         )

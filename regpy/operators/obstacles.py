@@ -1,6 +1,6 @@
 import numpy as np
 
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.vecsp.obstacles import StarTrigDiscr
 from regpy.operators import Operator
 
@@ -60,7 +60,7 @@ class Potential(Operator):
 
         super().__init__(
             domain=domain,
-            codomain=UniformGrid(np.linspace(0, 2 * np.pi, nmeas, endpoint=False))
+            codomain=UniformGridFcts(np.linspace(0, 2 * np.pi, nmeas, endpoint=False))
         )
 
         k = 1 + np.arange(self.nforward)

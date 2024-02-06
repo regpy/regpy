@@ -14,7 +14,7 @@ from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.fista import FISTA
 from regpy.hilbert import L2, Sobolev
-from regpy.vecsp import UniformGrid
+from regpy.vecsp import UniformGridFcts
 from regpy.functionals import HilbertNorm, TV
 
 logging.basicConfig(
@@ -22,7 +22,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
 )
 
-grid = UniformGrid(np.linspace(0, 2 * np.pi, 200))
+grid = UniformGridFcts(np.linspace(0, 2 * np.pi, 200))
 op = Volterra(grid, exponent=3)
 
 """Impulsive Noise"""

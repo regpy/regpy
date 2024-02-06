@@ -351,7 +351,7 @@ class Grid(VectorSpace):
         """The axisdata, if given."""
 
 
-class UniformGrid(Grid):
+class UniformGridFcts(Grid):
     """A discretization representing a rectangular grid with equidistant axes.
 
     All arguments are passed to the `Grid` constructor, but an error will be produced if any axis
@@ -377,7 +377,7 @@ class UniformGrid(Grid):
         centered : bool, optional
             Whether the resulting grid will have its zero frequency in the center or not. The
             advantage is that the resulting grid will have strictly increasing axes, making it
-            possible to define a `UniformGrid` instance in frequency space. The disadvantage is
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
             that `numpy.fft.fftshift` has to be used, which should generally be avoided for
             performance reasons. Default: `False`.
         axes : tuple of ints, optional
