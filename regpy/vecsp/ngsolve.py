@@ -1,4 +1,4 @@
-"""Finite element discretizations using NGSolve
+"""Finite element vector spaces using NGSolve
 
 This module implements a `regpy.vecsp.VectorSpace` instance for NGSolve spaces and corresponding
 Hilbert space structures. Operators are in the `regpy.operators.ngsolve` module.
@@ -14,12 +14,12 @@ from regpy.util import memoized_property, is_complex_dtype
 
 
 class NgsSpace(VectorSpace):
-    """A discretization wrapping an `ngsolve.FESpace`.
+    """A vector space wrapping an `ngsolve.FESpace`.
 
     Parameters
     ----------
     fes : ngsolve.FESpace
-       The wrapped NGSolve discretization.
+       The wrapped NGSolve vector space.
     """
 
     def __init__(self, fes, bdr=None):
@@ -102,7 +102,7 @@ class NgsSpace(VectorSpace):
         return domain
 
     @property
-    # By default, even a complex fes would read as a real discretization,
+    # By default, even a complex fes would read as a real vector space,
     # since NGSolve parses complexes as double-sized reals.
     # This overwrites the usual check.
     def is_complex(self):
@@ -116,7 +116,7 @@ class Matrix(Operator):
     Parameters
     ----------
     domain : NgsSpace
-        The discretization.
+        The vector space.
     form : ngsolve.BilinearForm or ngsolve.BaseMatrix
         The bilinear form or matrix. A bilinear form will be assembled.
     """

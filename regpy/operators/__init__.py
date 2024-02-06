@@ -64,7 +64,7 @@ class Operator:
     should return arrays that can be freely modified by the caller, i.e. should not share data
     with anything. Usually, this means they should allocate a new array for the return value.
 
-    Implementations can assume the arguments to be part of the specified discretizations, and return
+    Implementations can assume the arguments to be part of the specified vector spaces, and return
     values will be checked for consistency.
 
     The mechanism for derivatives and their adjoints is this: whenever a derivative is to be
@@ -107,7 +107,7 @@ class Operator:
 
         np.real(np.vdot(x, y))
 
-    Other inner product on discretizations are independent of both discretizations and operators,
+    Other inner product on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.
 
     Basic operator algebra is supported:
@@ -121,10 +121,10 @@ class Operator:
     Parameters
     ----------
     domain, codomain : regpy.vecsp.VectorSpace or None
-        The discretization on which the operator's arguements / values are defined. Using `None`
+        The vector space on which the operator's arguements / values are defined. Using `None`
         suppresses some consistency checks and is intended for ease of development, but should 
         not be used except as a temporary measure. Some constructions like direct sums will fail
-        if the discretizations are unknown.
+        if the vector spaces are unknown.
     linear : bool, optional
         Whether the operator is linear. Default: `False`.
     """
@@ -135,10 +135,10 @@ class Operator:
         assert not domain or isinstance(domain, vecsp.VectorSpace)
         assert not codomain or isinstance(codomain, vecsp.VectorSpace)
         self.domain = domain
-        """The discretization on which the operator is defined. Either a
+        """The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsp.VectorSpace` or `None`."""
         self.codomain = codomain
-        """The discretization on which the operator values are defined. Either
+        """The vector space on which the operator values are defined. Either
         a subclass of `regpy.vecsp.VectorSpace` or `None`."""
         self.linear = linear
         """Boolean indicating whether the operator is linear."""
@@ -544,14 +544,14 @@ class Pow(Operator):
         return Pow(self.op.inverse,self.exponent)
 
 class Identity(Operator):
-    """The identity operator on a discretization. 
+    """The identity operator on a vector space. 
     By default, a copy is performed to prevent callers from
     accidentally modifying the argument when modifying the return value.
 
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization.
+        The underlying vector space.
     """
 
     def __init__(self, domain, copy=True):
@@ -717,7 +717,7 @@ class CoordinateProjection(Operator):
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization
+        The underlying vector space
     mask : array-like
         Boolean mask of the subset onto which to project.
     """
@@ -748,7 +748,7 @@ class CoordinateMask(Operator):
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization
+        The underlying vector space
     mask : array-like
         Boolean mask of the subset onto which to project.
     """
@@ -776,7 +776,7 @@ class Ptw_Multiplication(Operator):
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization
+        The underlying vector space
     factor : array-like
         The factor by which to multiply. Can be anything that can be broadcast to `domain.shape`.
     """
@@ -923,7 +923,7 @@ class Power(Operator):
     power : float
         The exponent.
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization
+        The underlying vector space
     """
 
     def __init__(self, power, domain, integer = False):
@@ -985,9 +985,9 @@ class DirectSum(Operator):
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
     domain, codomain : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
-        The resulting discretization should be iterable, yielding the individual summands.
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.
         Default: vecsp.DirectSum.
     """
 
@@ -1080,9 +1080,9 @@ class Vector_of_operators(Operator):
     ----------
     *ops : tuple of Operator
     codomain : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
-        The resulting discretization should be iterable, yielding the individual summands.
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.
         Default: vecsp.DirectSum.
     """
 
@@ -1159,9 +1159,9 @@ class Matrix_of_operators(Operator):
     *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
            zero operators should be given by None's 
     domain, codomain : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
-        The resulting discretization should be iterable, yielding the individual summands.
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.
         Default: vecsp.DirectSum.
     """
 
@@ -1271,7 +1271,7 @@ class Exponential(Operator):
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization.
+        The underlying vector space.
     """
 
     def __init__(self, domain):
@@ -1374,9 +1374,9 @@ class Zero(Operator):
     Parameters
     ----------
     domain : regpy.vecsp.VectorSpace
-        The underlying discretization.
+        The underlying vector space.
     codomain : regpy.vecsp.VectorSpace, optional
-        The discretization if the codomain. Defaults to `domain`.
+        The vector space if the codomain. Defaults to `domain`.
     """
     def __init__(self, domain, codomain=None):
         if codomain is None:

@@ -159,7 +159,7 @@ class AbstractFunctionalBase:
     """Class representing abstract functionals without reference to a concrete implementation.
 
     Abstract functionals do not have elements, properties or any other structure, their sole purpose is
-    to pick the proper concrete implementation for a given discretization.
+    to pick the proper concrete implementation for a given vector space.
     """
 
     def __add__(self, other):
@@ -173,34 +173,34 @@ class AbstractFunctionalBase:
 
 
 class AbstractFunctional(AbstractFunctionalBase):
-    """An abstract functional that can be called on a discretization to get the corresponding
+    """An abstract functional that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractFunctionals provides two kinds of functionality:
 
     - A decorator method `register(discr_type)` that can be used to declare some class or function
-      as the concrete implementation of this abstract functional for discretizations of type `discr_type`
+      as the concrete implementation of this abstract functional for vector spaces of type `discr_type`
       or subclasses thereof, e.g.:
 
               @TV.register(vecsp.UniformGridFcts)
               class TVUniformGridFcts(HilbertSpace):
                   ...
 
-    - AbstractFunctionals are callable. Calling them on a discretization and arbitrary optional
+    - AbstractFunctionals are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.functionals.Functional` among all
       registered implementations. If there are implementations for multiple base classes of the
-      discretization type, the most specific one will be chosen. The chosen implementation will
-      then be called with the discretization and the keyword arguments, and the result will be
+      vector space type, the most specific one will be chosen. The chosen implementation will
+      then be called with the vector space and the keyword arguments, and the result will be
       returned.
 
-      If called without a discretization as positional argument, it returns a new abstract functional
+      If called without a vector space as positional argument, it returns a new abstract functional
       with all passed keyword arguments remembered as defaults.
 
     Parameters
     ----------
     name : str
         A name for this abstract functional. Currently, this is only used in error messages, when no
-        implementation was found for some discretization.
+        implementation was found for some vector space.
     """
 
     def __init__(self, name):
@@ -515,7 +515,7 @@ class TVUniformGridFcts(Functional):
             p = (p+update) / (1+np.abs(update))
         return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 
-"""Auxiliary method to register abstract functionals for various discretizations. Using the decorator
+"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
 method described in `AbstractFunctional` does not work due to circular depenencies when
 loading modules.
 

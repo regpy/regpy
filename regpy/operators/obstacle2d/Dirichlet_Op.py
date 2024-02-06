@@ -24,8 +24,8 @@ class DirichletOp(Operator):
         codomain = codomain or domain
 #        codomain.discr.iscomplex()
         self.kappa = 3            # wave number
-        self.N_ieq = 32           # 2*F_ieq is the number of discretization points
-        self.N_ieq_synth = 32     # 2*N_ieq is the number of discretization points for
+        self.N_ieq = 32           # 2*F_ieq is the number of vector space points
+        self.N_ieq_synth = 32     # 2*N_ieq is the number of vector space points for
         """the boundary integral equation when computing synthetic data (choose different
          to N_ieq to avoid invere crime)"""
         self.meas_directions = 64 # measurement directions

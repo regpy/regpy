@@ -27,7 +27,7 @@ class Potential(Operator):
     ----------
     domain : StarTrigDiscr
         The domain that represents the boundary curves. Actually, any star shaped curve
-        discretization that can compute derivatives along the curve and derivatives wrt. coefficient
+        vector space that can compute derivatives along the curve and derivatives wrt. coefficient
         perturbations works, but `StarTrigDiscr` is the only implementation currently available.
     radius : float
         The radius of the measurement circle.

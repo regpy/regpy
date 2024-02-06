@@ -51,9 +51,9 @@ class Parallel_vector_of_operators(Operator):
     ----------
     *ops : tuple of Operator
     codomain : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be called with all
-        summands' discretizations passed as arguments and should return a vecsp.DirectSum instance.
-        The resulting discretization should be iterable, yielding the individual summands.
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsp.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.
         Default: vecsp.DirectSum.
     """
 

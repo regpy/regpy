@@ -7,7 +7,7 @@ import regpy.util as util
 # The coefficients of this curve are actually equidistant samples of the radial function,
 # so we can simply inherit from UniformGridFcts to get the Sobolev implementation for free.
 class StarTrigDiscr(UniformGridFcts):
-    """A discretization representing star-shaped obstacles parametrized in a trigonometric basis.
+    """A vector space representing star-shaped obstacles parametrized in a trigonometric basis.
     Will always be 1d an complex.
 
     Parameters
@@ -41,7 +41,7 @@ class StarTrigCurve:
     Parameters
     ----------
     discr : StarTrigDiscr
-        The underlying discretization.
+        The underlying vector space.
     coeffs : array-like
         The coefficient array of the radial function.
     nvals : int, optional
@@ -54,7 +54,7 @@ class StarTrigCurve:
     def __init__(self, discr, coeffs, nvals=None, nderivs=0):
         assert isinstance(nderivs, int) and 0 <= nderivs <= 3
         self.discr = discr
-        """The discretization."""
+        """The vector space."""
         self.coeffs = coeffs
         """The coefficients."""
         self.nvals = nvals or self.discr.size

@@ -11,8 +11,8 @@ class TensorBasis(Operator):
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n)
     So that the operator TensorBasis maps the coefficient tensor c = (c_{k_1,....k_n}) to the tensor of function values
     (f(x))_{x in eval_domain}
-    eval_domain:    an instance of the class Prod in discretizations of size where each D_i has size M_i
-    coef_domain:    an instance of the class Prod in discretizations of size where each V_i has size N_i
+    eval_domain:    an instance of the class Prod in vector spaces of size where each D_i has size M_i
+    coef_domain:    an instance of the class Prod in vector spaces of size where each V_i has size N_i
     bases:          a list of matrices [B_1,..., B_n] where thematrix B_lis of size M_l x N_l and contains the function values
                     of the basis \{b^l_0, b^l_{M_l-1}} of the l-th coordinate:
                         B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}

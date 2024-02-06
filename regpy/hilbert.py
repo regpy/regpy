@@ -1,4 +1,4 @@
-"""Concrete and abstract Hilbert spaces on discretizations.
+"""Concrete and abstract Hilbert spaces on vector spaces.
 """
 
 from copy import copy
@@ -27,7 +27,7 @@ class HilbertSpace:
     Parameters
     ----------
     discr : regpy.vecsp.VectorSpace
-        The underlying discretization. Should be the domain and codomain of the Gram matrix.
+        The underlying vector space. Should be the domain and codomain of the Gram matrix.
     """
 
     log = util.classlogger
@@ -35,7 +35,7 @@ class HilbertSpace:
     def __init__(self, discr):
         assert isinstance(discr, vecsp.VectorSpace)
         self.discr = discr
-        """The underlying discretization."""
+        """The underlying vector space."""
 
     @property
     def gram(self):
@@ -195,8 +195,8 @@ class HilbertPullBack(HilbertSpace):
 
 class DirectSum(HilbertSpace):
     """The direct sum of an arbirtary number of hilbert spaces, with optional
-    scaling of the respective norms. The underlying discretization will be the
-    `regpy.vecsp.DirectSum` of the underlying discretizations of the summands.
+    scaling of the respective norms. The underlying vector space will be the
+    `regpy.vecsp.DirectSum` of the underlying vector spaces of the summands.
 
     Note that constructing DirectSum instances can be done more comfortably
     simply by adding `regpy.hilbert.HilbertSpace` instances and
@@ -214,8 +214,8 @@ class DirectSum(HilbertSpace):
         Whether summands that are themselves DirectSums should be merged into
         this instance. Default: False.
     discr : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be
-        called with all summands' discretizations passed as arguments and should
+        Either the underlying vector space or a factory function that will be
+        called with all summands' vector spaces passed as arguments and should
         return a vecsp.DirectSum instance. Default: vecsp.DirectSum.
     """
 
@@ -276,7 +276,7 @@ class DirectSum(HilbertSpace):
 
 class TensorProd(HilbertSpace):
     """The Tensor product of an arbirtary number of hilbert spaces, with optional
-    scaling of the respective norms. The underlying discretization will be the
+    scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsp.Prod` of the underlying discretisations of the factors.
 
     Important note! The implementation of the Gram operator makes use of the
@@ -311,8 +311,8 @@ class TensorProd(HilbertSpace):
         Whether factors that are themselves TensorProds should be merged into
         this instance. Default: False.
     discr : vecsp.VectorSpace or callable, optional
-        Either the underlying discretization or a factory function that will be
-        called with all factors' discretizations passed as arguments and should
+        Either the underlying vector space or a factory function that will be
+        called with all factors' vector spaces passed as arguments and should
         return a vecsp.Prod instance. Default: vecsp.Prod.
     """
 
@@ -381,11 +381,11 @@ class AbstractSpaceBase:
     """Class representing abstract hilbert spaces without reference to a concrete implementation.
 
     The motivation for using this construction is to be able to specify e.g. a Tikhonov penalty
-    without requiring knowledge of the concrete discretization the forward operator uses. See the
+    without requiring knowledge of the concrete vector space the forward operator uses. See the
     documentation of `AbstractSpace` for more details.
 
     Abstract spaces do not have elements, properties or any other structure, their sole purpose is
-    to pick the proper concrete implementation for a given discretization.
+    to pick the proper concrete implementation for a given vector space.
 
     This class only implements operator overloads so that scaling and adding abstract spaces works
     analogously to the concrete `HilbertSpace` instances, returning `AbstractSum` instances. The
@@ -412,27 +412,27 @@ class AbstractSpaceBase:
 
 
 class AbstractSpace(AbstractSpaceBase):
-    """An abstract Hilbert space that can be called on a discretization to get the corresponding
+    """An abstract Hilbert space that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractSpaces provide two kinds of functionality:
 
     - A decorator method `register(discr_type)` that can be used to declare some class or function
-      as the concrete implementation of this abstract space for discretizations of type `discr_type`
+      as the concrete implementation of this abstract space for vector spaces of type `discr_type`
       or subclasses thereof, e.g.:
 
               @Sobolev.register(vecsp.UniformGridFcts)
               class SobolevUniformGridFcts(HilbertSpace):
                   ...
 
-    - AbstractSpaces are callable. Calling them on a discretization and arbitrary optional
+    - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
       registered implementations. If there are implementations for multiple base classes of the
-      discretization type, the most specific one will be chosen. The chosen implementation will
-      then be called with the discretization and the keyword arguments, and the result will be
+      vector space type, the most specific one will be chosen. The chosen implementation will
+      then be called with the vector space and the keyword arguments, and the result will be
       returned.
 
-      If called without a discretization as positional argument, it returns a new abstract space
+      If called without a vector space as positional argument, it returns a new abstract space
       with all passed keyword arguments remembered as defaults. This allows one e.g. to write
 
           H = Sobolev(index=2)
@@ -444,7 +444,7 @@ class AbstractSpace(AbstractSpaceBase):
     ----------
     name : str
         A name for this abstract space. Currently, this is only used in error messages, when no
-        implementation was found for some discretization.
+        implementation was found for some vector space.
     """
 
     def __init__(self, name):
@@ -565,13 +565,13 @@ SobolevBoundary = AbstractSpace('SobolevBoundary')
 
 
 def componentwise(dispatcher, cls=DirectSum):
-    """Return a callable that iterates over the components of some discretization, constructing a
+    """Return a callable that iterates over the components of some vector space, constructing a
     `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
         L2.register(vecsp.DirectSum, componentwise(L2))
 
     to register a generic component-wise implementation of `L2` on `regpy.vecsp.DirectSum`
-    discretizations. Any discretization that allows iterating over components using Python's
+    vector spaces. Any vector space that allows iterating over components using Python's
     iterator protocol can be used, but `regpy.vecsp.DirectSum` is the only example of that right
     now.
 
@@ -579,7 +579,7 @@ def componentwise(dispatcher, cls=DirectSum):
     ----------
     dispatcher : callable
         The callable, most likely an `AbstractSpace`, to be applied in each component
-        discretization to construct the `HilberSpace` instances.
+        vector space to construct the `HilberSpace` instances.
     cls : callable, optional
         The callable, most likely a `HilbertSpace` subclass, to combine the individual
         `HilbertSpace` instances. Will be called with all spaces as arguments. Default: `DirectSum`.
@@ -848,7 +848,7 @@ class Hm0_domain(HilbertSpace):
             )
 
 def _register_spaces():
-    """Auxiliary method to register abstract spaces for various discretizations. Using the decorator
+    """Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
     loading modules.
 

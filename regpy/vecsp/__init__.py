@@ -1,6 +1,6 @@
 """VectorSpaces on which operators are defined.
 
-The classes in this module implement various discretizations on which the
+The classes in this module implement various vector spaces on which the
 `regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`,
 which represents plain arrays of some shape and dtype.
 
@@ -13,15 +13,15 @@ own.
 - Providing methods for generating elements of the proper shape and dtype, like zero arrays,
 random arrays or iterators over a basis.
 
-- Checking whether a given array is an element of the discretization. This is used for
+- Checking whether a given array is an element of the vector space. This is used for
 consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
 elements do not need to carry additional structure. Real arrays are considered as elements of
-complex discretizations.
+complex vector spaces.
 
-- Checking whether two discretizations are considered equal. This is used in consistency checks
+- Checking whether two vector spaces are considered equal. This is used in consistency checks
 e.g. for operator compositions.
 
-All discretizations are considered as real vector spaces, even when the dtype is complex. This
+All vector spaces are considered as real vector spaces, even when the dtype is complex. This
 affects iteration over a basis as well as functions returning the dimension or flattening arrays.
 """
 
@@ -41,7 +41,7 @@ class VectorSpace:
     Parameters
     ----------
     shape : int or tuple of ints
-        The shape of the arrays representing elements of this discretization.
+        The shape of the arrays representing elements of this vector space.
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
     """
@@ -56,13 +56,13 @@ class VectorSpace:
         # or other fancy dtypes
         assert np.issubdtype(dtype, np.inexact)
         self.dtype = dtype
-        """The discretization's dtype"""
+        """The vector space's dtype"""
         try:
             shape = tuple(shape)
         except TypeError:
             shape = (shape,)
         self.shape = shape
-        """The discretization's shape"""
+        """The vector space's shape"""
 
     def zeros(self, dtype=None):
         """Return the zero element of the space.
@@ -70,7 +70,7 @@ class VectorSpace:
         Parameters
         ----------
         dtype : data-type, optional
-            The dtype of the returned array. Default: the discretization's dtype.
+            The dtype of the returned array. Default: the vector space's dtype.
         """
         return np.zeros(self.shape, dtype=dtype or self.dtype)
 
@@ -80,7 +80,7 @@ class VectorSpace:
         Parameters
         ----------
         dtype : data-type, optional
-            The dtype of the returned array. Default: the discretization's dtype.
+            The dtype of the returned array. Default: the vector space's dtype.
         """
         return np.ones(self.shape, dtype=dtype or self.dtype)
 
@@ -90,12 +90,12 @@ class VectorSpace:
         Parameters
         ----------
         dtype : data-type, optional
-            The dtype of the returned array. Default: the discretization's dtype.
+            The dtype of the returned array. Default: the vector space's dtype.
         """
         return np.empty(self.shape, dtype=dtype or self.dtype)
 
     def iter_basis(self):
-        """Generator iterating over the standard basis of the discretization. For efficiency,
+        """Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy.
         """
@@ -121,7 +121,7 @@ class VectorSpace:
             array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
             this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
         dtype : data-type, optional
-            The dtype of the returned array. Default: the discretization's dtype.
+            The dtype of the returned array. Default: the vector space's dtype.
         """
         dtype = dtype or self.dtype
         r = rand(self.shape)
@@ -147,12 +147,12 @@ class VectorSpace:
 
     @property
     def size(self):
-        """The size of elements (as arrays) of this discretization."""
+        """The size of elements (as arrays) of this vector space."""
         return np.prod(self.shape)
 
     @property
     def realsize(self):
-        """The dimension of the discretization as a real vector space. For complex dtypes,
+        """The dimension of the vector space as a real vector space. For complex dtypes,
         this is twice the number of array elements. """
         if self.is_complex:
             return 2 * np.prod(self.shape)
@@ -166,7 +166,7 @@ class VectorSpace:
 
     @util.memoized_property
     def identity(self):
-        """The `regpy.operators.Identity` operator on this discretization. """
+        """The `regpy.operators.Identity` operator on this vector space. """
         return operators.Identity(self)
 
     def __contains__(self, x):
@@ -180,7 +180,7 @@ class VectorSpace:
             return False
 
     def flatten(self, x):
-        """Transform the array `x`, an element of the discretization, into a 1d real array. Inverse
+        """Transform the array `x`, an element of the vector space, into a 1d real array. Inverse
         to `fromflat`.
 
         Parameters
@@ -203,11 +203,11 @@ class VectorSpace:
                 aux.real = x
                 return util.complex2real(aux).ravel()
         elif util.is_complex_dtype(x.dtype):
-            raise TypeError('Real discretization can not handle complex vectors')
+            raise TypeError('Real vector space can not handle complex vectors')
         return x.ravel()
 
     def fromflat(self, x):
-        """Transform a real 1d array into an element of the discretization. Inverse to `flatten`.
+        """Transform a real 1d array into an element of the vector space. Inverse to `flatten`.
 
         Parameters
         ----------
@@ -227,12 +227,12 @@ class VectorSpace:
             return x.reshape(self.shape)
 
     def complex_space(self):
-        """Compute the corresponding complex discretization.
+        """Compute the corresponding complex vector space.
 
         Returns
         -------
         VectorSpace
-            The complex space corresponding to this discretization as a shallow copy with modified
+            The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
         other = copy(self)
@@ -240,12 +240,12 @@ class VectorSpace:
         return other
 
     def real_space(self):
-        """Compute the corresponding real discretization.
+        """Compute the corresponding real vector space.
 
         Returns
         -------
         VectorSpace
-            The real space corresponding to this discretization as a shallow copy with modified
+            The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
         other = copy(self)
@@ -282,7 +282,7 @@ class VectorSpace:
 
 
 class GridFcts(VectorSpace):
-    """A discretization representing a rectangular grid.
+    """A vector space representing a rectangular grid.
 
     Parameters
     ----------
@@ -297,11 +297,11 @@ class GridFcts(VectorSpace):
          parameter. If given, there must be one array for each dimension, the size of the first axis
          of which must match the respective dimension's length. Besides that, no further structure
          is imposed or assumed, this parameter exists solely to keep everything related to the
-         discretization in one place.
+         vector space in one place.
 
          If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
-        The dtype of the discretization.
+        The dtype of the vector space.
     """
 
     def __init__(self, *coords, axisdata=None, dtype=float):
@@ -352,7 +352,7 @@ class GridFcts(VectorSpace):
 
 
 class UniformGridFcts(GridFcts):
-    """A discretization representing a rectangular grid with equidistant axes.
+    """A vector space representing a rectangular grid with equidistant axes.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
     is not uniform.
@@ -406,7 +406,7 @@ class UniformGridFcts(GridFcts):
 
 
 class DirectSum(VectorSpace):
-    """The direct sum of an arbirtary number of discretizations.
+    """The direct sum of an arbirtary number of vector spaces.
 
     Elements of the direct sum will always be 1d real arrays.
 
@@ -416,12 +416,12 @@ class DirectSum(VectorSpace):
     (see below), since otherwise the number of summands is not fixed.
 
     DirectSum instances can be indexed and iterated over, returning / yielding the component
-    discretizations.
+    vector spaces.
 
     Parameters
     ----------
     *summands : tuple of VectorSpace instances
-        The discretizations to be summed.
+        The vector spaces to be summed.
     flatten : bool, optional
         Whether summands that are themselves `DirectSum`s should be merged into this instance. If
         False, DirectSum is not associative, but the join and split methods behave more
@@ -503,16 +503,16 @@ class DirectSum(VectorSpace):
         return len(self.summands)
 
 class Prod(VectorSpace):
-    """The tensor product of an arbirtary number of discretizations.
+    """The tensor product of an arbirtary number of vector spaces.
 
     Elements of the tensor product will always be real arrays with in n-dim where n is number of factors.
 
-    Prod instances can be indexed and iterated over, returning / yielding the component discretizations.
+    Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.
 
     Parameters
     ----------
     *factors : tuple of VectorSpace instances
-        The discretizations to be factored.
+        The vector spaces to be factored.
     flatten : bool, optional
         Whether factors that are themselves `Prod`s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
         Default: False
