@@ -2,7 +2,7 @@ import numpy as np
 from scipy.io import loadmat
 from regpy.operators import Operator
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
-from regpy.operators import Operator, SquaredModulus, Exponential, Ptw_Multiplication, Vector_of_operators
+from regpy.operators import Operator, SquaredModulus, Exponential, PtwMultiplication, Vector_of_operators
 from regpy.vecsps import UniformGridFcts, DirectSum
 
 def load_simulated_g(filename):
@@ -42,7 +42,7 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
             parallel=parallel
         )
         if using_gabs_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_a) * SquaredModulus(grid.complex_space())
+            op2 = PtwMultiplication(grid,1.0-mask_a) * SquaredModulus(grid.complex_space())
             op = Vector_of_operators([op2, op])
         return op, grid, g_map, g_map, mask_a, np.ones_like(mask_a), opdata
     else:
@@ -54,7 +54,7 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
         exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                         np.unwrap(np.angle(g_map.T)).T)
         if using_gabs_measurement:
-            op2 = Ptw_Multiplication(grid,1.0-mask_a) * Exponential(grid.real_space) * ForgetSecond(grid,grid)
+            op2 = PtwMultiplication(grid,1.0-mask_a) * Exponential(grid.real_space) * ForgetSecond(grid,grid)
             op = Vector_of_operators([op2, op])
 
         return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata

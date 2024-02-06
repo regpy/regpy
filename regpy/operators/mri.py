@@ -1,6 +1,6 @@
 import numpy as np
 
-from regpy.operators import CoordinateProjection, DirectSum, FourierTransform, Ptw_Multiplication, Operator
+from regpy.operators import CoordinateProjection, DirectSum, FourierTransform, PtwMultiplication, Operator
 from regpy import util, vecsps
 
 
@@ -120,7 +120,7 @@ def sobolev_smoother(codomain, sobolev_index, factor=None, centered=False):
         mulfactor = ( 1 + factor * np.linalg.norm(ft.codomain.coords[1:]/2./np.amax(np.abs(ft.codomain.coords[1:])), axis=0)**2
                                                  )**(-sobolev_index / 2)
 
-    mul = Ptw_Multiplication(ft.codomain, mulfactor)
+    mul = PtwMultiplication(ft.codomain, mulfactor)
     return DirectSum(grid.identity, ft.inverse * mul, codomain=codomain)
 
 

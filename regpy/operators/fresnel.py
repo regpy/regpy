@@ -1,6 +1,6 @@
 import numpy as np
 
-from regpy.operators import Exponential, FourierTransform, Ptw_Multiplication, RealPart, SquaredModulus, Operator
+from regpy.operators import Exponential, FourierTransform, PtwMultiplication, RealPart, SquaredModulus, Operator
 from regpy.vecsps import UniformGridFcts
 
 class PaddingOperator2D(Operator):
@@ -82,7 +82,7 @@ def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
         propagation_factor = np.exp(
             (-1j * np.pi / fresnel_number) * (frqs[0]**2 + frqs[1]**2)
         )
-        fresnel_multiplier = Ptw_Multiplication(ft.codomain, propagation_factor)
+        fresnel_multiplier = PtwMultiplication(ft.codomain, propagation_factor)
 
         return ft.adjoint * fresnel_multiplier * ft
     else:
@@ -92,7 +92,7 @@ def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
         propagation_factor = np.exp(
             (-1j * np.pi / fresnel_number) * (frqs[0]**2 + frqs[1]**2)
         )
-        fresnel_multiplier = Ptw_Multiplication(ft.codomain, propagation_factor)
+        fresnel_multiplier = PtwMultiplication(ft.codomain, propagation_factor)
 
         return pad_op.adjoint * ft.adjoint * fresnel_multiplier * ft * pad_op
 
@@ -143,7 +143,7 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
     # Operator that maps the phase-image to the corresponding wave-field behind the object
     # phi |--> psi_0 = exp(-(1j+absorption_fraction) * phi)
 
-    image_to_wavefield_op = Exponential(domain_complex) *Ptw_Multiplication(domain_complex, -1j - absorption_fraction)
+    image_to_wavefield_op = Exponential(domain_complex) *PtwMultiplication(domain_complex, -1j - absorption_fraction)
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
     fresnel_prop = fresnel_propagator(domain_complex, fresnel_number)

@@ -247,7 +247,7 @@ class Operator:
         elif isinstance(other, Operator):
             return Composition(self, other)
         elif np.isscalar(other) or isinstance(other, np.ndarray):
-            return self * Ptw_Multiplication(self.domain, other)
+            return self * PtwMultiplication(self.domain, other)
         else:
             return NotImplemented
 
@@ -258,7 +258,7 @@ class Operator:
             else:
                 return LinearCombination((other, self))         
         elif isinstance(other, np.ndarray):
-            return Ptw_Multiplication(self.codomain, other) * self
+            return PtwMultiplication(self.codomain, other) * self
         elif isinstance(other, Operator):
             return Composition(other, self) 
         else:
@@ -770,7 +770,7 @@ class CoordinateMask(Operator):
         return util.make_repr(self, self.domain)
 
 
-class Ptw_Multiplication(Operator):
+class PtwMultiplication(Operator):
     """A multiplication operator by a constant factor.
 
     Parameters
@@ -803,7 +803,7 @@ class Ptw_Multiplication(Operator):
     def inverse(self):
         sav = np.seterr(divide='raise')
         try:
-            return Ptw_Multiplication(self.domain, 1 / self.factor)
+            return PtwMultiplication(self.domain, 1 / self.factor)
         finally:
             np.seterr(**sav)
 

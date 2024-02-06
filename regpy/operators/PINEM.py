@@ -5,7 +5,7 @@ from numpy.core.defchararray import endswith
 
 from regpy.vecsps import DirectSum as DirectSumSpace 
 from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
-from regpy.operators import Ptw_Multiplication, DirectSum, SquaredModulus, Exponential, Power
+from regpy.operators import PtwMultiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import Vector_of_operators, Matrix_of_operators, Adjoint 
 from regpy.operators.parallel_operators import Parallel_vector_of_operators
 from regpy.operators.fresnel import fresnel_propagator
@@ -207,7 +207,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
             op_list.append(
                 SquaredModulus(cdomain)
                 *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
-                *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
+                *PtwMultiplication(cdomain,A_Psi0_Multiplier)
                 *Nemitzky_op_for_g(n,cdomain)
                 *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
@@ -239,7 +239,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier,
         op_list.append(
             SquaredModulus(cdomain)
             *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
-            *Ptw_Multiplication(cdomain,A_Psi0_Multiplier)
+            *PtwMultiplication(cdomain,A_Psi0_Multiplier)
             *complex_Nemitzky_op_for_g(n,cdomain)
             )
     if parallel:

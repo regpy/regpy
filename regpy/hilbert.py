@@ -607,7 +607,7 @@ class L2Generic(HilbertSpace):
         if self.weights is None:
             return self.vecsp.identity
         else:
-            return operators.Ptw_Multiplication(self.vecsp, self.weights)
+            return operators.PtwMultiplication(self.vecsp, self.weights)
 
 
 class L2UniformGridFcts(HilbertSpace):
@@ -624,7 +624,7 @@ class L2UniformGridFcts(HilbertSpace):
         if self.weights is None:
             return self.vecsp.volume_elem * self.vecsp.identity
         else:
-            return self.vecsp.volume_elem * operators.Ptw_Multiplication(self.vecsp, self.weights)
+            return self.vecsp.volume_elem * operators.PtwMultiplication(self.vecsp, self.weights)
 
 
 class SobolevUniformGridFcts(HilbertSpace):
@@ -649,7 +649,7 @@ class SobolevUniformGridFcts(HilbertSpace):
     @util.memoized_property
     def gram(self):
         ft = operators.FourierTransform(self.vecsp, axes=self.axes)
-        mul = operators.Ptw_Multiplication(
+        mul = operators.PtwMultiplication(
             ft.codomain,
             self.vecsp.volume_elem * (
                 1 + np.linalg.norm(ft.codomain.coords[self.axes], axis=0)**2

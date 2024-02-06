@@ -83,7 +83,7 @@ class Functional:
         elif isinstance(other, operators.Operator):
             return Composed(self, other)
         elif np.isscalar(other) or isinstance(other, np.ndarray):
-            return self * operators.Ptw_Multiplication(self.domain, other)
+            return self * operators.PtwMultiplication(self.domain, other)
         return NotImplemented
 
     def __rmul__(self, other):
