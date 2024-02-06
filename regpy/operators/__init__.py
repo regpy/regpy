@@ -1065,7 +1065,7 @@ class DirectSum(Operator):
     def __iter__(self):
         return iter(self.ops)
 
-class Vector_of_operators(Operator):
+class VectorOfOperators(Operator):
     """Vector of operators. For
 
         T_i : X -> Y_i
@@ -1143,14 +1143,14 @@ class Vector_of_operators(Operator):
     def __iter__(self):
         return iter(self.ops)
 
-class Matrix_of_operators(Operator):
+class MatrixOfOperators(Operator):
     """Matrix of operators. For
 
         T_ij : X_j -> Y_i
 
     we define
 
-        T := Matrix_of_operators(T_ij) : DirectSum(X_j) -> DirectSum(Y_i)
+        T := MatrixOfOperators(T_ij) : DirectSum(X_j) -> DirectSum(Y_i)
 
     by `T(x)_i := \sum_j T_ij(x_j)`. 
     

@@ -35,9 +35,9 @@ class Operator_as_worker(mp.Process):
             else:
                 raise TypeError(self.name+': unknown command ',command[0])
 
-class Parallel_vector_of_operators(Operator):
+class Parallel_vectorOfOperators(Operator):
     """Vector of operators in which all components are evaluated in parallel. 
-    The functionality is identical to the sequential analog Vector_of_operators: For
+    The functionality is identical to the sequential analog VectorOfOperators: For
 
         T_i : X -> Y_i
 
