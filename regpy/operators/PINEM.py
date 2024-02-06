@@ -7,7 +7,7 @@ from regpy.vecsps import DirectSum as DirectSumSpace
 from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
 from regpy.operators import PtwMultiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import VectorOfOperators, MatrixOfOperators, Adjoint 
-from regpy.operators.parallel_operators import Parallel_vectorOfOperators
+from regpy.operators.parallel_operators import ParallelVectorOfOperators
 from regpy.operators.fresnel import fresnel_propagator
 from scipy.special import jv
 
@@ -35,7 +35,7 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
     detection_op1 = SquaredModulus(domain)
     detection_op2 = SquaredModulus(domain)
     if parallel:
-        vec = Parallel_vectorOfOperators(
+        vec = ParallelVectorOfOperators(
             [detection_op0,
             detection_op1*fresnel_prop1, 
             detection_op2*fresnel_prop2]
@@ -211,7 +211,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
                 *Nemitzky_op_for_g(n,cdomain)
                 *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
-        g_to_modes = Parallel_vectorOfOperators(op_list)
+        g_to_modes = ParallelVectorOfOperators(op_list)
     else:
         g_to_modes = VectorOfOperators(op_list)
     op_mat = []
@@ -243,7 +243,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier,
             *complex_Nemitzky_op_for_g(n,cdomain)
             )
     if parallel:
-        g_to_modes = Parallel_vectorOfOperators(op_list)
+        g_to_modes = ParallelVectorOfOperators(op_list)
     else:
         g_to_modes = VectorOfOperators(op_list)
     op_mat = []
