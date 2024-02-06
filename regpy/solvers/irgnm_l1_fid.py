@@ -1,4 +1,4 @@
-"""IRGNM_L1_fid solver """
+"""IrgnmL1Fid solver """
 
 import logging
 import numpy as np
@@ -7,11 +7,11 @@ import scipy.optimize
 
 from regpy.solvers import Solver
 
-__all__ = ['IRGNM_L1_fid']
+__all__ = ['IrgnmL1Fid']
 
 
-class IRGNM_L1_fid(Solver):
-    """The IRGNM_L1_fid method.
+class IrgnmL1Fid(Solver):
+    """The IrgnmL1Fid method.
 
     Solves the potentially non-linear, ill-posed equation:
 
@@ -142,7 +142,7 @@ class IRGNM_L1_fid(Solver):
         return 0.5*np.dot(x.T,np.dot(self._Hess,x)) - np.dot(self._rhs.T,x)
 
     def next(self):
-        """Run a single IRGNM_L1_fid iteration.
+        """Run a single IrgnmL1Fid iteration.
 
         The actual computation happens in ``self.update``. In the end,
         ``self.x`` is updated as well as ``self.y``.
@@ -150,7 +150,7 @@ class IRGNM_L1_fid(Solver):
         Returns
         -------
         bool
-            Always True, as the IRGNM_L1_fid method never stops on its own.
+            Always True, as the IrgnmL1Fid method never stops on its own.
 
         """
         self.update()
