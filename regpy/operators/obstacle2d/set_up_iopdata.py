@@ -52,11 +52,11 @@ def setup_iop_data(bd,kappa):
 
     kdist=kdist.reshape((dim, dim))
 
-    return dat_object(kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
+    return DatObject(kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
                       kdist )
 
 
-class dat_object(object):
+class DatObject(object):
     def __init__(self, kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
                       kdist):
         self.kappa=kappa
