@@ -7,6 +7,7 @@ setuptools.setup(
     install_requires=[
         'numpy>=1.14,<2.0',
         'scipy>=1.1,<2.0',
+        'pytest>=8.0,<9.0',
     ],
     extras_require={
         'nfft': [
