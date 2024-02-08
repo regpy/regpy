@@ -54,7 +54,7 @@ class TensorBasis(Operator):
             return np.einsum(self.sumrule,G,*self.bases,optimize=self.path)
 
 
-def ChebyshevBasis(coef_domain,eval_domain,dtype=float):
+def chebyshev_basis(coef_domain,eval_domain,dtype=float):
     """ Implements a tensor basis of Chebyshev polynomials
     """
     assert isinstance(coef_domain,Prod)

@@ -9,7 +9,7 @@ from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
 from regpy.vecsps import UniformGridFcts, DirectSum
-from regpy.vecsps.tensor_bases import ChebyshevBasis, LegendreBasis
+from regpy.vecsps.tensor_bases import chebyshev_basis, LegendreBasis
 from regpy.hilbert import L2, Sobolev, HmDomain
 import regpy.hilbert as hilbert
 from regpy.operators import Identity
