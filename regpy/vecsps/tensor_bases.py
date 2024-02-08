@@ -73,7 +73,7 @@ def chebyshev_basis(coef_domain,eval_domain,dtype=float):
         bases.append(B_i)
     return TensorBasis(coef_domain,eval_domain,bases,dtype)
 
-def LegendreBasis(coef_domain,eval_domain,dtype=float):
+def legendre_basis(coef_domain,eval_domain,dtype=float):
     """ Implements a tensor basis of Legendre polynomials
     """
     assert isinstance(coef_domain,Prod)
