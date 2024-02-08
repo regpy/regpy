@@ -189,7 +189,7 @@ class ComplexNemitzkyOpForG(Operator):
             return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
                 + self._dir_g*np.real(self._factor_pow*y)
 
-def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
+def PINEM_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
      N=1,list_of_filters=None,parallel = False):
     assert not domain.is_complex
     cdomain = domain.complex_space()
@@ -207,7 +207,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
             op_list.append(
                 SquaredModulus(cdomain)
                 *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
-                *PtwMultiplication(cdomain,A_Psi0_Multiplier)
+                *PtwMultiplication(cdomain,a_psi0_multiplier)
                 *NemitzkyOpForG(n,cdomain)
                 *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
@@ -222,7 +222,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
 
     return modes_to_data*g_to_modes
 
-def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier, \
+def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     N=1,list_of_filters=None,parallel = False):
 # the elements of list_of_filters are lists of modes which are incoherently superposed, 
 # i.e. the squares or the propagated fields are added
@@ -239,7 +239,7 @@ def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,A_Psi0_Multiplier,
         op_list.append(
             SquaredModulus(cdomain)
             *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
-            *PtwMultiplication(cdomain,A_Psi0_Multiplier)
+            *PtwMultiplication(cdomain,a_psi0_multiplier)
             *ComplexNemitzkyOpForG(n,cdomain)
             )
     if parallel:

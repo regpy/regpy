@@ -27,13 +27,13 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
     #fresnel_number = 1./(defocus * lambda_electron)
     # Uniform grid
     N1,N2 = mask.shape
-    A_Psi0_Multiplier = mask.astype(complex)
+    a_psi0_multiplier = mask.astype(complex)
 
     #grid = UniformGridFcts(np.linspace(0, 1, N1, endpoint=False),
     #                       np.linspace(0, 1, N2, endpoint=False))
     grid = UniformGridFcts(np.arange(N1)*px_size[0][0],np.arange(N2)*px_size[0][1])
     pad_amount = ((50,0),(0,0))
-    opdata = [grid, fresnel_number,pad_amount,A_Psi0_Multiplier]
+    opdata = [grid, fresnel_number,pad_amount,a_psi0_multiplier]
     
     if g_is_complex:
         op = complex_PINEM_g_to_data(*opdata, 
