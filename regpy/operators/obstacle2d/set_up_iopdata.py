@@ -15,9 +15,9 @@ def setup_iop_data(bd,kappa):
     t2=np.matlib.repmat(bd.z[1,:].T,1,dim).reshape(dim**2)-np.matlib.repmat(bd.z[1,:], dim, 1).reshape(dim**2)
     kdist = kappa*np.sqrt(t1**2 + t2**2)
     bessj0_kdist = j0(kdist)
-    bessH0 = bessj0_kdist + complex(0, 1) * y0(kdist, bessj0_kdist)
-    bessH0=bessH0.reshape((dim, dim))
-    #bessH0 = besselh(0,1,dat.kdist)
+    bess_H0 = bessj0_kdist + complex(0, 1) * y0(kdist, bessj0_kdist)
+    bess_H0=bess_H0.reshape((dim, dim))
+    #bess_H0 = besselh(0,1,dat.kdist)
 
     bessj1_kdist= j1(kdist)
     """bessH1quot=np.zeros(dim**2)
@@ -31,7 +31,7 @@ def setup_iop_data(bd,kappa):
     bessH1quot=bessH1quot.reshape((dim, dim))
     #bessH1quot = besselh(1,1,dat.kdist) / dat.kdist
     for j in range(0, dim):
-        bessH0[j,j]=1
+        bess_H0[j,j]=1
 
 
     """set up prototyp of the singularity of boundary integral operators"""
@@ -52,17 +52,17 @@ def setup_iop_data(bd,kappa):
 
     kdist=kdist.reshape((dim, dim))
 
-    return DatObject(kappa, euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
+    return DatObject(kappa, euler_gamma, logsin_weights, logsin, bess_H0, bessH1quot, \
                       kdist )
 
 
 class DatObject(object):
-    def __init__(self, kappa, euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
+    def __init__(self, kappa, euler_gamma, logsin_weights, logsin, bess_H0, bessH1quot, \
                       kdist):
         self.kappa=kappa
         self.euler_gamma=euler_gamma
         self.logsin_weights=logsin_weights
         self.logsin=logsin
-        self.bessH0=bessH0
+        self.bess_H0=bess_H0
         self.bessH1quot=bessH1quot
         self.kdist=kdist

@@ -18,8 +18,8 @@ def op_S(bd,dat):
     % complex symmetric matrix """
 
     dim = np.size(bd.z,1)
-    M1 = -1/(2*np.pi)*dat.bessH0.real
-    M = complex(0,1)/2*dat.bessH0
+    M1 = -1/(2*np.pi)*dat.bess_H0.real
+    M = complex(0,1)/2*dat.bess_H0
     M1_logsin = M1* dat.logsin
     M2 = M - M1_logsin
     for j  in range(0, dim):
@@ -74,10 +74,10 @@ def op_T(bd,dat):
 
     N_tilde = kappa*(z.T.dot(zp) -  np.ones((dim,1)).dot(np.sum(z*zp, 0).reshape((1, dim))) / (dat.kdist+1e-5))
     N_tilde = -N_tilde.T.dot(N_tilde)
-    Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bessH0 - 2*kappa**2*dat.bessH1quot) \
+    Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bess_H0 - 2*kappa**2*dat.bessH1quot) \
         +complex(0,1)*kappa**2/2*(zp.T.dot(zp)) * dat.bessH1quot  \
         + scla.toeplitz(np.append(np.asarray([np.pi/2]), 1/(4*np.pi)*np.sin(np.pi*np.arange(1, dim)/dim)**(-2)))
-    N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bessH0.real-2*kappa**2*dat.bessH1quot.real)  \
+    N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bess_H0.real-2*kappa**2*dat.bessH1quot.real)  \
         - kappa**2/(2*np.pi)* (zp.T.dot(zp)) * dat.bessH1quot.real
     N2 = Nker - N1*dat.logsin
     for j in range(0, dim):
