@@ -48,19 +48,19 @@ def setup_iop_data(bd,kappa):
     logsin_weights = scla.toeplitz(-2*(s + sign/dim)/dim)
 
     #euler constant 'eulergamma'
-    Euler_gamma =  0.577215664901532860606512
+    euler_gamma =  0.577215664901532860606512
 
     kdist=kdist.reshape((dim, dim))
 
-    return DatObject(kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
+    return DatObject(kappa, euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
                       kdist )
 
 
 class DatObject(object):
-    def __init__(self, kappa, Euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
+    def __init__(self, kappa, euler_gamma, logsin_weights, logsin, bessH0, bessH1quot, \
                       kdist):
         self.kappa=kappa
-        self.Euler_gamma=Euler_gamma
+        self.euler_gamma=euler_gamma
         self.logsin_weights=logsin_weights
         self.logsin=logsin
         self.bessH0=bessH0

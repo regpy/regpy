@@ -23,7 +23,7 @@ def op_S(bd,dat):
     M1_logsin = M1* dat.logsin
     M2 = M - M1_logsin
     for j  in range(0, dim):
-        M2[j, j] = (complex(0, 1)/2 - dat.Euler_gamma/np.pi - 1/np.pi*np.log(dat.kappa/2*bd.zpabs[j]))
+        M2[j, j] = (complex(0, 1)/2 - dat.euler_gamma/np.pi - 1/np.pi*np.log(dat.kappa/2*bd.zpabs[j]))
 
     S =  2*np.pi* (M1 * dat.logsin_weights + M2/dim) * (bd.zpabs.T.dot(bd.zpabs))
     return S
@@ -83,7 +83,7 @@ def op_T(bd,dat):
     for j in range(0, dim):
         N1[j, j] = -kappa**2*zpabs[j]**2/(4*np.pi)
         N2[j, j] = kappa**2*zpabs[j]**2/(4*np.pi)  \
-            * ( np.pi*complex(0,1) -1 -2*dat.Euler_gamma - 2*np.log(kappa*zpabs[j]/2) ) \
+            * ( np.pi*complex(0,1) -1 -2*dat.euler_gamma - 2*np.log(kappa*zpabs[j]/2) ) \
             + 1/12/np.pi +  1/(2*np.pi) * np.sum(zp[:,j]*zpp[:,j])**2 / zpabs[j]**4 \
              - 1/(4*np.pi) * np.sum(zpp[:,j]**2)                    / zpabs[j]**2 \
              - 1/(6*np.pi) * np.sum(zp[:,j]*zppp[:,j])             / zpabs[j]**2
