@@ -147,7 +147,7 @@ class NeumannOp(Operator):
             adj = self.bd.adjoint_der_normal(res * self.bd.zpabs.T)
             return adj
 
-    def other_X_err(self,h):
+    def other_x_err(self,h):
             res = np.sqrt(((h-self.xdag).T*(h-self.xdag)).real)
             return res
 
