@@ -110,9 +110,9 @@ class IrgnmL1Fid(Solver):
         _, deriv=self.op.linearize(self.x)
         for i in range(len(self.x)):
             self._DF[:,i] = deriv(self._DF[:,i])
-        self._Hess = (np.dot(self._DF,np.linalg.solve(self._gram_x, self._DF.T))
+        self._hess = (np.dot(self._DF,np.linalg.solve(self._gram_x, self._DF.T))
                       + self._regpar*np.linalg.inv(self._gram_y))
-        self._Hess = 0.5 * (self._Hess+self._Hess.T)
+        self._hess = 0.5 * (self._hess+self._hess.T)
         self._rhs = self.data - self.y - np.dot(self._DF, self.init - self.x)
 #        self.alpha_l1 = np.max(self._regpar, self.alpha_l1)
         self.alpha_l1=np.asarray([self._regpar, self.alpha_l1]).max()
@@ -139,7 +139,7 @@ class IrgnmL1Fid(Solver):
     def _func(self, x):
         """Define the functional for ``scipy.optimize.minimize``."""
 
-        return 0.5*np.dot(x.T,np.dot(self._Hess,x)) - np.dot(self._rhs.T,x)
+        return 0.5*np.dot(x.T,np.dot(self._hess,x)) - np.dot(self._rhs.T,x)
 
     def next(self):
         """Run a single IrgnmL1Fid iteration.
