@@ -6,7 +6,8 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'numpy>=1.14,<2.0',
-        'scipy>=1.1,<2.0',
+        'scipy>=1.12,<2.0',
+        'pooch>=1.8,<2.0',
         'pytest>=8.0,<9.0',
     ],
     extras_require={

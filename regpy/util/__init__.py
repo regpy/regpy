@@ -2,7 +2,7 @@ from functools import wraps
 from logging import getLogger
 
 import numpy as np
-from scipy.spatial.qhull import Voronoi
+from scipy.spatial import Voronoi
 
 
 @property

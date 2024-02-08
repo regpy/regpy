@@ -50,7 +50,7 @@ class MediumScatteringBase(Operator):
     gmres_args : dict
         Arguments passed to [`scipy.sparse.linalg.gmres`][1] for solving the
         Lippmann Schwinger equation. Default values are `restart=10`,
-        `tol=1e-14`, `maxiter=100` and `atol='legacy'`.
+        `rtol=1e-14`, `maxiter=100` and `atol=0.0`.
     normalization : 'helmholtz' or 'schroedinger'
         How to normalize the kernel and farfield matrix.
 
@@ -153,7 +153,7 @@ class MediumScatteringBase(Operator):
             self.coarse = False
 
         self.gmres_args = util.set_defaults(
-            gmres_args, restart=10, tol=1e-14, maxiter=100, atol='legacy'
+            gmres_args, restart=10, rtol=1e-14, maxiter=100, atol=0.0
         )
 
         # Don't init codomain here. Subclasses are supposed to handle that.
