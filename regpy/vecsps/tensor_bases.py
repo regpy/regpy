@@ -92,7 +92,7 @@ def legendre_basis(coef_domain,eval_domain,dtype=float):
         bases.append(B_i)
     return TensorBasis(coef_domain,eval_domain,bases,dtype)
 
-def BSplineBasis(k,t,dim=1,add_points=10):
+def bspline_basis(k,t,dim=1,add_points=10):
     """ Implements a B-Spline basis in an arbirtary Dimension (given by dim)
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
