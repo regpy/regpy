@@ -90,8 +90,8 @@ class IrgnmL1Fid(Solver):
         # Computation of some parameters for the iteration
         self._gram_x = self.op.domain.gram(np.eye(len(self.x)))
         self._gram_x = 0.5 * (self._gram_x+self._gram_x.T)
-        self._GramY = self.op.codomain.gram(np.eye(len(self.y)))
-        self._GramY = 0.5 * (self._GramY+self._GramY.T)
+        self._gram_y = self.op.codomain.gram(np.eye(len(self.y)))
+        self._gram_y = 0.5 * (self._gram_y+self._gram_y.T)
         self._maxiter = 10000
 
     def update(self):
@@ -111,7 +111,7 @@ class IrgnmL1Fid(Solver):
         for i in range(len(self.x)):
             self._DF[:,i] = deriv(self._DF[:,i])
         self._Hess = (np.dot(self._DF,np.linalg.solve(self._gram_x, self._DF.T))
-                      + self._regpar*np.linalg.inv(self._GramY))
+                      + self._regpar*np.linalg.inv(self._gram_y))
         self._Hess = 0.5 * (self._Hess+self._Hess.T)
         self._rhs = self.data - self.y - np.dot(self._DF, self.init - self.x)
 #        self.alpha_l1 = np.max(self._regpar, self.alpha_l1)
