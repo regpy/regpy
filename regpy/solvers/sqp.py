@@ -85,7 +85,7 @@ class SQP(Solver):
         self.intensity = intensity
 
         # maximum number of CG iterations
-        self._N_CG = 50
+        self._N_cg = 50
         # replace KL(a,b) by KL(a+_offset, b+_offset)
         self._offset0 = 2e-6
         # offset is reduced in each Newton step by a factor _offset_step
@@ -143,7 +143,7 @@ class SQP(Solver):
         self._hl = TikhonovCG(
             op=self._opw, y=self._b,
             xref=self.init - self.x - self._h,
-            regpar=self.alpha, cgmaxit=self._N_CG
+            regpar=self.alpha, cgmaxit=self._N_cg
         )
 
         self._y_kl_update = self.op.derivative.eval(self.op.params, self._hl)
