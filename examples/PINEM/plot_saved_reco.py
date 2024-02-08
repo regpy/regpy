@@ -1,4 +1,4 @@
-from PINEM_plots import plot_exactSolution_data,plot_reco, plot_stats, init_plot_stats
+from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g
 from scipy.io import loadmat
 import matplotlib.pyplot as plt
@@ -16,7 +16,7 @@ op, grid, exact_solution, g_map, mask_a_org, mask_p, opdata \
         = setup_simulated_g(g_is_complex=False,using_gabs_measurement=False,N=30,parallel=False)
 data = loadmat('./NewtonCG_5e7/test_data.mat')['data'][0]
 data_comp = op.codomain.split(data)
-fig1,fig2 = plot_exactSolution_data(g_map,data_comp,
+fig1,fig2 = plot_exact_solution_data(g_map,data_comp,
                             using_gabs_measurement = False,plot_log_g = True)      
 fig3, axs3 = init_plot_stats()
 reco_ampl = rec['reco_amp']

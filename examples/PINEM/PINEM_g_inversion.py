@@ -22,7 +22,7 @@ from regpy.solvers.newton import NewtonCG
 from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
 import sys
 sys.path.append('./PINEM')
-from PINEM_plots import plot_exactSolution_data,plot_reco, plot_stats, init_plot_stats
+from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g, ForgetSecond
 from PINEM_extensions import harmonic_extension, extension_along_lines
 import matplotlib.pyplot as plt
@@ -369,7 +369,7 @@ def main():
             simplified_op = op_simple
             )
 
-    fig1,fig2 = plot_exactSolution_data(g_map,data_comp,
+    fig1,fig2 = plot_exact_solution_data(g_map,data_comp,
                             using_gabs_measurement = using_gabs_measurement,plot_log_g = plot_log_g)       
     fig3, axs3 = init_plot_stats()
     

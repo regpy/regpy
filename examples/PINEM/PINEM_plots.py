@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log
 
-def plot_exactSolution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
+def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
     fig1 = ImShowFig(3, 3)
     if plot_log_g:
         plotdata1 = [{'pos': (0, 0), 'data': np.log(np.abs(g_map.T)), 'title': 'log(|g|)'}]
