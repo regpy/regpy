@@ -42,7 +42,7 @@ def test_xray_phase_contrast():
     data = exact_data + noise
 
     # Image-reconstruction using the IRGNM method
-    setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
     solver = IrgnmCG(setting, data, regpar=10)
     stoprule = (
         rules.CountIterations(max_iterations=10) +

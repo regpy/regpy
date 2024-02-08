@@ -80,7 +80,7 @@ class IrgnmCG(Solver):
         stoprule.log.setLevel(logging.WARNING)
         # self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
@@ -184,7 +184,7 @@ class IrgnmCGPrec(Solver):
             self.krylov_order = precpars['krylov_order']
             self.number_eigenvalues = precpars['number_eigenvalues']
 
-        self.krylov_basis = np.zeros((self.krylov_order, self.setting.Hdomain.vecsp.size))
+        self.krylov_basis = np.zeros((self.krylov_order, self.setting.h_domain.vecsp.size))
         """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
@@ -195,7 +195,7 @@ class IrgnmCGPrec(Solver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
+                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
@@ -207,9 +207,9 @@ class IrgnmCGPrec(Solver):
             self.log.info('Spectral preconditioner updated')
           
         else:
-            preconditioner = MatrixMultiplication(self.M, domain=self.setting.Hdomain.vecsp, codomain=self.setting.Hdomain.vecsp)
+            preconditioner = MatrixMultiplication(self.M, domain=self.setting.h_domain.vecsp, codomain=self.setting.h_domain.vecsp)
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.Hdomain, self.setting.Hcodomain),
+                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,
@@ -230,7 +230,7 @@ class IrgnmCGPrec(Solver):
         """perform lanzcos method to calculate the preconditioner"""
         L = np.zeros((self.krylov_order, self.krylov_order))
         for i in range(0, self.krylov_order):
-            L[i, :] = np.dot(self.krylov_basis, self.setting.Hdomain.gram_inv(
+            L[i, :] = np.dot(self.krylov_basis, self.setting.h_domain.gram_inv(
                 self.deriv.adjoint(
                     self.setting.Hcodomain.gram(self.deriv((self.krylov_basis[i, :]))))))
         """Express T*T in Krylov_basis"""

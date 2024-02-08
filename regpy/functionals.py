@@ -12,9 +12,9 @@ class Functional:
         # TODO implement domain=None case
         assert isinstance(domain, vecsps.VectorSpace)
         self.domain = domain
-        self.Hdomain = hilbert.L2(domain)
-        #Hdomain on which the proximal operator is evaluated
-        #Overloaded if Hdomain != L2
+        self.h_domain = hilbert.L2(domain)
+        #h_domain on which the proximal operator is evaluated
+        #Overloaded if h_domain != L2
 
     def __call__(self, x):
         assert x in self.domain
@@ -411,12 +411,12 @@ class ErrorToInfinity(Functional):
 
 '''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on hspace.'''
 class HilbertNormGeneric(Functional):
-    def __init__(self, hspace, Hdomain=None):
+    def __init__(self, hspace, h_domain=None):
         assert isinstance(hspace, hilbert.HilbertSpace)
         super().__init__(hspace.vecsp)
         self.hspace = hspace
-        self.Hdomain = Hdomain or hspace 
-        '''overloads self.Hdomain from constructor'''
+        self.h_domain = h_domain or hspace 
+        '''overloads self.h_domain from constructor'''
 
     def _eval(self, x):
         return np.real(np.vdot(x, self.hspace.gram(x))) / 2
@@ -433,12 +433,12 @@ class HilbertNormGeneric(Functional):
         return self.hspace.gram
 
     def _proximal(self, x, tau, cgpars=None):
-        if self.Hdomain == self.hspace:
+        if self.h_domain == self.hspace:
             return 1/(1+tau)*x
         else:
-            op = self.Hdomain.gram+tau*self.hspace.gram
+            op = self.h_domain.gram+tau*self.hspace.gram
             inverse = operators.CholeskyInverse(op)
-            return inverse(self.Hdomain.gram(x))
+            return inverse(self.h_domain.gram(x))
 
 
 '''Generic L1 Functional. Proximal implemented for default L2 hspace'''
@@ -479,14 +479,14 @@ Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform
 from regpy.util import gradientuniformgrid
 from regpy.util import divergenceuniformgrid
 class TVUniformGridFcts(Functional):
-    def __init__(self, domain, Hdomain=None):
+    def __init__(self, domain, h_domain=None):
         self.dim = np.size(domain.shape)
         assert isinstance(domain, vecsps.UniformGridFcts)
         super().__init__(domain)
-        if Hdomain is not None:
-            self.Hdomain = Hdomain
-        """Overload Hdomain if needed"""
-        assert self.Hdomain.vecsp == self.domain
+        if h_domain is not None:
+            self.h_domain = h_domain
+        """Overload h_domain if needed"""
+        assert self.h_domain.vecsp == self.domain
 
     def _eval(self, x):
         if self.dim==1:
@@ -511,7 +511,7 @@ class TVUniformGridFcts(Functional):
         shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradientuniformgrid( self.Hdomain.gram_inv( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
+            update = stepsize*gradientuniformgrid( self.h_domain.gram_inv( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
             p = (p+update) / (1+np.abs(update))
         return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 

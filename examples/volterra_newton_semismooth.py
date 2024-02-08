@@ -23,7 +23,7 @@ noise = 0.1 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.zeros()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
 
 solver = IRGNMSemiSmooth(setting, data, psi_minus=-1, psi_plus=1, regpar=1, regpar_step=0.9, init=init)
 stoprule = (

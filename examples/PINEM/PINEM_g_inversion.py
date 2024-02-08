@@ -108,8 +108,8 @@ def main():
     
     ################################################   initialize forward operator
     if g_is_complex:
-        # Hdomain = Sobolev(grid.complex_space(), index=sobolev_index)
-        Hdomain = HmDomain(grid.complex_space(),mask_p, index = sobolev_index)
+        # h_domain = Sobolev(grid.complex_space(), index=sobolev_index)
+        h_domain = HmDomain(grid.complex_space(),mask_p, index = sobolev_index)
         g0 = harmonic_extension(1-mask_p,g_map)
         proj = CoordinateProjection(grid.complex_space(),mask_p)
         projection = InnerShift(proj,g0)
@@ -152,7 +152,7 @@ def main():
             #weight = np.ones_like(g_map.real)*g_map.shape[0]**2
             phase_domain = HmDomain(grid.real_space(),mask_p, index = sobolev_index_phase, weight = weight)
 
-        Hdomain = ampl_domain + phase_domain
+        h_domain = ampl_domain + phase_domain
         projection =  opDirectSum(ampl_projection, phase_projection)
         extension = opDirectSum(ampl_extension,phase_extension)
 
@@ -218,7 +218,7 @@ def main():
         Hcodomain = L2(grid, weights=1/(scal**2+scal*data_comp[0])) 
         for j in range(1, len(data_comp)):
             Hcodomain = Hcodomain + L2(grid, weights=1/(scal**2 + scal*data_comp[j]))
-    #setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    #setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, Hcodomain=Hcodomain)
 
     ##################### define initial guess
     if init_guess_filename:
@@ -347,7 +347,7 @@ def main():
 
     ########################################## perform inversion
 
-    setting = HilbertSpaceSetting(op=op_ext, Hdomain=Hdomain, Hcodomain=Hcodomain)
+    setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, Hcodomain=Hcodomain)
     if N_deriv:
         N_current = N_deriv[0]
         op_simple = PINEM_g_to_data(*opdata, N=N_current) * deepcopy(extension)

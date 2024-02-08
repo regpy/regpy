@@ -44,7 +44,7 @@ class NewtonCG(Solver):
         self._s2 = self.setting.Hcodomain.gram(self._s)
         self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.setting.Hdomain.gram_inv(self._rtilde)
+        self._r = self.setting.h_domain.gram_inv(self._rtilde)
         self._d = self._r
         self._innerProd = np.vdot(self._r, self._rtilde).real
      
@@ -57,7 +57,7 @@ class NewtonCG(Solver):
             self._s += -self._alpha * self._q
             self._s2 += -self._alpha * self._q2
             self._rtilde = self.deriv.adjoint(self._s2)
-            self._r = self.setting.Hdomain.gram_inv(self._rtilde)
+            self._r = self.setting.h_domain.gram_inv(self._rtilde)
             self._innerProd = np.vdot(self._r, self._rtilde).real
             self._beta = np.vdot(self._r, self._rtilde).real / self._innerProd
             self._d = self._r + self._beta * self._d

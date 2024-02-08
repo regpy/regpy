@@ -45,12 +45,12 @@ def test_mediumscattering():
     data = exact_data + noise
     init = op.domain.zeros()
 
-    myHdomain = Hm0Domain(scattering.support,dtype=complex,index=2)
+    myh_domain = Hm0Domain(scattering.support,dtype=complex,index=2)
     setting = HilbertSpaceSetting(
         op=op,
         # Define Sobolev norm on support via embedding
-        #Hdomain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
-        Hdomain = myHdomain, 
+        #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
+        h_domain = myh_domain, 
         Hcodomain=L2
     )
 

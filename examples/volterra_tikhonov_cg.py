@@ -22,7 +22,7 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
 
 solver = TikhonovCG(setting, data, regpar=0.01)
 stoprule = (

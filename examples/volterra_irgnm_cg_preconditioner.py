@@ -23,7 +23,7 @@ noise = 0.03 * op.domain.randn()
 data = exact_data + noise
 init = op.domain.ones()
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev(index=2), Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=Sobolev(index=2), Hcodomain=L2)
 
 precpars = {
         'krylov_order' : 3,

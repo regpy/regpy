@@ -50,12 +50,12 @@ data = exact_data+noise
 init = domain.from_ngs ( 1 )
 init_data = op(init)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=Sobolev)
 
 data_fidelity_operator = op - data
 data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
-penalty = TV(setting.Hdomain.vecsp)
+penalty = TV(setting.h_domain.vecsp)
 
 proximal_pars = {
         'stepsize' : 0.1,

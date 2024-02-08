@@ -43,16 +43,16 @@ def main():
     # Forward operator and its domain
     op = wave_field_reco_PINEM(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
     """if sol_type == None:
-        Hdomain = Sobolev(cgrid, index=0.5)
+        h_domain = Sobolev(cgrid, index=0.5)
     else:
-        Hdomain = Sobolev(grid, index=0.5)"""
+        h_domain = Sobolev(grid, index=0.5)"""
 
     if sol_type == None:
         projection = CoordinateProjection(cgrid,mask)
-        Hdomain =  Hm0Domain(mask,dtype=complex,index=1)
+        h_domain =  Hm0Domain(mask,dtype=complex,index=1)
     else:
         projection = CoordinateProjection(grid,mask)
-        Hdomain = Hm0Domain(mask,index=1)
+        h_domain = Hm0Domain(mask,index=1)
     embedding = projection.adjoint
     op = op*embedding
 
@@ -80,7 +80,7 @@ def main():
 
     # Image reconstruction using the IRGNM method
     setting = HilbertSpaceSetting(
-        op=op, Hdomain=Hdomain,
+        op=op, h_domain=h_domain,
         Hcodomain=Hcodomain)
     #init_vec = np.zeros_like(exact_solution)
     init_vec = np.zeros_like(projection(exact_solution))

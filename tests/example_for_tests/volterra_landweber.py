@@ -25,7 +25,7 @@ def test_volterra_landweber():
     data = exact_data + noise
     init = op.domain.ones()
 
-    setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=L2)
 
     landweber = Landweber(setting, data, init, stepsize=0.01)
     stoprule = (

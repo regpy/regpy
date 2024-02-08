@@ -149,13 +149,13 @@ class HilbertSpaceSetting:
     ----------
     op : regpy.operators.Operator
         The forward operator.
-    Hdomain, Hcodomain : regpy.hilbert.HilbertSpace or callable
+    h_domain, Hcodomain : regpy.hilbert.HilbertSpace or callable
         The Hilbert spaces or abstract spaces on the domain or codomain.
     """
-    def __init__(self, op, Hdomain, Hcodomain):
+    def __init__(self, op, h_domain, Hcodomain):
         self.op = op
         """The operator."""
-        self.Hdomain = as_hilbert_space(Hdomain, op.domain)
+        self.h_domain = as_hilbert_space(h_domain, op.domain)
         """The `regpy.hilbert.HilbertSpace` on the domain."""
         self.Hcodomain = as_hilbert_space(Hcodomain, op.codomain)
         """The `regpy.hilbert.HilbertSpace` on the codomain."""

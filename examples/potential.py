@@ -22,7 +22,7 @@ op = Potential(
     nmeas=64,
 )
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=L2)
 
 exact_solution = op.domain.sample(lambda t: np.sqrt(3 * np.cos(t)**2 + 1) / 2)
 exact_data = op(exact_solution)

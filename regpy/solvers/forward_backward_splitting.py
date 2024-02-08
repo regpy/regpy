@@ -43,13 +43,13 @@ class ForwardBackwardSplitting(Solver):
         """The functional of the data fidelity term and the penalty term"""
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
-        assert self.penalty.Hdomain == self.setting.Hdomain
+        assert self.penalty.h_domain == self.setting.h_domain
         
         self.x = init
         self.y = self.setting.op(self.x)
         
     def _next(self):
-        self.x-=self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity.gradient(self.x)) 
+        self.x-=self.tau*self.setting.h_domain.gram_inv(self.data_fidelity.gradient(self.x)) 
         self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         

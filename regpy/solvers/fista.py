@@ -6,7 +6,7 @@ from regpy import util
 from regpy.functionals import Functional
 
 """
-The generalized FISTA algorithm for minimization of regpar * G+H (where G, H: Hdomain -> R are the penalty term and the data fidelity term respectively).
+The generalized FISTA algorithm for minimization of regpar * G+H (where G, H: h_domain -> R are the penalty term and the data fidelity term respectively).
 We assume:
     -> G, H are convex
     -> grad H is L-Lipschitz continuous
@@ -43,7 +43,7 @@ class FISTA(Solver):
         self.penalty = penalty
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
-        assert self.penalty.Hdomain == self.setting.Hdomain
+        assert self.penalty.h_domain == self.setting.h_domain
 
         self.x = init
         self.y = self.setting.op(self.x)
@@ -74,6 +74,6 @@ class FISTA(Solver):
         self.x_old = self.x
         self.t_old = self.t
 
-        self.x = self.penalty.proximal(h-self.tau*self.setting.Hdomain.gram_inv(self.data_fidelity.gradient(h)), self.tau * self.regpar, self.proximal_pars)
+        self.x = self.penalty.proximal(h-self.tau*self.setting.h_domain.gram_inv(self.data_fidelity.gradient(h)), self.tau * self.regpar, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y = self.setting.op(self.x)

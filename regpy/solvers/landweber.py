@@ -49,7 +49,7 @@ class Landweber(Solver):
             derivh = deriv(h)
             derivh = setting.Hcodomain.gram(derivh)
             h = deriv.adjoint(derivh)
-            h = setting.Hdomain.gram_inv(h)
+            h = setting.h_domain.gram_inv(h)
             norm = np.sqrt(np.real(np.vdot(h, h)))
         self.stepsize = stepsize or 1 / norm
         """The stepsize."""
@@ -58,7 +58,7 @@ class Landweber(Solver):
         self._residual = self.y - self.rhs
         self._gy_residual = self.setting.Hcodomain.gram(self._residual)
         self._update = self.deriv.adjoint(self._gy_residual)
-        self.x -= self.stepsize * self.setting.Hdomain.gram_inv(self._update)
+        self.x -= self.stepsize * self.setting.h_domain.gram_inv(self._update)
         self.y, self.deriv = self.setting.op.linearize(self.x)
 
         if self.log.isEnabledFor(logging.INFO):

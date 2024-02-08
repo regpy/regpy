@@ -52,7 +52,7 @@ data = exact_data+noise
 init = domain.from_ngs ( 1 )
 init_data = op(init)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=L2, Hcodomain=Sobolev)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=Sobolev)
 
 landweber = Landweber(setting, data, init, stepsize=0.05)
 stoprule = (

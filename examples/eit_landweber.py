@@ -58,7 +58,7 @@ data = exact_data+noise
 
 init = domain.from_ngs(1)
 
-setting = HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=SobolevBoundary)
+setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=SobolevBoundary)
 
 #Discrepancy Principle usually stops very early
 landweber = Landweber(setting, data, init, stepsize=1)

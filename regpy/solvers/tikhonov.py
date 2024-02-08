@@ -63,17 +63,17 @@ class TikhonovCG(Solver):
 
         
         if preconditioner is None:
-            self.preconditioner = Identity (self.setting.Hdomain.vecsp)
-            self.penalty = Identity (self.setting.Hdomain.vecsp)
+            self.preconditioner = Identity (self.setting.h_domain.vecsp)
+            self.penalty = Identity (self.setting.h_domain.vecsp)
         else: 
             self.preconditioner = preconditioner
-            self.penalty = self.preconditioner * self.setting.Hdomain.gram * self.preconditioner * self.setting.Hdomain.gram_inv
+            self.penalty = self.preconditioner * self.setting.h_domain.gram * self.preconditioner * self.setting.h_domain.gram_inv
 
         self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.Hcodomain.gram(data)) )
         """The gram matrix applied to the residual."""
         if xref is not None:
-            self.g_res += self.regpar *self.preconditioner( self.setting.Hdomain.gram(xref) )
-        res = self.setting.Hdomain.gram_inv(self.g_res)
+            self.g_res += self.regpar *self.preconditioner( self.setting.h_domain.gram(xref) )
+        res = self.setting.h_domain.gram_inv(self.g_res)
         """The residual."""
         self.norm_res = np.real(np.vdot(self.g_res, res))
         """The norm of the residual."""
@@ -103,7 +103,7 @@ class TikhonovCG(Solver):
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
-            self.norm_x = np.real(np.vdot(self.x, self.setting.Hdomain.gram(self.x)))
+            self.norm_x = np.real(np.vdot(self.x, self.setting.h_domain.gram(self.x)))
 
         self.y += stepsize * Tdir
         if self.reltoly is not None:
@@ -111,7 +111,7 @@ class TikhonovCG(Solver):
             self.norm_y = np.real(np.vdot(self.g_y, self.y))
 
         self.g_res -= stepsize * (self.preconditioner( self.setting.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
-        res = self.setting.Hdomain.gram_inv(self.g_res)
+        res = self.setting.h_domain.gram_inv(self.g_res)
 
         norm_res_old = self.norm_res
         self.norm_res = np.real(np.vdot(self.g_res, res))

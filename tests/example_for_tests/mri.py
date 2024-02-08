@@ -59,7 +59,7 @@ def test_mri():
     init_density, _ = smoothed_op.domain.split(init)
     init_density[...] = 1
 
-    setting = HilbertSpaceSetting(op=smoothed_op, Hdomain=L2, Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=smoothed_op, h_domain=L2, Hcodomain=L2)
 
     solver = IrgnmCG(
         setting=setting,

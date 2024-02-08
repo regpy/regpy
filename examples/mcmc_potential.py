@@ -38,7 +38,7 @@ data = exact_data + noise
 
 # Determine an initial estimate using Irgnm
 estimate, _ = IrgnmCG(
-    setting=HilbertSpaceSetting(op=op, Hdomain=Sobolev, Hcodomain=L2),
+    setting=HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=L2),
     data=data,
     regpar=10,
     regpar_step=0.8,
