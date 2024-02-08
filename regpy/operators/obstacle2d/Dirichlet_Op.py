@@ -72,7 +72,7 @@ class DirichletOp(Operator):
         self.dudn=None  # normal derivative of total field at boundary
         """ weights of single and double layer potentials"""
         self.w_sl=-1*complex(0,1)*self.kappa
-        self.wDL=1
+        self.w_dl=1
         """ LU factors + permuation for integral equation matrix"""
         self.L=None
         self.U=None
@@ -80,7 +80,7 @@ class DirichletOp(Operator):
         self.FF_combined=None
         self.op_name='DirichletOp'
         """ use a mixed single and double layer potential ansatz with
-             weights w_sl and wDL"""
+             weights w_sl and w_dl"""
         self.Ydim = 2* np.size(self.meas_directions) * np.size(self.inc_directions, 1)
         super().__init__(domain=domain, codomain=codomain)
 
@@ -100,19 +100,19 @@ class DirichletOp(Operator):
             Iop = self.w_sl*op_S(self.bd,Iop_data)
         else:
             Iop = np.zeros(np.size(self.bd.z,1),np.size(self.bd.z,1))
-        if self.wDL!=0:
-            Iop = Iop + self.wDL*(np.diag(self.bd.zpabs)+ op_K(self.bd,Iop_data))
+        if self.w_dl!=0:
+            Iop = Iop + self.w_dl*(np.diag(self.bd.zpabs)+ op_K(self.bd,Iop_data))
         self.dudn = np.zeros((2*self.N_ieq,np.size(self.inc_directions,1)))
         FF_SL = farfield_matrix(self.bd,self.meas_directions,self.kappa,-1.,0.)
         self.perm_mat, self.L, self.U =scla.lu(Iop)
         self.perm=self.perm_mat.dot(np.arange(0, np.size(self.bd.z,1)))
         self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa, \
-                                           self.w_sl,self.wDL)
+                                           self.w_sl,self.w_dl)
         farfield = []
 
         for l in range(0, np.size(self.inc_directions, 1)):
             rhs = 2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))*  \
-                (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
+                (self.w_dl*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
                                          +self.w_sl*self.bd.zpabs)
 
             self.dudn[:, l]=np.linalg.solve(self.L.T, \

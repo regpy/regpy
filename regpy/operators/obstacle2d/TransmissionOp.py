@@ -31,13 +31,13 @@ class TransmissionOp(Operator):
         self.kappa_in = 4         # interior wave number
         self.rho = 4.3-6*complex(0,1)         # density ratio
         self.w_sl_ex = -1
-        self.wDL_ex = 1
+        self.w_dl_ex = 1
         self.w_sl_in
-        self.wDL_in = -1
+        self.w_dl_in = -1
         self.w_sl
-        self.wDL
+        self.w_dl
         self.op_name = 'TransmissionOp'
-        self.default=default(self.kappa, self.rho, self.w_sl_ex, self.wDL_ex)
+        self.default=default(self.kappa, self.rho, self.w_sl_ex, self.w_dl_ex)
 
 
         self.op_name = 'TransmissionOp'
@@ -87,22 +87,22 @@ class TransmissionOp(Operator):
         """ constructing operator Iop=A+L according to (4.9). Note that the operators in 'int_op'
         have an additional factor of 2|z'(x)| compared to the operators considered in the thesis."""
 #Bring this matrix in the right form, hier ist noch ein fehler im vergleich zu matlab
-        Iop = np.append(self.wDL_ex*op_K(self.bd,Iop_data_ex)+\
-                        self.wDL_in*op_K(self.bd,Iop_data_in)+(self.wDL_ex-self.wDL_in-4)*np.diag(self.bd.zpabs)+ \
+        Iop = np.append(self.w_dl_ex*op_K(self.bd,Iop_data_ex)+\
+                        self.w_dl_in*op_K(self.bd,Iop_data_in)+(self.w_dl_ex-self.w_dl_in-4)*np.diag(self.bd.zpabs)+ \
                         self.w_sl_ex*op_S(self.bd,Iop_data_ex)+self.w_sl_in*op_S(self.bd,Iop_data_in), \
-                        self.wDL_ex*op_T(self.bd,Iop_data_ex)+self.wDL_in*op_T(self.bd,Iop_data_in)+ \
+                        self.w_dl_ex*op_T(self.bd,Iop_data_ex)+self.w_dl_in*op_T(self.bd,Iop_data_in)+ \
                         self.w_sl_ex*op_K(self.bd,Iop_data_ex).T+self.w_sl_in*op_K(self.bd,Iop_data_in).T+\
                         (self.w_sl_in-2*self.rho-self.w_sl_ex-2)*np.diag(self.bd.zpabs)).reshape((2*op_K(self.bd,Iop_data_ex).shape[0], op_K(self.bd,Iop_data_ex).shape[1]))
-        R  = [-self.wDL_in*op_K(self.bd,Iop_data_in)+(self.wDL_in+2)*np.diag(self.bd.zpabs) \
+        R  = [-self.w_dl_in*op_K(self.bd,Iop_data_in)+(self.w_dl_in+2)*np.diag(self.bd.zpabs) \
             -self.w_sl_in*op_S(self.bd,Iop_data_in) \
-            -self.wDL_in*op_T(self.bd,Iop_data_in) \
+            -self.w_dl_in*op_T(self.bd,Iop_data_in) \
             -self.w_sl_in*op_K(self.bd,Iop_data_in).T+(2*self.rho-self.w_sl_in)*np.diag(self.bd.zpabs)]
         # TODO dont use matlabs \ operator
         # self.Iop = Iop\R
 
         #set up the matrix mapping the density to the far field pattern
         self.FF_combined = farfield_matrix_trans(self.bd,self.meas_directions, \
-                                    self.kappa_ex,self.w_sl_ex,self.wDL_ex)
+                                    self.kappa_ex,self.w_sl_ex,self.w_dl_ex)
 
         farfield = []
         self.dudn = np.zeros(4*self.N_ieq,np.size(self.inc_directions,1))
@@ -195,8 +195,8 @@ class TransmissionOp(Operator):
 
 
 class default(object):
-    def __init__(self, kappa_ex, w_sl_in, w_sl, wDL):
+    def __init__(self, kappa_ex, w_sl_in, w_sl, w_dl):
         self.kappa_ex=kappa_ex
         self.w_sl_in=w_sl_in
         self.w_sl=w_sl
-        self.wDL=wDL
+        self.w_dl=w_dl
