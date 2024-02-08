@@ -291,7 +291,7 @@ def main():
             reco_error3 = fnorm(reco_amp*np.exp(1j*reco_phase) -ex_amp*np.exp(1j*ex_phase))/fnorm(ex_amp)
         return reco_error1, reco_error2, reco_error3
 
-    def plot_write_safe(reco,reco_data,fig1,fig2,axs3, Newton_step,
+    def plot_write_safe(reco,reco_data,fig1,fig2,axs3, newton_step,
         do_plottings=do_plottings, stats =None,output_filename = None,N=None
         ):
 
@@ -314,7 +314,7 @@ def main():
             ereco = op.domain.join(reco_amp,reco_phase)
             
         reco_error1, reco_error2, reco_error3 = reconstruction_error(exact_solution, ereco)
-        stats['Newton step'].append(Newton_step)
+        stats['Newton step'].append(newton_step)
         stats['ampl_err'].append(reco_error1)
         stats['phase_err'].append(reco_error2)
         stats['complex_err'].append(reco_error3)
@@ -324,23 +324,23 @@ def main():
             stats['nr_inner_steps'].append(solver.nr_inner_its())
 
         if output_filename:
-            savemat(output_filename+'{}.mat'.format(Newton_step),
+            savemat(output_filename+'{}.mat'.format(newton_step),
             {'reco_amp':reco_amp, 'reco_phase': reco_phase, **stats}
             )
-        if Newton_step>0:
+        if newton_step>0:
             residual_reduction = stats['residuals'][-1]/stats['residuals'][-2]
             logging.info('it.{}, N={}, modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}, resid.reduct: {:1.4f}'.format(
-                Newton_step, N,reco_error1, reco_error2, reco_error3,residual_reduction))
+                newton_step, N,reco_error1, reco_error2, reco_error3,residual_reduction))
         else:
             residual_reduction = 1
             logging.info('it.{}, N={}, modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}'.format(
-                Newton_step, N,reco_error1, reco_error2, reco_error3))
+                newton_step, N,reco_error1, reco_error2, reco_error3))
 
         reco_data_comp = flat_codomain.split(reco_data)
         ex_data_comp = flat_codomain.split(data)
 
         if do_plottings:
-            plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,Newton_step,mask_a = mask_a)
+            plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,newton_step,mask_a = mask_a)
             plot_stats(axs3,stats,plot_inner_its = hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its))
 
         return residual_reduction
@@ -375,12 +375,12 @@ def main():
     
     stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': [], \
         'N': [], 'Newton step' : []}
-    Newton_step=0
-    plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+    newton_step=0
+    plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,newton_step,
         do_plottings=do_plottings,stats=stats,output_filename= output_filename,N=N_current)
       
-    for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
-        residual_reduction = plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+    for newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
+        residual_reduction = plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,newton_step,
             do_plottings=do_plottings,stats=stats,output_filename= output_filename,N=N_current)
         if residual_reduction > minimal_residual_reduction:
             break
@@ -397,7 +397,7 @@ def main():
         else:
             solver = IrgnmCG(
                 setting, data, init=stoprule.x,
-                regpar=IRGNM_regpar*IRGNM_regpar_step**(Newton_step-1), 
+                regpar=IRGNM_regpar*IRGNM_regpar_step**(newton_step-1), 
                 regpar_step=IRGNM_regpar_step,
                 cgstop=IRGNM_cgstop,
                 inner_it_logging_level=logging.INFO,
@@ -405,11 +405,11 @@ def main():
             )
 
         stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=max_Newton_its,while_type=True))
-        plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+        plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,newton_step,
            do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
 
-        for Newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),Newton_step+1):
-            residual_reduction = plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,Newton_step,
+        for newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),newton_step+1):
+            residual_reduction = plot_write_safe(solver.x,solver.y,fig1,fig2,axs3,newton_step,
                 do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
             if residual_reduction > minimal_residual_reduction and stats['residuals'][-1] < residual_last_N*NewtonCG_rho:
                 break

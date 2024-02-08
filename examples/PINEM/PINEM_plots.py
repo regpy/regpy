@@ -26,39 +26,39 @@ def plot_exactSolution_data(g_map,data_comp,using_gabs_measurement = False,plot_
     fig2.plot(plot_data2)
     return fig1, fig2
 
-def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,Newton_step,
+def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newton_step,
               plot_log_g = True, mask_a = None
               ):
         plotdata = []
         if plot_log_g:
             plotdata.append({'pos': (1, 0), 'data': np.log(reco_amp.T),
-                        'title': 'log(|g_rec|) it.{}'.format(Newton_step)})
+                        'title': 'log(|g_rec|) it.{}'.format(newton_step)})
         else:
             plotdata.append({'pos': (1, 0), 'data': reco_amp.T,
-                        'title': '|g_rec| it.{}'.format(Newton_step)})
+                        'title': '|g_rec| it.{}'.format(newton_step)})
         plotdata.append({'pos': (2, 0), 'data': reco_amp.T-np.abs(g_map.T),
-                            'title': 'Error |g|-|g_rec|  it.{}'.format(Newton_step)})
+                            'title': 'Error |g|-|g_rec|  it.{}'.format(newton_step)})
         plotdata.append({'pos': (1, 1), 'data': complex_to_rgb(reco_amp.T*np.exp(1j*reco_phase.T)),
-                            'title': 'g_rec with phase it.{}'.format(Newton_step)})
+                            'title': 'g_rec with phase it.{}'.format(newton_step)})
         plotdata.append({'pos': (1, 2), 'data': complex_to_rgb_log(reco_amp.T*np.exp(1j*reco_phase.T)),
-                            'title': 'log(g_rec) it.{}'.format(Newton_step)})
+                            'title': 'log(g_rec) it.{}'.format(newton_step)})
 
         if mask_a is None:
             plotdata.append({'pos': (2, 1), 'data': np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
-                            'title': 'error |g_rec-g| it.{}'.format(Newton_step)})
+                            'title': 'error |g_rec-g| it.{}'.format(newton_step)})
         else:
             plotdata.append({'pos': (2, 1), 'data': (1.-mask_a.T) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
-                            'title': 'ext. error |g_rec-g| it.{}'.format(Newton_step)})
+                            'title': 'ext. error |g_rec-g| it.{}'.format(newton_step)})
             plotdata.append({'pos': (2, 2), 'data': mask_a.T.astype(float) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
-                            'title': 'int. error |g_rec-g| it.{}'.format(Newton_step)})
+                            'title': 'int. error |g_rec-g| it.{}'.format(newton_step)})
         #plotdata.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
-        #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(Newton_step)})
+        #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(newton_step)})
         fig1.plot(plotdata)
 
         if not reco_data_comp is None:
             nr_data = len(reco_data_comp)
             plotdata = [{'pos': (1, j), 'data': reco_data_comp[j].T,
-                            'title':'rec. data it.{}'.format(Newton_step)}
+                            'title':'rec. data it.{}'.format(newton_step)}
                         for j in range(nr_data)]
             for j in range(nr_data):
                 plotdata.append({'pos': (2, j), 'data': reco_data_comp[j].T-data_comp[j].T,

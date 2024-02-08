@@ -119,31 +119,31 @@ def main():
     # perform reconstruction    
     #reco, reco_data = solver.run(stoprule)
     for reco, reco_data in solver.until(stoprule):
-        Newton_step = solver.iteration_step_nr
+        newton_step = solver.iteration_step_nr
         #ereco =reco
         ereco = embedding(reco)
         reco_error = ereco-exact_solution
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
-            Newton_step,
+            newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
             np.linalg.norm(reco_error.imag)/np.linalg.norm(exact_solution.imag)))
         # Plot reults
-        if Newton_step % 5 == 0 or stoprule.triggered:
-            axs[1, 0].set_title('Reco abs, step {}'.format(Newton_step))
+        if newton_step % 5 == 0 or stoprule.triggered:
+            axs[1, 0].set_title('Reco abs, step {}'.format(newton_step))
             im = axs[1, 0].imshow(np.abs(ereco), interpolation='nearest')
-            if Newton_step == 5:
+            if newton_step == 5:
                 fig.colorbar(im, ax=axs[1, 0])
-            axs[1, 1].set_title('Reco phase, step {}'.format(Newton_step))
+            axs[1, 1].set_title('Reco phase, step {}'.format(newton_step))
             im = axs[1, 1].imshow(np.angle(ereco), cmap='twilight', interpolation='nearest')
-            if Newton_step == 5:
+            if newton_step == 5:
                 fig.colorbar(im, ax=axs[1, 1])
 
             reco_data_comp = op.codomain.split(reco_data)
             for j in range(len(data_comp)):
                 im = axs2[1, j].imshow(reco_data_comp[j], interpolation='nearest')
-                if Newton_step == 5:
+                if newton_step == 5:
                     fig2.colorbar(im, ax=axs2[1, j])
-                axs2[1, j].set_title('reconstructed data step {}'.format(Newton_step))
+                axs2[1, j].set_title('reconstructed data step {}'.format(newton_step))
             plt.show(block=False)
             plt.pause(0.1)
     plt.show(block=True)
