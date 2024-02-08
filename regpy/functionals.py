@@ -409,39 +409,39 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
-'''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on hspace.'''
+'''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on h_space.'''
 class HilbertNormGeneric(Functional):
-    def __init__(self, hspace, h_domain=None):
-        assert isinstance(hspace, hilbert.HilbertSpace)
-        super().__init__(hspace.vecsp)
-        self.hspace = hspace
-        self.h_domain = h_domain or hspace 
+    def __init__(self, h_space, h_domain=None):
+        assert isinstance(h_space, hilbert.HilbertSpace)
+        super().__init__(h_space.vecsp)
+        self.h_space = h_space
+        self.h_domain = h_domain or h_space 
         '''overloads self.h_domain from constructor'''
 
     def _eval(self, x):
-        return np.real(np.vdot(x, self.hspace.gram(x))) / 2
+        return np.real(np.vdot(x, self.h_space.gram(x))) / 2
 
     def _linearize(self, x):
-        gx = self.hspace.gram(x)
+        gx = self.h_space.gram(x)
         y = np.real(np.vdot(x, gx)) / 2
         return y, gx
 
     def _gradient(self, x):
-        return self.hspace.gram(x)
+        return self.h_space.gram(x)
 
     def _hessian(self, x):
-        return self.hspace.gram
+        return self.h_space.gram
 
     def _proximal(self, x, tau, cgpars=None):
-        if self.h_domain == self.hspace:
+        if self.h_domain == self.h_space:
             return 1/(1+tau)*x
         else:
-            op = self.h_domain.gram+tau*self.hspace.gram
+            op = self.h_domain.gram+tau*self.h_space.gram
             inverse = operators.CholeskyInverse(op)
             return inverse(self.h_domain.gram(x))
 
 
-'''Generic L1 Functional. Proximal implemented for default L2 hspace'''
+'''Generic L1 Functional. Proximal implemented for default L2 h_space'''
 class L1Generic(Functional):
     def __init__(self, domain):
         super().__init__(domain)
@@ -459,7 +459,7 @@ class L1Generic(Functional):
     def _proximal(self, x, tau):
         return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
-'''Generic TV Functional. Proximal implemented for default L2 hspace'''
+'''Generic TV Functional. Proximal implemented for default L2 h_space'''
 class TVGeneric(Functional):
     def __init__(self, domain):
         super().__init__(domain)
