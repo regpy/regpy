@@ -20,16 +20,16 @@ def setup_iop_data(bd,kappa):
     #bess_H0 = besselh(0,1,dat.kdist)
 
     bessj1_kdist= j1(kdist)
-    """bessH1quot=np.zeros(dim**2)
+    """bess_H1_quot=np.zeros(dim**2)
     for i in range(0, dim):
         for j in range(0, dim):
             if kdist[dim*i+j]==0:
-                bessH1quot[dim*i+j]=0
+                bess_H1_quot[dim*i+j]=0
             else:
-                bessH1quot[dim*i+j] = (bessj1_kdist[dim*i+j]+ complex(0,1)*bessy1(kdist[dim*i+j],bessj1_kdist[dim*i+j]))/kdist[dim*i+j]"""
-    bessH1quot = (bessj1_kdist + complex(0,1) * y1(kdist, bessj1_kdist)) / (kdist + 1e-5)
-    bessH1quot=bessH1quot.reshape((dim, dim))
-    #bessH1quot = besselh(1,1,dat.kdist) / dat.kdist
+                bess_H1_quot[dim*i+j] = (bessj1_kdist[dim*i+j]+ complex(0,1)*bessy1(kdist[dim*i+j],bessj1_kdist[dim*i+j]))/kdist[dim*i+j]"""
+    bess_H1_quot = (bessj1_kdist + complex(0,1) * y1(kdist, bessj1_kdist)) / (kdist + 1e-5)
+    bess_H1_quot=bess_H1_quot.reshape((dim, dim))
+    #bess_H1_quot = besselh(1,1,dat.kdist) / dat.kdist
     for j in range(0, dim):
         bess_H0[j,j]=1
 
@@ -52,17 +52,17 @@ def setup_iop_data(bd,kappa):
 
     kdist=kdist.reshape((dim, dim))
 
-    return DatObject(kappa, euler_gamma, logsin_weights, logsin, bess_H0, bessH1quot, \
+    return DatObject(kappa, euler_gamma, logsin_weights, logsin, bess_H0, bess_H1_quot, \
                       kdist )
 
 
 class DatObject(object):
-    def __init__(self, kappa, euler_gamma, logsin_weights, logsin, bess_H0, bessH1quot, \
+    def __init__(self, kappa, euler_gamma, logsin_weights, logsin, bess_H0, bess_H1_quot, \
                       kdist):
         self.kappa=kappa
         self.euler_gamma=euler_gamma
         self.logsin_weights=logsin_weights
         self.logsin=logsin
         self.bess_H0=bess_H0
-        self.bessH1quot=bessH1quot
+        self.bess_H1_quot=bess_H1_quot
         self.kdist=kdist

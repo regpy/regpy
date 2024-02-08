@@ -42,8 +42,8 @@ def op_K(bd,dat):
     kappa = dat.kappa
 
     aux = np.dot(bd.z.T, bd.normal) - np.dot(np.ones((dim, 2)),(bd.normal*bd.z))
-    H = 0.5*complex(0, 1)*kappa**2* aux * dat.bessH1quot
-    H1 = -kappa**2/(2*np.pi)*aux * dat.bessH1quot.real
+    H = 0.5*complex(0, 1)*kappa**2* aux * dat.bess_H1_quot
+    H1 = -kappa**2/(2*np.pi)*aux * dat.bess_H1_quot.real
     H2 = H - H1*dat.logsin
     for j in range(0, dim):
         H1[j, j] = 0
@@ -74,11 +74,11 @@ def op_T(bd,dat):
 
     N_tilde = kappa*(z.T.dot(zp) -  np.ones((dim,1)).dot(np.sum(z*zp, 0).reshape((1, dim))) / (dat.kdist+1e-5))
     N_tilde = -N_tilde.T.dot(N_tilde)
-    Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bess_H0 - 2*kappa**2*dat.bessH1quot) \
-        +complex(0,1)*kappa**2/2*(zp.T.dot(zp)) * dat.bessH1quot  \
+    Nker = complex(0,1)/2*N_tilde*( kappa**2*dat.bess_H0 - 2*kappa**2*dat.bess_H1_quot) \
+        +complex(0,1)*kappa**2/2*(zp.T.dot(zp)) * dat.bess_H1_quot  \
         + scla.toeplitz(np.append(np.asarray([np.pi/2]), 1/(4*np.pi)*np.sin(np.pi*np.arange(1, dim)/dim)**(-2)))
-    N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bess_H0.real-2*kappa**2*dat.bessH1quot.real)  \
-        - kappa**2/(2*np.pi)* (zp.T.dot(zp)) * dat.bessH1quot.real
+    N1  = -1/(2*np.pi)*N_tilde * (kappa**2*dat.bess_H0.real-2*kappa**2*dat.bess_H1_quot.real)  \
+        - kappa**2/(2*np.pi)* (zp.T.dot(zp)) * dat.bess_H1_quot.real
     N2 = Nker - N1*dat.logsin
     for j in range(0, dim):
         N1[j, j] = -kappa**2*zpabs[j]**2/(4*np.pi)
