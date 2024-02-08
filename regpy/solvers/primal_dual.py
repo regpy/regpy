@@ -60,7 +60,7 @@ class PDHG(Solver):
         self.proximal_pars_penalty = proximal_pars_penalty
 
     def _next(self):
-        primal_step = self.x - self.tau * self.setting.h_domain.gram_inv(self.setting.op.adjoint(self.setting.Hcodomain.gram(self.p)))
+        primal_step = self.x - self.tau * self.setting.h_domain.gram_inv(self.setting.op.adjoint(self.setting.h_codomain.gram(self.p)))
         self.x = self.penalty.proximal(primal_step, self.regpar * self.tau, self.proximal_pars_penalty)
         dual_step = self.p + self.sigma * self.setting.op( self.x+self.theta*(self.x-self.x_old) )
         self.p = self.data_fidelity_conjugate.proximal(dual_step, self.sigma, self.proximal_pars_data_fidelity_conjugate)
@@ -97,7 +97,7 @@ class DouglasRashford(Solver):
         self.penalty = penalty
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
-        assert self.data_fidelity.h_domain == self.setting.Hcodomain
+        assert self.data_fidelity.h_domain == self.setting.h_codomain
         assert self.penalty.h_domain == self.setting.h_domain
 
         self.h = init_h

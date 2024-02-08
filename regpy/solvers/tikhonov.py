@@ -69,7 +69,7 @@ class TikhonovCG(Solver):
             self.preconditioner = preconditioner
             self.penalty = self.preconditioner * self.setting.h_domain.gram * self.preconditioner * self.setting.h_domain.gram_inv
 
-        self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.Hcodomain.gram(data)) )
+        self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.h_codomain.gram(data)) )
         """The gram matrix applied to the residual."""
         if xref is not None:
             self.g_res += self.regpar *self.preconditioner( self.setting.h_domain.gram(xref) )
@@ -96,7 +96,7 @@ class TikhonovCG(Solver):
 
     def _next(self):
         Tdir = self.setting.op( self.preconditioner(self.dir) )
-        g_Tdir = self.setting.Hcodomain.gram(Tdir)
+        g_Tdir = self.setting.h_codomain.gram(Tdir)
         stepsize = self.norm_res / np.real(
             np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
         )

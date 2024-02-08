@@ -207,18 +207,18 @@ def main():
 
     ################################## define Hilbert space setting
     if using_gabs_measurement:
-        Hcodomain0 = L2(grid, weights = 1/(scal_gabs**2 + scal_gabs*data_comp[0]))
+        h_codomain0 = L2(grid, weights = 1/(scal_gabs**2 + scal_gabs*data_comp[0]))
         data_comp = flat_codomain.split(data)
-        Hcodomain1 = L2(grid, weights=1/(scal**2 + scal*data_comp[1]))
+        h_codomain1 = L2(grid, weights=1/(scal**2 + scal*data_comp[1]))
         for j in range(2, len(flat_codomain)):
-            Hcodomain1 = Hcodomain1 + L2(grid, weights=1/(scal**2 +scal*data_comp[j]))
-        Hcodomain = hilbert.DirectSum(Hcodomain0, Hcodomain1)
+            h_codomain1 = h_codomain1 + L2(grid, weights=1/(scal**2 +scal*data_comp[j]))
+        h_codomain = hilbert.DirectSum(h_codomain0, h_codomain1)
     else:
         # define codomain Gram matrix based on observed data to approximate log-likelihood
-        Hcodomain = L2(grid, weights=1/(scal**2+scal*data_comp[0])) 
+        h_codomain = L2(grid, weights=1/(scal**2+scal*data_comp[0])) 
         for j in range(1, len(data_comp)):
-            Hcodomain = Hcodomain + L2(grid, weights=1/(scal**2 + scal*data_comp[j]))
-    #setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, Hcodomain=Hcodomain)
+            h_codomain = h_codomain + L2(grid, weights=1/(scal**2 + scal*data_comp[j]))
+    #setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
 
     ##################### define initial guess
     if init_guess_filename:
@@ -262,9 +262,9 @@ def main():
         sqrtdata = np.sqrt(scal*data) 
 
     discrepancy_rule = rules.Discrepancy(
-            Hcodomain.norm,
+            h_codomain.norm,
             data,
-            noiselevel= Hcodomain.norm(sqrtdata),
+            noiselevel= h_codomain.norm(sqrtdata),
             tau=1
         )
     stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=max_Newton_its,while_type=True))
@@ -318,7 +318,7 @@ def main():
         stats['ampl_err'].append(reco_error1)
         stats['phase_err'].append(reco_error2)
         stats['complex_err'].append(reco_error3)
-        stats['residuals'].append(setting.Hcodomain.norm(reco_data-data))
+        stats['residuals'].append(setting.h_codomain.norm(reco_data-data))
         stats['N'].append(N)
         if hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its):
             stats['nr_inner_steps'].append(solver.nr_inner_its())
@@ -347,7 +347,7 @@ def main():
 
     ########################################## perform inversion
 
-    setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, Hcodomain=Hcodomain)
+    setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
     if N_deriv:
         N_current = N_deriv[0]
         op_simple = PINEM_g_to_data(*opdata, N=N_current) * deepcopy(extension)

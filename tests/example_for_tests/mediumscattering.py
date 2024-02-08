@@ -51,7 +51,7 @@ def test_mediumscattering():
         # Define Sobolev norm on support via embedding
         #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
         h_domain = myh_domain, 
-        Hcodomain=L2
+        h_codomain=L2
     )
 
     solver = IrgnmCG(
@@ -67,8 +67,8 @@ def test_mediumscattering():
     stoprule = (
         rules.CountIterations(100) +
         rules.Discrepancy(
-            setting.Hcodomain.norm, data,
-            noiselevel=setting.Hcodomain.norm(noise),
+            setting.h_codomain.norm, data,
+            noiselevel=setting.h_codomain.norm(noise),
             tau=1.1
         )
     )

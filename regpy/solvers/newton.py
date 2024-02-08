@@ -41,7 +41,7 @@ class NewtonCG(Solver):
         # aux plays the role of s here to avoid storage for another vector in codomain
         self._x_k = self.setting.op.domain.zeros()
         # self._s += - self.deriv(self._x_k)
-        self._s2 = self.setting.Hcodomain.gram(self._s)
+        self._s2 = self.setting.h_codomain.gram(self._s)
         self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.setting.h_domain.gram_inv(self._rtilde)
@@ -51,7 +51,7 @@ class NewtonCG(Solver):
         while (self._k==0 or (np.sqrt(np.vdot(self._s2, self._s).real)
                > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
-            self._q2 = self.setting.Hcodomain.gram(self._q)
+            self._q2 = self.setting.h_codomain.gram(self._q)
             self._alpha = self._innerProd / np.vdot(self._q, self._q2).real
             self._x_k += self._alpha * self._d
             self._s += -self._alpha * self._q

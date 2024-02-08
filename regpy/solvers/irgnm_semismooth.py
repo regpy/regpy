@@ -42,7 +42,7 @@ class IRGNMSemiSmooth(Solver):
         """Prepare first iteration step"""
         self.y, self.deriv = self.setting.op.linearize(self.x)
         self.rhs=self.data-self.y+self.deriv(self.x)
-        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.rhs)))+self.regpar*self.init
+        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.rhs)))+self.regpar*self.init
         
         """Prepare newton-semismooth minimization"""
         self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
@@ -70,7 +70,7 @@ class IRGNMSemiSmooth(Solver):
         self.y, self.deriv = self.setting.op.linearize(self.x)
         
         self.rhs=self.data-self.y+self.deriv(self.x)
-        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.rhs)))+self.regpar*self.init
+        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.rhs)))+self.regpar*self.init
 
         #Prepare newton-semismooth minimization
         self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
@@ -102,7 +102,7 @@ class IRGNMSemiSmooth(Solver):
         project = CoordinateMask(self.setting.h_domain.vecsp, self.inactive)
         self.log.info('Running Tikhonov solver.')
         f, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv * project, self.setting.h_domain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
@@ -119,4 +119,4 @@ class IRGNMSemiSmooth(Solver):
         self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
         
     def _A(self, u):
-        return self.regpar*u+self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.Hcodomain.gram(self.deriv(u))))
+        return self.regpar*u+self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.deriv(u))))

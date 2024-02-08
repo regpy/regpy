@@ -64,12 +64,12 @@ data = exact_data+noise
 
 init = domain.from_ngs( 2 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=SobolevBoundary)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=SobolevBoundary)
 
 solver = Landweber(setting, data, init, stepsize=500)
 stoprule = (
         rules.CountIterations(300) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=1, tau=0))
+        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=1, tau=0))
 
 reco, reco_data = solver.run(stoprule)
 

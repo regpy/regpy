@@ -50,10 +50,10 @@ data = exact_data+noise
 init = domain.from_ngs ( 1 )
 init_data = op(init)
 
-setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=Sobolev)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=Sobolev)
 
 data_fidelity_operator = op - data
-data_fidelity = HilbertNorm(setting.Hcodomain) * data_fidelity_operator
+data_fidelity = HilbertNorm(setting.h_codomain) * data_fidelity_operator
 """The penalty term: 1/2 * ||f||_{TV}^2"""
 penalty = TV(setting.h_domain.vecsp)
 
@@ -69,7 +69,7 @@ alpha = 5*10**(-6)
 solver = ForwardBackwardSplitting(setting, data_fidelity, penalty, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
 stoprule = (
         rules.CountIterations(500) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.1))
+        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=1.1))
 
 reco, reco_data = solver.run(stoprule)
 

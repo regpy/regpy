@@ -22,14 +22,14 @@ def test_volterra_tikhonov_cg():
     data = exact_data + noise
     init = op.domain.ones()
 
-    setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
 
     solver = TikhonovCG(setting, data, regpar=0.01)
     stoprule = (
         rules.CountIterations(1000) +
         rules.Discrepancy(
-            setting.Hcodomain.norm, data,
-            noiselevel=setting.Hcodomain.norm(noise),
+            setting.h_codomain.norm, data,
+            noiselevel=setting.h_codomain.norm(noise),
             tau=1.1
         )
     )

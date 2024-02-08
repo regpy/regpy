@@ -58,13 +58,13 @@ data = exact_data+noise
 
 init = domain.from_ngs(1)
 
-setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=SobolevBoundary)
+setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=SobolevBoundary)
 
 #Discrepancy Principle usually stops very early
 landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
         rules.CountIterations(500) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1.2)
+        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=1.2)
 )
 
 reco, reco_data = landweber.run(stoprule)

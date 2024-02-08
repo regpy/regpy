@@ -42,7 +42,7 @@ class ADMM(Solver):
         self.penalty = penalty
         assert isinstance(self.data_fidelity, Functional)
         assert isinstance(self.penalty, Functional)
-        assert self.data_fidelity.h_domain == self.setting.Hcodomain
+        assert self.data_fidelity.h_domain == self.setting.h_codomain
         assert self.penalty.h_domain == self.setting.h_domain
 
         self.v1 = init['v1']
@@ -61,7 +61,7 @@ class ADMM(Solver):
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
 
         self.x, self.y = TikhonovCG(
-            setting=HilbertSpaceSetting(self.setting.op, self.setting.h_domain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.setting.op, self.setting.h_domain, self.setting.h_codomain),
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=1,
@@ -75,7 +75,7 @@ class ADMM(Solver):
         self.p2 -= self.gamma*(self.setting.op(self.x)-self.v2)
 
         self.x, self.y = TikhonovCG(
-            setting=HilbertSpaceSetting(self.setting.op, self.setting.h_domain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.setting.op, self.setting.h_domain, self.setting.h_codomain),
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=1,

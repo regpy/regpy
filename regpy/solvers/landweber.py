@@ -47,7 +47,7 @@ class Landweber(Solver):
         for count in range(10):
             h = h / norm
             derivh = deriv(h)
-            derivh = setting.Hcodomain.gram(derivh)
+            derivh = setting.h_codomain.gram(derivh)
             h = deriv.adjoint(derivh)
             h = setting.h_domain.gram_inv(h)
             norm = np.sqrt(np.real(np.vdot(h, h)))
@@ -56,7 +56,7 @@ class Landweber(Solver):
 
     def _next(self):
         self._residual = self.y - self.rhs
-        self._gy_residual = self.setting.Hcodomain.gram(self._residual)
+        self._gy_residual = self.setting.h_codomain.gram(self._residual)
         self._update = self.deriv.adjoint(self._gy_residual)
         self.x -= self.stepsize * self.setting.h_domain.gram_inv(self._update)
         self.y, self.deriv = self.setting.op.linearize(self.x)

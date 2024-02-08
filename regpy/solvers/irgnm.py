@@ -80,7 +80,7 @@ class IrgnmCG(Solver):
         stoprule.log.setLevel(logging.WARNING)
         # self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
+            setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
@@ -195,7 +195,7 @@ class IrgnmCGPrec(Solver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
+                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
@@ -209,7 +209,7 @@ class IrgnmCGPrec(Solver):
         else:
             preconditioner = MatrixMultiplication(self.M, domain=self.setting.h_domain.vecsp, codomain=self.setting.h_domain.vecsp)
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.Hcodomain),
+                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,
@@ -232,7 +232,7 @@ class IrgnmCGPrec(Solver):
         for i in range(0, self.krylov_order):
             L[i, :] = np.dot(self.krylov_basis, self.setting.h_domain.gram_inv(
                 self.deriv.adjoint(
-                    self.setting.Hcodomain.gram(self.deriv((self.krylov_basis[i, :]))))))
+                    self.setting.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
         """Express T*T in Krylov_basis"""
 
         #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues

@@ -73,15 +73,15 @@ def main():
     data = np.random.poisson(intensity * exact_data)/intensity
 
     # define codomain Gram matrix based on observed data to approximate log-likelihood
-    Hcodomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
-    Hcodomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)  
-    Hcodomain2 = L2(grid, weights=(1+intensity*data[2])/intensity)
-    Hcodomain = Hcodomain0+Hcodomain1+Hcodomain2
+    h_codomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
+    h_codomain1 = L2(grid, weights=(1+intensity*data[1])/intensity)  
+    h_codomain2 = L2(grid, weights=(1+intensity*data[2])/intensity)
+    h_codomain = h_codomain0+h_codomain1+h_codomain2
 
     # Image reconstruction using the IRGNM method
     setting = HilbertSpaceSetting(
         op=op, h_domain=h_domain,
-        Hcodomain=Hcodomain)
+        h_codomain=h_codomain)
     #init_vec = np.zeros_like(exact_solution)
     init_vec = np.zeros_like(projection(exact_solution))
 
@@ -92,9 +92,9 @@ def main():
     stoprule = (
         rules.CountIterations(max_iterations=100) +
         rules.Discrepancy(
-            setting.Hcodomain.norm,
+            setting.h_codomain.norm,
             data,
-            noiselevel=setting.Hcodomain.norm(np.sqrt(data/intensity)),
+            noiselevel=setting.h_codomain.norm(np.sqrt(data/intensity)),
             tau=1
         )
     )

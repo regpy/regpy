@@ -59,7 +59,7 @@ init = smoothed_op.domain.zeros()
 init_density, _ = smoothed_op.domain.split(init)
 init_density[...] = 1
 
-setting = HilbertSpaceSetting(op=smoothed_op, h_domain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=smoothed_op, h_domain=L2, h_codomain=L2)
 
 solver = IrgnmCG(
     setting=setting,
@@ -72,8 +72,8 @@ solver = IrgnmCG(
 stoprule = (
     rules.CountIterations(max_iterations=100) +
     rules.Discrepancy(
-        setting.Hcodomain.norm, data,
-        noiselevel=setting.Hcodomain.norm(exact_data - data),
+        setting.h_codomain.norm, data,
+        noiselevel=setting.h_codomain.norm(exact_data - data),
         tau=1.1
     )
 )

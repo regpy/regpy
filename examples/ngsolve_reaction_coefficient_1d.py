@@ -44,12 +44,12 @@ data = exact_data + noise
 
 init = domain.from_ngs( 1 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
 
 landweber = Landweber(setting, data, init, stepsize=1)
 stoprule = (
         rules.CountIterations(10000) +
-        rules.Discrepancy(setting.Hcodomain.norm, data, noiselevel=setting.Hcodomain.norm(noise), tau=1))
+        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=1))
 
 reco, reco_data = landweber.run(stoprule)
 

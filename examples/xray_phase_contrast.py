@@ -42,14 +42,14 @@ noise = noise_level * op.codomain.randn()
 data = exact_data + noise
 
 # Image-reconstruction using the IRGNM method
-setting = HilbertSpaceSetting(op=op, h_domain=L2, Hcodomain=L2)
+setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
 solver = IrgnmCG(setting, data, regpar=10)
 stoprule = (
     rules.CountIterations(max_iterations=10) +
     rules.Discrepancy(
-        setting.Hcodomain.norm,
+        setting.h_codomain.norm,
         data,
-        noiselevel=setting.Hcodomain.norm(noise),
+        noiselevel=setting.h_codomain.norm(noise),
         tau=1.1
     )
 )

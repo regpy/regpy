@@ -24,14 +24,14 @@ def test_volterra_irgnm_cg():
     data = exact_data + noise
     init = op.domain.ones()
 
-    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev(index=2), Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev(index=2), h_codomain=L2)
 
     solver = IrgnmCG(setting, data, regpar=1, regpar_step=0.9, init=init)
     stoprule = (
         rules.CountIterations(max_iterations=100) +
         rules.Discrepancy(
-            setting.Hcodomain.norm, data,
-            noiselevel=setting.Hcodomain.norm(noise),
+            setting.h_codomain.norm, data,
+            noiselevel=setting.h_codomain.norm(noise),
             tau=1.1
         )
     )

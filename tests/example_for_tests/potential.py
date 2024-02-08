@@ -23,12 +23,12 @@ def test_potential():
         nmeas=64,
     )
 
-    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, Hcodomain=L2)
+    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
 
     exact_solution = op.domain.sample(lambda t: np.sqrt(3 * np.cos(t)**2 + 1) / 2)
     exact_data = op(exact_solution)
     noise = op.codomain.randn()
-    noise = 0.01*setting.Hcodomain.norm(exact_data)/setting.Hcodomain.norm(noise) * noise
+    noise = 0.01*setting.h_codomain.norm(exact_data)/setting.h_codomain.norm(noise) * noise
     data = exact_data + noise
 
     init = op.domain.sample(lambda t: 1)
@@ -49,8 +49,8 @@ def test_potential():
     stoprule = (
         rules.CountIterations(100) +
         rules.Discrepancy(
-            setting.Hcodomain.norm, data,
-            noiselevel=setting.Hcodomain.norm(noise),
+            setting.h_codomain.norm, data,
+            noiselevel=setting.h_codomain.norm(noise),
             tau=2.1
         )
     )
