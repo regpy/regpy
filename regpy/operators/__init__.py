@@ -235,7 +235,7 @@ class Operator:
         useful."""
         raise NotImplementedError
 
-    def asLinearOperator(self):
+    def as_linear_operator(self):
         if self.linear:
             return SciPyLinearOperator(self)
         else:

@@ -242,7 +242,7 @@ def main():
                 init_vec = grid.complex_space().ones() * mask_a
         else:
             if using_polynomial_basis_for_phase:
-                T = phase_extension.asLinearOperator() # Legendre basis
+                T = phase_extension.as_linear_operator() # Legendre basis
                 init_phase_coeff_flat = lsq_linear(T,grid.flatten(init_phase)).x
                 init_phase_coeff = phase_extension.domain.fromflat(init_phase_coeff_flat)
                 init_vec_proj = op_ext.domain.join(ampl_projection(prior_ampl),init_phase_coeff)
