@@ -81,7 +81,7 @@ class DirichletOp(Operator):
         self.op_name='DirichletOp'
         """ use a mixed single and double layer potential ansatz with
              weights w_sl and w_dl"""
-        self.Ydim = 2* np.size(self.meas_directions) * np.size(self.inc_directions, 1)
+        self.Y_dim = 2* np.size(self.meas_directions) * np.size(self.inc_directions, 1)
         super().__init__(domain=domain, codomain=codomain)
 
 
