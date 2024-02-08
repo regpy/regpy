@@ -102,7 +102,7 @@ class GenTrig:
                 h, n))) / self.zpabs.transpose()
             return dhds
 
-    def coeff2Curve(self, coeff, n):
+    def coeff_to_curve(self, coeff, n):
 
 
         N = len(coeff)/2
