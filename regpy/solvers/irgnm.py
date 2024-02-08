@@ -27,7 +27,7 @@ class IrgnmCG(Solver):
         The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
-    cgpars : dict
+    cg_pars : dict
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
     simplified_op : Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
@@ -37,7 +37,7 @@ class IrgnmCG(Solver):
 
     def __init__(
         self, setting, data, regpar, regpar_step=2 / 3, 
-         init=None, cgpars=None, cgstop=None, 
+         init=None, cg_pars=None, cgstop=None, 
          inner_it_logging_level = logging.INFO, simplified_op = None
          ):
         super().__init__()
@@ -60,9 +60,9 @@ class IrgnmCG(Solver):
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        if cgpars is None:
-            cgpars = {}
-        self.cgpars = cgpars
+        if cg_pars is None:
+            cg_pars = {}
+        self.cg_pars = cg_pars
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
@@ -84,7 +84,7 @@ class IrgnmCG(Solver):
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
-            **self.cgpars,
+            **self.cg_pars,
             logging_level = self.inner_it_logging_level
         ).run(stoprule=stoprule)
         self.x += step
@@ -142,7 +142,7 @@ class IrgnmCGPrec(Solver):
         The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
-    cgpars : dict
+    cg_pars : dict
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
     precpars : dict
         Parameter dictionary passed to the computation of the spectral preconditioner
@@ -150,7 +150,7 @@ class IrgnmCGPrec(Solver):
 
     def __init__(
         self, setting, data, regpar, regpar_step=2 / 3, 
-        init=None, cgpars=None, precpars=None
+        init=None, cg_pars=None, precpars=None
         ):
         super().__init__()
         self.setting = setting
@@ -167,9 +167,9 @@ class IrgnmCGPrec(Solver):
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        if cgpars is None:
-            cgpars = {}
-        self.cgpars = cgpars
+        if cg_pars is None:
+            cg_pars = {}
+        self.cg_pars = cg_pars
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
         
         self.k=0
@@ -200,7 +200,7 @@ class IrgnmCGPrec(Solver):
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
                 xref=self.init - self.x,
-                **self.cgpars
+                **self.cg_pars
             ).run()
             self.need_prec_update = False
             self._preconditioner_update()
@@ -214,7 +214,7 @@ class IrgnmCGPrec(Solver):
                 regpar=self.regpar,
                 xref=self.init-self.x,
                 preconditioner=preconditioner,
-                **self.cgpars
+                **self.cg_pars
             ).run()
             step = self.M @ step
             

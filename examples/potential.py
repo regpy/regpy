@@ -41,7 +41,7 @@ solver = NewtonCG(
     regpar=10,
     regpar_step=0.8,
     init=init,
-    cgpars=dict(
+    cg_pars=dict(
         tol=1e-4
     )
 )"""

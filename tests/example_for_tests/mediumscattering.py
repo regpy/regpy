@@ -58,7 +58,7 @@ def test_mediumscattering():
         setting, data,
         regpar=0.0001, regpar_step=0.8,
         init=init,
-        cgpars=dict(
+        cg_pars=dict(
             tol=1e-8,
             reltolx=1e-8,
             reltoly=1e-8

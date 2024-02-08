@@ -432,7 +432,7 @@ class HilbertNormGeneric(Functional):
     def _hessian(self, x):
         return self.h_space.gram
 
-    def _proximal(self, x, tau, cgpars=None):
+    def _proximal(self, x, tau, cg_pars=None):
         if self.h_domain == self.h_space:
             return 1/(1+tau)*x
         else:

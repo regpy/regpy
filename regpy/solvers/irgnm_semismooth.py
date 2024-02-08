@@ -15,7 +15,7 @@ class IRGNMSemiSmooth(Solver):
     `regpar_n` is a decreasing geometric sequence of regularization parameters.
     """
 
-    def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cgpars=None):
+    def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cg_pars=None):
         super().__init__()
         self.setting=setting
         """The problem setting"""
@@ -30,9 +30,9 @@ class IRGNMSemiSmooth(Solver):
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        if cgpars is None:
-            cgpars = {}
-        self.cgpars = cgpars
+        if cg_pars is None:
+            cg_pars = {}
+        self.cg_pars = cg_pars
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
         self.psi_minus=psi_minus
         self.psi_plus=psi_plus
@@ -106,7 +106,7 @@ class IRGNMSemiSmooth(Solver):
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
-            **self.cgpars
+            **self.cg_pars
         ).run()
         self.x[self.inactive] = f[self.inactive]
         z = self._A(self.x)

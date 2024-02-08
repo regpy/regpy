@@ -31,10 +31,10 @@ class ADMM(Solver):
         Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
     proximal_pars_penalty : dict, optional
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
-    cgpars : dict, optional
+    cg_pars : dict, optional
         Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
     """
-    def __init__(self,  setting, data_fidelity, penalty, init, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cgpars = None):
+    def __init__(self,  setting, data_fidelity, penalty, init, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cg_pars = None):
         super().__init__()
         self.setting = setting
         assert self.setting.op.linear
@@ -55,9 +55,9 @@ class ADMM(Solver):
         self.proximal_pars_data_fidelity = proximal_pars_data_fidelity
         self.proximal_pars_penalty = proximal_pars_penalty
 
-        if cgpars is None:
-            cgpars = {}
-        self.cgpars = cgpars
+        if cg_pars is None:
+            cg_pars = {}
+        self.cg_pars = cg_pars
         """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
 
         self.x, self.y = TikhonovCG(
@@ -65,7 +65,7 @@ class ADMM(Solver):
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=1,
-            **self.cgpars
+            **self.cg_pars
         ).run()
 
     def _next(self):
@@ -79,5 +79,5 @@ class ADMM(Solver):
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=1,
-            **self.cgpars
+            **self.cg_pars
         ).run()
