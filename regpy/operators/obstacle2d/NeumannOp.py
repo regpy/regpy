@@ -62,7 +62,7 @@ class NeumannOp(Operator):
 
         self.u=None  # values of total field at boundary
         """ weights of single and double layer potentials"""
-        self.wSL = -complex(0,1)*self.kappa
+        self.w_sl = -complex(0,1)*self.kappa
         self.wDL = 1
         # LU factors + permuation for integral equation matrix
         self.L=None
@@ -71,7 +71,7 @@ class NeumannOp(Operator):
         self.FF_combined=None
         self.op_name = 'NeumannOp'
         """ use a mixed single and double layer potential ansatz with
-         weights wSL and wDL"""
+         weights w_sl and wDL"""
 
         self.Ydim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
 
@@ -94,8 +94,8 @@ class NeumannOp(Operator):
             Iop = self.wDL*op_T(self.bd,Iop_data)
         else:
             Iop = np.zeros(np.size(self.bd.z,2),np.size(self.bd.z,2));
-        if self.wSL!=0:
-            Iop = Iop + self.wSL*(op_K(self.bd,Iop_data).T - np.diag(self.bd.zpabs))
+        if self.w_sl!=0:
+            Iop = Iop + self.w_sl*(op_K(self.bd,Iop_data).T - np.diag(self.bd.zpabs))
             self.Iop=Iop
         #F.Iop=Iop;
         self.u = complex(0,1)*np.zeros((2*self.N_ieq,np.size(self.inc_directions,1)))
@@ -104,13 +104,13 @@ class NeumannOp(Operator):
         self.perm_mat, self.L, self.U =scla.lu(Iop)
         self.perm=self.perm_mat.dot(np.arange(0, np.size(self.bd.z,1)))
         self.FF_combined = farfield_matrix(self.bd,self.meas_directions,self.kappa,  \
-                                           self.wSL,self.wDL)
+                                           self.w_sl,self.wDL)
         farfield = []
 
         for l in range (0,np.size(self.inc_directions,1)):
             rhs = -2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.z))* \
                 (self.wDL*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.bd.normal) \
-                                     + self.wSL*self.bd.zpabs)
+                                     + self.w_sl*self.bd.zpabs)
             self.u[:, l]=np.linalg.solve(self.L.T, \
                           np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
             complex_farfield = FF_DL.dot(self.u[:,l])
