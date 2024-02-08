@@ -25,8 +25,8 @@ class ImShowFig:
         self.im = np.empty((nr_rows,nr_cols),dtype = object)
         self.cb = np.empty((nr_rows,nr_cols),dtype = object)
 
-    def plot(self,plotdata):
-        for datum in plotdata:
+    def plot(self,plot_data):
+        for datum in plot_data:
             row,col = datum['pos']
             assert row <= self.nr_rows
             assert col <= self.nr_cols
