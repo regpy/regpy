@@ -32,11 +32,11 @@ def main():
 
     # define grid
     Xdim = 256
-    Ydim = 256
+    Y_dim = 256
     grid = UniformGridFcts(np.linspace(0, 1, Xdim, endpoint=False),
-                       np.linspace(0, 1, Ydim, endpoint=False)).real_space()
+                       np.linspace(0, 1, Y_dim, endpoint=False)).real_space()
     cgrid = grid.complex_space()
-    [Xco, Yco] = np.meshgrid(np.arange(-1, 1, 2/Xdim), np.arange(-1, 1, 2/Ydim))
+    [Xco, Yco] = np.meshgrid(np.arange(-1, 1, 2/Xdim), np.arange(-1, 1, 2/Y_dim))
     mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
 
@@ -58,10 +58,10 @@ def main():
 
     # Create phantom image (= padded example-image)
     picture = ascent()
-    exact_solution = picture[-Xdim//2:, -Ydim//2:].astype(np.float64)/255
+    exact_solution = picture[-Xdim//2:, -Y_dim//2:].astype(np.float64)/255
     if sol_type is None:
         exact_solution = exact_solution + 0.3j*2*np.pi * \
-            picture[:Xdim//2, :Ydim//2].astype(np.float64)/255
+            picture[:Xdim//2, :Y_dim//2].astype(np.float64)/255
     pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2,
                     (grid.shape[1] - exact_solution.shape[1])//2])
     exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=0)

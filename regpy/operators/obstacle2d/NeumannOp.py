@@ -73,7 +73,7 @@ class NeumannOp(Operator):
         """ use a mixed single and double layer potential ansatz with
          weights w_sl and w_dl"""
 
-        self.Ydim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
+        self.Y_dim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
 
 
 

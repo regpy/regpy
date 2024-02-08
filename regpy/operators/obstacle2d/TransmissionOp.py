@@ -66,7 +66,7 @@ class TransmissionOp(Operator):
 
 
 
-        self.Ydim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
+        self.Y_dim = 2* np.size(self.meas_directions,1) * np.size(self.inc_directions,1)
 
 
 
