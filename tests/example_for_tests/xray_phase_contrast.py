@@ -18,7 +18,7 @@ def test_xray_phase_contrast():
 
 
     # Example parameters
-    fresnelNumber = 5e-4    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
+    fresnel_number = 5e-4    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
                             # in grid (i.e. with the size of one pixel for the above choice of grid)
     noise_level = 0.01      # Noise level in the simulated data
 
@@ -27,7 +27,7 @@ def test_xray_phase_contrast():
     grid = UniformGridFcts(np.arange(1024), np.arange(1024))
 
     # Forward operator
-    op = xray_phase_contrast(grid, fresnelNumber)
+    op = xray_phase_contrast(grid, fresnel_number)
 
     # Create phantom phase-image (= padded example-image)
     exact_solution = ascent().astype(np.float64)

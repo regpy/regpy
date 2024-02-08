@@ -21,7 +21,7 @@ logging.basicConfig(
 
 def main():
     # Example parameters
-    fresnelNumber = 5e2   # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
+    fresnel_number = 5e2   # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
 
     # in grid (i.e. with the size of one pixel for the above choice of grid)
     noise_level = 0.001       # Noise level in the simulated data
@@ -41,7 +41,7 @@ def main():
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
 
     # Forward operator and its domain
-    op = wave_field_reco_PINEM(cgrid, fresnelNumber, mask.astype(float), sol_type,parallel=True)  
+    op = wave_field_reco_PINEM(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
     """if sol_type == None:
         Hdomain = Sobolev(cgrid, index=0.5)
     else:
