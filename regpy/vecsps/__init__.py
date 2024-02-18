@@ -2,7 +2,8 @@
 
 The classes in this module implement various vector spaces on which the
 `regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`,
-which represents plain arrays of some shape and dtype.
+which represents plain numpy arrays of some shape and dtype. So far it is assumed that 
+vectors are always represented by numpy arrays. 
 
 VectorSpaces serve the following main purposes:
 
@@ -21,7 +22,7 @@ complex vector spaces.
 - Checking whether two vector spaces are considered equal. This is used in consistency checks
 e.g. for operator compositions.
 
-All vector spaces are considered as real vector spaces, even when the dtype is complex. This
+All vector spaces are considered as real vector spaces, even if the dtype is complex. This
 affects iteration over a basis as well as functions returning the dimension or flattening arrays.
 """
 
@@ -282,7 +283,7 @@ class VectorSpace:
 
 
 class GridFcts(VectorSpace):
-    """A vector space representing a rectangular grid.
+    """A vector space representing functions defined on a rectangular grid.
 
     Parameters
     ----------
@@ -352,7 +353,7 @@ class GridFcts(VectorSpace):
 
 
 class UniformGridFcts(GridFcts):
-    """A vector space representing a rectangular grid with equidistant axes.
+    """A vector space representing functions defined on a rectangular grid with equidistant axes.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
     is not uniform.
