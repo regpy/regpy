@@ -4,7 +4,7 @@ import numpy as np
 from regpy.solvers import Solver
 from regpy import util
 from regpy.functionals import Functional
-from regpy.hilbert import HilbertSpaceSetting
+from regpy.solvers import HilbertSpaceSetting
 
 from regpy.solvers.tikhonov import TikhonovCG
 

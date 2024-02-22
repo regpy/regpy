@@ -132,18 +132,21 @@ class TikhonovCG(Solver):
                 valx = np.sqrt(self.norm_res / self.norm_x / self.kappa) / self.regpar
                 tol_report = tol_report+'X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
                 if valx < self.reltolx / (1 + self.reltolx):
+                    self.log.info(tol_report)
                     return self.converge()
 
             if self.reltoly is not None:
                 valy = np.sqrt(self.norm_res / self.norm_y / self.kappa / self.regpar)
                 tol_report = tol_report+"Y:{:1.1e}/{:1.1e} ".format(valy,self.reltoly / (1 + self.reltoly))
                 if valy < self.reltoly / (1 + self.reltoly):
+                    self.log.info(tol_report)
                     return self.converge()
 
             if self.tol is not None:
                 val = np.sqrt(self.norm_res / self.norm_res_init / self.kappa) 
                 tol_report = tol_report+"res.red: {:1.1e}/{:1.1e}".format(val,self.tol)
                 if val < self.tol: 
+                    self.log.info(tol_report)
                     return self.converge()
 
             self.log.debug(tol_report)
