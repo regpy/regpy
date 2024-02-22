@@ -362,13 +362,14 @@ class TensorProd(HilbertSpace):
         for w, s in zip(self.weights, self.factors):
             basis =[]
             domains.append(s.gram.domain)
-            for v in s.gram.domain.iter_basis():
+            for v in s.gram.domain.real_space().iter_basis():
                 if w == 1:
-                    basis.append(s.gram(v))
+                    basis.append(s.gram(v).flatten())
                 else:
-                    basis.append((w**2 * s.gram)(v))
+                    basis.append((w**2 * s.gram)(v).flatten())
             bases.append(np.array(basis))
-        return vecsps.tensor_bases.TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases)
+        from regpy.vecsps.tensor_bases import TensorBasis
+        return TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
 
     def __getitem__(self, item):
         return self.factors[item]
