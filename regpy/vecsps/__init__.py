@@ -96,9 +96,11 @@ class VectorSpace:
         return np.empty(self.shape, dtype=dtype or self.dtype)
 
     def iter_basis(self):
-        """Generator iterating over the standard basis of the vector space. For efficiency,
+        r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
-        the array longer than that, perform a copy.
+        the array longer than that, perform a copy. In case of complex a vector space after each
+        each array modefied in its place with a real one it returns the same vector with \(1i\)
+        in its place.   
         """
         elm = self.zeros()
         for idx in np.ndindex(self.shape):
@@ -518,7 +520,10 @@ class DirectSum(VectorSpace):
 class Prod(VectorSpace):
     """The tensor product of an arbirtary number of vector spaces.
 
-    Elements of the tensor product will always be real arrays with in n-dim where n is number of factors.
+    Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
+    Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
+    basis element from teh factored spaces. Note, that spaces with posible multidimensional elements
+    (e.g. `UniformGridFcts` with multiple dimensions) get flatted. 
 
     Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.
 
@@ -535,8 +540,10 @@ class Prod(VectorSpace):
         assert all(isinstance(s, VectorSpace) for s in factors)
         assert all(s.is_complex for s in factors) or all(not s.is_complex for s in factors)
         self.factors = []
+        """List of the `VectorSpaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1
+        """Poduct of the `volume_elem` of all factors that have defined this property. """
         if factors[0].is_complex:
             dt=np.complex128
         else:
