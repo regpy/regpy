@@ -12,7 +12,7 @@ class PaddingOperator2D(Operator):
         The domain on which the operator is defined.
     pad_top=,pad_bottom,pad_left,pad_right: amount of padding in different directions
 
-    Returns
+    Notes
     -------
     A wrapper of the np.pad function
     """

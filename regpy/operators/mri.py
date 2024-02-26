@@ -35,7 +35,7 @@ class CoilMult(Operator):
     def _eval(self, x, differentiate=False):
         density, coils = self.domain.split(x)
         if differentiate:
-            # We need to copy here since .split() returns views into x if possible.
+            r"""We need to copy here since `.split()` returns views into `x` if possible."""            
             self._density = density.copy()
             self._coils = coils.copy()
         return density * coils
@@ -48,7 +48,7 @@ class CoilMult(Operator):
         density = self._density
         coils = self._coils
         if self.grid.is_complex:
-            # Only conj() in complex case. For real case, we can avoid the copy.
+            r"""Only `conj()` in complex case. For real case, we can avoid the copy."""
             density = np.conj(density)
             coils = np.conj(coils)
         return self.domain.join(

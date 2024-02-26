@@ -967,16 +967,12 @@ class Power(Operator):
         return np.conjugate(self._factor) * y
 
 class DirectSum(Operator):
-    """The direct sum of operators. For
-
-        T_i : X_i -> Y_i
-
+    r"""The direct sum of operators. For
+    \[ T_i \colon X_i \to Y_i \]
     the direct sum
-
-        T := DirectSum(T_i) : DirectSum(X_i) -> DirectSum(Y_i)
-
-    is given by `T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
-    with blocks (T_i).
+    \[ T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) \]
+    is given by \(T(x)_i := T_i(x_i)\). As a matrix, this is the block-diagonal
+    with blocks \((T_i)\).
 
     Parameters
     ----------
@@ -994,6 +990,7 @@ class DirectSum(Operator):
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
+        r""" List of all operators \((T_1,\dots,T_n)\)"""
         for op in ops:
             if flatten and isinstance(op, type(self)):
                 self.ops.extend(op.ops)
@@ -1066,15 +1063,15 @@ class DirectSum(Operator):
         return iter(self.ops)
 
 class VectorOfOperators(Operator):
-    """Vector of operators. For
-
-        T_i : X -> Y_i
-
+    r"""Vector of operators. For
+    \[
+    T_i \colon X \to Y_i
+    \]
     we define
-
-        T := VectorOfOperators(T_i) : X -> DirectSum(Y_i)
-
-    by `T(x)_i := T_i(x)`. 
+    \[
+    T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
+    \]
+    by \(T(x)_i := T_i(x)\). 
     
     Parameters
     ----------
@@ -1090,6 +1087,7 @@ class VectorOfOperators(Operator):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
         self.ops = ops
+        """List of all Operators \((T_1,\dots,T_n)\)"""
 
         if domain is None:
             self.domain = self.ops[0].domain
@@ -1144,15 +1142,15 @@ class VectorOfOperators(Operator):
         return iter(self.ops)
 
 class MatrixOfOperators(Operator):
-    """Matrix of operators. For
-
-        T_ij : X_j -> Y_i
-
+    r"""Matrix of operators. For
+    \[
+    T_ij \colon X_j \to Y_i
+    \]
     we define
-
-        T := MatrixOfOperators(T_ij) : DirectSum(X_j) -> DirectSum(Y_i)
-
-    by `T(x)_i := \sum_j T_ij(x_j)`. 
+    \[
+    T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
+    \]
+    by \(T(x)_i := \sum_j T_ij(x_j)\). 
     
     Parameters
     ----------
@@ -1169,6 +1167,7 @@ class MatrixOfOperators(Operator):
         ops_flat = [op for op_col in ops for op in op_col]
         assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
         self.ops = ops
+        r""" Matrix of Operators \((T_ij)\)"""
 
         domains = [None]*len(ops)
         for j in range(len(ops)):

@@ -56,9 +56,14 @@ def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel =
 class NemitzkyOpForG(Operator):
     """
     Parameters: 
-      - domain: A complex regpy.vecsps.VectorSpace
-      - N: an integer representing the order of Bessel functions
-
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        A complex regpy.vecsps.VectorSpace.
+    N : int
+        an integer representing the order of Bessel functions
+    
+    Notes:
+    ----------
     Input of eval: 
     - A pair of real-valued vectors on domain. The first component represents the modulus |g| of g, the second 
       component the phase arg(g)=ln(g/|g|)/i. 
@@ -71,6 +76,7 @@ class NemitzkyOpForG(Operator):
         assert domain.is_complex
         rdomain = domain.real_space()
         self.N =N
+        """An integer representing the order of Bessel functions."""
         super().__init__(DirectSumSpace(rdomain,rdomain), domain)
 
     def _eval(self, x, differentiate=False):
@@ -90,22 +96,28 @@ class NemitzkyOpForG(Operator):
         return self.domain.join(abs_res,arg_res)#abs_res + 1j*arg_res #
 
 class PtwDividedBessel(Operator):
-    """
+    r"""
     Parameters: 
-      - domain: A real regpy.vecsps.VectorSpace
-      - N: an integer representing the order of Bessel functions
+    -----------
+    domain : regpy.vecsps.VectorSpace
+        A real regpy.vecsps.VectorSpace
+    N : int 
+        an integer representing the order of Bessel functions
 
+    Notes:
+    ----------
     Input of eval: 
     - A real-valued vector r on domain.  
 
     Output of eval: 
     - A real vector of the same size with entries 
-            J_N(2r)*r^(-N ) .
+    \[J_N(2r)r^{-N}.\]
     """    
 
     def __init__(self, N,domain):
         assert not domain.is_complex
         self.N =N
+        """An integer representing the order of Bessel functions."""
         super().__init__(domain, domain)
 
     def _eval(self, r, differentiate=False):
@@ -136,23 +148,35 @@ class PtwDividedBessel(Operator):
         return self._factor * y
 
 class ComplexNemitzkyOpForG(Operator):
-    """
+    r"""
     Parameters: 
-      - domain: A complex regpy.vecsps.VectorSpace
-      - N: an integer representing the order of Bessel functions
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        A complex regpy.vecsps.VectorSpace
+    N : int
+        an integer representing the order of Bessel functions
 
+    Notes:
+    ----------
     Input of eval: 
     - A complex vector g on domain. 
 
     Output of eval: 
     - A complex vector of the same size as g with entries 
-            J_N(2|g|) * exp(i N arg(g)) = J_N(2|g|)*|g|^(-N ) * g^N ,       N>=0,
-                                        = J_N(2|g|)*|g|^(-N ) * conj(g)^N , N <0
+    \[
+    J_N(2|g|)  \exp(i N \textrm{arg}(g)) = 
+    \begin{cases}
+    J_N(2|g|)*|g|^{-N} g^N ,\; N>=0, \\
+    J_N(2|g|)|g|^{-N} * \textrm{conj}(g)^N ,\; N <0
+    \end{cases}
+    \]
     """
-    def __init__(self, N,domain):
+    def __init__(self, N, domain):
         assert domain.is_complex
         self.N =N
+        """An integer representing the order of Bessel functions. """
         self.pow = Power(np.uintc(np.absolute(N)),domain,integer=True)
+        """Power operator with Poser N."""
         self.jv_div = PtwDividedBessel(N,domain.real_space())
         super().__init__(domain, domain)
 

@@ -273,6 +273,18 @@ class VectorSpace:
             return DirectSum(other, self, flatten=True)
         else:
             return NotImplemented
+        
+    def __mul__(self, other):
+        if isinstance(other, VectorSpace):
+            return Prod(self, other)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, VectorSpace):
+            return Prod(other, self)
+        else:
+            return NotImplemented
 
     def __pow__(self, power):
         assert isinstance(power, int)
