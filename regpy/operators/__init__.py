@@ -237,9 +237,6 @@ class Operator:
 
     def _adjoint_derivative(self, x):
         return self._adjoint(self._derivative(x))
-
-    def _derivative_adjoint(self, y):
-        return self._derivative(self._adjoint(y))
     
     @property
     def inverse(self):
@@ -364,8 +361,8 @@ class AdjointDerivative(Operator):
     r"""A proxy class wrapping a non-linear operator \(F\). Calling it will evaluate the coposition of the operator's
     derivative adjoint with its derivative \(F'^\ast\circ F'\). This class should not be instantiated directly, 
     but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
-    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` and `_derivative_adjoint` note that
-    as long as only either evaluation or the adjoint is needed it is enough to implement one.   
+    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
+    needed as it is a selfadjoint operator.   
     """
 
     def __init__(self, op):
@@ -382,7 +379,7 @@ class AdjointDerivative(Operator):
         return self.op.get()._adjoint_derivative(x)
 
     def _adjoint(self, x):
-        return self.op.get()._derivative_adjoint(x)
+        return self.op.get()._adjoint_derivative(x)
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
