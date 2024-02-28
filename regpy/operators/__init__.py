@@ -175,7 +175,7 @@ class Operator:
         assert not self.codomain or y in self.codomain
         return y
 
-    def linearize(self, x):
+    def linearize(self, x, adjoint_derivitave = False):
         """Linearize the operator around some point.
 
         Parameters
@@ -191,12 +191,20 @@ class Operator:
         if self.linear:
             return self(x), self
         else:
-            assert not self.domain or x in self.domain
-            self.__revoke()
-            y = self._eval(x, differentiate=True)
-            assert not self.codomain or y in self.codomain
-            deriv = Derivative(self.__get_handle())
-            return y, deriv
+            if not adjoint_derivitave:
+                assert not self.domain or x in self.domain
+                self.__revoke()
+                y = self._eval(x, differentiate=True)
+                assert not self.codomain or y in self.codomain
+                deriv = Derivative(self.__get_handle())
+                return y, deriv
+            else:
+                assert not self.domain or x in self.domain
+                self.__revoke()
+                y = self._eval(x, differentiate=True)
+                assert not self.codomain or y in self.codomain
+                adjointderiv = AdjointDerivative(self.__get_handle())
+                return y, adjointderiv
 
     @util.memoized_property
     def adjoint(self):
@@ -227,6 +235,9 @@ class Operator:
     def _adjoint(self, y):
         raise NotImplementedError
 
+    def _adjoint_derivative(self, x):
+        return self._adjoint(self._derivative(x))
+    
     @property
     def inverse(self):
         """A property containing the  inverse as an `Operator` instance. In most cases this will
@@ -341,6 +352,34 @@ class Derivative(Operator):
 
     def _adjoint(self, x):
         return self.op.get()._adjoint(x)
+
+    def __repr__(self):
+        return util.make_repr(self, self.op.get())
+
+
+class AdjointDerivative(Operator):
+    r"""A proxy class wrapping a non-linear operator \(F\). Calling it will evaluate the coposition of the operator's
+    derivative adjoint with its derivative \(F'^\ast\circ F'\). This class should not be instantiated directly, 
+    but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
+    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
+    needed as it is a selfadjoint operator.   
+    """
+
+    def __init__(self, op):
+        if not isinstance(op, _Revocable):
+            # Wrap plain operators in a _Revocable that will never be revoked to
+            # avoid case distinctions below.
+            op = _Revocable(op)
+        self.op = op
+        """The underlying operator."""
+        _op = op.get()
+        super().__init__(_op.domain, _op.domain, linear=True)
+
+    def _eval(self, x):
+        return self.op.get()._adjoint_derivative(x)
+
+    def _adjoint(self, x):
+        return self.op.get()._adjoint_derivative(x)
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
