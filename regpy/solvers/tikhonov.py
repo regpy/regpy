@@ -8,10 +8,10 @@ from regpy.operators import Identity
 
 
 class TikhonovCG(Solver):
-    """The Tikhonov method for linear inverse problems. Minimizes
-
-        ||T x - data||**2 + regpar * ||x - xref||**2
-
+    r"""The Tikhonov method for linear inverse problems. Minimizes
+    \[
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
+    \]
     using a conjugate gradient method.
 
     Parameters

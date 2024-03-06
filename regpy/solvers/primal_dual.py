@@ -67,7 +67,9 @@ class PDHG(Solver):
         self.x_old = self.x
         self.y = self.setting.op(self.x)
 
-"""The Douglas-Rashford Splitting Algorithm
+
+class DouglasRashford(Solver):
+    r"""The Douglas-Rashford Splitting Algorithm
 
     Minimizes Data_fidelity(f)+regpar*penalty(f)
     Parameters
@@ -88,8 +90,7 @@ class PDHG(Solver):
             Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
         proximal_pars_penalty : dict, optional
             Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
-"""
-class DouglasRashford(Solver):
+    """
     def __init__(self,  setting, data_fidelity, penalty, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__()
         self.setting = setting
