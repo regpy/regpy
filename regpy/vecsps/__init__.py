@@ -303,9 +303,9 @@ class MeasureSpaceFcts(VectorSpace):
 
     Parameters
     ----------
-    measure : np.ndarray
+    measure : np.ndarray, optional
         The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. Default: None
-    shape : int or tuple of ints
+    shape : int or tuple of ints, optional
         The shape of the arrays representing elements of this vector space. If it is not given the shape is taken from measure. Default: None
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
@@ -346,7 +346,7 @@ class MeasureSpaceFcts(VectorSpace):
 
 
 
-class GridFcts(VectorSpace):
+class GridFcts(MeasureSpaceFcts):
     """A vector space representing functions defined on a rectangular grid.
 
     Parameters
@@ -367,9 +367,20 @@ class GridFcts(VectorSpace):
          If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
         The dtype of the vector space.
+    use_cell_measure : bool, optional
+        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to False.
+    boundary_ext : string {‘sym’, ‘const’, ‘zero’}, optional
+        Defines how the measure is continued at the boundary. Possible modes are
+        'sym' : The boundary coordinates are assumed to be in the center of their cell
+        'const': The boundary cells are extended by a constant given in boundary_ext_const
+        'zero': The boundary coordinates are assumed to be on the outer edge of their cell
+        defaults to 'sym'
+    boundary_ext_const: float or tuple of floats, optional
+        Defines extension of cells at edges of each axis. Can be set to a constant for all axes, one constant for each axis
+        or one constant for the start and one for the end of each axis. 
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float):
+    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=False,boundary_ext='symmetric',ext_const=None):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
@@ -391,8 +402,10 @@ class GridFcts(VectorSpace):
         """The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
-
-        super().__init__(self.coords[0].shape, dtype)
+        if(use_cell_measure):
+            super().__init__(GridFcts._calc_cell_measure(views,boundary_ext=boundary_ext,ext_const=ext_const), dtype=dtype)
+        else:
+            super().__init__(shape=self.coords[0].shape, dtype=dtype)
 
         axes = []
         extents = []
@@ -414,6 +427,34 @@ class GridFcts(VectorSpace):
                 assert self.shape[i] == axisdata[i].shape[0]
         self.axisdata = axisdata
         """The axisdata, if given."""
+
+    @classmethod
+    def _calc_cell_measure(views,boundary_ext,ext_const=None):
+        ext_views=[]
+        if(boundary_ext=="sym"):
+            ext_views=[np.insert(v,[1,2],np.array([2*v[0]-v[1],2*v[-1]-v[-2]])) for v in views]
+        elif(boundary_ext=="zero"):
+            ext_views=[np.insert(v,[1,2],np.array([v[0],v[-1]])) for v in views]
+        elif(boundary_ext=="const"):
+            ext_arr=np.zeros((len(views),2))
+            if(np.isscalar(ext_const)):
+                ext_const=len(views)*(ext_const,)
+            assert isinstance(ext_const, tuple)
+            assert len(ext_const)==len(views)
+            for i, v in enumerate(views):
+                if isinstance(ext_const[i],tuple):
+                    assert np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1])
+                    ext_views.append(np.insert(v,[1,2],np.array([v[0]-ext_const[i][0],v[-1]+ext_const[i][1]])))
+                else:
+                    assert np.isscalar(ext_const[i])
+                    ext_views.append(np.insert(v,[1,2],np.array([v[0]-ext_const[i],v[-1]+ext_const[i]])))
+        ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_views]
+        assert len(views)<=26
+        return np.einsum(','.join([chr(k) for k in range(65,65+len(views))]),*ax_widths)#computes product of entries from axes
+            
+
+
+
 
 
 class UniformGridFcts(GridFcts):
