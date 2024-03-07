@@ -295,6 +295,50 @@ class VectorSpace:
             domain = DirectSum(domain, self, flatten=True)
         return domain
 
+class MeasureSpaceFcts(VectorSpace):
+    r"""Discrete space \(\mathbb{R}^N\) or \(\mathbb{C}^N\) (viewed as a real
+    space) with an additional measure that is given via a non-negative weight for each element of the space.
+    Either the measure or the shape have to be specified. The measure defaults to the constant 1 measure for each point if it is not given.
+
+
+    Parameters
+    ----------
+    measure : np.array
+        The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. Default: None
+    shape : int or tuple of ints
+        The shape of the arrays representing elements of this vector space. If it is not given the shape is taken from measure. Default: None
+    dtype : data-type, optional
+        The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
+
+    """
+
+    def __init__(self,measure=None,shape=None,dtype=float):
+        assert measure!=None or shape!=None
+        if(measure==None):
+            measure=np.ones(shape)
+        assert np.min(measure)>=0
+        self._measure=measure
+        r""" Stores values of point measures """
+        super().__init__(measure.shape,dtype)
+
+    @property
+    def measure(self):
+        return self._measure
+    
+    @measure.setter
+    def measure(self,new_measure):
+        assert np.issubdtype(new_measure.dtype, np.floating)
+        assert new_measure.shape==self.shape
+        assert np.min(new_measure)>=0
+        self._measure=new_measure
+
+    def __eq__(self, other):
+        if(not self.super().__eq__(other)):
+            return False
+        return np.array_equal(self.measure,other.measure)
+        
+
+
 
 class GridFcts(VectorSpace):
     """A vector space representing functions defined on a rectangular grid.
