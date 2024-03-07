@@ -380,7 +380,7 @@ class GridFcts(MeasureSpaceFcts):
         or one constant for the start and one for the end of each axis. 
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=False,boundary_ext='symmetric',ext_const=None):
+    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=False,boundary_ext='sym',ext_const=None):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
@@ -402,15 +402,11 @@ class GridFcts(MeasureSpaceFcts):
         """The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
-        if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(views,boundary_ext=boundary_ext,ext_const=ext_const), dtype=dtype)
-        else:
-            super().__init__(shape=self.coords[0].shape, dtype=dtype)
 
         axes = []
         extents = []
-        for i in range(self.ndim):
-            slc = [0] * self.ndim
+        for i in range(self.coords.shape[0]):
+            slc = [0] * self.coords.shape[0]
             slc[i] = slice(None)
             axis = self.coords[i][tuple(slc)]
             axes.append(np.asarray(axis))
@@ -420,6 +416,11 @@ class GridFcts(MeasureSpaceFcts):
         self.extents = np.asarray(extents)
         """The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
+        if(use_cell_measure):
+            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype)
+        else:
+            super().__init__(shape=self.coords[0].shape, dtype=dtype)
+
         if axisdata is not None:
             axisdata = tuple(axisdata)
             assert len(axisdata) == len(coords)
@@ -428,29 +429,30 @@ class GridFcts(MeasureSpaceFcts):
         self.axisdata = axisdata
         """The axisdata, if given."""
 
-    @classmethod
-    def _calc_cell_measure(views,boundary_ext,ext_const=None):
-        ext_views=[]
+    def _calc_cell_measure(axes,boundary_ext,ext_const=None):
+        ext_axes=[]
         if(boundary_ext=="sym"):
-            ext_views=[np.insert(v,[1,2],np.array([2*v[0]-v[1],2*v[-1]-v[-2]])) for v in views]
+            ext_axes=[np.pad(v,(1,1),mode='reflect',reflect_type='odd') for v in axes]
         elif(boundary_ext=="zero"):
-            ext_views=[np.insert(v,[1,2],np.array([v[0],v[-1]])) for v in views]
+            ext_axes=[np.pad(v,(1,1),mode='edge') for v in axes]           
         elif(boundary_ext=="const"):
-            ext_arr=np.zeros((len(views),2))
+            ext_arr=np.zeros((len(axes),2))
             if(np.isscalar(ext_const)):
-                ext_const=len(views)*(ext_const,)
+                ext_const=len(axes)*(ext_const,)
             assert isinstance(ext_const, tuple)
-            assert len(ext_const)==len(views)
-            for i, v in enumerate(views):
+            assert len(ext_const)==len(axes)
+            for i, v in enumerate(axes):
+                
                 if isinstance(ext_const[i],tuple):
                     assert np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1])
-                    ext_views.append(np.insert(v,[1,2],np.array([v[0]-ext_const[i][0],v[-1]+ext_const[i][1]])))
+                    ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i][0], v[-1]+ext_const[i][1])))
                 else:
                     assert np.isscalar(ext_const[i])
-                    ext_views.append(np.insert(v,[1,2],np.array([v[0]-ext_const[i],v[-1]+ext_const[i]])))
-        ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_views]
-        assert len(views)<=26
-        return np.einsum(','.join([chr(k) for k in range(65,65+len(views))]),*ax_widths)#computes product of entries from axes
+                    ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i], v[-1]+ext_const[i])))
+        ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        assert len(axes)<=26
+        prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
+        return np.einsum(prod_string,*ax_widths)#computes product of entries from axes
             
 
 
