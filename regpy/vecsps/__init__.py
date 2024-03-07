@@ -303,7 +303,7 @@ class MeasureSpaceFcts(VectorSpace):
 
     Parameters
     ----------
-    measure : np.array
+    measure : np.ndarray
         The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. Default: None
     shape : int or tuple of ints
         The shape of the arrays representing elements of this vector space. If it is not given the shape is taken from measure. Default: None
@@ -313,10 +313,16 @@ class MeasureSpaceFcts(VectorSpace):
     """
 
     def __init__(self,measure=None,shape=None,dtype=float):
-        assert measure!=None or shape!=None
-        if(measure==None):
+        assert measure is not None or shape is not None
+        if(isinstance(measure, np.ndarray)):
+            assert np.issubdtype(measure.dtype, np.floating)
+            assert np.min(measure)>=0
+        elif(measure==None):
             measure=np.ones(shape)
-        assert np.min(measure)>=0
+        elif(np.isscalar(measure)):
+            assert measure>=0
+            assert shape!=None
+            measure=measure*np.ones(shape)            
         self._measure=measure
         r""" Stores values of point measures """
         super().__init__(measure.shape,dtype)
@@ -333,7 +339,7 @@ class MeasureSpaceFcts(VectorSpace):
         self._measure=new_measure
 
     def __eq__(self, other):
-        if(not self.super().__eq__(other)):
+        if(not super().__eq__(other)):
             return False
         return np.array_equal(self.measure,other.measure)
         
