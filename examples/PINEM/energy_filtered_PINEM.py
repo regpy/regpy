@@ -3,7 +3,7 @@ from scipy.sparse import linalg
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.operators import CoordinateProjection
-from regpy.operators.PINEM import wave_field_reco_PINEM
+from regpy.operators.pinem import wave_field_reco_PINEM
 from regpy.hilbert import L2, Sobolev, Hm0Domain
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting

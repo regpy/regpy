@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.io import loadmat
 from regpy.operators import Operator
-from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
+from regpy.operators.pinem import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.operators import Operator, SquaredModulus, Exponential, PtwMultiplication, VectorOfOperators
 from regpy.vecsps import UniformGridFcts, DirectSum
 
