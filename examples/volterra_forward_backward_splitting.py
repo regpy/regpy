@@ -11,7 +11,7 @@ import numpy as np
 import regpy.stoprules as rules
 from regpy.operators.volterra import Volterra
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.forward_backward_splitting import ForwardBackwardSplitting
+from regpy.solvers.nonlinear.forward_backward_splitting import ForwardBackwardSplitting
 from regpy.hilbert import L2, Sobolev
 from regpy.vecsps import UniformGridFcts
 from regpy.functionals import HilbertNorm, L1, TV

@@ -6,7 +6,7 @@ from regpy import util
 from regpy.functionals import Functional
 from regpy.solvers import HilbertSpaceSetting
 
-from regpy.solvers.tikhonov import TikhonovCG
+from regpy.solvers.linear.tikhonov import TikhonovCG
 
 """The ADMM algorithm"""
 
@@ -32,7 +32,7 @@ class ADMM(Solver):
     proximal_pars_penalty : dict, optional
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
     cg_pars : dict, optional
-        Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     """
     def __init__(self,  setting, data_fidelity, penalty, init, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cg_pars = None):
         super().__init__()
@@ -58,7 +58,7 @@ class ADMM(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
-        """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
+        """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
 
         self.x, self.y = TikhonovCG(
             setting=HilbertSpaceSetting(self.setting.op, self.setting.h_domain, self.setting.h_codomain),

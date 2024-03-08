@@ -11,7 +11,7 @@ from netgen.geom2d import SplineGeometry
 import regpy.stoprules as rules
 from regpy.operators.ngsolve import ReactionNeumann, ProjectToBoundary
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.landweber import Landweber
+from regpy.solvers.nonlinear.landweber import Landweber
 from regpy.hilbert import L2, SobolevBoundary
 from regpy.vecsps.ngsolve import NgsSpace
 

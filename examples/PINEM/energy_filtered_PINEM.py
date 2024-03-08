@@ -1,6 +1,6 @@
 from xml.dom.minidom import Identified
 from scipy.sparse import linalg
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.operators import CoordinateProjection
 from regpy.operators.PINEM import wave_field_reco_PINEM

@@ -1,4 +1,4 @@
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.operators.fresnel import xray_phase_contrast
 from regpy.hilbert import L2

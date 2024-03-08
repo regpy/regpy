@@ -17,9 +17,9 @@ from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
 from regpy.operators.PINEM import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm import IrgnmCG
-from regpy.solvers.newton import NewtonCG
-from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.newton import NewtonCG
+from regpy.util.imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
 import sys
 sys.path.append('./PINEM')
 from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
@@ -164,6 +164,7 @@ def main():
     ############################### compute synthetic data or load experimental data from file
     flat_codomain = DirectSum(*op.codomain.summands, flatten=True)
     if experimental_data_filename:
+        print(experimental_data_filename)
         dat = loadmat(experimental_data_filename)
         data = dat['data']
         data = np.reshape(data,(data.shape[1],))

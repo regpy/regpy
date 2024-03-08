@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from regpy.util.ImShowFig import ImShowFig, complex_to_rgb, complex_to_rgb_log
+from regpy.util.imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log
 
 def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
     fig1 = ImShowFig(3, 3)

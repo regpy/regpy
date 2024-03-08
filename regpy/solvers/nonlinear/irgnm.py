@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from regpy.solvers import HilbertSpaceSetting, Solver
-from regpy.solvers.tikhonov import TikhonovCG
+from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.stoprules import CountIterations
 
 
@@ -12,7 +12,7 @@ class IrgnmCG(Solver):
 
         ||T(x_n) + T'[x_n] h - data||**2 + regpar_n * ||x_n + h - init||**2
 
-    where `T` is a Frechet-differentiable operator, using `regpy.solvers.tikhonov.TikhonovCG`.
+    where `T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     `regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
@@ -28,7 +28,7 @@ class IrgnmCG(Solver):
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
-        Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     simplified_op : Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
@@ -63,7 +63,7 @@ class IrgnmCG(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
-        """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
+        """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
         self.inner_it_logging_level = inner_it_logging_level
@@ -113,7 +113,7 @@ class IrgnmCGPrec(Solver):
         Minimize    ||T (M @ g) - rhs||**2 + regpar * ||M @ (g - xref)||**2
         M @ h = g
 
-    with `regpy.solvers.tikhonov.TikhonovCG' and spectral preconditioner M.
+    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner M.
     The spectral preconditioner M is chosen, such that:
         M @ A @ M \approx Id
     where A = (Gram_domain^(-1) T^t Gram_codomain T + regpar*Id) = T^* T + regpar Id 
@@ -143,7 +143,7 @@ class IrgnmCGPrec(Solver):
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
-        Parameter dictionary passed to the inner `regpy.solvers.tikhonov.TikhonovCG` solver.
+        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     precpars : dict
         Parameter dictionary passed to the computation of the spectral preconditioner
     """
@@ -170,7 +170,7 @@ class IrgnmCGPrec(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
-        """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
+        """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         
         self.k=0
         """Counts the number of iterations"""

@@ -11,7 +11,7 @@ import numpy as np
 import regpy.stoprules as rules
 from regpy.operators.ngsolve import Coefficient
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.forward_backward_splitting import ForwardBackwardSplitting
+from regpy.solvers.nonlinear.forward_backward_splitting import ForwardBackwardSplitting
 from regpy.hilbert import L2, Sobolev
 from regpy.vecsps.ngsolve import NgsSpace
 from regpy.functionals import HilbertNorm, TV

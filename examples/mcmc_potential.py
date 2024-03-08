@@ -6,7 +6,7 @@ import numpy as np
 
 from regpy.solvers import HilbertSpaceSetting
 
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.vecsps.obstacles import StarTrigDiscr
 from regpy.functionals import ErrorToInfinity

@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm_semismooth import IRGNMSemiSmooth
+from regpy.solvers.nonlinear.irgnm_semismooth import IRGNMSemiSmooth
 import regpy.stoprules as rules
 
 import numpy as np

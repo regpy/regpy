@@ -1,8 +1,8 @@
 import logging
 
 import numpy as np
-from regpy.solvers.irgnm import IrgnmCG
-from regpy.solvers.newton import NewtonCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev

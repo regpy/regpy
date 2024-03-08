@@ -2,7 +2,7 @@ import logging
 import numpy as np
 
 from regpy.solvers import HilbertSpaceSetting, Solver
-from regpy.solvers.tikhonov import TikhonovCG
+from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
 
 class IRGNMSemiSmooth(Solver):
@@ -11,7 +11,7 @@ class IRGNMSemiSmooth(Solver):
 
      x_{n+1} \in argmin_{psi_minus < x_* < psi_plus}   ||T(x_n) + T'[x_n] (x_*-x_n) - data||**2 + regpar_n * ||x_* - init||**2
 
-    where `T` is a Frechet-differentiable operator, using `regpy.solvers.tikhonov.TikhonovCG`.
+    where `T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     `regpar_n` is a decreasing geometric sequence of regularization parameters.
     """
 
@@ -33,7 +33,7 @@ class IRGNMSemiSmooth(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
-        """The additional `regpy.solvers.tikhonov.TikhonovCG` parameters."""
+        """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.psi_minus=psi_minus
         self.psi_plus=psi_plus
         """The upper and the lower bound"""

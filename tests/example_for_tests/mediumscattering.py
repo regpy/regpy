@@ -2,7 +2,7 @@ from regpy.operators.mediumscattering import MediumScatteringFixed
 from regpy.operators import CoordinateProjection
 from regpy.hilbert import L2, Hm0Domain, Sobolev, HilbertPullBack
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 import regpy.util as util
 
