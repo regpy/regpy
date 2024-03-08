@@ -5,7 +5,7 @@ from regpy.solvers import HilbertSpaceSetting, Solver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
 
-class IRGNMSemiSmooth(Solver):
+class IrgnmSemiSmooth(Solver):
     """
     Semismooth Newton Method. In each iteration, solves
 

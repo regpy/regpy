@@ -2,7 +2,7 @@ from regpy.operators.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.nonlinear.irgnm_semismooth import IRGNMSemiSmooth
+from regpy.solvers.nonlinear.irgnm_semismooth import IrgnmSemiSmooth
 import regpy.stoprules as rules
 
 import numpy as np
@@ -25,7 +25,7 @@ init = op.domain.zeros()
 
 setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
 
-solver = IRGNMSemiSmooth(setting, data, psi_minus=-1, psi_plus=1, regpar=1, regpar_step=0.9, init=init)
+solver = IrgnmSemiSmooth(setting, data, psi_minus=-1, psi_plus=1, regpar=1, regpar_step=0.9, init=init)
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(
