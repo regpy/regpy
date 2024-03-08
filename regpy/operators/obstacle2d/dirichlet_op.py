@@ -8,9 +8,9 @@ Created on Sun Jul 14 20:12:14 2019
 from .functions.operator import op_S
 from .functions.operator import op_T
 from .functions.operator import op_K
-from .functions.farfieldmatrix import farfield_matrix
-from .functions.farfieldmatrix import farfield_matrix_trans
-from .set_up_iopdata import setup_iop_data
+from .functions.farfield_matrix import farfield_matrix
+from .functions.farfield_matrix import farfield_matrix_trans
+from .setup_iop_data import setup_iop_data
 
 from .. import Operator
 
