@@ -322,7 +322,7 @@ class MeasureSpaceFcts(VectorSpace):
         elif(np.isscalar(measure)):
             assert measure>=0
             assert shape!=None
-            measure=measure*np.ones(shape)            
+            measure=np.full(shape,measure)            
         self._measure=measure
         r""" Stores values of point measures """
         super().__init__(measure.shape,dtype)
@@ -333,6 +333,8 @@ class MeasureSpaceFcts(VectorSpace):
     
     @measure.setter
     def measure(self,new_measure):
+        if(np.isscalar(new_measure)):
+            new_measure=np.full_like(self.measure,new_measure)
         assert np.issubdtype(new_measure.dtype, np.floating)
         assert new_measure.shape==self.shape
         assert np.min(new_measure)>=0
@@ -368,7 +370,7 @@ class GridFcts(MeasureSpaceFcts):
     dtype : data-type, optional
         The dtype of the vector space.
     use_cell_measure : bool, optional
-        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to False.
+        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
     boundary_ext : string {‘sym’, ‘const’, ‘zero’}, optional
         Defines how the measure is continued at the boundary. Possible modes are
         'sym' : The boundary coordinates are assumed to be in the center of their cell
@@ -380,7 +382,7 @@ class GridFcts(MeasureSpaceFcts):
         or one constant for the start and one for the end of each axis. 
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=False,boundary_ext='sym',ext_const=None):
+    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
@@ -452,7 +454,7 @@ class GridFcts(MeasureSpaceFcts):
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
         assert len(axes)<=26
         prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
-        return np.einsum(prod_string,*ax_widths)#computes product of entries from axes
+        return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
             
 
 
@@ -461,21 +463,43 @@ class GridFcts(MeasureSpaceFcts):
 
 class UniformGridFcts(GridFcts):
     """A vector space representing functions defined on a rectangular grid with equidistant axes.
+    The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
     is not uniform.
+
+    Parameters
+    ----------
+    *coords
+         Axis specifications, one for each dimension. Each can be either
+
+         - an integer `n`, making the axis range from `0` to `n-1`,
+         - a tuple that is passed as arguments to `numpy.linspace`, or
+         - an array-like containing the axis coordinates.
+    axisdata : tuple of arrays, optional
+         If the axes represent indices into some auxiliary arrays, these can be passed via this
+         parameter. If given, there must be one array for each dimension, the size of the first axis
+         of which must match the respective dimension's length. Besides that, no further structure
+         is imposed or assumed, this parameter exists solely to keep everything related to the
+         vector space in one place.
+
+         If `axisdata` is given, the `coords` can be omitted.
+    dtype : data-type, optional
+        The dtype of the vector space.
+    use_cell_measure : bool, optional
+        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True):
+        super().__init__(*coords, axisdata=axisdata,dtype=dtype,use_cell_measure=use_cell_measure)
         spacing = []
         for axis in self.axes:
             assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
         self.spacing = np.asarray(spacing)
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
-        self.volume_elem = np.prod(self.spacing)
-        """The volumen element, i.e. `prod(spacing)`"""
+        self.volume_elem = self.measure.flat[0]
+        """The volumen element, i.e. any element of the measure"""
 
     def frequencies(self, centered=False, axes=None):
         """Compute the grid of frequencies for an FFT on this grid instance.
@@ -511,6 +535,14 @@ class UniformGridFcts(GridFcts):
             else:
                 frqs.append(self.axes[i])
         return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
+    
+    @MeasureSpaceFcts.measure.setter
+    def measure(self,new_measure):
+        if(isinstance(new_measure,np.ndarray)):
+            assert np.all(new_measure == new_measure.flat[0])
+        super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
+        self.volume_elem=self.measure.flat[0]
+        
 
 
 class DirectSum(VectorSpace):
