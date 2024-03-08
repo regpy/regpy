@@ -10,10 +10,5 @@ setuptools.setup(
         'pooch>=1.8,<2.0',
         'pytest>=8.0,<9.0',
     ],
-    extras_require={
-        'nfft': [
-            'pyNFFT>=1.3,<2.0',
-        ],
-    },
     python_requires='>=3.6,<4.0',
 )
