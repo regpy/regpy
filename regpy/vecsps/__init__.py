@@ -547,7 +547,8 @@ class UniformGridFcts(GridFcts):
     @MeasureSpaceFcts.measure.setter
     def measure(self,new_measure):
         if np.isscalar(new_measure):
-            assert (isinstance(new_measure, int) or isinstance(new_measure,float)) and new_measure>0
+            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
+            assert new_measure>0
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
         elif(isinstance(new_measure,np.ndarray)):
             assert np.all(new_measure == new_measure.flat[0])
