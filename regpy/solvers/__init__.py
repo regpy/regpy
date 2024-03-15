@@ -137,7 +137,7 @@ class HilbertSpaceSetting:
     - a Hilbert space structure on its domain that measures the regularity of reconstructions, and
     - a Hilbert space structur on its codomain for the data misfit.
 
-    This class  is mostly a container that keeps all of this data in one place and makes sure that
+    This class is mostly a container that keeps all of this data in one place and makes sure that
     the `regpy.hilbert.HilbertSpace.vecsp`s match the operator's domain and codomain.
 
     It also handles the case when the specified Hilbert space is actually an

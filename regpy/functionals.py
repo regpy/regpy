@@ -439,6 +439,58 @@ class HilbertNormGeneric(Functional):
             op = self.h_domain.gram+tau*self.h_space.gram
             inverse = operators.CholeskyInverse(op)
             return inverse(self.h_domain.gram(x))
+        
+
+class IntegralFunctionalBase(Functional):
+    r"""
+    This class provides a general framework for Integral functionals of the type
+    $$
+    F\colon X \to \mathbb{R}
+    $$
+    $$
+    v\mapsto \Int_\Omega f(w(x)v(x))\mathrm{d}x
+    $$
+    with $f\colon \mathbb{R}\ro \mathbb{R}$ some function and $w\colon\Omega\to\mathbb{R}$
+    defining some whieght function. 
+
+    Subclasses defining explicit functionals of this type have to implement
+        `_f` evaluation the function $f$
+        `_f_deriv` giving the derivative $f'$
+        `_f_porx` giving the prox of $f$
+    since 
+    $$
+    F'[g]h = \int_\Omega w(x)h(x)f'(w(x)g(x))
+    $$
+    is a functional of the same type and
+    $$
+    \mathrm{prox}_F(v)(x) = \mathrm{prox}_f(w(x)v(x)).
+    $$
+
+    Parameters
+    ----------
+    domain : `regpy.vecsps.MeasureSpaceFcts`
+    Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+    h_domain : `regpy.hilbert.HilbertSpace`
+    Hilbert Space defined on `domain`. Proximal operator needs to be computed 
+    wrt to that.
+    """
+
+    def __init__(self,domain,h_domain,weight = 1):
+        assert isinstance(domain,vecsps.MeasureSpaceFcts)
+        assert np.isscalar(weight) or weight.shape == domain.shape
+        self.weight = weight
+        """ Weights to multipy. """
+        super().__init__(domain,h_domain)
+
+    def _eval(self, x):
+        return np.sum(self._f(self.weight*x)*self.domain.measure)
+
+    def _gradient(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
 
 
 '''Generic L1 Functional. Proximal implemented for default L2 h_space'''

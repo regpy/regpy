@@ -317,26 +317,31 @@ class MeasureSpaceFcts(VectorSpace):
         if(isinstance(measure, np.ndarray)):
             assert np.issubdtype(measure.dtype, np.floating)
             assert np.min(measure)>=0
-        elif(measure==None):
-            measure=np.ones(shape)
+            shape = measure.shape
         elif(np.isscalar(measure)):
+            assert isinstance(measure, int) or isinstance(measure,float)
             assert measure>=0
             assert shape!=None
-            measure=np.full(shape,measure)            
-        self._measure=measure
+        elif(measure==None):
+            measure=1
+        #TODO: Make a default case            
+        super().__init__(shape,dtype)
+        self.measure=measure
         r""" Stores values of point measures """
-        super().__init__(measure.shape,dtype)
 
     @property
     def measure(self):
-        return self._measure
+        if np.isscalar(self._measure):
+            return np.full(self.shape,self._measure)
+        else:
+            return self._measure
     
     @measure.setter
     def measure(self,new_measure):
-        if(np.isscalar(new_measure)):
-            new_measure=np.full_like(self.measure,new_measure)
-        assert np.issubdtype(new_measure.dtype, np.floating)
-        assert new_measure.shape==self.shape
+        if np.isscalar(new_measure):
+            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
+        else:
+            assert  new_measure.shape==self.shape and np.issubdtype(new_measure.dtype, np.number)
         assert np.min(new_measure)>=0
         self._measure=new_measure
 
@@ -349,7 +354,7 @@ class MeasureSpaceFcts(VectorSpace):
 
 
 class GridFcts(MeasureSpaceFcts):
-    """A vector space representing functions defined on a rectangular grid.
+    r"""A vector space representing functions defined on a rectangular grid.
 
     Parameters
     ----------
@@ -370,7 +375,7 @@ class GridFcts(MeasureSpaceFcts):
     dtype : data-type, optional
         The dtype of the vector space.
     use_cell_measure : bool, optional
-        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
+        If true a measure is calculated using the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
     boundary_ext : string {‘sym’, ‘const’, ‘zero’}, optional
         Defines how the measure is continued at the boundary. Possible modes are
         'sym' : The boundary coordinates are assumed to be in the center of their cell
@@ -490,16 +495,19 @@ class UniformGridFcts(GridFcts):
         If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True):
-        super().__init__(*coords, axisdata=axisdata,dtype=dtype,use_cell_measure=use_cell_measure)
+    def __init__(self, *coords, axisdata=None, dtype=float):
+        super().__init__(*coords, axisdata=axisdata,dtype=dtype,use_cell_measure=False)
         spacing = []
         for axis in self.axes:
             assert util.is_uniform(axis)
             spacing.append(axis[1] - axis[0])
         self.spacing = np.asarray(spacing)
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
-        self.volume_elem = self.measure.flat[0]
-        """The volumen element, i.e. any element of the measure"""
+        self.volume_elem = np.prod(self.spacing)
+        """The volumen element, initialized as product of `spacing`"""
+        self.measure = self.volume_elem
+        """ Setting measure to be initialzed by `volume_element`"""
+
 
     def frequencies(self, centered=False, axes=None):
         """Compute the grid of frequencies for an FFT on this grid instance.
@@ -538,9 +546,12 @@ class UniformGridFcts(GridFcts):
     
     @MeasureSpaceFcts.measure.setter
     def measure(self,new_measure):
-        if(isinstance(new_measure,np.ndarray)):
+        if np.isscalar(new_measure):
+            assert (isinstance(new_measure, int) or isinstance(new_measure,float)) and new_measure>0
+            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
+        elif(isinstance(new_measure,np.ndarray)):
             assert np.all(new_measure == new_measure.flat[0])
-        super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
+            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
         self.volume_elem=self.measure.flat[0]
         
 
