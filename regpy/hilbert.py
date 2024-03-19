@@ -609,6 +609,23 @@ class L2Generic(HilbertSpace):
             return self.vecsp.identity
         else:
             return operators.PtwMultiplication(self.vecsp, self.weights)
+        
+class L2MeasureSpaceFcts(HilbertSpace):
+    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`."""
+
+    def __init__(self, vecsp, weights=None):
+        super().__init__(vecsp)
+        self.weights = weights
+
+    @util.memoized_property
+    def gram(self):
+        if self.weights is None:
+            if np.all(self.vecsp.measure==1):
+                return self.vecsp.identity
+            else:
+                return operators.PtwMultiplication(self.vecsp,self.vecsp.measure)
+        else:
+            return operators.PtwMultiplication(self.vecsp, self.weights*self.vecsp.measure)
 
 
 class L2UniformGridFcts(HilbertSpace):
@@ -859,6 +876,7 @@ def _register_spaces():
     L2.register(vecsps.Prod, componentwise(L2,cls=TensorProd))
     L2.register(vecsps.DirectSum, componentwise(L2))
     L2.register(vecsps.VectorSpace, L2Generic)
+    L2.register(vecsps.MeasureSpaceFcts,L2MeasureSpaceFcts)
     L2.register(vecsps.UniformGridFcts, L2UniformGridFcts)
 
     Sobolev.register(vecsps.DirectSum, componentwise(Sobolev))

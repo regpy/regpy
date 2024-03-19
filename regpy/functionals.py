@@ -8,13 +8,37 @@ from regpy import operators, util, vecsps, hilbert
 
 
 class Functional:
-    def __init__(self, domain):
+    r"""
+    Base class for implementation of a functional. Subsclasses should at least implement the 
+        `_eval` :  evaluating the funcitonal
+    and 
+        `_gradient` or `_deriv` : returning the gradtient or derivative at `x`.
+    
+    The evalution of a specific functional on some element of the `domain` can be done by
+    simply caling the functional on that element. 
+        
+    Funcationals can be added by taking `LinearCombination` of them. The `domain` has to be the
+    same for each functional. 
+
+    They can also be multiplied by scalars or `np.ndarrays`of `domain.shape`or multiplied by 
+    `regpy.operators.Operator`. This leads to a functional that is composed with the operator
+    \(F\circ O\) where \(F\) is the functional and $O$ some operator. Multiplying by a scalar
+    results in a composition with the `PtwMultiplication` operator.
+
+    Parameters
+    ----------
+    daomain : regpy.vecsps.VectorSpace
+        The uncerlying vector space for the function space on which it is defined.
+    h_domain : regpy.hilbert.HilbertSpace (default: `L2(domain)`)
+        The underlying Hilbert wrt which the proximal is conputed.
+    """
+    def __init__(self, domain, h_domain=None):
         # TODO implement domain=None case
         assert isinstance(domain, vecsps.VectorSpace)
         self.domain = domain
-        self.h_domain = hilbert.L2(domain)
-        #h_domain on which the proximal operator is evaluated
-        #Overloaded if h_domain != L2
+        """The underlying vector space."""
+        self.h_domain = h_domain or hilbert.L2(domain)
+        """The underlying Hilbert space."""
 
     def __call__(self, x):
         assert x in self.domain
@@ -26,6 +50,25 @@ class Functional:
         return y
 
     def linearize(self, x):
+        r"""
+        Linearizes the functional at `x` given by the value at that point and the gradient which is considered as
+        \[
+            F(x+\epsilon h) = F(x) + \epsion \langle \nabla F[x],h\rangle + \mathcal{O}(\epsilon^2)
+        \]
+        Requires the implementation of either `_gradient` or `_linearize`.
+
+        Parameter
+        ----------
+        x : in self.domain
+            Element at which will be linearized
+
+        Return
+        ----------
+        y 
+            Value of \(F(x)\).
+        grad : in self.domain
+            Gradient of \(F\) at \(x\).        
+        """
         assert x in self.domain
         try:
             y, grad = self._linearize(x)
@@ -37,6 +80,23 @@ class Functional:
         return y, grad
 
     def gradient(self, x):
+        r"""
+        Gradient of the functional at `x` where
+        \[
+            F(x+\epsilon h) = F(x) + \epsion \langle \nabla F[x],h\rangle + \mathcal{O}(\epsilon^2)
+        \]
+        Requires the implementation of either `_gradient` or `_linearize`.
+
+        Parameter
+        ----------
+        x : in self.domain
+            Element at which will be linearized
+
+        Return
+        ----------
+        grad : in self.domain
+            Gradient of \(F\) at \(x\).        
+        """
         assert x in self.domain
         try:
             grad = self._gradient(x)
@@ -46,6 +106,20 @@ class Functional:
         return grad
 
     def hessian(self, x):
+        """The hessian of the functional at `x` as an `regpy.operator.Operator` maping form the 
+        functionals `domain` to it self. Requires the implementation of `_hessian` or by default
+        computes the `regpy.operators.ApproximateHessian`.
+
+        Parameter:
+        ----------
+        `x` : `self.domain`
+            Point in `domain` at which to compute the hessian. 
+
+        Returns:
+        ----------
+        `h` : `regpy.operators.Operator` (Default: `regpy.operators.ApproximateHessian`)
+            Hessian operator at the point `x`. 
+        """
         assert x in self.domain
         h = self._hessian(x)
         assert isinstance(h, operators.Operator)
@@ -54,6 +128,26 @@ class Functional:
         return h
 
     def proximal(self, x, tau, proximal_pars = None):
+        r"""Proximal operator 
+        \[
+            \mathrm{prox} _{F}(x)=\arg \min _{v\in {\mathcal {X}}}(F(v)+{\frac{1}{2\tau}}\Vert v-x\Vert_{\mathcal {X}}^{2}).
+        \]
+        Requires and implementation of `_proximal`.
+
+        Parameters
+        ----------
+        x : `self.domain`
+            Point at which to compute proximal.
+        tau : `np.number`
+            Regularization parameter for the proximal. 
+        proximal_pars : any, optional
+            parameters handed to the implementation of `_proximal`, by default None
+
+        Returns
+        -------
+        proximal : `self.domain`
+            the computed proximal at \(x\) with parameter \(\tau\).
+        """
         assert x in self.domain
         if proximal_pars == None:
             proximal_pars = {}
@@ -121,6 +215,16 @@ class Functional:
 
 
 class Composed(Functional):
+    """Composition of an operator with a functional \(F\circ O\). This should not be called
+    directly but rather used by multiplying the `Functional` object with an `Operator`.
+
+    Parameters
+    ----------
+    func : `regpy.functionals.Functional`
+        Functional to be composed with. 
+    op : `regpy.operators.Operator`
+        Operator to be composed with. 
+    """
     def __init__(self, func, op):
         assert isinstance(func, Functional)
         assert isinstance(op, operators.Operator)
@@ -130,7 +234,11 @@ class Composed(Functional):
             op = func.op * op
             func = func.func
         self.func = func
+        """Functional that is composed with an Operator. 
+        """
         self.op = op
+        """Operator composed that is composed with a functional. 
+        """
 
     def _eval(self, x):
         return self.func(self.op(x))
@@ -209,6 +317,23 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.args = {}
 
     def register(self, vecsp_type, impl=None):
+        """Either registers a new implementation on a specific `regpy.vecsps.VectorSpace` 
+        for a given Abstract functional or returns as decorator that can output any implementation
+        option for a given vector space.
+
+        Parameters
+        ----------
+        vecsp_type : `regpy.vecsps.VectorSpace`
+            Vector Space on which the functional should be registered. 
+        impl : regpy.functionals.Functional, optional
+            The explicit implementation to be used for that Vector Space, by default None
+
+        Returns
+        -------
+        None or decorator : None or map
+            Either nothing or map that can output any of the registered implementations for 
+            a specific vector space. 
+        """
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
         else:
@@ -245,6 +370,13 @@ TV = AbstractFunctional('TV')
 HilbertNorm = AbstractFunctional('HilbertNorm')
 
 class LinearCombination(Functional):
+    """Linear combination of functionals. 
+
+    Parameters
+    ----------
+    *args : (np.number, regpy.functionals.Functional) or regpy.functionals.Functional
+        List of coefficients and functionals to be taken as linear combinations.
+    """
     def __init__(self, *args):
         coeff_for_func = defaultdict(lambda: 0)
         for arg in args:
@@ -260,7 +392,11 @@ class LinearCombination(Functional):
             else:
                 coeff_for_func[func] += coeff
         self.coeffs = []
+        """List of all coefficients
+        """
         self.funcs = []
+        """List of all functionals. 
+        """
         for func, coeff in coeff_for_func.items():
             self.coeffs.append(coeff)
             self.funcs.append(func)
@@ -303,16 +439,28 @@ class LinearCombination(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-'''Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
-The functionals are given as a list of the functionals on the summands of the product space.'''
 class FunctionalProductSpace(Functional):
+    """Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
+    The functionals are given as a list of the functionals on the summands of the product space.
+
+    Parameters
+    ----------
+    funcs : [regpy.functionals.Functional, ...]
+        List of functionals each defined on one summand of the direct sum of vector spaces.
+    domain : regpy.vecsps.DirectSum
+        Domain on which the combined functional is defined. 
+    """
     def __init__(self, funcs, domain):
         assert isinstance(domain, vecsps.DirectSum)
         self.length = len(domain.summands)
+        """Number of the summands in the direct sum domain. 
+        """
         for i in range(self.length):
             assert isinstance(funcs[i], Functional)
             assert funcs[i].domain == domain.summands[i] 
         self.funcs = funcs
+        """List of the functionals on each summand of the direct sum domain.
+        """
         super().__init__(domain)
 
     def _eval(self, x):
@@ -342,12 +490,25 @@ class FunctionalProductSpace(Functional):
 
 
 class Shifted(Functional):
+    r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional to be offset.
+    offset : np.number
+        Offset added to the evaluation of the functional.
+    """
     def __init__(self, func, offset):
         assert isinstance(func, Functional)
         assert np.isscalar(offset) and util.is_real_dtype(offset)
         super().__init__(func.domain)
         self.func = func
+        """Functional to be offset.
+        """
         self.offset = offset
+        """Offset added to the evaluation of the functional.
+        """
 
     def _eval(self, x):
         return self.func(x) + self.offset
@@ -365,9 +526,33 @@ class Shifted(Functional):
         return self.func.proximal(x, tau)
 
 class Indicator(Functional):
+    r"""Indicator function on the domain defined by some function evaluation to `True` on some subset of the `domain`
+    \[
+        \chi_f(x) := 
+        \begin{cases}
+        0\;\; if\;f(x)\;is\,true \\
+        \infty\;\; else
+        \end{cases}.
+    \]
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        Underlying domain on which the functional is defined.
+    predicate : (regpy.vecsps.VectorSpace -> boolean)
+        Function evaluating the truth value of elements in the domain.
+
+    Notes
+    -----
+    The proximal operator is the projection on the set predicate.
+    However, it is more natural to implement indicator function constraints in Tikhonov 
+    regularization by semismooth approaches. See semismooth Newton method.
+    """
     def __init__(self, domain, predicate):
         super().__init__(domain)
         self.predicate = predicate
+        """Function evaluating the truth value of elements in the domain.
+        """
 
     def _eval(self, x):
         if self.predicate(x):
@@ -383,19 +568,24 @@ class Indicator(Functional):
     def _hessian(self, x):
         return operators.Zero(self.domain)
 
-    """
-    The proximal operator is the projection on the set predicate.
-    However, it is more natural to implement indicator function constraints in Tikhonov 
-    regularization by semismooth approaches. See semismooth Newton method.
-    """
     def _proximal(self, x, tau):
         return NotImplementedError
 
 
 class ErrorToInfinity(Functional):
+    """Can be used in cases when a functional will most likely throw an exception. In such a case the return
+    value will be `np.inf`. The gradient will in such a case be zero. 
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional to be modified to have infinity whenever an exception is thrown. 
+    """
     def __init__(self, func):
         super().__init__(func.domain)
         self.func = func
+        """Functional to be modified to have infinity whenever an exception is thrown.
+        """
 
     def _eval(self, x):
         try:
@@ -409,14 +599,24 @@ class ErrorToInfinity(Functional):
         except:
             return self.domain.zeros()
 
-'''Generic implementation of the HilbertNorm 1/2*||x||**2. Proximal operator defined on h_space.'''
 class HilbertNormGeneric(Functional):
+    r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.
+
+    Parameters
+    ----------
+    h_space : regpy.hilbert.HilbertSpace
+        Hilbert space used for norm. 
+    h_domain : regpy.hilbert.HilbertSpace
+        Hilbert Space wrt the proximal operator gets computed. (Defaults : h_space)
+    """
     def __init__(self, h_space, h_domain=None):
         assert isinstance(h_space, hilbert.HilbertSpace)
         super().__init__(h_space.vecsp)
         self.h_space = h_space
+        """ Hilbert space used for norm.
+        """
         self.h_domain = h_domain or h_space 
-        '''overloads self.h_domain from constructor'''
+        """ Hilbert space wrt the proximal gets computed. """
 
     def _eval(self, x):
         return np.real(np.vdot(x, self.h_space.gram(x))) / 2
@@ -439,10 +639,107 @@ class HilbertNormGeneric(Functional):
             op = self.h_domain.gram+tau*self.h_space.gram
             inverse = operators.CholeskyInverse(op)
             return inverse(self.h_domain.gram(x))
+        
+
+class IntegralFunctionalBase(Functional):
+    r"""
+    This class provides a general framework for Integral functionals of the type
+    $$
+    F\colon X \to \mathbb{R}
+    $$
+    $$
+    v\mapsto \Int_\Omega f(w(x)v(x))\mathrm{d}x
+    $$
+    with $f\colon \mathbb{R}\ro \mathbb{R}$ some function and $w\colon\Omega\to\mathbb{R}$
+    defining some whieght function. 
+
+    Subclasses defining explicit functionals of this type have to implement
+        `_f` evaluation the function $f$
+        `_f_deriv` giving the derivative $f'$
+        `_f_porx` giving the prox of $f$
+    since 
+    $$
+    F'[g]h = \int_\Omega h(x)w(x)f'(w(x)g(x))
+    $$
+    is a functional of the same type and
+    $$
+    \mathrm{prox}_F(v)(x) = \mathrm{prox}_f(w(x)v(x)).
+    $$
+
+    Parameters
+    ----------
+    domain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+    h_domain : `regpy.hilbert.HilbertSpace`
+        Hilbert Space defined on `domain`. Proximal operator needs to be computed 
+    wrt to that.
+    """
+
+    def __init__(self,domain,h_domain,weight = 1):
+        assert isinstance(domain,vecsps.MeasureSpaceFcts)
+        assert domain == h_domain.vecsp
+        assert np.isscalar(weight) or weight.shape == domain.shape
+        self.weight = weight
+        """ Weights to multipy. """
+        super().__init__(domain)
+        self.h_domain = h_domain
+        """ Hilbert space on `domain` wrt to which is the prox computed."""
+
+    def _eval(self, x):
+        return np.sum(self._f(self.weight*x)*self.domain.measure)
+
+    def _gradient(self, x):
+        return self.weight*self._f_deriv(self.weight*x)
+
+    def _hessian(self, x):
+        raise NotImplementedError
+
+    def _proximal(self, x, tau):
+        return self._f_prox(self.weight*x)
+    
+    def _f(self,x_hat):
+        raise NotImplementedError
+    
+    def _f_deriv(self,x_hat):
+        raise NotImplementedError
+    
+    def _f_prox(self,x_hat):
+        raise NotImplementedError
+    
+class LppPower(IntegralFunctionalBase):
+    r"""
+    Implements the $p$-power of the $L^p$ norm on some domain in `MeasureSpaceFcts`
+    as an integral functional.
+
+    Parameters
+    ----------
+    domain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+    """
+
+    def __init__(self, domain, p=2):
+        assert np.isscalar(p)
+        self.p = p
+        super().__init__(domain, hilbert.L2(domain))
+
+    def _f(self,x_hat):
+        return np.abs(x_hat)**self.p
+    
+    def _f_deriv(self, x_hat):
+        return 1/self.p*np.abs(x_hat)**(self.p-1)*np.sign(x_hat)
+    
+    def _f_prox(self, x_hat):
+        raise NotImplementedError
 
 
-'''Generic L1 Functional. Proximal implemented for default L2 h_space'''
 class L1Generic(Functional):
+    """Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VestorSpace
+        Domain on which to define the generic L1.
+    """
     def __init__(self, domain):
         super().__init__(domain)
 
@@ -459,8 +756,12 @@ class L1Generic(Functional):
     def _proximal(self, x, tau):
         return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
-'''Generic TV Functional. Proximal implemented for default L2 h_space'''
+
 class TVGeneric(Functional):
+    """Generic TV Functional. Proximal implemented for default L2 h_space
+
+    NotImplemented yet!
+    """
     def __init__(self, domain):
         super().__init__(domain)
 
@@ -479,13 +780,24 @@ Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform
 from regpy.util import gradientuniformgrid
 from regpy.util import divergenceuniformgrid
 class TVUniformGridFcts(Functional):
+    """Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.UniformGridFcts
+        Underlying domain. 
+    h_domain : regpy.hilbert.HilbertSapce (defaul: L2)
+        Underlying Hilbert space for proximal. 
+    """
     def __init__(self, domain, h_domain=None):
         self.dim = np.size(domain.shape)
+        """Dimension of the Uniform Grid functions.
+        """
         assert isinstance(domain, vecsps.UniformGridFcts)
         super().__init__(domain)
         if h_domain is not None:
             self.h_domain = h_domain
-        """Overload h_domain if needed"""
+            """Overload h_domain if needed"""
         assert self.h_domain.vecsp == self.domain
 
     def _eval(self, x):
@@ -515,13 +827,14 @@ class TVUniformGridFcts(Functional):
             p = (p+update) / (1+np.abs(update))
         return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 
-"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
-method described in `AbstractFunctional` does not work due to circular depenencies when
-loading modules.
 
-This is called from the `regpy` top-level module once, and can be ignored otherwise.
-"""
 def _register_functionals():
+    """Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
+    method described in `AbstractFunctional` does not work due to circular depenencies when
+    loading modules.
+
+    This is called from the `regpy` top-level module once, and can be ignored otherwise.
+    """
     HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
 
     L1.register(vecsps.VectorSpace, L1Generic)
