@@ -1,4 +1,6 @@
 from regpy.vecsps import MeasureSpaceFcts, GridFcts, UniformGridFcts
+from regpy.vecsps import Prod
+from regpy.hilbert import L2
 import numpy as np
 
 
@@ -25,4 +27,10 @@ def test_uniform_grid_functions():
     gf.measure=3
     assert gf.volume_elem==3
 
-
+def test_prod_measure_space():
+    gf1=MeasureSpaceFcts(np.array([[2.0,4.0,8.0],[10,12,14]]))
+    gf2=MeasureSpaceFcts(np.array([1.0,3.0]))
+    prod=Prod(gf1,gf2)
+    hprod=L2(prod)
+    solution=np.array([[2.,6.],[ 4.,12.],[ 8.,24.],[10.,30.],[12.,36.],[14.,42.]])
+    assert np.array_equal(hprod.gram._eval(np.ones((6,2))),solution)

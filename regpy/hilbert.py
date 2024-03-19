@@ -623,9 +623,9 @@ class L2MeasureSpaceFcts(HilbertSpace):
             if np.all(self.vecsp.measure==1):
                 return self.vecsp.identity
             else:
-                return operators.PtwMultiplication(self.vecsp,self.measure)
+                return operators.PtwMultiplication(self.vecsp,self.vecsp.measure)
         else:
-            return operators.PtwMultiplication(self.vecsp, self.weights*self.measure)
+            return operators.PtwMultiplication(self.vecsp, self.weights*self.vecsp.measure)
 
 
 class L2UniformGridFcts(HilbertSpace):
