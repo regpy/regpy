@@ -30,8 +30,8 @@ class Volterra(Operator):
         """The exponent."""
         super().__init__(domain, domain, linear=(exponent == 1))
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._factor = self.exponent * x**(self.exponent - 1)
         return self.domain.volume_elem * np.cumsum(x**self.exponent)
 

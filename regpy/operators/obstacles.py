@@ -71,7 +71,7 @@ class Potential(Operator):
         self.cos_fl = np.cos(k_tfl)
         self.sin_fl = np.sin(k_tfl)
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         nfwd = self.nforward
         # TODO This operator does not actually need to know about the curve at all,
         #  it is effectively a composition with eval_curve (which is not a proper Operator yet). If
