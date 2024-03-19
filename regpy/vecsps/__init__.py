@@ -548,7 +548,7 @@ class UniformGridFcts(GridFcts):
         elif(isinstance(new_measure,np.ndarray)):
             assert np.all(new_measure == new_measure.flat[0])
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
-        self.volume_elem=self.measure.flat[0]
+        self.volume_elem=self.measure
         
 
 

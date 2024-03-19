@@ -24,8 +24,9 @@ def test_grid_functions():
 def test_uniform_grid_functions():
     gf=UniformGridFcts(np.array([2,4,6]),np.array([-1,2,5,8]))
     assert gf.volume_elem==6
-    gf.measure=3
+    gf.measure=3*np.ones((3,4))
     assert gf.volume_elem==3
+    assert gf.measure==3
 
 def test_prod_measure_space():
     gf1=MeasureSpaceFcts(np.array([[2.0,4.0,8.0],[10,12,14]]))
@@ -34,3 +35,4 @@ def test_prod_measure_space():
     hprod=L2(prod)
     solution=np.array([[2.,6.],[ 4.,12.],[ 8.,24.],[10.,30.],[12.,36.],[14.,42.]])
     assert np.array_equal(hprod.gram._eval(np.ones((6,2))),solution)
+
