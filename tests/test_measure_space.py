@@ -14,7 +14,7 @@ def test_base():
 
 def test_grid_functions():
     gf1=GridFcts(np.array([2,4,8]),np.array([-1,2,12,112]),use_cell_measure=False)
-    assert np.array_equal(gf1.measure,np.ones((3,4)))
+    assert gf1.measure==1.0
     gf2=GridFcts(np.array([2,4,8]),np.array([-1,0,5,15]))
     assert np.array_equal(gf2.measure,np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]]))
     gf3=GridFcts(np.array([2,4,8]),np.array([-1,0,5,15]),boundary_ext='zero')
