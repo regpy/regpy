@@ -331,10 +331,7 @@ class MeasureSpaceFcts(VectorSpace):
 
     @property
     def measure(self):
-        if np.isscalar(self._measure):
-            return np.full(self.shape,self._measure)
-        else:
-            return self._measure
+        return self._measure
     
     @measure.setter
     def measure(self,new_measure):
@@ -348,7 +345,7 @@ class MeasureSpaceFcts(VectorSpace):
     def __eq__(self, other):
         if(not super().__eq__(other)):
             return False
-        return np.array_equal(self.measure,other.measure)
+        return np.all(self.measure==other.measure)
         
 
 
@@ -491,8 +488,6 @@ class UniformGridFcts(GridFcts):
          If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
         The dtype of the vector space.
-    use_cell_measure : bool, optional
-        If true a measure is calculated that uses the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
     """
 
     def __init__(self, *coords, axisdata=None, dtype=float):
