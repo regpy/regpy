@@ -4,18 +4,28 @@ from regpy.vecsps import VectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
 
 class TensorBasis(Operator):
-    """
-    Consider an evaluation domain given as eval_domain = Prod(D_1,...,D_n) with D_1,...,D_n being n VectorSpaces
-    and a tensor in the coefficiants domain coef_domain = Prod(V_1,...,V_n) then we define an operator to map coeficiants
-    by a given basis to a function f: eval_domain -> dtype:
-        f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n)
-    So that the operator TensorBasis maps the coefficient tensor c = (c_{k_1,....k_n}) to the tensor of function values
-    (f(x))_{x in eval_domain}
-    eval_domain:    an instance of the class Prod in vector spaces of size where each D_i has size M_i
-    coef_domain:    an instance of the class Prod in vector spaces of size where each V_i has size N_i
-    bases:          a list of matrices [B_1,..., B_n] where thematrix B_lis of size M_l x N_l and contains the function values
-                    of the basis \{b^l_0, b^l_{M_l-1}} of the l-th coordinate:
-                        B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
+    r"""
+    Consider an evaluation domain given as Tensor product \(D_1\otimes \dots\otimes D_n\) with \(D_1,\dots,D_n\) being \(n\) 
+    `regpy.vecsps.VectorSpaces` and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
+    operator mapping coefficients to some function `f: eval_domain -> dtype`:
+    \[
+        f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).
+    \]
+    So that the operator TensorBasis maps the coefficient tensor \(c = (c_\{k_1,....k_n\})\) to the tensor of function values
+    \((f(x))_{x in eval_domain}\)
+
+    Parameters
+    ----------
+    eval_domain : regpy.vecsps.Prod   
+        an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each D_i has size M_i
+    coef_domain : regpy.vecsps.Prod   
+        an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each V_i has size N_i
+    bases : [ np.ndarray, ... ]
+        a list of matrices \([B_1,..., B_n]\) where the matrix \(B_l\) of size \(M_l \times N_l\) and contains the function values
+        of the basis \(\{b^l_0, b^l_{M_l-1}\}\) of the l-th coordinate:
+        \[
+            B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
+        \]
     """
     def __init__(self,coef_domain,eval_domain,bases,dtype=float):
         assert isinstance(coef_domain,Prod)
@@ -28,8 +38,12 @@ class TensorBasis(Operator):
         assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
+        """ `dtype ` of the vector spaces."""
         self.ndim = coef_domain.ndim
+        """ dimension of the `coef_domain`. """
         self.bases = bases
+        """List of all the bases transforms as a list of `np.ndarray`s
+        """
 
     def _eval(self, coef):
         ## separate 1-D and 2-D because of performance
@@ -55,7 +69,22 @@ class TensorBasis(Operator):
 
 
 def chebyshev_basis(coef_domain,eval_domain,dtype=float):
-    """ Implements a tensor basis of Chebyshev polynomials
+    """Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
+    both coef_domain and eval_domain has the same dimension.
+
+    Parameters
+    ----------
+    coef_domain : regpy.vecsps.Prod
+        Coefficients of tensor products of Chebychev polynomials.  
+    eval_domain : regpy.vecsps.Prod
+        Tensor product of `GridFcts` instances on which the Chebyshev polynomial are evaluated. 
+    dtype : np.dtype, optional
+       type of the underlying spaces, by default float
+
+    Returns
+    -------
+    TesnorBasis 
+        A bases transform from coefficients of Chebychev polynomial to their evaluation.
     """
     assert isinstance(coef_domain,Prod)
     assert isinstance(eval_domain,Prod)
@@ -74,7 +103,22 @@ def chebyshev_basis(coef_domain,eval_domain,dtype=float):
     return TensorBasis(coef_domain,eval_domain,bases,dtype)
 
 def legendre_basis(coef_domain,eval_domain,dtype=float):
-    """ Implements a tensor basis of Legendre polynomials
+    """Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
+    both coef_domain and eval_domain has the same dimension.
+
+    Parameters
+    ----------
+    coef_domain : regpy.vecsps.Prod
+        Coefficients of tensor products of Legendre polynomials.  
+    eval_domain : regpy.vecsps.Prod
+        Tensor product of `GridFcts` instances on which the Legendre polynomial are evaluated. 
+    dtype : np.dtype, optional
+       type of the underlying spaces, by default float
+
+    Returns
+    -------
+    TesnorBasis 
+        A bases transform from coefficients of Legendre polynomial to their evaluation.
     """
     assert isinstance(coef_domain,Prod)
     assert isinstance(eval_domain,Prod)
@@ -93,18 +137,33 @@ def legendre_basis(coef_domain,eval_domain,dtype=float):
     return TensorBasis(coef_domain,eval_domain,bases,dtype)
 
 def bspline_basis(k,t,dim=1,add_points=10):
-    """ Implements a B-Spline basis in an arbirtary Dimension (given by dim)
+    """Implements a B-Spline basis in an arbitrary Dimension (given by dim)
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
-    The evalutaion domain is a refined grid determined by the point added between points
+    The evaluation domain is a refined grid determined by the point added between points
     given by add_points:
-        np.linspace(t[0],t[-1],t.size*add_points)
-    Note, that to do that accuratly construct Splines, we use the key extrapolate=False and extend the
-    orignal knot points given in t by additionally 2k points with equidistante distance to T.
-    that is:
-                t[0]    ...     t[-1=n+1]
-    T[0]        T[k]    ...     T[-k]       T[n+2k+1]
-    In the end the spline will be zero at the boundary by contruction.
+        `np.linspace(t[0],t[-1],t.size*add_points)`
+    Note, that to do that accurately construct Splines, we use the key extrapolate=False and extend the
+    original knot points given in t by additionally 2k points with equidistant distance to T.
+    
+    By this construction the splines will be zero at the boundary.
+
+    Parameters
+    ----------
+    k : integer
+        Smoothness degree of the used Splines.
+    t : np.ndarray
+        One dimensional array of knot points for evaluating the Splines.
+    dim : int, optional
+        Dimension of the resulting spaces, by default 1
+    add_points : int, optional
+        Number of points to be added between each Knot for evaluation, by default 10
+
+    Returns
+    -------
+    TensorBasis
+        A base transform from coefficients of Splines to evaluation on a grid constructed from a refined
+        grid of the given evaluation knots. 
     """
     assert t.ndim == 1 and isinstance(k,int) and isinstance(dim,int) and isinstance(add_points,int)
     assert t.size > k+1
@@ -115,7 +174,7 @@ def bspline_basis(k,t,dim=1,add_points=10):
     j=0
     axis = eval_domain[0].axes[0]
     # added points to to t since BSpline only gives back data in t[k] to t[n]=t[-k] and t of size n+k+1
-    #assuming t to be equidistibuted points
+    #assuming t to be equidistant points
     diff = t[1]-t[0]
     # T has t_size + 2*k points hence T[k] = t[0] and T[-k] = t[-1] hence full interval under consideration
     T = np.linspace(-k*diff+t[0],t[-1]+k*diff,t.size+2*k)
