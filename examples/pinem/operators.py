@@ -250,7 +250,7 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
 
     return modes_to_data*g_to_modes
 
-def complex_get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
+def get_op_complex_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     N=1,list_of_filters=None,parallel = False):
 # the elements of list_of_filters are lists of modes which are incoherently superposed, 
 # i.e. the squares or the propagated fields are added
