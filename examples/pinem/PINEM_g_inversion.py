@@ -24,7 +24,7 @@ import sys
 sys.path.append('./PINEM')
 from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g, ForgetSecond
-from PINEM_extensions import harmonic_extension, extension_along_lines
+from examples.pinem.extensions import harmonic_extension, extension_along_lines
 import matplotlib.pyplot as plt
 
 def main():

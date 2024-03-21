@@ -4,22 +4,30 @@ from scipy.sparse.linalg import spsolve
 from scipy.interpolate import RegularGridInterpolator
 
 
-""" harmonic extension of a function on part of a 2D regular grid
+def harmonic_extension(mask, values, damping = 0,h_val = None,ext_bd_cond='Neum'):
+    r""" harmonic extension of a function on part of a 2D regular grid
 
-input: 
-    mask: binary mask with values 
-        1 at points where values are given (Dirichlet boundary values)
+    Parameters
+    ----------
+    mask: numpy.ndarray
+        binary mask with values 1 at points where values are given (Dirichlet boundary values)
         0 at points where values must be computed
-    values: array of function values: only values at points where mask=True are relevant
-    damping: The extension satisfies (-Delta + damping)u =0, so only for the default 
-                damping = 0 the extension is harmonic. 
-    By default, Neumann conditions are imposed at exterior boundaries. If ext_bd_cond is different from 'Neum', 
+    values: numpy.ndarray
+        array of function values; only values at points where mask=True are relevant
+    damping: float,optional
+        The extension satisfies \((-\Delta + \text{damping})u =0\), so only for the default 
+        \(damping = 0\) the extension is harmonic.
+    h_val: numpy.ndarray, optional
+        TODO Description
+    ext_bd_cond: str, optional
+        By default, Neumann conditions are imposed at exterior boundaries. If ext_bd_cond is different from 'Neum', 
         Dirichlet conditions will be used.  
-output:
+    Returns 
+    ----------
+    numpy.ndarray
         An array u which coincides with values at {mask=True}, and an approximation of a 
         harmonic function on {mask=False} which is globally continuous
-"""
-def harmonic_extension(mask, values, damping = 0,h_val = None,ext_bd_cond='Neum'):
+    """
     ndim = mask.ndim
     need_padding = False
     for dir in range(ndim):
@@ -96,48 +104,23 @@ def harmonic_extension(mask, values, damping = 0,h_val = None,ext_bd_cond='Neum'
         return u[sl]
     else:
         return u
-"""
-def harmonic_extension(mask, values, damping = 0):
-    u = values.flatten()
-    G = np.where(mask,0,1) # boolean to integer
-    k_int = np.nonzero(G)  # integer coordinates of interior points
-    k_ext = np.nonzero(1-G) # integer coordinates of exterior points
-    G[k_int] = 1+np.arange(len(k_int[0]))
 
-    G1 = G.flatten()
-    [m,n] = G.shape
-    # Indices of interior points
-    p = np.where(G1)[0] # list of numbers of interior points in flattened array
-    N = len(p)
-    f = np.zeros((N,),dtype=u.dtype) # right hand side of matrix equation 
-
-    # Connect interior points to themselves with 4's.
-    i = G1[p]-1
-    j = G1[p]-1
-    s = (damping/(m*n) + 4.)*np.ones(p.shape)
-
-    # for k = north, east, south, west
-    for k in [-1, n, 1, -n]:
-        # Possible neighbors in k-th direction
-        Q = G1[p+k]
-        # Index of points with interior neighbors in k-th direction
-        q = np.where(Q)[0]
-        q_ext = np.where(Q==0)[0]
-        # Connect interior points to neighbors with -1's.
-        i = np.concatenate([i, G1[p[q]]-1])
-        j = np.concatenate([j,Q[q]-1])
-        s = np.concatenate([s,-np.ones(q.shape)])
-        i_ext = G1[p[q_ext]]-1
-        f[i_ext] = f[i_ext]+u[p[q_ext]+k]
-    # sparse matrix with 5 diagonals
-    negLap= csc_matrix((s, (i,j)),(N,N))
-    u = values.copy()
-    u[k_int]=spsolve(negLap,f)
-    return u
-"""
 
 def extension_along_lines(log_g_map,mask):
-    # extrapolate log(g_map) from nanotip along straight lines. Damping is modeled by linear decay on these lines
+    r""" Extrapolate log(g_map) from nanotip along straight lines. Damping is modeled by linear decay on these lines.
+
+    Parameters
+    ----------
+    log_g_map: numpy.ndarray
+        TODO Description
+    mask: numpy.ndarray
+        TODO Description
+        
+    Returns 
+    ----------
+    numpy.ndarray
+        TODO Description
+    """   
     m,n = log_g_map.shape
     N_center=707  # origin is place at pixel (N_center,(n-1)/2)
     # artificial coordinate system for g_map; cut through nanotip is line eta = 1
