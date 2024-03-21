@@ -15,16 +15,16 @@ import regpy.hilbert as hilbert
 from regpy.operators import Identity
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
-from regpy.operators.pinem import PINEM_g_to_data, complex_PINEM_g_to_data
+from operators import PINEM_g_to_data, complex_PINEM_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 from regpy.util.imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
 import sys
-sys.path.append('./PINEM')
-from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
+sys.path.append('./pinem')
+from plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g, ForgetSecond
-from examples.pinem.extensions import harmonic_extension, extension_along_lines
+from extensions import harmonic_extension, extension_along_lines
 import matplotlib.pyplot as plt
 
 def main():

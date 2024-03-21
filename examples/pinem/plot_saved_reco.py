@@ -1,4 +1,4 @@
-from PINEM_plots import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
+from examples.pinem.plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
 from PINEM_setup import setup_simulated_g
 from scipy.io import loadmat
 import matplotlib.pyplot as plt
