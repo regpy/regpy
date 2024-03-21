@@ -15,7 +15,7 @@ import regpy.hilbert as hilbert
 from regpy.operators import Identity
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
-from operators import PINEM_g_to_data, complex_PINEM_g_to_data
+from operators import get_op_g_to_data, complex_get_op_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
@@ -351,7 +351,7 @@ def main():
     setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
     if N_deriv:
         N_current = N_deriv[0]
-        op_simple = PINEM_g_to_data(*opdata, N=N_current) * deepcopy(extension)
+        op_simple = get_op_g_to_data(*opdata, N=N_current) * deepcopy(extension)
     else:
         N_current = N_data
         op_simple = None
@@ -388,7 +388,7 @@ def main():
 
     for N_current in N_deriv[1:]:
         residual_last_N= stats['residuals'][-1]
-        op_simple = PINEM_g_to_data(*opdata, N=N_current) * deepcopy(extension)
+        op_simple = get_op_g_to_data(*opdata, N=N_current) * deepcopy(extension)
         if use_NewtonCG:
             solver = NewtonCG(
                 setting, data, init=stoprule.x,

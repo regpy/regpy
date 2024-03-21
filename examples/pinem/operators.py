@@ -22,6 +22,10 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
         Fresnel number of the imaging setup, defined with respect to the lengthscale
         that corresponds to length 1 in domain.coords. Governs the strength of the
         diffractive effects modeled by the Fresnel-propagator
+    sol_type : 
+        TODO description. Defaults to None
+    parallel : 
+        TODO description. Defaults to False
 
     Returns
     -------
@@ -54,7 +58,7 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
         return vec * mask
 
 class NemitzkyOpForG(Operator):
-    """
+    r"""
     Parameters: 
     ----------
     domain : regpy.vecsps.VectorSpace
@@ -65,12 +69,12 @@ class NemitzkyOpForG(Operator):
     Notes:
     ----------
     Input of eval: 
-    - A pair of real-valued vectors on domain. The first component represents the modulus |g| of g, the second 
-      component the phase arg(g)=ln(g/|g|)/i. 
+    - A pair of real-valued vectors on domain. The first component represents the modulus \(|g|\) of \(g\), the second 
+      component the phase \(\textrm{arg}(g)=\ln(\frac{g}{|g|})i^{-1}\). 
 
     Output of eval: 
     - A complex vector of the same size with entries 
-            J_N(2|g|) * exp(i N arg(g)).
+            \[J_{N}(2|g|) * e^{i N \textrm{arg}(g)}\].
     """
     def __init__(self, N, domain):
         assert domain.is_complex
@@ -213,7 +217,7 @@ class ComplexNemitzkyOpForG(Operator):
             return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
                 + self._dir_g*np.real(self._factor_pow*y)
 
-def PINEM_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
+def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
      N=1,list_of_filters=None,parallel = False):
     assert not domain.is_complex
     cdomain = domain.complex_space()
@@ -246,7 +250,7 @@ def PINEM_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
 
     return modes_to_data*g_to_modes
 
-def complex_PINEM_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
+def complex_get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     N=1,list_of_filters=None,parallel = False):
 # the elements of list_of_filters are lists of modes which are incoherently superposed, 
 # i.e. the squares or the propagated fields are added
