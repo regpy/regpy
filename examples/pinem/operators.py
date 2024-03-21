@@ -11,7 +11,7 @@ from regpy.operators.parallel_operators import ParallelVectorOfOperators
 from regpy.operators.fresnel import fresnel_propagator
 from scipy.special import jv
 
-def wave_field_reco_PINEM(domain, fresnel_number,mask,sol_type = None,parallel = False):
+def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = False):
     r"""Wavefield to measurement operator
 
     Parameters

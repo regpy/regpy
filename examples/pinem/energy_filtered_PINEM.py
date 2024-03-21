@@ -3,7 +3,7 @@ from scipy.sparse import linalg
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.operators import CoordinateProjection
-from operators import wave_field_reco_PINEM
+from operators import get_wave_field_reco
 from regpy.hilbert import L2, Sobolev, Hm0Domain
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
@@ -41,7 +41,7 @@ def main():
     mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
 
     # Forward operator and its domain
-    op = wave_field_reco_PINEM(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
+    op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
     """if sol_type == None:
         h_domain = Sobolev(cgrid, index=0.5)
     else:
