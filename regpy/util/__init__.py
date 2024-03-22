@@ -273,22 +273,6 @@ def adjoint_irfft(y, size=None):
         aux = np.zeros(size, dtype=result.dtype)
         aux[:result.size] = result
         return aux
-
-
-def foo(n, m):
-    x = np.random.randn(n) + 1j * np.random.randn(n)
-    fx = np.fft.irfft(x, m)
-    y = np.random.randn(fx.size)
-    fty = adjoint_irfft(y, x.size)
-    return np.real(np.vdot(y, fx)) - np.real(np.vdot(fty, x))
-
-
-def asdf():
-    a = np.zeros((8, 8))
-    for i in range(8):
-        for j in range(8):
-            a[i, j] = foo(i + 6, j + 6)
-    return a
     
 def gradientuniformgrid(u, spacing=1):
     """Computes the gradient of field given by 'u'. 'u' is defined on a 
