@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.io import loadmat
 from regpy.operators import Operator
-from operators import get_op_g_to_data, get_op_complex_g_to_data
+from operators import get_op_g_to_data
 from regpy.operators import Operator, SquaredModulus, Exponential, PtwMultiplication, VectorOfOperators
 from regpy.vecsps import UniformGridFcts, DirectSum
 
@@ -36,11 +36,10 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
     opdata = [grid, fresnel_number,pad_amount,a_psi0_multiplier]
     
     if g_is_complex:
-        op = get_op_complex_g_to_data(*opdata, 
+        op = get_op_g_to_data(*opdata, g_is_complex=True,
             list_of_filters = list_of_filters,
             N=N, 
-            parallel=parallel
-        )
+            parallel=parallel)
         if using_gabs_measurement:
             op2 = PtwMultiplication(grid,1.0-mask_a) * SquaredModulus(grid.complex_space())
             op = VectorOfOperators([op2, op])

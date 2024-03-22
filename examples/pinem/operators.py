@@ -25,7 +25,7 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
     sol_type : 
         TODO description. Defaults to None
     parallel : 
-        TODO description. Defaults to False
+        If set True different components of the operator are computed in parallel. Defaults to False. Defaults to False
 
     Returns
     -------
@@ -217,29 +217,37 @@ class ComplexNemitzkyOpForG(Operator):
             return  self._pow_lin.adjoint(self._factor_real * np.conjugate(y)) \
                 + self._dir_g*np.real(self._factor_pow*y)
 
+
 def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
-     N=1,list_of_filters=None,parallel = False):
-    """TODO _summary_
+     g_is_complex=False,N=1,list_of_filters=None,parallel = False):
+    """Constructs full PINEM measurement operator that maps g to the obtained data
 
     Parameters:
     ----------
-        domain : regpy.vecsps.UniformGridFcts 
-            TODO _description_
-        fresnel_number : float 
-            TODO _description_
-        pad_amount : int 
-            TODO _description_
-        a_psi0_multiplier (_type_) : 
-            TODO _description_
-        list_of_filters : list of numpy.ndarray, optional 
-            TODO _description_. Defaults to None.
-        parallel : bool, optional 
-            TODO _description_. Defaults to False.
+    domain : regpy.vecsps.VectorSpace
+        The domain on which the operator is defined.
+    fresnel_number : float
+        Fresnel number of the imaging setup, defined with respect to the lengthscale
+        that corresponds to length 1 in domain.coords. Governs the strength of the
+        diffractive effects modeled by the Fresnel-propagator
+    pad_amount : ((int,int),(int,int))
+        amount of padding to avoid aliasing artifacts in Fresnel-propagator.
+    a_psi0_multiplier : numpy.ndarray 
+        TODO _description_
+    g_is_complex : bool, optional
+        Whether g is complex. Defaults to False.
+    N : int, optional
+        If list_of_filters is not given it is replaced by `[np.arange(1,N+1),np.arange(-1,-N-1,-1)]`. Defaults to 1.
+    list_of_filters : list of numpy.ndarray, optional 
+        List of arrays representing modes which are incoherently superposed, 
+        i.e. the squares or the propagated fields are added. Defaults to None.
+    parallel : bool, optional 
+        If set True different components of the operator are computed in parallel. Defaults to False.
 
     Returns:
     ----------
-        regpy.operators.Operator
-            TODO _description_
+    regpy.operators.Operator
+        PINEM operator that maps g to the obtained data
     """    
     assert not domain.is_complex
     cdomain = domain.complex_space()
@@ -253,13 +261,20 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     modes = list(modes)
     op_list = []
     for n in modes:
-        if not n==0:
+        if g_is_complex:
             op_list.append(
                 SquaredModulus(cdomain)
                 *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
                 *PtwMultiplication(cdomain,a_psi0_multiplier)
-                *NemitzkyOpForG(n,cdomain)
-                *DirectSum(Exponential(domain), Identity(domain)))
+                *ComplexNemitzkyOpForG(n,cdomain))
+        else:
+            if not n==0:
+                op_list.append(
+                    SquaredModulus(cdomain)
+                    *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
+                    *PtwMultiplication(cdomain,a_psi0_multiplier)
+                    *NemitzkyOpForG(n,cdomain)
+                    *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
         g_to_modes = ParallelVectorOfOperators(op_list)
     else:
@@ -268,39 +283,6 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     for fil in list_of_filters:
         op_mat.append([Identity(domain,copy=False) if n in fil else None for n in modes])
     op_mat = list(map(list, zip(*op_mat)))
-    modes_to_data = MatrixOfOperators(op_mat)
-
-    return modes_to_data*g_to_modes
-
-def get_op_complex_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
-    N=1,list_of_filters=None,parallel = False):
-# the elements of list_of_filters are lists of modes which are incoherently superposed, 
-# i.e. the squares or the propagated fields are added
-    assert not domain.is_complex
-    cdomain = domain.complex_space()
-    if list_of_filters == None:
-        list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
-    modes = set()
-    for filter in list_of_filters:
-        modes.update(filter)
-    modes = list(modes)
-    op_list = []
-    for n in modes:
-        op_list.append(
-            SquaredModulus(cdomain)
-            *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
-            *PtwMultiplication(cdomain,a_psi0_multiplier)
-            *ComplexNemitzkyOpForG(n,cdomain)
-            )
-    if parallel:
-        g_to_modes = ParallelVectorOfOperators(op_list)
-    else:
-        g_to_modes = VectorOfOperators(op_list)
-    op_mat = []
-    for fil in list_of_filters:
-        op_mat.append([Identity(domain,copy=False) if n in fil else None for n in modes])
-    op_mat = list(map(list, zip(*op_mat)))
-
     modes_to_data = MatrixOfOperators(op_mat)
 
     return modes_to_data*g_to_modes

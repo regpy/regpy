@@ -15,7 +15,7 @@ import regpy.hilbert as hilbert
 from regpy.operators import Identity
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
-from operators import get_op_g_to_data, get_op_complex_g_to_data
+from operators import get_op_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
