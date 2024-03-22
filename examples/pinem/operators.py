@@ -219,6 +219,28 @@ class ComplexNemitzkyOpForG(Operator):
 
 def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
      N=1,list_of_filters=None,parallel = False):
+    """TODO _summary_
+
+    Parameters:
+    ----------
+        domain : regpy.vecsps.UniformGridFcts 
+            TODO _description_
+        fresnel_number : float 
+            TODO _description_
+        pad_amount : int 
+            TODO _description_
+        a_psi0_multiplier (_type_) : 
+            TODO _description_
+        list_of_filters : list of numpy.ndarray, optional 
+            TODO _description_. Defaults to None.
+        parallel : bool, optional 
+            TODO _description_. Defaults to False.
+
+    Returns:
+    ----------
+        regpy.operators.Operator
+            TODO _description_
+    """    
     assert not domain.is_complex
     cdomain = domain.complex_space()
     #complexProjection = CoordinateProjection(cdomain,mask)
