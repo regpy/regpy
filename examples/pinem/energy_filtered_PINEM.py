@@ -10,7 +10,7 @@ from regpy.solvers import HilbertSpaceSetting
 import regpy.stoprules as rules
 
 import numpy as np
-from scipy.misc import ascent
+from scipy.datasets import ascent
 import logging
 import matplotlib.pyplot as plt
 
@@ -42,10 +42,6 @@ def main():
 
     # Forward operator and its domain
     op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
-    """if sol_type == None:
-        h_domain = Sobolev(cgrid, index=0.5)
-    else:
-        h_domain = Sobolev(grid, index=0.5)"""
 
     if sol_type == None:
         projection = CoordinateProjection(cgrid,mask)
@@ -68,7 +64,6 @@ def main():
     exact_solution = exact_solution * mask  # - 4*(1-mask)
 
     # Create exact data and Poisson data
-    #exact_data = op(exact_solution)
     exact_data = op(projection(exact_solution))
     data = np.random.poisson(intensity * exact_data)/intensity
 
@@ -82,7 +77,7 @@ def main():
     setting = HilbertSpaceSetting(
         op=op, h_domain=h_domain,
         h_codomain=h_codomain)
-    #init_vec = np.zeros_like(exact_solution)
+
     init_vec = np.zeros_like(projection(exact_solution))
 
     solver = IrgnmCG(
@@ -117,17 +112,15 @@ def main():
         axs2[0, j].set_title('Simulated data')
 
     # perform reconstruction    
-    #reco, reco_data = solver.run(stoprule)
     for reco, reco_data in solver.until(stoprule):
         newton_step = solver.iteration_step_nr
-        #ereco =reco
         ereco = embedding(reco)
         reco_error = ereco-exact_solution
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
             np.linalg.norm(reco_error.imag)/np.linalg.norm(exact_solution.imag)))
-        # Plot reults
+        # Plot results
         if newton_step % 5 == 0 or stoprule.triggered:
             axs[1, 0].set_title('Reco abs, step {}'.format(newton_step))
             im = axs[1, 0].imshow(np.abs(ereco), interpolation='nearest')

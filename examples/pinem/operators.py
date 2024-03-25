@@ -1,10 +1,8 @@
-from numbers import Integral
 from math import factorial
 import numpy as np
-from numpy.core.defchararray import endswith
 
 from regpy.vecsps import DirectSum as DirectSumSpace 
-from regpy.operators import CoordinateProjection, Identity, Operator, Composition, RealPart, ImaginaryPart
+from regpy.operators import Identity, Operator, RealPart, ImaginaryPart
 from regpy.operators import PtwMultiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import VectorOfOperators, MatrixOfOperators, Adjoint 
 from regpy.operators.parallel_operators import ParallelVectorOfOperators
@@ -25,7 +23,7 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
     sol_type : 
         TODO description. Defaults to None
     parallel : 
-        If set True different components of the operator are computed in parallel. Defaults to False. Defaults to False
+        If set True different components of the operator are computed in parallel. Defaults to False
 
     Returns
     -------
@@ -251,8 +249,6 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
     """    
     assert not domain.is_complex
     cdomain = domain.complex_space()
-    #complexProjection = CoordinateProjection(cdomain,mask)
-    #maskDomain = complexProjection.codomain
     if list_of_filters == None:
         list_of_filters = [np.arange(1,N+1),np.arange(-1,-N-1,-1)]
     modes = set()
