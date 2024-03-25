@@ -112,12 +112,12 @@ class IrgnmCGPrec(Solver):
         \]
     where \(F\) is a Frechet-differentiable operator, by solving in every iteration step the problem
         \[
-        \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - xref)\Vert^2
+        \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
         \]
     with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner \(M\).
     The spectral preconditioner \(M\) is chosen, such that:
         \[M  A  M \approx Id\]
-    where \(A = (Gram_domain^(-1) T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id\) 
+    where \(A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id\) 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
     the order of the number of iterations: \(\{v_j\}\)
@@ -128,8 +128,8 @@ class IrgnmCGPrec(Solver):
     We choose: \(M = C_k^{-1/2} and M^{-1} = C_k^{1/2}\)
 
     It is:
-    \[M     : v \mapsto \frac{1}{sqrt{\text{regpar}}} v + \sum_{j=1}^{k} [\frac{1}{\sqrt{lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}} \langle v_j, v\rangle v_j\] 
-    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} [\sqrt{lambda_j+\text{regpar}} -\sqrt{P\text{regpar}}] \langle v_j, v\rangle v_j\]
+    \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
+    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j\]
 
     Parameters
     ----------
