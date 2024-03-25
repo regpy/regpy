@@ -247,6 +247,12 @@ class Operator:
         raise NotImplementedError
 
     def as_linear_operator(self):
+        r"""
+        Creates a `SciPyLinearOperator` with the same input and output as `self`.
+        Returns
+        -------
+        operators.ScipyLinearOperator
+        """
         if self.linear:
             return SciPyLinearOperator(self)
         else:
@@ -536,15 +542,37 @@ class Composition(Operator):
         return util.make_repr(self, *self.ops)
 
 class SciPyLinearOperator(sla.LinearOperator):
+    r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
+    The domain and codomain are flattened.
+    """
     def __init__(self, op2):
         self.op2 = op2
+        r"""the wrapped operator"""
         super().__init__(op2.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
     
     def _matvec(self, x):
+        r"""Applies the operator.
+        Parameters
+        ----------
+        x : numpy.ndarray
+            Flattened element from domain of operator.
+        Returns
+        -------
+        numpy.ndarray
+        """
         op2 = self.op2
         return op2.codomain.flatten(op2(op2.domain.fromflat(x)))
     
     def _rmatvec(self, y):
+        r"""Applies the adjoint operator.
+        Parameters
+        ----------
+        y : numpy.ndarray
+            Flattened element from codomain of operator.
+        Returns
+        -------
+        numpy.ndarray
+        """
         op2 = self.op2
         return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
 
