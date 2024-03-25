@@ -36,7 +36,7 @@ class PaddingOperator2D(Operator):
         return y[self.pad_top:None if self.pad_bottom == 0 else -self.pad_bottom, \
                  self.pad_left:None if self.pad_right == 0 else -self.pad_right]
 
-def fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
+def get_fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
     r"""Operator that implements Fresnel-propagation of 2D-arrays, which models near-field
     diffraction in the regime of the free-space paraxial Helmholtz equation.
 
@@ -146,7 +146,7 @@ def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
     image_to_wavefield_op = Exponential(domain_complex) *PtwMultiplication(domain_complex, -1j - absorption_fraction)
     # Fresnel propagator: models diffractive effects as the wave-field propagates from
     # the object to the detector: psi_0 |--> psi_d = FresnelPropagator(psi_0)
-    fresnel_prop = fresnel_propagator(domain_complex, fresnel_number)
+    fresnel_prop = get_fresnel_propagator(domain_complex, fresnel_number)
 
     # Detection operator: Maps the wave-field psi_d at the detector onto the corresponding
     # intensities: psi_d |--> I = |psi_d|^2 (squared modulus operation that eliminates

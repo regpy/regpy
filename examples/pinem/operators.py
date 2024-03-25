@@ -6,7 +6,7 @@ from regpy.operators import Identity, Operator, RealPart, ImaginaryPart
 from regpy.operators import PtwMultiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import VectorOfOperators, MatrixOfOperators, Adjoint 
 from regpy.operators.parallel_operators import ParallelVectorOfOperators
-from regpy.operators.fresnel import fresnel_propagator
+from regpy.operators.fresnel import get_fresnel_propagator
 from scipy.special import jv
 
 def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = False):
@@ -31,8 +31,8 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
     """
     assert domain.is_complex
 
-    fresnel_prop1 = fresnel_propagator(domain, fresnel_number)
-    fresnel_prop2 = fresnel_propagator(domain, -fresnel_number)
+    fresnel_prop1 = get_fresnel_propagator(domain, fresnel_number)
+    fresnel_prop2 = get_fresnel_propagator(domain, -fresnel_number)
     detection_op0 = SquaredModulus(domain)
     detection_op1 = SquaredModulus(domain)
     detection_op2 = SquaredModulus(domain)
@@ -260,14 +260,14 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
         if g_is_complex:
             op_list.append(
                 SquaredModulus(cdomain)
-                *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
+                *get_fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
                 *PtwMultiplication(cdomain,a_psi0_multiplier)
                 *ComplexNemitzkyOpForG(n,cdomain))
         else:
             if not n==0:
                 op_list.append(
                     SquaredModulus(cdomain)
-                    *fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
+                    *get_fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
                     *PtwMultiplication(cdomain,a_psi0_multiplier)
                     *NemitzkyOpForG(n,cdomain)
                     *DirectSum(Exponential(domain), Identity(domain)))
