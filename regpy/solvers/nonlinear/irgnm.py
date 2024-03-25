@@ -8,7 +8,7 @@ from regpy.stoprules import CountIterations
 
 
 class IrgnmCG(Solver):
-    """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
+    r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
         \[
             \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
@@ -106,7 +106,7 @@ from regpy import util
 from scipy.sparse.linalg import eigsh
         
 class IrgnmCGPrec(Solver):
-    """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
+    r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
         \[
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
         \]
