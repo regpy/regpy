@@ -1,6 +1,6 @@
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
-from regpy.operators.fresnel import xray_phase_contrast
+from regpy.operators.fresnel import get_xray_phase_contrast
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import HilbertSpaceSetting
@@ -27,7 +27,7 @@ noise_level = 0.01      # Noise level in the simulated data
 grid = UniformGridFcts(np.arange(1024), np.arange(1024))
 
 # Forward operator
-op = xray_phase_contrast(grid, fresnel_number)
+op = get_xray_phase_contrast(grid, fresnel_number)
 
 # Create phantom phase-image (= padded example-image)
 exact_solution = ascent().astype(np.float64)

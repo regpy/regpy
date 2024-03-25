@@ -97,7 +97,7 @@ def get_fresnel_propagator(domain, fresnel_number, pad_amount=((0,0),(0,0))):
         return pad_op.adjoint * ft.adjoint * fresnel_multiplier * ft * pad_op
 
 
-def xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
+def get_xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
     r"""Forward operator that models X-ray phase contrast imaging, also known as in-line
     holography or X-ray propagation imaging. Maps a given 2D-image phi, that describes
     the induced phase shifts in the X-ray wave-field directly behind the imaged sample,
