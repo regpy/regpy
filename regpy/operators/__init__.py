@@ -645,17 +645,30 @@ class Identity(Operator):
         return util.make_repr(self, self.domain)
 
 class MatrixMultiplication(Operator):
-    """Implements a matrix multiplication with a given matrix. Domain and codomain are plain
-    `regpy.vecsps.VectorSpace` instances.
+    """Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
+    are plain one dimensional `regpy.vecsps.VectorSpace` instances by default.
 
     Parameters
     ----------
     matrix : array-like
         The matrix.
-    inverse : Operator, array-like, 'inv', 'cholesky' or None
+    inverse : Operator, array-like, 'inv', 'cholesky' or None, optional
         How to implement the inverse operator. If available, this should be given as `Operator`
         or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'´ or `'superLU'´, a
         `CholeskyInverse´ or `SuperLU´´ instance will be returned.
+    domain : regpy.vecsps.VectorSpace, optional
+        The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
+        matrix columns is used. Defaults to None.
+    codomain : regpy.vecsps.VectorSpace, optional
+        The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
+        matrix rows is used. Defaults to None.
+
+    Notes
+    ----------
+    The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
+    The adjoint is implemented in the same way by multiplying with the adjoint matrix.
+    As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
+    codomains may also be used.
     """
 
     def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
@@ -943,6 +956,22 @@ class InnerShift(Operator):
 
 
 class FourierTransform(Operator):
+    """Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.UniformGridFcts
+        The underlying vector space
+    centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Defaults to `False`.
+    axes : sequence of ints, optional
+        Axes over which to compute the Fourier transform. If not given all axes are used.
+        Defaults to None.
+    """
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, vecsps.UniformGridFcts)
         frqs = domain.frequencies(centered=centered, axes=axes)
@@ -1442,7 +1471,7 @@ class Zero(Operator):
     domain : regpy.vecsps.VectorSpace
         The underlying vector space.
     codomain : regpy.vecsps.VectorSpace, optional
-        The vector space if the codomain. Defaults to `domain`.
+        The vector space of the codomain. Defaults to `domain`.
     """
     def __init__(self, domain, codomain=None):
         if codomain is None:
