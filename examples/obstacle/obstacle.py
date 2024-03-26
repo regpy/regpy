@@ -1,0 +1,96 @@
+import logging
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.newton import NewtonCG
+import regpy.stoprules as rules
+from regpy.hilbert import L2, Sobolev
+from regpy.solvers import HilbertSpaceSetting
+from dirichlet_op import DirichletOp
+from regpy.vecsps.curves.gen_trig import GenTrigDiscr
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
+)
+
+"""Forward operator"""
+op = DirichletOp(
+    domain=GenTrigDiscr(64),
+    kappa=3,
+    N_ieq = 128,
+    N_ieq_synth = 64,
+    N_inc = 32,
+    N_meas = 64,
+    true_curve = 'apple',
+    N_FK = 32
+)
+
+setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
+
+"""Exact data"""
+exact_solution=op.bd_ex_curve
+farfield = op._create_synthetic_data()
+
+"""Poission data"""
+noise = op.codomain.randn()
+noise = 0.01*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
+data = farfield+noise
+
+"""Initial guess"""
+t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
+init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
+init=init.flatten()
+
+"""Solver: NewtonCG or IrgnmCG"""
+solver = NewtonCG(
+    setting, farfield, init = init,
+        cgmaxit=50, rho=1.6
+)
+
+"""
+solver = IrgnmCG(
+    setting, data,
+    regpar=10,
+    regpar_step=0.8,
+    init=init,
+    cg_pars=dict(
+        tol=1e-4
+    )
+)
+"""
+stoprule = (
+    rules.CountIterations(100) +
+    rules.Discrepancy(
+        setting.h_codomain.norm, data,
+        noiselevel=setting.h_codomain.norm(noise),
+        tau=1.2
+    )
+)
+
+"""Plot function"""
+plt.ion()
+fig, axs = plt.subplots(1, 2)
+axs[0].set_title('Obstacle')
+axs[1].set_title('Farfield')
+
+for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
+    if n % 1 == 0:
+        axs[0].clear()
+        axs[0].plot(*exact_solution.z)
+        axs[0].plot(*op.domain.bd_eval(reco, nvals=op.N_ieq, nderivs=3).z)
+
+        axs[1].clear()
+        axs[1].plot(farfield.real, label='exact')
+        axs[1].plot(reco_data.real, label='reco')
+        axs[1].plot(data.real, label='measured')
+        axs[1].legend()
+        axs[1].set_ylim(ymin=0)
+        plt.pause(0.5)
+
+plt.ioff()
+plt.show()
+
+
