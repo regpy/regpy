@@ -151,7 +151,7 @@ class IrgnmCGPrec(Solver):
 
     def __init__(
         self, setting, data, regpar, regpar_step=2 / 3, 
-        init=None, cg_pars=None, precpars=None
+        init=None, cg_pars=None,cgstop =None, precpars=None
         ):
         super().__init__()
         self.setting = setting
@@ -171,6 +171,7 @@ class IrgnmCGPrec(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
+        self.cgstop = cgstop
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         
         self.k=0
@@ -189,8 +190,16 @@ class IrgnmCGPrec(Solver):
         """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
-                
+    
     def _next(self):
+        if self.cgstop is not None:
+            stoprule = CountIterations(self.cgstop)
+            # Disable info logging, but don't override log level for all
+            # CountIterations instances.
+        else:
+            stoprule = CountIterations(2**15)
+        stoprule.log = self.log.getChild('CountIterations')
+        stoprule.log.setLevel(logging.WARNING)
         self.log.info('Running Tikhonov solver.')
         
         if self.need_prec_update:
@@ -202,7 +211,7 @@ class IrgnmCGPrec(Solver):
                 krylov_basis=self.krylov_basis,
                 xref=self.init - self.x,
                 **self.cg_pars
-            ).run()
+            ).run(stoprule=stoprule)
             self.need_prec_update = False
             self._preconditioner_update()
             self.log.info('Spectral preconditioner updated')
@@ -216,7 +225,7 @@ class IrgnmCGPrec(Solver):
                 xref=self.init-self.x,
                 preconditioner=preconditioner,
                 **self.cg_pars
-            ).run()
+            ).run(stoprule=stoprule)
             step = self.M @ step
             
         self.x += step
