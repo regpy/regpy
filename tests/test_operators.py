@@ -4,7 +4,7 @@ import numpy as np
 from regpy import operators, util, vecsps
 from regpy.util import tests
 from regpy.operators import volterra 
-from regpy.operators import mediumscattering
+from examples.medium_scattering import mediumscattering
 
 def do_linear_test(op):
     for _ in range(10):
