@@ -9,8 +9,9 @@ from  regpy.operators import Operator
 from  regpy.vecsps.curves.star_curve import StarCurveDiscr
 from  regpy.vecsps import UniformGridFcts
 
-r"""Operator that maps the shape of a sound-soft obstacle to the far-field measurements. 
-The scattering problem is modelled by
+class DirichletOp(Operator):
+    r"""Operator that maps the shape of a sound-soft obstacle to the far-field measurements. 
+    The scattering problem is modelled by
 
     \[
         \begin{cases}
@@ -47,15 +48,12 @@ The scattering problem is modelled by
       Gauss–Newton method for an inverse potential and an inverse scattering problem", Inverse
       Problems, 13 (1997) 1279–1299.
     """
-
-class DirichletOp(Operator):
-
     def __init__(self, domain, kappa, N_ieq, N_ieq_synth, N_inc, N_meas, true_curve, N_FK, codomain=None, **kwargs):
         self.op_name = 'DirichletOp'
         self.kappa = kappa 
         """Wave number."""          
         self.N_ieq = N_ieq
-        """"(2*self.N_ieq) is the number of discrete boundary points."""
+        """(2*self.N_ieq) is the number of discrete boundary points."""
         self.N_ieq_synth = N_ieq_synth 
         """2*N_ieq_synth is the number of discretization points for the boundary integral 
         equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
@@ -80,12 +78,13 @@ class DirichletOp(Operator):
             and save these quantities as members of bd_ex set up the boudary integral operator."""
 
         self.domain_curve = None
+        """Curve domain"""
         self.dudn=None  
         """Normal derivative of total field at boundary.""" 
         self.w_sl=-1*complex(0,1)*self.kappa
         self.w_dl=1
-        """Weights of single and double layer potentials."""
-        """Use a mixed single and double layer potential ansatz with
+        """Weights of single and double layer potentials. 
+        Use a mixed single and double layer potential ansatz with
         weights w_sl and w_dl."""
         self.L=None
         self.U=None
@@ -116,7 +115,6 @@ class DirichletOp(Operator):
             
         FF_combined = farfield_matrix(self.bd_ex, self.meas_directions, self.kappa, self.w_sl, self.w_dl)
 
-        """Set up the matrix mapping the density to the far field pattern."""
         farfield = []
 
         for l in range(0, np.size(self.inc_directions, 1)):
@@ -130,13 +128,6 @@ class DirichletOp(Operator):
         return farfield
     
     def _eval(self, coeff, **kwargs):
-        """Solve the forward Dirichlet problem for the obstacle parameterized by
-        coeff. Quantities needed again for the computation of derivatives and
-        adjoints are stored as members of F."""
-
-        """Compute the grid points of the boundary parameterized by coeff and derivatives
-        of the parametrization and save these quantities as members of F.bd"""
-
         self.domain_curve = self.domain.bd_eval(coeff, 2*self.N_ieq, 3)
         Iop_data = setup_iop_data(self.domain_curve, self.kappa)
 
