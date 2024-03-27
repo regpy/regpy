@@ -1,5 +1,4 @@
 import logging
-#from multiprocessing.spawn import get_command_line
 
 import numpy as np
 from numpy.linalg import norm
@@ -9,22 +8,18 @@ from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
 from regpy.vecsps import UniformGridFcts, DirectSum
-from regpy.vecsps.tensor_bases import chebyshev_basis, legendre_basis
-from regpy.hilbert import L2, Sobolev, HmDomain
+from regpy.vecsps.tensor_bases import legendre_basis
+from regpy.hilbert import L2, HmDomain
 import regpy.hilbert as hilbert
-from regpy.operators import Identity
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
 from operators import get_op_g_to_data
 from regpy.solvers import HilbertSpaceSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
-from regpy.util.imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log 
-import sys
-sys.path.append('./pinem')
 from plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
-from PINEM_setup import setup_simulated_g, ForgetSecond
-from extensions import harmonic_extension, extension_along_lines
+from PINEM_setup import setup_simulated_g
+from extensions import harmonic_extension
 import matplotlib.pyplot as plt
 
 def main():
@@ -78,7 +73,8 @@ def main():
     # This value should gradually be increased to save computation time. 
     N_deriv = [4,8,16,30]
     # solver type: If True, NewtonCG is used, otherwise IrgnmCG
-    use_NewtonCG = True
+    use_NewtonCG = False#True
+    
     if g_is_complex:
         sobolev_index = 2
         IRGNM_regpar = 1e-4; IRGNM_regpar_step = 0.8
@@ -107,6 +103,20 @@ def main():
     # mask_a = np.full(mask_a.shape,False,dtype=bool)
     
     ################################################   initialize forward operator
+    print(f"g_is_complex:{g_is_complex}")
+    print(f"abs_g_is_partly_known:{abs_g_is_partly_known}")
+    print(f"using_polynomial_basis_for_phase:{using_polynomial_basis_for_phase}")
+    print(f"experimental_data_filename:{experimental_data_filename}")
+    print(f"using_gabs_measurement:{using_gabs_measurement}")
+    print(f"isfinite(total_nr_counts):{isfinite(total_nr_counts)}")
+    print(f"isfinite(total_nr_counts_gabs):{isfinite(total_nr_counts_gabs)}")
+    print(f"init_guess_filename:{init_guess_filename}")
+    print(f"output_filename:{output_filename}")
+    print(f"do_plottings:{do_plottings}")
+    
+    
+    
+    
     if g_is_complex:
         # h_domain = Sobolev(grid.complex_space(), index=sobolev_index)
         h_domain = HmDomain(grid.complex_space(),mask_p, index = sobolev_index)

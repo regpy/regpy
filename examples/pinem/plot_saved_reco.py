@@ -13,11 +13,10 @@ stats = {'ampl_err': rec['ampl_err'][0], 'phase_err': rec['phase_err'][0], \
        'complex_err': rec['complex_err'][0], 'residuals': rec['residuals'][0], \
         'nr_inner_steps': rec['nr_inner_steps'][0], 'N': rec['N'][0], 'Newton step' : rec['Newton step'][0]}
 op, grid, exact_solution, g_map, mask_a_org, mask_p, opdata \
-        = setup_simulated_g(g_is_complex=False,using_gabs_measurement=False,N=30,parallel=False)
+        = setup_simulated_g(g_is_complex=False,N=30,parallel=False)
 data = loadmat('./NewtonCG_5e7/test_data.mat')['data'][0]
 data_comp = op.codomain.split(data)
-fig1,fig2 = plot_exact_solution_data(g_map,data_comp,
-                            using_gabs_measurement = False,plot_log_g = True)      
+fig1,fig2 = plot_exact_solution_data(g_map,data_comp,plot_log_g = True)      
 fig3, axs3 = init_plot_stats()
 reco_ampl = rec['reco_amp']
 reco_phase = rec['reco_phase']

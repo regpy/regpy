@@ -92,8 +92,6 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
                         'title': 'ext. error |g_rec-g| it.{}'.format(newton_step)})
         plot_data.append({'pos': (2, 2), 'data': mask_a.T.astype(float) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
                         'title': 'int. error |g_rec-g| it.{}'.format(newton_step)})
-    #plot_data.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
-    #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(newton_step)})
     fig1.plot(plot_data)
 
     if not reco_data_comp is None:
@@ -107,26 +105,31 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
         fig2.plot(plot_data)
 
 def init_plot_stats():
-    r"""TODO Description
+    r"""Initializes plot of convergence statistics
     Returns 
     ----------
     matplotlib.figure.Figure
-        TODO Description
+        Figure with one column and three rows. One for errors, one for residuals and one for number of inner CG-steps
     """
     return plt.subplots(3, 1, sharex=False, sharey=False)
 
 def plot_stats(axs3,stats,plot_inner_its=True):
-    r"""TODO _description_
+    r"""Plots convergence statistics
 
     Parameters
     ----------
-    axs3 : 
-        TODO _description_
-    stats : 
-        TODO _description_
+    axs3 : tuple, list or numpy.ndarray
+        Contains the axes objects used for plotting. Should contain at least 2 and 
+        at least 3 if plot_inner_its is set to True.
+    stats : dict
+        Dictonary containing convergence statistics. 
+        Required keys: Newton step, ampl_err, phase_err, complex_err, residuals, 
+        nr_inner_steps if plot_inner_its is set to True.
     plot_inner_its : bool
-        TODO _description_. Defaults to True.
+        If True the number of inner iterations of the solver is plotted. Defaults to True.
     """
+    print(type(axs3))
+    print(type(axs3[0]))
     axs3[0].cla()        
     axs3[0].plot(stats['Newton step'],stats['ampl_err']/stats['ampl_err'][0], label='amplitude error')
     axs3[0].plot(stats['Newton step'],stats['phase_err']/stats['phase_err'][0], label='phase error')
@@ -145,17 +148,41 @@ def plot_stats(axs3,stats,plot_inner_its=True):
 ####################### conversion routines for plotting complex-valued fields
 
 def complex_to_rgb(z):
+    r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+    The brighntess corresponds to the absolut value.  
+
+    Parameters
+    ----------
+    z : numpy.ndarray
+        TODO _description_
+
+    Returns 
+    ----------
+    numpy.ndarray
+        Array that contains three values for each value in z containing the RGB representation of this value.
+    """  
     HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.abs(z)/np.max((np.abs(z[:]))), ))
     return hsv_to_rgb(HSV)
 
 def complex_to_rgb_log(z):
+    r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+    The brighntess corresponds to the logarithm of the absolut value.  
+
+    Parameters
+    ----------
+    z : numpy.ndarray
+        TODO _description_
+
+    Returns 
+    ----------
+    numpy.ndarray
+        Array that contains three values for each value in z containing the RGB representation of this value.
+    """  
     logdat = np.log(np.abs(z))
     minlog = np.min(logdat)
     maxlog = np.max(logdat)
     HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), (logdat-minlog)/(maxlog-minlog) ))
     return hsv_to_rgb(HSV)
-
-###################### ImShowFig
 
 class ImShowFig:
     def __init__(self,nr_rows,nr_cols):

@@ -1,9 +1,7 @@
 import numpy as np
 from scipy.io import loadmat
-from regpy.operators import Operator
 from operators import get_op_g_to_data
-from regpy.operators import Operator, SquaredModulus, Exponential, PtwMultiplication, VectorOfOperators
-from regpy.vecsps import UniformGridFcts, DirectSum
+from regpy.vecsps import UniformGridFcts
 
 def load_simulated_g(filename):
     mat = loadmat(filename)
@@ -18,19 +16,13 @@ def setup_simulated_g(g_is_complex=False, parallel=True,list_of_filters=None,N=3
     filename = r"/home/jakob/Programming/regpy/itreg/examples/pinem/data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_simulated_g(filename)
     mask_a = ~mask_binary
-    #fov = tuple(x*px_size for x in mask.shape)
     lambda_electron = 2.51e-12
     defocus = 900e-6
-    #fresnel_number = np.prod(fov)/(defocus * lambda_electron)
     theta_divergence = 5e-6
     fresnel_number = 1./(defocus * lambda_electron - 1j*theta_divergence**2 * defocus**2/np.log(2))
-    #fresnel_number = 1./(defocus * lambda_electron)
-    # Uniform grid
     N1,N2 = mask.shape
     a_psi0_multiplier = mask.astype(complex)
 
-    #grid = UniformGridFcts(np.linspace(0, 1, N1, endpoint=False),
-    #                       np.linspace(0, 1, N2, endpoint=False))
     grid = UniformGridFcts(np.arange(N1)*px_size[0][0],np.arange(N2)*px_size[0][1])
     pad_amount = ((50,0),(0,0))
     opdata = [grid, fresnel_number,pad_amount,a_psi0_multiplier]
@@ -50,17 +42,3 @@ def setup_simulated_g(g_is_complex=False, parallel=True,list_of_filters=None,N=3
         exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                         np.unwrap(np.angle(g_map.T)).T)
         return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata
-
-##################### operator needed for fixing g on parts of the grid where its values are known
-
-class ForgetSecond(Operator):
-    def __init__(self,domain1,domain2):
-        self.domain2 = domain2
-        super().__init__(DirectSum(domain1, domain2),domain2,linear=True)
-
-    def _eval(self,x):
-        x1,x2 = self.domain.split(x)
-        return x1
-   
-    def _adjoint(self,y):
-        return self.domain.join(y,self.domain2.zeros())

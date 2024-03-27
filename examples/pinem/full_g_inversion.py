@@ -55,7 +55,7 @@ N_data = 30
 # This value should gradually be increased to save computation time. 
 N_deriv = [4,8,16,30]
 # solver type: If True, NewtonCG is used, otherwise IrgnmCG
-use_NewtonCG = False#True
+use_NewtonCG = True
 
 
 
@@ -72,7 +72,7 @@ minimal_residual_reduction = 0.98 # NewtonCG_rho**0.5
 max_Newton_its = 20
 
 op, grid, exact_solution, g_map, mask_a, mask_p, opdata \
-    = setup_simulated_g(g_is_complex=False,N=N_data,parallel=True)
+    = setup_simulated_g(N=N_data,parallel=True)
 
 
 ############################## routines for reconstruction error evaluation  
@@ -142,9 +142,6 @@ print(f"do_plottings:{do_plottings}")
 
 if mask_a.any():
     prior_ampl = harmonic_extension(~mask_a,np.log(np.abs(g_map)),damping =0)
-    #mask = mask_a_org.copy()
-    #mask[-1,:]=1; mask[-1,:]=1; mask[:,-1] = 1
-    # prior_ampl = extension_along_lines(np.log(np.abs(g_map)),mask)
     ampl_proj = CoordinateProjection(grid, mask_a)
     ampl_domain = HmDomain(grid.real_space(),mask_a, index = sobolev_index_ampl)
 else: # amplitude is known everywhere
