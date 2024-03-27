@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from regpy.solvers import HilbertSpaceSetting, Solver
+from regpy.solvers import RegularizationSetting, Solver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.stoprules import CountIterations
 
@@ -17,7 +17,7 @@ class IrgnmCG(Solver):
 
     Parameters
     ----------
-    setting : regpy.solvers.HilbertSpaceSetting
+    setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -80,7 +80,7 @@ class IrgnmCG(Solver):
         stoprule.log.setLevel(logging.WARNING)
         # self.log.info('Running Tikhonov solver.')
         step, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
@@ -132,7 +132,7 @@ class IrgnmCGPrec(Solver):
 
     Parameters
     ----------
-    setting : regpy.solvers.HilbertSpaceSetting
+    setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -195,7 +195,7 @@ class IrgnmCGPrec(Solver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+                setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
@@ -209,7 +209,7 @@ class IrgnmCGPrec(Solver):
         else:
             preconditioner = MatrixMultiplication(self.M, domain=self.setting.h_domain.vecsp, codomain=self.setting.h_domain.vecsp)
             step, _ = TikhonovCG(
-                setting=HilbertSpaceSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+                setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,

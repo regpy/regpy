@@ -3,6 +3,7 @@
 
 from regpy.util import classlogger
 from regpy.hilbert import as_hilbert_space
+from regpy.functionals import  as_functional, Composed
 
 
 class Solver:
@@ -129,7 +130,7 @@ class Solver:
         return x, y
 
 
-class HilbertSpaceSetting:
+class RegularizationSetting:
     """A Hilbert space *setting* for an inverse problem, used by e.g. Tikhonov-type solvers. A
     setting consists of
 
@@ -152,10 +153,14 @@ class HilbertSpaceSetting:
     h_domain, h_codomain : regpy.hilbert.HilbertSpace or callable
         The Hilbert spaces or abstract spaces on the domain or codomain.
     """
-    def __init__(self, op, h_domain, h_codomain):
+    def __init__(self, op, penalty, data_fid):
         self.op = op
         """The operator."""
-        self.h_domain = as_hilbert_space(h_domain, op.domain)
-        """The `regpy.hilbert.HilbertSpace` on the domain."""
-        self.h_codomain = as_hilbert_space(h_codomain, op.codomain)
-        """The `regpy.hilbert.HilbertSpace` on the codomain."""
+        self.penalty = as_functional(penalty, op.domain)
+        self.data_fid = as_functional(data_fid, op.codomain)
+        self.h_domain = self.penalty.h_domain
+        self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
+        # self.h_domain = as_hilbert_space(h_domain, op.domain)
+        # """The `regpy.hilbert.HilbertSpace` on the domain."""
+        # self.h_codomain = as_hilbert_space(h_codomain, op.codomain)
+        # """The `regpy.hilbert.HilbertSpace` on the codomain."""

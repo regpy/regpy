@@ -1,7 +1,7 @@
-from regpy.operators.volterra import Volterra
+from examples.volterra.volterra import Volterra
 from regpy.hilbert import L2, Sobolev
 from regpy.vecsps import UniformGridFcts
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 
@@ -24,7 +24,7 @@ def test_volterra_irgnm_cg():
     data = exact_data + noise
     init = op.domain.ones()
 
-    setting = HilbertSpaceSetting(op=op, h_domain=Sobolev(index=2), h_codomain=L2)
+    setting = RegularizationSetting(op=op, penalty=Sobolev(index=2), data_fid=L2)
 
     solver = IrgnmCG(setting, data, regpar=1, regpar_step=0.9, init=init)
     stoprule = (

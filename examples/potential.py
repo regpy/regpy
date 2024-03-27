@@ -9,7 +9,7 @@ import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.operators.obstacles import Potential
 from regpy.vecsps.obstacles import StarTrigDiscr
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,7 +22,7 @@ op = Potential(
     nmeas=64,
 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
+setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
 exact_solution = op.domain.sample(lambda t: np.sqrt(3 * np.cos(t)**2 + 1) / 2)
 exact_data = op(exact_solution)

@@ -1,18 +1,24 @@
 import logging
 import numpy as np
 
-from regpy.solvers import HilbertSpaceSetting, Solver
+from regpy.solvers import RegularizationSetting, Solver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
+from regpy.stoprules import CountIterations
 
 class IrgnmSemiSmooth(Solver):
     """
     Semismooth Newton Method. In each iteration, solves
-
-     x_{n+1} \in argmin_{psi_minus < x_* < psi_plus}   ||T(x_n) + T'[x_n] (x_*-x_n) - data||**2 + regpar_n * ||x_* - init||**2
-
-    where `T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    `regpar_n` is a decreasing geometric sequence of regularization parameters.
+    $$
+     x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
+    $$
+    where $T$ is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    $\alpha_n$ is a decreasing geometric sequence of regularization parameters.
+    
+    Parameters
+    ----------
+    setting : _type_
+        _description_
     """
 
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cg_pars=None):
@@ -100,14 +106,18 @@ class IrgnmSemiSmooth(Solver):
         self.lam_minus[self.active_plus]=0
 
         project = CoordinateMask(self.setting.h_domain.vecsp, self.inactive)
-        self.log.info('Running Tikhonov solver.')
+        self.log.info('Running inner Tikhonov solver.')
+        stoprule = CountIterations(2*15)
+        stoprule.log = self.log.getChild('TikhonovCG')
+        stoprule.log.setLevel(logging.WARNING)
         f, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
+            logging_level="WARNING",
             **self.cg_pars
-        ).run()
+        ).run(stoprule=stoprule)
         self.x[self.inactive] = f[self.inactive]
         z = self._A(self.x)
         
