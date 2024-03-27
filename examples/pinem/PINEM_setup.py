@@ -53,7 +53,7 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
         exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                         np.unwrap(np.angle(g_map.T)).T)
         if using_gabs_measurement:
-            op2 = PtwMultiplication(grid,1.0-mask_a) * Exponential(grid.real_space) * ForgetSecond(grid,grid)
+            op2 = PtwMultiplication(grid,1.0-mask_a) * Exponential(grid.real_space()) * ForgetSecond(grid,grid)
             op = VectorOfOperators([op2, op])
 
         return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata
