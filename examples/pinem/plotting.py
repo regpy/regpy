@@ -128,8 +128,6 @@ def plot_stats(axs3,stats,plot_inner_its=True):
     plot_inner_its : bool
         If True the number of inner iterations of the solver is plotted. Defaults to True.
     """
-    print(type(axs3))
-    print(type(axs3[0]))
     axs3[0].cla()        
     axs3[0].plot(stats['Newton step'],stats['ampl_err']/stats['ampl_err'][0], label='amplitude error')
     axs3[0].plot(stats['Newton step'],stats['phase_err']/stats['phase_err'][0], label='phase error')

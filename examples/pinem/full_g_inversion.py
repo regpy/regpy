@@ -4,11 +4,9 @@ import numpy as np
 from numpy.linalg import norm
 from math import isfinite
 from scipy.io import savemat
-from scipy.optimize import lsq_linear
 from copy import deepcopy
 import regpy.stoprules as rules
-from regpy.vecsps import UniformGridFcts, DirectSum
-from regpy.vecsps.tensor_bases import legendre_basis
+from regpy.vecsps import DirectSum
 from regpy.hilbert import L2, HmDomain
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
@@ -17,7 +15,7 @@ from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 from plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
-from PINEM_setup import setup_simulated_g
+from setup import setup_simulated_g
 from extensions import harmonic_extension
 import matplotlib.pyplot as plt
 
@@ -35,14 +33,9 @@ logging.basicConfig(
 )
 
 
-# Iabs(g) is assumed to be known outside of the nanotip.
+# abs(g) is assumed to be known outside of the nanotip.
 # this is imposed as contraint. 
 
-# If using_polynomial_basis_for_phase==True, the phase will be parameterized by 
-# a tensor-product polynomial basis of degrees pol_degrees in x and y directions. 
-# Starting with small polynomial degrees helps to avoid getting trapped in local minimima.
-using_polynomial_basis_for_phase = False #not working for True
-pol_degrees = (20,7)
 # total number of counts for gain and loss data
 total_nr_counts = 2e9
 # turn off/on all plots
@@ -56,8 +49,6 @@ N_data = 30
 N_deriv = [4,8,16,30]
 # solver type: If True, NewtonCG is used, otherwise IrgnmCG
 use_NewtonCG = True
-
-
 
 sobolev_index_phase = 2; sobolev_index_ampl = 2
 IRGNM_regpar = 1e-15
@@ -73,7 +64,6 @@ max_Newton_its = 20
 
 op, grid, exact_solution, g_map, mask_a, mask_p, opdata \
     = setup_simulated_g(N=N_data,parallel=True)
-
 
 ############################## routines for reconstruction error evaluation  
 def reconstruction_error(_exact, _reconstruction):
@@ -134,7 +124,6 @@ def plot_write_save(reco,reco_data,fig1,fig2,axs3, newton_step,
     return residual_reduction
 
 ################################################   initialize forward operator
-print(f"using_polynomial_basis_for_phase:{using_polynomial_basis_for_phase}")
 print(f"isfinite(total_nr_counts):{isfinite(total_nr_counts)}")
 print(f"output_filename:{output_filename}")
 print(f"do_plottings:{do_plottings}")
@@ -152,20 +141,13 @@ else: # amplitude is known everywhere
 ampl_projection = InnerShift(ampl_proj,prior_ampl)
 ampl_extension = OuterShift(ampl_proj.adjoint,prior_ampl)
 
-if using_polynomial_basis_for_phase:
-    coeff_grid = UniformGridFcts(np.arange(pol_degrees[0]),np.arange(pol_degrees[1]))
-    phase_domain = L2(coeff_grid)         
-    phase_extension =  legendre_basis(coeff_grid,grid)
-    phase_projection = phase_extension.adjoint
-else:
-    # outer boundary values of phase must also be fixed for use of Sobolev norm
-    #prior_phase = harmonic_extension(~mask_p,np.unwrap(np.angle(g_map.T)).T,damping =0)
-    prior_phase = np.unwrap(np.angle(g_map.T)).T
-    phase_proj = CoordinateProjection(grid, mask_p)
-    phase_projection = InnerShift(phase_proj,prior_phase)
-    phase_extension = OuterShift(phase_proj.adjoint,prior_phase)
-    weight = (0.02+np.exp(prior_ampl)/np.exp(np.max(prior_ampl)))
-    phase_domain = HmDomain(grid.real_space(),mask_p, index = sobolev_index_phase, weight = weight)
+# outer boundary values of phase must also be fixed for use of Sobolev norm
+prior_phase = np.unwrap(np.angle(g_map.T)).T
+phase_proj = CoordinateProjection(grid, mask_p)
+phase_projection = InnerShift(phase_proj,prior_phase)
+phase_extension = OuterShift(phase_proj.adjoint,prior_phase)
+weight = (0.02+np.exp(prior_ampl)/np.exp(np.max(prior_ampl)))
+phase_domain = HmDomain(grid.real_space(),mask_p, index = sobolev_index_phase, weight = weight)
 
 h_domain = ampl_domain + phase_domain
 projection =  opDirectSum(ampl_projection, phase_projection)
@@ -203,14 +185,8 @@ for j in range(1, len(data_comp)):
 angle = np.deg2rad(10)
 X, Y = np.meshgrid(np.linspace(0, 1, np.size(mask_a, 1)), np.linspace(0, 1, np.size(mask_a, 0)))
 init_phase = -1 * (np.sin(angle)*X + np.cos(angle)*Y) * 2*np.pi * 3 + 2.5
-if using_polynomial_basis_for_phase:
-    T = phase_extension.as_linear_operator() # Legendre basis
-    init_phase_coeff_flat = lsq_linear(T,grid.flatten(init_phase)).x
-    init_phase_coeff = phase_extension.domain.fromflat(init_phase_coeff_flat)
-    init_vec_proj = op_ext.domain.join(ampl_projection(prior_ampl),init_phase_coeff)
-else:
-    init_vec = op.domain.join(prior_ampl,init_phase)
-    init_vec_proj = projection(init_vec)
+init_vec = op.domain.join(prior_ampl,init_phase)
+init_vec_proj = projection(init_vec)
 
 ############################### initialize stopping rule
 
