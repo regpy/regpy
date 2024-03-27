@@ -29,7 +29,7 @@ exact_solution = (1-np.cos(grid.coords[0]))**2/4
 exact_data = (3*grid.coords[0] - 4*np.sin(grid.coords[0]) + np.cos(grid.coords[0])*np.sin(grid.coords[0]))/8
 
 # add noise to the exact data
-noise = 0.05 * op.domain.randn()
+noise = 0.3 * op.domain.randn()
 data = exact_data + noise
 
 # Define a regularization setting be choosing the hilbert spaces on the domain and codomain.
@@ -43,7 +43,7 @@ solver = IrgnmSemiSmooth(
     psi_minus=0, # lower bound
     psi_plus=1.5, # upper bound
     regpar=1, # initial regularization parameter
-    regpar_step=0.5, # regularization parameter step
+    regpar_step=0.7, # regularization parameter step
     init=init # initial guess
 )
 
