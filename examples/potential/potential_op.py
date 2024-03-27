@@ -1,6 +1,5 @@
 import numpy as np
 
-from regpy.vecsps import UniformGridFcts
 from regpy.vecsps.curve import StarTrigDiscr
 from regpy.operators import Operator
 
@@ -50,7 +49,7 @@ class Potential(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, domain, radius, nmeas, nforward=128):
+    def __init__(self, domain, codomain, radius, nmeas, nforward=128):
         assert isinstance(domain, StarTrigDiscr)
         
         self.radius = radius
@@ -60,7 +59,7 @@ class Potential(Operator):
 
         super().__init__(
             domain=domain,
-            codomain=UniformGridFcts(np.linspace(0, 2 * np.pi, nmeas, endpoint=False))
+            codomain=codomain
         )
 
         k = 1 + np.arange(self.nforward)
