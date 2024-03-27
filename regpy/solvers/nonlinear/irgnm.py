@@ -10,9 +10,9 @@ from regpy.stoprules import CountIterations
 class IrgnmCG(Solver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
-        \[
-            \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
-        \]
+    \[
+        \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
+    \]
 
     where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
