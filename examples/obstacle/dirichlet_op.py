@@ -6,22 +6,22 @@ from  functions.operator import op_K
 from  functions.farfield_matrix import farfield_matrix
 from  functions.setup_iop_data import setup_iop_data
 from  regpy.operators import Operator
-from  regpy.vecsps.curves.star_curve import StarCurveDiscr
+from  regpy.vecsps.curve import StarCurveDiscr
 from  regpy.vecsps import UniformGridFcts
 
 class DirichletOp(Operator):
     r"""Operator that maps the shape of a sound-soft obstacle to the far-field measurements. 
-    The scattering problem is modelled by
+    The scattering problem is described by
 
     \[
         \begin{cases}
             \Delta u +\kappa^2 u = 0 & \text{ in } \mathbb{R}^2\backslash\overline{D}\\
              u = 0  & \text{ on } \partial D\\
-            \displaystyle{\lim_{r\to\infty}}r^{\frac{1}{2}}(\frac{\partial u^s}{\partial r}-i\kappa u^s)=0 & \text{ for } r=|x|.
+            \displaystyle{\lim_{r\to\infty}}r^{\frac{1}{2}}(\frac{\partial u^s}{\partial r}-i\kappa u^s)=0 & \text{ for } r=|x|,
         \end{cases}
     \]
 
-    where \(u=u^s+u^i\) is the total field and \(D\) is a bounded obstacle in \mathbb{R}^2 with \(\partial D\in\mathcal{C}^2\).
+    where $u=u^s+u^i$ is the total field and $D$ is a bounded obstacle in $\mathbb{R}^2$ with $\partial D\in\mathcal{C}^2$.
     
     Attributes
     ----------
@@ -48,16 +48,18 @@ class DirichletOp(Operator):
       Gauss–Newton method for an inverse potential and an inverse scattering problem", Inverse
       Problems, 13 (1997) 1279–1299.
     """
-    def __init__(self, domain, kappa, N_ieq, N_ieq_synth, N_inc, N_meas, true_curve, N_FK, codomain=None, **kwargs):
-        self.op_name = 'DirichletOp'
+
+    def __init__(self, domain, kappa, true_curve, N_ieq_synth, N_ieq, N_inc, N_meas, N_FK, codomain=None, **kwargs):
+        self.bd_ex = StarCurveDiscr(2*N_ieq_synth)
+        """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
+        equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
+        self.bd_ex_curve=self.bd_ex.bd_eval(true_curve, 2*N_ieq_synth, 3)
+        """Compute the grid points of the exact boundary and derivatives of the parametrization
+            and save these quantities as members of bd_ex set up the boudary integral operator."""
         self.kappa = kappa 
         """Wave number."""          
         self.N_ieq = N_ieq
         """(2*self.N_ieq) is the number of discrete boundary points."""
-        self.N_ieq_synth = N_ieq_synth 
-        """2*N_ieq_synth is the number of discretization points for the boundary integral 
-        equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
-        
         self.N_inc = N_inc
         """Number of incident direction."""
         t=2*np.pi*np.arange(0, self.N_inc)/self.N_inc
@@ -68,23 +70,14 @@ class DirichletOp(Operator):
         t= 2*np.pi*np.arange(0, self.N_meas)/self.N_meas
         self.meas_directions = np.append(np.cos(t), np.sin(t)).reshape((2, self.N_meas))
         """Measurement direction."""
-
-        self.true_curve = true_curve
         self.N_FK = N_FK
-
-        self.bd_ex = StarCurveDiscr(2*self.N_ieq_synth)
-        self.bd_ex_curve=self.bd_ex.bd_eval(self.true_curve, 2*self.N_ieq_synth, 3)
-        """Compute the grid points of the exact boundary and derivatives of the parametrization
-            and save these quantities as members of bd_ex set up the boudary integral operator."""
-
+        """Number of Fourier coefficients."""
         self.domain_curve = None
-        """Curve domain"""
         self.dudn=None  
         """Normal derivative of total field at boundary.""" 
         self.w_sl=-1*complex(0,1)*self.kappa
         self.w_dl=1
-        """Weights of single and double layer potentials. 
-        Use a mixed single and double layer potential ansatz with
+        """Weights of single and double layer potentials. Use a mixed single and double layer potential ansatz with
         weights w_sl and w_dl."""
         self.L=None
         self.U=None
@@ -99,7 +92,7 @@ class DirichletOp(Operator):
         )
 
     def _create_synthetic_data(self, **kwargs):
- 
+        
         wdlTmp=self.w_dl
         self.w_dl=0
         
