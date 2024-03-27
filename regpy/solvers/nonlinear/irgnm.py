@@ -8,12 +8,14 @@ from regpy.stoprules import CountIterations
 
 
 class IrgnmCG(Solver):
-    """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
+    r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
-        ||T(x_n) + T'[x_n] h - data||**2 + regpar_n * ||x_n + h - init||**2
+    \[
+        \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
+    \]
 
-    where `T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    `regpar_n` is a decreasing geometric sequence of regularization parameters.
+    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
@@ -24,7 +26,7 @@ class IrgnmCG(Solver):
     regpar : float
         The initial regularization parameter. Must be positive.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
+        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
@@ -78,7 +80,7 @@ class IrgnmCG(Solver):
             stoprule = CountIterations(2**15)
         stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(logging.WARNING)
-        # self.log.info('Running Tikhonov solver.')
+        # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
             data=self.data - self.y,
@@ -104,31 +106,30 @@ from regpy import util
 from scipy.sparse.linalg import eigsh
         
 class IrgnmCGPrec(Solver):
-    """The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
-
-        ||F(x_n) + F'[x_n] h - data||**2 + regpar_n * ||x_n + h - init||**2
-
-    where `F` is a Frechet-differentiable operator, by solving in every iteration step the problem
-
-        Minimize    ||T (M @ g) - rhs||**2 + regpar * ||M @ (g - xref)||**2
-        M @ h = g
-
-    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner M.
-    The spectral preconditioner M is chosen, such that:
-        M @ A @ M \approx Id
-    where A = (Gram_domain^(-1) T^t Gram_codomain T + regpar*Id) = T^* T + regpar Id 
+    r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
+        \[
+        \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
+        \]
+    where \(F\) is a Frechet-differentiable operator, by solving in every iteration step the problem
+        \[
+        \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
+        \]
+    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner \(M\).
+    The spectral preconditioner \(M\) is chosen, such that:
+        \[M  A  M \approx Id\]
+    where \(A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id\) 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
-    the order of the number of iterations: {v_j}
+    the order of the number of iterations: \(\{v_j\}\)
     We approximate A by the operator:
-    C_k: v \mapsto regpar * v +\sum_{j=1}^k <v, v_j> lambda_j v_j
-    where lambda are the biggest eigenvalues of T*T.
+    \[C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j\]
+    where lambda are the biggest eigenvalues of \(T*T\).
     
-    We choose: M = C_k^(-1/2) and M^(-1) = C_k^(1/2)
+    We choose: \(M = C_k^{-1/2} and M^{-1} = C_k^{1/2}\)
 
     It is:
-    M     : v \mapsto 1/sqrt(regpar) v + \sum_{j=1}^{k} [1/sqrt(lambda_j+regpar)-1/sqrt(regpar)] <v_j, v> v_j 
-    M^(-1): v \mapsto sqrt(regpar) v + \sum_{j=1}^{k} [sqrt(lambda_j+regpar) -sqrt(regpar)] <v_j, v> v_j
+    \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
+    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j\]
 
     Parameters
     ----------
@@ -150,7 +151,7 @@ class IrgnmCGPrec(Solver):
 
     def __init__(
         self, setting, data, regpar, regpar_step=2 / 3, 
-        init=None, cg_pars=None, precpars=None
+        init=None, cg_pars=None,cgstop =None, precpars=None
         ):
         super().__init__()
         self.setting = setting
@@ -170,6 +171,7 @@ class IrgnmCGPrec(Solver):
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
+        self.cgstop = cgstop
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         
         self.k=0
@@ -188,8 +190,16 @@ class IrgnmCGPrec(Solver):
         """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
-                
+    
     def _next(self):
+        if self.cgstop is not None:
+            stoprule = CountIterations(self.cgstop)
+            # Disable info logging, but don't override log level for all
+            # CountIterations instances.
+        else:
+            stoprule = CountIterations(2**15)
+        stoprule.log = self.log.getChild('CountIterations')
+        stoprule.log.setLevel(logging.WARNING)
         self.log.info('Running Tikhonov solver.')
         
         if self.need_prec_update:
@@ -201,7 +211,7 @@ class IrgnmCGPrec(Solver):
                 krylov_basis=self.krylov_basis,
                 xref=self.init - self.x,
                 **self.cg_pars
-            ).run()
+            ).run(stoprule=stoprule)
             self.need_prec_update = False
             self._preconditioner_update()
             self.log.info('Spectral preconditioner updated')
@@ -215,7 +225,7 @@ class IrgnmCGPrec(Solver):
                 xref=self.init-self.x,
                 preconditioner=preconditioner,
                 **self.cg_pars
-            ).run()
+            ).run(stoprule=stoprule)
             step = self.M @ step
             
         self.x += step

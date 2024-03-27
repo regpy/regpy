@@ -7,7 +7,7 @@ from regpy.solvers import RegularizationSetting
 import regpy.stoprules as rules
 
 import numpy as np
-from scipy.misc import ascent
+from scipy.datasets import ascent
 import logging
 import matplotlib.pyplot as plt
 

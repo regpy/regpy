@@ -15,7 +15,7 @@ def load_simulated_g(filename):
     return g_map, mask, mask_binary, px_size
 
 def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=True,list_of_filters=None,N=30):
-    filename = r"./data/FresnelPinemMap_obj_javier_2.mat"
+    filename = r"/home/jakob/Programming/regpy/itreg/examples/pinem/data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_simulated_g(filename)
     mask_a = ~mask_binary
     #fov = tuple(x*px_size for x in mask.shape)
