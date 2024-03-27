@@ -14,7 +14,7 @@ def load_simulated_g(filename):
     px_size = px_size * 1e-9 #convert nm to m
     return g_map, mask, mask_binary, px_size
 
-def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=True,list_of_filters=None,N=30):
+def setup_simulated_g(g_is_complex=False, parallel=True,list_of_filters=None,N=30):
     filename = r"/home/jakob/Programming/regpy/itreg/examples/pinem/data/FresnelPinemMap_obj_javier_2.mat"
     g_map, mask, mask_binary, px_size = load_simulated_g(filename)
     mask_a = ~mask_binary
@@ -40,9 +40,6 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
             list_of_filters = list_of_filters,
             N=N, 
             parallel=parallel)
-        if using_gabs_measurement:
-            op2 = PtwMultiplication(grid,1.0-mask_a) * SquaredModulus(grid.complex_space())
-            op = VectorOfOperators([op2, op])
         return op, grid, g_map, g_map, mask_a, np.ones_like(mask_a), opdata
     else:
         op = get_op_g_to_data(*opdata, 
@@ -52,10 +49,6 @@ def setup_simulated_g(g_is_complex=False,using_gabs_measurement=True, parallel=T
                     )
         exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                         np.unwrap(np.angle(g_map.T)).T)
-        if using_gabs_measurement:
-            op2 = PtwMultiplication(grid,1.0-mask_a) * Exponential(grid.real_space()) * ForgetSecond(grid,grid)
-            op = VectorOfOperators([op2, op])
-
         return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata
 
 ##################### operator needed for fixing g on parts of the grid where its values are known

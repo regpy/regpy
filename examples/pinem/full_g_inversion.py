@@ -72,11 +72,7 @@ minimal_residual_reduction = 0.98 # NewtonCG_rho**0.5
 max_Newton_its = 20
 
 op, grid, exact_solution, g_map, mask_a, mask_p, opdata \
-    = setup_simulated_g(g_is_complex=False, 
-                        using_gabs_measurement = False,
-                        N=N_data,
-                        parallel=True
-                        )
+    = setup_simulated_g(g_is_complex=False,N=N_data,parallel=True)
 
 
 ############################## routines for reconstruction error evaluation  
@@ -237,10 +233,6 @@ stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=max_Newton_i
 setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
 if N_deriv:
     N_current = N_deriv[0]
-    A=get_op_g_to_data(*opdata, N=N_current)
-    B=deepcopy(extension)
-    print(A.domain)
-    print(B.codomain)
     op_simple = get_op_g_to_data(*opdata, N=N_current) * deepcopy(extension)
 else:
     N_current = N_data
@@ -260,8 +252,7 @@ else:
         simplified_op = op_simple
         )
 
-fig1,fig2 = plot_exact_solution_data(g_map,data_comp,
-                        using_gabs_measurement = False,plot_log_g = plot_log_g)       
+fig1,fig2 = plot_exact_solution_data(g_map,data_comp,plot_log_g = plot_log_g)       
 fig3, axs3 = init_plot_stats()
 
 stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': [], \

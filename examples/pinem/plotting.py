@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import hsv_to_rgb
 
-def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
+def plot_exact_solution_data(g_map,data_comp,plot_log_g = True):
     r""" Plots solution g_map and corresponding data
 
     Parameters
@@ -11,8 +13,6 @@ def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot
         solution \(g\) to be plotted
     data_comp : numpy.ndarray
         simulated data
-    using_gabs_measurement : bool, optional
-        TODO Description Default: False
     plot_log_g : bool,optional  
         If True, \(\log(|g|)\) is plotted else \(|g|\) is plotted. Default: True 
 
@@ -35,12 +35,8 @@ def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot
     nr_data = len(data_comp)
     fig2 = ImShowFig(3, nr_data)
     plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
-                    for j in range(nr_data)]
-    if using_gabs_measurement and nr_data ==3:
-        plot_data2[0]['title'] = 'sim. ampl'
-        plot_data2[1]['title'] = 'sim. gain'
-        plot_data2[2]['title'] = 'sim. loss'    
-    if not using_gabs_measurement and nr_data ==2:
+                    for j in range(nr_data)]   
+    if nr_data ==2:
         plot_data2[0]['title'] = 'sim. gain'
         plot_data2[1]['title'] = 'sim. loss'  
     fig2.plot(plot_data2)
@@ -145,3 +141,42 @@ def plot_stats(axs3,stats,plot_inner_its=True):
         axs3[2].legend()
     plt.show(block=False)
     plt.pause(1e-4)
+
+####################### conversion routines for plotting complex-valued fields
+
+def complex_to_rgb(z):
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.abs(z)/np.max((np.abs(z[:]))), ))
+    return hsv_to_rgb(HSV)
+
+def complex_to_rgb_log(z):
+    logdat = np.log(np.abs(z))
+    minlog = np.min(logdat)
+    maxlog = np.max(logdat)
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), (logdat-minlog)/(maxlog-minlog) ))
+    return hsv_to_rgb(HSV)
+
+###################### ImShowFig
+
+class ImShowFig:
+    def __init__(self,nr_rows,nr_cols):
+        self.nr_rows = nr_rows
+        self.nr_cols = nr_cols
+        self.fig, self.ax = plt.subplots(nr_rows, nr_cols, sharex=True, sharey=True)
+        self.im = np.empty((nr_rows,nr_cols),dtype = object)
+        self.cb = np.empty((nr_rows,nr_cols),dtype = object)
+
+    def plot(self,plot_data):
+        for datum in plot_data:
+            row,col = datum['pos']
+            assert row <= self.nr_rows
+            assert col <= self.nr_cols
+            if 'kwargs' in datum:
+                self.im[row,col] = self.ax[row,col].imshow(datum['data'],**datum['kwargs'])
+            else:
+                self.im[row,col] = self.ax[row,col].imshow(datum['data'])
+            if 'title' in datum:
+                self.ax[row,col].set_title(datum['title'])
+            if self.cb[row,col]:
+                self.cb[row,col].remove()
+            self.cb[row,col]= self.fig.colorbar(self.im[row,col], ax=self.ax[row,col])
+        plt.pause(1e-4)
