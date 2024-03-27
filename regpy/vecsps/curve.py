@@ -1,9 +1,7 @@
 import numpy as np
 import numpy.matlib
 
-from regpy.util import trig_interpolate
 from regpy.vecsps import UniformGridFcts
-import regpy.util as util
 
 class GenCurveDiscr(UniformGridFcts):
     def __init__(self, n, **kwargs):
@@ -341,8 +339,8 @@ class StarTrigCurve:
         )
 
     def adjoint(self, g):
-        return (self.nvals / self.vecsp.size) * util.adjoint_rfft(
-            util.adjoint_irfft(g, self.vecsp.size // 2 + 1),
+        return (self.nvals / self.vecsp.size) * adjoint_rfft(
+            adjoint_irfft(g, self.vecsp.size // 2 + 1),
             self.vecsp.size
         )
 
@@ -357,6 +355,96 @@ class StarTrigCurve:
             self._frqs * np.fft.rfft(h), self.nvals
         ) / self.tangent_norm
 
+def trig_interpolate(val, n):
+    """Computes `n` Fourier coeffients to the point values given by `val`
+    such that `ifft(fftshift(coeffs))` is an interpolation of `val`."""
+    if n % 2 != 0:
+        ValueError('n should be even')
+    N = len(val)
+    coeffhat = np.fft.fft(val)
+    coeffs = np.zeros(n, dtype=complex)
+    if n >= N:
+        coeffs[:N // 2] = coeffhat[:N // 2]
+        coeffs[-(N // 2) + 1:] = coeffhat[N // 2 + 1:]
+        if n > N:
+            coeffs[N // 2] = 0.5 * coeffhat[N // 2]
+            coeffs[-(N // 2)] = 0.5 * coeffhat[N // 2]
+        else:
+            coeffs[N // 2] = coeffhat[N // 2]
+    else:
+        coeffs[:n // 2] = coeffhat[:n // 2]
+        coeffs[n // 2 + 1:] = coeffhat[-(n // 2) + 1:]
+        coeffs[n // 2] = 0.5 * (coeffhat[n // 2] + coeffhat[-(n // 2)])
+    coeffs = n / N * np.fft.ifftshift(coeffs)
+    return coeffs
+
+def adjoint_rfft(y, size, n=None):
+   
+    if n is None:
+        n = size
+    assert n // 2 + 1 == y.size
+
+    result = np.fft.irfft(y, n)
+    result *= n / 2
+    result += y[0].real / 2
+    if n % 2 == 0:
+        aux = y[-1].real / 2
+        result[::2] += aux
+        result[1::2] -= aux
+
+    if n == size:
+        return result
+    elif size < n:
+        return result[:size]
+    else:
+        aux = np.zeros(size, dtype=result.dtype)
+        aux[:n] = result
+        return aux
+
+def adjoint_irfft(y, size=None):
+    """Compute the adjoint of `numpy.fft.irfft`. More concretely, the adjoint of
+
+        x |-> irfft(x, n)
+
+    is
+
+        y |-> adjoint_irfft(y, x.size)
+
+    Since the size of `x` can not be determined from `y`, it needs to be given explicitly. The
+    parameter `n`, however, is determined as the output size of `irfft`, so it does not not need to
+    be specified for the adjoint.
+
+    Parameters
+    ----------
+    y : array-like
+        The input array.
+    size : int, optional
+        The size of the output, i.e. the size of the original input to `irfft`. If omitted,
+        `x.size // 2 + 1` will be used, i.e. we assume the `irfft` is inverse to a plain `rfft(x)`,
+        without additional padding or truncation.
+
+    Returns
+    -------
+    array of shape (size,)
+    """
+
+    if size is None:
+        size = y.size // 2 + 1
+    
+    result = np.fft.rfft(y)
+    result[0] -= np.sum(y) / 2
+    if y.size % 2 == 0:
+        result[-1] -= (np.sum(y[::2]) - np.sum(y[1::2])) / 2
+    result *= 2 / y.size
+   
+    if size == result.size:
+        return result
+    elif size < result.size:
+        return result[:size]
+    else:
+        aux = np.zeros(size, dtype=result.dtype)
+        aux[:result.size] = result
+        return aux
 
 def peanut(t,der):
       res=np.zeros(t.shape[0])
