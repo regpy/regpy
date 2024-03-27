@@ -828,7 +828,7 @@ class IntegralFunctionalBase(Functional):
         raise NotImplementedError
 
     def _proximal(self, x, tau):
-        return self._f_prox(self.weight*x)
+        return self._f_prox(self.weight*x,tau)
     
     def _f(self,x_hat):
         raise NotImplementedError
@@ -836,7 +836,7 @@ class IntegralFunctionalBase(Functional):
     def _f_deriv(self,x_hat):
         raise NotImplementedError
     
-    def _f_prox(self,x_hat):
+    def _f_prox(self,x_hat,tau):
         raise NotImplementedError
     
 class LppPower(IntegralFunctionalBase):
@@ -851,7 +851,7 @@ class LppPower(IntegralFunctionalBase):
     """
 
     def __init__(self, domain, p=2):
-        assert np.isscalar(p)
+        assert np.isscalar(p) and p >1
         self.p = p
         super().__init__(domain, hilbert.L2(domain))
 
@@ -861,8 +861,28 @@ class LppPower(IntegralFunctionalBase):
     def _f_deriv(self, x_hat):
         return 1/self.p*np.abs(x_hat)**(self.p-1)*np.sign(x_hat)
     
-    def _f_prox(self, x_hat):
+    def _f_prox(self, x_hat,tau):
         raise NotImplementedError
+
+class L1MeasureSpace(IntegralFunctionalBase):
+    """\(L ^1\) Functional on `MeasureSpace`. Proximal implemented for default \(L^2\) as `h_domain`.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VestorSpace
+        Domain on which to define the generic L1.
+    """
+    def __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    def _f(self, x):
+        return np.abs(x)
+
+    def _f_deriv(self, x):
+        return np.sign(x)
+
+    def _f_prox(self, x, tau):
+        return np.maximum(0, np.abs(x)-tau)*np.sign(x)
 
 
 class L1Generic(Functional):
@@ -1003,6 +1023,7 @@ def _register_functionals():
     HilbertNorm.register(vecsps.VectorSpace,HilbertNormOnAbstractSpace)
 
     L1.register(vecsps.VectorSpace, L1Generic)
+    L1.register(vecsps.MeasureSpaceFcts, L1MeasureSpace)
 
     TV.register(vecsps.VectorSpace, TVGeneric)
     TV.register(vecsps.UniformGridFcts, TVUniformGridFcts)
