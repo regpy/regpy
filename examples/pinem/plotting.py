@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from regpy.util.imshow_fig import ImShowFig, complex_to_rgb, complex_to_rgb_log
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import hsv_to_rgb
 
-def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot_log_g = True):
+def plot_exact_solution_data(g_map,data_comp,plot_log_g = True):
     r""" Plots solution g_map and corresponding data
 
     Parameters
@@ -11,16 +13,14 @@ def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot
         solution \(g\) to be plotted
     data_comp : numpy.ndarray
         simulated data
-    using_gabs_measurement : bool, optional
-        TODO Description Default: False
     plot_log_g : bool,optional  
         If True, \(\log(|g|)\) is plotted else \(|g|\) is plotted. Default: True 
 
     Returns 
         ----------
-        fig1 : matplotlib.figure.Figure
+        fig1 : ImShowFig
             Figure with plots of g
-        fig2 :
+        fig2 : ImShowFig
             Figure with plots of computed data
     """   
     fig1 = ImShowFig(3, 3)
@@ -35,12 +35,8 @@ def plot_exact_solution_data(g_map,data_comp,using_gabs_measurement = False,plot
     nr_data = len(data_comp)
     fig2 = ImShowFig(3, nr_data)
     plot_data2 = [{'pos': (0, j), 'data': data_comp[j].T, 'title':'sim. data'}
-                    for j in range(nr_data)]
-    if using_gabs_measurement and nr_data ==3:
-        plot_data2[0]['title'] = 'sim. ampl'
-        plot_data2[1]['title'] = 'sim. gain'
-        plot_data2[2]['title'] = 'sim. loss'    
-    if not using_gabs_measurement and nr_data ==2:
+                    for j in range(nr_data)]   
+    if nr_data ==2:
         plot_data2[0]['title'] = 'sim. gain'
         plot_data2[1]['title'] = 'sim. loss'  
     fig2.plot(plot_data2)
@@ -53,26 +49,26 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
 
     Parameters
     ----------
-    fig1 : matplotlib.figure.Figure
-        TODO _description_
-    fig2 : matplotlib.figure.Figure
-        TODO _description_
+    fig1 : ImshowFig
+        Object managing the plotting of information about g.
+    fig2 : ImshowFig
+        Object managing the plotting of computed data
     reco_amp : numpy.ndarray
-        TODO _description_
+        reconstructed amplitude
     reco_phase : numpy.ndarray
-        TODO _description_
+        reconstructed phase
     reco_data_comp : np.ndarray
-        TODO _description_
+        reconstructed data complete
     g_map : numpy.ndarray
-        TODO _description_
+        g parameter of PINEM
     data_comp : numpy.ndarray
-        TODO _description_
+        complete original data
     newton_step : int 
-        TODO _description_
+        iteration step
     plot_log_g : bool
-        TODO _description_. Defaults to True.
+        If True the logarithm of the amplitude of g is plotted. Defaults to True.
     mask_a : numpy.ndarray
-        TODO _description_. Defaults to None.
+        Mask for domain. Defaults to None.
     """
     plot_data = []
     if plot_log_g:
@@ -96,8 +92,6 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
                         'title': 'ext. error |g_rec-g| it.{}'.format(newton_step)})
         plot_data.append({'pos': (2, 2), 'data': mask_a.T.astype(float) * np.abs(reco_amp.T*np.exp(1j*reco_phase.T)-g_map.T),
                         'title': 'int. error |g_rec-g| it.{}'.format(newton_step)})
-    #plot_data.append({'pos': (2, 1), 'data': np.abs(np.exp(1j*reco_phase.T)-(g_map/(np.abs(g_map)+1e-16)).T),
-    #                    'title': '|g_rec/|g_rec|-g/|g|| it.{}'.format(newton_step)})
     fig1.plot(plot_data)
 
     if not reco_data_comp is None:
@@ -111,25 +105,28 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
         fig2.plot(plot_data)
 
 def init_plot_stats():
-    r"""TODO Description
+    r"""Initializes plot of convergence statistics
     Returns 
     ----------
     matplotlib.figure.Figure
-        TODO Description
+        Figure with one column and three rows. One for errors, one for residuals and one for number of inner CG-steps
     """
     return plt.subplots(3, 1, sharex=False, sharey=False)
 
 def plot_stats(axs3,stats,plot_inner_its=True):
-    r"""TODO _description_
+    r"""Plots convergence statistics
 
     Parameters
     ----------
-    axs3 : 
-        TODO _description_
-    stats : 
-        TODO _description_
+    axs3 : tuple, list or numpy.ndarray of matplotlib.axes._axes.Axes
+        Contains the axes objects used for plotting. Should contain at least 2 and 
+        at least 3 if plot_inner_its is set to True.
+    stats : dict
+        Dictonary containing convergence statistics. 
+        Required keys: Newton step, ampl_err, phase_err, complex_err, residuals, 
+        nr_inner_steps if plot_inner_its is set to True.
     plot_inner_its : bool
-        TODO _description_. Defaults to True.
+        If True the number of inner iterations of the solver is plotted. Defaults to True.
     """
     axs3[0].cla()        
     axs3[0].plot(stats['Newton step'],stats['ampl_err']/stats['ampl_err'][0], label='amplitude error')
@@ -145,3 +142,89 @@ def plot_stats(axs3,stats,plot_inner_its=True):
         axs3[2].legend()
     plt.show(block=False)
     plt.pause(1e-4)
+
+####################### conversion routines for plotting complex-valued fields
+
+def complex_to_rgb(z):
+    r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+    The brighntess corresponds to the absolut value.  
+
+    Parameters
+    ----------
+    z : numpy.ndarray
+        array of complex numbers
+
+    Returns 
+    ----------
+    numpy.ndarray
+        Array that contains three values for each value in z containing the RGB representation of this value.
+    """  
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.abs(z)/np.max((np.abs(z[:]))), ))
+    return hsv_to_rgb(HSV)
+
+def complex_to_rgb_log(z):
+    r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+    The brighntess corresponds to the logarithm of the absolut value.  
+
+    Parameters
+    ----------
+    z : numpy.ndarray
+        array of complex numbers
+
+    Returns 
+    ----------
+    numpy.ndarray
+        Array that contains three values for each value in z containing the RGB representation of this value.
+    """  
+    logdat = np.log(np.abs(z))
+    minlog = np.min(logdat)
+    maxlog = np.max(logdat)
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), (logdat-minlog)/(maxlog-minlog) ))
+    return hsv_to_rgb(HSV)
+
+class ImShowFig:
+    r""" 
+    Class used for plotting intermediate results of image producing inversion iterations
+    
+    Parameters
+    ----------
+    nr_rows : int
+        number of rows in figure
+    nr_rows : int
+        number of columns in figure
+
+    """
+    def __init__(self,nr_rows,nr_cols):
+        self.nr_rows = nr_rows
+        self.nr_cols = nr_cols
+        self.fig, self.ax = plt.subplots(nr_rows, nr_cols, sharex=True, sharey=True)
+        """information about pyplot subplots used for plotting"""
+        self.im = np.empty((nr_rows,nr_cols),dtype = object)
+        """numpy array of images to be plotted"""
+        self.cb = np.empty((nr_rows,nr_cols),dtype = object)
+        """numpy array of color bars used as legends"""
+
+    def plot(self,plot_data):
+        r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+        The brighntess corresponds to the logarithm of the absolut value.  
+
+        Parameters
+        ----------
+        plot_data : iterable of dict
+            The data to be plotted. Each dictionary has to contain a tuple on length 2 at 'pos' indicating the position
+            and an image at 'data' which is plotted using imshow. An iterable at 'kwargs' can be used for further imshow parameters. 
+        """  
+        for datum in plot_data:
+            row,col = datum['pos']
+            assert row <= self.nr_rows
+            assert col <= self.nr_cols
+            if 'kwargs' in datum:
+                self.im[row,col] = self.ax[row,col].imshow(datum['data'],**datum['kwargs'])
+            else:
+                self.im[row,col] = self.ax[row,col].imshow(datum['data'])
+            if 'title' in datum:
+                self.ax[row,col].set_title(datum['title'])
+            if self.cb[row,col]:
+                self.cb[row,col].remove()
+            self.cb[row,col]= self.fig.colorbar(self.im[row,col], ax=self.ax[row,col])
+        plt.pause(1e-4)
