@@ -7,7 +7,6 @@ from  functions.farfield_matrix import farfield_matrix
 from  functions.setup_iop_data import setup_iop_data
 from  regpy.operators import Operator
 from  regpy.vecsps.curve import StarCurveDiscr
-from  regpy.vecsps import UniformGridFcts
 
 class DirichletOp(Operator):
     r"""Operator that maps the shape of a sound-soft obstacle to the far-field measurements. 
@@ -49,7 +48,7 @@ class DirichletOp(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, domain, kappa, true_curve, N_ieq_synth, N_ieq, N_inc, N_meas, N_FK, codomain=None, **kwargs):
+    def __init__(self, domain, codomain, kappa, true_curve, N_ieq_synth, N_ieq, N_inc, N_meas, N_FK, **kwargs):
         self.bd_ex = StarCurveDiscr(2*N_ieq_synth)
         """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
         equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
@@ -84,11 +83,13 @@ class DirichletOp(Operator):
         self.perm=None
         """LU factors + permuation for integral equation matrix."""
         self.FF_combined=None
-        self.Y_dim = np.size(self.meas_directions, 1)*np.size(self.inc_directions, 1)
+        self.Y_dim=codomain.size
+        assert self.Y_dim == np.size(self.meas_directions, 1)*np.size(self.inc_directions, 1)
         
         super().__init__(
             domain=domain,
-            codomain=UniformGridFcts(np.linspace(0, 2*np.pi, self.Y_dim, endpoint=False), dtype=complex)
+            codomain=codomain,
+            linear=False
         )
 
     def _create_synthetic_data(self, **kwargs):
