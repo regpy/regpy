@@ -17,12 +17,14 @@ def setup_iop_data(bd, kappa):
     kdist = kappa*np.sqrt(t1**2 + t2**2)
     kdist =kdist.reshape(dim, dim)
     
-    bess_H0 = j0(kdist) + complex(0, 1)*y0(kdist)
+    kdist_2=kdist+np.diag(np.ones(dim))
+    bess_H0 = j0(kdist_2) + complex(0, 1)*y0(kdist_2)
     #bess_H0 = besselh(0,1,dat.kdist)
     for j in range(0, dim):
         bess_H0[j,j]=1
 
-    bess_H1_quot = (j1(kdist) + complex(0,1)*y1(kdist))/(kdist)
+    #bess_H1_quot = (j1(kdist) + complex(0,1)*y1(kdist))/(kdist)
+    bess_H1_quot = (j1(kdist_2) + complex(0,1)*y1(kdist_2))/(kdist_2)
     
     #Set up prototyp of the singularity of boundary integral operators.
     t=2*np.pi*np.arange(1, dim)/dim
