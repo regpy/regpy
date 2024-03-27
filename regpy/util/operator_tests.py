@@ -32,6 +32,24 @@ def test_adjoint(op, tolerance=1e-10):
 
 
 def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
+    r"""Numerically test derivative of operator.
+
+    Computes \( ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \)
+    for random choices of `x` and `v` and different `t` given in steps.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator.
+    steps : float, optional
+        The used steps. Defaults to
+        [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
+
+    Returns
+    ------
+    list of float
+        List of computed differences, one for each step.
+    """
     x = op.domain.rand()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
