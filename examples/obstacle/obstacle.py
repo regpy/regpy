@@ -9,42 +9,42 @@ import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import HilbertSpaceSetting
 from dirichlet_op import DirichletOp
-from regpy.vecsps.curves.gen_trig import GenTrigDiscr
+from regpy.vecsps.curve import GenTrigDiscr
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-"""Forward operator"""
+#Forward operator
 op = DirichletOp(
     domain=GenTrigDiscr(64),
-    kappa=3,
-    N_ieq = 128,
-    N_ieq_synth = 64,
+    kappa = 3,
+    true_curve='apple',
+    N_ieq_synth=64,
+    N_ieq = 128,  
     N_inc = 32,
-    N_meas = 64,
-    true_curve = 'apple',
+    N_meas = 64,   
     N_FK = 32
 )
 
 setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
 
-"""Exact data"""
+#Exact data
 exact_solution=op.bd_ex_curve
 farfield = op._create_synthetic_data()
 
-"""Poission data"""
+#Poission data
 noise = op.codomain.randn()
 noise = 0.01*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
 data = farfield+noise
 
-"""Initial guess"""
+#Initial guess
 t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
 init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
 init=init.flatten()
 
-"""Solver: NewtonCG or IrgnmCG"""
+#Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
     setting, farfield, init = init,
         cgmaxit=50, rho=1.6
@@ -70,7 +70,7 @@ stoprule = (
     )
 )
 
-"""Plot function"""
+#Plot function
 plt.ion()
 fig, axs = plt.subplots(1, 2)
 axs[0].set_title('Obstacle')
