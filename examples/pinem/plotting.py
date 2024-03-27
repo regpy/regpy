@@ -18,9 +18,9 @@ def plot_exact_solution_data(g_map,data_comp,plot_log_g = True):
 
     Returns 
         ----------
-        fig1 : matplotlib.figure.Figure
+        fig1 : ImShowFig
             Figure with plots of g
-        fig2 :
+        fig2 : ImShowFig
             Figure with plots of computed data
     """   
     fig1 = ImShowFig(3, 3)
@@ -49,26 +49,26 @@ def plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,data_comp,newto
 
     Parameters
     ----------
-    fig1 : matplotlib.figure.Figure
-        TODO _description_
-    fig2 : matplotlib.figure.Figure
-        TODO _description_
+    fig1 : ImshowFig
+        Object managing the plotting of information about g.
+    fig2 : ImshowFig
+        Object managing the plotting of computed data
     reco_amp : numpy.ndarray
-        TODO _description_
+        reconstructed amplitude
     reco_phase : numpy.ndarray
-        TODO _description_
+        reconstructed phase
     reco_data_comp : np.ndarray
-        TODO _description_
+        reconstructed data complete
     g_map : numpy.ndarray
-        TODO _description_
+        g parameter of PINEM
     data_comp : numpy.ndarray
-        TODO _description_
+        complete original data
     newton_step : int 
-        TODO _description_
+        iteration step
     plot_log_g : bool
-        TODO _description_. Defaults to True.
+        If True the logarithm of the amplitude of g is plotted. Defaults to True.
     mask_a : numpy.ndarray
-        TODO _description_. Defaults to None.
+        Mask for domain. Defaults to None.
     """
     plot_data = []
     if plot_log_g:
@@ -118,7 +118,7 @@ def plot_stats(axs3,stats,plot_inner_its=True):
 
     Parameters
     ----------
-    axs3 : tuple, list or numpy.ndarray
+    axs3 : tuple, list or numpy.ndarray of matplotlib.axes._axes.Axes
         Contains the axes objects used for plotting. Should contain at least 2 and 
         at least 3 if plot_inner_its is set to True.
     stats : dict
@@ -154,7 +154,7 @@ def complex_to_rgb(z):
     Parameters
     ----------
     z : numpy.ndarray
-        TODO _description_
+        array of complex numbers
 
     Returns 
     ----------
@@ -171,7 +171,7 @@ def complex_to_rgb_log(z):
     Parameters
     ----------
     z : numpy.ndarray
-        TODO _description_
+        array of complex numbers
 
     Returns 
     ----------
@@ -185,14 +185,37 @@ def complex_to_rgb_log(z):
     return hsv_to_rgb(HSV)
 
 class ImShowFig:
+    r""" 
+    Class used for plotting intermediate results of image producing inversion iterations
+    
+    Parameters
+    ----------
+    nr_rows : int
+        number of rows in figure
+    nr_rows : int
+        number of columns in figure
+
+    """
     def __init__(self,nr_rows,nr_cols):
         self.nr_rows = nr_rows
         self.nr_cols = nr_cols
         self.fig, self.ax = plt.subplots(nr_rows, nr_cols, sharex=True, sharey=True)
+        """information about pyplot subplots used for plotting"""
         self.im = np.empty((nr_rows,nr_cols),dtype = object)
+        """numpy array of images to be plotted"""
         self.cb = np.empty((nr_rows,nr_cols),dtype = object)
+        """numpy array of color bars used as legends"""
 
     def plot(self,plot_data):
+        r"""Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+        The brighntess corresponds to the logarithm of the absolut value.  
+
+        Parameters
+        ----------
+        plot_data : iterable of dict
+            The data to be plotted. Each dictionary has to contain a tuple on length 2 at 'pos' indicating the position
+            and an image at 'data' which is plotted using imshow. An iterable at 'kwargs' can be used for further imshow parameters. 
+        """  
         for datum in plot_data:
             row,col = datum['pos']
             assert row <= self.nr_rows

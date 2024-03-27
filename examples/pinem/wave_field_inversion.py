@@ -4,7 +4,7 @@ from regpy.operators import CoordinateProjection
 from operators import get_wave_field_reco
 from regpy.hilbert import L2, Sobolev, Hm0Domain
 from regpy.vecsps import UniformGridFcts
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 import regpy.stoprules as rules
 
 import numpy as np
@@ -71,7 +71,7 @@ h_codomain2 = L2(grid, weights=(1+intensity*data[2])/intensity)
 h_codomain = h_codomain0+h_codomain1+h_codomain2
 
 # Image reconstruction using the IRGNM method
-setting = HilbertSpaceSetting(
+setting = RegularizationSetting(
     op=op, h_domain=h_domain,
     h_codomain=h_codomain)
 
