@@ -14,7 +14,7 @@ import regpy.hilbert as hilbert
 from regpy.operators import CoordinateProjection, Zero, InnerShift, OuterShift
 from regpy.operators import DirectSum as opDirectSum
 from operators import get_op_g_to_data
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 from plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_stats
@@ -229,7 +229,7 @@ def main():
         h_codomain = L2(grid, weights=1/(scal**2+scal*data_comp[0])) 
         for j in range(1, len(data_comp)):
             h_codomain = h_codomain + L2(grid, weights=1/(scal**2 + scal*data_comp[j]))
-    #setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
+    #setting = RegularizationSetting(op=op_ext, penalty=h_domain, data_fid=h_codomain)
 
     ##################### define initial guess
     if init_guess_filename:
@@ -358,7 +358,7 @@ def main():
 
     ########################################## perform inversion
 
-    setting = HilbertSpaceSetting(op=op_ext, h_domain=h_domain, h_codomain=h_codomain)
+    setting = RegularizationSetting(op=op_ext, penalty=h_domain, data_fid=h_codomain)
     if N_deriv:
         N_current = N_deriv[0]
         op_simple = get_op_g_to_data(*opdata, N=N_current) * deepcopy(extension)

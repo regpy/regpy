@@ -13,7 +13,7 @@ from regpy.functionals import Functional
 
     Parameters
     ----------
-    setting : regpy.solvers.HilbertSpaceSetting
+    setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem. The operator needs to be linear.
     data_fidelity_conjugate : regpy.functionals.Functional
         The Fenchel conjugate of the data fidelity functional. Needs to have a prox-operator defined.
@@ -74,7 +74,7 @@ class DouglasRashford(Solver):
     Minimizes Data_fidelity(f)+regpar*penalty(f)
     Parameters
         ----------
-        setting : regpy.solvers.HilbertSpaceSetting
+        setting : regpy.solvers.RegularizationSetting
             The setting of the forward problem. The operator needs to be linear.
         data_fidelity : regpy.functionals.Functional
             The data fidelity functional. Needs to have a prox-operator defined.

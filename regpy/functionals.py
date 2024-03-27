@@ -37,7 +37,7 @@ class Functional:
         assert isinstance(domain, vecsps.VectorSpace)
         self.domain = domain
         """The underlying vector space."""
-        self.h_domain = h_domain or hilbert.L2(domain)
+        self.h_domain = hilbert.as_hilbert_space(h_domain,domain) or hilbert.L2(domain)
         """The underlying Hilbert space."""
 
     def __call__(self, x):
@@ -214,6 +214,114 @@ class Functional:
         return self
 
 
+class LinearCombination(Functional):
+    """Linear combination of functionals. 
+
+    Parameters
+    ----------
+    *args : (np.number, regpy.functionals.Functional) or regpy.functionals.Functional
+        List of coefficients and functionals to be taken as linear combinations.
+    """
+    def __init__(self, *args):
+        coeff_for_func = defaultdict(lambda: 0)
+        for arg in args:
+            if isinstance(arg, tuple):
+                coeff, func = arg
+            else:
+                coeff, func = 1, arg
+            assert isinstance(func, Functional)
+            assert np.isscalar(coeff) and util.is_real_dtype(coeff)
+            if isinstance(func, type(self)):
+                for c, f in zip(func.coeffs, func.funcs):
+                    coeff_for_func[f] += coeff * c
+            else:
+                coeff_for_func[func] += coeff
+        self.coeffs = []
+        """List of all coefficients
+        """
+        self.funcs = []
+        """List of all functionals. 
+        """
+        for func, coeff in coeff_for_func.items():
+            self.coeffs.append(coeff)
+            self.funcs.append(func)
+
+        domains = [func.domain for func in self.funcs if func.domain]
+        if domains:
+            domain = domains[0]
+            assert all(d == domain for d in domains)
+        else:
+            domain = None
+
+        super().__init__(domain)
+
+    def _eval(self, x):
+        y = 0
+        for coeff, func in zip(self.coeffs, self.funcs):
+            y += coeff * func(x)
+        return y
+
+    def _linearize(self, x):
+        y = 0
+        grad = self.domain.zeros()
+        for coeff, func in zip(self.coeffs, self.funcs):
+            f, g = func.linearize(x)
+            y += coeff * f
+            grad += coeff * g
+        return y, grad
+
+    def _gradient(self, x):
+        grad = self.domain.zeros()
+        for coeff, func in zip(self.coeffs, self.funcs):
+            grad += coeff * func.gradient(x)
+        return grad
+
+    def _hessian(self, x):
+        return operators.LinearCombination(
+            *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
+        )
+
+    def _proximal(self, x, tau):
+        return NotImplementedError
+
+
+class Shifted(Functional):
+    r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional to be offset.
+    offset : np.number
+        Offset added to the evaluation of the functional.
+    """
+    def __init__(self, func, offset):
+        assert isinstance(func, Functional)
+        assert np.isscalar(offset) and util.is_real_dtype(offset)
+        super().__init__(func.domain)
+        self.func = func
+        """Functional to be offset.
+        """
+        self.offset = offset
+        """Offset added to the evaluation of the functional.
+        """
+
+    def _eval(self, x):
+        return self.func(x) + self.offset
+
+    def _linearize(self, x):
+        return self.func.linearize(x)
+
+    def _gradient(self, x):
+        return self.func.gradient(x)
+
+    def _hessian(self, x):
+        return self.func.hessian(x)
+
+    def _proximal(self, x, tau):
+        return self.func.proximal(x, tau)
+
+
 class Composed(Functional):
     """Composition of an operator with a functional \(F\circ O\). This should not be called
     directly but rather used by multiplying the `Functional` object with an `Operator`.
@@ -262,7 +370,7 @@ class Composed(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-#TODO: Add AbstractSum
+
 class AbstractFunctionalBase:
     """Class representing abstract functionals without reference to a concrete implementation.
 
@@ -270,14 +378,47 @@ class AbstractFunctionalBase:
     to pick the proper concrete implementation for a given vector space.
     """
 
-    def __add__(self, other):
-        return NotImplemented
-
-    def __radd__(self, other):
+    def __mul__(self, other):
+        if np.isscalar(other) and other == 1:
+            return self
+        elif isinstance(other, operators.Operator):
+            return AbstractComposed(self, other)
+        elif np.isscalar(other) or isinstance(other, np.ndarray):
+            return self * operators.PtwMultiplication(self.domain, other)
         return NotImplemented
 
     def __rmul__(self, other):
+        if np.isscalar(other):
+            if other == 1:
+                return self
+            elif util.is_real_dtype(other):
+                return AbstractLinearCombination((other, self))
         return NotImplemented
+
+    def __truediv__(self, other):
+        return (1 / other) * self
+
+    def __add__(self, other):
+        if isinstance(other, Functional):
+            return AbstractLinearCombination(self, other)
+        elif np.isscalar(other):
+            return AbstractShifted(self, other)
+        return NotImplemented
+
+    def __radd__(self, other):
+        return self + other
+
+    def __sub__(self, other):
+        return self + (-other)
+
+    def __rsub__(self, other):
+        return (-self) + other
+
+    def __neg__(self):
+        return (-1) * self
+
+    def __pos__(self):
+        return self
 
 
 class AbstractFunctional(AbstractFunctionalBase):
@@ -369,22 +510,22 @@ L1 = AbstractFunctional('L1')
 TV = AbstractFunctional('TV')
 HilbertNorm = AbstractFunctional('HilbertNorm')
 
-class LinearCombination(Functional):
-    """Linear combination of functionals. 
+class AbstractLinearCombination(AbstractFunctional):
+    r"""Linear combination of abstract functionals. 
 
     Parameters
     ----------
-    *args : (np.number, regpy.functionals.Functional) or regpy.functionals.Functional
+    *args : (np.number, regpy.functionals.AbstractFunctional) or regpy.functionals.AbstractFunctional
         List of coefficients and functionals to be taken as linear combinations.
     """
-    def __init__(self, *args):
+    def __init__(self,*args):
         coeff_for_func = defaultdict(lambda: 0)
         for arg in args:
             if isinstance(arg, tuple):
                 coeff, func = arg
             else:
                 coeff, func = 1, arg
-            assert isinstance(func, Functional)
+            assert isinstance(func, AbstractFunctional)
             assert np.isscalar(coeff) and util.is_real_dtype(coeff)
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
@@ -401,43 +542,73 @@ class LinearCombination(Functional):
             self.coeffs.append(coeff)
             self.funcs.append(func)
 
-        domains = [op.domain for op in self.funcs if op.domain]
-        if domains:
-            domain = domains[0]
-            assert all(d == domain for d in domains)
-        else:
-            domain = None
+    def __call__(self,vecsp):
+        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        return LinearCombination(
+            *((w,func(vecsp)) for w, func in zip(self.coeffs, self.funcs))
+            )
 
-        super().__init__(domain)
+    def __getitem__(self,item):
+        return self.coeffs[item], self.funcs[item]
 
-    def _eval(self, x):
-        y = 0
-        for coeff, func in zip(self.coeffs, self.funcs):
-            y += coeff * func(x)
-        return y
+    def __iter__(self):
+        return iter(zip(self.coeffs,self.funcs))
 
-    def _linearize(self, x):
-        y = 0
-        grad = self.domain.zeros()
-        for coeff, func in zip(self.coeffs, self.funcs):
-            f, g = func.linearize(x)
-            y += coeff * f
-            grad += coeff * g
-        return y, grad
+class AbstractShifted(AbstractFunctional):
+    r"""Abstract analogue to `Shifted` class. Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional. 
 
-    def _gradient(self, x):
-        grad = self.domain.zeros()
-        for coeff, func in zip(self.coeffs, self.funcs):
-            grad += coeff * func.gradient(x)
-        return grad
+    Parameters
+    ----------
+    func : regpy.functionals.AbstractFunctional
+        Functional to be offset.
+    offset : np.number
+        Offset added to the evaluation of the functional.
+    """
+    def __init__(self, func, offset):
+        assert isinstance(func, AbstractFunctional), "func not an AbstractFunctional"
+        assert np.isscalar(offset) and util.is_real_dtype(offset), "offset not a scalar"
+        super().__init__(func.domain)
+        self.func = func
+        """Functional to be offset.
+        """
+        self.offset = offset
+        """Offset added to the evaluation of the functional.
+        """
 
-    def _hessian(self, x):
-        return operators.LinearCombination(
-            *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
-        )
+    def __call__(self,vecsp):
+        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        return Shifted(func=self.func(vecsp),offset=self.offset)
+    
+class AbstractComposed(AbstractFunctional):
+    """Abstract analogue to `Composed`. Composition of an operator with a functional \(F\circ O\). This should not be called
+    directly but rather used by multiplying the `AbstractFunctional` object with an `Operator`.
 
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    Parameters
+    ----------
+    func : `regpy.functionals.AbstractFunctional`
+        Functional to be composed with. 
+    op : `regpy.operators.Operator`
+        Operator to be composed with. 
+    """
+    def __init__(self, func, op):
+        assert isinstance(func, AbstractFunctional), "func not a AbstractFunctional"
+        assert isinstance(op, operators.Operator), "op not a Operator"
+        super().__init__(op.domain)
+        if isinstance(func, type(self)):
+            op = func.op * op
+            func = func.func
+        self.func = func
+        """Functional that is composed with an Operator. 
+        """
+        self.op = op
+        """Operator composed that is composed with a functional. 
+        """
+
+    def __call__(self,vecsp):
+        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        assert vecsp == self.op.codomain, "domain of functional must match codomain of operator"
+        return Composed(func=self.func(vecsp),op=self.op)
+    
 
 class FunctionalProductSpace(Functional):
     """Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
@@ -488,42 +659,6 @@ class FunctionalProductSpace(Functional):
             proximals.append( self.funcs[i].proximal(splitted[i], taus[i]) )
         return np.asarray(proximals).flatten()
 
-
-class Shifted(Functional):
-    r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
-
-    Parameters
-    ----------
-    func : regpy.functionals.Functional
-        Functional to be offset.
-    offset : np.number
-        Offset added to the evaluation of the functional.
-    """
-    def __init__(self, func, offset):
-        assert isinstance(func, Functional)
-        assert np.isscalar(offset) and util.is_real_dtype(offset)
-        super().__init__(func.domain)
-        self.func = func
-        """Functional to be offset.
-        """
-        self.offset = offset
-        """Offset added to the evaluation of the functional.
-        """
-
-    def _eval(self, x):
-        return self.func(x) + self.offset
-
-    def _linearize(self, x):
-        return self.func.linearize(x)
-
-    def _gradient(self, x):
-        return self.func.gradient(x)
-
-    def _hessian(self, x):
-        return self.func.hessian(x)
-
-    def _proximal(self, x, tau):
-        return self.func.proximal(x, tau)
 
 class Indicator(Functional):
     r"""Indicator function on the domain defined by some function evaluation to `True` on some subset of the `domain`
@@ -611,12 +746,10 @@ class HilbertNormGeneric(Functional):
     """
     def __init__(self, h_space, h_domain=None):
         assert isinstance(h_space, hilbert.HilbertSpace)
-        super().__init__(h_space.vecsp)
+        super().__init__(h_space.vecsp, h_domain= h_domain or h_space)
         self.h_space = h_space
         """ Hilbert space used for norm.
         """
-        self.h_domain = h_domain or h_space 
-        """ Hilbert space wrt the proximal gets computed. """
 
     def _eval(self, x):
         return np.real(np.vdot(x, self.h_space.gram(x))) / 2
@@ -762,8 +895,8 @@ class TVGeneric(Functional):
 
     NotImplemented yet!
     """
-    def __init__(self, domain):
-        super().__init__(domain)
+    def __init__(self, domain, h_domain=hilbert.L2):
+        super().__init__(domain,h_domain=h_domain)
 
     def _gradient(self, x):
         return NotImplementedError
@@ -794,11 +927,7 @@ class TVUniformGridFcts(Functional):
         """Dimension of the Uniform Grid functions.
         """
         assert isinstance(domain, vecsps.UniformGridFcts)
-        super().__init__(domain)
-        if h_domain is not None:
-            self.h_domain = h_domain
-            """Overload h_domain if needed"""
-        assert self.h_domain.vecsp == self.domain
+        super().__init__(domain,h_domain=h_domain)
 
     def _eval(self, x):
         if self.dim==1:
@@ -828,6 +957,41 @@ class TVUniformGridFcts(Functional):
         return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 
 
+def as_functional(func, vecsp):
+    r"""Convert `func` to Functional instance on vecsp.
+
+    - If func is a `HilbertSpace` then it generated the `HilbertNormGeneric`.
+    - If func is an Operator, it's wrapped in a `GramHilbertSpace` and then `HilbertNormGeneric` functional.
+    - If func is callable, e.g. an `hilbert.AbstractSpace` or `AbstractFunctional`, it is called on `vecsp` to construct the concrete functional or Hilbert space. In the later case the functional will be the `HilbertNormGeneric`
+
+    Parameters
+    ----------
+    func : Functional or HilbertSapce or Operator or callable
+        Functional or object from which to construct the Functional.
+    vecsp : VectorSpace
+        Underlying vector space for the functional. 
+
+    Returns
+    -------
+    Functional
+        Constructed Functional on the underlying vectorspace. 
+    """
+    from regpy.operators import Operator  # imported here to avoid circular dependency
+    if not isinstance(func,Functional):
+        if isinstance(func, operators.Operator):
+            func = HilbertNormGeneric(hilbert.GramHilbertSpace(func))
+        elif callable(func):
+            func = func(vecsp)
+        if isinstance(func, hilbert.HilbertSpace):
+            func = HilbertNormGeneric(func)
+    assert isinstance(func,Functional)
+    assert func.domain == vecsp or (isinstance(func,Composed) and func.func.domain == vecsp), "Given Vector space and the one of the functional do not match."
+    return func
+
+def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
+    return HilbertNorm(h_space(vecsp))
+
+
 def _register_functionals():
     """Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
     method described in `AbstractFunctional` does not work due to circular depenencies when
@@ -836,6 +1000,7 @@ def _register_functionals():
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
     HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
+    HilbertNorm.register(vecsps.VectorSpace,HilbertNormOnAbstractSpace)
 
     L1.register(vecsps.VectorSpace, L1Generic)
 

@@ -257,8 +257,8 @@ class NgsL1(Functional):
 
 @TV.register(NgsSpace)
 class NgsTV(Functional):
-    def __init__(self, domain):
-        super().__init__(domain)
+    def __init__(self, domain, h_domain=L2):
+        super().__init__(domain,h_domain=h_domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
         self._gfu.Set(0)
         self._p = list(ngs.grad(self._gfu))
