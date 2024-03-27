@@ -11,13 +11,13 @@ class GenCurveDiscr(UniformGridFcts):
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def bd_eval(self, name, n=None, der=0):
-        gencurve=GenCurve(name, n, der)
-        self.z=gencurve.z
-        self.zpabs=gencurve.zpabs
-        self.zp=gencurve.zp
-        self.zpp=gencurve.zpp
-        self.zppp=gencurve.zppp 
-        self.normal=gencurve.normal
+        gencurve = GenCurve(name, n, der)
+        self.z = gencurve.z
+        self.zpabs = gencurve.zpabs
+        self.zp = gencurve.zp
+        self.zpp = gencurve.zpp
+        self.zppp = gencurve.zppp 
+        self.normal = gencurve.normal
         return gencurve
 
 class GenCurve:
@@ -25,19 +25,19 @@ class GenCurve:
         parametrization by function name(t), 0<=t<=2*pi (counter-clockwise)."""
     
     def __init__(self, name, **kwargs):
-        self.name=name
-        self.z=None
-        self.zp=None
-        self.zpp=None
-        self.zppp=None
-        """Values of z(t) and its derivatives at equidistant grid"""
-        self.zpabs=None   
+        self.name = name
+        self.z = None
+        self.zp = None
+        self.zpp = None
+        self.zppp = None
+        """Values of z(t) and its derivatives at equidistant grid."""
+        self.zpabs = None   
         """|z'(t)|"""
         self.normal=None 
-        """Outer normal vector(not normalized)"""
+        """Outer normal vector(not normalized)."""
 
     def bd_eval(self, n, der):
-        t=2*np.pi*np.linspace(0, n-1, n)/n
+        t = 2*np.pi*np.linspace(0, n-1, n)/n
         self.z = eval(self.name)(t,0)
 
         if der>=1:
@@ -62,13 +62,13 @@ class StarCurveDiscr(UniformGridFcts):
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
    def bd_eval(self, name, n=None, der=0):
-        starcurve=StarCurve(name, n, der)
-        self.z=starcurve.z
-        self.zpabs=starcurve.zpabs
-        self.zp=starcurve.zp
-        self.zpp=starcurve.zpp
-        self.zppp=starcurve.zpp
-        self.normal=starcurve.normal
+        starcurve = StarCurve(name, n, der)
+        self.z = starcurve.z
+        self.zpabs = starcurve.zpabs
+        self.zp = starcurve.zp
+        self.zpp = starcurve.zpp
+        self.zppp = starcurve.zpp
+        self.normal = starcurve.normal
         return starcurve
 
 class StarCurve:
@@ -79,17 +79,17 @@ class StarCurve:
      with a positive, 2pi-periodic function q."""
     def __init__(self, name, n, der):
       """The first row of q contains values of q(t) at equidistant points
-      the second row values of q', the third row of q'' and so on"""
-      self.name=name
+      the second row values of q', the third row of q'' and so on."""
+      self.name = name
 
-      t=2*np.pi*np.linspace(0, n-1, n)/n  
+      t = 2*np.pi*np.linspace(0, n-1, n)/n  
       cost = np.cos(t)
       sint = np.sin(t)
 
       self.q = np.zeros((der+1,n))
 
       for j in range(0, der+1):
-            self.q[j, :]=eval(self.name)(t, j)
+            self.q[j, :] = eval(self.name)(t, j)
       q=self.q
       self.z = np.append(q[0, :]*cost,\
           q[0,:]*sint).reshape((2, n))
@@ -100,7 +100,7 @@ class StarCurve:
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             self.normal = np.append(self.zp[1,:],
                 -self.zp[0,:]).reshape((2, n))
-            """Outer normal vector"""
+            """Outer normal vector."""
 
       if der>=2:
             self.zpp = np.append(q[2,:]*cost - 2*q[1,:]*sint - q[0,:]*cost,\
@@ -114,7 +114,7 @@ class StarCurve:
             raise ValueError('only derivatives up to order 3 implemented')
 
     def radial(self, n):
-        t=2*np.pi*np.linspace(0, n-1, n)/n
+        t = 2*np.pi*np.linspace(0, n-1, n)/n
         rad = eval(self.name)(t, 0)
         return rad
 
@@ -126,15 +126,15 @@ class GenTrigDiscr(UniformGridFcts):
     def bd_eval(self, coeffs, nvals=None, nderivs=0):
         """Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `Gentrig`."""
-        gentrig=GenTrig(coeffs, nvals, nderivs)
-        self.z=gentrig.z
-        self.zpabs=gentrig.zpabs
-        self.zp=gentrig.zp
-        self.zpp=gentrig.zpp
-        self.zppp=gentrig.zppp
-        self.normal=gentrig.normal
-        self.der_normal=gentrig.der_normal
-        self.adjoint_der_normal=gentrig.adjoint_der_normal
+        gentrig = GenTrig(coeffs, nvals, nderivs)
+        self.z = gentrig.z
+        self.zpabs = gentrig.zpabs
+        self.zp = gentrig.zp
+        self.zpp = gentrig.zpp
+        self.zppp = gentrig.zppp
+        self.normal = gentrig.normal
+        self.der_normal = gentrig.der_normal
+        self.adjoint_der_normal = gentrig.adjoint_der_normal
         
         return gentrig
     
@@ -207,7 +207,7 @@ class GenTrig:
             hn = np.array([np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))),\
                 np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))])
 
-        der=np.sum(hn*self.normal,0)/self.zpabs
+        der = np.sum(hn*self.normal,0)/self.zpabs
         return der
 
     def adjoint_der_normal(self, g):
@@ -215,7 +215,7 @@ class GenTrig:
         N = int(len(self.coeff)/2)
         n = int(len(g))
         
-        adj_n=numpy.matlib.repmat(g/self.zpabs,2,1)*self.normal
+        adj_n = numpy.matlib.repmat(g/self.zpabs,2,1)*self.normal
     
         if N == n:
             adj = np.array([adj_n[0,:],\
@@ -226,7 +226,7 @@ class GenTrig:
             adj_hat = np.array([trig_interpolate(val, N), \
                        trig_interpolate(val1, N)])*n/N
             
-            adj_hat=adj_hat.T 
+            adj_hat = adj_hat.T 
          
             adj = np.append(np.array([np.fft.ifft(np.fft.fftshift(adj_hat[:,0]))]),\
                             np.array([np.fft.ifft(np.fft.fftshift(adj_hat[:,1]))]))
@@ -359,7 +359,7 @@ class StarTrigCurve:
 
 
 def peanut(t,der):
-      res=np.zeros(t.shape[0])
+      res = np.zeros(t.shape[0])
       if der==0:
         res = 1./2.*(3*np.cos(t)**2+1)**(1./2)
       elif der==1:
@@ -413,7 +413,7 @@ def apple(t, der):
       return res
 
 def three_lobes(t, der):
-     res=np.zeros(t.shape[0])
+     res = np.zeros(t.shape[0])
      if der==0:
         res = 0.5 + 0.25*np.exp(-np.sin(3*t)) - 0.1*np.sin(t)
      elif der==1:
@@ -427,7 +427,7 @@ def three_lobes(t, der):
      return res
 
 def pinched_ellipse(t, der):
-     res=np.zeros(t.shape[0])
+     res = np.zeros(t.shape[0])
      if der==0:
        res = 3/2*np.sqrt(1/4*np.cos(t)**2 + np.sin(t)**2)
      elif der==1:
@@ -441,7 +441,7 @@ def pinched_ellipse(t, der):
      return res
 
 def smoothed_rectangle(t, der):
-     res=np.zeros(t.shape[0])
+     res = np.zeros(t.shape[0])
      if der==0:
         res = (np.cos(t)**10 +2/3*np.sin(t)**10)**(-1/10)
      elif der==1:
@@ -461,9 +461,9 @@ def smoothed_rectangle(t, der):
      return res
 
 def nonsym_shape(t, der):
-     res=np.zeros(t.shape[0])
+     res = np.zeros(t.shape[0])
      if der==0:
-        res =(1 + 0.9*np.cos(t) + 0.1*np.sin(2*t))/(1 + 0.75*np.cos(t))
+        res = (1 + 0.9*np.cos(t) + 0.1*np.sin(2*t))/(1 + 0.75*np.cos(t))
      elif der==1:
         res = 4/5*(-3*np.sin(t)+8*np.cos(t)**2-4+3*np.cos(t)**3)/(16+24*np.cos(t)+9*np.cos(t)**2)
      elif der==2:
@@ -478,14 +478,14 @@ def nonsym_shape(t, der):
 
 def circle(t, der):
      if der==0:
-        res=np.ones(t.shape[0])
+        res = np.ones(t.shape[0])
      else:
-        res=np.zeros(t.shape[0])
+        res = np.zeros(t.shape[0])
      return res
 
 def kite(t, der):
-    res=np.zeros((2,t.shape[0]))
-    n=t.shape[0]
+    res = np.zeros((2,t.shape[0]))
+    n = t.shape[0]
 
     if der==0:
         res = np.append(np.cos(t)+0.65*np.cos(2*t)-0.65,   1.5*np.sin(t)).reshape(2, n)
