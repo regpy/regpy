@@ -17,11 +17,26 @@ class IrgnmSemiSmooth(Solver):
     
     Parameters
     ----------
-    setting : _type_
-        _description_
+    setting : RegularizationSetting
+        Setting for regularization. 
+    data : array-like
+        Data for reconstruction. Must be in the operators codomain.
+    psi_minus : np.number
+        lower constraint of the minimization. Must be larger then `psi_plus`
+    psi_plus : np.number
+        upper constraint of the minimization. Must be smaller then `psi_minus`
+    regpar : np.number
+        Initial regularization parameter $\alpha$ 
+    regpar_step : np.number, optional
+        Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
+    init : array-like, optional
+        An element of operator domain that is an initial guess. (Default: None)
+    cg_pars : dict
+        Dictionary of parameter to be given to the inner `TikhonovCG` solver. (Default: None) 
     """
-
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cg_pars=None):
+        assert isinstance(setting,RegularizationSetting)
+        assert psi_minus < psi_plus
         super().__init__()
         self.setting=setting
         """The problem setting"""
@@ -66,12 +81,12 @@ class IrgnmSemiSmooth(Solver):
         self.inactive=np.zeros(self.size)
         
     def _next(self):
-        first_iteration = True
-        while first_iteration or not self.active_plus_old==self.active_plus or not self.active_minus_old==self.active_minus:
+        iter_count = 0
+        while iter_count<=20 and (iter_count==0 or np.sum([old != new for old, new in zip(self.active_plus_old,self.active_plus)])>3 or np.sum([old != new for old, new in zip(self.active_minus_old,self.active_minus)])>3):
             self.active_plus_old=self.active_plus
             self.active_minus_old=self.active_minus
             self.inner_update()
-            first_iteration = False
+            iter_count += 1
         
         self.y, self.deriv = self.setting.op.linearize(self.x)
         
