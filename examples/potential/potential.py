@@ -11,17 +11,22 @@ from regpy.hilbert import L2, Sobolev
 from regpy.vecsps.curve import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 from potential_op import Potential
+from  regpy.vecsps import UniformGridFcts
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
+N_meas=128
+codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_meas, endpoint=False), dtype=complex)
+
 #Forward operator
 op = Potential(
     domain=StarTrigDiscr(200),
+    codomain=codomain,
     radius=1.5,
-    nmeas=128,
+    nmeas=N_meas,
 )
 
 setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
