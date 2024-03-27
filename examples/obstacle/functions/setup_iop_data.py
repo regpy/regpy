@@ -3,13 +3,12 @@ import scipy.linalg as scla
 from scipy.special import j0, j1, y0, y1
 
 def setup_iop_data(bd, kappa):
-    """Computes data needed to set up the boundary integral matrices
-     to avoid repeated computations."""
+    #Computes data needed to set up the boundary integral matrices to avoid repeated computations.
 
     dimension = len(bd.z.shape)
     dim=np.max([np.size(bd.z, l) for l in range(0, dimension)])
 
-    """Compute matrix of distances of grid points."""
+    #Compute matrix of distances of grid points.
     VEC_1, VEC_2=np.meshgrid(bd.z[0, :], bd.z[0, :], indexing='ij')
     t1=(VEC_1-VEC_2).reshape(dim**2)
     
@@ -25,11 +24,11 @@ def setup_iop_data(bd, kappa):
 
     bess_H1_quot = (j1(kdist) + complex(0,1)*y1(kdist))/(kdist)
     
-    """Set up prototyp of the singularity of boundary integral operators."""
+    #Set up prototyp of the singularity of boundary integral operators.
     t=2*np.pi*np.arange(1, dim)/dim
     logsin = scla.toeplitz(np.append(np.asarray([1]), np.log(4*np.sin(t/2)**2)))
 
-    """Quadrature weight for weight function log(4*(sin(t-tau))**2)."""
+    #Quadrature weight for weight function log(4*(sin(t-tau))**2).
     sign=np.ones(dim)
     sign[np.arange(1, dim, 2)]=-1
     t = 2*np.pi*np.arange(0, dim)/dim
@@ -37,8 +36,6 @@ def setup_iop_data(bd, kappa):
     for m in range(0, int(dim/2)-1):
         s=s+np.cos((m+1)*t)/(m+1)
     logsin_weights = scla.toeplitz(-2*(s+sign/dim)/dim)
-
-    kdist=kdist.reshape((dim, dim))
 
     return DatObject(kappa, logsin_weights, logsin, bess_H0, bess_H1_quot, \
                       kdist)
