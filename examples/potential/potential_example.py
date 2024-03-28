@@ -18,15 +18,14 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-N_meas=128
-codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_meas, endpoint=False), dtype=complex)
+N_means=128
+codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex)
 
 #Forward operator
 op = Potential(
     domain=StarTrigDiscr(200),
     codomain=codomain,
     radius=1.5,
-    nmeas=N_meas,
 )
 
 setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)

@@ -49,7 +49,7 @@ class Potential(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, domain, codomain, radius, nmeas, nforward=128):
+    def __init__(self, domain, codomain, radius, nforward=128):
         assert isinstance(domain, StarTrigDiscr)
         
         self.radius = radius
