@@ -32,9 +32,9 @@ class CoilMult(Operator):
             codomain=self.coilgrid
         )
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         density, coils = self.domain.split(x)
-        if differentiate:
+        if differentiate or adjoint_derivative:
             r"""We need to copy here since `.split()` returns views into `x` if possible."""            
             self._density = density.copy()
             self._coils = coils.copy()

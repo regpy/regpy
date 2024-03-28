@@ -20,6 +20,10 @@ def do_nonlinear_test(op):
         _, deriv = op.linearize(x)
         do_linear_test(deriv)
 
+def do_adjoint_derivative_test(op):
+    for _ in range(10):
+        operator_tests.test_adjoint_derivative(op)
+
 
 def test_linear_volterra():
     do_linear_test(
@@ -34,4 +38,11 @@ def test_nonlinear_volterra():
             exponent=3))
 
 
+def test_adjoint_derivative_composition_volterra():
+    do_adjoint_derivative_test(
+        volterra.Volterra(
+            domain=vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 200)),
+            exponent=3) * volterra.Volterra(
+            domain=vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 200)),
+            exponent=2))
 

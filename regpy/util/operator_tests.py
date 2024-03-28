@@ -56,3 +56,13 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
     normh = np.linalg.norm(h)
     g = deriv(h)
     return [np.linalg.norm((op(x + step * h) - y) / step - g) / normh for step in steps]
+
+def test_adjoint_derivative(op, tolerance=1e-10):
+    x = op.domain.rand()
+    h = op.domain.rand()
+    _, adjoint_derivative = op.linearize(x, adjoint_derivative=True)
+    adjoint_deriv_h = adjoint_derivative(h)
+    _, deriv = op.linearize(x)
+    return np.all(np.abs(adjoint_deriv_h-deriv.adjoint(deriv(h)))<tolerance)
+
+    

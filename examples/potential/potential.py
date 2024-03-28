@@ -1,9 +1,7 @@
 import numpy as np
 
-from regpy.vecsps import UniformGridFcts
-from regpy.vecsps.obstacles import StarTrigDiscr
+from regpy.vecsps.curve import StarTrigDiscr
 from regpy.operators import Operator
-
 
 class Potential(Operator):
     r"""Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
@@ -11,8 +9,8 @@ class Potential(Operator):
 
     \[
         \begin{cases}
-            \Delta u = 1_K & \text{in } \Omega \\
-            u = 0          & \text{on } \partial\Omega
+            \Delta u = 1_K & \text{ in } \Omega \\
+            u = 0          & \text{ on } \partial\Omega
         \end{cases}
     \]
 
@@ -28,7 +26,7 @@ class Potential(Operator):
     domain : StarTrigDiscr
         The domain that represents the boundary curves. Actually, any star shaped curve
         vector space that can compute derivatives along the curve and derivatives wrt. coefficient
-        perturbations works, but `StarTrigDiscr` is the only implementation currently available.
+        perturbations works.
     radius : float
         The radius of the measurement circle.
     nmeas : int
@@ -45,14 +43,15 @@ class Potential(Operator):
     References
     ----------
     - F. Hettlich & W. Rundell "Iterative methods for the reconstruction of an inverse potential
-      problem", Inverse Problems 12 (1996) 251–266
-    - sec. 3 in T. Hohage "Logarithmic convergence rates of the iteratively regularized
-      Gauss–Newton method for an inverse potential and an inverse scattering problem" Inverse
-      Problems 13 (1997) 1279–1299
+      problem", Inverse Problems, 12 (1996) 251–266.
+    - T. Hohage "Logarithmic convergence rates of the iteratively regularized
+      Gauss–Newton method for an inverse potential and an inverse scattering problem", Inverse
+      Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, domain, radius, nmeas, nforward=64):
+    def __init__(self, domain, codomain, radius, nforward=128):
         assert isinstance(domain, StarTrigDiscr)
+        
         self.radius = radius
         """The measurement radius."""
         self.nforward = nforward
@@ -60,7 +59,7 @@ class Potential(Operator):
 
         super().__init__(
             domain=domain,
-            codomain=UniformGridFcts(np.linspace(0, 2 * np.pi, nmeas, endpoint=False))
+            codomain=codomain
         )
 
         k = 1 + np.arange(self.nforward)
@@ -71,12 +70,10 @@ class Potential(Operator):
         self.cos_fl = np.cos(k_tfl)
         self.sin_fl = np.sin(k_tfl)
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         nfwd = self.nforward
-        # TODO This operator does not actually need to know about the curve at all,
-        #  it is effectively a composition with eval_curve (which is not a proper Operator yet). If
-        #  similar patterns work for the other obstacle operators, this should be made manifest.
         self._bd = self.domain.eval_curve(x, nvals=nfwd)
+
         q = self._bd.radius[0]
         if q.max() >= self.radius:
             raise ValueError('Object penetrates measurement circle')

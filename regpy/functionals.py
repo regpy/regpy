@@ -943,11 +943,6 @@ class TVGeneric(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-'''
-Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
-'''
-from regpy.util import gradientuniformgrid
-from regpy.util import divergenceuniformgrid
 class TVUniformGridFcts(Functional):
     """Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
 
@@ -967,15 +962,15 @@ class TVUniformGridFcts(Functional):
 
     def _eval(self, x):
         if self.dim==1:
-            return np.sum(np.abs(gradientuniformgrid(x, spacing=self.domain.spacing)))
+            return np.sum(np.abs(self._gradientuniformgrid(x, spacing=self.domain.spacing)))
         else:
-            return np.sum(np.linalg.norm(gradientuniformgrid(x, spacing=self.domain.spacing), axis=0))
+            return np.sum(np.linalg.norm(self._gradientuniformgrid(x, spacing=self.domain.spacing), axis=0))
 
     def _gradient(self, x):
         if self.dim==1:
-            return np.sign(gradientuniformgrid(x, spacing=self.domain.spacing))
+            return np.sign(self._gradientuniformgrid(x, spacing=self.domain.spacing))
         else:
-            grad = gradientuniformgrid(x, spacing=self.domain.spacing)
+            grad = self._gradientuniformgrid(x, spacing=self.domain.spacing)
             grad_norm = np.linalg.norm(grad, axis=0)
             toret = np.zeros(x.shape)
             toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
@@ -988,10 +983,21 @@ class TVUniformGridFcts(Functional):
         shape = [self.dim]+list(x.shape)
         p = np.zeros(shape)
         for i in range(maxiter):
-            update = stepsize*gradientuniformgrid( self.h_domain.gram_inv( divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
+            update = stepsize*self._gradientuniformgrid( self.h_domain.gram_inv( self._divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing))-x/tau, spacing=self.domain.spacing)
             p = (p+update) / (1+np.abs(update))
-        return x-tau*divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
+        return x-tau*self._divergenceuniformgrid(p, self.dim, spacing=self.domain.spacing)
 
+    def _gradientuniformgrid(u, spacing=1):
+        """Computes the gradient of field given by 'u'. 'u' is defined on a 
+        equidistant grid. Returns a list of vectors that are the derivatives in each 
+        dimension."""
+        return 1/spacing*np.array(np.gradient(u))
+
+    def _divergenceuniformgrid(u, dim, spacing=1):
+        """Computes the divergence of a vector field 'u'. 'u' is assumed to be
+        a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
+        regular grid"""
+        return 1/spacing*np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i) for i in range(dim)])
 
 def as_functional(func, vecsp):
     r"""Convert `func` to Functional instance on vecsp.
