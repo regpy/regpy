@@ -6,7 +6,7 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
-from potential_op import Potential
+from examples.potential.potential import Potential
 from regpy.vecsps.curve import StarTrigDiscr
 from regpy.solvers import HilbertSpaceSetting
 
