@@ -20,7 +20,7 @@ def test_potential():
     N_means = 128
     op = Potential(
         domain=StarTrigDiscr(200),
-        codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex)
+        codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex),
         radius=1.2,
     )
 
