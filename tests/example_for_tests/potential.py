@@ -6,9 +6,12 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
-from regpy.operators.obstacles import Potential
-from regpy.vecsps.obstacles import StarTrigDiscr
+
+from examples.potential.potential import Potential
+from regpy.vecsps import UniformGridFcts
+from regpy.vecsps.curve import StarTrigDiscr
 from regpy.solvers import RegularizationSetting
+
 
 
 def test_potential():
@@ -16,11 +19,11 @@ def test_potential():
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
     )
-
+    N_means = 128
     op = Potential(
         domain=StarTrigDiscr(200),
+        codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex),
         radius=1.2,
-        nmeas=64,
     )
 
     setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
