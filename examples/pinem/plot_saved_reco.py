@@ -4,8 +4,13 @@ from scipy.io import loadmat
 import matplotlib.pyplot as plt
 import numpy as np
 
-filename = './NewtonCG_2e9/testA34.mat'
-#filename = './NewtonCG_damped/test37.mat'
+"""Script used to view saved pinem solutions.
+"""
+
+#Put name of file here.
+filename = 'some_file.mat'
+
+
 # If False, the simulated data corresponding to the displayed iterate are not shown to save time
 show_reco_data = True
 rec = loadmat(filename)

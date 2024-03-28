@@ -77,7 +77,7 @@ logging.basicConfig(
 output_path=None
 if save_results:
     output_path = os.path.join(current_directory,'data','results',output_prefix)
-    print(f"Files will be saved at {os.path.join(current_directory,'data','results')}")
+    print(f"Files will be saved to {os.path.join(current_directory,'data','results')}")
 
 ##############################ROUTINES FOR ERROR CALCULATION AND UPDATES OF STATS  
 

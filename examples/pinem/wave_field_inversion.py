@@ -17,6 +17,12 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
 )
 
+r"""Shows inversion of imaging system with modeled by Fresnel propagator. The (complex) image \(x\) is reconstructed from
+ \(|\mathcal{D}_{+N}(x)|^{2}) and \(|\mathcal{D}_{-N}(x)|^{2}) where \(\mathcal{D}\) is the Fresnel propagator.
+The reconstruction is done using the iteratively regularized Gauss-Newton method.
+"""
+
+
 # Example parameters
 fresnel_number = 5e2   # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
 
