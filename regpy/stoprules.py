@@ -69,6 +69,17 @@ class StopRule:
         return CombineRules([self, other])
 
 
+class NoneRule(StopRule):
+    """Default stop rule that will never stop an iteration. The rule should not be used in normal setting
+    it provides a default for the solvers that would stop by triggering their converged statement. 
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def _stop(self, x, y=None):
+        return False
+
 class CombineRules(StopRule):
     """Combine several stopping rules into one.
 

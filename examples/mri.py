@@ -7,7 +7,7 @@ import numpy as np
 import regpy.stoprules as rules
 import regpy.util as util
 from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
@@ -59,7 +59,7 @@ init = smoothed_op.domain.zeros()
 init_density, _ = smoothed_op.domain.split(init)
 init_density[...] = 1
 
-setting = HilbertSpaceSetting(op=smoothed_op, h_domain=L2, h_codomain=L2)
+setting = RegularizationSetting(op=smoothed_op, penalty=L2, data_fid=L2)
 
 solver = IrgnmCG(
     setting=setting,

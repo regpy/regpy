@@ -4,14 +4,40 @@ import multiprocessing as mp
 from regpy.util import classlogger
 
 class OperatorAsWorker(mp.Process):
+    r""" 
+    Process that represents an operator and can be used to do operator
+    evaluations in parallel. 
+    
+    Parameters
+    ----------
+    name : string
+        name of the process
+    conn : mp.connection.Connection
+        connection object to receive commands and 
+        send the results back to master
+    F : operators.Operator
+        the regpy operator
+    """
     log = classlogger
     def __init__(self, name, conn,F):
         super(OperatorAsWorker, self).__init__()
         self.F = F
+        """the operator"""
         self.name = name
+        """name of the process"""
         self.conn = conn
+        """connection to master"""
 
     def run(self):
+        """Starts the process. While running the process may receive the commands:
+        'eval_nodiff': evaluates the operator with differentiate=False
+        'eval_diff': evaluates the operator with differentiate=True
+        'deriv': returns linearize
+        'eval_nodiff': returns adjoint
+
+        Raises:
+            TypeError: Error is raised if unknown command is received
+        """
         while True:
             command = self.conn.recv()
             self.log.debug(self.name+ ' executing '+command[0])
@@ -87,9 +113,6 @@ class ParallelVectorOfOperators(Operator):
             it += 1
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
- #   def __del__(self):
- #       for conn_m in self.conn:
- #           conn_m.send('break')
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -98,13 +121,6 @@ class ParallelVectorOfOperators(Operator):
         else:
             for conn_m in self.conn:
                 conn_m.send(['eval_nodiff',x])   
-        #results = []
-        #for conn_m in self.conn:
-        #    res = conn_m.recv()
-        #    self.log.info('received result of size ' + str(res.shape))
-        #    results.append(res)
-        #self.log.info('now joining results. type:'+str(type(results)))
-        #return self.codomain.join(*tuple(results))
         aux = self.codomain.join(*(conn_m.recv() for conn_m in self.conn))
         return aux
 
@@ -121,12 +137,3 @@ class ParallelVectorOfOperators(Operator):
             result += conn_m.recv()
         return result
 
-#   @util.memoized_property
-#    def __repr__(self):
-#        return util.make_repr(self, *self.ops)
-#
-#    def __getitem__(self, item):
-#        return self.ops[item]
-#
-#    def __iter__(self):
-#        return iter(self.ops)

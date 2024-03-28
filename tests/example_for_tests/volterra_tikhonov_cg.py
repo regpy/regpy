@@ -1,7 +1,7 @@
-from regpy.operators.volterra import Volterra
+from examples.volterra.volterra import Volterra
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG
 import regpy.stoprules as rules
 
@@ -22,7 +22,7 @@ def test_volterra_tikhonov_cg():
     data = exact_data + noise
     init = op.domain.ones()
 
-    setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
+    setting = RegularizationSetting(op=op, penalty=L2, data_fid=L2)
 
     solver = TikhonovCG(setting, data, regpar=0.01)
     stoprule = (

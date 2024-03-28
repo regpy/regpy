@@ -2,18 +2,18 @@ import pytest
 import numpy as np
 
 from regpy import operators, util, vecsps
-from regpy.util import tests
-from regpy.operators import volterra 
-from regpy.operators import mediumscattering
+from regpy.util import operator_tests
+from examples.volterra import volterra 
+from examples.medium_scattering import mediumscattering
 
 def do_linear_test(op):
     for _ in range(10):
-        tests.test_adjoint(op)
+        operator_tests.test_adjoint(op)
 
 
 def do_nonlinear_test(op):
     for _ in range(10):
-        large, small = tests.test_derivative(op, steps=[1e-1, 1e-8])
+        large, small = operator_tests.test_derivative(op, steps=[1e-1, 1e-8])
         assert small / large < 1e-5
     for _ in range(10):
         x = op.domain.rand()

@@ -10,7 +10,7 @@ from netgen.geom2d import SplineGeometry
 
 import regpy.stoprules as rules
 from regpy.operators.ngsolve import ReactionNeumann, ProjectToBoundary
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.landweber import Landweber
 from regpy.hilbert import L2, SobolevBoundary
 from regpy.vecsps.ngsolve import NgsSpace
@@ -64,7 +64,7 @@ data = exact_data+noise
 
 init = domain.from_ngs( 2 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=SobolevBoundary)
+setting = RegularizationSetting(op=op, penalty=L2, data_fid=SobolevBoundary)
 
 solver = Landweber(setting, data, init, stepsize=500)
 stoprule = (

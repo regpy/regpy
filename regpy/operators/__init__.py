@@ -1183,7 +1183,7 @@ class VectorOfOperators(Operator):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
         self.ops = ops
-        """List of all Operators \((T_1,\dots,T_n)\)"""
+        r"""List of all Operators \((T_1,\dots,T_n)\)"""
 
         if domain is None:
             self.domain = self.ops[0].domain

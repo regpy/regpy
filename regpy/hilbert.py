@@ -537,6 +537,8 @@ def as_hilbert_space(h, vecsp):
     - If h is callable, e.g. an AbstractSpace, it is called on vecsp to
       construct the concrete space.
     """
+    if h is None:
+        return None
     from regpy.operators import Operator  # imported here to avoid circular dependency
     if not isinstance(h, HilbertSpace):
         if isinstance(h, Operator):

@@ -112,42 +112,6 @@ def make_repr(self, *args, **kwargs):
         arglist.append("{}={}".format(repr(k), repr(v)))
     return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
 
-
-eps = np.finfo(float).eps
-
-
-def bounded_voronoi(nodes, left, down, up, right):
-    """Computes the Voronoi diagram with a bounding box
-    """
-
-    # Extend the set of nodes by reflecting along boundaries
-    nodes_left = 2 * np.array([left - 1e-6, 0]) - nodes
-    nodes_down = 2 * np.array([0, down - 1e-6]) - nodes
-    nodes_right = 2 * np.array([right + 1e-6, 0]) - nodes
-    nodes_up = 2 * np.array([0, up + 1e-6]) - nodes
-
-    # Compute the extended Voronoi diagram
-    evor = Voronoi(np.concatenate([nodes, nodes_up, nodes_down, nodes_left, nodes_right]))
-
-    # Shrink the Voronoi diagram
-    regions = [evor.regions[reg] for reg in evor.point_region[:nodes.shape[0]]]
-    used_vertices = np.unique([i for reg in regions for i in reg])
-    regions = [[np.where(used_vertices == i)[0][0] for i in reg] for reg in regions]
-    vertices = [evor.vertices[i] for i in used_vertices]
-
-    return regions, vertices
-
-
-def broadcast_shapes(*shapes):
-    a = np.ones((max(len(s) for s in shapes), len(shapes)), dtype=int)
-    for i, s in enumerate(shapes):
-        a[-len(s):, i] = s
-    result = np.max(a, axis=1)
-    for r, x in zip(result, a):
-        if np.any((x != 1) & (x != r)):
-            raise ValueError('Shapes can not be broadcast')
-    return result
-
 def gradientuniformgrid(u, spacing=1):
     """Computes the gradient of field given by 'u'. 'u' is defined on a 
     equidistant grid. Returns a list of vectors that are the derivatives in each 

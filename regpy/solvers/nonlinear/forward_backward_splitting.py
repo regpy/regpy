@@ -1,21 +1,15 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver
-from regpy import util
-from regpy.functionals import Functional
+from regpy.solvers import Solver, RegularizationSetting
 
 """
 Minimizes data_fidelity(f)+regpar*penalty(f) with forward backward splitting
 
 Parameters
 ----------
-setting : regpy.solvers.HilbertSpaceSetting
-    The setting of the forward problem.
-data_fidelity : regpy.functionals.Functional
-    The data fidelity term. Needs to have a prox-operator defined. Matches S.
-penalty : regpy.functionals.Functional
-    The penalty term. Needs to have a prox-operator defined. Matches R.
+setting : regpy.solvers.RegularizationSetting
+    The setting of the forward problem. Includes both penalty and data fidelity functional. 
 init : array-like
     The initial guess. 
 tau : float , optional
@@ -27,8 +21,8 @@ proximal_pars: dict, optional
 """
 
 class ForwardBackwardSplitting(Solver):
-    def __init__(self, setting, data_fidelity, penalty, init, tau = 1, regpar = 1, proximal_pars = None):
-        
+    def __init__(self, setting, init, tau = 1, regpar = 1, proximal_pars = None):
+        assert isinstance(setting,RegularizationSetting), "Setting is not a RegularizationSetting instance."
         super().__init__()
         self.setting = setting
         """The problem setting."""
@@ -38,19 +32,13 @@ class ForwardBackwardSplitting(Solver):
         """The proximal operator parameter"""
         self.proximal_pars = proximal_pars
 
-        self.data_fidelity = data_fidelity
-        self.penalty = penalty
-        """The functional of the data fidelity term and the penalty term"""
-        assert isinstance(self.data_fidelity, Functional)
-        assert isinstance(self.penalty, Functional)
-        assert self.penalty.h_domain == self.setting.h_domain
         
         self.x = init
         self.y = self.setting.op(self.x)
         
     def _next(self):
-        self.x-=self.tau*self.setting.h_domain.gram_inv(self.data_fidelity.gradient(self.x)) 
-        self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
+        self.x-=self.tau*self.setting.h_domain.gram_inv(self.setting.data_fid.gradient(self.x)) 
+        self.x = self.setting.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         
         self.y = self.setting.op(self.x)

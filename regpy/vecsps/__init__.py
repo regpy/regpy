@@ -262,7 +262,7 @@ class VectorSpace:
                 self.dtype == other.dtype
             )
         else:
-            return NotImplemented
+            return False
 
     def __add__(self, other):
         if isinstance(other, VectorSpace):

@@ -8,10 +8,12 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
+
 from regpy.vecsps.curve import StarTrigDiscr
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from potential import Potential
 from  regpy.vecsps import UniformGridFcts
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +30,7 @@ op = Potential(
     radius=1.5,
 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
+setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
 #Exact data and Poission data
 exact_solution = op.domain.sample(lambda t: np.sqrt(3*np.cos(t)**2+1)/2)

@@ -16,7 +16,7 @@ class TikhonovCG(Solver):
 
     Parameters
     ----------
-    setting : regpy.solvers.HilbertSpaceSetting
+    setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data : array-like
         The measured data.

@@ -20,7 +20,7 @@ class Landweber(Solver):
 
     Parameters
     ----------
-    setting : regpy.solvers.HilbertSpaceSetting
+    setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     rhs : array-like
         The right hand side.

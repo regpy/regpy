@@ -1,21 +1,42 @@
 import logging
 import numpy as np
 
-from regpy.solvers import HilbertSpaceSetting, Solver
+from regpy.solvers import RegularizationSetting, Solver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
+from regpy.stoprules import CountIterations
 
 class IrgnmSemiSmooth(Solver):
     """
     Semismooth Newton Method. In each iteration, solves
-
-     x_{n+1} \in argmin_{psi_minus < x_* < psi_plus}   ||T(x_n) + T'[x_n] (x_*-x_n) - data||**2 + regpar_n * ||x_* - init||**2
-
-    where `T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    `regpar_n` is a decreasing geometric sequence of regularization parameters.
+    $$
+     x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
+    $$
+    where $T$ is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    $\alpha_n$ is a decreasing geometric sequence of regularization parameters.
+    
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        Setting for regularization. 
+    data : array-like
+        Data for reconstruction. Must be in the operators codomain.
+    psi_minus : np.number
+        lower constraint of the minimization. Must be larger then `psi_plus`
+    psi_plus : np.number
+        upper constraint of the minimization. Must be smaller then `psi_minus`
+    regpar : np.number
+        Initial regularization parameter $\alpha$ 
+    regpar_step : np.number, optional
+        Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
+    init : array-like, optional
+        An element of operator domain that is an initial guess. (Default: None)
+    cg_pars : dict
+        Dictionary of parameter to be given to the inner `TikhonovCG` solver. (Default: None) 
     """
-
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cg_pars=None):
+        assert isinstance(setting,RegularizationSetting)
+        assert psi_minus < psi_plus
         super().__init__()
         self.setting=setting
         """The problem setting"""
@@ -60,12 +81,12 @@ class IrgnmSemiSmooth(Solver):
         self.inactive=np.zeros(self.size)
         
     def _next(self):
-        first_iteration = True
-        while first_iteration or not self.active_plus_old==self.active_plus or not self.active_minus_old==self.active_minus:
+        iter_count = 0
+        while iter_count<=20 and (iter_count==0 or np.sum([old != new for old, new in zip(self.active_plus_old,self.active_plus)])>3 or np.sum([old != new for old, new in zip(self.active_minus_old,self.active_minus)])>3):
             self.active_plus_old=self.active_plus
             self.active_minus_old=self.active_minus
             self.inner_update()
-            first_iteration = False
+            iter_count += 1
         
         self.y, self.deriv = self.setting.op.linearize(self.x)
         
@@ -100,12 +121,13 @@ class IrgnmSemiSmooth(Solver):
         self.lam_minus[self.active_plus]=0
 
         project = CoordinateMask(self.setting.h_domain.vecsp, self.inactive)
-        self.log.info('Running Tikhonov solver.')
+        self.log.info('Running inner Tikhonov solver.')
         f, _ = TikhonovCG(
-            setting=HilbertSpaceSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
+            logging_level="WARNING",
             **self.cg_pars
         ).run()
         self.x[self.inactive] = f[self.inactive]
