@@ -70,6 +70,7 @@ class MediumScatteringBase(Operator):
                  support=None, coarseshape=None, coarseiterations=3,
                  gmres_args=None,
                  normalization='helmholtz'):
+        super().__init__()
         assert len(gridshape) in (2, 3)
         assert all(isinstance(s, int) for s in gridshape)
         grid = vecsps.UniformGridFcts(
@@ -77,6 +78,7 @@ class MediumScatteringBase(Operator):
               for s in gridshape),
             dtype=complex
         )
+        self.domain = grid
 
         if support is None:
             support = (np.linalg.norm(grid.coords, axis=0) <= radius)
@@ -85,7 +87,8 @@ class MediumScatteringBase(Operator):
         else:
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
-        # TODO assert support is contained in radius
+        assert (support <= (np.linalg.norm(grid.coords, axis=0) <= radius)).all()
+        # assert support is contained in radius
 
         self.support = support
         """Boolean array for the support constraint"""
@@ -112,7 +115,7 @@ class MediumScatteringBase(Operator):
             if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_2d
                 # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
-                normalization_factor = grid.volume_elem * self.wave_number**2
+                normalization_factor = grid.volume_elem * self.wave_number**2 #*-np.exp(1j*np.pi/4)/np.sqrt(8*np.pi*self.wave_number)
 
             elif self.normalization == 'schroedinger':
                 def compute_kernel(*args):
@@ -123,7 +126,7 @@ class MediumScatteringBase(Operator):
             if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_3d
                 # TODO The sign appears to be wrong
-                normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)
+                normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)#*-1
 
             elif self.normalization == 'schroedinger':
                 raise NotImplementedError('Schrödinger-Equation not implemented in 3d')
@@ -144,7 +147,6 @@ class MediumScatteringBase(Operator):
                   for c in coarseshape)
             )
             self.coarsekernel = compute_kernel(2*wave_number*radius, self.coarsegrid.shape),
-            # TODO use coarsegrid.frequencies() here, get rid of fftshift
             self.dualcoords = np.ix_(
                 *(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)
             )
@@ -156,12 +158,12 @@ class MediumScatteringBase(Operator):
             gmres_args, restart=10, rtol=1e-14, maxiter=100, atol=0.0
         )
 
-        # Don't init codomain here. Subclasses are supposed to handle that.
-        super().__init__(domain=grid)
+
+        
 
         # all attributes defined above are constants
-        # TODO
         self._consts.update(self.attrs)
+        print(self._consts)
 
         # pre-allocate to save time in _eval
         self._totalfield = np.empty((np.sum(self.support), self.inc_matrix.shape[0]),
@@ -209,15 +211,15 @@ class MediumScatteringBase(Operator):
         contrast = contrast.copy()
         contrast[~self.support] = 0
         self._contrast = contrast
-        if self.coarse:
-            # TODO take real part? what about even case? for 1d, highest
-            # fourier coeff must be real then, which is not guaranteed by
-            # subsampling here.
-            aux = fftn(self._contrast)[self.dualcoords]
-            self._coarse_contrast = (
-                (self.coarsegrid.size / self.domain.size) *
-                ifftn(aux)
-            )
+        # if self.coarse:
+        #     # TODO take real part? what about even case? for 1d, highest
+        #     # fourier coeff must be real then, which is not guaranteed by
+        #     # subsampling here.
+        #     aux = fftn(self._contrast)[self.dualcoords]
+        #     self._coarse_contrast = (
+        #         (self.coarsegrid.size / self.domain.size) *
+        #         ifftn(aux)
+        #     )
         farfield = self.codomain.empty()
         rhs = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
