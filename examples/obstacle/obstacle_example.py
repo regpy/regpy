@@ -7,7 +7,7 @@ from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 from dirichlet_op import DirichletOp
 from regpy.vecsps.curve import GenTrigDiscr
 from  regpy.vecsps import UniformGridFcts
@@ -35,7 +35,7 @@ op = DirichletOp(
     N_FK = 32
 )
 
-setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
+setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
 #Exact data
 exact_solution=op.bd_ex_curve
