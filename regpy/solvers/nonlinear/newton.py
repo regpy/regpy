@@ -5,7 +5,7 @@ from regpy.solvers import Solver
 
 
 class NewtonCG(Solver):
-    """The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
+    r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
 
         T(x) = y,
 
@@ -21,9 +21,12 @@ class NewtonCG(Solver):
     def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
         super().__init__()
         self.setting = setting
+        """The problem setting."""
         self.data = data
+        """The measured data."""
         if init is None:
             init = self.setting.op.domain.zeros()
+        """The initial guess."""
         self.x = np.copy(init)
         if simplified_op:
             self.simplified_op = simplified_op
@@ -32,7 +35,9 @@ class NewtonCG(Solver):
         else:
             self.y, self.deriv = self.setting.op.linearize(self.x)
         self.rho = rho
+        """A fix number related to the termination (0<rho<1)."""
         self.cgmaxit = cgmaxit
+        """Maximum number of iterations for inner CG solver."""
         self._k = 0
     
     def _next(self):
