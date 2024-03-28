@@ -109,8 +109,7 @@ class MediumScatteringBase(Operator):
         if grid.ndim == 2:
             if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_2d
-                # TODO This appears to be missing a factor -exp(i pi/4) / sqrt(8 pi wave_number)
-                normalization_factor = grid.volume_elem * self.wave_number**2 #*-np.exp(1j*np.pi/4)/np.sqrt(8*np.pi*self.wave_number)
+                normalization_factor = grid.volume_elem * self.wave_number**2*-np.exp(1j*np.pi/4)/np.sqrt(8*np.pi*self.wave_number)
 
             elif self.normalization == 'schroedinger':
                 def compute_kernel(*args):
@@ -120,8 +119,7 @@ class MediumScatteringBase(Operator):
         elif grid.ndim == 3:
             if self.normalization == 'helmholtz':
                 compute_kernel = _compute_kernel_3d
-                # TODO The sign appears to be wrong
-                normalization_factor = grid.volume_elem * self.wave_number**2 / (4*np.pi)#*-1
+                normalization_factor = -grid.volume_elem * self.wave_number**2 / (4*np.pi)
 
             elif self.normalization == 'schroedinger':
                 raise NotImplementedError('Schrödinger-Equation not implemented in 3d')
@@ -253,7 +251,7 @@ def _compute_kernel_2d(R, shape):
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
 
-    K_hat = (2*R)**(-1) * R**2 / (piabsJ**2 - R**2) * (
+    K_hat =  R**2 / (piabsJ**2 - R**2) * (
         1 + 1j*np.pi/2 * (
             piabsJ * besselj(1, piabsJ) * hankel1(0, R) -
             R * besselj(0, piabsJ) * hankel1(1, R)
@@ -272,12 +270,12 @@ def _compute_kernel_3d(R, shape):
     piabsJ = np.pi * np.linalg.norm(J, axis=0)
     Jzero = tuple(s//2 for s in shape)
 
-    K_hat = (2*R)**(-3/2) * R**2 / (piabsJ**2 - R**2) * (
+    K_hat =  R**2 / (piabsJ**2 - R**2) * (
         1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sin(piabsJ) / piabsJ)
     )
-    K_hat[Jzero] = -(2*R)**(-1.5) * (1 - np.exp(1j*R) * (1 - 1j*R))
+    K_hat[Jzero] = -(1 - np.exp(1j*R) * (1 - 1j*R))
     K_hat[piabsJ == R] = -1j/4 * (2*R)**(-1/2) * (1 - np.exp(1j*R) * np.sin(R) / R)
-    return 2 * R * fftshift(K_hat)
+    return (2*R)**(3/2) * fftshift(K_hat)
 
 
 class MediumScatteringFixed(MediumScatteringBase):
