@@ -326,7 +326,7 @@ class Shifted(Functional):
 
 
 class Composed(Functional):
-    """Composition of an operator with a functional \(F\circ O\). This should not be called
+    r"""Composition of an operator with a functional \(F\circ O\). This should not be called
     directly but rather used by multiplying the `Functional` object with an `Operator`.
 
     Parameters
@@ -596,7 +596,7 @@ class AbstractShifted(AbstractFunctional):
         return Shifted(func=self.func(vecsp),offset=self.offset)
     
 class AbstractComposed(AbstractFunctional):
-    """Abstract analogue to `Composed`. Composition of an operator with a functional \(F\circ O\). This should not be called
+    r"""Abstract analogue to `Composed`. Composition of an operator with a functional \(F\circ O\). This should not be called
     directly but rather used by multiplying the `AbstractFunctional` object with an `Operator`.
 
     Parameters
@@ -881,7 +881,7 @@ class LppPower(IntegralFunctionalBase):
         raise NotImplementedError
 
 class L1MeasureSpace(IntegralFunctionalBase):
-    """\(L ^1\) Functional on `MeasureSpace`. Proximal implemented for default \(L^2\) as `h_domain`.
+    r"""\(L ^1\) Functional on `MeasureSpace`. Proximal implemented for default \(L^2\) as `h_domain`.
 
     Parameters
     ----------
@@ -902,7 +902,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
 
 class L1Generic(Functional):
-    """Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
+    r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
 
     Parameters
     ----------
