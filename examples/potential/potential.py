@@ -1,91 +1,141 @@
-import logging
-
-import matplotlib.pyplot as plt
 import numpy as np
 
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-from regpy.solvers.nonlinear.newton import NewtonCG
-
-import regpy.stoprules as rules
-from regpy.hilbert import L2, Sobolev
 from regpy.vecsps.curve import StarTrigDiscr
-from regpy.solvers import HilbertSpaceSetting
-from potential_op import Potential
-from  regpy.vecsps import UniformGridFcts
+from regpy.operators import Operator
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
-)
+class Potential(Operator):
+    r"""Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
+    circle outside of the object. The heat distributions satisfies
 
-N_meas=128
-codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_meas, endpoint=False), dtype=complex)
+    \[
+        \begin{cases}
+            \Delta u = 1_K & \text{ in } \Omega \\
+            u = 0          & \text{ on } \partial\Omega
+        \end{cases}
+    \]
 
-#Forward operator
-op = Potential(
-    domain=StarTrigDiscr(200),
-    codomain=codomain,
-    radius=1.5,
-    nmeas=N_meas,
-)
+    where \(\partial\Omega\) is the measurement circle and \(K\) is the heat source. The operator
+    maps the shape of the heat source to the Neumann data:
 
-setting = HilbertSpaceSetting(op=op, h_domain=Sobolev, h_codomain=L2)
+    \[
+        \partial K \mapsto \left.\frac{\partial u}{\partial\nu}\right|_{\partial\Omega}.
+    \]
 
-#Exact data and Poission data
-exact_solution = op.domain.sample(lambda t: np.sqrt(3*np.cos(t)**2+1)/2)
-exact_data = op(exact_solution)
-noise = op.codomain.randn()
-noise = 0.01*setting.h_codomain.norm(exact_data)/setting.h_codomain.norm(noise) * noise
-data = exact_data + noise
+    Attributes
+    ----------
+    domain : StarTrigDiscr
+        The domain that represents the boundary curves. Actually, any star shaped curve
+        vector space that can compute derivatives along the curve and derivatives wrt. coefficient
+        perturbations works.
+    radius : float
+        The radius of the measurement circle.
+    nmeas : int
+        The number of equispaced measurement points on the circle.
+    nforward : int, optional
+        The order of the Fourier expansion in the forward solver.
 
-#Initial guess
-init = op.domain.sample(lambda t: 1)
+    Raises
+    ------
+    ValueError
+        Will be raised on evaluating the operator if the object radius is negative or penetrates
+        the measurement circle.
 
-#Solver: NewtonCG or IrgnmCG
-solver = NewtonCG(
-    setting, data, init = init,
-        cgmaxit=50, rho=0.3
-)
+    References
+    ----------
+    - F. Hettlich & W. Rundell "Iterative methods for the reconstruction of an inverse potential
+      problem", Inverse Problems, 12 (1996) 251–266.
+    - T. Hohage "Logarithmic convergence rates of the iteratively regularized
+      Gauss–Newton method for an inverse potential and an inverse scattering problem", Inverse
+      Problems, 13 (1997) 1279–1299.
+    """
 
-"""
-solver = IrgnmCG(
-    setting, data,
-    regpar = 10,
-    regpar_step = 0.8,
-    init = init,
-    cg_pars = dict(
-        tol = 1e-4
-    )
-)
-"""
-stoprule = (
-    rules.CountIterations(100) +
-    rules.Discrepancy(
-        setting.h_codomain.norm, data,
-        noiselevel = setting.h_codomain.norm(noise),
-        tau=1.2
-    )
-)
+    def __init__(self, domain, codomain, radius, nmeas, nforward=128):
+        assert isinstance(domain, StarTrigDiscr)
+        
+        self.radius = radius
+        """The measurement radius."""
+        self.nforward = nforward
+        """The Fourier order of the forward solver."""
 
-#Plot function
-plt.ion()
-fig, axs = plt.subplots(1, 2)
-axs[0].set_title('Obstacle')
-axs[1].set_title('Heat flux')
+        super().__init__(
+            domain=domain,
+            codomain=codomain
+        )
 
-for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
-    if n % 1 == 0:
-        axs[0].clear()
-        axs[0].plot(*op.domain.eval_curve(exact_solution).curve[0])
-        axs[0].plot(*op.domain.eval_curve(reco).curve[0])
+        k = 1 + np.arange(self.nforward)
+        k_t = np.outer(k, np.linspace(0, 2 * np.pi, self.nforward, endpoint=False))
+        k_tfl = np.outer(k, self.codomain.coords[0])
+        self.cosin = np.cos(k_t)
+        self.sinus = np.sin(k_t)
+        self.cos_fl = np.cos(k_tfl)
+        self.sin_fl = np.sin(k_tfl)
+        
+    def _eval(self, x, differentiate=False):
+        nfwd = self.nforward
+        self._bd = self.domain.eval_curve(x, nvals=nfwd)
 
-        axs[1].clear()
-        axs[1].plot(exact_data, label='exact')
-        axs[1].plot(reco_data, label='reco')
-        axs[1].plot(data, label='measured')
-        axs[1].legend()
-        axs[1].set_ylim(ymin=0)
-        plt.pause(0.5)
+        q = self._bd.radius[0]
+        if q.max() >= self.radius:
+            raise ValueError('Object penetrates measurement circle')
+        if q.min() <= 0:
+            raise ValueError('Radial function negative')
 
-plt.ioff()
-plt.show()
+        qq = q**2
+        flux = 1 / (2 * self.radius * nfwd) * np.sum(qq) * self.codomain.ones()
+        fac = 2 / (nfwd * self.radius)
+        for j in range(0, (nfwd - 1) // 2):
+            fac /= self.radius
+            qq *= q
+            flux += (
+                (fac / (j + 3)) * self.cos_fl[j, :] * np.sum(qq * self.cosin[j, :]) +
+                (fac / (j + 3)) * self.sin_fl[j, :] * np.sum(qq * self.sinus[j, :])
+            )
+
+        if nfwd % 2 == 0:
+            fac /= self.radius
+            qq *= q
+            flux += fac * self.cos_fl[:, nfwd // 2] * np.sum(qq * self.cosin[nfwd // 2, :])
+        return flux
+
+    def _derivative(self, h):
+        nfwd = self.nforward
+        q = self._bd.radius[0]
+        qqh = q * self._bd.derivative(h)
+
+        der = 1 / (self.radius * nfwd) * np.sum(qqh) * self.codomain.ones()
+        fac = 2 / (nfwd * self.radius)
+        for j in range((nfwd - 1) // 2):
+            fac /= self.radius
+            qqh *= q
+            der += fac * (
+                self.cos_fl[j, :] * np.sum(qqh * self.cosin[j, :]) +
+                self.sin_fl[j, :] * np.sum(qqh * self.sinus[j, :])
+            )
+
+        if nfwd % 2 == 0:
+            fac /= self.radius
+            qqh *= q
+            der += fac * self.cos_fl[nfwd // 2, :] * np.sum(qqh * self.cosin[nfwd // 2, :])
+        return der
+
+    def _adjoint(self, g):
+        nfwd = self.nforward
+        q = self._bd.radius[0]
+        qq = q.copy()
+
+        adj = 1 / (self.radius * nfwd) * np.sum(g) * qq
+        fac = 2 / (nfwd * self.radius)
+        for j in range((nfwd - 1) // 2):
+            fac /= self.radius
+            qq *= q
+            adj += fac * (
+                np.sum(g * self.cos_fl[j, :]) * (self.cosin[j, :] * qq) +
+                np.sum(g * self.sin_fl[j, :]) * (self.sinus[j, :] * qq)
+            )
+
+        if nfwd % 2 == 0:
+            fac /= self.radius
+            qq *= q
+            adj += fac * np.sum(g * self.cos_fl[nfwd // 2, :]) * (self.cosin[nfwd // 2, :] * qq)
+
+        return self._bd.adjoint(adj)

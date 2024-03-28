@@ -1,40 +1,22 @@
-
 import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.newton import NewtonCG
+
+import regpy.stoprules as rules
+from regpy.hilbert import L2, Sobolev
+from regpy.vecsps.curve import StarTrigDiscr
+from regpy.solvers import HilbertSpaceSetting
+from potential import Potential
+from  regpy.vecsps import UniformGridFcts
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
-
-
-
-# Inverse potential problem 
-
-Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
-circle outside of the object. The heat distributions satisfies
-
-$$
-        \begin{cases}
-            \Delta u = 1_K & \text{ in } \Omega \\
-            u = 0          & \text{ on } \partial\Omega
-        \end{cases}
-        
-$$
-where $\partial\Omega$ is the measurement circle and $K$ is the heat source. The operator
-maps the shape of the heat source to the Neumann data:
-$$
-        \partial K \mapsto \frac{\partial u}{\partial\nu}|_{\partial\Omega}.
-$$
-
-    
-from  regpy.vecsps import UniformGridFcts
-from potential_op import Potential
-from regpy.vecsps.curve import StarTrigDiscr
-from regpy.solvers import HilbertSpaceSetting
-from regpy.hilbert import L2, Sobolev
 
 N_meas=128
 codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_meas, endpoint=False), dtype=complex)
@@ -59,34 +41,29 @@ data = exact_data + noise
 #Initial guess
 init = op.domain.sample(lambda t: 1)
 
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-from regpy.solvers.nonlinear.newton import NewtonCG
-import regpy.stoprules as rules
-
 #Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
     setting, data, init = init,
-        cgmaxit=50, rho=0.6
+        cgmaxit=50, rho=0.3
 )
 
 """
 solver = IrgnmCG(
     setting, data,
-    regpar=10,
-    regpar_step=0.8,
-    init=init,
-    cg_pars=dict(
-        tol=1e-4
+    regpar = 10,
+    regpar_step = 0.8,
+    init = init,
+    cg_pars = dict(
+        tol = 1e-4
     )
 )
 """
-
 stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(
         setting.h_codomain.norm, data,
         noiselevel = setting.h_codomain.norm(noise),
-        tau=1.1
+        tau=1.2
     )
 )
 
