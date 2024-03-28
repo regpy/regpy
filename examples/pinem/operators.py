@@ -238,7 +238,7 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
         If list_of_filters is not given it is replaced by `[np.arange(1,N+1),np.arange(-1,-N-1,-1)]`. Defaults to 1.
     list_of_filters : list of numpy.ndarray, optional 
         List of arrays representing modes which are incoherently superposed, 
-        i.e. the squares or the propagated fields are added. Defaults to None.
+        i.e. the squares of the propagated fields are added. Defaults to None.
     parallel : bool, optional 
         If set True different components of the operator are computed in parallel. Defaults to False.
 

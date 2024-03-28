@@ -18,20 +18,12 @@ from plotting import plot_exact_solution_data,plot_reco, plot_stats, init_plot_s
 from setup import setup_simulated_g
 from extensions import harmonic_extension
 import matplotlib.pyplot as plt
+import os
 
 ################################ set parameters 
 
-# intermediate results will be written to file names starting with output_filename
-output_filename = r'./test'
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)-20s :: %(message)s",
-    handlers=[
-        logging.FileHandler(output_filename+'.log',mode='w'),
-        logging.StreamHandler()
-    ]
-)
-
+# intermediate results will be written to file names starting with output_prefix
+output_prefix='example'
 
 # abs(g) is assumed to be known outside of the nanotip.
 # this is imposed as contraint. 
@@ -40,6 +32,8 @@ logging.basicConfig(
 total_nr_counts = 2e9
 # turn off/on all plots
 do_plottings = True
+# turn off/on saving of results
+save_results=False
 # use log(|g|) instead of |g| for darkness in phase plots of g and g_rec. Makes phase visible everywhere
 plot_log_g = True
 # number of modes used for evaluations of forward operator and generation of simulated data
@@ -65,8 +59,21 @@ max_Newton_its = 20
 op, grid, exact_solution, g_map, mask_a, mask_p, opdata \
     = setup_simulated_g(N=N_data,parallel=True)
 
+
+current_directory=os.path.dirname(os.path.realpath(__file__))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)-20s :: %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(current_directory,f"{output_prefix}.log"),mode='w'),
+        logging.StreamHandler()
+    ]
+)
+output_path=None
+if save_results:
+    output_path = os.path.join(current_directory,'data','results',output_prefix)
 ############################## routines for reconstruction error evaluation  
-def reconstruction_error(_exact, _reconstruction):
+def reconstruction_errors(_exact, _reconstruction):
     def fnorm(arr):
         return norm(arr[:])
     log_ex_amp, ex_phase = op.domain.split(_exact)
@@ -76,6 +83,45 @@ def reconstruction_error(_exact, _reconstruction):
     reco_error2 = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(ex_phase.shape))
     reco_error3 = fnorm(reco_amp*np.exp(1j*reco_phase) -ex_amp*np.exp(1j*ex_phase))/fnorm(ex_amp)
     return reco_error1, reco_error2, reco_error3
+
+def calc_reco_amp_phase(reco,extension,op_domain,mask_a):
+    ereco = extension(reco)
+    # fix unidentified constant global phase 
+    _, ex_phase = op_domain.split(exact_solution)
+    reco_amp, reco_phase = op_domain.split(ereco)
+    reco_amp = np.exp(reco_amp)
+    phase_correction = np.median(ex_phase[~mask_a])-np.median(reco_phase[~mask_a]) 
+    reco_phase += phase_correction
+    return reco_amp,reco_phase
+
+def calc_reco_errors(reco_amp,reco_phase,exact_solution,op_domain):
+    def fnorm(arr):
+        return norm(arr[:])
+    log_ex_amp, ex_phase = op_domain.split(exact_solution)
+    ex_amp = np.exp(log_ex_amp)
+    reco_error_amp = fnorm(reco_amp-ex_amp)/fnorm(ex_amp)
+    reco_error_phase = fnorm(np.exp(1j*reco_phase)-np.exp(1j*ex_phase))/np.sqrt(np.prod(ex_phase.shape))
+    reco_error_complex = fnorm(reco_amp*np.exp(1j*reco_phase) -ex_amp*np.exp(1j*ex_phase))/fnorm(ex_amp)
+    return reco_error_amp, reco_error_phase, reco_error_complex
+
+def calc_residual(reco_data,data,setting):
+    return setting.h_codomain.norm(reco_data-data)
+
+def update_stats(reco_errors,residual,newton_step,stats =None,N=None):
+    stats['Newton step'].append(newton_step)
+    stats['ampl_err'].append(reco_errors[0])
+    stats['phase_err'].append(reco_errors[1])
+    stats['complex_err'].append(reco_errors[2])
+    stats['residuals'].append(residual)
+    stats['N'].append(N)
+    stats['nr_inner_steps'].append(solver.nr_inner_its())
+    residual_reduction=1
+    if newton_step>0:
+        residual_reduction=stats['residuals'][-1]/stats['residuals'][-2]
+    stats['residual_reduction'].append(residual_reduction)
+    logging.info('it.{}, N={}, modulus: {:1.4f}, phase: {:1.4f}, norm: {:1.4f}, resid.reduct: {:1.4f}'.format(
+        newton_step, N,reco_errors[0], reco_errors[1], reco_errors[2],residual_reduction))
+
 
 def plot_write_save(reco,reco_data,fig1,fig2,axs3, newton_step,
     do_plottings=do_plottings, stats =None,output_filename = None,N=None
@@ -91,7 +137,7 @@ def plot_write_save(reco,reco_data,fig1,fig2,axs3, newton_step,
     reco_phase += phase_correction
     ereco = op.domain.join(reco_amp,reco_phase)
         
-    reco_error1, reco_error2, reco_error3 = reconstruction_error(exact_solution, ereco)
+    reco_error1, reco_error2, reco_error3 = reconstruction_errors(exact_solution, ereco)
     stats['Newton step'].append(newton_step)
     stats['ampl_err'].append(reco_error1)
     stats['phase_err'].append(reco_error2)
@@ -125,7 +171,7 @@ def plot_write_save(reco,reco_data,fig1,fig2,axs3, newton_step,
 
 ################################################   initialize forward operator
 print(f"isfinite(total_nr_counts):{isfinite(total_nr_counts)}")
-print(f"output_filename:{output_filename}")
+print(f"output_filename:{output_prefix}")
 print(f"do_plottings:{do_plottings}")
 
 
@@ -168,7 +214,8 @@ else:
     data = exact_data
     scal =1
 data_comp = op.codomain.split(data)
-savemat(output_filename+'_data.mat',{'data':data})
+if output_path:
+    savemat(output_path+'_data.mat',{'data':data})
 
 
 ################################## define Hilbert space setting
@@ -229,15 +276,25 @@ fig1,fig2 = plot_exact_solution_data(g_map,data_comp,plot_log_g = plot_log_g)
 fig3, axs3 = init_plot_stats()
 
 stats = {'ampl_err': [], 'phase_err': [], 'complex_err': [], 'residuals': [], 'nr_inner_steps': [], \
-    'N': [], 'Newton step' : []}
+    'N': [], 'Newton step' : [], 'residual_reduction':[]}
 newton_step=0
 plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
-    do_plottings=do_plottings,stats=stats,output_filename= output_filename,N=N_current)
+    do_plottings=do_plottings,stats=stats,output_filename= output_path,N=N_current)
     
 for newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),1):
-    residual_reduction = plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
-        do_plottings=do_plottings,stats=stats,output_filename= output_filename,N=N_current)
-    if residual_reduction > minimal_residual_reduction:
+    reco_amp,reco_phase=calc_reco_amp_phase(reco,extension,op.domain,mask_a)
+    reco_errors=calc_reco_errors(reco_amp,reco_phase,exact_solution,op.domain)
+    residual=calc_residual(reco_data,data,setting)
+    update_stats(reco_errors,residual,newton_step,stats,N_current)
+    reco_data_comp = flat_codomain.split(reco_data)
+    ex_data_comp = flat_codomain.split(data)
+    if(do_plottings):
+        plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,newton_step,mask_a = mask_a)
+        plot_stats(axs3,stats,plot_inner_its = hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its))
+
+    # residual_reduction = plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
+        # do_plottings=do_plottings,stats=stats,output_filename= output_path,N=N_current)
+    if stats['residual_reduction'][-1] > minimal_residual_reduction:
         break
 
 for N_current in N_deriv[1:]:
@@ -261,12 +318,21 @@ for N_current in N_deriv[1:]:
 
     stoprule = (discrepancy_rule + rules.CountIterations(max_iterations=max_Newton_its,while_type=True))
     plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
-        do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
+        do_plottings=True,stats=stats,output_filename= output_path,N=N_current)
 
     for newton_step, [reco, reco_data] in enumerate(solver.while_(stoprule),newton_step+1):
-        residual_reduction = plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
-            do_plottings=True,stats=stats,output_filename= output_filename,N=N_current)
-        if residual_reduction > minimal_residual_reduction and stats['residuals'][-1] < residual_last_N*NewtonCG_rho:
+        #residual_reduction = plot_write_save(solver.x,solver.y,fig1,fig2,axs3,newton_step,
+           # do_plottings=True,stats=stats,output_filename= output_path,N=N_current)
+        reco_amp,reco_phase=calc_reco_amp_phase(reco,extension,op.domain,mask_a)
+        reco_errors=calc_reco_errors(reco_amp,reco_phase,exact_solution,op.domain)
+        residual=calc_residual(reco_data,data,setting)
+        update_stats(reco_errors,residual,newton_step,stats,N_current)
+        reco_data_comp = flat_codomain.split(reco_data)
+        ex_data_comp = flat_codomain.split(data)
+        if(do_plottings):
+            plot_reco(fig1,fig2,reco_amp,reco_phase,reco_data_comp,g_map,ex_data_comp,newton_step,mask_a = mask_a)
+            plot_stats(axs3,stats,plot_inner_its = hasattr(solver, "nr_inner_its") and callable(solver.nr_inner_its))
+        if stats['residual_reduction'][-1] > minimal_residual_reduction and stats['residuals'][-1] < residual_last_N*NewtonCG_rho:
             break
 if do_plottings:
     plt.show(block=True)
