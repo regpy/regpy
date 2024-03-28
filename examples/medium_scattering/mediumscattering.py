@@ -163,7 +163,6 @@ class MediumScatteringBase(Operator):
 
         # all attributes defined above are constants
         self._consts.update(self.attrs)
-        print(self._consts)
 
         # pre-allocate to save time in _eval
         self._totalfield = np.empty((np.sum(self.support), self.inc_matrix.shape[0]),
@@ -211,15 +210,15 @@ class MediumScatteringBase(Operator):
         contrast = contrast.copy()
         contrast[~self.support] = 0
         self._contrast = contrast
-        # if self.coarse:
-        #     # TODO take real part? what about even case? for 1d, highest
-        #     # fourier coeff must be real then, which is not guaranteed by
-        #     # subsampling here.
-        #     aux = fftn(self._contrast)[self.dualcoords]
-        #     self._coarse_contrast = (
-        #         (self.coarsegrid.size / self.domain.size) *
-        #         ifftn(aux)
-        #     )
+        if self.coarse:
+            # TODO take real part? what about even case? for 1d, highest
+            # fourier coeff must be real then, which is not guaranteed by
+            # subsampling here.
+            aux = fftn(self._contrast)[self.dualcoords]
+            self._coarse_contrast = (
+                (self.coarsegrid.size / self.domain.size) *
+                ifftn(aux)
+            )
         farfield = self.codomain.empty()
         rhs = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
