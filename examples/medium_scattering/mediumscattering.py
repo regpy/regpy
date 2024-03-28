@@ -42,11 +42,6 @@ class MediumScatteringBase(Operator):
         `radius` given by the radius argument will be assumed. A callable will
         be called with arguments `grid` and `radius` and should return a
         boolean array.
-    coarseshape : tuple or None
-        Tuple determining the size of the coarse grid for the two-grid solver.
-        If `None`, the single-grid solver will be used.
-    coarseiterations : int
-        Number of coarse grid iterations in the two-grid solver.
     gmres_args : dict
         Arguments passed to [`scipy.sparse.linalg.gmres`][1] for solving the
         Lippmann Schwinger equation. Default values are `restart=10`,
@@ -67,7 +62,7 @@ class MediumScatteringBase(Operator):
     """
 
     def __init__(self, gridshape, radius, wave_number, inc_directions,
-                 support=None, coarseshape=None, coarseiterations=3,
+                 support=None,
                  gmres_args=None,
                  normalization='helmholtz'):
         super().__init__()
@@ -88,7 +83,7 @@ class MediumScatteringBase(Operator):
             support = np.asarray(support, dtype=bool)
         assert support.shape == grid.shape
         assert (support <= (np.linalg.norm(grid.coords, axis=0) <= radius)).all()
-        # assert support is contained in radius
+        """assert support is contained in radius"""
 
         self.support = support
         """Boolean array for the support constraint"""
@@ -137,22 +132,6 @@ class MediumScatteringBase(Operator):
         self.kernel = compute_kernel(2*wave_number*radius, grid.shape)
         """The Lippmann-Schwinger kernel in Fourier space."""
 
-        if coarseshape:
-            if not all(c < s for c, s in zip(coarseshape, gridshape)):
-                raise ValueError('coarse grid is not coarser than fine grid')
-            assert all(isinstance(c, int) for c in coarseshape)
-            self.coarse = True
-            self.coarsegrid = vecsps.UniformGridFcts(
-                *(np.linspace(-2*radius, 2*radius, c, endpoint=False)
-                  for c in coarseshape)
-            )
-            self.coarsekernel = compute_kernel(2*wave_number*radius, self.coarsegrid.shape),
-            self.dualcoords = np.ix_(
-                *(ifftshift(np.arange(-(c//2), (c+1)//2)) for c in coarseshape)
-            )
-            self.coarseiterations = coarseiterations
-        else:
-            self.coarse = False
 
         self.gmres_args = util.set_defaults(
             gmres_args, restart=10, rtol=1e-14, maxiter=100, atol=0.0
@@ -174,14 +153,6 @@ class MediumScatteringBase(Operator):
             rmatvec=self._lippmann_schwinger_adjoint,
             dtype=complex
         )
-        if self.coarse:
-            # noinspection PyArgumentList
-            self._lippmann_schwinger_coarse = spla.LinearOperator(
-                (np.prod(self.coarsegrid.shape),) * 2,
-                matvec=self._lippmann_schwinger_coarse_op,
-                rmatvec=self._lippmann_schwinger_coarse_adjoint,
-                dtype=complex
-            )
 
     def _compute_farfield(self, farfield, inc_idx, v):
         """Abstract method, needs to be implemented by child classes.
@@ -210,15 +181,6 @@ class MediumScatteringBase(Operator):
         contrast = contrast.copy()
         contrast[~self.support] = 0
         self._contrast = contrast
-        if self.coarse:
-            # TODO take real part? what about even case? for 1d, highest
-            # fourier coeff must be real then, which is not guaranteed by
-            # subsampling here.
-            aux = fftn(self._contrast)[self.dualcoords]
-            self._coarse_contrast = (
-                (self.coarsegrid.size / self.domain.size) *
-                ifftn(aux)
-            )
         farfield = self.codomain.empty()
         rhs = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
@@ -226,10 +188,7 @@ class MediumScatteringBase(Operator):
             # the unknown v = a u_total. The Fourier coefficients of the
             # periodic convolution kernel k are precomputed.
             rhs[self.support] = self.inc_matrix[j, :] * contrast[self.support]
-            if self.coarse:
-                v = self._solve_two_grid(rhs)
-            else:
-                v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
+            v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
             self._compute_farfield(farfield, j, v)
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = u_inc - conv(k, v)
@@ -246,10 +205,7 @@ class MediumScatteringBase(Operator):
         rhs = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
             rhs[self.support] = self._totalfield[:, j] * contrast
-            if self.coarse:
-                v = self._solve_two_grid(rhs)
-            else:
-                v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
+            v = self._gmres(self._lippmann_schwinger, rhs).reshape(self.domain.shape)
             self._compute_farfield(farfield, j, v)
         return farfield
 
@@ -258,51 +214,13 @@ class MediumScatteringBase(Operator):
         contrast = self.domain.zeros()
         for j in range(self.inc_matrix.shape[0]):
             self._compute_farfield_adjoint(farfield, j, v)
-            if self.coarse:
-                rhs = self._solve_two_grid_adjoint(v)
-            else:
-                rhs = self._gmres(self._lippmann_schwinger.adjoint(), v).reshape(self.domain.shape)
+            rhs = self._gmres(self._lippmann_schwinger.adjoint(), v).reshape(self.domain.shape)
             aux = self._totalfield[:, j].conj() * rhs[self.support]
             contrast[self.support] += aux
         return contrast
 
-    def _solve_two_grid(self, rhs):
-        rhs = fftn(rhs)
-        v = self.domain.zeros()
-        rhs_coarse = rhs[self.dualcoords]
-        for remaining_iters in range(self.coarseiterations, 0, -1):
-            v_coarse = (
-                self
-                ._gmres(self._lippmann_schwinger_coarse, rhs_coarse)
-                .reshape(self.coarsegrid.shape)
-            )
-            v[self.dualcoords] = v_coarse
-            if remaining_iters > 0:
-                rhs_coarse = fftn(self._coarse_contrast * ifftn(
-                    self.coarsekernel * v_coarse
-                ))
-                v = rhs - fftn(self._contrast * ifftn(self.kernel * v))
-                rhs_coarse += v[self.dualcoords]
-        return ifftn(v)
 
-    def _solve_two_grid_adjoint(self, v):
-        v = fftn(v)
-        rhs = self.domain.zeros()
-        v_coarse = v[self.dualcoords]
-        for remaining_iters in range(self.coarseiterations, 0, -1):
-            rhs_coarse = (
-                self
-                ._gmres(self._lippmann_schwinger_coarse.adjoint(), v_coarse)
-                .reshape(self.coarsegrid.shape)
-            )
-            rhs[self.dualcoords] = rhs_coarse
-            if remaining_iters > 0:
-                v_coarse = self.coarsekernel * fftn(
-                    self._coarse_contrast * ifftn(rhs_coarse)
-                )
-                rhs = v - self.kernel * fftn(self._contrast * ifftn(rhs))
-                v_coarse += rhs[self.dualcoords]
-        return ifftn(rhs)
+    
 
     def _gmres(self, op, rhs):
         result, info = spla.gmres(op, rhs.ravel(), **self.gmres_args)
@@ -326,19 +244,7 @@ class MediumScatteringBase(Operator):
         v = v + ifftn(np.conj(self.kernel) * fftn(np.conj(self._contrast) * v))
         return v.ravel()
 
-    def _lippmann_schwinger_coarse_op(self, v):
-        """Lippmann-Schwinger operator in frequency domain on coarse grid
-        """
-        v = v.reshape(self.coarsegrid.shape)
-        v = v + fftn(self._coarse_contrast * ifftn(self.coarsekernel * v))
-        return v.ravel()
-
-    def _lippmann_schwinger_coarse_adjoint(self, v):
-        """Lippmann-Schwinger operator in frequency domain on coarse grid
-        """
-        v = v.reshape(self.coarsegrid.shape)
-        v = v + np.conj(self.coarsekernel) * fftn(np.conj(self._coarse_contrast) * ifftn(v))
-        return v.ravel()
+    
 
 
 # noinspection PyPep8Naming
