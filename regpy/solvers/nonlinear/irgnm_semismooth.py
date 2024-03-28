@@ -7,7 +7,7 @@ from regpy.operators import CoordinateMask
 from regpy.stoprules import CountIterations
 
 class IrgnmSemiSmooth(Solver):
-    """
+    r"""
     Semismooth Newton Method. In each iteration, solves
     $$
      x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2

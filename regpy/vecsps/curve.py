@@ -70,7 +70,7 @@ class StarCurveDiscr(UniformGridFcts):
         return starcurve
 
 class StarCurve:
-    """Radial curve parameterized by 
+    r"""Radial curve parameterized by 
     \[
       z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
     \]
@@ -137,7 +137,7 @@ class GenTrigDiscr(UniformGridFcts):
         return gentrig
     
 class GenTrig:
-    """The class GenTrig describes boundaries of domains in R^2 which are
+    r"""The class GenTrig describes boundaries of domains in R^2 which are
      parameterized by
      \[
           z(t) = [z_1(t), z_2(t)]      0<=t<=2pi

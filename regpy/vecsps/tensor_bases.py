@@ -6,7 +6,7 @@ from scipy.interpolate import BSpline
 class TensorBasis(Operator):
     r"""
     Consider an evaluation domain given as Tensor product \(D_1\otimes \dots\otimes D_n\) with \(D_1,\dots,D_n\) being \(n\) 
-    `regpy.vecsps.VectorSpaces` and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
+    `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
     operator mapping coefficients to some function `f: eval_domain -> dtype`:
     \[
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).

@@ -4,7 +4,7 @@ import logging
 import numpy as np
 
 class Landweber(Solver):
-    """The Landweber method. Solves the potentially non-linear, ill-posed equation
+    r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
     $$
         T(x) = g^\delta,
     $$

@@ -106,7 +106,7 @@ class Functional:
         return grad
 
     def hessian(self, x):
-        """The hessian of the functional at `x` as an `regpy.operator.Operator` maping form the 
+        """The hessian of the functional at `x` as an `regpy.operators.Operator` maping form the 
         functionals `domain` to it self. Requires the implementation of `_hessian` or by default
         computes the `regpy.operators.ApproximateHessian`.
 
@@ -885,7 +885,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VestorSpace
+    domain : regpy.vecsps.VectorSpace
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):
@@ -906,7 +906,7 @@ class L1Generic(Functional):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VestorSpace
+    domain : regpy.vecsps.VectorSpace
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):

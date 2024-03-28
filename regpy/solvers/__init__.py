@@ -144,16 +144,16 @@ class RegularizationSetting:
 
     It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`s (or actually any callable) instead of a `regpy.functional.Functional`, calling 
+    or `AbstractFunctional`s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
 
     Parameters
     ----------
     op : regpy.operators.Operator
         The forward operator.
-    penalty : regpy.functional.Functional or regpy.hilbert.HilbertSpace or callable
+    penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The penalty functional.
-    data_fid : regpy.functional.Functional or regpy.hilbert.HilbertSpace or callable
+    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
