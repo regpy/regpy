@@ -22,7 +22,7 @@ def do_nonlinear_test(op):
 
 def do_adjoint_derivative_test(op):
     for _ in range(10):
-        tests.test_adjoint_derivative(op)
+        operator_tests.test_adjoint_derivative(op)
 
 
 def test_linear_volterra():
