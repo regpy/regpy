@@ -34,6 +34,7 @@ class OperatorAsWorker(mp.Process):
         'eval_diff': evaluates the operator with differentiate=True
         'deriv': returns linearize
         'eval_nodiff': returns adjoint
+        'break': ends process
 
         Raises:
             TypeError: Error is raised if unknown command is received
@@ -60,6 +61,7 @@ class OperatorAsWorker(mp.Process):
                 break
             else:
                 raise TypeError(self.name+': unknown command ',command[0])
+        self.terminate()
 
 class ParallelVectorOfOperators(Operator):
     """Vector of operators in which all components are evaluated in parallel. 
@@ -112,7 +114,10 @@ class ParallelVectorOfOperators(Operator):
             G.start()
             it += 1
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
-
+    
+    def __del__(self):
+        for conn_m in self.conn:
+            conn_m.send(['break']) 
 
     def _eval(self, x, differentiate=False):
         if differentiate:
