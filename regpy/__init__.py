@@ -71,7 +71,7 @@ from the project's root folder. If you want to modify `regpy` itself, you can us
 pip install --editable .
 ~~~
 
-to have Python load `regpy` from your current directory rathan than copying it to its library
+to have Python load `regpy` from your current directory rather than copying it to its library
 folder.
 
 In both cases, you can add `--no-deps` to prevent installing dependencies automatically,
