@@ -82,6 +82,26 @@ if save_results:
 ##############################ROUTINES FOR ERROR CALCULATION AND UPDATES OF STATS  
 
 def calc_reco_amp_phase(reco,extension,op_domain,mask_a):
+    r"""Splits reconstructed data into amplitude and phase
+
+    Parameters
+    ----------
+        reco : numpy.ndarray
+            the reconstruction
+        extension : regpy.operators.Operator
+            extension operator
+        op_domain : regpy.vecsps.VectorSpace
+            domain of op
+        mask_a : numpy.ndarray
+            mask on domain of operator
+
+    Returns 
+    ----------
+        reco_amp : numpy.ndarray
+            amplitude of reco
+        reco_phase : numpy.ndarray
+            phase of reco
+    """
     ereco = extension(reco)
     # fix unidentified constant global phase 
     _, ex_phase = op_domain.split(exact_solution)
@@ -92,6 +112,28 @@ def calc_reco_amp_phase(reco,extension,op_domain,mask_a):
     return reco_amp,reco_phase
 
 def calc_reco_errors(reco_amp,reco_phase,exact_solution,op_domain):
+    r"""Calculates errors between reconstruction and exact solution
+
+    Parameters
+    ----------
+        reco_amp : numpy.ndarray
+            amplitude of reco
+        reco_phase : numpy.ndarray
+            phase of reco
+        exact_solution : numpy.ndarray
+            exact solution
+        op_domain : regpy.vecsps.VectorSpace
+            domain of op
+
+    Returns 
+    ----------
+        reco_error_amp : numpy.ndarray
+            error in amplitude
+        reco_error_phase : numpy.ndarray
+            error in phase
+        reco_error_comp : numpy.ndarray
+            total error
+    """
     def fnorm(arr):
         return norm(arr[:])
     log_ex_amp, ex_phase = op_domain.split(exact_solution)
@@ -102,9 +144,11 @@ def calc_reco_errors(reco_amp,reco_phase,exact_solution,op_domain):
     return reco_error_amp, reco_error_phase, reco_error_complex
 
 def calc_residual(reco_data,data,setting):
+    r"""Calculates the residual"""
     return setting.h_codomain.norm(reco_data-data)
 
 def update_stats(reco_errors,residual,newton_step,stats =None,N=None):
+    r"""Updates the statistics"""
     stats['Newton step'].append(newton_step)
     stats['ampl_err'].append(reco_errors[0])
     stats['phase_err'].append(reco_errors[1])
