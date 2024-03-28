@@ -122,9 +122,6 @@ class IrgnmSemiSmooth(Solver):
 
         project = CoordinateMask(self.setting.h_domain.vecsp, self.inactive)
         self.log.info('Running inner Tikhonov solver.')
-        stoprule = CountIterations(2*15)
-        stoprule.log = self.log.getChild('TikhonovCG')
-        stoprule.log.setLevel(logging.WARNING)
         f, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
             data=self.rhs, 
@@ -132,7 +129,7 @@ class IrgnmSemiSmooth(Solver):
             xref=self.init,
             logging_level="WARNING",
             **self.cg_pars
-        ).run(stoprule=stoprule)
+        ).run()
         self.x[self.inactive] = f[self.inactive]
         z = self._A(self.x)
         
