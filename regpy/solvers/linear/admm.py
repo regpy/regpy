@@ -8,10 +8,8 @@ from regpy.solvers import RegularizationSetting
 
 from regpy.solvers.linear.tikhonov import TikhonovCG
 
-"""The ADMM algorithm"""
-
 class ADMM(Solver):
-    """The ADMM method for minimizing $S(Tf) + \alpha * R(f)$. 
+    r"""The ADMM method for minimizing $S(Tf) + \alpha * R(f)$. 
     ADMM solves the problem $\min_{u,v}[F(u)+G(v)]$ under the constraint that $Au+Bv=b$. Choosing 
     $$
         A:=\begin{pmatrix} T \\ I \end{pmatrix} ,\;
@@ -65,7 +63,7 @@ class ADMM(Solver):
         self.gamma = gamma
         """ Augmentation parameter to Lagrangian. """
         self.regpar = regpar
-        """ Regularizaiton parameter for penalty prox"""
+        """ Regularization parameter for inner Tikhonov."""
         self.proximal_pars_data_fidelity = proximal_pars_data_fidelity
         """ Prox parameters of data fidelity."""
         self.proximal_pars_penalty = proximal_pars_penalty

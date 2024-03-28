@@ -6,16 +6,31 @@ from regpy.solvers import Solver
 
 class NewtonCG(Solver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
-
+    $$
         T(x) = y,
-
-    where T is a Frechet-differentiable operator. The Newton equations are solved by the
+    $$
+    where $T$ is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
 
     If simplified_op is specified, it will be used to generate an approximation of the derivative 
     of the forward operator setting.op, which may be cheaper to evaluate. E.g., it may be the 
     derivative at the initial guess, which would yield a frozen Newton method. 
+
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        The regularization setting includes the operator and penalty and data fidelity functionals.
+    data : array-like
+        The rhs y of the equation to be solved. Must be in setting.op.codomain.
+    init : array-like, optional
+        Initial guess to exact solution. (Default: setting.op.domain.zeros())
+    cgmaxit : number, optional
+        Maximal number of inner CG iterations. (Default: 50)
+    rho : number, optional
+        A fix number related to the termination (0<rho<1). (Default: 0.8)
+    simplified_op : Operator, optional
+        Simplified operator to be used for the derivative. (Default: None)
     """
 
     def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
@@ -30,6 +45,8 @@ class NewtonCG(Solver):
         self.x = np.copy(init)
         if simplified_op:
             self.simplified_op = simplified_op
+            """Simplified operator for derivative.
+            """
             _, self.deriv = self.simplified_op.linearize(self.x)
             self.y = self.setting.op(self.x)
         else:
@@ -79,6 +96,22 @@ class NewtonCG(Solver):
         return self._k
 
 class NewtonCGFrozen(Solver):
+    r"""The frozen Newton-CG method. Like Newton-CG but freezes the derivative for some time to avoid 
+    recomputing it. 
+
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        The regularization setting includes the operator and penalty and data fidelity functionals.
+    data : array-like
+        The rhs y of the equation to be solved. Must be in setting.op.codomain.
+    init : array-like, optional
+        Initial guess to exact solution. (Default: setting.op.domain.zeros())
+    cgmaxit : number, optional
+        Maximal number of inner CG iterations. (Default: 50)
+    rho : number, optional
+        A fix number related to the termination (0<rho<1). (Default: 0.8)
+    """
     def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
         super().__init__()
         self.setting = setting
@@ -135,14 +168,42 @@ class NewtonCGFrozen(Solver):
 
 
 class NewtonSemiSmooth(Solver):
+    r"""The frozen Newton-CG method. Like Newton-CG adds constraints $\psi_+$ and $\psi_-$ and efficiently
+    only updates the parts needed to be updated. 
+
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        The regularization setting includes the operator and penalty and data fidelity functionals.
+    rhs : array-like
+        The rhs y of the equation to be solved. Must be in setting.op.codomain.
+    init : array-like, optional
+        Initial guess to exact solution. (Default: setting.op.domain.zeros())
+    alpha : number, optional
+        Initial regularization parameter $\alpha$.
+    psi_minus : np.number
+        lower constraint of the minimization. Must be larger then `psi_plus`
+    psi_plus : np.number
+        upper constraint of the minimization. Must be smaller then `psi_minus`
+    """
     def __init__(self, setting, rhs, init, alpha, psi_minus, psi_plus):
         super().__init__()
         self.setting = setting
+        """The regularization setting includes the operator and penalty and data fidelity functionals.
+        """
         self.rhs = rhs
+        """The rhs y of the equation to be solved.
+        """
         self.x = init
         self.alpha = alpha
+        """Initial regularization parameter $\alpha$.
+        """
         self.psi_minus = psi_minus
+        """lower constraint of the minimization.
+        """
         self.psi_plus = psi_plus
+        """upper constraint of the minimization.
+        """
 
         self.size = init.shape[0]
 

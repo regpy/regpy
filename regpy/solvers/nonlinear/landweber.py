@@ -5,14 +5,14 @@ import numpy as np
 
 class Landweber(Solver):
     """The Landweber method. Solves the potentially non-linear, ill-posed equation
-
-        T(x) = rhs,
-
-    where `T` is a Frechet-differentiable operator, by gradient descent for the residual
-
-        ||T(x) - rhs||**2,
-
-    where `||.||` is the Hilbert space norm in the codomain, and gradients are computed with
+    $$
+        T(x) = g^\delta,
+    $$
+    where $T$ is a Frechet-differentiable operator, by gradient descent for the residual
+    $$
+        \Vert T(x) - g^\delta\Vert^2,
+    $$
+    where $\Vert\cdot\Vert$ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 
     The number of iterations is effectively the regularization parameter and needs to be picked
