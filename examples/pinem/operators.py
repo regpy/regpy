@@ -81,9 +81,9 @@ class NemitzkyOpForG(Operator):
         """An integer representing the order of Bessel functions."""
         super().__init__(DirectSumSpace(rdomain,rdomain), domain)
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False,adjoint_derivative=False):
         abs_g,arg_g = self.domain.split(x)
-        if differentiate:
+        if differentiate or adjoint_derivative:
             self._factor_abs_g = (jv(self.N-1,2*abs_g)-jv(self.N+1,2*abs_g))*np.exp(self.N*1j*arg_g)
             self._factor_arg_g = self.N*1j*jv(self.N,2*abs_g)*np.exp(self.N*1j*arg_g)
         return jv(self.N,2*abs_g)*np.exp(self.N*1j*arg_g)
@@ -122,7 +122,7 @@ class PtwDividedBessel(Operator):
         """An integer representing the order of Bessel functions."""
         super().__init__(domain, domain)
 
-    def _eval(self, r, differentiate=False):
+    def _eval(self, r, differentiate=False, adjoint_derivative=False):
         N= self.N
         absN = np.absolute(N)
         jv2r = jv(N,2*r)
@@ -131,7 +131,7 @@ class PtwDividedBessel(Operator):
         if N<0 and (N%2)==1:
              jv2r_at_null = - jv2r_at_null
 
-        if differentiate:
+        if differentiate or adjoint_derivative:
             mask = np.abs(r)>10**(-16./(absN+1))
             rmask = r[mask]
             self._factor = np.zeros_like(r)
@@ -182,8 +182,8 @@ class ComplexNemitzkyOpForG(Operator):
         self.jv_div = PtwDividedBessel(N,domain.real_space())
         super().__init__(domain, domain)
 
-    def _eval(self, g, differentiate=False): 
-        if differentiate:
+    def _eval(self, g, differentiate=False, adjoint_derivative=False): 
+        if differentiate or adjoint_derivative:
             self._abs_g = np.absolute(g)
             self._dir_g = np.nan_to_num(g/self._abs_g)
             factor_pow, self._pow_lin = self.pow.linearize(g)

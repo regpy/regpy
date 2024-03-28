@@ -67,18 +67,24 @@ class Operator:
     Implementations can assume the arguments to be part of the specified vector spaces, and return
     values will be checked for consistency.
 
+    In some cases a solver only requires the application of the composition of the adjoint with the 
+    derivative. When this should be used i.e. in cases when setting up elements in the codomain is 
+    not feasible one can implement the `_adjoint_derivative` method and when linearizing can set the
+    flag `adjoint_derivative = True`.
+
     The mechanism for derivatives and their adjoints is this: whenever a derivative is to be
-    computed, `_eval` will be called first with `differentiate=True`, and should produce the
-    operator's value and perform any precomputation needed for evaluating the derivative. Any
-    subsequent invocation of `_derivative` and `_adjoint` should evaluate the derivative or its
-    adjoint at the same point `_eval` was called. The reasoning is this
+    computed, `_eval` will be called first with `differentiate=True` or `adjoint_derivative=True`, 
+    and should produce the operator's value and perform any precomputation needed for evaluating 
+    the derivative. Any subsequent invocation of `_derivative`, `_adjoint` and `_adjoint_derivative`
+    should evaluate the  derivative, its adjoint or their composition at the same point `_eval` was 
+    called. The reasoning is this
 
     - In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
       operator around some point, so the value is almost always needed.
     - Many expensive computations, e.g. assembling of finite element matrices, need to be carried
       out only once per linearization point, and can be shared between the operator and the
       derivative, so they should only be computed once (in `_eval`).
-
+    
     For callers, this means that since the derivative shares data with the operator, it can't be
     reliably called after the operator has been evaluated somewhere else, since shared data may
     have been overwritten. The `Operator`, `Derivative` and `Adjoint` classes ensure that an
@@ -175,7 +181,7 @@ class Operator:
         assert not self.codomain or y in self.codomain
         return y
 
-    def linearize(self, x, adjoint_derivitave = False):
+    def linearize(self, x, adjoint_derivative = False):
         """Linearize the operator around some point.
 
         Parameters
@@ -183,15 +189,21 @@ class Operator:
         x : array-like
             The point around which to linearize.
 
+        adjoint_deriv : boolean (Default: False)
+            Flag to determine if AdjointDerivative should be return. 
+
         Returns
         -------
-        array, Derivative
+        array, Derivative or AdjointDerivative
             The value and the derivative at `x`, the latter as an `Operator` instance.
         """
         if self.linear:
-            return self(x), self
+            if adjoint_derivative:
+                return self(x), self.adjoint * self
+            else:
+                return self(x), self
         else:
-            if not adjoint_derivitave:
+            if not adjoint_derivative:
                 assert not self.domain or x in self.domain
                 self.__revoke()
                 y = self._eval(x, differentiate=True)
@@ -201,15 +213,20 @@ class Operator:
             else:
                 assert not self.domain or x in self.domain
                 self.__revoke()
-                y = self._eval(x, differentiate=True)
+                y = self._eval(x, adjoint_derivative=True)
                 assert not self.codomain or y in self.codomain
-                adjointderiv = AdjointDerivative(self.__get_handle())
-                return y, adjointderiv
+                adjoint_deriv = AdjointDerivative(self.__get_handle())
+                return y, adjoint_deriv
 
     @util.memoized_property
     def adjoint(self):
         """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
+
+        Returns
+        -------
+        Adjoint
+            The adjoint as an `Operator` instance.
         """
         return Adjoint(self)
 
@@ -226,7 +243,7 @@ class Operator:
             self.__handle = _Revocable(self)
             return self.__handle
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative = False):
         raise NotImplementedError
 
     def _derivative(self, x):
@@ -247,11 +264,17 @@ class Operator:
         raise NotImplementedError
 
     def as_linear_operator(self):
-        r"""
-        Creates a `SciPyLinearOperator` with the same input and output as `self`.
+        """Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
+
         Returns
         -------
-        operators.ScipyLinearOperator
+        scipy.linalg.LinearOperator 
+            The linear operator as a scipy linear operator.
+
+        Raises
+        ------
+        RuntimeError
+            If operator flag `linear` is False. 
         """
         if self.linear:
             return SciPyLinearOperator(self)
@@ -438,7 +461,7 @@ class LinearCombination(Operator):
 
         super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         y = self.codomain.zeros()
         if differentiate:
             self._derivs = []
@@ -446,6 +469,9 @@ class LinearCombination(Operator):
             if differentiate:
                 z, deriv = op.linearize(x)
                 self._derivs.append(deriv)
+            elif adjoint_derivative:
+                z, adjoint_deriv = op.linearize(x, adjoint_derivative = True)
+                self._adjoint_derivs.append(adjoint_deriv)
             else:
                 z = op(x)
             y += coeff * z
@@ -466,6 +492,12 @@ class LinearCombination(Operator):
         for coeff, op in zip(self.coeffs, ops):
             x += np.conj(coeff) * op.adjoint(y)
         return x
+    
+    def _adjoint_derivative(self, x):
+        y = self.domain.zeros()
+        for coeff, adjoint_deriv in zip(self.coeffs, self._adjoint_derivs):
+            y += np.abs(coeff)**2 * adjoint_deriv(x)
+        return y
 
     @property
     def inverse(self):
@@ -506,13 +538,20 @@ class Composition(Operator):
             self.ops[-1].domain, self.ops[0].codomain,
             linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative = False):
         y = x
         if differentiate:
             self._derivs = []
             for op in self.ops[::-1]:
                 y, deriv = op.linearize(y)
                 self._derivs.insert(0, deriv)
+        elif adjoint_derivative:
+            self._outer_derivs = []
+            for op in self.ops[:0:-1]:
+                y, deriv = op.linearize(y)
+                self._outer_derivs.insert(0, deriv)
+            y, adjoint_deriv = self.ops[0].linearize(y,adjoint_derivative=True)
+            self._inner_adjoint_deriv = adjoint_deriv
         else:
             for op in self.ops[::-1]:
                 y = op(y)
@@ -533,6 +572,15 @@ class Composition(Operator):
         for op in ops:
             x = op.adjoint(x)
         return x
+    
+    def _adjoint_derivative(self, x):
+        y = x
+        for deriv in self._outer_derivs[::-1]:
+            y = deriv(y)
+        y = self._inner_adjoint_deriv(y)
+        for deriv in self._outer_derivs:
+            y = deriv.adjoint(y)
+        return y
 
     @util.memoized_property
     def inverse(self):
@@ -909,9 +957,9 @@ class OuterShift(Operator):
         self.op = op
         self.offset = np.copy(offset)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
-            y, self._deriv = self.op.linearize(x)
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
+            y, self._deriv = self.op.linearize(x, adjoint_derivative= adjoint_derivative)
             return y + self.offset
         else:
             return self.op(x) + self.offset
@@ -941,9 +989,9 @@ class InnerShift(Operator):
         self.op = op
         self.offset = np.copy(offset)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
-            y, self._deriv = self.op.linearize(x-self.offset)
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
+            y, self._deriv = self.op.linearize(x-self.offset, adjoint_derivative=adjoint_derivative)
             return y 
         else:
             return self.op(x - self.offset)
@@ -1030,10 +1078,10 @@ class Power(Operator):
         self.power = power
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         if self.integer:
             res = np.ones_like(x)
-            if differentiate:
+            if differentiate or adjoint_derivative:
                 self._factor = self.power*np.ones_like(x)
                 if self.power>0:
                     self._dpow_bin = "{0:b}".format(self.power-1)
@@ -1115,11 +1163,15 @@ class DirectSum(Operator):
 
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         elms = self.domain.split(x)
         if differentiate:
             linearizations = [op.linearize(elm) for op, elm in zip(self.ops, elms)]
             self._derivs = [l[1] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
+        elif adjoint_derivative:
+            linearizations = [op.linearize(elm,adjoint_derivative=True) for op, elm in zip(self.ops, elms)]
+            self._adjoint_derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
@@ -1138,6 +1190,12 @@ class DirectSum(Operator):
             ops = self._derivs
         return self.domain.join(
             *(op.adjoint(elm) for op, elm in zip(ops, elms))
+        )
+    
+    def _adjoint_derivative(self, x):
+        elms = self.domain.split(x)
+        return self.domain.join(
+            *(adjoint_deriv(elm) for adjoint_deriv, elm in zip(self._adjoint_derivs, elms))
         )
 
     @util.memoized_property
@@ -1203,10 +1261,14 @@ class VectorOfOperators(Operator):
 
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         if differentiate:
             linearizations = [op.linearize(x) for op in self.ops]
             self._derivs = [l[1] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
+        elif adjoint_derivative:
+            linearizations = [op.linearize(x,adjoint_derivative=True) for op in self.ops]
+            self._adjoint_derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(x) for op in self.ops))
@@ -1225,6 +1287,12 @@ class VectorOfOperators(Operator):
         result = self.domain.zeros()    
         for op, elm in zip(ops, elms):
             result += op.adjoint(elm)
+        return result
+    
+    def _adjoint_derivative(self, x):
+        result = self.domain.zeros() 
+        for adjoint_deriv in self._adjoint_derivs:
+            result += adjoint_deriv(x)
         return result
 
     @util.memoized_property
@@ -1305,12 +1373,14 @@ class MatrixOfOperators(Operator):
         
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, differentiate=False, adjoint_derivative= False):
         x_comp = self.domain.split(x)
         res = self.codomain.split(self.codomain.zeros()) 
         Tprime = []
+        Tadjprime = []
         for T_j, x_j in zip(self.ops,x_comp):
             Tprime_j = []
+            Tadjprime_j = []
             for T_ij,res_i in zip(T_j,res):
                 if differentiate:
                     if T_ij:
@@ -1319,12 +1389,22 @@ class MatrixOfOperators(Operator):
                     else:
                         Tprime_ij = None
                     Tprime_j.append(Tprime_ij)
+                elif adjoint_derivative:
+                    if T_ij:
+                        res_ij, Tadjprime_ij = T_ij.linearize(x_j,adjoint_derivative=True)
+                        res_i += res_ij
+                    else:
+                        Tadjprime_ij = None
+                    Tadjprime_j.append(Tadjprime_ij)
                 else:   
                     if T_ij:
                         res_i += T_ij(x_j)
             Tprime.append(Tprime_j)
+            Tadjprime.append(Tadjprime_j)
         if differentiate:
             self._derivs = Tprime
+        if adjoint_derivative:
+            self._adjoint_derivs = Tadjprime
         return self.codomain.join(*(res_i for res_i in res))
            
     def _derivative(self, x):
@@ -1347,6 +1427,15 @@ class MatrixOfOperators(Operator):
             for Tprime_ij, y_i in zip(Tprime_j,y_comp):
                 if Tprime_ij:
                     res_j += Tprime_ij.adjoint(y_i)
+        return self.domain.join(*(res_j for res_j in res_comp))
+    
+    def _adjoint_derivative(self, x):
+        res_comp = self.domain.split(self.domain.zeros())
+        x_comp = self.domain.split(x)
+        for Tadjprime_j, res_j in zip(self._adjoint_derivs,res_comp):
+            for Tadjprime_ij,x_i in zip(Tadjprime_j,x_comp):
+                if Tadjprime_ij:
+                    res_j += Tadjprime_ij(x_i)
         return self.domain.join(*(res_j for res_j in res_comp))
 
     @util.memoized_property
@@ -1372,8 +1461,8 @@ class Exponential(Operator):
     def __init__(self, domain):
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._exponential_factor = np.exp(x)
             return self._exponential_factor
         return np.exp(x)
@@ -1451,8 +1540,8 @@ class SquaredModulus(Operator):
             codomain = None
         super().__init__(domain, codomain)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._factor = 2 * x
         return x.real**2 + x.imag**2
 

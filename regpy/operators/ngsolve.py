@@ -137,7 +137,7 @@ class Coefficient(NGSolveOperator):
         self.gfu_deriv.Set(0)
         self.gfu_inner_adj.Set(0)
 
-    def _eval(self, diff, differentiate=False):
+    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()
@@ -289,7 +289,7 @@ class EIT(NGSolveOperator):
     #Hence: int_Omega [s grad u grad v + alpha u v] = int_dOmega [g trace(v)]
     #Left term: Bilinearform self.a
     #Righ term: Linearform self.b
-    def _eval(self, diff, differentiate=False):
+    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()
@@ -425,7 +425,7 @@ class ReactionNeumann(NGSolveOperator):
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
 
-    def _eval(self, diff, differentiate=False):
+    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()

@@ -69,8 +69,8 @@ class Potential(Operator):
         self.sinus = np.sin(k_t)
         self.cos_fl = np.cos(k_tfl)
         self.sin_fl = np.sin(k_tfl)
-        
-    def _eval(self, x, differentiate=False):
+
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
         nfwd = self.nforward
         self._bd = self.domain.eval_curve(x, nvals=nfwd)
 

@@ -38,8 +38,12 @@ class TensorBasis(Operator):
         assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
+        """ `dtype ` of the vector spaces."""
         self.ndim = coef_domain.ndim
+        """ dimension of the `coef_domain`. """
         self.bases = bases
+        """List of all the bases transforms as a list of `np.ndarray`s
+        """
 
     def _eval(self, coef):
         ## separate 1-D and 2-D because of performance
@@ -171,7 +175,7 @@ def bspline_basis(k,t,dim=1,add_points=10):
     j=0
     axis = eval_domain[0].axes[0]
     # added points to to t since BSpline only gives back data in t[k] to t[n]=t[-k] and t of size n+k+1
-    #assuming t to be equidistibuted points
+    #assuming t to be equidistant points
     diff = t[1]-t[0]
     # T has t_size + 2*k points hence T[k] = t[0] and T[-k] = t[-1] hence full interval under consideration
     T = np.linspace(-k*diff+t[0],t[-1]+k*diff,t.size+2*k)

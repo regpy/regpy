@@ -205,7 +205,7 @@ class MediumScatteringBase(Operator):
         """
         raise NotImplementedError
 
-    def _eval(self, contrast, differentiate=False):
+    def _eval(self, contrast, differentiate=False, adjoint_derivative=False):
         contrast = contrast.copy()
         contrast[~self.support] = 0
         self._contrast = contrast
@@ -232,7 +232,7 @@ class MediumScatteringBase(Operator):
             self._compute_farfield(farfield, j, v)
             # The total field can be recovered from v in a stable manner by the formula
             # u_total = u_inc - conv(k, v)
-            if differentiate:
+            if differentiate or adjoint_derivative:
                 self._totalfield[:, j] = (
                     self.inc_matrix[j, :] - ifftn(self.kernel * fftn(v))[self.support]
                 )
