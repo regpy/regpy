@@ -2,7 +2,7 @@
 """
 
 from regpy.util import classlogger
-from regpy.hilbert import as_hilbert_space
+from regpy.stoprules import NoneRule
 from regpy.functionals import  as_functional, Composed
 
 
@@ -73,7 +73,7 @@ class Solver:
         while self.next():
             yield self.x, self.y
 
-    def while_(self, stoprule):
+    def while_(self, stoprule=NoneRule()):
         """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
@@ -97,7 +97,7 @@ class Solver:
  
 
 
-    def until(self, stoprule):
+    def until(self, stoprule=NoneRule()):
         """Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
@@ -121,7 +121,7 @@ class Solver:
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
-    def run(self, stoprule=None):
+    def run(self, stoprule=NoneRule()):
         """Run the solver with the given stopping rule. This method simply runs the generator
         `regpy.solvers.Solver.while_` and returns the final `(x, y)` pair.
         """
@@ -131,36 +131,39 @@ class Solver:
 
 
 class RegularizationSetting:
-    """A Hilbert space *setting* for an inverse problem, used by e.g. Tikhonov-type solvers. A
+    """A Regularization *setting* for an inverse problem, used by solvers. A
     setting consists of
 
     - a forward operator,
-    - a Hilbert space structure on its domain that measures the regularity of reconstructions, and
-    - a Hilbert space structur on its codomain for the data misfit.
+    - a penalty functional with an associated Hilbert space structure to measure the error, and
+    - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
 
     This class is mostly a container that keeps all of this data in one place and makes sure that
-    the `regpy.hilbert.HilbertSpace.vecsp`s match the operator's domain and codomain.
+    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`s 
+    with the operator's domain and codomain.
 
-    It also handles the case when the specified Hilbert space is actually an
-    `regpy.hilbert.AbstractSpace` (or actually any callable) instead of a
-    `regpy.hilbert.HilbertSpace`, calling it on the operator's domain or codomain to construct
-    the concrete Hilbert space instances.
+    It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
+    the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
+    or `AbstractFunctional`s (or actually any callable) instead of a `regpy.functional.Functional`, calling 
+    it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
 
     Parameters
     ----------
     op : regpy.operators.Operator
         The forward operator.
-    h_domain, h_codomain : regpy.hilbert.HilbertSpace or callable
-        The Hilbert spaces or abstract spaces on the domain or codomain.
+    penalty : regpy.functional.Functional or regpy.hilbert.HilbertSpace or callable
+        The penalty functional.
+    data_fid : regpy.functional.Functional or regpy.hilbert.HilbertSpace or callable
+        The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
         self.op = op
         """The operator."""
         self.penalty = as_functional(penalty, op.domain)
+        """The penalty functional."""
         self.data_fid = as_functional(data_fid, op.codomain)
+        """The data misfit functional."""
         self.h_domain = self.penalty.h_domain
+        """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
-        # self.h_domain = as_hilbert_space(h_domain, op.domain)
-        # """The `regpy.hilbert.HilbertSpace` on the domain."""
-        # self.h_codomain = as_hilbert_space(h_codomain, op.codomain)
-        # """The `regpy.hilbert.HilbertSpace` on the codomain."""
+        """The Hilbert space associated to data fidelity functional"""

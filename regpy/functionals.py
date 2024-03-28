@@ -281,8 +281,11 @@ class LinearCombination(Functional):
             *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
         )
 
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    def _proximal(self, x, tau, proximal_params):
+        if len(self.funcs) == 1:
+            return self.funcs[0].proximal(x,self.coeffs[0]*tau)
+        else:
+            return NotImplementedError
 
 
 class Shifted(Functional):
@@ -367,8 +370,21 @@ class Composed(Functional):
             # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    def _proximal(self, x, tau, cg_params={}):
+        # In case it is a functional 1/2||Tf-g^delta||^2 can approximated by a Tikhonov solver
+        if isinstance(self.func,HilbertNormGeneric) and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
+            from regpy.solvers.linear.tikhonov import TikhonovCG
+            from regpy.solvers import RegularizationSetting
+            f, _ = TikhonovCG(
+                setting=RegularizationSetting(self.op.op, hilbert.L2, self.func.h_domain),
+                data=-self.op.offset,
+                xref=x,
+                regpar=tau,
+                **cg_params
+            ).run()
+            return f
+        else:
+            return NotImplementedError
 
 
 class AbstractFunctionalBase:
