@@ -2,7 +2,7 @@ from functools import wraps
 from logging import getLogger
 
 import numpy as np
-from scipy.spatial.qhull import Voronoi
+from scipy.spatial import Voronoi
 
 
 @property
@@ -13,7 +13,12 @@ def classlogger(self):
 
     [1]: https://docs.python.org/3/library/logging.html#logging.Logger
     """
-    return getLogger(type(self).__qualname__)
+    return getattr(self, '_log', None) or getLogger(type(self).__qualname__)
+
+
+@classlogger.setter
+def classlogger(self, log):
+    self._log = log
 
 
 def memoized_property(prop):
@@ -106,65 +111,3 @@ def make_repr(self, *args, **kwargs):
     for k, v in sorted(kwargs.items()):
         arglist.append("{}={}".format(repr(k), repr(v)))
     return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
-
-
-eps = np.finfo(float).eps
-
-
-def bounded_voronoi(nodes, left, down, up, right):
-    """Computes the Voronoi diagram with a bounding box
-    """
-
-    # Extend the set of nodes by reflecting along boundaries
-    nodes_left = 2 * np.array([left - 1e-6, 0]) - nodes
-    nodes_down = 2 * np.array([0, down - 1e-6]) - nodes
-    nodes_right = 2 * np.array([right + 1e-6, 0]) - nodes
-    nodes_up = 2 * np.array([0, up + 1e-6]) - nodes
-
-    # Compute the extended Voronoi diagram
-    evor = Voronoi(np.concatenate([nodes, nodes_up, nodes_down, nodes_left, nodes_right]))
-
-    # Shrink the Voronoi diagram
-    regions = [evor.regions[reg] for reg in evor.point_region[:nodes.shape[0]]]
-    used_vertices = np.unique([i for reg in regions for i in reg])
-    regions = [[np.where(used_vertices == i)[0][0] for i in reg] for reg in regions]
-    vertices = [evor.vertices[i] for i in used_vertices]
-
-    return regions, vertices
-
-
-def broadcast_shapes(*shapes):
-    a = np.ones((max(len(s) for s in shapes), len(shapes)), dtype=int)
-    for i, s in enumerate(shapes):
-        a[-len(s):, i] = s
-    result = np.max(a, axis=1)
-    for r, x in zip(result, a):
-        if np.any((x != 1) & (x != r)):
-            raise ValueError('Shapes can not be broadcast')
-    return result
-
-
-def trig_interpolate(val, n):
-    # TODO get rid of fftshift
-    """Computes `n` Fourier coeffients to the point values given by by `val`
-    such that `ifft(fftshift(coeffs))` is an interpolation of `val`.
-    """
-    if n % 2 != 0:
-        ValueError('n should be even')
-    N = len(val)
-    coeffhat = np.fft.fft(val)
-    coeffs = np.zeros(n, dtype=complex)
-    if n >= N:
-        coeffs[:N // 2] = coeffhat[:N // 2]
-        coeffs[-(N // 2) + 1:] = coeffhat[N // 2 + 1:]
-        if n > N:
-            coeffs[N // 2] = 0.5 * coeffhat[N // 2]
-            coeffs[-(N // 2)] = 0.5 * coeffhat[N // 2]
-        else:
-            coeffs[N // 2] = coeffhat[N // 2]
-    else:
-        coeffs[:n // 2] = coeffhat[:n // 2]
-        coeffs[n // 2 + 1:] = coeffhat[-(n // 2) + 1:]
-        coeffs[n // 2] = 0.5 * (coeffhat[n // 2] + coeffhat[-(n // 2)])
-    coeffs = n / N * np.fft.ifftshift(coeffs)
-    return coeffs

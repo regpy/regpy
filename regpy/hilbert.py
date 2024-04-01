@@ -1,11 +1,12 @@
-"""Concrete and abstract Hilbert spaces on discretizations.
+"""Concrete and abstract Hilbert spaces on vector spaces.
 """
 
 from copy import copy
 
 import numpy as np
 
-from regpy import util, operators, functionals, discrs
+from regpy import util, operators, functionals, vecsps
+from scipy.sparse import csc_matrix
 
 
 class HilbertSpace:
@@ -17,7 +18,7 @@ class HilbertSpace:
     `regpy.util.memoized_property` can be used.
 
     Hilbert spaces can be added, producing `DirectSum` instances on the direct sums of the
-    underlying disretizations (see `regpy.discrs.DirectSum` in the `regpy.discrs` module).
+    underlying disretizations (see `regpy.vecsps.DirectSum` in the `regpy.vecsps` module).
 
     They can also be multiplied by scalars to scale the norm. Note that the Gram matrix will scale
     by the square of the factor. This is for consistency with the (not yet implemented) Banach space
@@ -25,16 +26,16 @@ class HilbertSpace:
 
     Parameters
     ----------
-    discr : regpy.discrs.Discretization
-        The underlying discretization. Should be the domain and codomain of the Gram matrix.
+    vecsp : regpy.vecsps.VectorSpace
+        The underlying vector space. Should be the domain and codomain of the Gram matrix.
     """
 
     log = util.classlogger
 
-    def __init__(self, discr):
-        assert isinstance(discr, discrs.Discretization)
-        self.discr = discr
-        """The underlying discretization."""
+    def __init__(self, vecsp):
+        assert isinstance(vecsp, vecsps.VectorSpace)
+        self.vecsp = vecsp
+        """The underlying vector space."""
 
     @property
     def gram(self):
@@ -89,6 +90,12 @@ class HilbertSpace:
         """
         return functionals.HilbertNorm(self)
 
+    def __eq__(self, other):
+        if isinstance(other, type(self)):
+            return self.vecsp == other.vecsp
+        else:
+            return NotImplemented
+
     def __add__(self, other):
         if isinstance(other, HilbertSpace):
             return DirectSum(self, other, flatten=True)
@@ -108,8 +115,26 @@ class HilbertSpace:
             return NotImplemented
 
 
+class GramHilbertSpace(HilbertSpace):
+    def __init__(self, gram, gram_inv=None):
+        assert gram.domain == gram.codomain
+        if gram_inv is not None:
+            assert gram_inv.domain == gram_inv.codomain == gram.domain
+        self._gram = gram
+        self._gram_inv = gram_inv
+        super().__init__(gram.domain)
+
+    @property
+    def gram(self):
+        return self._gram
+
+    @property
+    def gram_inv(self):
+        return self._gram_inv or self._gram.inverse
+
+
 class HilbertPullBack(HilbertSpace):
-    """Pullback of a hilbert space on the codomain of an operator to its domain.
+    """Pullback of a Hilbert space on the codomain of an operator to its domain.
 
     For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
 
@@ -141,7 +166,7 @@ class HilbertPullBack(HilbertSpace):
         if not isinstance(space, HilbertSpace) and callable(space):
             space = space(op.codomain)
         assert isinstance(space, HilbertSpace)
-        assert op.codomain == space.discr
+        assert op.codomain == space.vecsp
         self.op = op
         """The operator."""
         self.space = space
@@ -170,13 +195,13 @@ class HilbertPullBack(HilbertSpace):
 
 class DirectSum(HilbertSpace):
     """The direct sum of an arbirtary number of hilbert spaces, with optional
-    scaling of the respective norms. The underlying discretization will be the
-    `regpy.discrs.DirectSum` of the underlying discretizations of the summands.
+    scaling of the respective norms. The underlying vector space will be the
+    `regpy.vecsps.DirectSum` of the underlying vector spaces of the summands.
 
     Note that constructing DirectSum instances can be done more comfortably
     simply by adding `regpy.hilbert.HilbertSpace` instances and
     by multiplying them with scalars, but see the documentation for
-    `regpy.discrs.DirectSum` for the `flatten` parameter.
+    `regpy.vecsps.DirectSum` for the `flatten` parameter.
 
     Parameters
     ----------
@@ -188,13 +213,13 @@ class DirectSum(HilbertSpace):
     flatten : bool, optional
         Whether summands that are themselves DirectSums should be merged into
         this instance. Default: False.
-    discr : discrs.Discretization or callable, optional
-        Either the underlying discretization or a factory function that will be
-        called with all summands' discretizations passed as arguments and should
-        return a discrs.DirectSum instance. Default: discrs.DirectSum.
+    vecsp : vecsps.VectorSpace or callable, optional
+        Either the underlying vector space or a factory function that will be
+        called with all summands' vector spaces passed as arguments and should
+        return a vecsps.DirectSum instance. Default: vecsps.DirectSum.
     """
 
-    def __init__(self, *args, flatten=False, discr=None):
+    def __init__(self, *args, flatten=False, vecsp=None):
         self.summands = []
         self.weights = []
         for arg in args:
@@ -211,25 +236,27 @@ class DirectSum(HilbertSpace):
                 self.summands.append(s)
                 self.weights.append(w)
 
-        if discr is None:
-            discr = discrs.DirectSum
-        if isinstance(discr, discrs.Discretization):
+        if vecsp is None:
+            vecsp = vecsps.DirectSum
+        if isinstance(vecsp, vecsps.VectorSpace):
             pass
-        elif callable(discr):
-            discr = discr(*(s.discr for s in self.summands))
+        elif callable(vecsp):
+            vecsp = vecsp(*(s.vecsp for s in self.summands))
         else:
-            raise TypeError('discr={} is neither a Discretization nor callable'.format(discr))
-        assert all(s.discr == d for s, d in zip(self.summands, discr))
+            raise TypeError('vecsp={} is neither a VectorSpace nor callable'.format(vecsp))
+        assert all(s.vecsp == d for s, d in zip(self.summands, vecsp))
 
-        super().__init__(discr)
+        super().__init__(vecsp)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            len(self.summands) == len(other.summands) and
-            all(s == t for s, t in zip(self.summands, other.summands)) and
-            all(v == w for v, w in zip(self.weights, other.weights))
-        )
+        if isinstance(other, type(self)):
+            return (
+                len(self.summands) == len(other.summands) and
+                all(s == t for s, t in zip(self.summands, other.summands)) and
+                all(v == w for v, w in zip(self.weights, other.weights))
+            )
+        else:
+            return NotImplemented
 
     @util.memoized_property
     def gram(self):
@@ -239,7 +266,7 @@ class DirectSum(HilbertSpace):
                 ops.append(s.gram)
             else:
                 ops.append(w**2 * s.gram)
-        return operators.DirectSum(*ops, domain=self.discr, codomain=self.discr)
+        return operators.DirectSum(*ops, domain=self.vecsp, codomain=self.vecsp)
 
     def __getitem__(self, item):
         return self.summands[item]
@@ -247,16 +274,119 @@ class DirectSum(HilbertSpace):
     def __iter__(self):
         return iter(self.summands)
 
+class TensorProd(HilbertSpace):
+    """The Tensor product of an arbirtary number of hilbert spaces, with optional
+    scaling of the respective norms. The underlying vector space will be the
+    `regpy.vecsps.Prod` of the underlying discretisations of the factors.
+
+    Important note! The implementation of the Gram operator makes use of the
+    TensorBasis Operator from regpy.vecsps.tensor_bases in the sense, that
+    the Gram matrix of the Tensor Product of discretised Hilbert spaces
+    would be given as the Kronecker-product of all Gram matrices. Which is
+    exacly given by the TensorBasis operator given that we interpret the
+    Gram matrices as basis changes in each discretised Hilbert space.
+
+    Therefore, please pay attention that to do that we have to actually evaluate
+    the Gram-matrix for each Hilbert and store it.
+
+    We want $H_1 \otimes \dots H_l$ and each $H_i$ is discretised by a basis
+    of size $n_i$ then we get a memory consumption for the Gram matrices of
+    $O(\sum_{i=1}^l n_i)<=O(l\cdot n)$ with $n = \max(n_i)$.
+
+    Computing the Gram property itself can be easily seen to have the complexity
+    $O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n)))$. with $\phi_i$ being
+    the complexity for evaluation the Gram operator of the Hilbert space $H_i$.
+    Note that in the case that each Gram operator is a dense matrix this would be
+    given by $\phi_i(n_i)=n_i^2$ leading to a complexity of $O(l\cdot n^3)$.
+
+
+    Parameters
+    ----------
+    *factors : HilbertSpace tuple
+        The Hilbert spaces to be tensored. Alternatively, factors can be given
+        as tuples `(scalar, HilbertSpace)`, which will scale the norm of the
+        respective factor. The gram matrices and hence the inner products will
+        be scaled by `scalar**2`.
+    flatten : bool, optional
+        Whether factors that are themselves TensorProds should be merged into
+        this instance. Default: False.
+    vecsp : vecsps.VectorSpace or callable, optional
+        Either the underlying vector space or a factory function that will be
+        called with all factors' vector spaces passed as arguments and should
+        return a vecsps.Prod instance. Default: vecsps.Prod.
+    """
+
+    def __init__(self, *args, flatten=False, vecsp=None):
+        self.factors = []
+        self.weights = []
+        for arg in args:
+            if isinstance(arg, tuple):
+                w, s = arg
+            else:
+                w, s = 1, arg
+            assert w > 0
+            assert isinstance(s, HilbertSpace)
+            if flatten and isinstance(s, type(self)):
+                self.factors.extend(s.factors)
+                self.weights.extend(w * sw for sw in s.weights)
+            else:
+                self.factors.append(s)
+                self.weights.append(w)
+
+        if vecsp is None:
+            vecsp = vecsps.Prod
+        if isinstance(vecsp, vecsps.VectorSpace):
+            pass
+        elif callable(vecsp):
+            vecsp = vecsp(*(s.vecsp for s in self.factors))
+        else:
+            raise TypeError('vecsp={} is neither a VectorSpace nor callable'.format(vecsp))
+        assert all(s.vecsp == d for s, d in zip(self.factors, vecsp))
+
+        super().__init__(vecsp)
+
+    def __eq__(self, other):
+        if isinstance(other, type(self)):
+            return (
+                len(self.factors) == len(other.factors) and
+                all(s == t for s, t in zip(self.factors, other.factors)) and
+                all(v == w for v, w in zip(self.weights, other.weights))
+            )
+        else:
+            return NotImplemented
+
+    @util.memoized_property
+    def gram(self):
+        bases = []
+        domains = []
+        for w, s in zip(self.weights, self.factors):
+            basis =[]
+            domains.append(s.gram.domain)
+            for v in s.gram.domain.real_space().iter_basis():
+                if w == 1:
+                    basis.append(s.gram(v).flatten())
+                else:
+                    basis.append((w**2 * s.gram)(v).flatten())
+            bases.append(np.array(basis))
+        from regpy.vecsps.tensor_bases import TensorBasis
+        return TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
+
+    def __getitem__(self, item):
+        return self.factors[item]
+
+    def __iter__(self):
+        return iter(self.factors)
+
 
 class AbstractSpaceBase:
     """Class representing abstract hilbert spaces without reference to a concrete implementation.
 
-    The motivation for using this construction is to be able to specify e.g. a Thikhonov penalty
-    without requiring knowledge of the concrete discretization the forward operator uses. See the
+    The motivation for using this construction is to be able to specify e.g. a Tikhonov penalty
+    without requiring knowledge of the concrete vector space the forward operator uses. See the
     documentation of `AbstractSpace` for more details.
 
     Abstract spaces do not have elements, properties or any other structure, their sole purpose is
-    to pick the proper concrete implementation for a given discretization.
+    to pick the proper concrete implementation for a given vector space.
 
     This class only implements operator overloads so that scaling and adding abstract spaces works
     analogously to the concrete `HilbertSpace` instances, returning `AbstractSum` instances. The
@@ -283,39 +413,39 @@ class AbstractSpaceBase:
 
 
 class AbstractSpace(AbstractSpaceBase):
-    """An abstract Hilbert space that can be called on a discretization to get the corresponding
+    """An abstract Hilbert space that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractSpaces provide two kinds of functionality:
 
-    - A decorator method `register(discr_type)` that can be used to declare some class or function
-      as the concrete implementation of this abstract space for discretizations of type `discr_type`
+    - A decorator method `register(vecsp_type)` that can be used to declare some class or function
+      as the concrete implementation of this abstract space for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(discrs.UniformGrid)
-              class SobolevUniformGrid(HilbertSpace):
+              @Sobolev.register(vecsps.UniformGridFcts)
+              class SobolevUniformGridFcts(HilbertSpace):
                   ...
 
-    - AbstractSpaces are callable. Calling them on a discretization and arbitrary optional
+    - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
       registered implementations. If there are implementations for multiple base classes of the
-      discretization type, the most specific one will be chosen. The chosen implementation will
-      then be called with the discretization and the keyword arguments, and the result will be
+      vector space type, the most specific one will be chosen. The chosen implementation will
+      then be called with the vector space and the keyword arguments, and the result will be
       returned.
 
-      If called without a discretization as positional argument, it returns a new abstract space
+      If called without a vector space as positional argument, it returns a new abstract space
       with all passed keyword arguments remembered as defaults. This allows one e.g. to write
 
           H = Sobolev(index=2)
 
       after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in turn will be the
-      same as something like `SobolevUniformGrid(grid, index=2)`, depending on the type of `grid`).
+      same as something like `SobolevUniformGridFcts(grid, index=2)`, depending on the type of `grid`).
 
     Parameters
     ----------
     name : str
         A name for this abstract space. Currently, this is only used in error messages, when no
-        implementation was found for some discretization.
+        implementation was found for some vector space.
     """
 
     def __init__(self, name):
@@ -323,22 +453,22 @@ class AbstractSpace(AbstractSpaceBase):
         self.name = name
         self.args = {}
 
-    def register(self, discr_type, impl=None):
+    def register(self, vecsp_type, impl=None):
         if impl is not None:
-            self._registry.setdefault(discr_type, []).append(impl)
+            self._registry.setdefault(vecsp_type, []).append(impl)
         else:
             def decorator(i):
-                self.register(discr_type, i)
+                self.register(vecsp_type, i)
                 return i
             return decorator
 
-    def __call__(self, discr=None, **kwargs):
-        if discr is None:
+    def __call__(self, vecsp=None, **kwargs):
+        if vecsp is None:
             clone = copy(self)
             clone.args = copy(self.args)
             clone.args.update(kwargs)
             return clone
-        for cls in type(discr).mro():
+        for cls in type(vecsp).mro():
             try:
                 impls = self._registry[cls]
             except KeyError:
@@ -346,13 +476,13 @@ class AbstractSpace(AbstractSpaceBase):
             kws = copy(self.args)
             kws.update(kwargs)
             for impl in impls:
-                result = impl(discr, **kws)
+                result = impl(vecsp, **kws)
                 if result is NotImplemented:
                     continue
                 assert isinstance(result, HilbertSpace)
                 return result
         raise NotImplementedError(
-            '{} not implemented on {}'.format(self.name, discr)
+            '{} not implemented on {}'.format(self.name, vecsp)
         )
 
 
@@ -363,7 +493,7 @@ class AbstractSum(AbstractSpaceBase):
     Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
     construct AbstractSums.
 
-    This abstract space can only be called on a `regpy.discrs.DirectSum`, in which case it
+    This abstract space can only be called on a `regpy.vecsps.DirectSum`, in which case it
     constructs the corresponding `regpy.hilbert.DirectSum` obtained by matching up summands, e.g.
 
         (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
@@ -386,11 +516,11 @@ class AbstractSum(AbstractSpaceBase):
                 self.summands.append(s)
                 self.weights.append(w)
 
-    def __call__(self, discr):
-        assert isinstance(discr, discrs.DirectSum)
+    def __call__(self, vecsp):
+        assert isinstance(vecsp, vecsps.DirectSum)
         return DirectSum(
-            *((w, s(d)) for w, s, d in zip(self.weights, self.summands, discr.summands)),
-            discr=discr
+            *((w, s(d)) for w, s, d in zip(self.weights, self.summands, vecsp.summands)),
+            vecsp=vecsp
         )
 
     def __getitem__(self, item):
@@ -400,11 +530,35 @@ class AbstractSum(AbstractSpaceBase):
         return iter(zip(self.weights, self.summands))
 
 
+def as_hilbert_space(h, vecsp):
+    """Convert h to HilbertSpace instance on vecsp.
+
+    - If h is an Operator, it's wrapped in a GramHilbertSpace.
+    - If h is callable, e.g. an AbstractSpace, it is called on vecsp to
+      construct the concrete space.
+    """
+    if h is None:
+        return None
+    from regpy.operators import Operator  # imported here to avoid circular dependency
+    if not isinstance(h, HilbertSpace):
+        if isinstance(h, Operator):
+            h = GramHilbertSpace(h)
+        elif callable(h):
+            h = h(vecsp)
+    assert isinstance(h, HilbertSpace)
+    assert h.vecsp == vecsp
+    return h
+
+
 L2 = AbstractSpace('L2')
 """L2 `AbstractSpace`."""
 
 Sobolev = AbstractSpace('Sobolev')
 """Sobolev `AbstractSpace`"""
+
+Hm = AbstractSpace('Hm')
+Hm0 = AbstractSpace('Hm0')
+"""H^m_0 `AbstractSpace`"""
 
 L2Boundary = AbstractSpace('L2Boundary')
 """L2 `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
@@ -414,21 +568,21 @@ SobolevBoundary = AbstractSpace('SobolevBoundary')
 
 
 def componentwise(dispatcher, cls=DirectSum):
-    """Return a callable that iterates over the components of some discretization, constructing a
-    `HilbertSpace` on each component, and joining the result. Inteded to be used like e.g.
+    """Return a callable that iterates over the components of some vector space, constructing a
+    `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
-        L2.register(discrs.DirectSum, componentwise(L2))
+        L2.register(vecsps.DirectSum, componentwise(L2))
 
-    to register a generic component-wise implementation of `L2` on `regpy.discrs.DirectSum`
-    discretizations. Any discretization that allows iterating over components using Python's
-    iterator protocol can be used, but `regpy.discrs.DirectSum` is the only example of that right
+    to register a generic component-wise implementation of `L2` on `regpy.vecsps.DirectSum`
+    vector spaces. Any vector space that allows iterating over components using Python's
+    iterator protocol can be used, but `regpy.vecsps.DirectSum` is the only example of that right
     now.
 
     Parameters
     ----------
     dispatcher : callable
         The callable, most likely an `AbstractSpace`, to be applied in each component
-        discretization to construct the `HilberSpace` instances.
+        vector space to construct the `HilberSpace` instances.
     cls : callable, optional
         The callable, most likely a `HilbertSpace` subclass, to combine the individual
         `HilbertSpace` instances. Will be called with all spaces as arguments. Default: `DirectSum`.
@@ -439,74 +593,300 @@ def componentwise(dispatcher, cls=DirectSum):
         A callable that can be used to register an `AbstractSpace` implementation on
         direct sums.
     """
-    def factory(discr):
-        return cls(*(dispatcher(s) for s in discr), discr=discr)
+    def factory(vecsp, **kwargs):
+        return cls(*(dispatcher(s, **kwargs) for s in vecsp), vecsp=vecsp)
     return factory
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.discrs.Discretization`."""
-    @property
-    def gram(self):
-        return self.discr.identity
+    """`L2` implementation on a generic `regpy.vecsps.VectorSpace`."""
 
-    def __eq__(self, other):
-        return isinstance(other, type(self)) and self.discr == other.discr
+    def __init__(self, vecsp, weights=None):
+        super().__init__(vecsp)
+        self.weights = weights
 
-
-class L2UniformGrid(HilbertSpace):
-    """`L2` implementation on a `regpy.discrs.UniformGrid`, taking into account the volume
-    element.
-    """
     @util.memoized_property
     def gram(self):
-        return self.discr.volume_elem * self.discr.identity
+        if self.weights is None:
+            return self.vecsp.identity
+        else:
+            return operators.PtwMultiplication(self.vecsp, self.weights)
+        
+class L2MeasureSpaceFcts(HilbertSpace):
+    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`."""
+
+    def __init__(self, vecsp, weights=None):
+        super().__init__(vecsp)
+        self.weights = weights
+
+    @util.memoized_property
+    def gram(self):
+        if self.weights is None:
+            if np.all(self.vecsp.measure==1):
+                return self.vecsp.identity
+            else:
+                return operators.PtwMultiplication(self.vecsp,self.vecsp.measure)
+        else:
+            return operators.PtwMultiplication(self.vecsp, self.weights*self.vecsp.measure)
 
 
-class SobolevUniformGrid(HilbertSpace):
-    """`Sobolev` implementation on a `regpy.discrs.UniformGrid`.
+class L2UniformGridFcts(HilbertSpace):
+    """`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
+    element.
     """
-    def __init__(self, discr, index=1, axes=None):
-        super().__init__(discr)
+
+    def __init__(self, vecsp, weights=None):
+        super().__init__(vecsp)
+        self.weights = weights
+
+    @util.memoized_property
+    def gram(self):
+        if self.weights is None:
+            return self.vecsp.volume_elem * self.vecsp.identity
+        else:
+            return self.vecsp.volume_elem * operators.PtwMultiplication(self.vecsp, self.weights)
+
+
+class SobolevUniformGridFcts(HilbertSpace):
+    """`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
+    """
+    def __init__(self, vecsp, index=1, axes=None):
+        super().__init__(vecsp)
         self.index = index
         if axes is None:
-            axes = range(discr.ndim)
+            axes = range(vecsp.ndim)
         self.axes = list(axes)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, type(self)) and
-            self.discr == other.discr and
-            self.index == other.index
-        )
+        if isinstance(other, type(self)):
+            return (
+                self.vecsp == other.vecsp and
+                self.index == other.index
+            )
+        else:
+            return NotImplemented
 
     @util.memoized_property
     def gram(self):
-        ft = operators.FourierTransform(self.discr, axes=self.axes)
-        mul = operators.Multiplication(
+        ft = operators.FourierTransform(self.vecsp, axes=self.axes)
+        mul = operators.PtwMultiplication(
             ft.codomain,
-            self.discr.volume_elem * (
+            self.vecsp.volume_elem * (
                 1 + np.linalg.norm(ft.codomain.coords[self.axes], axis=0)**2
             )**self.index
         )
         return ft.adjoint * mul * ft
 
+class HmDomain(HilbertSpace):
+    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGridFcts grid.
+    D is characterized by a binary or integer-valued mask: D={mask==1}.
+    {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries.
+    mask may also be boolean, in this case there are only Dirichlet boundaries.
+    Boundary condition at the exterior boundaries are specified by ext_bd_cond, default is Neumann ('Neum')
+
+    m=index is a non-negative integer, the order or index of the Sobolev space.
+    The gram matrix is (alpha I - Delta)**(-m).
+
+    By default it is assumed that the lenghts in grid are given in physical dimensions,
+    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
+
+    If weight is specified, the Gram matrix will approximate (I-weight*Delta)**index. weight should be slowly varying.
+    """
+
+    def __init__(self,grid, mask,
+                h='normalized',
+                index=1,
+                weight=None,
+                ext_bd_cond = 'Neum',
+                alpha = 1,
+                dtype = float):
+        assert grid is None or isinstance(grid,vecsps.UniformGridFcts)
+        if not (grid is None or mask is None):
+            assert grid.shape == mask.shape
+        assert type(index)== int and index>=0
+        self.ndim = mask.ndim
+        if type(h) == tuple:
+            self.h_val = h
+        elif grid is None:
+            self.h_val=1./np.max(mask.shape)*np.ones((self.ndim,))
+        elif h=='physical':
+            self.h_val = grid.extents/(np.array(grid.shape)-1)
+        elif h=='normalized':
+            self.h_val = (2.*np.pi/np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
+        else:
+            raise NotImplemented
+
+        self.index = index
+        self.alpha = alpha
+        self.grid = grid
+        self.mask = (mask==1)
+        self.dtype = grid.dtype if grid else dtype
+        # impose exterior Neumann boundary conditions
+        mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
+        vecsp = vecsps.VectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
+        super().__init__(vecsp)
+        self.G = np.zeros(mask.shape,dtype=int)
+        interior_ind = mask==1
+        self.G[interior_ind] = 1+np.arange(np.count_nonzero(interior_ind))
+        self.G[mask==-1] = -1
+
+        if weight is None:
+            self.weight = None
+        else:
+            self.weight = np.pad(weight,1,'edge')
+
+    def I_minus_Delta(self):
+        """
+        I_minus_Delta is the sparse form of the sum of the alpha*identity and the negative Laplacian on the domain {mask
+        """
+        if not self.weight is None:
+            w = self.weight.ravel()
+        # Indices of interior points
+        G1 = self.G.ravel()
+        p = np.where(G1>0)[0] # list of numbers of interior points in flattened array
+        N = len(p)
+        # Connect interior points to themselves with 4's.
+        i = []   # row indices of matrix entries
+        j = []   # column indices of matrix entries
+        s = []   # values of matrix entries
+        dia = self.alpha * np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
+        # for k = north, east, south, west
+
+        kval= [1]
+        for d in range(self.ndim-1,0,-1):
+            kval = np.concatenate([kval,[kval[-1]*self.G.shape[d]] ])
+        # If G.shape = [m,n], then kval= [1,n].
+        # If G.shape = [l,m,n], then kval = [1,n,m*n]
+
+        for dir,h in enumerate(self.h_val):
+            for k in  kval[dir]*np.array([-1,1]):
+                # Possible neighbors in k-th direction
+                Q=np.zeros_like(p)
+                Q = G1[p+k]
+                # Indices of points with interior neighbors
+                q = np.where(Q>0)[0]
+                # Connect interior points to neighbors
+                i = np.concatenate([i, G1[p[q]]-1])
+                j = np.concatenate([j,Q[q]-1])
+                entries = np.ones(q.shape)/h**2
+                if not self.weight is None:
+                    entries = entries * np.sqrt(w[p[q]]*w[p[q]+k])
+                s = np.concatenate([s,-entries ])
+                dia[G1[p[q]]-1] += entries
+                # Indices of points with neighbors on Dirichlet boundary
+                q_diri = np.where(Q==0)[0]
+                entries = np.ones(q_diri.shape)/h**2
+                if not self.weight is None:
+                    entries = entries * np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
+                dia[G1[p[q_diri]]-1] += entries
+        i = np.concatenate([i, G1[p]-1])
+        j = np.concatenate([j, G1[p]-1])
+        s = np.concatenate([s,dia])
+        return csc_matrix((s, (i,j)),(N,N))
+
+    @util.memoized_property
+    def gram(self):
+        return operators.Pow(
+            operators.MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.dtype),
+            self.index
+            )
+
+## TODO: old version, to be deleted
+class Hm0Domain(HilbertSpace):
+    """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
+    m=index is a non-negative integer, the order or index of the Sobolev space
+
+    If weight is specified, the Gram matrix will approximated (I-weight*Delta)**index, otherwise weight == h**(-2).
+
+    only implemented in dimension n=2
+    """
+
+    def __init__(self,mask,dtype=float,h=None,index=1,weight=None):
+        assert type(index)== int and index>=0
+        if len(mask.shape) != 2:
+            raise NotImplementedError
+        vecsp = vecsps.VectorSpace((np.count_nonzero(mask),),dtype=dtype)
+        super().__init__(vecsp)
+        self.mask = mask
+        self.G = np.where(mask,1,0) # boolean to integer
+        k = np.nonzero(self.G) # integer coordinates of interior points
+        self.G[k] = 1+np.arange(len(k[0])) # numbering of the interior points
+        if h==None:
+            self.h=1/mask.shape[0]
+        else:
+            self.h = h
+        self.index = index
+        self.weight = weight
+
+    def I_minus_Delta(self):
+        """
+        Construct five-point finite difference Laplacian.
+        I_minus_Delta is the sparse form of the sum of the identity and the two-dimensional,
+        5-point discrete negative Laplacian on the grid G.
+        """
+        [m,n] = self.G.shape
+        if self.weight is None:
+            weight = (1./self.h**2) *np.ones((m,n))
+        else:
+            weight = self.weight
+        w = weight.flatten()
+        # Indices of interior points
+        G1 = self.G.flatten()
+        p = np.where(G1)[0] # list of numbers of interior points in flattened array
+        N = len(p)
+        # Connect interior points to themselves with 4's.
+        i = []   # row indices of matrix entries
+        j = []   # column indices of matrix entries
+        s = []   # values of matrix entries
+        dia = np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
+        # for k = north, east, south, west
+        for k in [-1, n, 1, -n]:
+            # Possible neighbors in k-th direction
+            Q = G1[p+k]
+            # Indices of points with interior neighbors
+            q = np.where(Q)[0]
+            # Connect interior points to neighbors
+            i = np.concatenate([i, G1[p[q]]-1])
+            j = np.concatenate([j,Q[q]-1])
+            entries = np.sqrt(w[p[q]]*w[p[q]+k])
+            s = np.concatenate([s,-entries ])
+            dia[G1[p[q]]-1] += entries
+            # Indices of points with neighbors on Dirichlet boundary
+            q_diri = np.where(Q==0)[0]
+            entries = np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
+            dia[G1[p[q_diri]]-1] += entries
+        i = np.concatenate([i, G1[p]-1])
+        j = np.concatenate([j, G1[p]-1])
+        s = np.concatenate([s,dia])
+        return csc_matrix((s, (i,j)),(N,N))
+
+    @util.memoized_property
+    def gram(self):
+        return operators.Pow(
+            operators.MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.vecsp.dtype),
+            self.index
+            )
 
 def _register_spaces():
-    """Auxiliary method to register abstract spaces for various discretizations. Using the decorator
+    """Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
     loading modules.
 
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
 
-    L2.register(discrs.DirectSum, componentwise(L2))
-    L2.register(discrs.Discretization, L2Generic)
-    L2.register(discrs.UniformGrid, L2UniformGrid)
+    L2.register(vecsps.Prod, componentwise(L2,cls=TensorProd))
+    L2.register(vecsps.DirectSum, componentwise(L2))
+    L2.register(vecsps.VectorSpace, L2Generic)
+    L2.register(vecsps.MeasureSpaceFcts,L2MeasureSpaceFcts)
+    L2.register(vecsps.UniformGridFcts, L2UniformGridFcts)
 
-    Sobolev.register(discrs.DirectSum, componentwise(Sobolev))
-    Sobolev.register(discrs.UniformGrid, SobolevUniformGrid)
+    Sobolev.register(vecsps.DirectSum, componentwise(Sobolev))
+    Sobolev.register(vecsps.UniformGridFcts, SobolevUniformGridFcts)
 
-    L2Boundary.register(discrs.DirectSum, componentwise(L2Boundary))
+    Hm.register(vecsps.VectorSpace,Hm)
+    Hm0.register(vecsps.VectorSpace,Hm0)
 
-    SobolevBoundary.register(discrs.DirectSum, componentwise(SobolevBoundary))
+    L2Boundary.register(vecsps.DirectSum, componentwise(L2Boundary))
+
+    SobolevBoundary.register(vecsps.DirectSum, componentwise(SobolevBoundary))

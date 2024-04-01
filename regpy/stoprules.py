@@ -69,6 +69,17 @@ class StopRule:
         return CombineRules([self, other])
 
 
+class NoneRule(StopRule):
+    """Default stop rule that will never stop an iteration. The rule should not be used in normal setting
+    it provides a default for the solvers that would stop by triggering their converged statement. 
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def _stop(self, x, y=None):
+        return False
+
 class CombineRules(StopRule):
     """Combine several stopping rules into one.
 
@@ -136,10 +147,13 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations):
+    def __init__(self, max_iterations, while_type = True):
         super().__init__()
         self.max_iterations = max_iterations
-        self.iteration = 0
+        if while_type:
+            self.iteration = -1
+        else:
+            self.iteration = 0
 
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
@@ -150,7 +164,6 @@ class CountIterations(StopRule):
             'iteration = {} / {}'
             .format(self.iteration, self.max_iterations))
         return self.iteration >= self.max_iterations
-
 
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
@@ -190,7 +203,7 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
-        self.log.info('relative discrepancy = {}, tolerance = {}'.format(rel, self.tau))
+        self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
 
