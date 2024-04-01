@@ -17,7 +17,6 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-# TODO dtype=complex?
 grid = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
 
 sobolev_index = 32

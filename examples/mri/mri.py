@@ -18,7 +18,6 @@ class CoilMult(Operator):
     """
 
     def __init__(self, grid, ncoils):
-        # TODO: are density and/or coil profiles complex?
         assert isinstance(grid, vecsps.UniformGridFcts)
         assert grid.ndim == 2
         self.grid = grid
