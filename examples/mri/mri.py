@@ -1,102 +1,148 @@
-import logging
-
-import matplotlib.colorbar as cbar
-import matplotlib.pyplot as plt
 import numpy as np
 
-import regpy.stoprules as rules
-import regpy.util as util
-from regpy.operators.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
-from regpy.solvers import RegularizationSetting
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-from regpy.vecsps import UniformGridFcts
-from regpy.hilbert import L2
+from regpy.operators import CoordinateProjection, DirectSum, FourierTransform, PtwMultiplication, Operator
+from regpy import util, vecsps
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
-)
 
-# TODO dtype=complex?
-grid = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
+class CoilMult(Operator):
+    """Operator that implements the multiplication between density and coil profiles. The domain
+    is a direct sum of the `grid` (for the densitiy) and a `regpy.vecsps.UniformGridFcts` of `ncoils`
+    copies of `grid`, stacked along the 0th dimension.
 
-sobolev_index = 32
-noiselevel = 0.05
+    Parameters
+    ----------
+    grid : regpy.vecsps.UniformGridFcts
+        The grid on which the density is defined.
+    ncoils : int
+        The number of coils.
+    """
 
-# In real applications with data known before constructing the operator, estimate_sampling_pattern
-# can be used to determine the mask.
-mask = grid.zeros(dtype=bool)
-mask[::2] = True
-mask[:10] = True
-mask[-10:] = True
+    def __init__(self, grid, ncoils):
+        # TODO: are density and/or coil profiles complex?
+        assert isinstance(grid, vecsps.UniformGridFcts)
+        assert grid.ndim == 2
+        self.grid = grid
+        """The density grid."""
+        self.coilgrid = vecsps.UniformGridFcts(ncoils, *grid.axes, dtype=grid.dtype)
+        """The coil grid, a stack of copies of `grid`."""
+        self.ncoils = ncoils
+        """The number of coils."""
+        super().__init__(
+            domain=self.grid + self.coilgrid,
+            codomain=self.coilgrid
+        )
 
-full_mri_op = parallel_mri(grid=grid, ncoils=10)
-sampling = cartesian_sampling(full_mri_op.codomain, mask=mask)
-mri_op = sampling * full_mri_op
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        density, coils = self.domain.split(x)
+        if differentiate or adjoint_derivative:
+            r"""We need to copy here since `.split()` returns views into `x` if possible."""            
+            self._density = density.copy()
+            self._coils = coils.copy()
+        return density * coils
 
-# Substitute Sobolev weights into coil profiles
-smoother = sobolev_smoother(mri_op.domain, sobolev_index, factor=220.)
-smoothed_op = mri_op * smoother
+    def _derivative(self, x):
+        density, coils = self.domain.split(x)
+        return density * self._coils + self._density * coils
 
-exact_solution = mri_op.domain.zeros()
-exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case
+    def _adjoint(self, y):
+        density = self._density
+        coils = self._coils
+        if self.grid.is_complex:
+            r"""Only `conj()` in complex case. For real case, we can avoid the copy."""
+            density = np.conj(density)
+            coils = np.conj(coils)
+        return self.domain.join(
+            np.sum(coils * y, axis=0),
+            density * y
+        )
 
-# Exact density is just a square shape
-exact_density[...] = (np.max(np.abs(grid.coords), axis=0) < 0.4)
+    def __repr__(self):
+        return util.make_repr(self, self.grid, self.ncoils)
 
-# Exact coils are Gaussians centered on points on a circle
-centers = util.linspace_circle(exact_coils.shape[0]) / np.sqrt(2)
-for coil, center in zip(exact_coils, centers):
-    r = np.linalg.norm(grid.coords - center[:, np.newaxis, np.newaxis], axis=0)
-    coil[...] = np.exp(-r**2 / 2)
 
-# Construct data (criminally), add noise
-exact_data = mri_op(exact_solution)
-data = exact_data + noiselevel * mri_op.codomain.randn()
+def cartesian_sampling(domain, mask):
+    """Constructs a cartesian sampling operator. This simple uses all arguments to construct
+    a `regpy.operators.CoordinateProjection` and returns it.
+    """
+    return CoordinateProjection(domain, mask)
 
-# Initial guess: constant density, zero coils
-init = smoothed_op.domain.zeros()
-init_density, _ = smoothed_op.domain.split(init)
-init_density[...] = 1
 
-setting = RegularizationSetting(op=smoothed_op, penalty=L2, data_fid=L2)
+def parallel_mri(grid, ncoils, centered=False):
+    """Construct a parallel MRI operator by composing a `regpy.operators.FourierTransform` and a
+    `CoilMult`. Subsampling patterns need to added by composing with e.g. a `cartesian_sampling`.
 
-solver = IrgnmCG(
-    setting=setting,
-    data=data,
-    regpar=10,
-    regpar_step=0.8,
-    init=init
-)
+    Parameters
+    ----------
+    grid : vecsps.UniformGridFcts
+        The grid on which the density is defined.
+    ncoils : int
+        The number of coils.
+    centered : bool
+        Whether to use a centered FFT. If true, the operator will use fftshift.
 
-stoprule = (
-    rules.CountIterations(max_iterations=100) +
-    rules.Discrepancy(
-        setting.h_codomain.norm, data,
-        noiselevel=setting.h_codomain.norm(exact_data - data),
-        tau=1.1
-    )
-)
+    Returns
+    -------
+    Operator
+    """
+    cmult = CoilMult(grid, ncoils)
+    ft = FourierTransform(cmult.codomain, axes=range(1, cmult.codomain.ndim), centered=centered)
+    return ft * cmult
 
-# Plotting setup
-plt.ion()
-fig, axes = plt.subplots(ncols=2, constrained_layout=True)
-bars = [cbar.make_axes(ax)[0] for ax in axes]
 
-axes[0].set_title('exact solution')
-axes[1].set_title('reconstruction')
+def sobolev_smoother(codomain, sobolev_index, factor=None, centered=False):
+    """Partial reimplementation of the Sobolev Gram matrix. Can be composed with forward operator
+    (from the right) to substitute
 
-# Plot exact solution
-im = axes[0].imshow(np.abs(normalize(*mri_op.domain.split(exact_solution))))
-fig.colorbar(im, cax=bars[0])
+        coils = ifft(aux / sqrt(sobolev_weights)),
 
-# Run the solver, plot iterates
-for reco, reco_data in solver.until(stoprule):
-    reco2 = smoother(reco)
-    im = axes[1].imshow(np.abs(normalize(*mri_op.domain.split(reco2))))
-    bars[1].clear()
-    fig.colorbar(im, cax=bars[1])
-    plt.pause(0.5)
+    making `aux` the new unknown. This can be used to avoid the numerically unstable Gram matrix
+    for high Sobolev indices.
 
-plt.ioff()
-plt.show()
+    Parameters
+    ----------
+    codomain :
+        Codomain of the operator
+    sobolev_index : int
+    centered : bool
+        Whether to use a centered FFT. If true, the operator will use fftshift.
+    factor : float
+        If factor is None (default): Implicit scaling based on the codomain. Otherwise,
+        the coordinates are normalized and this factor is applied.
+    """
+    # TODO Combine with Sobolev space implementation as much as possible
+    grid, coilsgrid = codomain
+    ft = FourierTransform(coilsgrid, axes=(1, 2), centered=centered)
+    if factor is None:
+       mulfactor = grid.volume_elem * (
+                    1 + np.linalg.norm(ft.codomain.coords[1:], axis=0)**2
+                                      )**(-sobolev_index / 2)
+    else:
+        mulfactor = ( 1 + factor * np.linalg.norm(ft.codomain.coords[1:]/2./np.amax(np.abs(ft.codomain.coords[1:])), axis=0)**2
+                                                 )**(-sobolev_index / 2)
+
+    mul = PtwMultiplication(ft.codomain, mulfactor)
+    return DirectSum(grid.identity, ft.inverse * mul, codomain=codomain)
+
+
+def estimate_sampling_pattern(data):
+    """Estimate the sampling pattern from measured data. If some measurement point is zero in all
+    coil profiles it is assumed to be outside of the sampling pattern. This method has a very low
+    probability of failing, especially non-integer data.
+
+    Parameters
+    ----------
+    data : array-like
+        The measured data, with coils stacked along dimension 0.
+
+    Returns
+    -------
+    boolean array
+        The subsampling mask.
+    """
+    return np.all(data != 0, axis=0)
+
+
+def normalize(density, coils):
+    """Normalize density and coils to handle the inherent non-injectivity of the `CoilMult` operator.
+    """
+    return density * np.linalg.norm(coils, axis=0)
