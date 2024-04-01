@@ -78,7 +78,7 @@ In both cases, you can add `--no-deps` to prevent installing dependencies automa
 in case you want to install them via some other package manager.
 """
 
-from regpy import vecsps, functionals, hilbert, mcmc, operators, solvers, stoprules, util
+from regpy import vecsps, functionals, hilbert, operators, solvers, stoprules, util
 
 hilbert._register_spaces()
 functionals._register_functionals()
