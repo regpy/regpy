@@ -3,38 +3,13 @@ r"""# Python tools for regularization methods
 A library for implementing and solving ill-posed inverse problems developed at the [Institute for
 Numerical and Applied Mathematics Goettingen](https://num.math.uni-goettingen.de).
 
-!!! Warning
-    This project is alpha quality software and under heavy development. Excpect bugs and sparse
-    documentation.
+This project is now low beta quality software and still under under heavy development. 
+Therefore, expect bugs and partially undocumented tools.
 
 ## Usage examples
 
-To get an impression of how using `regpy` looks, there are some examples it the [`examples`
-folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well as inside the
-release tarballs (see below).
-
-## Test it with [Singularity](https://sylabs.io/singularity/)
-
-If you're on Linux, you can use a premade Ubuntu-based Singularity container that contains
-`regpy` and all of its dependencies and examples. Install instructions for Singularity can be
-found [here][1].
-
-[1]: https://sylabs.io/guides/3.4/user-guide/installation.html#distribution-packages-of-singularity
-
-To get the container image, use
-
-~~~ bash
-singularity pull library://cruegge/default/regpy:latest
-~~~
-
-To run a shell inside the container, use
-
-~~~ bash
-singularity shell regpy_latest.sif
-~~~
-
-Note that the container's Python command is `python3`, not `python`. The examples can be found
-under `/opt/examples`.
+To get an impression of how using `regpy` looks, there are some examples in the [`examples`
+folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well as inside the release tarballs (see below). Most of the examples supply both a commented python script and a python notebook with more detailed explanation. 
 
 ## Installation
 
@@ -42,7 +17,7 @@ under `/opt/examples`.
 
 - The source code is on GitHub ([regpy/regpy](https://github.com/regpy/regpy)).
 - Releases are at the corresponding [release page](https://github.com/regpy/regpy/releases). The
-  current version is 0.1.
+  current version is 0.2.
 
 ### Dependencies
 
