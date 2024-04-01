@@ -70,6 +70,51 @@ class ProjectToBoundary(NGSolveOperator):
         return np.array(toret).flatten()
 
 class Coefficient(NGSolveOperator):
+    
+    """Diffusion and reaction coefficient problem
+    
+    Identification of a diffusion coefficient:
+    
+    PDE: -div(a grad u)=rhs       in Omega
+         u = 0            on dOmega
+
+    Evaluate: 
+        F: a \mapsto u
+    Derivative:
+        -div (a grad v)=div (h grad u) in Omega
+        v = 0                        on dOmega
+
+    Der: F'[u]: h \mapsto v
+
+    Adjoint:
+        div (a grad w)=q  in Omega
+        w=0              on dOmega
+
+    Adj: F'[s]^*: q \mapsto -grad(u) grad(w)
+    
+    
+    
+    
+    Identification of a reaction coefficient:
+    
+    PDE: -Delta u +c u=f       in Omega
+         u = 0            on dOmega
+
+    Evaluate: 
+        F: c \mapsto u
+        
+    Derivative:
+        -Delta v + c v=-h u in Omega
+        v = 0                        on dOmega
+
+    Der: F'[u]: h \mapsto v
+
+    Adjoint:
+        -Delta w+c w=q  in Omega
+        w=0              on dOmega
+
+    Adj: F'[s]^*: q \mapsto -u^* w    
+    """
 
     def __init__(
         self, domain, rhs, bc=None, codomain=None,
