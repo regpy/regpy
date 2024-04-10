@@ -10,10 +10,10 @@ class IrgnmSemiSmooth(Solver):
     r"""
     Semismooth Newton Method. In each iteration, solves
     $$
-     x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
+     x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < \psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
     $$
-    where $T$ is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    $\alpha_n$ is a decreasing geometric sequence of regularization parameters.
+    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    \(\alpha_n\) is a decreasing geometric sequence of regularization parameters.
     
     Parameters
     ----------
@@ -26,7 +26,7 @@ class IrgnmSemiSmooth(Solver):
     psi_plus : np.number
         upper constraint of the minimization. Must be smaller then `psi_minus`
     regpar : np.number
-        Initial regularization parameter $\alpha$ 
+        Initial regularization parameter \(\alpha\) 
     regpar_step : np.number, optional
         Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
     init : array-like, optional
