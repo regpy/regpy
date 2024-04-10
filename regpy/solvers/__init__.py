@@ -7,26 +7,33 @@ from regpy.functionals import  as_functional, Composed
 
 
 class Solver:
-    """Abstract base class for solvers. Solvers do not loop themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate and value as attributes
+    r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
     `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
     may or may not be the same arrays as before, modified in-place).
 
     There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
 
-    Subclasses should override the method `_next(self)` to perform a single iteration. The main
-    difference to `next` is that `_next` does not have a return value. If the solver
-    converged, `converge` should be called, afterwards `_next` will never be called again. Most
-    solvers will probably never converge on their own, but rely on the caller or a
+    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
+    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
+    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
+    called again. Most solvers will probably never converge on their own, but rely on the caller or a
     `regpy.stoprules.StopRule` for termination.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Initial argument for iteration. Defaults to None.
+    y : numpy.ndarray
+        Initial value at current iterate. Defaults to None.
     """
 
     log = classlogger
 
-    def __init__(self):
-        self.x = None
+    def __init__(self,x=None,y=None):
+        self.x = x
         """The current iterate."""
-        self.y = None
+        self.y = y
         """The value at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
         self.__converged = False
