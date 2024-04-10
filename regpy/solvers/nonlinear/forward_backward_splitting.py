@@ -5,18 +5,18 @@ from regpy.solvers import Solver, RegularizationSetting
 
 class ForwardBackwardSplitting(Solver):
     r"""
-    Minimizes $\mathcal{S}(f)+r\alpha*\mathcal{R}(f)$ with forward backward splitting. 
+    Minimizes \(\mathcal{S}(f)+r\alpha*\mathcal{R}(f)\) with forward backward splitting. 
 
     Parameters
     ----------
     setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem. Includes both penalty $\mathcal{R}$ and data fidelity $\mathcal{S}$ functional. 
+        The setting of the forward problem. Includes both penalty \(\mathcal{R}\) and data fidelity \(\mathcal{S}\) functional. 
     init : array-like
         The initial guess. Must be in setting.op.domain 
     tau : float , optional
         The parameter to compute the proximal operator of the penalty term. Must be positive.
     regpar : float, optional
-        The regularization parameter $\alpha$. Must be positive.
+        The regularization parameter \(\alpha\). Must be positive.
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
     """
