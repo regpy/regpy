@@ -63,7 +63,8 @@ class OperatorAsWorker(mp.Process):
                 terminate=True
             else:
                 raise TypeError(self.name+': unknown command ',command[0])
-        self.terminate()
+        print("Finished process")
+        return 0
 
 class ParallelInterface:
     def __init__(self,conns,subprocess_count,parallel_manager=None,end_command="break"):
@@ -73,16 +74,19 @@ class ParallelInterface:
         self.parallel_manager=parallel_manager
         if(self.parallel_manager!=None):
             self.pid=self.parallel_manager.append(self)
+        self.running=True
 
     def terminate_all(self,call_manager=False):
         for conn in self.conns:
             conn.send([self.end_command])
         self.subprocess_count=0
+        self.running=False
         if(self.parallel_manager!=None and call_manager):
             self.parallel_manager.terminated(self.pid)
 
     def __del__(self):
-        self.terminate_all()
+        if(self.running):
+            self.terminate_all()
 
 
 
@@ -140,6 +144,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         ParallelInterface.__init__(self,conns,len(conns),parallel_manager)
 
     def _eval(self, x, differentiate=False):
+        assert self.running
         if differentiate:
             for conn_m in self.conns:
                 conn_m.send(['eval_diff',x])
@@ -150,11 +155,13 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         return aux
 
     def _derivative(self, x):
+        assert self.running
         for conn_m in self.conns:
                 conn_m.send(['deriv',x])   
         return self.codomain.join(*(conn_m.recv() for conn_m in self.conns))
 
     def _adjoint(self, y):
+        assert self.running
         elms = self.codomain.split(y)
         result = self.domain.zeros()    
         for conn_m, elm in zip(self.conns, elms):
@@ -163,14 +170,13 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         return result
 
 class ParallelExecutionManager:
-    MAX_SUBPROCESSES=16#128
+    MAX_SUBPROCESSES=1#128
     total_subprocesses=0
 
     def __init__(self):
         self._min_id=0
         self.managed_ops={}
-        self.managed_processes=0
-
+        self._managed_processes=0
 
     def check_subprocess_count():
         if(ParallelExecutionManager.total_subprocesses> ParallelExecutionManager.MAX_SUBPROCESSES):
@@ -178,8 +184,9 @@ class ParallelExecutionManager:
 
     def __enter__(self):
         ParallelExecutionManager.check_subprocess_count()
+        return self
 
-    def __exit__(self):
+    def __exit__(self,type, value, traceback):
         self.terminate_all()
 
     @property
@@ -188,9 +195,10 @@ class ParallelExecutionManager:
     
     @managed_processes.setter
     def managed_processes(self,new_ammount):
-        ParallelExecutionManager.total_subprocesses+=new_ammount-self.managed_processes
+        print(new_ammount)
+        ParallelExecutionManager.total_subprocesses+=new_ammount-self._managed_processes
         ParallelExecutionManager.check_subprocess_count()
-        self.managed_processes=new_ammount
+        self._managed_processes=new_ammount
 
     def append(self,parallel_op):
         assert isinstance(parallel_op,ParallelInterface)
@@ -206,7 +214,7 @@ class ParallelExecutionManager:
 
     def terminate_all(self):
         for id in self.managed_ops.keys():
-            self.managed_ops[id].terminate_all()
+            self.managed_ops[id][0].terminate_all()
         self.managed_ops.clear()
         self.managed_processes=0
         self._min_id=0

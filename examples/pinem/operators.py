@@ -217,7 +217,7 @@ class ComplexNemitzkyOpForG(Operator):
 
 
 def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
-     g_is_complex=False,N=1,list_of_filters=None,parallel = False):
+     g_is_complex=False,N=1,list_of_filters=None,parallel = False,parallel_manager=None):
     """Constructs full PINEM measurement operator that maps g to the obtained data
 
     Parameters:
@@ -272,7 +272,7 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
                     *NemitzkyOpForG(n,cdomain)
                     *DirectSum(Exponential(domain), Identity(domain)))
     if parallel:
-        g_to_modes = ParallelVectorOfOperators(op_list)
+        g_to_modes = ParallelVectorOfOperators(op_list,parallel_manager=parallel_manager)
     else:
         g_to_modes = VectorOfOperators(op_list)
     op_mat = []
