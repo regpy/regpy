@@ -2,6 +2,7 @@ from regpy import util, vecsps
 from regpy.operators import Operator
 import multiprocessing as mp 
 from warnings import warn
+from weakref import WeakValueDictionary
 from regpy.util import classlogger
 
 class OperatorAsWorker(mp.Process):
@@ -41,52 +42,84 @@ class OperatorAsWorker(mp.Process):
             TypeError: Error is raised if unknown command is received
         """
         terminate=False
-        while not terminate:#TODO improve error handling
-            command = self.conn.recv()
-            self.log.debug(self.name+ ' executing '+command[0])
-            if command[0] ==  'eval_nodiff':
-                res=self.F(command[1])
-                self.conn.send(res)
-            elif command[0] == 'eval_diff':
-                res, self.deriv = self.F.linearize(command[1])
-                self.conn.send(res)
-            elif command[0] == 'deriv':
-                res = self.deriv(command[1])
-                self.conn.send(res)
-            elif command[0] == 'adjoint':
-                if self.F.linear:
-                    res = self.F.adjoint(command[1])
+        while not terminate:
+            try:           
+                command = self.conn.recv()
+                self.log.debug(self.name+ ' executing '+command[0])
+                if command[0] ==  'eval_nodiff':
+                    res=self.F(command[1])
+                    self.conn.send(res)
+                elif command[0] == 'eval_diff':
+                    res, self.deriv = self.F.linearize(command[1])
+                    self.conn.send(res)
+                elif command[0] == 'deriv':
+                    res = self.deriv(command[1])
+                    self.conn.send(res)
+                elif command[0] == 'adjoint':
+                    if self.F.linear:
+                        res = self.F.adjoint(command[1])
+                    else:
+                        res = self.deriv.adjoint(command[1])
+                    self.conn.send(res)
+                elif command[0] == 'break':
+                    terminate=True
                 else:
-                    res = self.deriv.adjoint(command[1])
-                self.conn.send(res)
-            elif command[0] == 'break':
-                terminate=True
-            else:
-                raise TypeError(self.name+': unknown command ',command[0])
-        print("Finished process")
+                    raise TypeError(self.name+': unknown command ',command[0])
+            except TypeError:
+                self.conn.send(TypeError(f"Error in subprocess: {self.name}: unknown command",command[0]))
+            except:
+                self.conn.send(RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}"))
         return 0
+            
 
 class ParallelInterface:
-    def __init__(self,conns,subprocess_count,parallel_manager=None,end_command="break"):
+    MAX_SUBPROCESSES=128
+    parallel_instances=WeakValueDictionary()
+    _min_id=0
+
+    def total_subprocess_count():
+        return sum([instance.subprocess_count for instance in ParallelInterface.parallel_instances.values() if instance.running])
+
+    def warn_subprocess_count():
+        sp_count=ParallelInterface.total_subprocess_count()
+        if(sp_count> ParallelInterface.MAX_SUBPROCESSES):
+            warn(f"Warning: There are already {sp_count} subprocesses running.",stacklevel=2)
+
+    def terminate_all_instances():
+        for instance in ParallelInterface.parallel_instances.values():
+            instance.terminate_all()
+
+    def __init__(self,conns,subprocess_count,end_command="break"):
         self.conns=conns
         self.subprocess_count=subprocess_count
         self.end_command=end_command
-        self.parallel_manager=parallel_manager
-        if(self.parallel_manager!=None):
-            self.pid=self.parallel_manager.append(self)
+        ParallelInterface.parallel_instances[ParallelInterface._min_id]=self
+        ParallelInterface._min_id+=1
         self.running=True
+        ParallelInterface.warn_subprocess_count()
 
-    def terminate_all(self,call_manager=False):
-        for conn in self.conns:
-            conn.send([self.end_command])
-        self.subprocess_count=0
-        self.running=False
-        if(self.parallel_manager!=None and call_manager):
-            self.parallel_manager.terminated(self.pid)
+    def terminate_all(self):
+        if(self.running):
+            for conn in self.conns:
+                conn.send([self.end_command])
+            self.subprocess_count=0
+            self.running=False
+
+    def compute_all(self,command,args_same=[],args_specific=[]):
+        if(not self.running):
+            raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
+        same_info=[command]+args_same
+        for i,conn in enumerate(self.conns):
+            conn.send(same_info+[arg[i] for arg in args_specific])
+        results=[conn.recv() for conn in self.conns]
+        for res in results:
+            if(isinstance(res,Exception)):
+                self.terminate_all()
+                raise res
+        return results
 
     def __del__(self):
-        if(self.running):
-            self.terminate_all()
+        self.terminate_all()
 
 
 
@@ -112,7 +145,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         Default: vecsps.DirectSum.
     """
 
-    def __init__(self, ops,  domain=None, codomain=None,parallel_manager=None):
+    def __init__(self, ops,  domain=None, codomain=None):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
 
@@ -141,83 +174,35 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
             G.start()
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
-        ParallelInterface.__init__(self,conns,len(conns),parallel_manager)
+        ParallelInterface.__init__(self,conns,len(conns))
 
     def _eval(self, x, differentiate=False):
-        assert self.running
         if differentiate:
-            for conn_m in self.conns:
-                conn_m.send(['eval_diff',x])
+            return self.codomain.join(*self.compute_all('eval_diff',[x]))
         else:
-            for conn_m in self.conns:
-                conn_m.send(['eval_nodiff',x])   
-        aux = self.codomain.join(*(conn_m.recv() for conn_m in self.conns))
-        return aux
+            return self.codomain.join(*self.compute_all('eval_nodiff',[x]))
 
     def _derivative(self, x):
-        assert self.running
-        for conn_m in self.conns:
-                conn_m.send(['deriv',x])   
-        return self.codomain.join(*(conn_m.recv() for conn_m in self.conns))
+        return self.codomain.join(*self.compute_all('deriv',[x]))
 
     def _adjoint(self, y):
         assert self.running
         elms = self.codomain.split(y)
-        result = self.domain.zeros()    
-        for conn_m, elm in zip(self.conns, elms):
-            conn_m.send(['adjoint',elm])
-            result += conn_m.recv()
-        return result
+        return sum(self.compute_all('adjoint',args_specific=[elms]))
 
 class ParallelExecutionManager:
-    MAX_SUBPROCESSES=1#128
-    total_subprocesses=0
 
     def __init__(self):
-        self._min_id=0
-        self.managed_ops={}
-        self._managed_processes=0
-
-    def check_subprocess_count():
-        if(ParallelExecutionManager.total_subprocesses> ParallelExecutionManager.MAX_SUBPROCESSES):
-            warn(f"Warning: There are already {ParallelExecutionManager.total_subprocesses} subprocesses running.")
+        pass
 
     def __enter__(self):
-        ParallelExecutionManager.check_subprocess_count()
+        ParallelInterface.warn_subprocess_count()
         return self
 
     def __exit__(self,type, value, traceback):
-        self.terminate_all()
+        ParallelInterface.terminate_all_instances()
 
-    @property
-    def managed_processes(self):
-        return self._managed_processes
-    
-    @managed_processes.setter
-    def managed_processes(self,new_ammount):
-        print(new_ammount)
-        ParallelExecutionManager.total_subprocesses+=new_ammount-self._managed_processes
-        ParallelExecutionManager.check_subprocess_count()
-        self._managed_processes=new_ammount
 
-    def append(self,parallel_op):
-        assert isinstance(parallel_op,ParallelInterface)
-        id=self._min_id
-        self._min_id+=1
-        self.managed_ops.update({id:(parallel_op,parallel_op.subprocess_count)})
-        self.managed_processes+=parallel_op.subprocess_count
-        return id
-
-    def terminated(self,id):
-        _,subprocess_count=self.managed_ops.pop()
-        self.managed_processes-=subprocess_count
-
-    def terminate_all(self):
-        for id in self.managed_ops.keys():
-            self.managed_ops[id][0].terminate_all()
-        self.managed_ops.clear()
-        self.managed_processes=0
-        self._min_id=0
 
 
 

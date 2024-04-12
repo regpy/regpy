@@ -33,7 +33,7 @@ def load_simulated_g(filename):
     px_size = px_size * 1e-9 #convert nm to m
     return g_map, mask, mask_binary, px_size
 
-def setup_simulated_g(parallel=True,parallel_manager=None,list_of_filters=None,N=30):
+def setup_simulated_g(parallel=True,list_of_filters=None,N=30):
     r"""Loads simulated_g and sets up operator, domains and masks accordingly.
 
     Parameters
@@ -83,7 +83,7 @@ def setup_simulated_g(parallel=True,parallel_manager=None,list_of_filters=None,N
     op = get_op_g_to_data(*opdata, 
                 list_of_filters = list_of_filters,
                 N=N, 
-                parallel=parallel,parallel_manager=parallel_manager)
+                parallel=parallel)
     exact_solution = op.domain.join(np.log(np.abs(g_map)),
                                     np.unwrap(np.angle(g_map.T)).T)
     return op, grid, exact_solution, g_map, mask_a, np.ones_like(mask_a), opdata
