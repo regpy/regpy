@@ -71,10 +71,10 @@ class PDHG(Solver):
         self.y = self.setting.op(self.x)
 
 
-class DouglasRashford(Solver):
+class DouglasRachford(Solver):
     r"""The Douglas-Rashford Splitting Algorithm
 
-    Minimizes $\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)$
+    Minimizes \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)\)
 
     Parameters
     ----------
@@ -108,6 +108,6 @@ class DouglasRashford(Solver):
         self.y = self.setting.op(self.x)
 
     def _next(self):
-        self.h += self.setting.data_fidelity.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
+        self.h += self.setting.data_fid.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
         self.x = self.setting.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
         self.y = self.setting.op(self.x)
