@@ -488,9 +488,15 @@ class UniformGridFcts(GridFcts):
          If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
         The dtype of the vector space.
+    periodic: If true, the grid is assumed to be periodic. If coords is a tuple of triples 
+        passed as arguments to numpy.linspace, the right boundaries (second elements of the triples)
+        are reduced such that the difference of the second and first elements represents 
+        periodicity lengths. 
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float):
+    def __init__(self, *coords, axisdata=None, dtype=float, periodic = False):
+        if periodic and all(isinstance(c,tuple) for c in coords):
+            coords = tuple((l, (l+(n-1)*r)/n ,n) for (l,r,n) in coords)
         super().__init__(*coords, axisdata=axisdata,dtype=dtype,use_cell_measure=False)
         spacing = []
         for axis in self.axes:
@@ -502,42 +508,6 @@ class UniformGridFcts(GridFcts):
         """The volumen element, initialized as product of `spacing`"""
         self.measure = self.volume_elem
         """ Setting measure to be initialzed by `volume_element`"""
-
-
-    def frequencies(self, centered=False, axes=None):
-        """Compute the grid of frequencies for an FFT on this grid instance.
-
-        Parameters
-        ----------
-        centered : bool, optional
-            Whether the resulting grid will have its zero frequency in the center or not. The
-            advantage is that the resulting grid will have strictly increasing axes, making it
-            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
-            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
-            performance reasons. Default: `False`.
-        axes : tuple of ints, optional
-            Axes for which to compute the frequencies. All other axes will be returned as-is.
-            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
-            axes will be computed. Default: `None`.
-        Returns
-        -------
-        array
-        """
-        if axes is None:
-            axes = range(self.ndim)
-        axes = set(axes)
-        frqs = []
-        for i, (s, l) in enumerate(zip(self.shape, self.spacing)):
-            if i in axes:
-                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
-                # to be periodic.
-                if centered:
-                    frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
-                else:
-                    frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
-            else:
-                frqs.append(self.axes[i])
-        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
     
     @MeasureSpaceFcts.measure.setter
     def measure(self,new_measure):
