@@ -1022,8 +1022,11 @@ class FourierTransform(Operator):
     """
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, vecsps.UniformGridFcts)
-        frqs = domain.frequencies(centered=centered, axes=axes)
-        if centered:
+        self.is_complex = domain.is_complex
+        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        shape = domain.shape
+        s = shape[-1]
+        if centered or (not domain.is_complex and domain.ndim==1):
             codomain = vecsps.UniformGridFcts(*frqs, dtype=complex)
         else:
             # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
@@ -1031,11 +1034,14 @@ class FourierTransform(Operator):
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes
-
+  
     def _eval(self, x):
         if self.centered:
             x = np.fft.ifftshift(x, axes=self.axes)
-        y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        if self.is_complex:
+            y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        else:
+            y = np.fft.rfftn(x, axes=self.axes, norm='ortho')
         if self.centered:
             return np.fft.fftshift(y, axes=self.axes)
         else:
@@ -1044,13 +1050,56 @@ class FourierTransform(Operator):
     def _adjoint(self, y):
         if self.centered:
             y = np.fft.ifftshift(y, axes=self.axes)
-        x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        if self.is_complex:
+            x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        else:
+            x = np.fft.irfftn(y, self.domain.shape,axes=self.axes, norm='ortho')
         if self.centered:
             x = np.fft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:
             return x
         else:
             return np.real(x)
+        
+    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+        """Compute the grid of frequencies for an FFT on this grid instance.
+
+        Parameters
+        ----------
+        centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Default: `False`.
+        axes : tuple of ints, optional
+            Axes for which to compute the frequencies. All other axes will be returned as-is.
+            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
+            axes will be computed. Default: `None`.
+        Returns
+        -------
+        array
+        """
+        if axes is None:
+            axes = range(domain.ndim)
+        axes = set(axes)
+        frqs = []
+        for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
+            if i in axes:
+                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
+                # to be periodic.
+                shalf = s/2+1 if (s//2)*2==s else (s+1)/2
+                if i==domain.ndim-1 and rfft==True:
+                    frqs.append(np.arange(0,shalf) / (s*l))
+                else:
+                    if centered:
+                        frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
+                    else:
+                        frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
+            else:
+                frqs.append(self.axes[i])
+        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
+        
 
     @property
     def inverse(self):
@@ -1604,3 +1653,6 @@ class ApproximateHessian(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+
+
+
