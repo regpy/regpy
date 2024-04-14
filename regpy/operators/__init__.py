@@ -596,7 +596,7 @@ class SciPyLinearOperator(sla.LinearOperator):
     def __init__(self, op2):
         self.op2 = op2
         r"""the wrapped operator"""
-        super().__init__(op2.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+        super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
     
     def _matvec(self, x):
         r"""Applies the operator.

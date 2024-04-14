@@ -6,13 +6,13 @@ import logging
 import numpy as np
 
 class Landweber(Solver):
-    r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
+    r"""The linear Landweber method. Solves the linear, ill-posed equation
     $$
-        F(x) = g^\delta,
+        T(x) = g^\delta,
     $$
-    where $T$ is a Frechet-differentiable operator, by gradient descent for the residual
+    in Hilbert spaces by gradient descent for the residual
     $$
-        \Vert F(x) - g^\delta\Vert^2,
+        \Vert T(x) - g^\delta\Vert^2,
     $$
     where $\Vert\cdot\Vert$ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
@@ -39,23 +39,24 @@ class Landweber(Solver):
         """The problem setting."""
         self.rhs = rhs
         """The right hand side."""
-        self.x = init
-        self.y, deriv = self.setting.op.linearize(self.x)
-        self.deriv = deriv
-        """The derivative at the current iterate."""
+        T = self.setting.op
         gramX = self.setting.h_domain.gram
         gramY = self.setting.h_codomain.gram
-        norm =eigsh(SciPyLinearOperator(self.deriv.adjoint * gramY * self.deriv), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
-
-        self.stepsize = stepsize or 0.9 / norm
+        self.x = init
+        self.y = T(self.x)
+        norm =eigsh(SciPyLinearOperator(T.adjoint * gramY * T), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
+        self.stepsize = stepsize or 1 / norm
         """The stepsize."""
 
     def _next(self):
+        T = self.setting.op
+        gramX_inv = self.setting.h_domain.gram_inv
+        gramY = self.setting.h_codomain.gram
         self._residual = self.y - self.rhs
-        self._gy_residual = self.setting.h_codomain.gram(self._residual)
-        self._update = self.deriv.adjoint(self._gy_residual)
-        self.x -= self.stepsize * self.setting.h_domain.gram_inv(self._update)
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self._gy_residual = gramY(self._residual)
+        self._update = T.adjoint(self._gy_residual)
+        self.x -= self.stepsize * gramX_inv(self._update)
+        self.y = T(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
             norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
