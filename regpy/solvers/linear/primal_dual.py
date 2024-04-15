@@ -7,14 +7,14 @@ from regpy.functionals import Functional
 
 class PDHG(Solver):
     r"""The Primal-dual hybrid gradient (PDHG) or Chambolle-Pock Algorithm
-    For $\theta=0$ this is the Arrow-Hurwicz-Uzawa algorithm.
+    For \(\theta=0)\ this is the Arrow-Hurwicz-Uzawa algorithm.
 
-    Solves the minimization problem: $\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)$
+    Solves the minimization problem: \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f))\
     by solving the saddle-point problem: 
-    $$
+    \[
         \inf_f \sup_p [ \langle Tf,p\rangle+\alpha\mathcal{R}(f)-\mathcal{S}^\ast(p) ].
-    $$
-    Here $\mathcal{S}^\ast$ denotes the Fenchel conjugate functional.
+    \]
+    Here \(\mathcal{S}^\ast)\ denotes the Fenchel conjugate functional.
 
     Parameters
     ----------
