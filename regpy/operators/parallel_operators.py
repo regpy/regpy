@@ -1,9 +1,16 @@
-from regpy import util, vecsps
+from regpy import vecsps
 from regpy.operators import Operator
 import multiprocessing as mp 
 from warnings import warn
 from weakref import WeakValueDictionary
 from regpy.util import classlogger
+from enum import Enum
+
+class ExitCode(Enum):
+    SUCCESS=1
+    ERROR=2
+    TIMEOUT=3
+
 
 class OperatorAsWorker(mp.Process):
     r""" 
@@ -21,7 +28,7 @@ class OperatorAsWorker(mp.Process):
         the regpy operator
     """
     log = classlogger
-    def __init__(self, name, conn,F):
+    def __init__(self, name, conn,F,timeout=300):
         super(OperatorAsWorker, self).__init__()
         self.F = F
         """the operator"""
@@ -29,6 +36,7 @@ class OperatorAsWorker(mp.Process):
         """name of the process"""
         self.conn = conn
         """connection to master"""
+        self.timeout=timeout
 
     def run(self):
         """Starts the process. While running the process may receive the commands:
@@ -42,33 +50,40 @@ class OperatorAsWorker(mp.Process):
             TypeError: Error is raised if unknown command is received
         """
         terminate=False
-        while not terminate:
+        timed_out=False
+        while not terminate and not timed_out:
             try:           
                 command = self.conn.recv()
+                print(f"{self}:{command}")
                 self.log.debug(self.name+ ' executing '+command[0])
                 if command[0] ==  'eval_nodiff':
                     res=self.F(command[1])
-                    self.conn.send(res)
+                    self.conn.send([ExitCode.SUCCESS,res])
                 elif command[0] == 'eval_diff':
                     res, self.deriv = self.F.linearize(command[1])
-                    self.conn.send(res)
+                    self.conn.send([ExitCode.SUCCESS,res])
                 elif command[0] == 'deriv':
                     res = self.deriv(command[1])
-                    self.conn.send(res)
+                    self.conn.send([ExitCode.SUCCESS,res])
                 elif command[0] == 'adjoint':
                     if self.F.linear:
                         res = self.F.adjoint(command[1])
                     else:
                         res = self.deriv.adjoint(command[1])
-                    self.conn.send(res)
+                    self.conn.send([ExitCode.SUCCESS,res])
                 elif command[0] == 'break':
                     terminate=True
                 else:
                     raise TypeError(self.name+': unknown command ',command[0])
             except TypeError:
-                self.conn.send(TypeError(f"Error in subprocess: {self.name}: unknown command",command[0]))
+                self.conn.send([ExitCode.ERROR,TypeError(f"Error in subprocess: {self.name}: unknown command",command[0])])
             except:
-                self.conn.send(RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}"))
+                self.conn.send([ExitCode.ERROR,RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}")])
+            print(f"{self}:finised")
+            timed_out=not self.conn.poll(self.timeout)
+        if(timed_out):
+            print(f"Process timed out after {self.timeout} seconds.")
+            self.conn.send([ExitCode.TIMEOUT,None])
         return 0
             
 
@@ -89,6 +104,7 @@ class ParallelInterface:
         for instance in ParallelInterface.parallel_instances.values():
             instance.terminate_all()
 
+
     def __init__(self,conns,subprocess_count,end_command="break"):
         self.conns=conns
         self.subprocess_count=subprocess_count
@@ -101,22 +117,37 @@ class ParallelInterface:
     def terminate_all(self):
         if(self.running):
             for conn in self.conns:
-                conn.send([self.end_command])
+                if(conn.poll()):
+                    rec_d=conn.recv()
+                    if(rec_d[0]==ExitCode.ERROR):
+                        conn.send([self.end_command])
+                else:
+                    conn.send([self.end_command])
             self.subprocess_count=0
             self.running=False
+
+    def handle_errors(self,rec_d):
+        if(rec_d[0]==ExitCode.ERROR):
+            self.terminate_all()
+            raise rec_d[1]
+        elif(rec_d[0]==ExitCode.TIMEOUT):
+            self.terminate_all()
+            raise TimeoutError("Subprocess timed out!")
 
     def compute_all(self,command,args_same=[],args_specific=[]):
         if(not self.running):
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
         same_info=[command]+args_same
         for i,conn in enumerate(self.conns):
-            conn.send(same_info+[arg[i] for arg in args_specific])
-        results=[conn.recv() for conn in self.conns]
-        for res in results:
-            if(isinstance(res,Exception)):
+            if(conn.poll()):
                 self.terminate_all()
-                raise res
-        return results
+                raise TimeoutError("Subprocess timed out!")
+            else:
+                conn.send(same_info+[arg[i] for arg in args_specific])
+        rec_data=[conn.recv() for conn in self.conns]
+        for rec_d in rec_data:
+            self.handle_errors(rec_d)
+        return (rec_d[1] for rec_d in rec_data)
 
     def __del__(self):
         self.terminate_all()
@@ -145,7 +176,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         Default: vecsps.DirectSum.
     """
 
-    def __init__(self, ops,  domain=None, codomain=None):
+    def __init__(self, ops,  domain=None, codomain=None,timeout=60):#300
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
 
@@ -170,11 +201,12 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         for op in ops:
             conn_m, conn_w = mp.Pipe()
             conns.append(conn_m)
-            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op)
+            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op,timeout=timeout)
             G.start()
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
         ParallelInterface.__init__(self,conns,len(conns))
+        
 
     def _eval(self, x, differentiate=False):
         if differentiate:
@@ -201,7 +233,6 @@ class ParallelExecutionManager:
 
     def __exit__(self,type, value, traceback):
         ParallelInterface.terminate_all_instances()
-
 
 
 
