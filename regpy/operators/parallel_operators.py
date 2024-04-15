@@ -5,6 +5,8 @@ from warnings import warn
 from weakref import WeakValueDictionary
 from regpy.util import classlogger
 from enum import Enum
+import os
+import time
 
 class ExitCode(Enum):
     SUCCESS=1
@@ -28,7 +30,7 @@ class OperatorAsWorker(mp.Process):
         the regpy operator
     """
     log = classlogger
-    def __init__(self, name, conn,F,timeout=300):
+    def __init__(self, name, conn,F,parent_id,timeout=300):
         super(OperatorAsWorker, self).__init__()
         self.F = F
         """the operator"""
@@ -37,6 +39,7 @@ class OperatorAsWorker(mp.Process):
         self.conn = conn
         """connection to master"""
         self.timeout=timeout
+        self.parent_id=parent_id
 
     def run(self):
         """Starts the process. While running the process may receive the commands:
@@ -49,43 +52,65 @@ class OperatorAsWorker(mp.Process):
         Raises:
             TypeError: Error is raised if unknown command is received
         """
+        self.parent_id=os.getppid()
         terminate=False
         timed_out=False
         while not terminate and not timed_out:
+            res=None
+            exit_code=ExitCode.ERROR
             try:           
                 command = self.conn.recv()
-                print(f"{self}:{command}")
                 self.log.debug(self.name+ ' executing '+command[0])
                 if command[0] ==  'eval_nodiff':
                     res=self.F(command[1])
-                    self.conn.send([ExitCode.SUCCESS,res])
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'eval_diff':
                     res, self.deriv = self.F.linearize(command[1])
-                    self.conn.send([ExitCode.SUCCESS,res])
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'deriv':
                     res = self.deriv(command[1])
-                    self.conn.send([ExitCode.SUCCESS,res])
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'adjoint':
                     if self.F.linear:
                         res = self.F.adjoint(command[1])
                     else:
                         res = self.deriv.adjoint(command[1])
-                    self.conn.send([ExitCode.SUCCESS,res])
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'break':
                     terminate=True
                 else:
                     raise TypeError(self.name+': unknown command ',command[0])
             except TypeError:
-                self.conn.send([ExitCode.ERROR,TypeError(f"Error in subprocess: {self.name}: unknown command",command[0])])
+                exit_code=ExitCode.ERROR
+                res=TypeError(f"Error in subprocess: {self.name}: unknown command",command[0])
             except:
-                self.conn.send([ExitCode.ERROR,RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}")])
-            print(f"{self}:finised")
+                exit_code=ExitCode.ERROR
+                res=RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}")
+            print(f"{self.name}:{os.getppid()}-{self.parent_id}")
+            if(self.parent_id==os.getppid()):
+                print(f"{self.name}:Send back")
+                self.conn.send([exit_code,res])
+                print(f"{self.name}:Send back finished")
+            else:
+                terminate=True
             timed_out=not self.conn.poll(self.timeout)
         if(timed_out):
             print(f"Process timed out after {self.timeout} seconds.")
             self.conn.send([ExitCode.TIMEOUT,None])
         return 0
             
+
+def check_running(conns):
+    parent_id=os.getppid()
+    while(os.getppid()==parent_id):
+        time.sleep(10)
+        print("check")
+    for conn in conns:
+        if(conn.poll()):
+            conn.recv()
+        conn.send('break')
+    print("Done")
+
 
 class ParallelInterface:
     MAX_SUBPROCESSES=128
@@ -113,6 +138,8 @@ class ParallelInterface:
         ParallelInterface._min_id+=1
         self.running=True
         ParallelInterface.warn_subprocess_count()
+        process = mp.Process(target=check_running, args=(conns,))
+        process.start()
 
     def terminate_all(self):
         if(self.running):
@@ -201,7 +228,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         for op in ops:
             conn_m, conn_w = mp.Pipe()
             conns.append(conn_m)
-            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op,timeout=timeout)
+            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op,os.getpid(),timeout=timeout)
             G.start()
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
