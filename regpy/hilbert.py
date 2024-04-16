@@ -302,7 +302,7 @@ class TensorProd(HilbertSpace):
 
     Parameters
     ----------
-    *factors : HilbertSpace tuple
+    *args : HilbertSpace or (scalar, HilbertSpace)
         The Hilbert spaces to be tensored. Alternatively, factors can be given
         as tuples `(scalar, HilbertSpace)`, which will scale the norm of the
         respective factor. The gram matrices and hence the inner products will
@@ -364,9 +364,9 @@ class TensorProd(HilbertSpace):
             domains.append(s.gram.domain)
             for v in s.gram.domain.real_space().iter_basis():
                 if w == 1:
-                    basis.append(s.domain.flatten(s.gram(v)))
+                    basis.append(s.vecsp.flatten(s.gram(v)))
                 else:
-                    basis.append(s.domain.flatten((w**2 * s.gram)(v)))
+                    basis.append(s.vecsp.flatten((w**2 * s.gram)(v)))
             bases.append(np.array(basis))
         from regpy.vecsps.tensor_bases import TensorBasis
         return TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
