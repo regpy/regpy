@@ -58,8 +58,10 @@ class OperatorAsWorker(mp.Process):
         while not terminate and not timed_out:
             res=None
             exit_code=ExitCode.ERROR
-            try:           
+            try:
+                print(f"{self.name}:Waiting for command")           
                 command = self.conn.recv()
+                print(f"{self.name}:Read command {command[0]}")
                 self.log.debug(self.name+ ' executing '+command[0])
                 if command[0] ==  'eval_nodiff':
                     res=self.F(command[1])
@@ -86,17 +88,15 @@ class OperatorAsWorker(mp.Process):
             except:
                 exit_code=ExitCode.ERROR
                 res=RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}")
-            print(f"{self.name}:{os.getppid()}-{self.parent_id}")
-            if(self.parent_id==os.getppid()):
+            if(not terminate):
                 print(f"{self.name}:Send back")
                 self.conn.send([exit_code,res])
                 print(f"{self.name}:Send back finished")
-            else:
-                terminate=True
-            timed_out=not self.conn.poll(self.timeout)
+            #timed_out=not self.conn.poll(self.timeout)
         if(timed_out):
             print(f"Process timed out after {self.timeout} seconds.")
             self.conn.send([ExitCode.TIMEOUT,None])
+        print(f"{self.name}:finished")
         return 0
             
 
@@ -104,11 +104,12 @@ def check_running(conns):
     parent_id=os.getppid()
     while(os.getppid()==parent_id):
         time.sleep(10)
-        print("check")
+        print(f"check{os.getppid()}:{parent_id}")
+    time.sleep(10)
     for conn in conns:
         if(conn.poll()):
             conn.recv()
-        conn.send('break')
+        conn.send(['break'])
     print("Done")
 
 
@@ -166,11 +167,7 @@ class ParallelInterface:
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
         same_info=[command]+args_same
         for i,conn in enumerate(self.conns):
-            if(conn.poll()):
-                self.terminate_all()
-                raise TimeoutError("Subprocess timed out!")
-            else:
-                conn.send(same_info+[arg[i] for arg in args_specific])
+            conn.send(same_info+[arg[i] for arg in args_specific])
         rec_data=[conn.recv() for conn in self.conns]
         for rec_d in rec_data:
             self.handle_errors(rec_d)
