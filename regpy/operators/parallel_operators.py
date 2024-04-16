@@ -54,10 +54,8 @@ class OperatorAsWorker(mp.Process):
         while not terminate:
             res=None
             exit_code=ExitCode.ERROR
-            try:
-                print(f"{self.name}:Waiting for command")           
+            try:    
                 command = self.conn.recv()
-                print(f"{self.name}:Read command {command[0]}")
                 self.log.debug(self.name+ ' executing '+command[0])
                 if command[0] ==  'eval_nodiff':
                     res=self.F(command[1])
@@ -85,10 +83,7 @@ class OperatorAsWorker(mp.Process):
                 exit_code=ExitCode.ERROR
                 res=RuntimeError(f"Error in subprocess: An error occured during the computation of {command[0]}")
             if(not terminate):
-                print(f"{self.name}:Send back")
                 self.conn.send([exit_code,res])
-                print(f"{self.name}:Send back finished")
-        print(f"{self.name}:finished")
         return 0
             
 
@@ -98,7 +93,6 @@ def check_running(conns,conn_m):
     while(os.getppid()==parent_id and not terminated):
         if(conn_m.poll(10)):
             terminated=True
-        print(f"check{os.getppid()}:{parent_id}")
     if(not terminated):
         time.sleep(10)
         for conn in conns:
@@ -122,7 +116,6 @@ class ParallelInterface:
 
     def warn_subprocess_count():
         sp_count=ParallelInterface.total_subprocess_count()
-        print(sp_count)
         if(sp_count> ParallelInterface.MAX_SUBPROCESSES):
             warn(f"Warning: There are already {sp_count} subprocesses running.",stacklevel=2)
 
