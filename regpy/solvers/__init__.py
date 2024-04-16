@@ -134,6 +134,10 @@ class Solver:
         """
         for x, y in self.while_(stoprule):
             pass
+        if not 'x' in locals() or not 'y' in locals(): 
+            # This happens if the stopping criterion is satisfied for the initial guess.
+            x = self.x
+            y = self.y
         return x, y
 
 
