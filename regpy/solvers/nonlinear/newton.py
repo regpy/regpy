@@ -6,10 +6,10 @@ from regpy.solvers import Solver
 
 class NewtonCG(Solver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
-    $$
+    \[
         T(x) = y,
-    $$
-    where $T$ is a Frechet-differentiable operator. The Newton equations are solved by the
+    \]
+    where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
 
@@ -168,7 +168,7 @@ class NewtonCGFrozen(Solver):
 
 
 class NewtonSemiSmooth(Solver):
-    r"""The frozen Newton-CG method. Like Newton-CG adds constraints $\psi_+$ and $\psi_-$ and efficiently
+    r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
     only updates the parts needed to be updated. 
 
     Parameters
@@ -180,7 +180,7 @@ class NewtonSemiSmooth(Solver):
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
     alpha : number, optional
-        Initial regularization parameter $\alpha$.
+        Initial regularization parameter \(\alpha)\.
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
@@ -196,7 +196,7 @@ class NewtonSemiSmooth(Solver):
         """
         self.x = init
         self.alpha = alpha
-        """Initial regularization parameter $\alpha$.
+        """Initial regularization parameter \(\alpha)\.
         """
         self.psi_minus = psi_minus
         """lower constraint of the minimization.

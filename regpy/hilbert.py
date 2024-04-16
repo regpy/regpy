@@ -289,15 +289,15 @@ class TensorProd(HilbertSpace):
     Therefore, please pay attention that to do that we have to actually evaluate
     the Gram-matrix for each Hilbert and store it.
 
-    We want $H_1 \otimes \dots H_l$ and each $H_i$ is discretised by a basis
-    of size $n_i$ then we get a memory consumption for the Gram matrices of
-    $O(\sum_{i=1}^l n_i)<=O(l\cdot n)$ with $n = \max(n_i)$.
+    We want \(H_1 \otimes \dots H_l)\ and each \(H_i)\ is discretised by a basis
+    of size \(n_i)\ then we get a memory consumption for the Gram matrices of
+    \(O(\sum_{i=1}^l n_i)<=O(l\cdot n))\ with \(n = \max(n_i))\.
 
     Computing the Gram property itself can be easily seen to have the complexity
-    $O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n)))$. with $\phi_i$ being
-    the complexity for evaluation the Gram operator of the Hilbert space $H_i$.
+    \(O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n))))\. with \(\phi_i)\ being
+    the complexity for evaluation the Gram operator of the Hilbert space \(H_i)\.
     Note that in the case that each Gram operator is a dense matrix this would be
-    given by $\phi_i(n_i)=n_i^2$ leading to a complexity of $O(l\cdot n^3)$.
+    given by \(\phi_i(n_i)=n_i^2)\ leading to a complexity of \(O(l\cdot n^3))\.
 
 
     Parameters

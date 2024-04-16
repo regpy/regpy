@@ -7,14 +7,14 @@ from regpy.functionals import Functional
 
 class PDHG(Solver):
     r"""The Primal-dual hybrid gradient (PDHG) or Chambolle-Pock Algorithm
-    For $\theta=0$ this is the Arrow-Hurwicz-Uzawa algorithm.
+    For \(\theta=0)\ this is the Arrow-Hurwicz-Uzawa algorithm.
 
-    Solves the minimization problem: $\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)$
+    Solves the minimization problem: \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f))\
     by solving the saddle-point problem: 
-    $$
+    \[
         \inf_f \sup_p [ \langle Tf,p\rangle+\alpha\mathcal{R}(f)-\mathcal{S}^\ast(p) ].
-    $$
-    Here $\mathcal{S}^\ast$ denotes the Fenchel conjugate functional.
+    \]
+    Here \(\mathcal{S}^\ast)\ denotes the Fenchel conjugate functional.
 
     Parameters
     ----------
@@ -71,10 +71,10 @@ class PDHG(Solver):
         self.y = self.setting.op(self.x)
 
 
-class DouglasRashford(Solver):
+class DouglasRachford(Solver):
     r"""The Douglas-Rashford Splitting Algorithm
 
-    Minimizes $\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)$
+    Minimizes \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)\)
 
     Parameters
     ----------
@@ -108,6 +108,6 @@ class DouglasRashford(Solver):
         self.y = self.setting.op(self.x)
 
     def _next(self):
-        self.h += self.setting.data_fidelity.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
+        self.h += self.setting.data_fid.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
         self.x = self.setting.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
         self.y = self.setting.op(self.x)

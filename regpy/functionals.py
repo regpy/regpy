@@ -22,7 +22,7 @@ class Functional:
 
     They can also be multiplied by scalars or `np.ndarrays`of `domain.shape`or multiplied by 
     `regpy.operators.Operator`. This leads to a functional that is composed with the operator
-    \(F\circ O\) where \(F\) is the functional and $O$ some operator. Multiplying by a scalar
+    \(F\circ O\) where \(F\) is the functional and \(O)\ some operator. Multiplying by a scalar
     results in a composition with the `PtwMultiplication` operator.
 
     Parameters
@@ -793,27 +793,27 @@ class HilbertNormGeneric(Functional):
 class IntegralFunctionalBase(Functional):
     r"""
     This class provides a general framework for Integral functionals of the type
-    $$
+    \[
     F\colon X \to \mathbb{R}
-    $$
-    $$
+    \]
+    \[
     v\mapsto \Int_\Omega f(w(x)v(x))\mathrm{d}x
-    $$
-    with $f\colon \mathbb{R}\ro \mathbb{R}$ some function and $w\colon\Omega\to\mathbb{R}$
+    \]
+    with \(f\colon \mathbb{R}\ro \mathbb{R})\ some function and \(w\colon\Omega\to\mathbb{R})\
     defining some whieght function. 
 
     Subclasses defining explicit functionals of this type have to implement
-        `_f` evaluation the function $f$
-        `_f_deriv` giving the derivative $f'$
-        `_f_porx` giving the prox of $f$
+        `_f` evaluation the function \(f)\
+        `_f_deriv` giving the derivative \(f')\
+        `_f_porx` giving the prox of \(f)\
     since 
-    $$
+    \[
     F'[g]h = \int_\Omega h(x)w(x)f'(w(x)g(x))
-    $$
+    \]
     is a functional of the same type and
-    $$
+    \[
     \mathrm{prox}_F(v)(x) = \mathrm{prox}_f(w(x)v(x)).
-    $$
+    \]
 
     Parameters
     ----------
@@ -857,7 +857,7 @@ class IntegralFunctionalBase(Functional):
     
 class LppPower(IntegralFunctionalBase):
     r"""
-    Implements the $p$-power of the $L^p$ norm on some domain in `MeasureSpaceFcts`
+    Implements the \(p)\-power of the \(L^p)\ norm on some domain in `MeasureSpaceFcts`
     as an integral functional.
 
     Parameters

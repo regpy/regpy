@@ -20,7 +20,7 @@ class DirichletOp(Operator):
         \end{cases}
     \]
 
-    where $u=u^s+u^i$ is the total field and $D$ is a bounded obstacle in $\mathbb{R}^2$ with $\partial D\in\mathcal{C}^2$.
+    where \(u=u^s+u^i)\ is the total field and \(D)\ is a bounded obstacle in \(\mathbb{R}^2)\ with \(\partial D\in\mathcal{C}^2)\.
     
     Attributes
     ----------
