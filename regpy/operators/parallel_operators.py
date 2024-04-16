@@ -107,28 +107,44 @@ def check_running(conns):
 
 class ParallelInterface:
     MAX_SUBPROCESSES=128
-    parallel_instances=WeakValueDictionary()
-    _min_id=0
+    parallel_instances=[WeakValueDictionary()]
+    _min_id_inst=0
+    _id_manager=0
 
     def total_subprocess_count():
-        return sum([instance.subprocess_count for instance in ParallelInterface.parallel_instances.values() if instance.running])
+        tot_sum=0
+        for p_inst in ParallelInterface.parallel_instances:
+            tot_sum+=sum([instance.subprocess_count for instance in p_inst.values() if instance.running])
+        return tot_sum
 
     def warn_subprocess_count():
         sp_count=ParallelInterface.total_subprocess_count()
+        print(sp_count)
         if(sp_count> ParallelInterface.MAX_SUBPROCESSES):
             warn(f"Warning: There are already {sp_count} subprocesses running.",stacklevel=2)
 
+    def terminate_managed_instances(manager_id):
+        for i in range(manager_id,len(ParallelInterface.parallel_instances)):
+            for instance in ParallelInterface.parallel_instances[i].values():
+                instance.terminate_all()
+
+
     def terminate_all_instances():
-        for instance in ParallelInterface.parallel_instances.values():
-            instance.terminate_all()
+        ParallelInterface.terminate_all_managed_instances(0)
+
+    def add_manager():
+        ParallelInterface.parallel_instances.append(WeakValueDictionary())
+        ParallelInterface._id_manager+=1
+        return ParallelInterface._id_manager
+
 
 
     def __init__(self,conns,subprocess_count,end_command="break"):
         self.conns=conns
         self.subprocess_count=subprocess_count
         self.end_command=end_command
-        ParallelInterface.parallel_instances[ParallelInterface._min_id]=self
-        ParallelInterface._min_id+=1
+        ParallelInterface.parallel_instances[ParallelInterface._id_manager][ParallelInterface._min_id_inst]=self
+        ParallelInterface._min_id_inst+=1
         self.running=True
         ParallelInterface.warn_subprocess_count()
         process = mp.Process(target=check_running, args=(conns,))
@@ -245,10 +261,11 @@ class ParallelExecutionManager:
 
     def __enter__(self):
         ParallelInterface.warn_subprocess_count()
+        self.manager_id=ParallelInterface.add_manager()
         return self
 
     def __exit__(self,type, value, traceback):
-        ParallelInterface.terminate_all_instances()
+        ParallelInterface.terminate_managed_instances(self.manager_id)
 
 
 
