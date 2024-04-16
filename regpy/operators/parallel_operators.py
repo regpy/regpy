@@ -30,7 +30,7 @@ class OperatorAsWorker(mp.Process):
         the regpy operator
     """
     log = classlogger
-    def __init__(self, name, conn,F,parent_id,timeout=300):
+    def __init__(self, name, conn,F):
         super(OperatorAsWorker, self).__init__()
         self.F = F
         """the operator"""
@@ -38,8 +38,6 @@ class OperatorAsWorker(mp.Process):
         """name of the process"""
         self.conn = conn
         """connection to master"""
-        self.timeout=timeout
-        self.parent_id=parent_id
 
     def run(self):
         """Starts the process. While running the process may receive the commands:
@@ -52,10 +50,8 @@ class OperatorAsWorker(mp.Process):
         Raises:
             TypeError: Error is raised if unknown command is received
         """
-        self.parent_id=os.getppid()
         terminate=False
-        timed_out=False
-        while not terminate and not timed_out:
+        while not terminate:
             res=None
             exit_code=ExitCode.ERROR
             try:
@@ -92,10 +88,6 @@ class OperatorAsWorker(mp.Process):
                 print(f"{self.name}:Send back")
                 self.conn.send([exit_code,res])
                 print(f"{self.name}:Send back finished")
-            #timed_out=not self.conn.poll(self.timeout)
-        if(timed_out):
-            print(f"Process timed out after {self.timeout} seconds.")
-            self.conn.send([ExitCode.TIMEOUT,None])
         print(f"{self.name}:finished")
         return 0
             
@@ -200,7 +192,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         Default: vecsps.DirectSum.
     """
 
-    def __init__(self, ops,  domain=None, codomain=None,timeout=60):#300
+    def __init__(self, ops,  domain=None, codomain=None):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
 
@@ -225,7 +217,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         for op in ops:
             conn_m, conn_w = mp.Pipe()
             conns.append(conn_m)
-            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op,os.getpid(),timeout=timeout)
+            G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op)
             G.start()
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
