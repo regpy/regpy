@@ -1,6 +1,6 @@
 from examples.medium_scattering.mediumscattering import MediumScatteringFixed
 from regpy.operators import CoordinateProjection
-from regpy.hilbert import L2, Hm0Domain, Sobolev, HilbertPullBack
+from regpy.hilbert import L2, HmDomain, Sobolev, HilbertPullBack
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
@@ -45,7 +45,7 @@ def test_mediumscattering():
     data = exact_data + noise
     init = op.domain.zeros()
 
-    myh_domain = Hm0Domain(scattering.support,dtype=complex,index=2)
+    myh_domain = HmDomain(scattering.domain,scattering.support,dtype=complex,index=2)
     setting = RegularizationSetting(
         op=op,
         # Define Sobolev norm on support via embedding
