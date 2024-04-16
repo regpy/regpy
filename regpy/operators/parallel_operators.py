@@ -92,17 +92,20 @@ class OperatorAsWorker(mp.Process):
         return 0
             
 
-def check_running(conns):
+def check_running(conns,conn_m):
     parent_id=os.getppid()
-    while(os.getppid()==parent_id):
-        time.sleep(10)
+    terminated=False
+    while(os.getppid()==parent_id and not terminated):
+        if(conn_m.poll(10)):
+            terminated=True
         print(f"check{os.getppid()}:{parent_id}")
-    time.sleep(10)
-    for conn in conns:
-        if(conn.poll()):
-            conn.recv()
-        conn.send(['break'])
-    print("Done")
+    if(not terminated):
+        time.sleep(10)
+        for conn in conns:
+            if(conn.poll()):
+                conn.recv()
+            conn.send(['break'])
+        print("Closed remaining background processes.")
 
 
 class ParallelInterface:
@@ -138,7 +141,6 @@ class ParallelInterface:
         return ParallelInterface._id_manager
 
 
-
     def __init__(self,conns,subprocess_count,end_command="break"):
         self.conns=conns
         self.subprocess_count=subprocess_count
@@ -147,7 +149,9 @@ class ParallelInterface:
         ParallelInterface._min_id_inst+=1
         self.running=True
         ParallelInterface.warn_subprocess_count()
-        process = mp.Process(target=check_running, args=(conns,))
+        conn_m, conn_w = mp.Pipe()
+        self.conn_watcher=conn_m
+        process = mp.Process(target=check_running, args=(conns,conn_w))
         process.start()
 
     def terminate_all(self):
@@ -155,11 +159,9 @@ class ParallelInterface:
             for conn in self.conns:
                 if(conn.poll()):
                     rec_d=conn.recv()
-                    if(rec_d[0]==ExitCode.ERROR):
-                        conn.send([self.end_command])
-                else:
-                    conn.send([self.end_command])
+                conn.send([self.end_command])
             self.subprocess_count=0
+            self.conn_watcher.send(['break'])
             self.running=False
 
     def handle_errors(self,rec_d):

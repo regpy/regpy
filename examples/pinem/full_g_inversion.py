@@ -167,7 +167,6 @@ with ParallelExecutionManager():
         print(f"Files will be saved to {os.path.join(current_directory,'data','results')}")
 
 
-
     ########################INITIALIZE FORWARD OPERATOR
 
     if mask_a.any():
