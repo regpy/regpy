@@ -991,7 +991,9 @@ class TVUniformGridFcts(Functional):
         """Computes the gradient of field given by 'u'. 'u' is defined on a 
         equidistant grid. Returns a list of vectors that are the derivatives in each 
         dimension."""
-        return 1/self.domain.spacing*np.array(np.gradient(u))
+        # Need to reshape spacing otherwise getting braodcasting error
+        shape = [self.domain.ndim]+[1 for _ in self.domain.shape]
+        return 1/self.domain.spacing.reshape(shape)*np.array(np.gradient(u))
 
     def _divergenceuniformgrid(self, u):
         """Computes the divergence of a vector field 'u'. 'u' is assumed to be

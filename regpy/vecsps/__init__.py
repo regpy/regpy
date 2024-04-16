@@ -591,7 +591,7 @@ class DirectSum(VectorSpace):
         """Split an element of the direct sum into a tuple of elements of the summands.
 
         The result arrays may be views into `x`, if memory layout allows it. For complex
-        summands, a neccessary condition is that the elements' real and imaginary parts are
+        summands, a necessary condition is that the elements' real and imaginary parts are
         contiguous in memory.
 
         Parameters
