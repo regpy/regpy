@@ -88,6 +88,18 @@ class OperatorAsWorker(mp.Process):
             
 
 def check_running(conns,conn_m):
+    r"""
+    Function that runs in seperate watcher process and checks if main process is alive.
+    Terminates subprocesses after 10 seconds if main process is killed.
+
+    Parameters
+    ----------
+    conns : list of mp.connection.Connection
+        connections to subprocesses of main process
+    conn : mp.connection.Connection
+        connection object used to receive command from main
+        process to shut down this process if subprocesses are closed normally 
+    """
     parent_id=os.getppid()
     terminated=False
     while(os.getppid()==parent_id and not terminated):
@@ -103,51 +115,100 @@ def check_running(conns,conn_m):
 
 
 class ParallelInterface:
+    r""" 
+    Interface for parallel processing 
+    
+    Parameters
+    ----------
+    conns : list of mp.connection.Connection
+        List of connections used to send commands to worker processes
+        and receive results. 
+    end_command : string, optional
+        Command that terminates sub processes. Defaults to "break"
+    """
+
+
     MAX_SUBPROCESSES=128
+    """maximal number of subprocesses until warning is raised"""
     parallel_instances=[WeakValueDictionary()]
+    """list of dictionaries containig weak references to subprocesses. Used internally for terminating subprocesses."""
     _min_id_inst=0
     _id_manager=0
 
     def total_subprocess_count():
+        r"""
+        Calculates the total number of running processes.
+        """
         tot_sum=0
         for p_inst in ParallelInterface.parallel_instances:
             tot_sum+=sum([instance.subprocess_count for instance in p_inst.values() if instance.running])
         return tot_sum
 
     def warn_subprocess_count():
+        r"""
+        Produces a warning if the total number of running processes is higher than
+        MAX_SUBPROCESSES.
+        """
         sp_count=ParallelInterface.total_subprocess_count()
         if(sp_count> ParallelInterface.MAX_SUBPROCESSES):
             warn(f"Warning: There are already {sp_count} subprocesses running.",stacklevel=2)
 
     def terminate_managed_instances(manager_id):
+        r"""
+        Terminate all instances of ParallelInterface associated with manager_id or a higher id
+        Parameters
+        ----------
+        manager_id : int
+            id of ParallelExecutionManager
+        """
         for i in range(manager_id,len(ParallelInterface.parallel_instances)):
             for instance in ParallelInterface.parallel_instances[i].values():
                 instance.terminate_all()
-
+        if(manager_id>0):
+            ParallelInterface._id_manager=manager_id-1
+            ParallelInterface.parallel_instances=ParallelInterface.parallel_instances[:manager_id]
+        else:
+            ParallelInterface._id_manager=0
+            ParallelInterface.parallel_instances=[WeakValueDictionary()]
 
     def terminate_all_instances():
+        r"""
+        Terminates all instances of ParallelInterface.
+        """
         ParallelInterface.terminate_all_managed_instances(0)
 
+
     def add_manager():
+        r"""
+        Adds a new manager section and returns the correcponding manager id.
+        """
         ParallelInterface.parallel_instances.append(WeakValueDictionary())
         ParallelInterface._id_manager+=1
         return ParallelInterface._id_manager
 
 
-    def __init__(self,conns,subprocess_count,end_command="break"):
+    def __init__(self,conns,end_command="break"):
         self.conns=conns
-        self.subprocess_count=subprocess_count
+        """Connection to subprocesses"""
+        self.subprocess_count=len(conns)
+        """Number of subprocesses"""
         self.end_command=end_command
+        """Command used to end sub processes"""
+        #Add current instance to weak dictionary at current manager id
         ParallelInterface.parallel_instances[ParallelInterface._id_manager][ParallelInterface._min_id_inst]=self
         ParallelInterface._min_id_inst+=1
         self.running=True
+        """Flag which indicates if subprocsses of this object are still running"""
         ParallelInterface.warn_subprocess_count()
+        #Setup watcher process
         conn_m, conn_w = mp.Pipe()
         self.conn_watcher=conn_m
         process = mp.Process(target=check_running, args=(conns,conn_w))
         process.start()
 
     def terminate_all(self):
+        r"""Terminate all running subprocesses.
+        """
         if(self.running):
             for conn in self.conns:
                 if(conn.poll()):
@@ -158,6 +219,14 @@ class ParallelInterface:
             self.running=False
 
     def handle_errors(self,rec_d):
+        r"""Handles received errors by displaying massage and stopping subprocesses.
+        
+        Parameters
+        ----------
+        rec_d : list
+            list where the first entry is an ExitCode that indicates whether an error occured
+            in the subprocess
+        """
         if(rec_d[0]==ExitCode.ERROR):
             self.terminate_all()
             raise rec_d[1]
@@ -166,6 +235,19 @@ class ParallelInterface:
             raise TimeoutError("Subprocess timed out!")
 
     def compute_all(self,command,args_same=[],args_specific=[]):
+        r"""Sends command and argument to all subprocesses and returns results.
+        
+        Parameters
+        ----------
+        command : string
+            command describing task for subprocess
+        args_same : list, optional
+            List of arguments send to all subprocesses. Defaults to [].
+        args_specific : list, optional
+            List of lists of arguments where args_specific[i][j] is send to subprocess j.
+            Defaulst to [].
+        """
+
         if(not self.running):
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
         same_info=[command]+args_same
@@ -177,6 +259,9 @@ class ParallelInterface:
         return (rec_d[1] for rec_d in rec_data)
 
     def __del__(self):
+        r"""
+        Terminates all subprocesses when object is garbage collected.
+        """
         self.terminate_all()
 
 
@@ -232,7 +317,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
             G.start()
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
-        ParallelInterface.__init__(self,conns,len(conns))
+        ParallelInterface.__init__(self,conns)
         
 
     def _eval(self, x, differentiate=False):
@@ -250,16 +335,27 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         return sum(self.compute_all('adjoint',args_specific=[elms]))
 
 class ParallelExecutionManager:
+    r"""
+    Context manager used to manage objects that use the ParallelInterface.
+    Before such objects are created a ParallelExecutionManager should be entered using
+    `with ParallelExecutionManager()` to guarantee that subprocesses are closed correctly.
+    """
 
     def __init__(self):
         pass
 
     def __enter__(self):
+        r"""
+        Gets manager id from ParallelInterface.
+        """
         ParallelInterface.warn_subprocess_count()
         self.manager_id=ParallelInterface.add_manager()
         return self
 
     def __exit__(self,type, value, traceback):
+        r"""
+        Terminates all managed instances of ParallelInterface.
+        """
         ParallelInterface.terminate_managed_instances(self.manager_id)
 
 
