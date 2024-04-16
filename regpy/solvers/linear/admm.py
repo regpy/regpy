@@ -9,26 +9,26 @@ from regpy.solvers import RegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG
 
 class ADMM(Solver):
-    r"""The ADMM method for minimizing $S(Tf) + \alpha * R(f)$. 
-    ADMM solves the problem $\min_{u,v}[F(u)+G(v)]$ under the constraint that $Au+Bv=b$. Choosing 
-    $$
+    r"""The ADMM method for minimizing \(S(Tf) + \alpha * R(f))\. 
+    ADMM solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. Choosing 
+    \[
         A:=\begin{pmatrix} T \\ I \end{pmatrix} ,\;
         B:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \;
         b:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\;
         F(f):= 0,\;
         G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}:=R(v_1)+S(v_2) ,\;
-    $$
-    leads to a nice splitting of the operator $T$ and the functional $R$ seen in the Lagrangian
-    $$
+    \]
+    leads to a nice splitting of the operator \(T)\ and the functional \(R)\ seen in the Lagrangian
+    \[
         L_\gamma(f,v_1,v_2,p_1,p_2):= 
         S(v_1) + R(v_2) 
         - \langle\gamma p_1,Tf-v_1\rangle 
         - \langle\gamma p_2,f-v_2\rangle
         + \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2
         + \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
-    $$
-    The minimization for $f$ simply reduces to a Tikhonov functional and is treated as such in the Algorithm. 
-    Splitting up the minimization for $v_1$ and $v_2$ one gets the algorithm below requiring the proximal 
+    \]
+    The minimization for \(f)\ simply reduces to a Tikhonov functional and is treated as such in the Algorithm. 
+    Splitting up the minimization for \(v_1)\ and \(v_2)\ one gets the algorithm below requiring the proximal 
     operators for the penalty and data fidelity functional. 
 
     Parameters

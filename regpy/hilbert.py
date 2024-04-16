@@ -289,20 +289,20 @@ class TensorProd(HilbertSpace):
     Therefore, please pay attention that to do that we have to actually evaluate
     the Gram-matrix for each Hilbert and store it.
 
-    We want $H_1 \otimes \dots H_l$ and each $H_i$ is discretised by a basis
-    of size $n_i$ then we get a memory consumption for the Gram matrices of
-    $O(\sum_{i=1}^l n_i)<=O(l\cdot n)$ with $n = \max(n_i)$.
+    We want \(H_1 \otimes \dots H_l)\ and each \(H_i)\ is discretised by a basis
+    of size \(n_i)\ then we get a memory consumption for the Gram matrices of
+    \(O(\sum_{i=1}^l n_i)<=O(l\cdot n))\ with \(n = \max(n_i))\.
 
     Computing the Gram property itself can be easily seen to have the complexity
-    $O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n)))$. with $\phi_i$ being
-    the complexity for evaluation the Gram operator of the Hilbert space $H_i$.
+    \(O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n))))\. with \(\phi_i)\ being
+    the complexity for evaluation the Gram operator of the Hilbert space \(H_i)\.
     Note that in the case that each Gram operator is a dense matrix this would be
-    given by $\phi_i(n_i)=n_i^2$ leading to a complexity of $O(l\cdot n^3)$.
+    given by \(\phi_i(n_i)=n_i^2)\ leading to a complexity of \(O(l\cdot n^3))\.
 
 
     Parameters
     ----------
-    *factors : HilbertSpace tuple
+    *args : HilbertSpace or (scalar, HilbertSpace)
         The Hilbert spaces to be tensored. Alternatively, factors can be given
         as tuples `(scalar, HilbertSpace)`, which will scale the norm of the
         respective factor. The gram matrices and hence the inner products will
@@ -364,9 +364,9 @@ class TensorProd(HilbertSpace):
             domains.append(s.gram.domain)
             for v in s.gram.domain.real_space().iter_basis():
                 if w == 1:
-                    basis.append(s.gram(v).flatten())
+                    basis.append(s.vecsp.flatten(s.gram(v)))
                 else:
-                    basis.append((w**2 * s.gram)(v).flatten())
+                    basis.append(s.vecsp.flatten((w**2 * s.gram)(v)))
             bases.append(np.array(basis))
         from regpy.vecsps.tensor_bases import TensorBasis
         return TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
