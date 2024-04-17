@@ -5,7 +5,7 @@ from regpy.solvers import Solver
 from regpy import util
 
 from regpy.operators import Identity
-
+from regpy.stoprules import CountIterations
 
 class TikhonovCG(Solver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
@@ -155,3 +155,130 @@ class TikhonovCG(Solver):
         self.dir += res
         self.g_dir *= beta
         self.g_dir += self.g_res
+
+
+class GeometricSequence:
+    """Iterator generating a geometric sequence
+    Parameters: alpha0, q
+    Yields: Sequence defined recursively by 
+        alpha_0 = alpha0
+        alpha_{n+1} = q*alpha_n
+    """    
+    def __init__(self, alpha0,q):
+        self.alpha = alpha0
+        self.alpha0 = alpha0
+        self.q = q
+
+    def __iter__(self):
+        self.alpha = self.alpha0
+        return self
+
+    def __next__(self):
+        result = self.alpha
+        self.alpha = self.alpha*self.q
+        return result
+
+class TikhonovAlphaGrid(Solver):
+    """Class runnning Tikhonov regularization on a grid of different regularization parameters.
+    This allows to choose the regularization parameter by some stopping rule. 
+    Tikhonov functionals are minimized by an inner CG iteration.
+
+    Parameters:
+    setting:  regpy.solvers.RegularizationSetting
+        The setting of the forward problem.
+    data: array-like
+        The right hand side.
+    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+    xref: Initial guess
+
+    Further keyword arguments for TikhonovCG can be given. 
+    """
+    def __init__(self,setting, data, alphas, max_inner_iter=1000,**kwargs):
+        if isinstance(alphas,tuple) and len(alphas)==2:
+            self._alphas = GeometricSequence(alphas[0],alphas[1])
+        else:
+            self._alphas = alphas
+        self.setting = setting
+        """The problem setting."""
+        self.data = data
+        """Right hand side of the operator equation."""
+        self.max_inner_iter = max_inner_iter
+        """maximum number of inner CG iterations."""
+        if not 'logging_level' in kwargs:
+            kwargs['logging_level']= logging.WARNING
+        self.kwargs = kwargs
+        """Arguments passed to TikhonovCG"""
+        super().__init__()
+        if 'xref' in kwargs:
+            self.x = kwargs['xref']
+            self.y = setting.op(self.x)
+        else:
+            self.x = setting.op.domain.zeros()
+            self.y = setting.op.codomain.zeros()
+
+    def _next(self):
+        try:
+            alpha = next(self._alphas)
+        except StopIteration:
+            return self.converge()
+        inner_stoprule = CountIterations(max_iterations=self.max_inner_iter)
+        inner_stoprule.log = self.log.getChild('CountIterations')
+        inner_stoprule.log.setLevel(logging.WARNING)
+        self.kwargs['xref']=self.x
+        tikhcg =TikhonovCG(self.setting,self.data,alpha,**self.kwargs)
+        self.x, self.y = tikhcg.run(inner_stoprule)
+        self.log.info('alpha = {}, inner CG its = {}'.format(alpha,inner_stoprule.iteration))
+
+class NonstationaryIteratedTikhonov(Solver):
+    """Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
+       Tikhonov functionals are minimized by an inner CG iteration.
+
+    Parameters:
+    setting:  regpy.solvers.RegularizationSetting
+        The setting of the forward problem.
+    data: array-like
+        The right hand side.
+    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+    xref: Initial guess.
+
+    Further keyword arguments for TikhonovCG may be given
+    """
+    def __init__(self,setting, data, alphas, max_inner_iter=1000,**kwargs):
+        if isinstance(alphas,tuple) and len(alphas)==2:
+            self._alphas = GeometricSequence(alphas[0],alphas[1])
+        else:
+            self._alphas = alphas
+        self.setting = setting
+        """The problem setting."""
+        self.data = data
+        """Right hand side of the operator equations."""
+        self.max_inner_iter = max_inner_iter
+        """Maximum number of inner CG iterations."""
+        self.alpha_eff = np.inf
+        """effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of all regularization parameters."""
+        if not 'logging_level' in kwargs:
+            kwargs['logging_level']= logging.WARNING
+        self.kwargs = kwargs
+        """Keyword arguments passed to TikhonovCG"""
+        super().__init__()
+        if 'href' in kwargs:
+            self.x = kwargs['href']
+            self.y = setting.op(self.x)
+        else:
+            self.x = setting.op.domain.zeros()
+            self.y = setting.op.codomain.zeros()
+
+    def _next(self):
+        try:
+            alpha = next(self._alphas)
+        except StopIteration:
+            return self.converge()
+        self.alpha_eff = 1./(1./alpha + 1./self.alpha_eff)
+        inner_stoprule = CountIterations(max_iterations=self.max_inner_iter)
+        inner_stoprule.log = self.log.getChild('CountIterations')
+        inner_stoprule.log.setLevel(logging.WARNING)
+        tikhcg =TikhonovCG(self.setting,self.data,alpha,**self.kwargs)
+        self.x, self.y = tikhcg.run(inner_stoprule)
+        self.log.info('alpha_eff = {}, inner CG its = {}'.format(self.alpha_eff,inner_stoprule.iteration))
