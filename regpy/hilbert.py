@@ -678,22 +678,45 @@ class SobolevUniformGridFcts(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class HmDomain(HilbertSpace):
-    """implementation of a Sobolev space H^m(D) for a subset D of a UniformGridFcts grid.
-    D is characterized by a binary or integer-valued mask: D={mask==1}.
-    {mask==0} are Dirichlet boundaries, and {mask==-1} Neumann boundaries.
-    mask may also be boolean, in this case there are only Dirichlet boundaries.
-    Boundary condition at the exterior boundaries are specified by ext_bd_cond, default is Neumann ('Neum')
+    r"""Implementation of a Sobolev space \(H^m(D)\) for a subset \(D\) of a `UniformGridFcts` grid.
+    \(D\) is characterized by a binary or integer-valued mask: `D={mask==1}`.
+    `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
+    `mask` may also be boolean, in this case there are only Dirichlet boundaries.
+    Boundary condition at the exterior boundaries are specified by `ext_bd_cond`, default is Neumann ('Neum')
 
-    m=index is a non-negative integer, the order or index of the Sobolev space.
-    The gram matrix is (alpha I - Delta)**(-m).
+    `m=index` is a non-negative integer, the order or index of the Sobolev space.
+    The gram matrix is given by \((\alpha I - \Delta)^{-m}\).
 
-    By default it is assumed that the lenghts in grid are given in physical dimensions,
+    By default it is assumed that the lengths in grid are given in physical dimensions,
     and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
 
-    If weight is specified, the Gram matrix will approximate (I-weight*Delta)**index. weight should be slowly varying.
+    If `weight` is specified, the Gram matrix will approximate \((\alpha I-{weight}\Delta)^{-m}\). `weight` should be slowly varying.
+
+    Parameters
+    ----------
+    grid : UniformGridFcts
+        Underlying grid functions.
+    mask : array-type
+        Mask to capture that subset \(D\) on which the Sobolev space is defined. Can only contain 
+        values `{-1,0,1}` or is a boolean. Shape has to match the shape of `grid`.
+    h : tuple or None or string, optional
+        The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
+        "normalized". (Defaults: "normalized)
+    index : int, optional
+        The Sobolev index \(m\). (Defaults: 1)
+    weight : array-type, optional
+        Weights to be applied to Laplacian in the gram matrix definition. (Defaults: None)
+    ext_bd_cond : any, optional
+        Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions. (Defaults: "Neum")
+    alpha : scalar, optional
+        Parameter when computing the gram matrix as \((\alpha I - \Delta)^{-m}\). (Defaults: 1)
+    dtype : type, optional
+        Type of underlying grid. (Defaults: float) 
     """
 
-    def __init__(self,grid, mask,
+    def __init__(self,
+                grid, 
+                mask,
                 h='normalized',
                 index=1,
                 weight=None,
@@ -705,6 +728,8 @@ class HmDomain(HilbertSpace):
             assert grid.shape == mask.shape
         assert type(index)== int and index>=0
         self.ndim = mask.ndim
+        """Dimension of vector space
+        """
         if type(h) == tuple:
             self.h_val = h
         elif grid is None:
@@ -717,10 +742,20 @@ class HmDomain(HilbertSpace):
             raise NotImplemented
 
         self.index = index
+        """Sobolev index.
+        """
         self.alpha = alpha
+        """Regularizer for Gram matrix.
+        """
         self.grid = grid
+        """Underlying gird.
+        """
         self.mask = (mask==1)
+        """Mask to determine the subspace D.
+        """
         self.dtype = grid.dtype if grid else dtype
+        """Type of the underlying grid. 
+        """
         # impose exterior Neumann boundary conditions
         mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
         vecsp = vecsps.VectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
@@ -737,7 +772,8 @@ class HmDomain(HilbertSpace):
 
     def I_minus_Delta(self):
         """
-        I_minus_Delta is the sparse form of the sum of the alpha*identity and the negative Laplacian on the domain {mask
+        I_minus_Delta is the sparse form of the sum of the `alpha*identity` and the negative Laplacian on the domain D 
+        defined by masking with `mask`.
         """
         if not self.weight is None:
             w = self.weight.ravel()
@@ -791,81 +827,6 @@ class HmDomain(HilbertSpace):
             self.index
             )
 
-## TODO: old version, to be deleted
-class Hm0Domain(HilbertSpace):
-    """implementation of H^m_0(D) for a subdomain D of R^n given by a binary mask on a regular n-dimensional grid
-    m=index is a non-negative integer, the order or index of the Sobolev space
-
-    If weight is specified, the Gram matrix will approximated (I-weight*Delta)**index, otherwise weight == h**(-2).
-
-    only implemented in dimension n=2
-    """
-
-    def __init__(self,mask,dtype=float,h=None,index=1,weight=None):
-        assert type(index)== int and index>=0
-        if len(mask.shape) != 2:
-            raise NotImplementedError
-        vecsp = vecsps.VectorSpace((np.count_nonzero(mask),),dtype=dtype)
-        super().__init__(vecsp)
-        self.mask = mask
-        self.G = np.where(mask,1,0) # boolean to integer
-        k = np.nonzero(self.G) # integer coordinates of interior points
-        self.G[k] = 1+np.arange(len(k[0])) # numbering of the interior points
-        if h==None:
-            self.h=1/mask.shape[0]
-        else:
-            self.h = h
-        self.index = index
-        self.weight = weight
-
-    def I_minus_Delta(self):
-        """
-        Construct five-point finite difference Laplacian.
-        I_minus_Delta is the sparse form of the sum of the identity and the two-dimensional,
-        5-point discrete negative Laplacian on the grid G.
-        """
-        [m,n] = self.G.shape
-        if self.weight is None:
-            weight = (1./self.h**2) *np.ones((m,n))
-        else:
-            weight = self.weight
-        w = weight.flatten()
-        # Indices of interior points
-        G1 = self.G.flatten()
-        p = np.where(G1)[0] # list of numbers of interior points in flattened array
-        N = len(p)
-        # Connect interior points to themselves with 4's.
-        i = []   # row indices of matrix entries
-        j = []   # column indices of matrix entries
-        s = []   # values of matrix entries
-        dia = np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
-        # for k = north, east, south, west
-        for k in [-1, n, 1, -n]:
-            # Possible neighbors in k-th direction
-            Q = G1[p+k]
-            # Indices of points with interior neighbors
-            q = np.where(Q)[0]
-            # Connect interior points to neighbors
-            i = np.concatenate([i, G1[p[q]]-1])
-            j = np.concatenate([j,Q[q]-1])
-            entries = np.sqrt(w[p[q]]*w[p[q]+k])
-            s = np.concatenate([s,-entries ])
-            dia[G1[p[q]]-1] += entries
-            # Indices of points with neighbors on Dirichlet boundary
-            q_diri = np.where(Q==0)[0]
-            entries = np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
-            dia[G1[p[q_diri]]-1] += entries
-        i = np.concatenate([i, G1[p]-1])
-        j = np.concatenate([j, G1[p]-1])
-        s = np.concatenate([s,dia])
-        return csc_matrix((s, (i,j)),(N,N))
-
-    @util.memoized_property
-    def gram(self):
-        return operators.Pow(
-            operators.MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.vecsp.dtype),
-            self.index
-            )
 
 def _register_spaces():
     """Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
@@ -886,6 +847,10 @@ def _register_spaces():
 
     Hm.register(vecsps.VectorSpace,Hm)
     Hm0.register(vecsps.VectorSpace,Hm0)
+
+    Hm.register(vecsps.Prod, componentwise(HmDomain,cls=TensorProd))
+    Hm.register(vecsps.DirectSum, componentwise(HmDomain))
+    Hm.register(vecsps.UniformGridFcts,HmDomain)
 
     L2Boundary.register(vecsps.DirectSum, componentwise(L2Boundary))
 

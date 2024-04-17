@@ -2,7 +2,7 @@ from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
 from regpy.operators import CoordinateProjection
 from operators import get_wave_field_reco
-from regpy.hilbert import L2, Hm0Domain
+from regpy.hilbert import L2, HmDomain
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import RegularizationSetting
 import regpy.stoprules as rules
@@ -48,10 +48,10 @@ op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,par
 
 if sol_type == None:
     projection = CoordinateProjection(cgrid,mask)
-    h_domain =  Hm0Domain(mask,dtype=complex,index=1)
+    h_domain =  HmDomain(cgrid,mask,dtype=complex,index=1)
 else:
     projection = CoordinateProjection(grid,mask)
-    h_domain = Hm0Domain(mask,index=1)
+    h_domain = HmDomain(grid,mask,index=1)
 embedding = projection.adjoint
 op = op*embedding
 
