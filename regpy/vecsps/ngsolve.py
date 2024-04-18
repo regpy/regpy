@@ -112,3 +112,22 @@ class NgsSpace(VectorSpace):
 
 
     
+# Registering functionals and Hilbert spaces defined in `regpy.hilbert.ngsolve`
+# and `regpy,functionals.ngsolve`. So that the can be used by using the abstract 
+# Hilbert space `AbstractSpace` or abstract Functionals `AbstractFunctional` 
+
+from regpy.hilbert import L2, L2Boundary, Sobolev, SobolevBoundary, Hm0
+from regpy.hilbert.ngsolve import L2FESpace, SobolevFESpace, H10FESpace, L2BoundaryFESpace, SobolevBoundaryFESpace
+
+L2.register(NgsSpace, L2FESpace)
+Sobolev.register(NgsSpace,SobolevFESpace)
+Hm0.register(NgsSpace,H10FESpace)
+L2Boundary.register(NgsSpace, L2BoundaryFESpace)
+SobolevBoundary.register(NgsSpace,SobolevBoundaryFESpace)
+
+
+from regpy.functionals.ngsolve import NgsL1,NgsTV
+from regpy.functionals import L1, TV
+
+L1.register(NgsSpace, NgsL1)
+TV.register(NgsSpace,NgsTV)

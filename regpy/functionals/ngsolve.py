@@ -6,10 +6,8 @@ import numpy as np
 from regpy.vecsps.ngsolve import NgsSpace
 from regpy.hilbert import L2
 from regpy.functionals import Functional
-from regpy.functionals import L1, TV
 
 
-@L1.register(NgsSpace)
 class NgsL1(Functional):
     r"""Implementation of the \(L^1\)-norm on a given `NgsSpace`. It is registered under the
     Abstract functional `L1` and should not be called directly but rather used by defining the 
@@ -51,7 +49,7 @@ class NgsL1(Functional):
         self._gfu.Set(self._gfu_util)
         return self._gfu.vec.FV().NumPy().copy()
 
-@TV.register(NgsSpace)
+
 class NgsTV(Functional):
     r"""Implementation of the total variation functional \(TV\) on a given `NgsSpace`. It is 
     registered under the Abstract functional `TV` and should not be called directly but rather 

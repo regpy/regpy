@@ -2,7 +2,7 @@ import ngsolve as ngs
 import numpy as np
 
 from regpy.vecsps.ngsolve import NgsSpace
-from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary, Hm0
+from regpy.hilbert import HilbertSpace
 from regpy.operators import Operator
 from regpy.util import memoized_property
 
@@ -59,7 +59,6 @@ class Matrix(Operator):
             return self._inverse
 
 
-@L2.register(NgsSpace)
 class L2FESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.L2` on an `NgsSpace`."""
     @memoized_property
@@ -70,7 +69,6 @@ class L2FESpace(HilbertSpace):
         return Matrix(self.vecsp, form)
 
 
-@Sobolev.register(NgsSpace)
 class SobolevFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
     @memoized_property
@@ -80,7 +78,7 @@ class SobolevFESpace(HilbertSpace):
         form += ngs.SymbolicBFI(u * v + ngs.grad(u) * ngs.grad(v))
         return Matrix(self.vecsp, form)
 
-@Hm0.register(NgsSpace)
+
 class H10FESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.Hm0` on an `NgsSpace`."""
 
@@ -91,7 +89,7 @@ class H10FESpace(HilbertSpace):
         form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
         return Matrix(self.vecsp, form)
 
-@L2Boundary.register(NgsSpace)
+
 class L2BoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.L2Boundary` on an `NgsSpace`."""
     def __init__(self, vecsp):
@@ -109,7 +107,6 @@ class L2BoundaryFESpace(HilbertSpace):
         return Matrix(self.vecsp, form)
 
 
-@SobolevBoundary.register(NgsSpace)
 class SobolevBoundaryFESpace(HilbertSpace):
     """The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsSpace`."""
     def __init__(self, vecsp):
