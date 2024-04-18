@@ -164,7 +164,7 @@ class TikhonovCG(Solver):
 
 
 class GeometricSequence:
-    """Iterator generating a geometric sequence
+    r"""Iterator generating a geometric sequence
     Parameters: alpha0, q
     Yields: Sequence defined recursively by 
         alpha_0 = alpha0
@@ -185,7 +185,7 @@ class GeometricSequence:
         return result
 
 class TikhonovAlphaGrid(Solver):
-    """Class runnning Tikhonov regularization on a grid of different regularization parameters.
+    r"""Class runnning Tikhonov regularization on a grid of different regularization parameters.
     This allows to choose the regularization parameter by some stopping rule. 
     Tikhonov functionals are minimized by an inner CG iteration.
 
@@ -237,7 +237,7 @@ class TikhonovAlphaGrid(Solver):
         self.log.info('alpha = {}, inner CG its = {}'.format(alpha,inner_stoprule.iteration))
 
 class NonstationaryIteratedTikhonov(Solver):
-    """Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
+    r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
        Tikhonov functionals are minimized by an inner CG iteration.
 
     Parameters:

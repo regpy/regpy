@@ -4,7 +4,8 @@ from copy import copy
 
 import numpy as np
 
-from regpy import operators, util, vecsps, hilbert
+from regpy import operators, util, vecsps
+from regpy import hilbert
 
 
 class Functional:

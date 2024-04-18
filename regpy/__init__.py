@@ -57,3 +57,6 @@ from regpy import vecsps, functionals, hilbert, operators, solvers, stoprules, u
 
 hilbert._register_spaces()
 functionals._register_functionals()
+
+from regpy.functionals import ngsolve
+from regpy.hilbert import ngsolve

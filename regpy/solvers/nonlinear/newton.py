@@ -196,7 +196,7 @@ class NewtonSemiSmooth(Solver):
         """
         self.x = init
         self.alpha = alpha
-        """Initial regularization parameter \(\alpha)\.
+        r"""Initial regularization parameter \(\alpha)\.
         """
         self.psi_minus = psi_minus
         """lower constraint of the minimization.
