@@ -5,7 +5,7 @@ from copy import copy
 
 import numpy as np
 
-from regpy import util, operators, functionals, vecsps
+from regpy import util, functionals, operators, vecsps
 from scipy.sparse import csc_matrix
 
 
@@ -275,7 +275,7 @@ class DirectSum(HilbertSpace):
         return iter(self.summands)
 
 class TensorProd(HilbertSpace):
-    """The Tensor product of an arbirtary number of hilbert spaces, with optional
+    r"""The Tensor product of an arbirtary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.Prod` of the underlying discretisations of the factors.
 
