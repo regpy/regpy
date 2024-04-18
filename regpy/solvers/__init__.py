@@ -1,4 +1,4 @@
-"""Iterative solvers for inverse problems.
+"""Solvers for inverse problems.
 """
 
 from regpy.util import classlogger
