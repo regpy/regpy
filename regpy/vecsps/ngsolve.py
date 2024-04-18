@@ -185,7 +185,7 @@ class SobolevFESpace(HilbertSpace):
 
 @Hm0.register(NgsSpace)
 class H10FESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
+    """The implementation of `regpy.hilbert.Hm0` on an `NgsSpace`."""
 
     @memoized_property
     def gram(self):
