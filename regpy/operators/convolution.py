@@ -112,6 +112,15 @@ class GaussianBlur(ConvolutionOperator):
                              pad_amount=pad_amount
                             )
             
+class ExponentialConvolution(ConvolutionOperator):
+    r"""Convolution with an exponential function exp(-|x|_1/a).
+    """
+    def __init__(self,grid,a,pad_amount= None):
+        super().__init__(grid,
+                        lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
+                        pad_amount=pad_amount
+                        )
+            
 class FresnelPropagator(ConvolutionOperator):
     r"""Operator that implements Fresnel-propagation of arrays of arbitrary dimension. 
     In 2D this models near-field diffraction in the regime of the free-space paraxial 
