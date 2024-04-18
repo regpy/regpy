@@ -8,7 +8,7 @@ import ngsolve as ngs
 import numpy as np
 
 from regpy.vecsps import VectorSpace, DirectSum
-from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary
+from regpy.hilbert import HilbertSpace, L2, L2Boundary, Sobolev, SobolevBoundary, Hm0
 from regpy.operators import Operator
 from regpy.util import memoized_property, is_complex_dtype
 
@@ -27,7 +27,7 @@ class NgsSpace(VectorSpace):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
-        self._fes_util = ngs.L2(fes.mesh, order=0, complex = fes.is_complex)
+        self._fes_util = fes
         self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(fes)
 
@@ -183,6 +183,16 @@ class SobolevFESpace(HilbertSpace):
         form += ngs.SymbolicBFI(u * v + ngs.grad(u) * ngs.grad(v))
         return Matrix(self.vecsp, form)
 
+@Hm0.register(NgsSpace)
+class H10FESpace(HilbertSpace):
+    """The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
+
+    @memoized_property
+    def gram(self):
+        u, v = self.vecsp.fes.TnT()
+        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
+        form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
+        return Matrix(self.vecsp, form)
 
 @L2Boundary.register(NgsSpace)
 class L2BoundaryFESpace(HilbertSpace):

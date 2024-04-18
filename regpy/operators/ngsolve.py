@@ -29,7 +29,7 @@ class NGSolveOperator(Operator):
         """
         if prec_update:
             prec.Update()
-        ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec)
+        ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec,needsassembling=False, print=False)
 
 class ProjectToBoundary(NGSolveOperator):
 
