@@ -12,7 +12,12 @@ class TikhonovCG(Solver):
     \[
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
     \]
-    using a conjugate gradient method.
+    using a conjugate gradient method. 
+    To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
+    used, which can be implemented by updating a scalar parameter in each iteration. 
+    For details on the use of the embedded MR method, see the Master thesis by Andrea Dietrich 
+    "Analytische und numerische Untersuchung eines Abbruchkriteriums für das CG-Verfahren zur Minimierung 
+    von Tikhonov Funktionalen", Univ. Göttingen, 2017 
 
     Parameters
     ----------
@@ -44,10 +49,11 @@ class TikhonovCG(Solver):
         self.regpar = regpar
         """The regularization parameter."""
         #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
-        self.tol = tol
-        """The tolerance."""
 
-        # TODO Improve documentation for these two.
+        """The iteration is stopped at the first iteration index for which one of the following tolerance 
+        criteria is satisfied."""
+        self.tol = tol
+        """The absolute tolerance in the domain."""
         self.reltolx = reltolx
         """The relative tolerance in the domain."""
         self.reltoly = reltoly
@@ -82,10 +88,10 @@ class TikhonovCG(Solver):
         self.dir = res
         """The direction of descent."""
         self.g_dir = np.copy(self.g_res)
-        """The gram matrix applied to the direction of descent."""
-        # TODO Improve documentation
+        """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
-        """Auxiliary parameter for estimating the relative tolerances."""
+        """ratio of tze squared norms of the residuals of the CG method and the MR-method.
+        Used for error estimation."""
 
         self.krylov_basis=krylov_basis
         if self.krylov_basis is not None: 
