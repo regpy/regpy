@@ -30,7 +30,9 @@ class IrgnmCG(Solver):
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
-        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+        Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+    cg_stop: int
+        Maximum number of inner CG iterations
     simplified_op : Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
@@ -38,9 +40,12 @@ class IrgnmCG(Solver):
     """
 
     def __init__(
-        self, setting, data, regpar, regpar_step=2 / 3, 
-         init=None, cg_pars=None, cgstop=None, 
-         inner_it_logging_level = logging.INFO, simplified_op = None
+               self, setting, data, regpar, regpar_step=2 / 3, 
+                 init=None, 
+                 cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
+                cgstop=1000, 
+                inner_it_logging_level = logging.INFO, 
+                simplified_op = None
          ):
         super().__init__()
         self.setting = setting
@@ -62,8 +67,6 @@ class IrgnmCG(Solver):
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        if cg_pars is None:
-            cg_pars = {}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
@@ -74,10 +77,9 @@ class IrgnmCG(Solver):
     def _next(self):
         if self.cgstop is not None:
             stoprule = CountIterations(self.cgstop)
-            # Disable info logging, but don't override log level for all
-            # CountIterations instances.
         else:
             stoprule = CountIterations(2**15)
+        # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(logging.WARNING)
         # Running Tikhonov solver
