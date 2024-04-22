@@ -140,8 +140,8 @@ def estimate_sampling_pattern(data):
     """
     return np.all(data != 0, axis=0)
 
-
 def normalize(density, coils):
     """Normalize density and coils to handle the inherent non-injectivity of the `CoilMult` operator.
     """
-    return density * np.linalg.norm(coils, axis=0)
+    scaling_factor = np.linalg.norm(coils, axis=0)
+    return density * scaling_factor, coils /scaling_factor

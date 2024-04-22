@@ -86,13 +86,14 @@ axes[0].set_title('exact solution')
 axes[1].set_title('reconstruction')
 
 # Plot exact solution
-im = axes[0].imshow(np.abs(normalize(*mri_op.domain.split(exact_solution))))
+rho_ex,coils_ex = normalize(*mri_op.domain.split(exact_solution))
+im = axes[0].imshow(np.abs(rho_ex))
 fig.colorbar(im, cax=bars[0])
 
 # Run the solver, plot iterates
 for reco, reco_data in solver.until(stoprule):
-    reco2 = smoother(reco)
-    im = axes[1].imshow(np.abs(normalize(*mri_op.domain.split(reco2))))
+    rho,coils = normalize(*mri_op.domain.split(smoother(reco)))
+    im = axes[1].imshow(np.abs(rho))
     bars[1].clear()
     fig.colorbar(im, cax=bars[1])
     plt.pause(0.5)
