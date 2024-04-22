@@ -44,7 +44,7 @@ class IrgnmCG(Solver):
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
-                inner_it_logging_level = logging.INFO, 
+                inner_it_logging_level = logging.WARNING, 
                 simplified_op = None
          ):
         super().__init__()
@@ -99,6 +99,7 @@ class IrgnmCG(Solver):
             self.y , self.deriv = self.setting.op.linearize(self.x)
         self.regpar *= self.regpar_step
         self._nr_inner_steps = stoprule.iteration
+        self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
     
     def nr_inner_its(self):
         return self._nr_inner_steps
