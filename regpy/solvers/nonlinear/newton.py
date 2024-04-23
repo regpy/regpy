@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.sparse import linalg as spla
 
-from regpy.solvers import Solver
+from regpy.solvers import RegSolver
 
 
-class NewtonCG(Solver):
+class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
     \[
         T(x) = y,
@@ -34,13 +34,11 @@ class NewtonCG(Solver):
     """
 
     def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
+        super().__init__(setting)
         self.data = data
         """The measured data."""
         if init is None:
-            init = self.setting.op.domain.zeros()
+            init = self.op.domain.zeros()
         """The initial guess."""
         self.x = np.copy(init)
         if simplified_op:
@@ -48,9 +46,9 @@ class NewtonCG(Solver):
             """Simplified operator for derivative.
             """
             _, self.deriv = self.simplified_op.linearize(self.x)
-            self.y = self.setting.op(self.x)
+            self.y = self.op(self.x)
         else:
-            self.y, self.deriv = self.setting.op.linearize(self.x)
+            self.y, self.deriv = self.op.linearize(self.x)
         self.rho = rho
         """A fix number related to the termination (0<rho<1)."""
         self.cgmaxit = cgmaxit
@@ -61,25 +59,25 @@ class NewtonCG(Solver):
         self._k = 0
         self._s = self.data - self.y  
         # aux plays the role of s here to avoid storage for another vector in codomain
-        self._x_k = self.setting.op.domain.zeros()
+        self._x_k = self.op.domain.zeros()
         # self._s += - self.deriv(self._x_k)
-        self._s2 = self.setting.h_codomain.gram(self._s)
+        self._s2 = self.h_codomain.gram(self._s)
         self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.setting.h_domain.gram_inv(self._rtilde)
+        self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
         self._inner_prod = np.vdot(self._r, self._rtilde).real
      
         while (self._k==0 or (np.sqrt(np.vdot(self._s2, self._s).real)
                > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
-            self._q2 = self.setting.h_codomain.gram(self._q)
+            self._q2 = self.h_codomain.gram(self._q)
             self._alpha = self._inner_prod / np.vdot(self._q, self._q2).real
             self._x_k += self._alpha * self._d
             self._s += -self._alpha * self._q
             self._s2 += -self._alpha * self._q2
             self._rtilde = self.deriv.adjoint(self._s2)
-            self._r = self.setting.h_domain.gram_inv(self._rtilde)
+            self._r = self.h_domain.gram_inv(self._rtilde)
             self._inner_prod = np.vdot(self._r, self._rtilde).real
             self._beta = np.vdot(self._r, self._rtilde).real / self._inner_prod
             self._d = self._r + self._beta * self._d
@@ -88,14 +86,14 @@ class NewtonCG(Solver):
         self.x += self._x_k
         if hasattr(self,'simplified_op'):
             _, self.deriv = self.simplified_op.linearize(self.x)
-            self.y = self.setting.op(self.x)
+            self.y = self.op(self.x)
         else:
-            self.y , self.deriv = self.setting.op.linearize(self.x)
+            self.y , self.deriv = self.op.linearize(self.x)
 
     def nr_inner_its(self):
         return self._k
 
-class NewtonCGFrozen(Solver):
+class NewtonCGFrozen(RegSolver):
     r"""The frozen Newton-CG method. Like Newton-CG but freezes the derivative for some time to avoid 
     recomputing it. 
 
@@ -113,8 +111,7 @@ class NewtonCGFrozen(Solver):
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     """
     def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
-        super().__init__()
-        self.setting = setting
+        super().__init__(setting)
         self.op = setting.op
         self.data = data
         self.x = init
@@ -133,30 +130,30 @@ class NewtonCGFrozen(Solver):
         self._residual = self.data - self.y
         #        _, self.deriv=self.op.linearize(self.x)
         self._s = self._residual - self.deriv(self._x_k)
-        self._s2 = self.setting.codomain.gram(self._s)
+        self._s2 = self.codomain.gram(self._s)
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.setting.domain.gram_inv(self._rtilde)
+        self._r = self.domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = self.setting.domain.inner(self._r, self._rtilde)
-        self._norms0 = np.sqrt(np.real(self.setting.domain.inner(self._s2, self._s)))
+        self._inner_prod = self.domain.inner(self._r, self._rtilde)
+        self._norms0 = np.sqrt(np.real(self.domain.inner(self._s2, self._s)))
         self._k = 1
         self._n += 1
 
     def _inner_update(self):
         _, self.deriv = self.op.linearize(self.x)
         self._q = self.deriv(self._d)
-        self._q2 = self.setting.codomain.gram(self._q)
+        self._q2 = self.codomain.gram(self._q)
         self._alpha = (self._inner_prod
-                       / np.real(self.setting.codomain.inner(self._q, self._q2)))
+                       / np.real(self.codomain.inner(self._q, self._q2)))
         self._s2 += -self._alpha * self._q2
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.setting.domain.gram_inv(self._rtilde)
-        self._beta = (np.real(self.setting.codomain.inner(self._r, self._rtilde))
+        self._r = self.domain.gram_inv(self._rtilde)
+        self._beta = (np.real(self.codomain.inner(self._r, self._rtilde))
                       / self._inner_prod)
 
     def _next(self):
         while (
-            np.sqrt(self.setting.domain.inner(self._s2, self._s)) > self.rho * self._norms0
+            np.sqrt(self.domain.inner(self._s2, self._s)) > self.rho * self._norms0
             and self._k <= self.cgmaxit
         ):
             self._inner_update()
@@ -167,7 +164,7 @@ class NewtonCGFrozen(Solver):
         self._outer_update()
 
 
-class NewtonSemiSmooth(Solver):
+class NewtonSemiSmooth(RegSolver):
     r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
     only updates the parts needed to be updated. 
 
@@ -187,10 +184,7 @@ class NewtonSemiSmooth(Solver):
         upper constraint of the minimization. Must be smaller then `psi_minus`
     """
     def __init__(self, setting, rhs, init, alpha, psi_minus, psi_plus):
-        super().__init__()
-        self.setting = setting
-        """The regularization setting includes the operator and penalty and data fidelity functionals.
-        """
+        super().__init__(setting)
         self.rhs = rhs
         """The rhs y of the equation to be solved.
         """
@@ -207,9 +201,9 @@ class NewtonSemiSmooth(Solver):
 
         self.size = init.shape[0]
 
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
 
-        self.b = self.setting.op.adjoint(self.rhs) + self.alpha * init
+        self.b = self.op.adjoint(self.rhs) + self.alpha * init
 
         self.lam_plus = np.maximum(np.zeros(self.size), self.b - self._A(self.x))
         self.lam_minus = -np.minimum(np.zeros(self.size), self.b - self._A(self.x))
@@ -253,7 +247,7 @@ class NewtonSemiSmooth(Solver):
             self.active_minus] + z[self.active_minus]
 
         # Update active and inactive sets
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
         self.active_plus = [self.lam_plus[j] + self.alpha * (self.x[j] - self.psi_plus) > 0 for j in
                             range(self.size)]
         self.active_minus = [self.lam_minus[j] - self.alpha * (self.x[j] - self.psi_minus) > 0 for j
@@ -268,8 +262,8 @@ class NewtonSemiSmooth(Solver):
         return result
 
     def _A(self, u):
-        self.y = self.setting.op(u)
-        return self.alpha * u + self.setting.op.adjoint(self.y)
+        self.y = self.op(u)
+        return self.alpha * u + self.op.adjoint(self.y)
 
     def _A_inactive(self, u):
         projection = np.zeros(self.size)
