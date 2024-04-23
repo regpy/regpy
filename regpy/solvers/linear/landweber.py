@@ -1,11 +1,11 @@
-from regpy.solvers import Solver
+from regpy.solvers import RegSolver
 from regpy.operators import SciPyLinearOperator
 from scipy.sparse.linalg import eigsh
 
 import logging
 import numpy as np
 
-class Landweber(Solver):
+class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
     \[
         T(x) = g^\delta,
@@ -34,14 +34,12 @@ class Landweber(Solver):
     """
 
     def __init__(self, setting, rhs, init, stepsize=None):
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
+        super().__init__(setting)
         self.rhs = rhs
         """The right hand side."""
-        T = self.setting.op
-        gramX = self.setting.h_domain.gram
-        gramY = self.setting.h_codomain.gram
+        T = self.op
+        gramX = self.h_domain.gram
+        gramY = self.h_codomain.gram
         self.x = init
         self.y = T(self.x)
         norm =eigsh(SciPyLinearOperator(T.adjoint * gramY * T), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
@@ -49,9 +47,9 @@ class Landweber(Solver):
         """The stepsize."""
 
     def _next(self):
-        T = self.setting.op
-        gramX_inv = self.setting.h_domain.gram_inv
-        gramY = self.setting.h_codomain.gram
+        T = self.op
+        gramX_inv = self.h_domain.gram_inv
+        gramY = self.h_codomain.gram
         self._residual = self.y - self.rhs
         self._gy_residual = gramY(self._residual)
         self._update = T.adjoint(self._gy_residual)
