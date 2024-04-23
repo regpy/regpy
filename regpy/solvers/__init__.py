@@ -178,3 +178,41 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+
+class RegSolver(Solver):
+    r"""Abstract base class for solvers working with a regularization setting.
+     Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
+    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
+    may or may not be the same arrays as before, modified in-place).
+
+    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
+
+    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
+    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
+    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
+    called again. Most solvers will probably never converge on their own, but rely on the caller or a
+    `regpy.stoprules.StopRule` for termination.
+
+    Parameters
+    ----------
+    setting: RegularizationSetting
+        RegularizationSetting used for solver
+    x : numpy.ndarray
+        Initial argument for iteration. Defaults to None.
+    y : numpy.ndarray
+        Initial value at current iterate. Defaults to None.
+    """
+
+    def __init__(self,setting,x=None,y=None):
+        self.op=setting.op
+        """The operator."""
+        self.penalty = setting.penalty
+        """The penalty functional."""
+        self.data_fid = setting.data_fid
+        """The data misfit functional."""
+        self.h_domain = setting.h_domain
+        """The Hilbert space associated to penalty functional"""
+        self.h_codomain =  setting.h_codomain
+        """The Hilbert space associated to data fidelity functional"""
+        super().__init__(x,y)

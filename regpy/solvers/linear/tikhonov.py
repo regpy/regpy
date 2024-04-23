@@ -1,13 +1,12 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver
-from regpy import util
+from regpy.solvers import RegSolver
 
 from regpy.operators import Identity
 from regpy.stoprules import CountIterations
 
-class TikhonovCG(Solver):
+class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
     \[
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
@@ -59,9 +58,8 @@ class TikhonovCG(Solver):
         ):
         assert setting.op.linear
 
-        super().__init__()
+        super().__init__(setting)
         self.log.setLevel(logging_level)
-        self.setting = setting
         """The problem setting."""
         self.regpar = regpar
         """The regularization parameter."""
@@ -81,37 +79,37 @@ class TikhonovCG(Solver):
         if x0 is not None:
             self.x = x0.copy()
             """The current iterate."""
-            self.y = self.setting.op(self.x)
+            self.y = self.op(self.x)
             """The image of the current iterate under the operator."""
         else:
-            self.x = self.setting.op.domain.zeros()
-            self.y = self.setting.op.codomain.zeros()
+            self.x = self.op.domain.zeros()
+            self.y = self.op.codomain.zeros()
 
         if self.reltolx is not None:
             self.sq_norm_x = 0
         if self.reltoly is not None:
-            self.g_y = self.setting.h_codomain.gram(self.y)
+            self.g_y = self.h_codomain.gram(self.y)
             self.norm_y = np.vdot(self.y,self.g_y)
             if self.x0 is not None:
                 self.y0 = self.y
                 self.g_y0 = self.g_y
 
         if preconditioner is None:
-            self.preconditioner = Identity (self.setting.h_domain.vecsp)
-            self.penalty = Identity (self.setting.h_domain.vecsp)
+            self.preconditioner = Identity (self.h_domain.vecsp)
+            self.penalty = Identity (self.h_domain.vecsp)
         else: 
             self.preconditioner = preconditioner
-            self.penalty = self.preconditioner * self.setting.h_domain.gram * self.preconditioner * self.setting.h_domain.gram_inv
+            self.penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
 
-        self.g_res = self.preconditioner( self.setting.op.adjoint(self.setting.h_codomain.gram(data-self.y)) )
+        self.g_res = self.preconditioner( self.op.adjoint(self.h_codomain.gram(data-self.y)) )
         """The gram matrix applied to the residual of the normal equation. 
         g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         if xref is not None:
-            self.g_res += self.regpar *self.preconditioner( self.setting.h_domain.gram(xref-self.x) )
+            self.g_res += self.regpar *self.preconditioner( self.h_domain.gram(xref-self.x) )
         elif x0 is not None:
-            self.g_res -= self.regpar *self.preconditioner( self.setting.h_domain.gram(self.x) )
-        res = self.setting.h_domain.gram_inv(self.g_res)
+            self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
+        res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
         self.sq_norm_res = np.real(np.vdot(self.g_res, res))
         """The squared norm of the residual."""
@@ -136,8 +134,8 @@ class TikhonovCG(Solver):
 
 
     def _next(self):
-        Tdir = self.setting.op( self.preconditioner(self.dir) )
-        g_Tdir = self.setting.h_codomain.gram(Tdir)
+        Tdir = self.op( self.preconditioner(self.dir) )
+        g_Tdir = self.h_codomain.gram(Tdir)
         stepsize = self.sq_norm_res / np.real(
             np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
         ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
@@ -145,9 +143,9 @@ class TikhonovCG(Solver):
         self.x += stepsize * self.dir
         if self.reltolx is not None:
             if self.x0 is None:
-                self.sq_norm_x = np.real(np.vdot(self.x, self.setting.h_domain.gram(self.x)))
+                self.sq_norm_x = np.real(np.vdot(self.x, self.h_domain.gram(self.x)))
             else:
-                self.sq_norm_x = np.real(np.vdot(self.x-self.x0, self.setting.h_domain.gram(self.x-self.x0)))
+                self.sq_norm_x = np.real(np.vdot(self.x-self.x0, self.h_domain.gram(self.x-self.x0)))
 
         self.y += stepsize * Tdir
         if self.reltoly is not None:
@@ -157,8 +155,8 @@ class TikhonovCG(Solver):
             else: 
                 self.norm_y = np.real(np.vdot(self.g_y-self.g_y0, self.y-self.y0))
 
-        self.g_res -= stepsize * (self.preconditioner( self.setting.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
-        res = self.setting.h_domain.gram_inv(self.g_res)
+        self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
+        res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
         self.sq_norm_res = np.real(np.vdot(self.g_res, res))
@@ -236,7 +234,7 @@ class GeometricSequence:
         self.alpha = self.alpha*self.q
         return result
 
-class TikhonovAlphaGrid(Solver):
+class TikhonovAlphaGrid(RegSolver):
     r"""Class runnning Tikhonov regularization on a grid of different regularization parameters.
     This allows to choose the regularization parameter by some stopping rule. 
     Tikhonov functionals are minimized by an inner CG iteration.
@@ -261,12 +259,11 @@ class TikhonovAlphaGrid(Solver):
     """
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
-        super().__init__()
+        super().__init__(setting)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = alphas
-        self.setting = setting
         """The problem setting."""
         self.data = data
         """Right hand side of the operator equation."""
@@ -274,10 +271,10 @@ class TikhonovAlphaGrid(Solver):
         """initial guess in Tikhonov functional."""
         if self.xref is not None:
             self.x = self.xref
-            self.y = self.setting.op(self.xref)
+            self.y = self.op(self.xref)
         else:
-            self.x = self.setting.op.domain.zeros()
-            self.y = self.setting.op.codomain.zeros()
+            self.x = self.op.domain.zeros()
+            self.y = self.op.codomain.zeros()
         self.max_CG_iter = max_CG_iter
         """maximum number of CG iterations."""    
         self.delta = delta
@@ -297,19 +294,19 @@ class TikhonovAlphaGrid(Solver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self.setting,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
                                reltolx = self.tol_fac / np.sqrt(alpha),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self.setting,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
                                tol= self.tol_fac * self.delta / np.sqrt(alpha),
                                 logging_level=self.logging_level
                                )
         self.x, self.y = tikhcg.run(inner_stoprule)
         self.log.info('alpha = {}, inner CG its = {}'.format(alpha,inner_stoprule.iteration))
 
-class NonstationaryIteratedTikhonov(Solver):
+class NonstationaryIteratedTikhonov(RegSolver):
     r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
        Tikhonov functionals are minimized by an inner CG iteration.
 
@@ -329,12 +326,11 @@ class NonstationaryIteratedTikhonov(Solver):
     """
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
-        super().__init__()
+        super().__init__(setting)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = alphas
-        self.setting = setting
         """The problem setting."""
         self.data = data
         """Right hand side of the operator equation."""
@@ -342,10 +338,10 @@ class NonstationaryIteratedTikhonov(Solver):
         """initial guess in Tikhonov functional."""
         if self.xref is not None:
             self.x = self.xref
-            self.y = self.setting.op(self.xref)
+            self.y = self.op(self.xref)
         else:
-            self.x = self.setting.op.domain.zeros()
-            self.y = self.setting.op.codomain.zeros()
+            self.x = self.op.domain.zeros()
+            self.y = self.op.codomain.zeros()
         self.max_CG_iter = max_CG_iter
         """maximum number of CG iterations."""    
         self.delta = delta
@@ -368,12 +364,12 @@ class NonstationaryIteratedTikhonov(Solver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self.setting,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
                                reltolx = self.tol_fac / np.sqrt(self.alpha_eff),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self.setting,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
                                tol= self.tol_fac * self.delta / np.sqrt(self.alpha_eff),
                                 logging_level=self.logging_level
                                )
