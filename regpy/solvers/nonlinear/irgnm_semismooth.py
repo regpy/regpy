@@ -1,12 +1,12 @@
 import logging
 import numpy as np
 
-from regpy.solvers import RegularizationSetting, Solver
+from regpy.solvers import RegularizationSetting, RegSolver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
 from regpy.stoprules import CountIterations
 
-class IrgnmSemiSmooth(Solver):
+class IrgnmSemiSmooth(RegSolver):
     r"""
     Semismooth Newton Method. In each iteration, solves
     \[
@@ -37,13 +37,11 @@ class IrgnmSemiSmooth(Solver):
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, cg_pars=None):
         assert isinstance(setting,RegularizationSetting)
         assert psi_minus < psi_plus
-        super().__init__()
-        self.setting=setting
-        """The problem setting"""
+        super().__init__(setting)
         self.data=data
         """The measured data"""
         if init is None:
-            init = self.setting.op.domain.zeros()
+            init = self.op.domain.zeros()
         self.init = np.asarray(init)
         """The initial guess."""
         self.x=np.copy(self.init)
@@ -61,9 +59,9 @@ class IrgnmSemiSmooth(Solver):
         self.size=self.init.shape[0]
 
         """Prepare first iteration step"""
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
         self.rhs=self.data-self.y+self.deriv(self.x)
-        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.rhs)))+self.regpar*self.init
+        self.b=self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.rhs)))+self.regpar*self.init
         
         """Prepare newton-semismooth minimization"""
         self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
@@ -88,10 +86,10 @@ class IrgnmSemiSmooth(Solver):
             self.inner_update()
             iter_count += 1
         
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
         
         self.rhs=self.data-self.y+self.deriv(self.x)
-        self.b=self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.rhs)))+self.regpar*self.init
+        self.b=self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.rhs)))+self.regpar*self.init
 
         #Prepare newton-semismooth minimization
         self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
@@ -120,10 +118,10 @@ class IrgnmSemiSmooth(Solver):
         self.lam_minus[self.inactive]=0
         self.lam_minus[self.active_plus]=0
 
-        project = CoordinateMask(self.setting.h_domain.vecsp, self.inactive)
+        project = CoordinateMask(self.h_domain.vecsp, self.inactive)
         self.log.info('Running inner Tikhonov solver.')
         f, _ = TikhonovCG(
-            setting=RegularizationSetting(self.deriv * project, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.deriv * project, self.h_domain, self.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,
@@ -141,4 +139,4 @@ class IrgnmSemiSmooth(Solver):
         self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
         
     def _A(self, u):
-        return self.regpar*u+self.setting.h_domain.gram_inv(self.deriv.adjoint(self.setting.h_codomain.gram(self.deriv(u))))
+        return self.regpar*u+self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.deriv(u))))
