@@ -60,7 +60,6 @@ class TikhonovCG(RegSolver):
 
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        """The problem setting."""
         self.regpar = regpar
         """The regularization parameter."""
         #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
@@ -264,7 +263,6 @@ class TikhonovAlphaGrid(RegSolver):
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = alphas
-        """The problem setting."""
         self.data = data
         """Right hand side of the operator equation."""
         self.xref = xref
@@ -331,7 +329,6 @@ class NonstationaryIteratedTikhonov(RegSolver):
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = alphas
-        """The problem setting."""
         self.data = data
         """Right hand side of the operator equation."""
         self.xref = xref
