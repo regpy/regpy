@@ -1,11 +1,11 @@
-from regpy.solvers import Solver
+from regpy.solvers import RegSolver
 from regpy.operators import SciPyLinearOperator
 from scipy.sparse.linalg import eigsh
 
 import logging
 import numpy as np
 
-class Landweber(Solver):
+class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
     \[
         F(x) = g^\delta,
@@ -34,17 +34,15 @@ class Landweber(Solver):
     """
 
     def __init__(self, setting, rhs, init, stepsize=None):
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
+        super().__init__(setting)
         self.rhs = rhs
         """The right hand side."""
         self.x = init
-        self.y, deriv = self.setting.op.linearize(self.x)
+        self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
-        gramX = self.setting.h_domain.gram
-        gramY = self.setting.h_codomain.gram
+        gramX = self.h_domain.gram
+        gramY = self.h_codomain.gram
         norm =eigsh(SciPyLinearOperator(self.deriv.adjoint * gramY * self.deriv), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
 
         self.stepsize = stepsize or 0.9 / norm
@@ -52,10 +50,10 @@ class Landweber(Solver):
 
     def _next(self):
         self._residual = self.y - self.rhs
-        self._gy_residual = self.setting.h_codomain.gram(self._residual)
+        self._gy_residual = self.h_codomain.gram(self._residual)
         self._update = self.deriv.adjoint(self._gy_residual)
-        self.x -= self.stepsize * self.setting.h_domain.gram_inv(self._update)
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
+        self.y, self.deriv = self.op.linearize(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
             norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))

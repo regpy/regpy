@@ -1,9 +1,9 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver, RegularizationSetting
+from regpy.solvers import RegSolver, RegularizationSetting
 
-class ForwardBackwardSplitting(Solver):
+class ForwardBackwardSplitting(RegSolver):
     r"""
     Minimizes \(\mathcal{S}(f)+r\alpha*\mathcal{R}(f)\) with forward backward splitting. 
 
@@ -22,12 +22,10 @@ class ForwardBackwardSplitting(Solver):
     """
     def __init__(self, setting, init, tau = 1, regpar = 1, proximal_pars = None):
         assert isinstance(setting,RegularizationSetting), "Setting is not a RegularizationSetting instance."
-        super().__init__()
+        super().__init__(setting)
         assert regpar > 0
         assert tau > 0
         assert init in setting.op.domain
-        self.setting = setting
-        """The problem setting."""
         self.regpar = regpar
         """The regularization parameter."""
         self.tau = tau
@@ -36,12 +34,12 @@ class ForwardBackwardSplitting(Solver):
 
         
         self.x = init
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
         
     def _next(self):
-        self.x-=self.tau*self.setting.h_domain.gram_inv(self.setting.data_fid.gradient(self.x)) 
-        self.x = self.setting.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
+        self.x-=self.tau*self.h_domain.gram_inv(self.data_fid.gradient(self.x)) 
+        self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
         
