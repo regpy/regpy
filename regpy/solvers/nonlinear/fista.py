@@ -1,9 +1,9 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver, RegularizationSetting
+from regpy.solvers import RegSolver, RegularizationSetting
 
-class FISTA(Solver):
+class FISTA(RegSolver):
     r"""
     The generalized FISTA algorithm for minimization of \(\alpha * \mathcal{G}+\mathcal{H}\), where \(\mathcal{G},\mathcal{H}: H -> \mathbb{R}\) 
     are the penalty term and the data fidelity term respectively.
@@ -36,13 +36,10 @@ class FISTA(Solver):
     The data fidelity in the setting has to be defined on the domain of the operator i.e. of the type \(S(T(\cdot))\). 
     """
     def __init__(self, setting, init, tau = 1, regpar = 1, mu_data_fidelity = 1, mu_penalty = 1, proximal_pars=None):
-        super().__init__()
-        self.setting = setting
-        """Regularization setting. Includes Operator, penalty and data fidelity functional and corresponding Hilbert Spaces.
-        """
+        super().__init__(setting)
         assert isinstance(setting,RegularizationSetting)
         self.x = init
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
 
         self.tau = tau
         """Step size of minimization procedure. 
@@ -80,6 +77,6 @@ class FISTA(Solver):
         self.x_old = self.x
         self.t_old = self.t
 
-        self.x = self.setting.penalty.proximal(h-self.tau*self.setting.h_domain.gram_inv(self.setting.data_fid.gradient(h)), self.tau * self.regpar, self.proximal_pars)
+        self.x = self.penalty.proximal(h-self.tau*self.h_domain.gram_inv(self.data_fid.gradient(h)), self.tau * self.regpar, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        self.y = self.setting.op(self.x)
+        self.y = self.op(self.x)
