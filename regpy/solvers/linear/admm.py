@@ -1,14 +1,14 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver
+from regpy.solvers import RegSolver
 from regpy import util
 from regpy.functionals import Functional
 from regpy.solvers import RegularizationSetting
 
 from regpy.solvers.linear.tikhonov import TikhonovCG
 
-class ADMM(Solver):
+class ADMM(RegSolver):
     r"""The ADMM method for minimizing \(S(Tf) + \alpha * R(f))\. 
     ADMM solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. Choosing 
     \[
@@ -50,10 +50,8 @@ class ADMM(Solver):
     """
     def __init__(self,  setting, init, gamma = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, cg_pars = None):
         assert isinstance(setting,RegularizationSetting)
-        super().__init__()
-        self.setting = setting
-        """Regularization Setting."""
-        assert self.setting.op.linear
+        super().__init__(setting)
+        assert self.op.linear
 
         self.v1 = init['v1']
         self.v2 = init['v2']
@@ -75,7 +73,7 @@ class ADMM(Solver):
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
 
         self.x, self.y = TikhonovCG(
-            setting=RegularizationSetting(self.setting.op, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=self.regpar,
@@ -83,13 +81,13 @@ class ADMM(Solver):
         ).run()
 
     def _next(self):
-        self.v1 = self.setting.data_fid.proximal(self.setting.op(self.x)-self.p1, 1/self.gamma, self.proximal_pars_data_fidelity)
-        self.v2 = self.setting.penalty.proximal(self.x-self.p2, 1/self.gamma, self.proximal_pars_penalty)
-        self.p1 -= self.gamma*(self.setting.op(self.x)-self.v1)
+        self.v1 = self.data_fid.proximal(self.op(self.x)-self.p1, 1/self.gamma, self.proximal_pars_data_fidelity)
+        self.v2 = self.penalty.proximal(self.x-self.p2, 1/self.gamma, self.proximal_pars_penalty)
+        self.p1 -= self.gamma*(self.op(self.x)-self.v1)
         self.p2 -= self.gamma*(self.x-self.v2)
 
         self.x, self.y = TikhonovCG(
-            setting=RegularizationSetting(self.setting.op, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
             data=self.v1+self.p1,
             xref=self.v2+self.p2,
             regpar=self.regpar,
