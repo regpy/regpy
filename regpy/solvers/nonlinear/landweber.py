@@ -1,11 +1,11 @@
-from regpy.solvers import Solver
+from regpy.solvers import RegSolver
 from regpy.operators import SciPyLinearOperator
 from scipy.sparse.linalg import eigsh
 
 import logging
 import numpy as np
 
-class Landweber(Solver):
+class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
     \[
         F(x) = g^\delta,
