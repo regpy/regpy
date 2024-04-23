@@ -1053,7 +1053,7 @@ class FourierTransform(Operator):
         if self.is_complex:
             x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
         else:
-            x = np.fft.irfftn(y, self.domain.shape,axes=self.axes, norm='ortho')
+            x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
         if self.centered:
             x = np.fft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:

@@ -58,29 +58,31 @@ class ConvolutionOperator(Composition):
     pad_amount: d-tuple of pairs of integers 
         To model non-periodic convolutions, zero padding is often needed to avoid aliasing artifacts
         by periodization. Each pair of integers specifies the number of pixels to be added in each dimension. 
+    first_conv_axis: integer, default:0
+        If first_conv_axis>0, then convolution is only performed along the last (grid.ndim-first_conv_axis) axes.
     """
 
-    def __init__(self, grid, fourier_multiplier, pad_amount=None):
+    def __init__(self, grid, fourier_multiplier, pad_amount=None,first_conv_axis=0):
         ndim = grid.ndim
         if pad_amount is None or pad_amount == ((0,0),)*ndim:
-            ft = FourierTransform(grid)
+            ft = FourierTransform(grid,axes=tuple(range(first_conv_axis,ndim)))
             self._frqs = ft.codomain.coords
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs)
             else:
                 self._otf = fourier_multiplier
-            multiplier = PtwMultiplication(ft.codomain, self._otf)
+            multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
 
             super().__init__(ft.adjoint, multiplier, ft)
         else:
             pad_op = PaddingOperator(grid,pad_amount)
-            ft = FourierTransform(pad_op.codomain)
+            ft = FourierTransform(pad_op.codomain,axes=tuple(range(first_conv_axis,ndim)))
             self._frqs = ft.codomain.coords
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs)
             else:
                 self._otf = fourier_multiplier
-            multiplier = PtwMultiplication(ft.codomain, self._otf)
+            multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
         
             super().__init__(pad_op.adjoint, ft.adjoint, multiplier, ft, pad_op)
 
@@ -99,26 +101,29 @@ class GaussianBlur(ConvolutionOperator):
     For shift=0 it also represents the forward operator for the backward heat equation if 
     kernel_width= 2\sqrt{t}.
     """
-    def __init__(self,grid,kernel_width,shift=None,pad_amount= None):
+    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,first_conv_axis=0):
         if shift==None:
             super().__init__(grid,
                              lambda *x : np.exp(-(np.pi*kernel_width)**2 * sum(y**2 for y in x)),
-                             pad_amount=pad_amount
+                             pad_amount=pad_amount,
+                             first_conv_axis=first_conv_axis
                              )
         else:
             super().__init__(grid,
                              lambda *x : np.exp(sum(-(np.pi*kernel_width)**2*y**2 + 2*np.pi*1j*sh*y
                                                          for y,sh in zip(x,shift))),
-                             pad_amount=pad_amount
+                             pad_amount=pad_amount,
+                             first_conv_axis=first_conv_axis
                             )
             
 class ExponentialConvolution(ConvolutionOperator):
     r"""Convolution with an exponential function exp(-|x|_1/a).
     """
-    def __init__(self,grid,a,pad_amount= None):
+    def __init__(self,grid,a,pad_amount= None,first_conv_axis=0):
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
-                        pad_amount=pad_amount
+                        pad_amount=pad_amount,
+                        first_conv_axis=first_conv_axis
                         )
             
 class FresnelPropagator(ConvolutionOperator):
@@ -155,10 +160,11 @@ class FresnelPropagator(ConvolutionOperator):
     with wavelength  \(lambda\) and propagation distance \(d\).
     """
 
-    def __init__(self,grid, fresnel_number, pad_amount=None):
+    def __init__(self,grid, fresnel_number, pad_amount=None,first_conv_axis=0):
         assert grid.is_complex
         super().__init__(grid,
                         lambda *x : np.exp((-1j * np.pi / fresnel_number) * sum(y**2 for y in x)),
-                        pad_amount=pad_amount
+                        pad_amount=pad_amount,
+                        first_conv_axis=first_conv_axis
                         )
  
