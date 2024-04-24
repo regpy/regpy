@@ -18,12 +18,7 @@ logging.basicConfig(
 #Forward operator
 op = DirichletOp(
     kappa = 1,
-    true_curve='apple',
-    N_ieq_synth=64,
-    N_ieq = 128,  
-    N_inc = 1,
-    N_meas = 64,   
-    N_FK = 32
+    true_curve='apple'
 )
 
 setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
@@ -45,7 +40,7 @@ init=init.flatten()
 #Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
     setting, farfield, init = init,
-        cgmaxit=50, rho=0.8
+        cgmaxit=50, rho=0.5
 )
 
 """
