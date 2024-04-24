@@ -9,29 +9,20 @@ import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 from dirichlet_op import DirichletOp
-from regpy.vecsps.curve import GenTrigDiscr
-from  regpy.vecsps import UniformGridFcts
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-N_meas=64
-N_inc=1
-Y_dim=N_meas*N_inc
-codomain=UniformGridFcts(np.linspace(0, 2*np.pi, Y_dim, endpoint=False), dtype=complex)
-
 #Forward operator
 op = DirichletOp(
-    domain=GenTrigDiscr(64),
-    codomain=codomain,
     kappa = 1,
     true_curve='apple',
     N_ieq_synth=64,
     N_ieq = 128,  
-    N_inc = N_inc,
-    N_meas = N_meas,   
+    N_inc = 1,
+    N_meas = 64,   
     N_FK = 32
 )
 
