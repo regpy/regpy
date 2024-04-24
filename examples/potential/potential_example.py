@@ -51,8 +51,8 @@ solver = NewtonCG(
 """
 solver = IrgnmCG(
     setting, data,
-    regpar = 10,
-    regpar_step = 0.8,
+    regpar = 1,
+    regpar_step = 0.5,
     init = init,
     cg_pars = dict(
         tol = 1e-4
@@ -64,7 +64,7 @@ stoprule = (
     rules.Discrepancy(
         setting.h_codomain.norm, data,
         noiselevel = setting.h_codomain.norm(noise),
-        tau=1.2
+        tau=2.1
     )
 )
 
@@ -85,7 +85,7 @@ for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
         axs[1].plot(reco_data, label='reco')
         axs[1].plot(data, label='measured')
         axs[1].legend()
-        axs[1].set_ylim(ymin=0)
+        #axs[1].set_ylim(ymin=0)
         plt.pause(0.5)
 
 plt.ioff()
