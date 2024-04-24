@@ -50,7 +50,7 @@ class DirichletOp(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, kappa, true_curve, N_ieq_synth, N_ieq, N_inc, N_meas, N_FK, **kwargs):
+    def __init__(self, kappa, true_curve, N_ieq_synth=64, N_ieq=128, N_inc=1, N_meas=64, N_FK=64, **kwargs):
         self.bd_ex = StarCurveDiscr(2*N_ieq_synth)
         """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
         equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
@@ -85,11 +85,10 @@ class DirichletOp(Operator):
         self.perm=None
         """LU factors + permuation for integral equation matrix."""
         self.FF_combined=None
-        self.Y_dim=codomain.size
-        assert self.Y_dim == np.size(self.meas_directions, 1)*np.size(self.inc_directions, 1)
+        self.Y_dim=self.N_inc*self.N_meas   
         
         super().__init__(
-            domain=GenTrigDiscr(64),
+            domain=GenTrigDiscr(2*self.N_FK),
             codomain=UniformGridFcts(np.linspace(0, 2*np.pi, self.Y_dim, endpoint=False), dtype=complex),
             linear=False
         )
