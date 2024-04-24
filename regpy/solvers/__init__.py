@@ -4,7 +4,7 @@
 from regpy.util import classlogger
 from regpy.stoprules import NoneRule
 from regpy.functionals import  as_functional, Composed
-
+import regpy.stoprules as rules
 
 class Solver:
     r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
@@ -216,3 +216,30 @@ class RegSolver(Solver):
         self.h_codomain =  setting.h_codomain
         """The Hilbert space associated to data fidelity functional"""
         super().__init__(x,y)
+
+    def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
+        """
+        Run solver with Morozov's discrepancy principle as stopping rule.
+
+        Parameters:
+        data: array-like
+        The right-hand side
+
+        delta: float, default:0
+        noise level 
+
+        tau: float, default: 2.1
+        parameter in discrepancy principle
+
+        max_its: int, default: 1000
+        maximal number of iterations
+        """
+        stoprule =  (rules.CountIterations(max_iterations=max_its)
+                        + rules.Discrepancy(self.h_codomain.norm, data,
+                        noiselevel=delta, tau=tau)
+                    )
+        reco, reco_data = self.run(stoprule)
+        if not isinstance(stoprule.active_rule, rules.Discrepancy):
+            self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
+        return reco, reco_data
+    
