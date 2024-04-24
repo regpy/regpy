@@ -9,29 +9,20 @@ import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 from dirichlet_op import DirichletOp
-from regpy.vecsps.curve import GenTrigDiscr
-from  regpy.vecsps import UniformGridFcts
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-N_meas=64
-N_inc=32
-Y_dim=N_meas*N_inc
-codomain=UniformGridFcts(np.linspace(0, 2*np.pi, Y_dim, endpoint=False), dtype=complex)
-
 #Forward operator
 op = DirichletOp(
-    domain=GenTrigDiscr(64),
-    codomain=codomain,
-    kappa = 3,
+    kappa = 1,
     true_curve='apple',
     N_ieq_synth=64,
     N_ieq = 128,  
-    N_inc = N_inc,
-    N_meas = N_meas,   
+    N_inc = 1,
+    N_meas = 64,   
     N_FK = 32
 )
 
@@ -54,14 +45,14 @@ init=init.flatten()
 #Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
     setting, farfield, init = init,
-        cgmaxit=50, rho=1.6
+        cgmaxit=50, rho=0.8
 )
 
 """
 solver = IrgnmCG(
     setting, data,
-    regpar=10,
-    regpar_step=0.8,
+    regpar=1.,
+    regpar_step=0.5,
     init=init,
     cg_pars=dict(
         tol=1e-4
@@ -73,7 +64,7 @@ stoprule = (
     rules.Discrepancy(
         setting.h_codomain.norm, data,
         noiselevel=setting.h_codomain.norm(noise),
-        tau=1.2
+        tau=2.1
     )
 )
 
@@ -81,7 +72,7 @@ stoprule = (
 plt.ion()
 fig, axs = plt.subplots(1, 2)
 axs[0].set_title('Obstacle')
-axs[1].set_title('Farfield')
+axs[1].set_title('Farfield (real part)')
 
 for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
     if n % 1 == 0:
@@ -94,7 +85,7 @@ for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
         axs[1].plot(op.codomain.coords[0], reco_data.real, label='reco')
         axs[1].plot(op.codomain.coords[0], data.real, label='measured')
         axs[1].legend()
-        axs[1].set_ylim(ymin=0)
+        #axs[1].set_ylim(ymin=0)
         plt.pause(0.5)
 
 plt.ioff()
