@@ -116,6 +116,15 @@ class HilbertSpace:
 
 
 class GramHilbertSpace(HilbertSpace):
+    """
+    Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
+    
+    Parameters:
+    gram: operator
+        The Gram matrix of the discrete Hilbert space.
+    gram_inv: operator, default =None
+        Inverse of the Gram matrix    
+    """
     def __init__(self, gram, gram_inv=None):
         assert gram.domain == gram.codomain
         if gram_inv is not None:
