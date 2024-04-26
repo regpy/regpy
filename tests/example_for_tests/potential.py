@@ -19,11 +19,11 @@ def test_potential():
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
     )
-    N_means = 128
+    #N_means = 128
     op = Potential(
-        domain=StarTrigDiscr(200),
-        codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex),
-        radius=1.2,
+     #   domain=StarTrigDiscr(200),
+     #   codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex),
+        radius=1.2
     )
 
     setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
