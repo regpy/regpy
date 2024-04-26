@@ -17,7 +17,7 @@ logging.basicConfig(
 
 #Forward operator
 op = DirichletOp(
-    kappa = 1,
+    kappa = 3,
     true_curve='apple'
 )
 
@@ -35,12 +35,12 @@ data = farfield+noise
 #Initial guess
 t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
 init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
-init=init.flatten()
+init = init.flatten()
 
 #Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
     setting, farfield, init = init,
-        cgmaxit=50, rho=0.5
+        cgmaxit=50, rho=0.6
 )
 
 """
@@ -74,14 +74,21 @@ for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
         axs[0].clear()
         axs[0].plot(*exact_solution.z)
         axs[0].plot(*op.domain.bd_eval(reco, nvals=op.N_ieq, nderivs=3).z)
-
-        axs[1].clear()
-        axs[1].plot(op.codomain.coords[0], farfield.real, label='exact')
-        axs[1].plot(op.codomain.coords[0], reco_data.real, label='reco')
-        axs[1].plot(op.codomain.coords[0], data.real, label='measured')
-        axs[1].legend()
-        #axs[1].set_ylim(ymin=0)
-        plt.pause(0.5)
+        
+        if op.N_inc==1:
+         axs[1].clear()
+         axs[1].plot(op.codomain.coords[0], farfield.real, label='exact')
+         axs[1].plot(op.codomain.coords[0], reco_data.real, label='reco')
+         axs[1].plot(op.codomain.coords[0], data.real, label='measured')
+         axs[1].legend()
+         plt.pause(0.5)
+        else: 
+         axs[1].clear()
+         axs[1].plot(op.codomain.coords[0][:,0], farfield.real[:,0], label='exact')
+         axs[1].plot(op.codomain.coords[0][:,0], reco_data.real[:,0], label='reco')
+         axs[1].plot(op.codomain.coords[0][:,0], data.real[:,0], label='measured')
+         axs[1].legend()
+         plt.pause(0.5)
 
 plt.ioff()
 plt.show()
