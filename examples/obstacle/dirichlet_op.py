@@ -7,7 +7,7 @@ from  functions.farfield_matrix import farfield_matrix
 from  functions.setup_iop_data import setup_iop_data
 from  regpy.operators import Operator
 from  regpy.vecsps.curve import StarCurveDiscr
-from  regpy.vecsps import UniformGridFcts
+from  regpy.vecsps import UniformGridFcts, GridFcts
 from regpy.vecsps.curve import GenTrigDiscr
 
 class DirichletOp(Operator):
@@ -50,7 +50,7 @@ class DirichletOp(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, kappa, true_curve, N_ieq_synth=64, N_ieq=128, N_inc=1, N_meas=64, N_FK=64, **kwargs):
+    def __init__(self, kappa, true_curve, N_ieq_synth=64, N_ieq=128, N_inc=4, N_meas=64, N_FK=64, **kwargs):
         self.bd_ex = StarCurveDiscr(2*N_ieq_synth)
         """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
         equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
@@ -85,13 +85,22 @@ class DirichletOp(Operator):
         self.perm=None
         """LU factors + permuation for integral equation matrix."""
         self.FF_combined=None
-        self.Y_dim=self.N_inc*self.N_meas   
-        
+
+        self.Y_dim=self.N_inc*self.N_meas
+        meas_dir=np.linspace(0, 2*np.pi, self.N_meas, endpoint=False)
+        inc_dir=np.linspace(0, 2*np.pi, self.N_inc, endpoint=False)
+
+        if  self.N_inc==1:
+            codomain=UniformGridFcts(np.linspace(0, 2*np.pi, self.Y_dim, endpoint=False), dtype=complex)
+        else:
+            codomain=GridFcts(meas_dir, inc_dir, dtype=complex)
+
         super().__init__(
             domain=GenTrigDiscr(2*self.N_FK),
-            codomain=UniformGridFcts(np.linspace(0, 2*np.pi, self.Y_dim, endpoint=False), dtype=complex),
+            codomain=codomain,
             linear=False
         )
+        
 
     def _create_synthetic_data(self, **kwargs):
         
@@ -111,13 +120,15 @@ class DirichletOp(Operator):
         FF_combined = farfield_matrix(self.bd_ex, self.meas_directions, self.kappa, self.w_sl, self.w_dl)
 
         farfield = []
-
         for l in range(0, np.size(self.inc_directions, 1)):
             rhs = -2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].reshape((1,2)).dot(self.bd_ex_curve.z))*self.bd_ex_curve.zpabs
             rhs=rhs.flatten()
             phi = scla.solve(Iop, rhs)
             complex_farfield=FF_combined.dot(phi)
             farfield=np.append(farfield, complex_farfield)
+
+        if self.N_inc!=1:
+           farfield =farfield.reshape(self.N_meas, self.N_inc)
 
         self.w_dl=wdlTmp
         return farfield
@@ -152,6 +163,10 @@ class DirichletOp(Operator):
             complex_farfield = np.dot(FF_SL, self.dudn[:,l])
             farfield = np.append(farfield, complex_farfield)
 
+        if self.N_inc==1:
+           farfield=farfield
+        else:
+           farfield =farfield.reshape(self.N_meas, self.N_inc)
         return farfield
 
     def _derivative(self, h):
@@ -162,9 +177,14 @@ class DirichletOp(Operator):
                 complex_farfield = self.FF_combined.dot(phi)
               
                 der = np.append(der, complex_farfield)
+
+            if self.N_inc!=1:
+              der = der.reshape(self.N_meas, self.N_inc)
             return der
 
     def _adjoint(self, g):
+            if self.N_inc!=1:
+               g = g.reshape(self.N_meas*self.N_inc)
              
             res = np.zeros(2*self.N_ieq)
             rhs = np.zeros(2*self.N_ieq, dtype=complex)
