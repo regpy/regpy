@@ -1,7 +1,8 @@
 import numpy as np
 
-from regpy.vecsps.curve import StarTrigDiscr
 from regpy.operators import Operator
+from regpy.vecsps.curve import StarTrigDiscr
+from  regpy.vecsps import UniformGridFcts
 
 class Potential(Operator):
     r"""Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
@@ -49,21 +50,20 @@ class Potential(Operator):
       Problems, 13 (1997) 1279–1299.
     """
 
-    def __init__(self, domain, codomain, radius, nforward=128):
-        assert isinstance(domain, StarTrigDiscr)
+    def __init__(self, radius, nforward=128, N_means=128, N_ieq=128):
         
         self.radius = radius
         """The measurement radius."""
         self.nforward = nforward
         """The Fourier order of the forward solver."""
-
+         
         super().__init__(
-            domain=domain,
-            codomain=codomain
+            domain=StarTrigDiscr(2*N_ieq),
+            codomain=UniformGridFcts(np.linspace(0, 2*np.pi, N_means, endpoint=False), dtype=complex)
         )
 
         k = 1 + np.arange(self.nforward)
-        k_t = np.outer(k, np.linspace(0, 2 * np.pi, self.nforward, endpoint=False))
+        k_t = np.outer(k, np.linspace(0, 2*np.pi, self.nforward, endpoint=False))
         k_tfl = np.outer(k, self.codomain.coords[0])
         self.cosin = np.cos(k_t)
         self.sinus = np.sin(k_t)
