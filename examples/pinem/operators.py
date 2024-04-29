@@ -6,7 +6,7 @@ from regpy.operators import Identity, Operator, RealPart, ImaginaryPart
 from regpy.operators import PtwMultiplication, DirectSum, SquaredModulus, Exponential, Power
 from regpy.operators import VectorOfOperators, MatrixOfOperators, Adjoint 
 from regpy.operators.parallel_operators import ParallelVectorOfOperators
-from regpy.operators.fresnel import get_fresnel_propagator
+from regpy.operators.convolution import FresnelPropagator
 from scipy.special import jv
 
 def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = False):
@@ -260,14 +260,14 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
         if g_is_complex:
             op_list.append(
                 SquaredModulus(cdomain)
-                *get_fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
+                *FresnelPropagator(cdomain, fresnel_number,pad_amount=pad_amount)
                 *PtwMultiplication(cdomain,a_psi0_multiplier)
                 *ComplexNemitzkyOpForG(n,cdomain))
         else:
             if not n==0:
                 op_list.append(
                     SquaredModulus(cdomain)
-                    *get_fresnel_propagator(cdomain, fresnel_number,pad_amount=pad_amount)
+                    *FresnelPropagator(cdomain, fresnel_number,pad_amount=pad_amount)
                     *PtwMultiplication(cdomain,a_psi0_multiplier)
                     *NemitzkyOpForG(n,cdomain)
                     *DirectSum(Exponential(domain), Identity(domain)))
