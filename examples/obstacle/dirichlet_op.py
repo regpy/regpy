@@ -86,14 +86,10 @@ class DirichletOp(Operator):
         """LU factors + permuation for integral equation matrix."""
         self.FF_combined=None
 
-        self.Y_dim=self.N_inc*self.N_meas
         meas_dir=np.linspace(0, 2*np.pi, self.N_meas, endpoint=False)
         inc_dir=np.linspace(0, 2*np.pi, self.N_inc, endpoint=False)
 
-        if  self.N_inc==1:
-            codomain=UniformGridFcts(np.linspace(0, 2*np.pi, self.Y_dim, endpoint=False), dtype=complex)
-        else:
-            codomain=GridFcts(meas_dir, inc_dir, dtype=complex)
+        codomain=GridFcts(meas_dir, inc_dir, dtype=complex)
 
         super().__init__(
             domain=GenTrigDiscr(2*self.N_FK),
@@ -111,7 +107,6 @@ class DirichletOp(Operator):
        
         if self.w_sl!=0:
             Iop = self.w_sl*op_S(self.bd_ex, Iop_data)
-
         else:
             Iop = np.zeros(np.size(self.bd_ex_curve.z, 1), np.size(self.bd_ex_curve.z, 1))
         if self.w_dl!=0:
@@ -119,16 +114,12 @@ class DirichletOp(Operator):
             
         FF_combined = farfield_matrix(self.bd_ex, self.meas_directions, self.kappa, self.w_sl, self.w_dl)
 
-        farfield = []
-        for l in range(0, np.size(self.inc_directions, 1)):
+        farfield = np.zeros((self.N_meas,self.N_inc),dtype = complex)
+        for l in range(0, self.N_inc):
             rhs = -2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].reshape((1,2)).dot(self.bd_ex_curve.z))*self.bd_ex_curve.zpabs
             rhs=rhs.flatten()
             phi = scla.solve(Iop, rhs)
-            complex_farfield=FF_combined.dot(phi)
-            farfield=np.append(farfield, complex_farfield)
-
-        if self.N_inc!=1:
-           farfield =farfield.reshape(self.N_meas, self.N_inc)
+            farfield[:,l]=FF_combined.dot(phi)
 
         self.w_dl=wdlTmp
         return farfield
@@ -144,60 +135,43 @@ class DirichletOp(Operator):
         if self.w_dl!=0:
             Iop = Iop + self.w_dl*(np.diag(self.domain_curve.zpabs)+op_K(self.domain_curve,Iop_data))
 
-        self.dudn = np.zeros((2*self.N_ieq, np.size(self.inc_directions,1)), dtype=complex)
+        self.dudn = np.zeros((2*self.N_ieq, self.N_inc), dtype=complex)
         FF_SL = farfield_matrix(self.domain_curve,self.meas_directions,self.kappa,-1.,0.)
 
         self.perm_mat, self.L, self.U = scla.lu(Iop)
         self.perm = self.perm_mat.dot(np.arange(0, np.size(self.domain_curve.z,1)))
         self.FF_combined = farfield_matrix(self.domain_curve,self.meas_directions,self.kappa, \
                                            self.w_sl,self.w_dl)
-        farfield = []
+        farfield = np.zeros((self.N_meas,self.N_inc),dtype=complex)
 
-        for l in range(0, np.size(self.inc_directions, 1)):
+        for l in range(0, self.N_inc):
             rhs = 2*np.exp(complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.domain_curve.z))*  \
                 (self.w_dl*complex(0,1)*self.kappa*self.inc_directions[:,l].T.dot(self.domain_curve.normal) \
                                          +self.w_sl*self.domain_curve.zpabs)
-
             self.dudn[:, l] = np.linalg.solve(self.L.T, \
                      np.linalg.solve(self.U.T, rhs[self.perm.astype(int)]))
-            complex_farfield = np.dot(FF_SL, self.dudn[:,l])
-            farfield = np.append(farfield, complex_farfield)
-
-        if self.N_inc==1:
-           farfield=farfield
-        else:
-           farfield =farfield.reshape(self.N_meas, self.N_inc)
+            farfield[:,l] = np.dot(FF_SL, self.dudn[:,l])
         return farfield
 
     def _derivative(self, h):
-            der = []
-            for l in range(0, np.size(self.inc_directions, 1)):
+            der = np.zeros((self.N_meas,self.N_inc),dtype=complex)
+            for l in range(0, self.N_inc):
                 rhs = - 2*self.dudn[:,l]*(self.domain_curve.der_normal(h))*(self.domain_curve.zpabs.T)
                 phi = np.linalg.solve(self.U, np.linalg.solve(self.L, rhs[self.perm.astype(int)]))
-                complex_farfield = self.FF_combined.dot(phi)
-              
-                der = np.append(der, complex_farfield)
-
-            if self.N_inc!=1:
-              der = der.reshape(self.N_meas, self.N_inc)
+                der[:,l] = self.FF_combined.dot(phi)
             return der
 
     def _adjoint(self, g):
-            if self.N_inc!=1:
-               g = g.reshape(self.N_meas*self.N_inc)
-             
-            res = np.zeros(2*self.N_ieq)
+            res = np.zeros(2*self.N_ieq,dtype =float)
             rhs = np.zeros(2*self.N_ieq, dtype=complex)
-            N_FF = np.size(self.meas_directions,1)
 
-            for  l in range(0, np.size(self.inc_directions,1)):
-                g_complex = g[(l)*N_FF+np.arange(0, N_FF)]
-                phi = self.FF_combined.T.conjugate().dot(g_complex)
+            for  l in range(0, self.N_inc):
+                phi = self.FF_combined.T.conjugate().dot(g[:,l])
 
                 rhs[self.perm.astype(int)] = np.linalg.solve(self.L.T.conjugate(), \
                 np.linalg.solve(self.U.T.conjugate(), phi))
                 
-                res = res-2*(rhs*np.conjugate(self.dudn[:,l])).real
+                res += -2*(rhs*np.conjugate(self.dudn[:,l])).real
 
             adj = self.domain_curve.adjoint_der_normal(res*self.domain_curve.zpabs)
 

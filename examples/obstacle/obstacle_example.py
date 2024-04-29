@@ -18,7 +18,8 @@ logging.basicConfig(
 #Forward operator
 op = DirichletOp(
     kappa = 3,
-    true_curve='apple'
+    true_curve='apple',
+    N_inc = 4
 )
 
 setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
@@ -27,7 +28,7 @@ setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 exact_solution=op.bd_ex_curve
 farfield = op._create_synthetic_data()
 
-#Poission data
+# add Gaussian white noise 
 noise = op.codomain.randn()
 noise = 0.01*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
 data = farfield+noise
