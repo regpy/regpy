@@ -3,12 +3,17 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
+import sys
+import os
+sys.path.append(os.path.join('c:/users/19363/desktop/test/itreg-development/examples/obstacle', '../../'))
+
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 from dirichlet_op import DirichletOp
+from dirichlet_op import create_synthetic_data
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,19 +23,18 @@ logging.basicConfig(
 #Forward operator
 op = DirichletOp(
     kappa = 3,
-    true_curve='apple',
     N_inc = 4
 )
 
 setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
 #Exact data
-exact_solution=op.bd_ex_curve
-farfield = op._create_synthetic_data()
+farfield, exact_solution = create_synthetic_data(op, true_curve='apple')
 
-# add Gaussian white noise 
+# Gaussian data 
+noiselevel=0.01
 noise = op.codomain.randn()
-noise = 0.01*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
+noise = noiselevel*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
 data = farfield+noise
 
 #Initial guess
@@ -59,7 +63,7 @@ stoprule = (
     rules.CountIterations(100) +
     rules.Discrepancy(
         setting.h_codomain.norm, data,
-        noiselevel=setting.h_codomain.norm(noise),
+        noiselevel=noiselevel,
         tau=2.1
     )
 )
@@ -76,20 +80,12 @@ for n, (reco, reco_data) in enumerate(solver.until(stoprule)):
         axs[0].plot(*exact_solution.z)
         axs[0].plot(*op.domain.bd_eval(reco, nvals=op.N_ieq, nderivs=3).z)
         
-        if op.N_inc==1:
-         axs[1].clear()
-         axs[1].plot(op.codomain.coords[0], farfield.real, label='exact')
-         axs[1].plot(op.codomain.coords[0], reco_data.real, label='reco')
-         axs[1].plot(op.codomain.coords[0], data.real, label='measured')
-         axs[1].legend()
-         plt.pause(0.5)
-        else: 
-         axs[1].clear()
-         axs[1].plot(op.codomain.coords[0][:,0], farfield.real[:,0], label='exact')
-         axs[1].plot(op.codomain.coords[0][:,0], reco_data.real[:,0], label='reco')
-         axs[1].plot(op.codomain.coords[0][:,0], data.real[:,0], label='measured')
-         axs[1].legend()
-         plt.pause(0.5)
+        axs[1].clear()
+        axs[1].plot(op.codomain.coords[0][:,0], farfield.real[:,0], label='exact')
+        axs[1].plot(op.codomain.coords[0][:,0], reco_data.real[:,0], label='reco')
+        axs[1].plot(op.codomain.coords[0][:,0], data.real[:,0], label='measured')
+        axs[1].legend()
+        plt.pause(0.5)
 
 plt.ioff()
 plt.show()
