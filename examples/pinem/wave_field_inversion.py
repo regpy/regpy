@@ -44,7 +44,7 @@ mask = (abs(Xco+0.2) <= 0.2) & (abs(Yco) <= 0.4)
 mask = mask | (abs((Xco-0.35)*(Xco-0.35)+(Yco-0.35)*(Yco-0.35)) <= 0.01)
 
 # Forward operator and its domain
-op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=True)  
+op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=False)  
 
 if sol_type == None:
     projection = CoordinateProjection(cgrid,mask)

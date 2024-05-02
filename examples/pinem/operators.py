@@ -31,8 +31,8 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
     """
     assert domain.is_complex
 
-    fresnel_prop1 = get_fresnel_propagator(domain, fresnel_number)
-    fresnel_prop2 = get_fresnel_propagator(domain, -fresnel_number)
+    fresnel_prop1 = FresnelPropagator(domain, fresnel_number)
+    fresnel_prop2 = FresnelPropagator(domain, -fresnel_number)
     detection_op0 = SquaredModulus(domain)
     detection_op1 = SquaredModulus(domain)
     detection_op2 = SquaredModulus(domain)

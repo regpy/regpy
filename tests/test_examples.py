@@ -4,3 +4,4 @@ from example_for_tests.xray_phase_contrast import test_xray_phase_contrast
 from example_for_tests.potential import test_potential
 from example_for_tests.volterra import test_volterra
 from example_for_tests.obstacle import test_obstacle
+from example_for_tests.wave_field_inversion import test_wave_field_inversion
