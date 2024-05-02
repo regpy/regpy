@@ -1,14 +1,20 @@
 import numpy as np
 import scipy.linalg as scla
-
-from  functions.operator import op_S
-from  functions.operator import op_K
-from  functions.farfield_matrix import farfield_matrix
-from  functions.setup_iop_data import setup_iop_data
-from  regpy.operators import Operator
-from  regpy.vecsps.curve import StarCurveDiscr
-from  regpy.vecsps import GridFcts
+import os
+import sys
+sys.path.append(os.path.dirname(__file__))
+from functions.operator import op_S
+from functions.operator import op_K
+from functions.farfield_matrix import farfield_matrix
+from functions.setup_iop_data import setup_iop_data
+from regpy.operators import Operator
+from regpy.vecsps.curve import StarCurveDiscr
+from regpy.vecsps import GridFcts
 from regpy.vecsps.curve import GenTrigDiscr
+
+
+
+
 
 class DirichletOp(Operator):
     r"""Operator that maps the shape of a sound-soft obstacle to the far-field measurements. 
