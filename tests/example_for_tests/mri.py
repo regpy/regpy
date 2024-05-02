@@ -1,12 +1,10 @@
 import logging
-
-from matplotlib.colors import hsv_to_rgb
 import numpy as np
 from scipy.io import loadmat
 
 import regpy.stoprules as rules
 
-from examples.mri.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother, estimate_sampling_pattern
+from examples.mri.mri import parallel_mri, sobolev_smoother, estimate_sampling_pattern
 from regpy.operators import PtwMultiplication
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
