@@ -1,6 +1,6 @@
 from examples.medium_scattering.mediumscattering import MediumScatteringFixed
 from regpy.operators import CoordinateProjection
-from regpy.hilbert import L2, HmDomain, Sobolev, HilbertPullBack
+from regpy.hilbert import L2, HmDomain, Sobolev
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
@@ -9,8 +9,6 @@ import regpy.util as util
 import numpy as np
 import logging
 
-# import matplotlib.pyplot as plt
-# import matplotlib.colorbar as cbar
 
 def test_mediumscattering():
     logging.basicConfig(
@@ -51,7 +49,7 @@ def test_mediumscattering():
         # Define Sobolev norm on support via embedding
         #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
         penalty = myh_domain, 
-        data_fid = L2
+        data_fid =L2
     )
 
     solver = IrgnmCG(
@@ -73,10 +71,11 @@ def test_mediumscattering():
         )
     )
 
+
+
     for reco, reco_data in solver.until(stoprule):
         solution = embedding(reco)
-    
-    
-    # ToDo check also corection of solution
-    
-    
+
+
+
+
