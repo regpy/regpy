@@ -1,6 +1,5 @@
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from regpy.operators import Operator
 from regpy.vecsps import UniformGridFcts
