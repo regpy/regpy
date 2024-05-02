@@ -44,7 +44,7 @@ init = init.flatten()
 
 #Solver: NewtonCG or IrgnmCG
 solver = NewtonCG(
-    setting, farfield, init = init,
+    setting, data, init = init,
         cgmaxit=50, rho=0.6
 )
 
