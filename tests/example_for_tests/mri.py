@@ -1,85 +1,81 @@
 import logging
 
+from matplotlib.colors import hsv_to_rgb
 import numpy as np
+from scipy.io import loadmat
 
 import regpy.stoprules as rules
-import regpy.util as util
-from examples.mri.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother
+
+from examples.mri.mri import cartesian_sampling, normalize, parallel_mri, sobolev_smoother, estimate_sampling_pattern
+from regpy.operators import PtwMultiplication
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
 
 
-def test_mri():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
-    )
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
+)
 
-    # TODO dtype=complex?
-    grid = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
+# ### Complex to rgb conversion
+# 
+# Converts array of complex numbers into array of RGB color values for plotting. The hue corresponds to the argument.
+# The brighntess corresponds to the absolute value.  
 
-    sobolev_index = 32
-    noiselevel = 0.05
+def complex_to_rgb(z):
+    HSV = np.dstack( (np.mod(np.angle(z)/(2.*np.pi),1), 1.0*np.ones(z.shape), np.abs(z)/np.max((np.abs(z[:]))), ))
+    return hsv_to_rgb(HSV)
 
-    # In real applications with data known before constructing the operator, estimate_sampling_pattern
-    # can be used to determine the mask.
-    mask = grid.zeros(dtype=bool)
-    mask[::2] = True
-    mask[:10] = True
-    mask[-10:] = True
+# ### Load data from file and estimate sampling pattern
 
-    full_mri_op = parallel_mri(grid=grid, ncoils=10)
-    sampling = cartesian_sampling(full_mri_op.codomain, mask=mask)
-    mri_op = sampling * full_mri_op
+data = loadmat('examples/mri/data/ksp3x2.mat')['Y']
+data = np.transpose(data,(2,0,1))*(100/np.linalg.norm(data))
+# normalize and transpose data 
+nrcoils,n1,n2 = data.shape
+grid = UniformGridFcts((-1, 1, n1), (-1, 1, n2), dtype=complex)
+mask = estimate_sampling_pattern(data)
 
-    # Substitute Sobolev weights into coil profiles
-    smoother = sobolev_smoother(mri_op.domain, sobolev_index, factor=220.)
-    smoothed_op = mri_op * smoother
+# ### Set up forward operator
 
-    exact_solution = mri_op.domain.zeros()
-    exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case
+sobolev_index = 32
 
-    # Exact density is just a square shape
-    exact_density[...] = (np.max(np.abs(grid.coords), axis=0) < 0.4)
+full_mri_op = parallel_mri(grid=grid, ncoils=nrcoils,centered=True)
+sampling = PtwMultiplication(full_mri_op.codomain,(1.+0j)* mask)
+smoother = sobolev_smoother(full_mri_op.domain, sobolev_index, factor=220.)
 
-    # Exact coils are Gaussians centered on points on a circle
-    centers = util.linspace_circle(exact_coils.shape[0]) / np.sqrt(2)
-    for coil, center in zip(exact_coils, centers):
-        r = np.linalg.norm(grid.coords - center[:, np.newaxis, np.newaxis], axis=0)
-        coil[...] = np.exp(-r**2 / 2)
+parallel_mri_op = sampling * full_mri_op * smoother
 
-    # Construct data (criminally), add noise
-    exact_data = mri_op(exact_solution)
-    data = exact_data + noiselevel * mri_op.codomain.randn()
+# ### Set up initial guess
+# We use constant density and zero coil profiles as initial guess.
 
-    # Initial guess: constant density, zero coils
-    init = smoothed_op.domain.zeros()
-    init_density, _ = smoothed_op.domain.split(init)
-    init_density[...] = 1
+init = parallel_mri_op.domain.zeros()
+init_density, _ = parallel_mri_op.domain.split(init)
+init_density[...] = 1
 
-    setting = RegularizationSetting(op=smoothed_op, penalty=L2, data_fid=L2)
+# ### Set up regularization method
 
-    solver = IrgnmCG(
-        setting=setting,
-        data=data,
-        regpar=10,
-        regpar_step=0.8,
-        init=init
-    )
+setting = RegularizationSetting(op=parallel_mri_op, penalty=L2, data_fid=L2)
 
-    stoprule = (
-        rules.CountIterations(max_iterations=100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=setting.h_codomain.norm(exact_data - data),
-            tau=1.1
-        )
-    )
+solver = IrgnmCG(
+    setting=setting,
+    data=data,
+    regpar=1,
+    regpar_step=1/3.,
+    init=init
+)
+
+stoprule = rules.CountIterations(max_iterations=5) 
+
+# ### Run solver by hand and plot iterates
+# Get an iterator from the solver
+
+it = iter(solver)
+for reco, reco_data in solver.while_(stoprule):
+    rho, coils = smoother.codomain.split(smoother(reco))
+    #rho, coils = normalize(rho,coils)
 
 
 
-    # Run the solver, plot iterates
-    for reco, reco_data in solver.until(stoprule):
-        reco2 = smoother(reco)
+
