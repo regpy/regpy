@@ -1,39 +1,43 @@
 import logging
 
-
 import numpy as np
 
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
-
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
-from examples.potential.potential import Potential
+from examples.obstacle.dirichlet_op import DirichletOp
+from examples.obstacle.dirichlet_op import create_synthetic_data
 
 
-
-def test_potential():
+def test_obstacle():
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
     )
 
     #Forward operator
-    op = Potential(
-        radius=1.3
+    op = DirichletOp(
+        kappa = 3,
+        N_inc = 4
     )
 
     setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
-    #Exact data and Poission data
-    exact_solution = op.domain.sample(lambda t: np.sqrt(3*np.cos(t)**2+1)/2)
-    exact_data = op(exact_solution)
+    #Exact data
+    farfield, exact_solution = create_synthetic_data(op, true_curve='apple')
+
+    # Gaussian data 
+    noiselevel=0.01
     noise = op.codomain.randn()
-    noise = 0.01*setting.h_codomain.norm(exact_data)/setting.h_codomain.norm(noise)*noise
-    data = exact_data + noise
+    noise = noiselevel*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
+    data = farfield+noise
 
     #Initial guess
-    init = op.domain.sample(lambda t: 1)
+    t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
+    init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
+    init = init.flatten()
 
     #Solver: NewtonCG or IrgnmCG
     solver = NewtonCG(
@@ -44,11 +48,11 @@ def test_potential():
     """
     solver = IrgnmCG(
         setting, data,
-        regpar = 1,
-        regpar_step = 0.5,
-        init = init,
-        cg_pars = dict(
-            tol = 1e-4
+        regpar=1.,
+        regpar_step=0.5,
+        init=init,
+        cg_pars=dict(
+            tol=1e-4
         )
     )
     """
@@ -56,15 +60,13 @@ def test_potential():
         rules.CountIterations(100) +
         rules.Discrepancy(
             setting.h_codomain.norm, data,
-            noiselevel = setting.h_codomain.norm(noise),
+            noiselevel=noiselevel,
             tau=2.1
         )
     )
 
-    #Plot function
-
-
     solver.run(stoprule)
+
 
 
 

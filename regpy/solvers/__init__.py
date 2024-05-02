@@ -2,6 +2,7 @@
 """
 
 from regpy.util import classlogger
+from regpy.util.operator_tests import test_adjoint, test_derivative
 from regpy.stoprules import NoneRule
 from regpy.functionals import  as_functional, Composed
 import regpy.stoprules as rules
@@ -178,6 +179,75 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+
+    def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
+        r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
+        is the true matrix adjoint. That is 
+        >   np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
+
+        If the operator is non-linear this will be done for the derivative.
+
+        Parameters
+        ----------
+        tolerance : float
+            Tolerance of the two computed inner products.
+
+        Assertion
+        ---------
+        Assertion is thrown by the `regpy.util.operator_tests.test_adjoint` when it does not fit. 
+        """
+        if self.op.linear:
+            test_adjoint(self.op,tolerance=tolerance)
+        else:
+            _, deriv = self.op.linearize(self.op.domain.randn())
+            test_adjoint(deriv, tolerance=tolerance)
+
+    def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
+        r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
+        provided derivative in the operator ,if it is a non-linear operator. It computes for 
+        the provided `steps` as \(t\)
+        \[ ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \]
+        wrt the \(L^2\)-norm and returns true if it is a decreasing sequence.
+
+        Parameters
+        ----------
+        steps : float, optional
+            A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
+
+        Return
+        ------
+        Boolean
+            True if the sequence provided by `regpy.util.operator_test.test_adjoint` is decreasing.
+        """
+        if self.op.linear:
+            return True
+        seq = test_derivative(self.op,steps=steps)
+        return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
+    
+    def h_adjoint(self,x=None):
+        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
+
+        If the operator is non-linear this provided the adjoint to the derivative at `x`.
+
+        Parameters
+        ----------
+        x : array-like
+            Element of the domain at which to compute the derivative. 
+
+        Returns
+        -------
+        regpy.operators.Operator
+            Adjoint wrt chosen Hilbert spaces. 
+        regpy.operators.Operator
+            The operator who's adjoint is computed. Only needed for non-linear case as this return the 
+            derivative at the point.
+        """
+        if self.op.linear:
+            return self.h_domain.gram_inv * self.op.adjoint * self.h_codomain.gram, self.op
+        else:
+            _ , deriv = self.op.linearize(x)
+            return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
+
 
 class RegSolver(Solver):
     r"""Abstract base class for solvers working with a regularization setting.
