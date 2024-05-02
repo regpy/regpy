@@ -3,10 +3,6 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-import sys
-import os
-sys.path.append(os.path.join('c:/users/19363/desktop/test/itreg-development/examples/obstacle', '../../'))
-
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
