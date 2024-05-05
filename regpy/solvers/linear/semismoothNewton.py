@@ -80,8 +80,7 @@ class SemismoothNewton_bilateral(RegSolver):
 
         """Prepare first iteration step"""
         self.y = self.op(self.x)
-        self.rhs=self.data-self.y
-        self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.rhs)))
+        self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.data)))
         if self.xref is not None:
             self.b += self.regpar*self.xref
 
@@ -89,8 +88,8 @@ class SemismoothNewton_bilateral(RegSolver):
         self.lam_plus=np.maximum(res,0)
         self.lam_minus=-np.minimum(res,0)
 
-        self.active_plus = self.lam_plus +self.regpar*(self.x-self.psi_plus )>0 
-        self.active_minus= self.lam_minus-self.regpar*(self.x-self.psi_minus)>0 
+        self.active_plus = (self.lam_plus +self.regpar*(self.x-self.psi_plus ))>0 
+        self.active_minus= (self.lam_minus-self.regpar*(self.x-self.psi_minus))>0 
 
     def _next(self):
 
@@ -117,7 +116,7 @@ class SemismoothNewton_bilateral(RegSolver):
         else:
             tikhcg = TikhonovCG(
                 setting=RegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
-                data=self.rhs, 
+                data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
                 x0 = projection(self.x),
@@ -171,6 +170,8 @@ class SemismoothNewton_nonneg(RegSolver):
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: array-like, default: None
         First iterate. If None, then x0=xref
+    lambda0: array-like, default: None
+        Initial guess for Lagrange parameter
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhnonov functional on inactive set in each SS Newton step.
     TOL: float, default: 0
@@ -181,7 +182,7 @@ class SemismoothNewton_nonneg(RegSolver):
     cg_logging_level: default: logging.INFO
 
     """
-    def __init__(self,setting, data, regpar, xref = None,  x0=None, cg_pars = None, TOL = 0.,
+    def __init__(self,setting, data, regpar, xref = None,  x0=None, lambda0=None, cg_pars = None, TOL = 0.,
                  logging_level = logging.INFO, cg_logging_level = logging.INFO):
         assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
@@ -211,15 +212,17 @@ class SemismoothNewton_nonneg(RegSolver):
 
         """Prepare first iteration step"""
         self.y = self.op(self.x)
-        self.rhs=self.data-self.y
-        self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.rhs)))
+        self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.data)))
         if self.xref is not None:
             self.b += self.regpar*self.xref
 
         res = self.b - self.regpar*self.x - self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
-        self.lam=np.maximum(0, -res)
+        if lambda0 is None:
+            self.lam=np.maximum(0, -res)
+        else:
+            self.lam = np.copy(lambda0)
 
-        self.active= self.lam-self.regpar*self.x>0 
+        self.active= (self.lam-self.regpar*self.x)>0 
 
     def _next(self):
 
@@ -240,7 +243,7 @@ class SemismoothNewton_nonneg(RegSolver):
         else:
             tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
-                data=self.rhs, 
+                data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
                 x0 = projection(self.x),
@@ -262,7 +265,7 @@ class SemismoothNewton_nonneg(RegSolver):
         self.lam[self.active]=z[self.active]
 
         #Update active and inactive sets
-        self.active = self.lam-self.regpar*self.x>0
+        self.active = (self.lam-self.regpar*self.x)>0
         added_ind =  np.sum(np.logical_and(self.active, np.logical_not(self.active_old))) 
         removed_ind = np.sum(np.logical_and(self.active_old, np.logical_not(self.active)))
         self.log.debug('it {}: CG its {}; changes active set +{},-{}; error bound {:1.2e}/{:1.2e}'.format(self.iteration_step_nr,
@@ -321,18 +324,30 @@ class SemismoothNewtonAlphaGrid(RegSolver):
 
     def _next(self):
         try:
-            alpha = next(self._alphas)
+            if hasattr(self,'alpha'):
+                self.alpha_old = self.alpha
+            self.alpha = next(self._alphas)
         except StopIteration:
             return self.converge()
         setting = RegularizationSetting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
         inner_stoprule = CountIterations(max_iterations=self.max_Newton_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
-        SSNewton = SemismoothNewton_nonneg(setting,self.data,alpha,xref=self.xref,x0=0*self.x,
-                                TOL = self.tol_fac / np.sqrt(alpha),
-                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(alpha)},
+        if not hasattr(self,'alpha_old'):
+            SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,
+                                TOL = self.tol_fac / np.sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
+                                logging_level=self.logging_level,
+                                cg_logging_level = logging.WARNING
+                               )    
+        else:
+            lambda0 = (self.alpha/self.alpha_old)*self.lam
+            SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,x0=self.x,lambda0=lambda0,
+                                TOL = self.tol_fac / np.sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
                                 logging_level=self.logging_level,
                                 cg_logging_level = logging.WARNING
                                )
         self.x, self.y = SSNewton.run(inner_stoprule)
-        self.log.info('alpha = {}, SS Newton its = {}'.format(alpha,inner_stoprule.iteration))
+        self.lam = SSNewton.lam
+        self.log.info('alpha = {}, SS Newton its = {}'.format(self.alpha,inner_stoprule.iteration))
