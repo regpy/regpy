@@ -75,7 +75,7 @@ class SobolevFESpace(HilbertSpace):
     def gram(self):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
-        form += ngs.SymbolicBFI(u * v + ngs.grad(u) * ngs.grad(v))
+        form += ngs.SymbolicBFI(u * v + ngs.InnerProduct(ngs.Grad(u),ngs.Grad(v)))
         return Matrix(self.vecsp, form)
 
 
@@ -119,7 +119,7 @@ class SobolevBoundaryFESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(
-            u.Trace() * v.Trace() + u.Trace().Deriv() * v.Trace().Deriv(),
+            ngs.InnerProduct(u.Trace(),v.Trace()) + ngs.InnerProduct(u.Trace().Deriv(), v.Trace().Deriv()),
             definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
         return Matrix(self.vecsp, form)

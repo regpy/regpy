@@ -21,7 +21,10 @@ class NgsL1(Functional):
     """
     def __init__(self, domain):
         self._gfu = ngs.GridFunction(domain.fes)
-        self._fes_util = ngs.L2(domain.fes.mesh, order=0)
+        if domain.codim > 1:
+            self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
+        else:
+            self._fes_util = ngs.L2(domain.fes.mesh, order=0)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         super().__init__(domain)
 
@@ -31,7 +34,7 @@ class NgsL1(Functional):
         return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
 
     def _gradient(self, x):
-        self._gfu.FV().NumPy()[:] = x
+        self._gfu.vec.FV().NumPy()[:] = x
         self._gfu_util.Set(self._gfu)
         y = self._gfu_util.vec.FV().NumPy()
         self._gfu_util.vec.FV().NumPy()[:] = np.sign(y)
@@ -65,6 +68,7 @@ class NgsTV(Functional):
     """
 
     def __init__(self, domain, h_domain=L2):
+        assert domain.codim == 1, "TV is not implemented for vector valued spaces." 
         super().__init__(domain,h_domain=h_domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
         self._gfu.Set(0)

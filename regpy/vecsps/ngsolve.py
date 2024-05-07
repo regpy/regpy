@@ -29,7 +29,15 @@ class NgsSpace(VectorSpace):
         super().__init__(fes.ndof)
         self.fes = fes
         self.bdr = bdr
-        self._fes_util = fes
+        # Checks if FES is Vector valued and stores the dimension in self.codim
+        from netgen.libngpy._meshing import NgException
+        try:
+            self.codim = len(fes.components)
+            assert self.codim == fes.mesh.dim
+            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0)
+        except NgException:
+            self.codim = 1
+            self._fes_util = ngs.L2(self.fes.mesh, order=0)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(fes)
 
