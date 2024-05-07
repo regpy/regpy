@@ -112,7 +112,6 @@ class NewtonCGFrozen(RegSolver):
     """
     def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
         super().__init__(setting)
-        self.op = setting.op
         self.data = data
         self.x = init
         _, self.deriv = self.op.linearize(self.x)
@@ -130,30 +129,30 @@ class NewtonCGFrozen(RegSolver):
         self._residual = self.data - self.y
         #        _, self.deriv=self.op.linearize(self.x)
         self._s = self._residual - self.deriv(self._x_k)
-        self._s2 = self.codomain.gram(self._s)
+        self._s2 = self.h_codomain.gram(self._s)
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.domain.gram_inv(self._rtilde)
+        self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = self.domain.inner(self._r, self._rtilde)
-        self._norms0 = np.sqrt(np.real(self.domain.inner(self._s2, self._s)))
+        self._inner_prod = self.h_domain.inner(self._r, self._rtilde)
+        self._norms0 = np.sqrt(np.real(self.h_domain.inner(self._s2, self._s)))
         self._k = 1
         self._n += 1
 
     def _inner_update(self):
         _, self.deriv = self.op.linearize(self.x)
         self._q = self.deriv(self._d)
-        self._q2 = self.codomain.gram(self._q)
+        self._q2 = self.h_codomain.gram(self._q)
         self._alpha = (self._inner_prod
-                       / np.real(self.codomain.inner(self._q, self._q2)))
+                       / np.real(self.h_codomain.inner(self._q, self._q2)))
         self._s2 += -self._alpha * self._q2
         self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.domain.gram_inv(self._rtilde)
-        self._beta = (np.real(self.codomain.inner(self._r, self._rtilde))
+        self._r = self.h_domain.gram_inv(self._rtilde)
+        self._beta = (np.real(self.h_codomain.inner(self._r, self._rtilde))
                       / self._inner_prod)
 
     def _next(self):
         while (
-            np.sqrt(self.domain.inner(self._s2, self._s)) > self.rho * self._norms0
+            np.sqrt(self.h_domain.inner(self._s2, self._s)) > self.rho * self._norms0
             and self._k <= self.cgmaxit
         ):
             self._inner_update()
