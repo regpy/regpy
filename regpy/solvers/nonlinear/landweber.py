@@ -24,8 +24,8 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
-    rhs : array-like
-        The right hand side.
+    data : array-like
+        The measured data/right hand side.
     init : array-like
         The initial guess.
     stepsize : float, optional
@@ -33,10 +33,10 @@ class Landweber(RegSolver):
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, rhs, init, stepsize=None):
+    def __init__(self, setting, data, init, stepsize=None):
         super().__init__(setting)
-        self.rhs = rhs
-        """The right hand side."""
+        self.rhs = data
+        """The right hand side gets initialized with the measured data."""
         self.x = init
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
