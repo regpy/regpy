@@ -337,25 +337,29 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         return self.codomain.join(*self.compute_all('deriv',x))
 
     def _adjoint(self, y):
-        assert self.running
         elms = self.codomain.split(y)
         return sum(self.compute_all('adjoint',args_specific=elms))
     
 class DistributedVectorOfOperators(Operator,ParallelInterface):
-    """Vector of operators in which all components are evaluated in parallel. 
-    The functionality is identical to the sequential analog VectorOfOperators: For
-    TODO change description
-        T_i : X -> Y_i
+    r"""Vector of operators in which all components are evaluated in parallel and the input
+    is assumed to be from direct sum of spaces that is then distributed to the operators that
+    need it
+        \[T_i : X_{i_1}\times X_{i_2}... -> Y_i\]
 
     we define
 
-        T := VectorOfOperators(T_i) : X -> DirectSum(Y_i)
+        T := VectorOfOperators(T_i) : DirectSum(X_j) -> DirectSum(Y_i)
 
-    by `T(x)_i := T_i(x)`. 
+    by `T(x)_i := T_i(x_i1,x_i2,...)`. 
     
     Parameters
     ----------
     *ops : tuple of Operator
+    domain : vecsps.VectorSpace
+        The domain of the operator. It should usually be a direct sum of vector spaces
+    distribution_mat : numpy.ndarray of bools
+        The matrix that indicates which parts of the arguments are passed to which operator. If the entry M_i,j is True the
+        j-th component of the argument is passed to the i-th operator.
     codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -379,6 +383,8 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             raise TypeError('codomain={} is neither a VectorSpace nor callable'.format(codomain))
         assert all(op.codomain == c for op, c in zip(ops, codomain))
         self.distribution_mat=distribution_mat
+        self.distribution_lists=[[j for j in range(distribution_mat.shape[1]) if distribution_mat[i,j]] for i in range(distribution_mat.shape[0])]
+        self.collection_lists=[[i for i in range(distribution_mat.shape[0]) if distribution_mat[i,j]] for j in range(distribution_mat.shape[1])]
         conns = []
         it = 0
         for op in ops:
@@ -389,21 +395,35 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             it += 1
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
         ParallelInterface.__init__(self,conns)
-        
+    
+    def _distribute(self,x):
+        elms=self.domain.split(x)
+        x_ops=[]
+        for i,op in enumerate(self.ops):
+            x_ops.append(op.domain.join(*[elms[j] for j in self.distribution_lists[i]]))
+        return x_ops
+    
+    def _collect(self,x_res):
+        elms=self.domain.split(self.domain.zeros)
+        x_split=[op.domain.split(x_res[i]) for i,op in enumerate(self.ops)]
+        for j,elm in enumerate(elms):
+            elm+=sum(*[x_split[i,j] for i in self.collection_lists[j]])
+        return self.domain.join(*elms)
 
     def _eval(self, x, differentiate=False):
+        x_ops=self._distribute(x)
         if differentiate:
-            return self.codomain.join(*self.compute_all('eval_diff',[x]))
+            return self.codomain.join(*self.compute_all('eval_diff',args_specific=x_ops))
         else:
-            return self.codomain.join(*self.compute_all('eval_nodiff',[x]))
+            return self.codomain.join(*self.compute_all('eval_nodiff',args_specific=x_ops))
 
     def _derivative(self, x):
-        return self.codomain.join(*self.compute_all('deriv',[x]))
+        x_ops=self._distribute(x)
+        return self.codomain.join(*self.compute_all('deriv',args_specific=x_ops))
 
     def _adjoint(self, y):
-        assert self.running
         elms = self.codomain.split(y)
-        return sum(self.compute_all('adjoint',args_specific=[elms]))
+        return self._collect(self.compute_all('adjoint',args_specific=[elms]))
 
 class ParallelExecutionManager:
     r"""
@@ -428,10 +448,4 @@ class ParallelExecutionManager:
         Terminates all managed instances of ParallelInterface.
         """
         ParallelInterface.terminate_managed_instances(self.manager_id)
-
-
-
-
-
-
 
