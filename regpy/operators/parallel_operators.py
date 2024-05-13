@@ -1,4 +1,5 @@
 from regpy import vecsps
+from regpy.vecsps import DirectSum
 from regpy.operators import Operator
 import multiprocessing as mp 
 from warnings import warn
@@ -247,7 +248,6 @@ class ParallelInterface:
             List of arguments where args_specific[j] is send to subprocess j.
             Defaulst to [].
         """
-
         if(not self.running):
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
         same_info=[command]
@@ -371,10 +371,9 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
 
-        if domain is None:
-            self.domain = ops[0].domain
-        else:
-            self.domain = domain
+        self.domain = domain
+        if codomain is None:
+            codomain = vecsps.DirectSum
         if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):
@@ -384,7 +383,6 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         assert all(op.codomain == c for op, c in zip(ops, codomain))
         self.distribution_mat=distribution_mat
         self.distribution_lists=[[j for j in range(distribution_mat.shape[1]) if distribution_mat[i,j]] for i in range(distribution_mat.shape[0])]
-        self.collection_lists=[[i for i in range(distribution_mat.shape[0]) if distribution_mat[i,j]] for j in range(distribution_mat.shape[1])]
         conns = []
         it = 0
         for op in ops:
@@ -393,6 +391,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             G = OperatorAsWorker(type(op).__name__+' as worker '+str(it),conn_w,op)
             G.start()
             it += 1
+        self.ops=ops
         Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
         ParallelInterface.__init__(self,conns)
     
@@ -400,14 +399,18 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         elms=self.domain.split(x)
         x_ops=[]
         for i,op in enumerate(self.ops):
-            x_ops.append(op.domain.join(*[elms[j] for j in self.distribution_lists[i]]))
+            if(len(self.distribution_lists[i])==1):
+                x_ops.append(elms[self.distribution_lists[i][0]])
+            else:
+                x_ops.append(op.domain.join(*[elms[j] for j in self.distribution_lists[i]]))
         return x_ops
     
     def _collect(self,x_res):
-        elms=self.domain.split(self.domain.zeros)
-        x_split=[op.domain.split(x_res[i]) for i,op in enumerate(self.ops)]
-        for j,elm in enumerate(elms):
-            elm+=sum(*[x_split[i,j] for i in self.collection_lists[j]])
+        elms=list(self.domain.split(self.domain.zeros()))
+        x_split=[op.domain.split(x_res[i]) if isinstance(op.domain, DirectSum) else x_res[i] for i,op in enumerate(self.ops)]
+        for i, op in enumerate(self.ops):
+            for k,j in enumerate(self.distribution_lists[i]):
+                elms[j]=elms[j]+x_split[i][k]
         return self.domain.join(*elms)
 
     def _eval(self, x, differentiate=False):
@@ -423,7 +426,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
 
     def _adjoint(self, y):
         elms = self.codomain.split(y)
-        return self._collect(self.compute_all('adjoint',args_specific=[elms]))
+        return self._collect(list(self.compute_all('adjoint',args_specific=elms)))
 
 class ParallelExecutionManager:
     r"""
