@@ -1,8 +1,7 @@
 import numpy as np
-
+from regpy.operators.parallel_operators import DistributedVectorOfOperators
 from regpy.operators import CoordinateProjection, DirectSum, FourierTransform, PtwMultiplication, Operator
 from regpy import util, vecsps
-
 
 class CoilMult(Operator):
     """Operator that implements the multiplication between density and coil profiles. The domain
@@ -22,7 +21,10 @@ class CoilMult(Operator):
         assert grid.ndim == 2
         self.grid = grid
         """The density grid."""
-        self.coilgrid = vecsps.UniformGridFcts(ncoils, *grid.axes, dtype=grid.dtype)
+        if(ncoils>1):
+            self.coilgrid = vecsps.UniformGridFcts(ncoils, *grid.axes, dtype=grid.dtype)
+        else:
+            self.coilgrid=vecsps.UniformGridFcts(*grid.axes, dtype=grid.dtype)
         """The coil grid, a stack of copies of `grid`."""
         self.ncoils = ncoils
         """The number of coils."""
@@ -50,10 +52,11 @@ class CoilMult(Operator):
             r"""Only `conj()` in complex case. For real case, we can avoid the copy."""
             density = np.conj(density)
             coils = np.conj(coils)
-        return self.domain.join(
-            np.sum(coils * y, axis=0),
-            density * y
-        )
+        if(self.ncoils>1):
+            return self.domain.join(
+                np.sum(coils * y, axis=0),
+                density * y)
+        return self.domain.join(coils*y,density*y)
 
     def __repr__(self):
         return util.make_repr(self, self.grid, self.ncoils)
@@ -86,6 +89,37 @@ def parallel_mri(grid, ncoils, centered=False):
     cmult = CoilMult(grid, ncoils)
     ft = FourierTransform(cmult.codomain, axes=range(1, cmult.codomain.ndim), centered=centered)
     return ft * cmult
+
+def full_parallel_mri_parallelized(grid,ncoils,mask,centered=False,sobolev_index=32,smoothing_factor=220):
+    """Construct a parallel MRI operator by composing a `regpy.operators.FourierTransform` and a
+    `CoilMult`. Subsampling patterns need to added by composing with e.g. a `cartesian_sampling`.
+
+    Parameters
+    ----------
+    grid : vecsps.UniformGridFcts
+        The grid on which the density is defined.
+    ncoils : int
+        The number of coils.
+    centered : bool
+        Whether to use a centered FFT. If true, the operator will use fftshift.
+
+    Returns
+    -------
+    Operator
+    """
+    ops=[]
+    distribution_mat=np.zeros((ncoils,ncoils+1),dtype=bool)
+    distribution_mat[:,0]=True
+    cmult = CoilMult(grid, 1)
+    ft = FourierTransform(cmult.codomain, axes=range(1, cmult.codomain.ndim), centered=centered)
+    # smoother=sobolev_smoother(cmult.domain,sobolev_index=sobolev_index,factor=smoothing_factor)
+    sampling=cartesian_sampling(ft.codomain, mask=mask)
+    domain=grid
+    for i in range(ncoils):
+        ops.append(sampling*ft*cmult)
+        distribution_mat[i,i+1]=True
+        domain+=cmult.domain[1]
+    return DistributedVectorOfOperators(ops,domain,distribution_mat),sampling*ft*cmult
 
 
 def sobolev_smoother(codomain, sobolev_index, factor=None, centered=False):
