@@ -1,7 +1,6 @@
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsps.ngsolve import NgsSpace
 from regpy.hilbert import HilbertSpace
 from regpy.operators import Operator
 from regpy.util import memoized_property
@@ -19,6 +18,8 @@ class Matrix(Operator):
     """
 
     def __init__(self, domain, form):
+        #imported here to prevent circular import
+        from regpy.vecsps.ngsolve import NgsSpace
         assert isinstance(domain, NgsSpace)
         if isinstance(form, ngs.BilinearForm):
             assert domain.fes == form.space

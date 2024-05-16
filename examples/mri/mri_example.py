@@ -35,7 +35,7 @@ mri_op = sampling * full_mri_op
 
 # Substitute Sobolev weights into coil profiles
 smoother = sobolev_smoother(mri_op.domain, sobolev_index, factor=220.)
-smoothed_op = mri_op * smoother
+smoothed_op = mri_op* smoother
 
 exact_solution = mri_op.domain.zeros()
 exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case

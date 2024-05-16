@@ -41,9 +41,8 @@ class Landweber(RegSolver):
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
-        gramX = self.h_domain.gram
-        gramY = self.h_codomain.gram
-        norm =eigsh(SciPyLinearOperator(self.deriv.adjoint * gramY * self.deriv), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
+        norm = setting.op_norm(self.deriv)
+        #compute norm after linearizing as because needs deriv as argument
 
         self.stepsize = stepsize or 0.9 / norm
         """The stepsize."""

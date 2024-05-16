@@ -35,10 +35,11 @@ class SemismoothNewton_bilateral(RegSolver):
     psi_minus: array-like, default: None
         The lower bound. In the default case it is -inf
     cg_pars: dictionary, default: None
-        Parameters of CG method for minimizing Tikhnonov functional on inactive set in each SS Newton step.
-    logging_level: default: logging:INFO
-
-    cg_logging_level: default: logging.INFO
+        Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
+    logging_level: Loglevel
+        default: logging:INFO
+    cg_logging_level: Loglevel
+        default: logging.INFO
 
     """
     def __init__(self,setting, data, regpar, xref = None, x0=None,psi_plus = None, psi_minus = None, cg_pars = None,
@@ -48,7 +49,7 @@ class SemismoothNewton_bilateral(RegSolver):
         assert self.op.domain.dtype == float
         self.data=data
         """The measured data"""
-        self.xref = xref
+        self.xref = xref if xref is not None else setting.op.domain.zeros()
         """The initial guess."""
         if x0 is None:
             if xref is None:
@@ -89,7 +90,7 @@ class SemismoothNewton_bilateral(RegSolver):
                 data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
-                x0 = self.xref,
+                x0 = self.x,
                 logging_level=self.cg_logging_level,
                 **self.cg_pars
             )
@@ -106,7 +107,6 @@ class SemismoothNewton_bilateral(RegSolver):
 
 
     def _next(self):
-
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
@@ -211,7 +211,7 @@ class SemismoothNewton_nonneg(RegSolver):
                 self.x = np.copy(xref)
         else:
             self.x = np.copy(x0)
-            """The current interate"""
+            """The current iterate"""
         self.regpar=regpar
         """The regularizaton parameter."""
         if cg_pars is None:
@@ -229,7 +229,7 @@ class SemismoothNewton_nonneg(RegSolver):
         if self.xref is not None:
             self.b += self.regpar*self.xref
 
-        self.lam = np.zeros_like(self.b)
+        self.lam = lambda0 if lambda0 is not None else np.zeros_like(self.b)
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -327,7 +327,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
-            self._alphas = alphas
+            self._alphas = iter(alphas)
         self.data = data
         """Right hand side of the operator equation."""
         self.xref = xref
