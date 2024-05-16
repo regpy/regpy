@@ -1299,6 +1299,49 @@ class KullbackLeibler(IntegralFunctionalBase):
         assert np.all(np.logical_or(np.logical_not(u_star==1),w==0))
         return w/(1-u_star)**2
 
+class RelativeEntropy(IntegralFunctionalBase):
+    r"""Kullback-Leiber divergence define by
+    \[ 
+        F(u,w) = \int (u(x)\ln \frac{u(x)}{w(x)}) dx
+    \]
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        Domain on which to define the Kullback-Leibler divergence
+    """
+
+    def  __init__(self, domain,w):
+        super().__init__(domain,hilbert.L2(domain))
+        assert w in domain
+        assert np.min(w)>0
+        self.wref = w
+
+    def _f(self, u,w):
+        res =  u * np.log(u/w)
+        ind_uneg = (u<0)
+        res[ind_uneg] = np.inf
+        res[u==0] = 0
+        return res    
+   
+    def _f_deriv(self, u,w):
+        assert np.min(u)>0
+        res = np.ones_like(u)+np.log(u/w)
+        return res
+
+    def _f_second_deriv(self, u, w):
+        assert np.min(u)>0
+        return 1/u
+
+    def _f_conj(self, u_star,w):
+        return w*(np.exp(u_star-1))
+
+    def _f_conj_deriv(self, u_star,w):
+        return w*np.exp(u_star-1)
+    
+    def _f_conj_second_deriv(self, u_star,w):
+        return w*np.exp(u_star-1)
+
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
 
