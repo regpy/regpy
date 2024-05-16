@@ -3,7 +3,6 @@
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsps.ngsolve import NgsSpace
 from regpy.hilbert import L2
 from regpy.functionals import Functional
 
@@ -20,6 +19,9 @@ class NgsL1(Functional):
         The underlying `ngsolve` space. 
     """
     def __init__(self, domain):
+        #imported here to prevent circular import
+        from regpy.vecsps.ngsolve import NgsSpace
+        assert isinstance(domain, NgsSpace)
         self._gfu = ngs.GridFunction(domain.fes)
         if domain.codim > 1:
             self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
@@ -68,6 +70,9 @@ class NgsTV(Functional):
     """
 
     def __init__(self, domain, h_domain=L2):
+        #imported here to prevent circular import
+        from regpy.vecsps.ngsolve import NgsSpace
+        assert isinstance(domain, NgsSpace)
         assert domain.codim == 1, "TV is not implemented for vector valued spaces." 
         super().__init__(domain,h_domain=h_domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
