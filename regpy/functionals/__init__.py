@@ -386,6 +386,60 @@ class Functional:
     def __pos__(self):
         return self
 
+    @util.memoized_property
+    def conj_functional(self):
+        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        instance. Will only be computed on demand and saved for subsequent invocations.
+
+        Returns
+        -------
+        Adjoint
+            The adjoint as an `Operator` instance.
+        """
+        return Conj(self)
+
+class Conj(Functional):
+    """An proxy class wrapping a functional. Calling it will evaluate the functional's
+    conj method. This class should not be instantiated directly, but rather through the
+    `Functional.conj_functional` property of a functional.
+    """
+
+    def __init__(self, func):
+        self.func = func
+        """The underlying functional."""
+        super().__init__(func.domain, h_domain = func.h_domain)
+
+    def _eval(self, x):
+        return self.func.conj(x)
+
+    def _conj(self, x):
+        return self.func._eval(x)
+    
+    def _gradient(self, x):
+        return self.func.conj_gradient(x)
+    
+    def _conj_gradient(self, x):
+        return self.func._gradient(x)
+
+    def _hessian(self, x):
+        return self.func.conj_hessian(x)
+    
+    def _conj_hessian(self, x):
+        return self.func._hessian(x)
+    
+    def _prox(self, x,tau):
+        return self.func.conj_prox(x,tau)
+    
+    def _conj_prox(self, x,tau):
+        return self.func._prox(x,tau)    
+
+    @property
+    def conj_functional(self):
+        return self.func
+
+    def __repr__(self):
+        return util.make_repr(self, self.func)
+
 
 class LinearFunctional(Functional):
     r"""Linear functionals
