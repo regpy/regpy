@@ -1,6 +1,4 @@
 from regpy.solvers import RegSolver
-from regpy.operators import SciPyLinearOperator
-from scipy.sparse.linalg import eigsh
 
 import logging
 import numpy as np
@@ -37,24 +35,18 @@ class Landweber(RegSolver):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized to measured data"""
-        T = self.op
-        gramX = self.h_domain.gram
-        gramY = self.h_codomain.gram
         self.x = init
-        self.y = T(self.x)
-        norm =eigsh(SciPyLinearOperator(T.adjoint * gramY * T), 1, M=SciPyLinearOperator(gramX),tol=0.01)[0][0]
+        self.y = self.op(self.x)
+        norm = setting.op_norm()
         self.stepsize = stepsize or 1 / norm
         """The stepsize."""
 
     def _next(self):
-        T = self.op
-        gramX_inv = self.h_domain.gram_inv
-        gramY = self.h_codomain.gram
         self._residual = self.y - self.rhs
-        self._gy_residual = gramY(self._residual)
-        self._update = T.adjoint(self._gy_residual)
-        self.x -= self.stepsize * gramX_inv(self._update)
-        self.y = T(self.x)
+        self._gy_residual = self.h_codomain.gram(self._residual)
+        self._update = self.op.adjoint(self._gy_residual)
+        self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
+        self.y = self.op(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
             norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))

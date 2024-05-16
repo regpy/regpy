@@ -1,10 +1,11 @@
 """Solvers for inverse problems.
 """
+from scipy.sparse.linalg import eigsh
 
 from regpy.util import classlogger
 from regpy.util.operator_tests import test_adjoint, test_derivative
 from regpy.stoprules import NoneRule
-from regpy.functionals import  as_functional, Composed
+from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
 import regpy.stoprules as rules
 
 class Solver:
@@ -247,6 +248,47 @@ class RegularizationSetting:
         else:
             _ , deriv = self.op.linearize(x)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
+        
+    def op_norm(self,deriv = None):
+        """Approximate the operator norm for Hilbert space settings by computing the 
+        largest eigenvalue with eigsh from scipy. 
+
+        Parameters
+        ----------
+        deriv : Operator, optional
+            The derivative of the operator if it is a non-linear operator, by default None
+
+        Returns
+        -------
+        scalar
+            Approximation of the norm of the operator by the largest eigenvalue. 
+
+        Raises
+        ------
+        NotImplementedError
+            If the setting is not a Hilbert space setting, meaning `penalty` and `data_fid`
+            are not `HilbertNormGeneric` instances this is not implemented.
+        """
+        from regpy.operators import SciPyLinearOperator, Derivative
+        if self.is_hilbert_setting():
+            if self.op.linear:
+                return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+            else:
+                assert isinstance(deriv,Derivative)
+                return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+        else:
+            raise NotImplementedError
+
+    def is_hilbert_setting(self):
+        """Assert if the setting is a Hilbert space setting. 
+
+        Returns
+        -------
+        Boolean
+            True if both `penalty` and `data_fid` are `HIlbertNormGeneric` functionals. 
+        """
+        return isinstance(self.penalty,HilbertNormGeneric) and isinstance(self.data_fid,HilbertNormGeneric)
+        
 
 
 class RegSolver(Solver):
