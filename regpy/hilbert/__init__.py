@@ -289,10 +289,10 @@ class TensorProd(HilbertSpace):
     `regpy.vecsps.Prod` of the underlying discretisations of the factors.
 
     Important note! The implementation of the Gram operator makes use of the
-    TensorBasis Operator from regpy.vecsps.tensor_bases in the sense, that
+    BasisTransform Operator from regpy.operators.bases_transform in the sense, that
     the Gram matrix of the Tensor Product of discretised Hilbert spaces
     would be given as the Kronecker-product of all Gram matrices. Which is
-    exacly given by the TensorBasis operator given that we interpret the
+    exacly given by the BasisTransform operator given that we interpret the
     Gram matrices as basis changes in each discretised Hilbert space.
 
     Therefore, please pay attention that to do that we have to actually evaluate
@@ -377,8 +377,8 @@ class TensorProd(HilbertSpace):
                 else:
                     basis.append(s.vecsp.flatten((w**2 * s.gram)(v)))
             bases.append(np.array(basis))
-        from regpy.vecsps.tensor_bases import TensorBasis
-        return TensorBasis(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
+        from regpy.operators.bases_transform import BasisTransform
+        return BasisTransform(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
 
     def __getitem__(self, item):
         return self.factors[item]

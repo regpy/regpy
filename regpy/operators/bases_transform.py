@@ -3,7 +3,7 @@ from regpy.operators import Operator
 from regpy.vecsps import VectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
 
-class TensorBasis(Operator):
+class BasisTransform(Operator):
     r"""
     Consider an evaluation domain given as Tensor product \(D_1\otimes \dots\otimes D_n\) with \(D_1,\dots,D_n\) being \(n\) 
     `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
@@ -11,7 +11,7 @@ class TensorBasis(Operator):
     \[
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).
     \]
-    So that the operator TensorBasis maps the coefficient tensor \(c = (c_\{k_1,....k_n\})\) to the tensor of function values
+    So that the operator BasisTransform maps the coefficient tensor \(c = (c_\{k_1,....k_n\})\) to the tensor of function values
     \((f(x))_{x in eval_domain}\)
 
     Parameters
@@ -65,17 +65,17 @@ class TensorBasis(Operator):
         else:
             self.sumrule = "".join(chr(k) for k in range(97,97+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(65,65+self.ndim))
             self.einsum_path = np.einsum_path(self.sumrule,G,*self.bases, optimize='optimal')[0]
-            return np.einsum(self.sumrule,G,*self.bases,optimize=self.path)
+            return np.einsum(self.sumrule,G,*self.bases,optimize=self.einsum_path)
 
 
-def chebyshev_basis(coef_domain,eval_domain,dtype=float):
+def chebyshev_basis(coef_nr,eval_domain,dtype=float):
     """Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
     Parameters
     ----------
-    coef_domain : regpy.vecsps.Prod
-        Coefficients of tensor products of Chebychev polynomials.  
+    coef_nr : scalar or tuple
+        Number of Coefficients of Chebychev polynomials in the coefficients basis.  
     eval_domain : regpy.vecsps.Prod
         Tensor product of `GridFcts` instances on which the Chebyshev polynomial are evaluated. 
     dtype : np.dtype, optional
@@ -83,26 +83,28 @@ def chebyshev_basis(coef_domain,eval_domain,dtype=float):
 
     Returns
     -------
-    TesnorBasis 
+    BasisTransform 
         A bases transform from coefficients of Chebychev polynomial to their evaluation.
     """
-    assert isinstance(coef_domain,Prod)
     assert isinstance(eval_domain,Prod)
-    assert coef_domain.ndim == eval_domain.ndim
+    if isinstance(coef_nr, tuple):
+        assert len(coef_nr) == eval_domain.ndim 
+    elif isinstance(coef_nr,int):
+        coef_nr = (coef_nr,)*eval_domain.ndim
+    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
     bases = []
-    for D_i, V_i in zip(eval_domain,coef_domain):
+    for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)
         x = D_i.axes[0]
-        N_i=V_i.size
         B_i = np.zeros((len(x),N_i))
         Id = np.eye(N_i)
         for k in range(N_i):
             pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return TensorBasis(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases,dtype)
 
-def legendre_basis(coef_domain,eval_domain,dtype=float):
+def legendre_basis(coef_nr,eval_domain,dtype=float):
     """Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -117,25 +119,27 @@ def legendre_basis(coef_domain,eval_domain,dtype=float):
 
     Returns
     -------
-    TesnorBasis 
+    BasisTransform 
         A bases transform from coefficients of Legendre polynomial to their evaluation.
     """
 
-    assert isinstance(coef_domain,Prod)
     assert isinstance(eval_domain,Prod)
-    assert coef_domain.ndim == eval_domain.ndim
+    if isinstance(coef_nr, tuple):
+        assert len(coef_nr) == eval_domain.ndim 
+    elif isinstance(coef_nr,int):
+        coef_nr = (coef_nr,)*eval_domain.ndim
+    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
     bases = []
-    for D_i, V_i in zip(eval_domain,coef_domain):
+    for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)
         x = D_i.axes[0]
-        N_i=V_i.size
         B_i = np.zeros((len(x),N_i))
         Id = np.eye(N_i)
         for k in range(N_i):
             pol = np.polynomial.legendre.Legendre(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return TensorBasis(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases,dtype)
 
 def bspline_basis(k,t,dim=1,add_points=10):
     """Implements a B-Spline basis in an arbitrary Dimension (given by dim)
@@ -162,7 +166,7 @@ def bspline_basis(k,t,dim=1,add_points=10):
 
     Returns
     -------
-    TensorBasis
+    BasisTransform
         A base transform from coefficients of Splines to evaluation on a grid constructed from a refined
         grid of the given evaluation knots. 
     """
@@ -185,4 +189,4 @@ def bspline_basis(k,t,dim=1,add_points=10):
         spl_i = BSpline(T,c,k)
         basis[:,j] = spl_i(axis)
         j += 1
-    return TensorBasis(coef_domain,eval_domain,[basis for i in range(dim)])
+    return BasisTransform(coef_domain,eval_domain,[basis for i in range(dim)])
