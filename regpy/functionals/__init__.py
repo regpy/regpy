@@ -114,6 +114,7 @@ class Functional:
         \[
          F(x+h) = F(x) + (\nabla F)(x)^T h + \frac{1}{2} h^T Hess F(x) h + \mathcal{o}(\|h\|^2)
         \]
+        Require either the implementation of _hessian or of _hessian_conj and _gradient
 
         Parameter:
         ----------
@@ -138,41 +139,9 @@ class Functional:
         assert h.domain == h.codomain == self.domain
         return h
 
-    def conj(self, xstar):
-        r"""The conjugate functional 
-        \[
-            F^*(x^*) = \sup_{x\in {\mathcal{X}}}((x^*)^T x - F(x) )
-        \]
-        
-        Parameter:
-        -------------
-        `xstar` : `self.domain`
-            Point in `domain` at which to compute the conjugate functional. 
-        
-        Returns:
-        -------------
-        `y`: float
-            Value of the conjugate functional at `xstar`
-        """
-        assert xstar in self.domain
-        y = self._conj(xstar)
-        assert isinstance(y, float)
-        return y        
-
     def conj_gradient(self, xstar):
-        r"""
-        Gradient \(\nabla F^*[x^*])\ of the conjugate functional F^* at `x^*`. 
-        Requires the implementation of either `_conj_gradient`.
-
-        Parameter
-        ----------
-        xstar : in self.domain
-            Element at which will be linearized
-
-        Return
-        ----------
-        grad : in self.domain
-            Gradient of \(F^*\) at \(x^*\).        
+        r"""Gradient of the conjugate functional. Should not be called directly, but via self.Conj.gradient.  
+        Requires the implementation of `_conj_gradient`.       
         """
         assert xstar in self.domain
         try:
@@ -183,19 +152,7 @@ class Functional:
         return grad
 
     def conj_hessian(self,xstar, recursion_safeguard=False):
-        r"""The hessian of the functional at `x` as an `regpy.operators.Operator` maping form the 
-        functionals `domain` to it self. Requires the implementation of `_conj_hessian` or 
-        _hessian and _conj_gradient
-        
-        Parameter:
-        ----------
-        `x` : `self.domain`
-            Point in `domain` at which to compute the hessian. 
-
-        Returns:
-        ----------
-        `h` : `regpy.operators.Operator` (Default: `regpy.operators.ApproximateHessian`)
-            Hessian operator at the point `x`. 
+        r"""The hessian of the functional. Should not be called directly, but via self.Conj.hessian.
         """
         assert xstar in self.domain
         try:
@@ -212,20 +169,7 @@ class Functional:
 
     def conj_linearize(self, xstar):
         r"""
-        Linearizes the conjugate functional \(F^*\) at `xstar` given by the value at that point and the gradient 
-        Requires the implementation of either `_conj_gradient` or `_conj_linearize`.
-
-        Parameter
-        ----------
-        xstar : in self.domain
-            Element at which will be linearized
-
-        Return
-        ----------
-        y 
-            Value of \(F^*(x^*)\).
-        grad : in self.domain
-            Gradient of \(F^*\) at \(x^*\).        
+        Linearizes the conjugate functional \(F^*\). Should not be called directly, but via self.Conj.linearize
         """
         assert xstar in self.domain
         try:
@@ -242,7 +186,7 @@ class Functional:
         \[
             \mathrm{prox}_{\tau F}(x)=\arg \min _{v\in {\mathcal {X}}}(F(v)+{\frac{1}{2\tau}}\Vert v-x\Vert_{\mathcal {X}}^{2}).
         \]
-        Requires an implementation of `_proximal`.
+        Requires either an implementation of `_proximal` or of `_gradient` and `_conj_proximal`.
 
         Parameters
         ----------
@@ -275,25 +219,7 @@ class Functional:
         return proximal
 
     def proximal_conj(self, xstar, tau, recursion_safeguard = False, proximal_pars = None):
-        r"""Proximal operator of conjugate functional 
-        \[
-            \mathrm{prox} _{\tau F^*}(x^*)=\arg \min _{v\in {\mathcal {X}}}(F^*(v^*)+{\frac{1}{2\tau}}\Vert v^*-x^*\Vert_{\mathcal {X}}^{2}).
-        \]
-        Requires an implementation of `_proximal` (in this case proximal_conj is evaluated by Moreau's identity) or an alternative implementation of ` _proximal_conj`.
-
-        Parameters
-        ----------
-        xstar : `self.domain`
-            Point at which to compute proximal_star.
-        tau : `np.number`
-            Regularization parameter for the proximal. 
-        proximal_pars : any, optional
-            parameters handed to the implementation of `_proximal`, by default None
-
-        Returns
-        -------
-        proximal : `self.domain`
-            the computed proximal of the conjugate functional at \(x^*\) with parameter \(\tau\).
+        r"""Proximal operator of conjugate functional. Should not be called directly, but via self.Conj.proximal
         """
         assert xstar in self.domain
         if proximal_pars == None:
@@ -341,8 +267,6 @@ class Functional:
 
     def _proximal_conj(self, xstar, tau):
         raise NotImplementedError
-#         gram = self.h_domain.gram
-#         return xstar-tau*gram(self._prox(gram.inverse(xstar)/tau,1/tau))
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
@@ -387,7 +311,7 @@ class Functional:
         return self
 
     @util.memoized_property
-    def conj_functional(self):
+    def Conj(self):
         """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
@@ -401,7 +325,7 @@ class Functional:
 class Conj(Functional):
     """An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
-    `Functional.conj_functional` property of a functional.
+    `Functional.Conj` property of a functional.
     """
 
     def __init__(self, func):
@@ -409,8 +333,8 @@ class Conj(Functional):
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain)
 
-    def _eval(self, x):
-        return self.func.conj(x)
+    def __call__(self, x):
+        return self.func._conj(x)
 
     def _conj(self, x):
         return self.func._eval(x)
@@ -419,19 +343,19 @@ class Conj(Functional):
         return self.func.conj_gradient(x)
     
     def _conj_gradient(self, x):
-        return self.func._gradient(x)
+        return self.func.gradient(x)
 
     def _hessian(self, x):
         return self.func.conj_hessian(x)
     
     def _conj_hessian(self, x):
-        return self.func._hessian(x)
+        return self.func.hessian(x)
     
     def _prox(self, x,tau):
         return self.func.conj_prox(x,tau)
     
     def _conj_prox(self, x,tau):
-        return self.func._prox(x,tau)    
+        return self.func.prox(x,tau)    
 
     @property
     def conj_functional(self):
@@ -571,12 +495,12 @@ class LinearCombination(Functional):
 
     def _conj(self, x):
         if len(self.funcs) == 1:
-            return self.coeffs[0]*self.funcs[0].conj(x/self.coeffs[0])
+            return self.coeffs[0]*self.funcs[0]._conj(x/self.coeffs[0])
         elif self.linear_table.count(False)==0:
             return 0 if x == self.grad_sum else np.inf
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.coeffs[j]*self.funcs[j].conj((x-self.grad_sum)/self.coeffs[j])
+            return self.coeffs[j]*self.funcs[j]._conj((x-self.grad_sum)/self.coeffs[j])
         else:
             return NotImplementedError
 
@@ -624,7 +548,7 @@ class VerticalShift(Functional):
         return self.func.hessian(x)
 
     def _conj(self,x):
-        return self.func.conj(x) - self.offset
+        return self.func._conj(x) - self.offset
     
     def _proximal(self, x, tau):
         return self.func.proximal(x, tau)
@@ -656,9 +580,9 @@ class HorizontalShiftDilation(Functional):
          
     def _conj(self,x_star):
         if self.shift is None:
-            return self.F.conj(x_star/self.dilation)             
+            return self.F._conj(x_star/self.dilation)             
         else:
-            return self.F.conj(x_star/self.dilation) + np.dot(x_star,self.shift)
+            return self.F._conj(x_star/self.dilation) + np.dot(x_star,self.shift)
         
     def _proximal(self, x, tau):
         if self.shift is None:
@@ -714,7 +638,7 @@ class Composed(Functional):
 
     def _conj(self,x):
         if self.op.linear:
-            return self.func.conj(self.op.adjoint.inverse(x))
+            return self.func._conj(self.op.adjoint.inverse(x))
 
     def _proximal(self, x, tau, cg_params={}):
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver
@@ -1164,62 +1088,61 @@ class IntegralFunctionalBase(Functional):
     wrt to that.
     """
 
-    def __init__(self,domain,h_domain,wref=None):
+    def __init__(self,domain,h_domain,kwargs={}):
         assert isinstance(domain,vecsps.MeasureSpaceFcts)
         assert domain == h_domain.vecsp
-        assert wref is None or np.isscalar(wref) or wref.shape == domain.shape
-        self.wref = wref
+        self.kwargs = kwargs
         super().__init__(domain)
         self.h_domain = h_domain
         """ Hilbert space on `domain` wrt to which is the prox computed."""
 
     def _eval(self, v):
-        return np.sum(self._f(v,self.wref)*self.domain.measure)
+        return np.sum(self._f(v,**self.kwargs)*self.domain.measure)
 
     def _conj(self,vstar):
-        return np.sum(self._f_conj(vstar/self.domain.measure,self.wref)*self.domain.measure)
+        return np.sum(self._f_conj(vstar/self.domain.measure,**self.kwargs)*self.domain.measure)
 
     def _gradient(self, v):
-        return self._f_deriv(v,self.wref)*self.domain.measure
+        return self._f_deriv(v,**self.kwargs)*self.domain.measure
 
     def _hessian(self, v):
-        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,self.wref))
+        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs))
 
     def _proximal(self, v, tau):
-        return self._f_prox(v,self.wref,tau)
+        return self._f_prox(v,tau,**self.kwargs)
     
     def _proximal_conj(self, vstar, tau):
-        return self._f_prox_conj(vstar/self.domain.measure,self.wref,tau)*self.domain.measure
+        return self._f_prox_conj(vstar/self.domain.measure,tau,**self.kwargs)*self.domain.measure
     
     def _conj_gradient(self, vstar):
-        return self._f_conj_deriv(vstar/self.domain.measure,self.wref)
+        return self._f_conj_deriv(vstar/self.domain.measure,**self.kwargs)
     
     def _conj_hessian(self, vstar):
-        return operators.PtwMultiplication(self.domain,self._f_conj_second_deriv(vstar/self.domain.measure,self.wref))
+        return operators.PtwMultiplication(self.domain,self._f_conj_second_deriv(vstar/self.domain.measure,**self.kwargs))
 
-    def _f(self,v,w):
+    def _f(self,v,**kwargs):
         raise NotImplementedError
     
-    def _f_deriv(self,v,w):
+    def _f_deriv(self,v,**kwargs):
         raise NotImplementedError
 
-    def _f_second_deriv(self,v,w):
+    def _f_second_deriv(self,v,**kwargs):
         raise NotImplementedError
 
-    def _f_prox(self,v,w,tau):
+    def _f_prox(self,v,tau,**kwargs):
         """TODO: write default implementation by Newton's method"""
         raise NotImplementedError
     
-    def _f_conj(self,vstar,w):
+    def _f_conj(self,vstar,**kwargs):
         raise NotImplementedError
     
-    def _f_conj_deriv(self,vstar,w):
+    def _f_conj_deriv(self,vstar,**kwargs):
         raise NotImplementedError
 
-    def _f_conj_second_deriv(self,vstar,w):
+    def _f_conj_second_deriv(self,vstar,**kwargs):
         raise NotImplementedError
 
-    def _f_prox_conj(self,vstar,w,tau):
+    def _f_prox_conj(self,vstar,tau,**kwargs):
         raise NotImplementedError
 #        """default implementation by Moreau's identity """
 #        return vstar-tau*self._f_prox(vstar/tau,w,1/tau)
@@ -1241,26 +1164,26 @@ class LppPower(IntegralFunctionalBase):
         self.q = p/(p-1)
         super().__init__(domain, hilbert.L2(domain))
 
-    def _f(self,v,w):
+    def _f(self,v,**kwargs):
         return np.abs(v)**self.p/self.p
     
-    def _f_deriv(self, v,w):
+    def _f_deriv(self, v,**kwargs):
         return np.abs(v)**(self.p-1)*np.sign(v)
     
-    def _f_second_deriv(self, v,w):
+    def _f_second_deriv(self, v,**kwargs):
         return (self.p-1)*np.abs(v)**(self.p-2)
     
-    def _f_conj(self, vstar,w):
+    def _f_conj(self, vstar,**kwargs):
         return np.abs(vstar)**self.q/self.q
 
-    def _f_conj_deriv(self, vstar,w):
+    def _f_conj_deriv(self, vstar,**kwargs):
         return np.abs(vstar)**(self.q-1)*np.sign(vstar)
     
-    def _f_conj_second_deriv(self, vstar,w):
+    def _f_conj_second_deriv(self, vstar,**kwargs):
         return (self.q-1)*np.abs(vstar)**(self.q-2)
     
 
-    def _f_prox(self, x_hat,tau,w):
+    def _f_prox(self, x_hat,tau,**kwargs):
         raise NotImplementedError
 
 class L1MeasureSpace(IntegralFunctionalBase):
@@ -1274,10 +1197,10 @@ class L1MeasureSpace(IntegralFunctionalBase):
     def __init__(self, domain):
         super().__init__(domain,hilbert.L2(domain))
 
-    def _f(self, v,w):
+    def _f(self, v,**kwargs):
         return np.abs(v)
 
-    def _f_deriv(self, v,w):
+    def _f_deriv(self, v,**kwargs):
         assert not np.any(v==0)
         return np.sign(v)
 
@@ -1288,13 +1211,13 @@ class L1MeasureSpace(IntegralFunctionalBase):
     def _f_prox(self, v,w, tau):
         return np.maximum(0, np.abs(v)-tau)*np.sign(v)
 
-    def _f_conj(self, v_star,w):
+    def _f_conj(self, v_star,**kwargs):
         ind = (np.abs(v_star)>1)
         res = np.zeros_like(v_star)
         res[ind]=np.inf
         return res
     
-    def _f_conj_der(self, v_star,w):
+    def _f_conj_der(self, v_star,**kwargs):
         assert abs(v_star)<=1
         return np.zeros_like(v_star)
 
@@ -1310,13 +1233,15 @@ class KullbackLeibler(IntegralFunctionalBase):
         Domain on which to define the Kullback-Leibler divergence
     """
 
-    def __init__(self, domain,w):
+    def __init__(self, domain,**kwargs):
         super().__init__(domain,hilbert.L2(domain))
+        w=kwargs['w']
         assert w in domain
         assert np.min(w)>=0
-        self.wref = w
+        self.kwargs = kwargs['w']
 
-    def _f(self, u,w):
+    def _f(self, u,**kwargs):
+        w= kwargs['w']
         res = u-w - w * np.log(u/w)
         ind_uneg = (u<0)
         res[ind_uneg] = np.inf
@@ -1324,18 +1249,21 @@ class KullbackLeibler(IntegralFunctionalBase):
         res[ind_uzero] = np.inf
         return res    
    
-    def _f_deriv(self, u,w):
+    def _f_deriv(self, u,**kwargs):
+        w=kwargs['w']
         assert np.min(u)>=0
         assert np.all(np.logical_or(np.logical_not(u==0),w==0))
         res = np.ones_like(u)-w/u
         res[u==0] = 1
         return res
 
-    def _f_second_deriv(self, u, w):
+    def _f_second_deriv(self, u, **kwargs):
+        w=kwargs['w']
         assert np.min(u)>0
         return w/u**2
 
-    def _f_conj(self, u_star,w):
+    def _f_conj(self, u_star,**kwargs):
+        w=kwargs['w']
         if np.any(u_star)>1:
             return np.inf 
         elif np.any(np.logical_and(u_star == 1,np.logical_not(w==0))):
@@ -1343,12 +1271,14 @@ class KullbackLeibler(IntegralFunctionalBase):
         else:
             return -w*np.log(1-u_star)
 
-    def _f_conj_deriv(self, u_star,w):
+    def _f_conj_deriv(self, u_star,**kwargs):
+        w=kwargs['w']        
         assert np.max(u_star)<=1
         assert np.all(np.logical_or(np.logical_not(u_star==1),w==0))
         return w/(1-u_star)
     
-    def _f_conj_second_deriv(self, u_star,w):
+    def _f_conj_second_deriv(self, u_star,**kwargs):
+        w=kwargs['w']
         assert np.max(u_star)<=1
         assert np.all(np.logical_or(np.logical_not(u_star==1),w==0))
         return w/(1-u_star)**2
@@ -1365,36 +1295,125 @@ class RelativeEntropy(IntegralFunctionalBase):
         Domain on which to define the Kullback-Leibler divergence
     """
 
-    def  __init__(self, domain,w):
+    def  __init__(self, domain,**kwargs):
         super().__init__(domain,hilbert.L2(domain))
+        w = kwargs['w']
         assert w in domain
         assert np.min(w)>0
-        self.wref = w
+        self.kwargs = kwargs
 
-    def _f(self, u,w):
+    def _f(self, u,**kwargs):
+        w=kwargs['w']        
         res =  u * np.log(u/w)
         ind_uneg = (u<0)
         res[ind_uneg] = np.inf
         res[u==0] = 0
         return res    
    
-    def _f_deriv(self, u,w):
+    def _f_deriv(self, u,**kwargs):
+        w=kwargs['w']        
         assert np.min(u)>0
         res = np.ones_like(u)+np.log(u/w)
         return res
 
-    def _f_second_deriv(self, u, w):
+    def _f_second_deriv(self, u, **kwargs):
         assert np.min(u)>0
         return 1/u
 
-    def _f_conj(self, u_star,w):
+    def _f_conj(self, u_star,**kwargs):
+        w=kwargs['w']
         return w*(np.exp(u_star-1))
 
-    def _f_conj_deriv(self, u_star,w):
+    def _f_conj_deriv(self, u_star,**kwargs):
+        w=kwargs['w']
         return w*np.exp(u_star-1)
     
-    def _f_conj_second_deriv(self, u_star,w):
+    def _f_conj_second_deriv(self, u_star,**kwargs):
+        w=kwargs['w']
         return w*np.exp(u_star-1)
+
+class Huber(IntegralFunctionalBase):
+    r"""Huber functional 
+    \[
+    F(x) = 1/2 |x|^2    if |x|\leq 1
+    F(x) = |x|-1/2    if |x|>1
+    \]
+    """
+
+    def  __init__(self, domain,as_primal=True):
+        super().__init__(domain,hilbert.L2(domain))
+        if as_primal:
+            self.Conjugate = QuadraticUnitIntv(domain,as_primal=False)
+
+    def _f(self, u,**kwargs):
+        res =  u*u/2
+        mask = np.abs(u)>=1
+        res[mask] = np.abs(u[mask])-0.5
+        return res    
+   
+    def _f_deriv(self, u,**kwargs):
+        res = u.copy()
+        mask = np.abs(u)>1
+        res[mask] = np.sign(u[mask])
+        return res
+
+    def _f_second_deriv(self, u, **kwargs):
+        return (np.abs(u)<=1).astype(float)
+
+    def _f_conj(self, ustar,**kwargs):
+        return self.Conjugate._f(ustar)    
+   
+    def _f_conj_deriv(self, ustar,**kwargs):
+        return self.Conjugate._f_deriv(ustar)
+
+    def _f_conj_second_deriv(self, ustar,**kwargs):
+        return self.Conjugate._f_second_deriv(ustar)
+
+    def _f_conj_proximal(self,ustar,tau,**kwargs):
+        return self.Conjugate._f_proximal(ustar,tau)
+
+
+class QuadraticUnitIntv(IntegralFunctionalBase):
+    r"""Functional 
+    \[
+    F(x) = 1/2 |X|^2    if |x|\leq 1
+    F(x) = \infty    if |x|>1
+    \]
+    """
+
+    def  __init__(self, domain,as_primal=True):
+        super().__init__(domain,hilbert.L2(domain))
+        if as_primal:        
+            self.Conjugate = Huber(domain,as_primal=False)
+
+    def _f(self, u,**kwargs):
+        res =  u*u/2
+        res[np.abs(u)>1] = np.inf
+        return res    
+   
+    def _f_deriv(self, u,**kwargs):
+        assert np.max(np.abs(u))<=1
+        return u.copy()
+
+    def _f_proximal(self,u,tau,**kwargs):
+        res = u/(1+tau)
+        return res/np.maximum(np.abs(res),1)
+
+    def _f_second_deriv(self, u,**kwargs):
+        assert np.max(np.abs(u))<1
+        return np.ones_like(u)
+
+    def _f_conj(self, ustar,**kwargs):
+        return self.Conjugate._f(ustar)    
+   
+    def _f_conj_deriv(self, ustar,**kwargs):
+        return self.Conjugate._f_deriv(ustar)
+
+    def _f_conj_second_deriv(self, ustar,**kwargs):
+        return self.Conjugate._f_second_deriv(ustar)
+
+    def _f_conj_proximal(self,ustar,tau,**kwargs):
+        return self.Conjugate._f_proximal(ustar,tau)
 
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
