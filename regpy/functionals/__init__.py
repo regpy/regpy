@@ -1592,22 +1592,22 @@ def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
     """
     assert isinstance(domain,vecsps.MeasureSpaceFcts)
     if isinstance(lb,float):
-        lb = lb*grid.ones()
+        lb = lb*domain.ones()
     assert lb in domain
     if isinstance(ub,float):
-        ub = ub*grid.ones()
+        ub = ub*domain.ones()
     assert ub in domain
     assert np.all(lb<ub)
     assert x0 in domain 
     assert isinstance(alpha,float)
 
-    F = QuadraticIntv(grid,sigma=2./(ub-lb))
+    F = QuadraticIntv(domain,sigma=2./(ub-lb))
     center = (ub+lb)/2
     lin = LinearFunctional(center-x0,
-                           domain=grid,
+                           domain=domain,
                            gradient_in_dual_space=False
                            )
-    offset = 0.5*(np.sum((x0**2-center**2)*grid.measure))
+    offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
     return alpha*HorizontalShiftDilation(F,shift=center) \
         + alpha*lin + alpha*offset
 
