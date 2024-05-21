@@ -77,6 +77,6 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.t_old = self.t
 
-        self.x = self.penalty.proximal(h-self.tau*self.h_domain.gram_inv(self.data_fid.gradient(h)), self.tau * self.regpar, self.proximal_pars)
+        self.x = self.penalty.proximal(h-self.tau*self.h_domain.gram_inv(self.data_fid.subgradient(h)), self.tau * self.regpar, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y = self.op(self.x)

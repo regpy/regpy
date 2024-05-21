@@ -35,7 +35,7 @@ class NgsL1(Functional):
         coeff = ngs.CoefficientFunction(self._gfu)
         return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
 
-    def _gradient(self, x):
+    def _subgradient(self, x):
         self._gfu.vec.FV().NumPy()[:] = x
         self._gfu_util.Set(self._gfu)
         y = self._gfu_util.vec.FV().NumPy()
@@ -93,7 +93,7 @@ class NgsTV(Functional):
             tvnorm += ngs.Integrate( ngs.Norm(self._gfu_util), self.domain.fes.mesh )
         return tvnorm
 
-    def _gradient(self, x):
+    def _subgradient(self, x):
         raise NotImplementedError
 
     def _hessian(self, x):
