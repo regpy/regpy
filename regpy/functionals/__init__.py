@@ -715,7 +715,7 @@ class HorizontalShiftDilation(Functional):
         return self.dilation*self.F.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),tau/self.dilation**2)
 
 class Composed(Functional):
-    r"""Composition of an operator with a functional \(F\circ O\). This should not be called
+    r"""Composition of a linear operator with a functional \(F\circ O\). This should not be called
     directly but rather used by multiplying the `Functional` object with an `Operator`.
 
     Parameters
@@ -737,6 +737,7 @@ class Composed(Functional):
         """Functional that is composed with an Operator. 
         """
         self.op = op
+        assert op.linear
         """Operator composed that is composed with a functional. 
         """
 
@@ -744,20 +745,16 @@ class Composed(Functional):
         return self.func(self.op(x))
 
     def _linearize(self, x):
-        y, deriv = self.op.linearize(x)
+        y = self.op(x)
         z, grad = self.func.linearize(y)
-        return z, deriv.adjoint(grad)
+        return z, self.op.adjoint(grad)
 
     def _subgradient(self, x):
-        y, deriv = self.op.linearize(x)
-        return deriv.adjoint(self.func.subgradient(y))
+        y = self.op.linearize(x)
+        return self.op.adjoint(self.func.subgradient(y))
 
     def _hessian(self, x):
-        if self.op.linear:
-            return self.op.adjoint * self.func.hessian(x) * self.op
-        else:
-            # TODO this can be done slightly more efficiently
-            return super()._hessian(x)
+        return self.op.adjoint * self.func.hessian(x) * self.op
 
     def _conj(self,x):
         if self.op.linear:
@@ -1297,7 +1294,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):
@@ -1358,8 +1355,11 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Kullback-Leibler divergence
+    w: domain [optional, no default value]
+        First argument of Kullback-Leibler divergence.
+        Formally optional, but required for proper functioning. 
     """
 
     def __init__(self, domain,**kwargs):
@@ -1420,8 +1420,11 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Kullback-Leibler divergence
+    w: domain [optional, no default value]
+        reference value.
+        Formally optional, but required for proper functioning. 
     """
 
     def  __init__(self, domain,**kwargs):
@@ -1464,30 +1467,43 @@ class RelativeEntropy(IntegralFunctionalBase):
 class Huber(IntegralFunctionalBase):
     r"""Huber functional 
     \[
-    F(x) = 1/2 |x|^2    if |x|\leq 1
-    F(x) = |x|-1/2    if |x|>1
+    F(x) = 1/2 |x|^2                if  |x|\leq \sigma
+    F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
     \]
+    ------
+
+    Paramter: 
+    domain: regpy.vecsps.MeasureSpaceFcts
+        domain on which Huber functional is defined
+    sigma: float or domain [default: 1]
+        parameter in the Huber functional. 
     """
 
-    def  __init__(self, domain,as_primal=True):
+    def  __init__(self, domain,as_primal=True,sigma = 1.):
         super().__init__(domain,hilbert.L2(domain))
         if as_primal:
-            self.Conjugate = QuadraticUnitIntv(domain,as_primal=False)
+            self.Conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
+        assert isinstance(sigma, float) or sigma in domain 
+        assert np.min(sigma)>0
+        if isinstance(sigma, float) :
+            self.sigma = sigma * domain.ones()
+        else:
+            self.sigma = sigma 
 
     def _f(self, u,**kwargs):
         res =  u*u/2
-        mask = np.abs(u)>=1
-        res[mask] = np.abs(u[mask])-0.5
+        mask = np.abs(u)>=self.sigma
+        res[mask] = np.abs(u[mask])*self.sigma[mask]-0.5*self.sigma[mask]**2
         return res    
    
     def _f_deriv(self, u,**kwargs):
         res = u.copy()
-        mask = np.abs(u)>1
-        res[mask] = np.sign(u[mask])
+        mask = np.abs(u)>self.sigma
+        res[mask] = self.sigma[mask]*np.sign(u[mask])
         return res
 
     def _f_second_deriv(self, u, **kwargs):
-        return (np.abs(u)<=1).astype(float)
+        return (np.abs(u)<=self.sigma).astype(float)
 
     def _f_conj(self, ustar,**kwargs):
         return self.Conjugate._f(ustar)    
@@ -1502,35 +1518,50 @@ class Huber(IntegralFunctionalBase):
         return self.Conjugate._f_prox(ustar,tau)
 
 
-class QuadraticUnitIntv(IntegralFunctionalBase):
+class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
     \[
-    F(x) = 1/2 |X|^2    if |x|\leq 1
-    F(x) = \infty    if |x|>1
+    F(x) = 1/2 |x|^2    if |x|\leq 1/\sigma
+    F(x) = \infty    if |x|>1/\sigma
     \]
+
+    -------
+    Parameter
+
+    regpy.vecsps.MeasureSpaceFcts
+        domain on which Huber functional is defined
+    sigma: float or domain [default: 1]
+        reciprocal of interval width. 
     """
 
-    def  __init__(self, domain,as_primal=True):
+    def  __init__(self, domain,as_primal=True,sigma=1.):
         super().__init__(domain,hilbert.L2(domain))
         if as_primal:        
-            self.Conjugate = Huber(domain,as_primal=False)
+            self.Conjugate = Huber(domain,as_primal=False,sigma=sigma)
+        assert isinstance(sigma, float) or sigma in domain 
+        assert np.min(sigma)>0
+        if isinstance(sigma, float):
+            self.sigma = sigma * domain.ones()
+        else:
+            self.sigma = sigma 
 
     def _f(self, u,**kwargs):
         res =  u*u/2
-        res[np.abs(u)>1] = np.inf
+        res[self.sigma*np.abs(u)>1] = np.inf
         return res    
    
     def _f_deriv(self, u,**kwargs):
-        assert np.max(np.abs(u))<=1
+        if np.max(self.sigma*np.abs(u))>1:
+            raise NotInEssentialDomainError('QuadraticIntv')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
         res = u/(1+tau)
-        return res/np.maximum(np.abs(res),1)
+        return res/np.maximum(np.abs(res),1/self.sigma)
 
     def _f_second_deriv(self, u,**kwargs):
-        if np.max(np.abs(u))>=1:
-            raise NotTwiceDifferentiableError('QuadraticUnitIntv')
+        if np.max(self.sigma*np.abs(u))>=1:
+            raise NotTwiceDifferentiableError('QuadraticIntv')
         else:
             return np.ones_like(u)
 
@@ -1548,8 +1579,38 @@ class QuadraticUnitIntv(IntegralFunctionalBase):
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
-        return np.max(np.abs(x))<=1 and vstar[x==1]>=1 and vstar[x==-1]<=-1 and \
-            np.linalg.norm(grad[np.abs(x)<1]-vstar[np.abs(x)<1]) <= eps*np.linalg.norm(grad[np.abs(x)<1])
+        return self.sigmanp.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
+            np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
+
+def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
+    r""" Returns `Functional` defined by 
+    \[
+    F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
+    F(x) = np.inf else
+    \]
+    
+    """
+    assert isinstance(domain,vecsps.MeasureSpaceFcts)
+    if isinstance(lb,float):
+        lb = lb*grid.ones()
+    assert lb in domain
+    if isinstance(ub,float):
+        ub = ub*grid.ones()
+    assert ub in domain
+    assert np.all(lb<ub)
+    assert x0 in domain 
+    assert isinstance(alpha,float)
+
+    F = QuadraticIntv(grid,sigma=2./(ub-lb))
+    center = (ub+lb)/2
+    lin = LinearFunctional(center-x0,
+                           domain=grid,
+                           gradient_in_dual_space=False
+                           )
+    offset = 0.5*(np.sum((x0**2-center**2)*grid.measure))
+    return alpha*HorizontalShiftDilation(F,shift=center) \
+        + alpha*lin + alpha*offset
+
 
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
