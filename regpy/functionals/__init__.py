@@ -715,7 +715,7 @@ class HorizontalShiftDilation(Functional):
         return self.dilation*self.F.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),tau/self.dilation**2)
 
 class Composed(Functional):
-    r"""Composition of a linear operator with a functional \(F\circ O\). This should not be called
+    r"""Composition of an operator with a functional \(F\circ O\). This should not be called
     directly but rather used by multiplying the `Functional` object with an `Operator`.
 
     Parameters
@@ -737,7 +737,6 @@ class Composed(Functional):
         """Functional that is composed with an Operator. 
         """
         self.op = op
-        assert op.linear
         """Operator composed that is composed with a functional. 
         """
 
@@ -745,16 +744,20 @@ class Composed(Functional):
         return self.func(self.op(x))
 
     def _linearize(self, x):
-        y = self.op(x)
+        y, deriv = self.op.linearize(x)
         z, grad = self.func.linearize(y)
-        return z, self.op.adjoint(grad)
+        return z, deriv.adjoint(grad)
 
     def _subgradient(self, x):
-        y = self.op.linearize(x)
-        return self.op.adjoint(self.func.subgradient(y))
+        y, deriv = self.op.linearize(x)
+        return deriv.adjoint(self.func.subgradient(y))
 
     def _hessian(self, x):
-        return self.op.adjoint * self.func.hessian(x) * self.op
+        if self.op.linear:
+            return self.op.adjoint * self.func.hessian(x) * self.op
+        else:
+            # TODO this can be done slightly more efficiently
+            return super()._hessian(x)
 
     def _conj(self,x):
         if self.op.linear:
@@ -775,7 +778,6 @@ class Composed(Functional):
             return f
         else:
             return NotImplementedError
-
 
 class AbstractFunctionalBase:
     """Class representing abstract functionals without reference to a concrete implementation.
