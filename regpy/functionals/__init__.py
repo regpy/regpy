@@ -1056,20 +1056,62 @@ class FunctionalProductSpace(Functional):
         splitted = self.domain.split(x)
         subgradients = []
         for i in range(self.length):
-            subgradients.append( self.funcs[i](splitted[i]) )
+            subgradients.append( self.funcs[i].subgradient(splitted[i]) )
         return np.asarray(subgradients).flatten()
 
-    def _hessian(self, x):
-        raise NotImplementedError
+    def _is_subgradient(self,v_star, x):
+        x_splitted = self.domain.split(x)
+        vstar_splitted = self.domain.split(v_star)
+        res = True
+        for i in range(self.length):
+            if not self.funcs[i].is_subgradient(vstar_splitted[i],x_splitted[i]):
+                res = False
+        return res
 
-    def _proximal(self, x, taus):
-        assert len(taus) == self.length
+    def _hessian(self, x):
+        splitted = self.domain.split(x)
+        return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i] for i in range(self.length))))
+
+    def _proximal(self, x, tau):
         splitted = self.domain.split(x)
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].proximal(splitted[i], taus[i]) )
+            proximals.append( self.funcs[i].proximal(splitted[i], tau) )
         return np.asarray(proximals).flatten()
 
+    def _conj(self, xstar):
+        splitted = self.domain.split(xstar)
+        toret = 0 
+        for i in range(self.length):
+            toret += self.funcs[i].Conj(splitted[i])
+        return toret
+
+    def _conj_subgradient(self, xstar):
+        splitted = self.domain.split(xstar)
+        subgradients = []
+        for i in range(self.length):
+            subgradients.append( self.funcs[i].Conj.subgradient(splitted[i]) )
+        return np.asarray(subgradients).flatten()
+
+    def _is_conj_subgradient(self,v, xstar):
+        xstar_splitted = self.domain.split(xstar)
+        v_splitted = self.domain.split(v)
+        res = True
+        for i in range(self.length):
+            if not self.funcs[i].Conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
+                res = False
+        return res
+
+    def _hessian(self, xstar):
+        splitted = self.domain.split(xstar)
+        return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i] for i in range(self.length))))
+
+    def _conj_proximal(self, xstar, tau):
+        splitted = self.domain.split(xstar)
+        proximals = []
+        for i in range(self.length):
+            proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau) )
+        return np.asarray(proximals).flatten()
 
 class Indicator(Functional):
     r"""Indicator function on the domain defined by some function evaluation to `True` on some subset of the `domain`
