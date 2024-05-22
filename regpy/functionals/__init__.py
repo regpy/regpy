@@ -1113,46 +1113,6 @@ class FunctionalProductSpace(Functional):
             proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau) )
         return np.asarray(proximals).flatten()
 
-class Indicator(Functional):
-    r"""Indicator function on the domain defined by some function evaluation to `True` on some subset of the `domain`
-    \[
-        \chi_f(x) := 
-        \begin{cases}
-        0\;\; if\;f(x)\;is\,true \\
-        \infty\;\; else
-        \end{cases}.
-    \]
-
-    Parameters
-    ----------
-    domain : regpy.vecsps.VectorSpace
-        Underlying domain on which the functional is defined.
-    predicate : (regpy.vecsps.VectorSpace -> boolean)
-        Function evaluating the truth value of elements in the domain.    
-    """
-    def __init__(self, domain, predicate):
-        super().__init__(domain)
-        self.predicate = predicate
-        """Function evaluating the truth value of elements in the domain.
-        """
-
-    def _eval(self, x):
-        if self.predicate(x):
-            return 0
-        else:
-            return np.inf
-
-    def _subgradient(self, x):
-        # This is of course not correct, but lets us use an Indicator functional to force
-        # rejecting an MCMC proposals without altering the subgradient.
-        return self.domain.zeros()
-
-    def _hessian(self, x):
-        return operators.Zero(self.domain)
-
-    def _proximal(self, x, tau):
-        return NotImplementedError
-
 class HilbertNormGeneric(Functional):
     r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.
 
