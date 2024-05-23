@@ -226,7 +226,9 @@ class IrgnmCGPrec(RegSolver):
 
     It is:
     \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
-    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j\]
+    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.\]
+
+    At the moment this method does not work for complex domains/codomains
 
     Parameters
     ----------
@@ -340,7 +342,7 @@ class IrgnmCGPrec(RegSolver):
                     self.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
         """Express T*T in Krylov_basis"""
 
-        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues
+        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues, AND make shure it is a method that can handle complex matrices
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
