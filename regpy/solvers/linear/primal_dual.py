@@ -77,6 +77,8 @@ class DouglasRachford(RegSolver):
     ----------
     setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
+        And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
+        is mapping from the domain of the operator.
     init_h : array_like
         The initial guess "f". Must be in setting.op.domain.
     tau : float , optional
