@@ -288,11 +288,11 @@ class RegularizationSetting:
                 return power_method(setting = self, op = deriv)
         else:
             from regpy.operators import SciPyLinearOperator
-                if self.op.linear:
-                    return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
-                else:
-                    assert isinstance(deriv,Derivative)
-                    return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+            if self.op.linear:
+                return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+            else:
+                assert isinstance(deriv,Derivative)
+                return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
             
     def is_hilbert_setting(self):
         """Assert if the setting is a Hilbert space setting. 
