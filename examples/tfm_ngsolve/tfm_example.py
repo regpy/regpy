@@ -170,7 +170,7 @@ reco_gf = domain_rec.to_ngs(reco)
 err_abs = ngs.sqrt(ngs.Integrate((reco_gf - traction_true_cf)**2, mesh_rec,definedon=mesh_rec.Boundaries('top')))
 norm_true = ngs.sqrt(ngs.Integrate((traction_true_cf)**2, mesh_rec,definedon=mesh_rec.Boundaries('top'))) 
 norm_rec = ngs.sqrt(ngs.Integrate((reco_gf)**2, mesh_rec,definedon=mesh_rec.Boundaries('top')))
-err_rel = norm_true / err_abs
+err_rel = err_abs/norm_true * 100
 
 print('relative error:' , err_rel, '%')
 

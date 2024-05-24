@@ -1056,60 +1056,62 @@ class FunctionalProductSpace(Functional):
         splitted = self.domain.split(x)
         subgradients = []
         for i in range(self.length):
-            subgradients.append( self.funcs[i](splitted[i]) )
+            subgradients.append( self.funcs[i].subgradient(splitted[i]) )
         return np.asarray(subgradients).flatten()
 
-    def _hessian(self, x):
-        raise NotImplementedError
+    def _is_subgradient(self,v_star, x):
+        x_splitted = self.domain.split(x)
+        vstar_splitted = self.domain.split(v_star)
+        res = True
+        for i in range(self.length):
+            if not self.funcs[i].is_subgradient(vstar_splitted[i],x_splitted[i]):
+                res = False
+        return res
 
-    def _proximal(self, x, taus):
-        assert len(taus) == self.length
+    def _hessian(self, x):
+        splitted = self.domain.split(x)
+        return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i] for i in range(self.length))))
+
+    def _proximal(self, x, tau):
         splitted = self.domain.split(x)
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].proximal(splitted[i], taus[i]) )
+            proximals.append( self.funcs[i].proximal(splitted[i], tau) )
         return np.asarray(proximals).flatten()
 
+    def _conj(self, xstar):
+        splitted = self.domain.split(xstar)
+        toret = 0 
+        for i in range(self.length):
+            toret += self.funcs[i].Conj(splitted[i])
+        return toret
 
-class Indicator(Functional):
-    r"""Indicator function on the domain defined by some function evaluation to `True` on some subset of the `domain`
-    \[
-        \chi_f(x) := 
-        \begin{cases}
-        0\;\; if\;f(x)\;is\,true \\
-        \infty\;\; else
-        \end{cases}.
-    \]
+    def _conj_subgradient(self, xstar):
+        splitted = self.domain.split(xstar)
+        subgradients = []
+        for i in range(self.length):
+            subgradients.append( self.funcs[i].Conj.subgradient(splitted[i]) )
+        return np.asarray(subgradients).flatten()
 
-    Parameters
-    ----------
-    domain : regpy.vecsps.VectorSpace
-        Underlying domain on which the functional is defined.
-    predicate : (regpy.vecsps.VectorSpace -> boolean)
-        Function evaluating the truth value of elements in the domain.    
-    """
-    def __init__(self, domain, predicate):
-        super().__init__(domain)
-        self.predicate = predicate
-        """Function evaluating the truth value of elements in the domain.
-        """
+    def _is_conj_subgradient(self,v, xstar):
+        xstar_splitted = self.domain.split(xstar)
+        v_splitted = self.domain.split(v)
+        res = True
+        for i in range(self.length):
+            if not self.funcs[i].Conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
+                res = False
+        return res
 
-    def _eval(self, x):
-        if self.predicate(x):
-            return 0
-        else:
-            return np.inf
+    def _hessian(self, xstar):
+        splitted = self.domain.split(xstar)
+        return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i] for i in range(self.length))))
 
-    def _subgradient(self, x):
-        # This is of course not correct, but lets us use an Indicator functional to force
-        # rejecting an MCMC proposals without altering the subgradient.
-        return self.domain.zeros()
-
-    def _hessian(self, x):
-        return operators.Zero(self.domain)
-
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    def _conj_proximal(self, xstar, tau):
+        splitted = self.domain.split(xstar)
+        proximals = []
+        for i in range(self.length):
+            proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau) )
+        return np.asarray(proximals).flatten()
 
 class HilbertNormGeneric(Functional):
     r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.
@@ -1594,22 +1596,22 @@ def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
     """
     assert isinstance(domain,vecsps.MeasureSpaceFcts)
     if isinstance(lb,float):
-        lb = lb*grid.ones()
+        lb = lb*domain.ones()
     assert lb in domain
     if isinstance(ub,float):
-        ub = ub*grid.ones()
+        ub = ub*domain.ones()
     assert ub in domain
     assert np.all(lb<ub)
     assert x0 in domain 
     assert isinstance(alpha,float)
 
-    F = QuadraticIntv(grid,sigma=2./(ub-lb))
+    F = QuadraticIntv(domain,sigma=2./(ub-lb))
     center = (ub+lb)/2
     lin = LinearFunctional(center-x0,
-                           domain=grid,
+                           domain=domain,
                            gradient_in_dual_space=False
                            )
-    offset = 0.5*(np.sum((x0**2-center**2)*grid.measure))
+    offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
     return alpha*HorizontalShiftDilation(F,shift=center) \
         + alpha*lin + alpha*offset
 
