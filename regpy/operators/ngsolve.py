@@ -18,13 +18,13 @@ class NGSolveOperator(Operator):
         gfu.Set(self.gfu_read_in)
 
     '''Solves the dirichlet problem by ngsolve routines'''
-    #def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
-    #    if prec_update:
-    #        prec.Update()
-    #    ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec,needsassembling=False, print=False)
-    
     def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
-        gf.vec.data=bf.mat.Inverse()*lf.vec
+       if prec_update:
+           prec.Update()
+       ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec,needsassembling=False, print=False)
+    
+    # def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
+    #     gf.vec.data=bf.mat.Inverse()*lf.vec
         
 class SolveSystem(NGSolveOperator):
     def __init__(self, domain, bf):
