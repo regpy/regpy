@@ -281,7 +281,7 @@ class RegularizationSetting:
 
         if method == "power_method":
             from regpy.solvers.linear import PowerMethod
-            if self.op_linear:
+            if self.op.linear:
                 return PowerMethod(setting = self)
             else:
                 assert isinstance(deriv,Derivative)
