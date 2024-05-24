@@ -24,10 +24,6 @@ class Potential(Operator):
 
     Attributes
     ----------
-    domain : StarTrigDiscr
-        The domain that represents the boundary curves. Actually, any star shaped curve
-        vector space that can compute derivatives along the curve and derivatives wrt. coefficient
-        perturbations works.
     radius : float
         The radius of the measurement circle.
     nmeas : int

@@ -32,16 +32,10 @@ class DirichletOp(Operator):
     
     Attributes
     ----------
-    domain : StarTrigDiscr or GenTrigDiscr
-        The domain that represents the boundary curves. Actually, any star shaped curve
-        vector space that can compute derivatives along the curve and derivatives wrt. coefficient
-        perturbations works.
     kappa : complex
         Wave number.
     N_ieq : int
         Number of discrete boundary points.
-    N_ieq_synth : int
-        Number of discretization points for the boundary integral equation when computing synthetic data. 
     N_inc : int
         Number of incident direction.
     N_meas : int
@@ -173,7 +167,7 @@ def create_synthetic_data(Dir_op, true_curve, N_ieq_synth=64, **kwargs):
     bd_ex = StarCurveDiscr(2*N_ieq_synth)
     """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
     equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
-    bd_ex_curve=bd_ex.bd_eval(true_curve, 2*N_ieq_synth, 3)
+    bd_ex_curve=bd_ex.bd_eval(true_curve, 3)
     """Compute the grid points of the exact boundary and derivatives of the parametrization
         and save these quantities as members of bd_ex set up the boudary integral operator."""
 
