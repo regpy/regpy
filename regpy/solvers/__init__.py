@@ -180,6 +180,8 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+        self._op_norm = None
+        """The operator norm of op with respect to h_domain and h_codomain."""
 
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
@@ -248,8 +250,10 @@ class RegularizationSetting:
         else:
             _ , deriv = self.op.linearize(x)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
-        
-    def op_norm(self,deriv = None):
+
+    # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
+    #@memoized_property
+    def op_norm(self,deriv = None, method = "power_method"):
         """Approximate the operator norm for Hilbert space settings by computing the 
         largest eigenvalue with eigsh from scipy. 
 
@@ -269,16 +273,27 @@ class RegularizationSetting:
             If the setting is not a Hilbert space setting, meaning `penalty` and `data_fid`
             are not `HilbertNormGeneric` instances this is not implemented.
         """
-        from regpy.operators import SciPyLinearOperator, Derivative
-        if self.is_hilbert_setting():
-            if self.op.linear:
-                return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
-            else:
-                assert isinstance(deriv,Derivative)
-                return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
-        else:
+
+        if not self.is_hilbert_setting():
             raise NotImplementedError
 
+        from regpy.operators import Derivative
+
+        if method == "power_method":
+            from regpy.solvers.linear import power_method
+            if self.op_linear:
+                return power_method(setting = self)
+            else:
+                assert isinstance(deriv,Derivative)
+                return power_method(setting = self, op = deriv)
+        else:
+            from regpy.operators import SciPyLinearOperator
+                if self.op.linear:
+                    return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+                else:
+                    assert isinstance(deriv,Derivative)
+                    return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+            
     def is_hilbert_setting(self):
         """Assert if the setting is a Hilbert space setting. 
 

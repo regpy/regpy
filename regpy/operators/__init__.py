@@ -113,7 +113,7 @@ class Operator:
 
         np.real(np.vdot(x, y))
 
-    Other inner product on vector spaces are independent of both vector spaces and operators,
+    Other inner products on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.
 
     Basic operator algebra is supported:
