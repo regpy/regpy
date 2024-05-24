@@ -600,10 +600,12 @@ class SciPyLinearOperator(sla.LinearOperator):
     
     def _matvec(self, x):
         r"""Applies the operator.
+        
         Parameters
         ----------
         x : numpy.ndarray
             Flattened element from domain of operator.
+        
         Returns
         -------
         numpy.ndarray
@@ -613,10 +615,12 @@ class SciPyLinearOperator(sla.LinearOperator):
     
     def _rmatvec(self, y):
         r"""Applies the adjoint operator.
+        
         Parameters
         ----------
         y : numpy.ndarray
             Flattened element from codomain of operator.
+        
         Returns
         -------
         numpy.ndarray
@@ -629,7 +633,7 @@ class Pow(Operator):
        A * A * ... * A
 
        Parameters
-       -----------------
+       ----------
        op : operator
        exponent :  non-negative integer
     """
@@ -712,7 +716,7 @@ class MatrixMultiplication(Operator):
         matrix rows is used. Defaults to None.
 
     Notes
-    ----------
+    -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
     The adjoint is implemented in the same way by multiplying with the adjoint matrix.
     As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
@@ -804,7 +808,7 @@ class CholeskyInverse(Operator):
 class SuperLUInverse(Operator):
     """Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
 
-    Parameters:
+    Parameters
     ----------
         op : MatrixMultiplication
             The operator to be inverted.   
@@ -1625,7 +1629,7 @@ class Zero(Operator):
 
 class ApproximateHessian(Operator):
     """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
-    using finite differences of its `regpy.functionals.Functional.gradient`.
+    using finite differences of it `gradient` if it is implemented for that functional.
 
     Parameters
     ----------
@@ -1638,6 +1642,7 @@ class ApproximateHessian(Operator):
     """
     def __init__(self, func, x, stepsize=1e-8):
         assert isinstance(func, functionals.Functional)
+        assert hasattr(func,"gradient")
         self.gradx = func.gradient(x)
         """The gradient at `x`"""
         self.func = func

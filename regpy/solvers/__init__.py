@@ -217,10 +217,10 @@ class RegularizationSetting:
         steps : float, optional
             A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
 
-        Return
-        ------
+        Returns
+        -------
         Boolean
-            True if the sequence provided by `regpy.util.operator_test.test_adjoint` is decreasing.
+            True if the sequence provided by `regpy.util.operator_tests.test_adjoint` is decreasing.
         """
         if self.op.linear:
             return True
@@ -281,11 +281,11 @@ class RegularizationSetting:
 
         if method == "power_method":
             from regpy.solvers.linear import power_method
-            if self.op_linear:
-                return power_method(setting = self)
+            if self.op.linear:
+                return power_method(self)
             else:
                 assert isinstance(deriv,Derivative)
-                return power_method(setting = self, op = deriv)
+                return power_method(self, op = deriv)
         else:
             from regpy.operators import SciPyLinearOperator
             if self.op.linear:
@@ -348,18 +348,16 @@ class RegSolver(Solver):
         """
         Run solver with Morozov's discrepancy principle as stopping rule.
 
-        Parameters:
+        Parameters
+        ----------
         data: array-like
-        The right-hand side
-
+            The right-hand side
         delta: float, default:0
-        noise level 
-
+            noise level
         tau: float, default: 2.1
-        parameter in discrepancy principle
-
+            parameter in discrepancy principle
         max_its: int, default: 1000
-        maximal number of iterations
+            maximal number of iterations
         """
         stoprule =  (rules.CountIterations(max_iterations=max_its)
                         + rules.Discrepancy(self.h_codomain.norm, data,

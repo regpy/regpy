@@ -336,9 +336,9 @@ class MeasureSpaceFcts(VectorSpace):
     @measure.setter
     def measure(self,new_measure):
         if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
+            assert isinstance(new_measure, int) or isinstance(new_measure,float) or (np.issubdtype(new_measure.dtype,np.number) and np.isrealobj(new_measure))
         else:
-            assert  new_measure.shape==self.shape and np.issubdtype(new_measure.dtype, np.number)
+            assert  new_measure.shape==self.shape and np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
         assert np.min(new_measure)>=0
         self._measure=new_measure
 
@@ -388,13 +388,17 @@ class GridFcts(MeasureSpaceFcts):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
+
         for n, c in enumerate(coords):
             if isinstance(c, int):
                 v = np.arange(c)
             elif isinstance(c, tuple):
+                assert len(c) == 3, "Tuple must be of length 3"
+                assert all([isinstance(c_i, int) or isinstance(c_i,float) for c_i in c]) and isinstance(c[2], int), "The axis must be real"
                 v = np.linspace(*c)
             else:
                 v = np.asarray(c).view()
+                assert np.issubdtype(v.dtype, np.number) and np.isrealobj(v), "axis must be real"
             if 1 == v.ndim < len(coords):
                 s = [1] * len(coords)
                 s[n] = -1
@@ -459,10 +463,6 @@ class GridFcts(MeasureSpaceFcts):
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
             
 
-
-
-
-
 class UniformGridFcts(GridFcts):
     """A vector space representing functions defined on a rectangular grid with equidistant axes.
     The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
@@ -520,7 +520,6 @@ class UniformGridFcts(GridFcts):
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
         self.volume_elem=self.measure
         
-
 
 class DirectSum(VectorSpace):
     """The direct sum of an arbirtary number of vector spaces.
@@ -619,12 +618,13 @@ class DirectSum(VectorSpace):
     def __len__(self):
         return len(self.summands)
 
+
 class Prod(VectorSpace):
-    """The tensor product of an arbirtary number of vector spaces.
+    """The tensor product of an arbitrary number of vector spaces.
 
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
-    basis element from teh factored spaces. Note, that spaces with posible multidimensional elements
+    basis element from teh factored spaces. Note, that spaces with possible multidimensional elements
     (e.g. `UniformGridFcts` with multiple dimensions) get flatted. 
 
     Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.

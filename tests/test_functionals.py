@@ -43,8 +43,3 @@ def test_prox_huber():
     F = fct.HorizontalShiftDilation(F0,dilation=0.5,shift=0.01*grid.ones())
     check_prox(F)
 
-test_prox_huber()
-test_conj_and_subgradient_huber()
-print("done")
-
-
