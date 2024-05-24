@@ -1,5 +1,4 @@
 import numpy as np
-import numpy.matlib
 
 from regpy.vecsps import UniformGridFcts
 
@@ -311,7 +310,7 @@ class GenTrig:
         N = int(len(self.coeff)/2)
         n = int(len(g))
         
-        adj_n=numpy.matlib.repmat(g/self.zpabs,2,1)*self.normal
+        adj_n=np.array([g/self.zpabs,g/self.zpabs])*self.normal
     
         if N == n:
             adj = np.array([adj_n[0,:],\
