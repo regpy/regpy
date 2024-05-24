@@ -134,4 +134,4 @@ class Potential(Operator):
             qq *= q
             adj += fac * np.sum(g * self.cos_fl[nfwd // 2, :]) * (self.cosin[nfwd // 2, :] * qq)
 
-        return self._bd.adjoint(adj)
+        return self._bd.adjoint(adj.real)
