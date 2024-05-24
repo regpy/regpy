@@ -143,7 +143,6 @@ def _SolveSystem(domain, bf):
 
 
 class Coefficient(NGSolveOperator):
-    
     """Diffusion and reaction coefficient problem
     
     Identification of a diffusion coefficient:
@@ -188,7 +187,6 @@ class Coefficient(NGSolveOperator):
 
     Adj: F'[s]^*: q \mapsto -u^* w    
     """
-
     def __init__(
         self, domain, rhs, bc=None, codomain=None,
         diffusion=False, reaction=True
@@ -294,15 +292,6 @@ class Coefficient(NGSolveOperator):
             return self.gfu_adjoint.vec.FV().NumPy().copy()
 
 
-
-
-
-
-
-        
-        
-        
-
 class ProjectToBoundary(NGSolveOperator):
 
     def __init__(self, domain, codomain=None):
@@ -343,32 +332,48 @@ class ProjectToBoundary(NGSolveOperator):
 
 
 class EIT(NGSolveOperator):
-    """Electrical Impedance Tomography Problem
-
-    PDE: -div(s grad u)+alpha*u=0       in Omega
-         s du/dn = g            on dOmega
-
-    Evaluate: F: s \mapsto trace(u)
+    r"""Electrical Impedance Tomography Problem
+    
+    PDE:
+    \[
+    -\textrm{div}(s \nabla u)+\alpha u=0 \;\text{ in } \Omega
+    \]
+    \[
+         s \frac{\textrm{d}u}{\textrm{d}n} = g \;\text{ on } \partial\Omega
+    \]
+    Evaluate: \(F\colon s \mapsto \mathrm{tr}(u)\)
     Derivative:
-        -div (s grad v)+alpha*v=div (h grad u) (=:f)
-        s dv/dn = 0+(-h du/dn) [second term often omitted]
+    \[
+    -\textrm{div}(s \nabla v)+\alpha v=\textrm{div}(h \nabla u) (=:f) 
+    \]
+    \[
+         s \frac{\textrm{d}v}{\textrm{d}n} = 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
+    \]
 
-    Der: F'[s]: h \mapsto trace(v)
+    Der: \(F'[s]\colon h \mapsto \textrm{tr}(v)\)
 
     Adjoint:
-        -div (s grad w)+alpha*w=0
-        s dw/dn=q
+    \[
+    -\textrm{div}(s \nabla w)+\alpha w=0 
+    \]
+    \[
+         s \frac{\textrm{d}w}{\textrm{d}n} = q 
+    \]
+    
+    Adj: \(F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)\)
 
-    Adj: F'[s]^*: q \mapsto -grad(u) grad(w)
-
-    proof:
-    (F'h, q)=int_dOmega [trace(v) q] = int_dOmega [trace(v) s dw/dn] = int_Omega [div(v s grad w )]
-    Note div(s grad w) = alpha*w, thus above equation shows:
-    (F'h, q) = (s grad v, grad w)+alpha (v, w) = int_Omega [div( s grad v w)] +(-div (s grad v)), w)+alpha (v, w)
-    = int_dOmega [s dv/dn trace(w)]+(f, w) = (f, w)-int_dOmega [trace(w) h du/dn]
-    = (h, -grad u grad w) + int_Omega [div(h grad u w)]-int_dOmega [trace(w) h du/dn]
-    The last two terms are the same! It follows: (F'h, q) = (h, -grad u grad w). Hence:
-    Adjoint: q \mapsto -grad u grad w
+    Proof:
+    \[(F'h, q)=\int_{\partial\Omega} [\textrm{tr}(v) q] \]
+    \[= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \] 
+    \[= \int_{\Omega} [\textrm{div}(v s \nabla w )]\]
+    Note \(\textrm{div}(s \nabla w) = \alpha*w\), thus above equation shows:
+    \[(F'h, q) = (s \nabla v, \nabla w)+\alpha (v, w) \]
+    \[= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w)\]
+    \[= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w)\]
+    \[= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}]\]
+    \[= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \]
+    The last two terms are the same! It follows: \((F'h, q) = (h, -\nabla u \nabla w)\). Hence:
+    Adjoint: \(q \mapsto -\nabla u \nabla w\)
     """
 
     def __init__(self, domain, g, codomain=None, alpha=0.01):
@@ -493,7 +498,7 @@ class EIT(NGSolveOperator):
         return toret
 
 
- 
+class ReactionNeumann(NGSolveOperator):
     """
     Estimation of the reaction coefficient from boundary value measurements
 
@@ -519,8 +524,6 @@ class EIT(NGSolveOperator):
     Note that dv/dn=0 on dOmega. Hence:
     (F'h, q) = -int_Omega[h u w] = (h, -u w)
     """
-
-class ReactionNeumann(NGSolveOperator):
     def __init__(self, domain, g, codomain=None):
         codomain = codomain or domain
         #Need to know the boundary to calculate Neumann bdr condition
