@@ -71,12 +71,12 @@ class Functional:
         Requires the implementation of either `_subgradient` or `_linearize`.
 
         Parameter
-        ----------
+        ---------
         x : in self.domain
             Element at which will be linearized
 
         Return
-        ----------
+        ------
         y 
             Value of \(F(x)\).
         grad : in self.domain
@@ -101,12 +101,12 @@ class Functional:
         Requires the implementation of either `_subgradient` or `_linearize`.
 
         Parameter
-        ----------
+        ---------
         x : in self.domain
             Element at which will be linearized
 
-        Return
-        ----------
+        Returns
+        -------
         grad : in self.domain
             subgradient of \(F)\ at \(x)\.        
         """
@@ -123,7 +123,7 @@ class Functional:
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
 
         Paramters
-        ------
+        ---------
         eps: float (default: 1e-10)
             relative accuracy for the test
         """
@@ -132,21 +132,21 @@ class Functional:
 
     def hessian(self, x,recursion_safeguard=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` maping form the 
-        functionals `domain` to it self. Requires the implementation of `_hessian` or by default
-        computes the `regpy.operators.ApproximateHessian`. It is defined by 
+        functionals `domain` to it self. 
+        It is defined by 
         \[
          F(x+h) = F(x) + (\nabla F)(x)^T h + \frac{1}{2} h^T Hess F(x) h + \mathcal{o}(\|h\|^2)
         \]
         Require either the implementation of _hessian or of _hessian_conj and _subgradient
 
-        Parameter:
-        ----------
+        Parameter
+        ---------
         `x` : `self.domain`
             Point in `domain` at which to compute the hessian. 
 
-        Returns:
-        ----------
-        `h` : `regpy.operators.Operator` (Default: `regpy.operators.ApproximateHessian`)
+        Returns
+        -------
+        `h` : `regpy.operators.Operator`
             Hessian operator at the point `x`. 
         """
         assert x in self.domain
@@ -396,20 +396,17 @@ class LinearFunctional(Functional):
     Linear functional given by
         F(x) = np.dot(a, x)
     
-    Parameters: 
+    Parameters
+    ----------
     gradient: domain
         The gradient of the linear functional. \(a=gradient\) if gradient_in_dual_space == True
-
-    domain: regpy.vctspc.VectorSpace, optional
+    domain: regpy.vecsps.VectorSpace, optional
         The VectorSpace on which the functional is defined
-
     h_domain: regpy.hilbert.HilbertSpace (default: `L2(domain)`)
         Hilbert space for proximity operator
-
     gradient_in_dual_space: bool (default: False)
         If false, the argument gradient is considered as an element of the primal space, 
         and \(a = h_domain.gram(gradient).\).
-    
     """
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None:
@@ -651,7 +648,7 @@ class HorizontalShiftDilation(Functional):
     \(F(x)\) by \(F(dilation(x-shift)))
     
     Parameters
-    --------
+    ----------
     dilation: float
         dilation factor
     shift: self.domain
@@ -1529,8 +1526,8 @@ class QuadraticIntv(IntegralFunctionalBase):
     F(x) = \infty    if |x|>1/\sigma
     \]
 
-    -------
     Parameter
+    ---------
 
     regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined

@@ -1,4 +1,4 @@
-'''Special NGSolve functionals defined on the `regpy.vecsps.NgsSpace`. 
+'''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsSpace`. 
 '''
 import ngsolve as ngs
 import numpy as np
