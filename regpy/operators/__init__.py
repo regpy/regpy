@@ -1621,38 +1621,3 @@ class Zero(Operator):
 
     def _adjoint(self, x):
         return self.domain.zeros()
-
-
-class ApproximateHessian(Operator):
-    """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
-    using finite differences of its `regpy.functionals.Functional.gradient`.
-
-    Parameters
-    ----------
-    func : regpy.functionals.Functional
-        The functional.
-    x : array-like
-        The point at which to evaluate the Hessian.
-    stepsize : float, optional
-        The stepsize for the finite difference approximation.
-    """
-    def __init__(self, func, x, stepsize=1e-8):
-        assert isinstance(func, functionals.Functional)
-        self.gradx = func.gradient(x)
-        """The gradient at `x`"""
-        self.func = func
-        self.x = x.copy()
-        self.stepsize = stepsize
-        # linear=True is a necessary lie
-        super().__init__(func.domain, func.domain, linear=True)
-        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
-
-    def _eval(self, h):
-        grad = self.func.gradient(self.x + self.stepsize * h)
-        return grad - self.gradx
-
-    def _adjoint(self, x):
-        return self._eval(x)
-
-
-
