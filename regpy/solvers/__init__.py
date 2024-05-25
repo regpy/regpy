@@ -5,7 +5,8 @@ from scipy.sparse.linalg import eigsh
 from regpy.util import classlogger
 from regpy.util.operator_tests import test_adjoint, test_derivative
 from regpy.stoprules import NoneRule
-from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
+from regpy.functionals import  as_functional, Composed, HilbertNormGeneric, Functional, HorizontalShiftDilation
+from regpy.operators import Operator
 import regpy.stoprules as rules
 
 class Solver:
@@ -170,12 +171,13 @@ class RegularizationSetting:
         The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
+        assert isinstance(op,Operator)
         self.op = op
         """The operator."""
         self.penalty = as_functional(penalty, op.domain)
         """The penalty functional."""
         self.data_fid = as_functional(data_fid, op.codomain)
-        """The data misfit functional."""
+        """The data fidelity functional."""
         self.h_domain = self.penalty.h_domain
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
@@ -225,15 +227,15 @@ class RegularizationSetting:
         seq = test_derivative(self.op,steps=steps)
         return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
     
-    def h_adjoint(self,x=None):
+    def h_adjoint(self,y=None):
         r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
 
-        If the operator is non-linear this provided the adjoint to the derivative at `x`.
+        If the operator is non-linear this provided the adjoint to the derivative at `y`.
 
         Parameters
         ----------
-        x : array-like
-            Element of the domain at which to compute the derivative. 
+        y : op.codomain
+            Element of the domain at which to evaluate the adjoint of the derivative. 
 
         Returns
         -------
@@ -249,19 +251,19 @@ class RegularizationSetting:
             _ , deriv = self.op.linearize(x)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
-    def op_norm(self,deriv = None):
-        """Approximate the operator norm for Hilbert space settings by computing the 
-        largest eigenvalue with eigsh from scipy. 
+    def op_norm(self,T = None):
+        """Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
+        by computing the largest eigenvalue with eigsh from scipy. 
 
         Parameters
         ----------
-        deriv : Operator, optional
-            The derivative of the operator if it is a non-linear operator, by default None
+        T: linear Operator from self.domain to self.codomain [default=None]
+            Typically the derivative of the operator at some point. In the default case, self.op is used if self.op is linear. 
 
         Returns
         -------
         scalar
-            Approximation of the norm of the operator by the largest eigenvalue. 
+            Approximation of the norm of T^*T. 
 
         Raises
         ------
@@ -270,14 +272,16 @@ class RegularizationSetting:
             are not `HilbertNormGeneric` instances this is not implemented.
         """
         from regpy.operators import SciPyLinearOperator, Derivative
-        if self.is_hilbert_setting():
+        if T is None:
             if self.op.linear:
-                return eigsh(SciPyLinearOperator(self.op.adjoint * self.h_codomain.gram * self.op), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+                T= self.op
             else:
-                assert isinstance(deriv,Derivative)
-                return eigsh(SciPyLinearOperator(deriv.adjoint * self.h_codomain.gram * deriv), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+                raise NotImplementedError
         else:
-            raise NotImplementedError
+            assert T.domain == self.op.domain
+            assert T.codomain == self.op.codomain
+        
+        return eigsh(SciPyLinearOperator(T.adjoint * self.h_domain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
 
     def is_hilbert_setting(self):
         """Assert if the setting is a Hilbert space setting. 
@@ -289,6 +293,104 @@ class RegularizationSetting:
         """
         return isinstance(self.penalty,HilbertNormGeneric) and isinstance(self.data_fid,HilbertNormGeneric)
         
+
+class TikhonovRegularizationSetting(RegularizationSetting):
+    r"""Tikhonov regularization setting for minimizing a Tikhonov functional 
+    \[
+    \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+    \]    
+    In contrast to RegularizationSetting, the regularization parameter is fixed, 
+    the data fidelity functional \(\mathcal{S}=self.data_fid)\ incorporates the data \(g^{\delta})\ of the inverse problem, 
+    and the penalty term \(\mathcal{R})\ incorporates a potential initial guess.
+
+    Parameters
+    -------------------
+    op : regpy.operators.Operator
+        The forward operator.
+    penalty : regpy.functionals.Functional
+        The penalty functional \(\mathcal{R}\).
+    data_fid : regpy.functionals.Functional
+        The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
+    alpha: float [default: 1]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data_fid_shift: op.co_domain [default: None]
+        If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
+    """
+
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None):
+        super().__init__(op,penalty=penalty, data_fid= data_fid)
+
+        if not penalty_shift is None:
+            self.penalty = HorizontalShiftDilation(self.penalty,shift = penalty_shift)
+
+        if not data_fid_shift is None:
+            self.data_fid = HorizontalShiftDilation(self.data_fid,shift = data_fid_shift)
+
+        assert isinstance(regpar,float) and regpar>=0
+        self.regpar = regpar
+        """The regularization parameter"""
+    
+    def DualSetting(self):
+        r"""Yields the setting of the dual optimization problem
+        \[
+           \alpha\mathcal{R}^*(\alpha T^*p) + \mathcal{S}^*(- p) = \min!
+        \]
+        (To make this a Tikhonov functional again, the objective functional of the Rockafellar-Fenchel dual maximization problem
+        has been multipied by \(-\alpha\).)
+        """
+        assert self.op.linear
+        return TikhonovRegularizationSetting(self.op.adjoint,
+                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-1.),
+                                             HorizontalShiftDilation(self.penalty.Conj,dilation=self.regpar),
+                                             regpar= 1/self.regpar
+                                             )
+
+    def DualToPrimalSolution(self,pstar):
+        r"""Yields a solution to the primal problem given a solution to the dual problem.
+        Returns an element of \(\partial \mathcal{R}^*(-T^*p) )\ 
+        (without checks if pstar is a dual solution and if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
+                
+        Parameters
+        -------
+        pstar: self.op.codomain
+        Solution of the dual problem.
+        """
+        return self.penalty.Conj.subgradient(-self.op.adjoint(pstar))
+
+    def PrimalToDualSolution(self,x):
+        r"""Yields a solution to the dual problem given a solution to the primal problem.
+        Returns an element of \(\partial \mathcal{S}^*(Tx) )\ 
+        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}^*\) is not differentiable).
+
+        Parameters
+        ----------------------------
+        x: self.op.domain
+        Solution of the primal problem.
+        """
+        return (1/self.regpar) * self.data_fid.subgradient(self.op(x))
+
+    def isSaddlePoint(self,x,p,tol):
+        r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        or equivalently (in case of strong duality)
+        - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
+        - if 
+        \[
+        Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
+        \]
+
+        Parameters
+        ---------------------------
+        x: self.op.domain
+        Candidate solution of primal problem.
+        p: self.op.codomain
+        Candidate solution of dual problem.
+        tol: float [default: 1e-10]
+        Tolerance value
+        """
+        return self.data_fid.Conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
+               self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
 
 class RegSolver(Solver):
