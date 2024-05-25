@@ -652,10 +652,12 @@ class HorizontalShiftDilation(Functional):
     
     Parameters
     --------
-    dilation: float
-        dilation factor
-    shift: self.domain
-        shift vector
+    F: Functional
+        The functional to be shifted and dilated.
+    dilation: float [default: 1]
+        Dilation factor.
+    shift: self.domain [default: None]
+        Shift vector. 0 in the default case.
     """
     def __init__(self, F, dilation =1., shift = None):
         super().__init__(F.domain, F.h_domain, F.linear)
@@ -1144,7 +1146,7 @@ class HilbertNormGeneric(Functional):
     def _hessian(self, x):
         return self.h_space.gram
 
-    def _proximal(self, x, tau, cg_pars=None):
+    def _proximal(self, x, tau):
         if self.h_domain == self.h_space:
             return 1/(1+tau)*x
         else:
@@ -1152,6 +1154,26 @@ class HilbertNormGeneric(Functional):
             inverse = operators.CholeskyInverse(op)
             return inverse(self.h_domain.gram(x))
         
+    def _conj(self, xstar):
+        return np.real(np.vdot(x, self.h_space.gram(xstar))) / 2
+
+    def _conj_linearize(self, xstar):
+        gx = self.h_space.gram_inv(xstar)
+        y = np.real(np.vdot(x, gx)) / 2
+        return y, gx
+
+    def _conj_subgradient(self, xstar):
+        return self.h_space.gram_inv(xstar)
+
+    def _conj_hessian(self, xstar):
+        return self.h_space.gram_inv
+
+    def _conj_proximal(self, xstar, tau):
+        if self.h_domain == self.h_space:
+            return 1/(1+tau)*xstar
+        else:
+            raise NotImplementedError
+
 
 class IntegralFunctionalBase(Functional):
     r"""
@@ -1525,8 +1547,8 @@ class Huber(IntegralFunctionalBase):
 class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
     \[
-    F(x) = 1/2 |x|^2    if |x|\leq 1/\sigma
-    F(x) = \infty    if |x|>1/\sigma
+    F(x) = 1/2 |x|^2    if |x|\leq 1/\sigma(x)
+    F(x) = \infty    if |x|>1/\sigma(x)
     \]
 
     -------
@@ -1561,7 +1583,7 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def _f_prox(self,u,tau,**kwargs):
         res = u/(1+tau)
-        return res/np.maximum(np.abs(res),1/self.sigma)
+        return res/np.maximum(self.sigma*np.abs(res),1)
 
     def _f_second_deriv(self, u,**kwargs):
         if np.max(self.sigma*np.abs(u))>=1:
