@@ -5,8 +5,11 @@ from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 
 class FISTA(RegSolver):
     r"""
-    The generalized FISTA algorithm for minimization of Tikhonov functionals. 
-
+    The generalized FISTA algorithm for minimization of Tikhonov functionals
+    \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
+    \] 
+    Gradient steps are performed on the first term, and proximal steps on the second term. 
+    
     Parameters:
     -----------
     setting : regpy.solvers.TikhonovRegularizationSetting
@@ -62,7 +65,7 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.t_old = self.t
 
-        grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.op(self.x))))
+        grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y, self.deriv = self.op.linearize(self.x)
 
