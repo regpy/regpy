@@ -281,7 +281,7 @@ class RegularizationSetting:
             assert T.domain == self.op.domain
             assert T.codomain == self.op.codomain
         
-        return eigsh(SciPyLinearOperator(T.adjoint * self.h_domain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+        return eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
 
     def is_hilbert_setting(self):
         """Assert if the setting is a Hilbert space setting. 
@@ -311,7 +311,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         The penalty functional \(\mathcal{R}\).
     data_fid : regpy.functionals.Functional
         The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
-    alpha: float [default: 1]
+    regpar: float [default: 1]
         regularization parameter
     penalty_shift: op.domain [default: None]
         If not None, the penalty functional is replaced by penalty(. - penalty_shift).
