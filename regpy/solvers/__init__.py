@@ -182,6 +182,8 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+        self._op_norm = None
+        """The operator norm of op with respect to h_domain and h_codomain."""
 
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
@@ -217,10 +219,10 @@ class RegularizationSetting:
         steps : float, optional
             A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
 
-        Return
-        ------
+        Returns
+        -------
         Boolean
-            True if the sequence provided by `regpy.util.operator_test.test_adjoint` is decreasing.
+            True if the sequence provided by `regpy.util.operator_tests.test_adjoint` is decreasing.
         """
         if self.op.linear:
             return True
@@ -251,10 +253,12 @@ class RegularizationSetting:
             _ , deriv = self.op.linearize(x)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
-    def op_norm(self,T = None):
+    def op_norm(self,T = None, method = "lanczos"):
         """Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
         by computing the largest eigenvalue with eigsh from scipy. 
-
+        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
+        #@memoized_property
+ 
         Parameters
         ----------
         T: linear Operator from self.domain to self.codomain [default=None]
@@ -271,7 +275,7 @@ class RegularizationSetting:
             If the setting is not a Hilbert space setting, meaning `penalty` and `data_fid`
             are not `HilbertNormGeneric` instances this is not implemented.
         """
-        from regpy.operators import SciPyLinearOperator, Derivative
+
         if T is None:
             if self.op.linear:
                 T= self.op
@@ -280,8 +284,15 @@ class RegularizationSetting:
         else:
             assert T.domain == self.op.domain
             assert T.codomain == self.op.codomain
-        
-        return eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+
+        if method == "power_method":
+            from regpy.solvers.linear import power_method
+            return power_method(self, op = T)
+        elif method == "lanczos":
+            from regpy.operators import SciPyLinearOperator
+            return eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+        else:
+            raise NotImplementedError
 
     def is_hilbert_setting(self):
         """Assert if the setting is a Hilbert space setting. 
@@ -435,18 +446,16 @@ class RegSolver(Solver):
         """
         Run solver with Morozov's discrepancy principle as stopping rule.
 
-        Parameters:
+        Parameters
+        ----------
         data: array-like
-        The right-hand side
-
+            The right-hand side
         delta: float, default:0
-        noise level 
-
+            noise level
         tau: float, default: 2.1
-        parameter in discrepancy principle
-
+            parameter in discrepancy principle
         max_its: int, default: 1000
-        maximal number of iterations
+            maximal number of iterations
         """
         stoprule =  (rules.CountIterations(max_iterations=max_its)
                         + rules.Discrepancy(self.h_codomain.norm, data,

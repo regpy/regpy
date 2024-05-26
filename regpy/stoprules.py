@@ -291,7 +291,7 @@ class RelativeChangeSol(StopRule):
 class Monotonicity(StopRule):
     """Stops if the residual is growing again.
 
-        Parameters
+    Parameters
     ----------
     norm : callable
         The norm with respect to which the difference should be measured.

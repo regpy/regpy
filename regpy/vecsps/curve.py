@@ -1,15 +1,33 @@
 import numpy as np
-import numpy.matlib
 
 from regpy.vecsps import UniformGridFcts
 
 class GenCurveDiscr(UniformGridFcts):
-    def __init__(self, n, **kwargs):
+    """Class for the `VectorSpace` instance of GenCurve instances. It provides method `bd_eval` which 
+    gives the capability to evaluate a curve GenCurve by name.  
+
+    Parameters
+    ----------
+    n : int
+        number of discretization points 
+    """
+    def __init__(self, n):
         assert isinstance(n, int)
+        self.n = n 
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
-    def bd_eval(self, name, n=None, der=0):
-        gencurve=GenCurve(name, n, der)
+    def bd_eval(self, name, der = 0):
+        """Compute a curve for the given coefficients. All parameters will be passed to the
+        constructor of `StarCurve`.
+        
+        Parameters
+        ----------
+        name : str
+            name of the method to evaluate as string
+        der : int, optional
+            Number of derivatives to compute , Defaults : 0
+        """
+        gencurve=GenCurve(name, self.n, der)
         self.z=gencurve.z
         self.zpabs=gencurve.zpabs
         self.zp=gencurve.zp
@@ -19,10 +37,26 @@ class GenCurveDiscr(UniformGridFcts):
         return gencurve
 
 class GenCurve:
-    """Parameterized smooth closed curve in R^2 without self-crossing
-        parametrization by function name(t), 0<=t<=2*pi (counter-clockwise)."""
+    r"""Parameterized smooth closed curve in R^2 without self-crossing
+    parametrization by function z(t), 0<=t<=2*pi (counter-clockwise). 
+    Note \(z(t)\) must return two values [x(t),z(t)]
+
+    Parameters
+    ----------
+    name : str 
+        name of the curves
+    n : int 
+        number of discretization point
+    der : int
+        up to which derivative to compute, Defaults: 0
+
+    Raises
+    ------
+    ValueError
+        If der > 3, because only Derivative up to order 3 is implemented
+    """
     
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, n, der = 0):
         self.name=name
         self.z=None
         self.zp=None
@@ -34,7 +68,6 @@ class GenCurve:
         self.normal=None 
         """Outer normal vector(not normalized)"""
 
-    def bd_eval(self, n, der):
         t=2*np.pi*np.linspace(0, n-1, n)/n
         self.z = eval(self.name)(t,0)
 
@@ -55,12 +88,31 @@ class GenCurve:
 
 
 class StarCurveDiscr(UniformGridFcts):
-   def __init__(self, n, **kwargs):
+    """Class for the `VectorSpace` instance of `StarCurve` instances. It provides method `bd_eval` which 
+    gives evaluates a curve `StarCurve` by name.  
+
+    Parameters
+    ----------
+    n : int
+        Number of discretization points. 
+    """
+    def __init__(self, n):
         assert isinstance(n, int)
+        self.n = n
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
-   def bd_eval(self, name, n=None, der=0):
-        starcurve=StarCurve(name, n, der)
+    def bd_eval(self, name, der=0):
+        """Compute a curve for the given coefficients. All parameters will be passed to the
+        constructor of `StarCurve`.
+        
+        Parameters
+        ----------
+        name : str
+            name of the method to evaluate
+        der : int, optional
+            Number of derivatives to compute , Defaults : 0
+        """
+        starcurve=StarCurve(name, self.n, der)
         self.z=starcurve.z
         self.zpabs=starcurve.zpabs
         self.zp=starcurve.zp
@@ -74,25 +126,41 @@ class StarCurve:
     \[
       z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
     \]
-     with a positive, 2pi-periodic function q."""
+     with a positive, 2pi-periodic function q. 
+     
+    Parameters
+    ----------
+    name : str 
+        name of the curves
+    n : int 
+        number of discretization point
+    der : int
+        up to which derivative to compute, Defaults: 0
+
+    Raises
+    ------
+    ValueError
+        If der > 3, because only Derivative up to order 3 is implemented
+    """
     def __init__(self, name, n, der):
-      """The first row of q contains values of q(t) at equidistant points
-      the second row values of q', the third row of q'' and so on"""
-      self.name=name
+      
+        self.name=name
 
-      t=2*np.pi*np.linspace(0, n-1, n)/n  
-      cost = np.cos(t)
-      sint = np.sin(t)
+        t=2*np.pi*np.linspace(0, n-1, n)/n  
+        cost = np.cos(t)
+        sint = np.sin(t)
 
-      self.q = np.zeros((der+1,n))
+        self.q = np.zeros((der+1,n))
+        """The first row of q contains values of q(t) at equidistant points
+        the second row values of q', the third row of q'' and so on"""
 
-      for j in range(0, der+1):
+        for j in range(0, der+1):
             self.q[j, :]=eval(self.name)(t, j)
-      q=self.q
-      self.z = np.append(q[0, :]*cost,\
-          q[0,:]*sint).reshape((2, n))
-        
-      if der>=1:
+        q=self.q
+        self.z = np.append(q[0, :]*cost,\
+            q[0,:]*sint).reshape((2, n))
+            
+        if der>=1:
             self.zp = np.append(q[1,:]*cost - q[0,:]*sint,\
                 q[1,:]*sint + q[0,:]*cost).reshape((2, n))
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
@@ -100,15 +168,15 @@ class StarCurve:
                 -self.zp[0,:]).reshape((2, n))
             """Outer normal vector"""
 
-      if der>=2:
+        if der>=2:
             self.zpp = np.append(q[2,:]*cost - 2*q[1,:]*sint - q[0,:]*cost,\
                 q[2,:]*sint + 2*q[1,:]*cost - q[0,:]*sint).reshape((2, n))
 
-      if der>=3:
+        if der>=3:
             self.zppp = np.append(q[3,:]*cost - 3*q[2,:]*sint - 3*q[1,:]*cost + q[0,:]*sint,\
                 q[3,:]*sint + 3*q[2,:]*cost - 3*q[1,:]*sint - q[0,:]*cost).reshape((2,n))
-            
-      if der>3:
+                
+        if der>3:
             raise ValueError('only derivatives up to order 3 implemented')
 
     def radial(self, n):
@@ -117,13 +185,32 @@ class StarCurve:
         return rad
 
 class GenTrigDiscr(UniformGridFcts):
+    """Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
+    gives evaluates a curve `GenTrig` by name.  
+
+    Parameters
+    ----------
+    n : int
+        Number of discretization points. 
+    """
     def __init__(self, n):
         assert isinstance(n, int)
+        self.n = n
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def bd_eval(self, coeffs, nvals=None, nderivs=0):
         """Compute a curve for the given coefficients. All parameters will be passed to the
-        constructor of `Gentrig`."""
+        constructor of `GenTrig`.
+        
+        Parameters
+        ----------
+        coeffs : array-like
+            Coefficients for which to evaluate the curve
+        nvals : int 
+            Number of points to evaluate on
+        nderivs : int
+            Number of derivatives to compute 
+        """
         gentrig=GenTrig(coeffs, nvals, nderivs)
         self.z=gentrig.z
         self.zpabs=gentrig.zpabs
@@ -147,7 +234,17 @@ class GenTrig:
      but sin(t*N/2) does not occur.
      z and its derivatives are sampled at n equidistant points.
      Application of the Gramian matrix and its inverse w.r.t. the
-     Sobolev norm ||z||_{H^s} are implemented."""
+     Sobolev norm ||z||_{H^s} are implemented.
+     
+     Parameters
+     ----------
+     coeffs : array-like
+        Coefficients for which to evaluate the curve
+    nvals : int 
+        Number of points to evaluate on
+    nderivs : int
+        Number of derivatives to compute 
+     """
 
     def __init__(self, coeffs, nvals, nderivs):
         self.coeff = coeffs
@@ -213,7 +310,7 @@ class GenTrig:
         N = int(len(self.coeff)/2)
         n = int(len(g))
         
-        adj_n=numpy.matlib.repmat(g/self.zpabs,2,1)*self.normal
+        adj_n=np.array([g/self.zpabs,g/self.zpabs])*self.normal
     
         if N == n:
             adj = np.array([adj_n[0,:],\
@@ -252,18 +349,31 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    """A vector space representing star-shaped obstacles parametrized in a trigonometric basis.
+    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides method `eval_curve` which 
+    gives evaluates a curve `StarTrigCurve` by name.  
 
     Parameters
     ----------
     n : int
-        The number of coefficients.
+        Number of discretization points. 
     """
     def __init__(self, n):
         assert isinstance(n, int)
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def eval_curve(self, coeffs, nvals=None, nderivs=0):
+        """Compute a curve for the given coefficients. All parameters will be passed to the
+        constructor of `StarTrigCurve`.
+        
+        Parameters
+        ----------
+        coeffs : array-like
+            Coefficients for which to evaluate the curve
+        nvals : int, optional
+            Number of points to evaluate on, Defaults : None
+        nderivs : int, optional
+            Number of derivatives to compute , Defaults : 0
+        """
         return StarTrigCurve(self, coeffs, nvals, nderivs)
 
     def sample(self, f):

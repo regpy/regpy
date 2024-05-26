@@ -373,9 +373,9 @@ class TensorProd(HilbertSpace):
             domains.append(s.gram.domain)
             for v in s.gram.domain.real_space().iter_basis():
                 if w == 1:
-                    basis.append(s.vecsp.flatten(s.gram(v)))
+                    basis.append(s.vecsp.real_space().flatten(s.gram(v)))
                 else:
-                    basis.append(s.vecsp.flatten((w**2 * s.gram)(v)))
+                    basis.append(s.vecsp.real_space().flatten((w**2 * s.gram)(v)))
             bases.append(np.array(basis))
         from regpy.operators.bases_transform import BasisTransform
         return BasisTransform(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
@@ -566,6 +566,8 @@ Sobolev = AbstractSpace('Sobolev')
 """Sobolev `AbstractSpace`"""
 
 Hm = AbstractSpace('Hm')
+"""H^m `AbstractSpace`"""
+
 Hm0 = AbstractSpace('Hm0')
 """H^m_0 `AbstractSpace`"""
 
@@ -608,7 +610,15 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.vecsps.VectorSpace`."""
+    """`L2` implementation on a generic `regpy.vecsps.VectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp : VectorSpace
+        Underlying discretization
+    weights : array-like
+        Weight in the norm.
+    """
 
     def __init__(self, vecsp, weights=None):
         super().__init__(vecsp)
@@ -622,9 +632,18 @@ class L2Generic(HilbertSpace):
             return operators.PtwMultiplication(self.vecsp, self.weights)
         
 class L2MeasureSpaceFcts(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`."""
+    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
+    
+    Parameters
+    ----------
+    vecsp : MeasureSpaceFcts
+        Underlying discretization
+    weights : array-like
+        Weight in the norm.
+    """
 
     def __init__(self, vecsp, weights=None):
+        assert isinstance(vecsp,vecsps.MeasureSpaceFcts)
         super().__init__(vecsp)
         self.weights = weights
 
@@ -658,8 +677,18 @@ class L2UniformGridFcts(HilbertSpace):
 
 class SobolevUniformGridFcts(HilbertSpace):
     """`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
+
+    Parameters
+    ----------
+    vecsp : UniformGridFcts
+        Grid on which to define the Sobolev space.
+    index : float, optional
+        Sobolev index, Defaults: 1
+    axes : list, optional
+        List of axes for which to compute in default all axes, Defaults: None
     """
     def __init__(self, vecsp, index=1, axes=None):
+        assert isinstance(vecsp,vecsps.UniformGridFcts)
         super().__init__(vecsp)
         self.index = index
         if axes is None:
@@ -853,9 +882,6 @@ def _register_spaces():
 
     Sobolev.register(vecsps.DirectSum, componentwise(Sobolev))
     Sobolev.register(vecsps.UniformGridFcts, SobolevUniformGridFcts)
-
-    Hm.register(vecsps.VectorSpace,Hm)
-    Hm0.register(vecsps.VectorSpace,Hm0)
 
     Hm.register(vecsps.Prod, componentwise(HmDomain,cls=TensorProd))
     Hm.register(vecsps.DirectSum, componentwise(HmDomain))
