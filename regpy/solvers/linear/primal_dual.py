@@ -39,7 +39,7 @@ class PDHG(RegSolver):
     proximal_pars_penalty : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
     """
-    def __init__(self,  setting, data_fidelity_conjugate, penalty, init_domain, init_codomain, tau = 1, sigma = 1, regpar = 1, theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None):
+    def __init__(self,  setting, data_fidelity_conjugate, init_domain, init_codomain, tau = 1, sigma = 1, regpar = 1, theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None):
         super().__init__(setting)
         assert self.op.linear
         self.data_fidelity_conjugate = data_fidelity_conjugate
