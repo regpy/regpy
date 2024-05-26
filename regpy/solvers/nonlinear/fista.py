@@ -33,7 +33,7 @@ class FISTA(RegSolver):
 
         assert tau is None or tau>0
         if tau is None:
-            self.tau = setting.op_norm(self.deriv)
+            self.tau = setting.op_norm(op=self.deriv)
         else:
             self.tau = tau
             """The step size parameter"""
