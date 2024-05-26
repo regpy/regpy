@@ -1018,7 +1018,7 @@ class AbstractComposed(AbstractFunctional):
     
 
 class FunctionalProductSpace(Functional):
-    """Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
+    r"""Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
     The functionals are given as a list of the functionals on the summands of the product space.
     \[
     F(x_1,... x_n) = \sum_{j=1}^n F_j(x_j)

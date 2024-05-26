@@ -317,7 +317,7 @@ class RegularizationSetting:
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
     def op_norm(self,op = None, method = "lanczos"):
-        """Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
+        r"""Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
         by computing the largest eigenvalue with eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
         #@memoized_property
@@ -358,7 +358,7 @@ class RegularizationSetting:
             raise NotImplementedError
 
     def is_hilbert_setting(self):
-        """Assert if the setting is a Hilbert space setting. 
+        r"""Assert if the setting is a Hilbert space setting. 
 
         Returns
         -------
