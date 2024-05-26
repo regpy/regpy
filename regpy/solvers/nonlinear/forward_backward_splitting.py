@@ -10,7 +10,7 @@ class ForwardBackwardSplitting(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes both penalty \(\mathcal{R}\) and data fidelity \(\mathcal{S}\) functional. 
     init : setting.domain
         The initial guess. 
@@ -23,7 +23,7 @@ class ForwardBackwardSplitting(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator.
     """
     def __init__(self, setting, init, tau = None, proximal_pars = None):
-        assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhnoovRegularizationSetting instance."
+        assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
         assert init in self.op.domain
         self.regpar = setting.regpar
