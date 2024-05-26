@@ -1626,7 +1626,6 @@ class Zero(Operator):
     def _adjoint(self, x):
         return self.domain.zeros()
 
-
 class ApproximateHessian(Operator):
     """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
     using finite differences of it `gradient` if it is implemented for that functional.
@@ -1658,6 +1657,5 @@ class ApproximateHessian(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
-
 
 
