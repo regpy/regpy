@@ -30,11 +30,11 @@ class ForwardBackwardSplitting(RegSolver):
         """The regularization parameter."""
 
         self.x = init
-        self.y, deriv = self.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
 
         assert tau is None or tau>0
         if tau is None:
-            self.tau = setting.op_norm(deriv)
+            self.tau = setting.op_norm(self.deriv)
         else:
             self.tau = tau
             """The step size parameter"""
@@ -42,11 +42,8 @@ class ForwardBackwardSplitting(RegSolver):
 
         
     def _next(self):
-        y,deriv = self.op.linearize(self.x)
-        self.x-=self.tau*self.h_domain.gram_inv(deriv.adjoint(self.data_fid.subgradient(self.op(self.x))))
+        self.x-=self.tau*self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y)))
         self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        
-        self.y = self.op(self.x)
-
+        self.y,self.deriv = self.op.linearize(self.x)
  
