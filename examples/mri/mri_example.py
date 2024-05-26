@@ -17,7 +17,6 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-40s :: %(message)s'
 )
 
-# TODO dtype=complex?
 grid = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
 
 sobolev_index = 32
@@ -36,7 +35,7 @@ mri_op = sampling * full_mri_op
 
 # Substitute Sobolev weights into coil profiles
 smoother = sobolev_smoother(mri_op.domain, sobolev_index, factor=220.)
-smoothed_op = mri_op * smoother
+smoothed_op = mri_op* smoother
 
 exact_solution = mri_op.domain.zeros()
 exact_density, exact_coils = mri_op.domain.split(exact_solution)  # returns views into exact_solution in this case
@@ -87,13 +86,14 @@ axes[0].set_title('exact solution')
 axes[1].set_title('reconstruction')
 
 # Plot exact solution
-im = axes[0].imshow(np.abs(normalize(*mri_op.domain.split(exact_solution))))
+rho_ex,coils_ex = normalize(*mri_op.domain.split(exact_solution))
+im = axes[0].imshow(np.abs(rho_ex))
 fig.colorbar(im, cax=bars[0])
 
 # Run the solver, plot iterates
 for reco, reco_data in solver.until(stoprule):
-    reco2 = smoother(reco)
-    im = axes[1].imshow(np.abs(normalize(*mri_op.domain.split(reco2))))
+    rho,coils = normalize(*mri_op.domain.split(smoother(reco)))
+    im = axes[1].imshow(np.abs(rho))
     bars[1].clear()
     fig.colorbar(im, cax=bars[1])
     plt.pause(0.5)

@@ -150,20 +150,25 @@ class CountIterations(StopRule):
     def __init__(self, max_iterations, while_type = True):
         super().__init__()
         self.max_iterations = max_iterations
-        if while_type:
-            self.iteration = -1
-        else:
-            self.iteration = 0
+        self.iteration = 0
+        self.while_type = while_type
 
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
 
     def _stop(self, x, y=None):
-        self.iteration += 1
-        self.log.info(
-            'iteration = {} / {}'
-            .format(self.iteration, self.max_iterations))
-        return self.iteration >= self.max_iterations
+        if self.while_type:
+            self.iteration += 1
+            if  self.iteration <= self.max_iterations:
+                self.log.info(
+                    'iteration = {} / {}'
+                    .format(self.iteration, self.max_iterations))
+        else:
+            self.log.info(
+                'iteration = {} / {}'
+                .format(self.iteration, self.max_iterations))
+            self.iteration += 1
+        return self.iteration > self.max_iterations
 
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
@@ -286,7 +291,7 @@ class RelativeChangeSol(StopRule):
 class Monotonicity(StopRule):
     """Stops if the residual is growing again.
 
-        Parameters
+    Parameters
     ----------
     norm : callable
         The norm with respect to which the difference should be measured.

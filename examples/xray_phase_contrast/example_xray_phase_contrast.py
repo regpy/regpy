@@ -1,6 +1,6 @@
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
-from regpy.operators.fresnel import get_xray_phase_contrast
+from xray_phase_contrast_operator import get_xray_phase_contrast
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
 from regpy.solvers import RegularizationSetting

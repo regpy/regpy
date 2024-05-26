@@ -1,32 +1,42 @@
-"""Iterative solvers for inverse problems.
+"""Solvers for inverse problems.
 """
+from scipy.sparse.linalg import eigsh
 
 from regpy.util import classlogger
+from regpy.util.operator_tests import test_adjoint, test_derivative
 from regpy.stoprules import NoneRule
-from regpy.functionals import  as_functional, Composed
-
+from regpy.functionals import  as_functional, Composed, HilbertNormGeneric, Functional, HorizontalShiftDilation
+from regpy.operators import Operator
+import regpy.stoprules as rules
 
 class Solver:
-    """Abstract base class for solvers. Solvers do not loop themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate and value as attributes
+    r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
     `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
     may or may not be the same arrays as before, modified in-place).
 
     There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
 
-    Subclasses should override the method `_next(self)` to perform a single iteration. The main
-    difference to `next` is that `_next` does not have a return value. If the solver
-    converged, `converge` should be called, afterwards `_next` will never be called again. Most
-    solvers will probably never converge on their own, but rely on the caller or a
+    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
+    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
+    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
+    called again. Most solvers will probably never converge on their own, but rely on the caller or a
     `regpy.stoprules.StopRule` for termination.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Initial argument for iteration. Defaults to None.
+    y : numpy.ndarray
+        Initial value at current iterate. Defaults to None.
     """
 
     log = classlogger
 
-    def __init__(self):
-        self.x = None
+    def __init__(self,x=None,y=None):
+        self.x = x
         """The current iterate."""
-        self.y = None
+        self.y = y
         """The value at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
         self.__converged = False
@@ -127,7 +137,74 @@ class Solver:
         """
         for x, y in self.while_(stoprule):
             pass
+        if not 'x' in locals() or not 'y' in locals(): 
+            # This happens if the stopping criterion is satisfied for the initial guess.
+            x = self.x
+            y = self.y
         return x, y
+
+
+class RegSolver(Solver):
+    r"""Abstract base class for solvers working with a regularization setting.
+     Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
+    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
+    may or may not be the same arrays as before, modified in-place).
+
+    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
+
+    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
+    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
+    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
+    called again. Most solvers will probably never converge on their own, but rely on the caller or a
+    `regpy.stoprules.StopRule` for termination.
+
+    Parameters
+    ----------
+    setting: RegularizationSetting
+        RegularizationSetting used for solver
+    x : numpy.ndarray
+        Initial argument for iteration. Defaults to None.
+    y : numpy.ndarray
+        Initial value at current iterate. Defaults to None.
+    """
+
+    def __init__(self,setting,x=None,y=None):
+        self.op=setting.op
+        """The operator."""
+        self.penalty = setting.penalty
+        """The penalty functional."""
+        self.data_fid = setting.data_fid
+        """The data misfit functional."""
+        self.h_domain = setting.h_domain
+        """The Hilbert space associated to penalty functional"""
+        self.h_codomain =  setting.h_codomain
+        """The Hilbert space associated to data fidelity functional"""
+        super().__init__(x,y)
+
+    def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
+        """
+        Run solver with Morozov's discrepancy principle as stopping rule.
+
+        Parameters
+        ----------
+        data: array-like
+            The right-hand side
+        delta: float, default:0
+            noise level
+        tau: float, default: 2.1
+            parameter in discrepancy principle
+        max_its: int, default: 1000
+            maximal number of iterations
+        """
+        stoprule =  (rules.CountIterations(max_iterations=max_its)
+                        + rules.Discrepancy(self.h_codomain.norm, data,
+                        noiselevel=delta, tau=tau)
+                    )
+        reco, reco_data = self.run(stoprule)
+        if not isinstance(stoprule.active_rule, rules.Discrepancy):
+            self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
+        return reco, reco_data
 
 
 class RegularizationSetting:
@@ -157,13 +234,262 @@ class RegularizationSetting:
         The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
+        assert isinstance(op,Operator)
         self.op = op
         """The operator."""
         self.penalty = as_functional(penalty, op.domain)
         """The penalty functional."""
         self.data_fid = as_functional(data_fid, op.codomain)
-        """The data misfit functional."""
+        """The data fidelity functional."""
         self.h_domain = self.penalty.h_domain
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+        self._op_norm = None
+        """The operator norm of op with respect to h_domain and h_codomain."""
+
+    def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
+        r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
+        is the true matrix adjoint. That is 
+        >   np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
+
+        If the operator is non-linear this will be done for the derivative.
+
+        Parameters
+        ----------
+        tolerance : float
+            Tolerance of the two computed inner products.
+
+        Assertion
+        ---------
+        Assertion is thrown by the `regpy.util.operator_tests.test_adjoint` when it does not fit. 
+        """
+        if self.op.linear:
+            test_adjoint(self.op,tolerance=tolerance)
+        else:
+            _, deriv = self.op.linearize(self.op.domain.randn())
+            test_adjoint(deriv, tolerance=tolerance)
+
+    def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
+        r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
+        provided derivative in the operator ,if it is a non-linear operator. It computes for 
+        the provided `steps` as \(t\)
+        \[ ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \]
+        wrt the \(L^2\)-norm and returns true if it is a decreasing sequence.
+
+        Parameters
+        ----------
+        steps : float, optional
+            A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
+
+        Returns
+        -------
+        Boolean
+            True if the sequence provided by `regpy.util.operator_tests.test_adjoint` is decreasing.
+        """
+        if self.op.linear:
+            return True
+        seq = test_derivative(self.op,steps=steps)
+        return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
+    
+    def h_adjoint(self,y=None):
+        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
+
+        If the operator is non-linear this provided the adjoint to the derivative at `y`.
+
+        Parameters
+        ----------
+        y : op.codomain
+            Element of the domain at which to evaluate the adjoint of the derivative. 
+
+        Returns
+        -------
+        regpy.operators.Operator
+            Adjoint wrt chosen Hilbert spaces. 
+        regpy.operators.Operator
+            The operator who's adjoint is computed. Only needed for non-linear case as this return the 
+            derivative at the point.
+        """
+        if self.op.linear:
+            return self.h_domain.gram_inv * self.op.adjoint * self.h_codomain.gram, self.op
+        else:
+            _ , deriv = self.op.linearize(x)
+            return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
+        
+    def op_norm(self,op = None, method = "lanczos"):
+        r"""Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
+        by computing the largest eigenvalue with eigsh from scipy. 
+        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
+        #@memoized_property
+ 
+        Parameters
+        ----------
+        T: linear Operator from self.domain to self.codomain [default=None]
+            Typically the derivative of the operator at some point. In the default case, self.op is used if self.op is linear. 
+
+        Returns
+        -------
+        scalar
+            Approximation of the norm of T^*T. 
+
+        Raises
+        ------
+        NotImplementedError
+            If the setting is not a Hilbert space setting, meaning `penalty` and `data_fid`
+            are not `HilbertNormGeneric` instances this is not implemented.
+        """
+
+        if op is None:
+            if self.op.linear:
+                T= self.op
+            else:
+                raise NotImplementedError
+        else:
+            T=op
+            assert T.domain == self.op.domain
+            assert T.codomain == self.op.codomain
+
+        if method == "power_method":
+            return power_method(self, op = T)
+        elif method == "lanczos":
+            from regpy.operators import SciPyLinearOperator
+            return eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+        else:
+            raise NotImplementedError
+
+    def is_hilbert_setting(self):
+        r"""Assert if the setting is a Hilbert space setting. 
+
+        Returns
+        -------
+        Boolean
+            True if both `penalty` and `data_fid` are `HIlbertNormGeneric` functionals. 
+        """
+        return isinstance(self.penalty,HilbertNormGeneric) and isinstance(self.data_fid,HilbertNormGeneric)
+        
+
+class TikhonovRegularizationSetting(RegularizationSetting):
+    r"""Tikhonov regularization setting for minimizing a Tikhonov functional 
+    \[
+    \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+    \]    
+    In contrast to RegularizationSetting, the regularization parameter is fixed, 
+    the data fidelity functional \(\mathcal{S}=self.data_fid)\ incorporates the data \(g^{\delta})\ of the inverse problem, 
+    and the penalty term \(\mathcal{R})\ incorporates a potential initial guess.
+
+    Parameters
+    -------------------
+    op : regpy.operators.Operator
+        The forward operator.
+    penalty : regpy.functionals.Functional
+        The penalty functional \(\mathcal{R}\).
+    data_fid : regpy.functionals.Functional
+        The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
+    regpar: float [default: 1]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data_fid_shift: op.co_domain [default: None]
+        If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
+    """
+
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None):
+        super().__init__(op,penalty=penalty, data_fid= data_fid)
+
+        if not penalty_shift is None:
+            self.penalty = HorizontalShiftDilation(self.penalty,shift = penalty_shift)
+
+        if not data_fid_shift is None:
+            self.data_fid = HorizontalShiftDilation(self.data_fid,shift = data_fid_shift)
+
+        assert isinstance(regpar,float) and regpar>=0
+        self.regpar = regpar
+        """The regularization parameter"""
+    
+    def DualSetting(self):
+        r"""Yields the setting of the dual optimization problem
+        \[
+           \alpha\mathcal{R}^*(\alpha T^*p) + \mathcal{S}^*(- p) = \min!
+        \]
+        (To make this a Tikhonov functional again, the objective functional of the Rockafellar-Fenchel dual maximization problem
+        has been multiplied by \(-\alpha\).)
+        """
+        assert self.op.linear
+        return TikhonovRegularizationSetting(self.op.adjoint,
+                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-1.),
+                                             HorizontalShiftDilation(self.penalty.Conj,dilation=self.regpar),
+                                             regpar= 1/self.regpar
+                                             )
+
+    def DualToPrimalSolution(self,pstar):
+        r"""Yields a solution to the primal problem given a solution to the dual problem.
+        Returns an element of \(\partial \mathcal{R}^*(-T^*p) )\ 
+        (without checks if pstar is a dual solution and if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
+                
+        Parameters
+        -------
+        pstar: self.op.codomain
+        Solution of the dual problem.
+        """
+        return self.penalty.Conj.subgradient(-self.op.adjoint(pstar))
+
+    def PrimalToDualSolution(self,x):
+        r"""Yields a solution to the dual problem given a solution to the primal problem.
+        Returns an element of \(\partial \mathcal{S}^*(Tx) )\ 
+        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}^*\) is not differentiable).
+
+        Parameters
+        ----------------------------
+        x: self.op.domain
+        Solution of the primal problem.
+        """
+        return (1/self.regpar) * self.data_fid.subgradient(self.op(x))
+
+    def isSaddlePoint(self,x,p,tol):
+        r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        or equivalently (in case of strong duality)
+        - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
+        - if 
+        \[
+        Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
+        \]
+
+        Parameters
+        ---------------------------
+        x: self.op.domain
+        Candidate solution of primal problem.
+        p: self.op.codomain
+        Candidate solution of dual problem.
+        tol: float [default: 1e-10]
+        Tolerance value
+        """
+        return self.data_fid.Conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
+               self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
+
+
+def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
+    r"""Approximation of operator norm by the power method.
+
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        Provides op and Gram. 
+    op : Operator,optional
+        Optionally overrides choice of operator (e.g. for linearization), Defaults: None
+    """
+    assert isinstance(setting,RegularizationSetting)
+    if not setting.is_hilbert_setting():
+        raise NotImplementedError
+    if op is None:
+        op = setting.op
+    
+    x = setting.op.domain.rand()
+    relative_residual = np.inf
+    for i in range(max_iter):
+        if relative_residual < stopping_rule:
+            break
+        y = (setting.h_domain.gram_inv * op.adjoint * setting.h_codomain.gram * op)(x)
+        lmb = np.sqrt(np.inner(y, (op.adjoint * setting.h_codomain.gram * op)(x)))
+        relative_residual = setting.h_domain.norm(y - lmb * x)
+        x = y/lmb
+    return lmb

@@ -17,7 +17,7 @@ folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well
 
 - The source code is on GitHub ([regpy/regpy](https://github.com/regpy/regpy)).
 - Releases are at the corresponding [release page](https://github.com/regpy/regpy/releases). The
-  current version is 0.2.
+  current version is 0.3.
 
 ### Dependencies
 

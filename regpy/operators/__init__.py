@@ -113,7 +113,7 @@ class Operator:
 
         np.real(np.vdot(x, y))
 
-    Other inner product on vector spaces are independent of both vector spaces and operators,
+    Other inner products on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.
 
     Basic operator algebra is supported:
@@ -596,14 +596,16 @@ class SciPyLinearOperator(sla.LinearOperator):
     def __init__(self, op2):
         self.op2 = op2
         r"""the wrapped operator"""
-        super().__init__(op2.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+        super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
     
     def _matvec(self, x):
         r"""Applies the operator.
+        
         Parameters
         ----------
         x : numpy.ndarray
             Flattened element from domain of operator.
+        
         Returns
         -------
         numpy.ndarray
@@ -613,10 +615,12 @@ class SciPyLinearOperator(sla.LinearOperator):
     
     def _rmatvec(self, y):
         r"""Applies the adjoint operator.
+        
         Parameters
         ----------
         y : numpy.ndarray
             Flattened element from codomain of operator.
+        
         Returns
         -------
         numpy.ndarray
@@ -629,7 +633,7 @@ class Pow(Operator):
        A * A * ... * A
 
        Parameters
-       -----------------
+       ----------
        op : operator
        exponent :  non-negative integer
     """
@@ -712,7 +716,7 @@ class MatrixMultiplication(Operator):
         matrix rows is used. Defaults to None.
 
     Notes
-    ----------
+    -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
     The adjoint is implemented in the same way by multiplying with the adjoint matrix.
     As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
@@ -804,7 +808,7 @@ class CholeskyInverse(Operator):
 class SuperLUInverse(Operator):
     """Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
 
-    Parameters:
+    Parameters
     ----------
         op : MatrixMultiplication
             The operator to be inverted.   
@@ -1022,8 +1026,11 @@ class FourierTransform(Operator):
     """
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, vecsps.UniformGridFcts)
-        frqs = domain.frequencies(centered=centered, axes=axes)
-        if centered:
+        self.is_complex = domain.is_complex
+        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        shape = domain.shape
+        s = shape[-1]
+        if centered or (not domain.is_complex and domain.ndim==1):
             codomain = vecsps.UniformGridFcts(*frqs, dtype=complex)
         else:
             # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
@@ -1031,11 +1038,14 @@ class FourierTransform(Operator):
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes
-
+  
     def _eval(self, x):
         if self.centered:
             x = np.fft.ifftshift(x, axes=self.axes)
-        y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        if self.is_complex:
+            y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        else:
+            y = np.fft.rfftn(x, axes=self.axes, norm='ortho')
         if self.centered:
             return np.fft.fftshift(y, axes=self.axes)
         else:
@@ -1044,13 +1054,56 @@ class FourierTransform(Operator):
     def _adjoint(self, y):
         if self.centered:
             y = np.fft.ifftshift(y, axes=self.axes)
-        x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        if self.is_complex:
+            x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        else:
+            x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
         if self.centered:
             x = np.fft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:
             return x
         else:
             return np.real(x)
+        
+    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+        """Compute the grid of frequencies for an FFT on this grid instance.
+
+        Parameters
+        ----------
+        centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Default: `False`.
+        axes : tuple of ints, optional
+            Axes for which to compute the frequencies. All other axes will be returned as-is.
+            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
+            axes will be computed. Default: `None`.
+        Returns
+        -------
+        array
+        """
+        if axes is None:
+            axes = range(domain.ndim)
+        axes = set(axes)
+        frqs = []
+        for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
+            if i in axes:
+                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
+                # to be periodic.
+                shalf = s/2+1 if (s//2)*2==s else (s+1)/2
+                if i==domain.ndim-1 and rfft==True:
+                    frqs.append(np.arange(0,shalf) / (s*l))
+                else:
+                    if centered:
+                        frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
+                    else:
+                        frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
+            else:
+                frqs.append(domain.axes[i])
+        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
+        
 
     @property
     def inverse(self):
@@ -1573,10 +1626,9 @@ class Zero(Operator):
     def _adjoint(self, x):
         return self.domain.zeros()
 
-
 class ApproximateHessian(Operator):
     """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
-    using finite differences of its `regpy.functionals.Functional.gradient`.
+    using finite differences of it `gradient` if it is implemented for that functional.
 
     Parameters
     ----------
@@ -1589,6 +1641,7 @@ class ApproximateHessian(Operator):
     """
     def __init__(self, func, x, stepsize=1e-8):
         assert isinstance(func, functionals.Functional)
+        assert hasattr(func,"gradient")
         self.gradx = func.gradient(x)
         """The gradient at `x`"""
         self.func = func
@@ -1604,3 +1657,5 @@ class ApproximateHessian(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+
+

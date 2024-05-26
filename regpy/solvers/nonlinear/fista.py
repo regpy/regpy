@@ -1,64 +1,49 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver, RegularizationSetting
+from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 
-class FISTA(Solver):
+class FISTA(RegSolver):
     r"""
-    The generalized FISTA algorithm for minimization of $\alpha * \mathcal{G}+\mathcal{H}$, where $\mathcal{G},\mathcal{H}: H -> \mathbb{R}$ 
-    are the penalty term and the data fidelity term respectively.
-
-    We assume:
-        -> $\mathcal{G}, \mathcal{H}$ are convex
-        -> grad $\mathcal{H}$ is L-Lipschitz continuous
-        -> $\mathcal{G}$ is $\mu_\mathcal{G}$-convex with $\mu_\mathcal{G} \geq 0$ 
-        -> $\mathcal{H}$ is $\mu_\mathcal{H}$-convex with $\mu_\mathcal{H} \geq 0$ 
-
+    The generalized FISTA algorithm for minimization of Tikhonov functionals
+    \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
+    \] 
+    Gradient steps are performed on the first term, and proximal steps on the second term. 
+    
     Parameters:
     -----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
-    init : array-like
+    init : setting.op.domain
         The initial guess
-    tau : float, optional 
-        step size of minimization procedure. Needs to be in (0, 1/L) where grad H is assumed to be L-Lipschitz 
-    regpar : float, optional
-        The regularization parameter
-    mu_data_fidelity : float, optional
-        The convexity constant of the data fidelity term. Matches $\mu_\mathcal{H}$.
+    tau : float [default: None]
+        Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
     mu_penalty : float, optional
-        The convexity constant of the penalty term. Matches $\mu_\mathcal{G}$
-    proximal_pars : dict, optional
+        The convexity constant of the penalty term. 
+    proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
-
-    Notes
-    -----
-    The data fidelity in the setting has to be defined on the domain of the operator i.e. of the type $S(T(\cdot))$. 
     """
-    def __init__(self, setting, init, tau = 1, regpar = 1, mu_data_fidelity = 1, mu_penalty = 1, proximal_pars=None):
-        super().__init__()
-        self.setting = setting
-        """Regularization setting. Includes Operator, penalty and data fidelity functional and corresponding Hilbert Spaces.
-        """
-        assert isinstance(setting,RegularizationSetting)
+    def __init__(self, setting, init, tau = None, mu_penalty = 0, mu_data_fidelity= 0, proximal_pars=None):
+        assert isinstance(setting,TikhonovRegularizationSetting)
+        super().__init__(setting)
+        assert init in self.op.domain
+        self.regpar = setting.regpar
         self.x = init
-        self.y = self.setting.op(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
 
-        self.tau = tau
-        """Step size of minimization procedure. 
-        """
-        self.regpar = regpar
-        """Regularization parameter.
-        """
+        assert tau is None or tau>0
+        if tau is None:
+            self.tau = setting.op_norm(op=self.deriv)
+        else:
+            self.tau = tau
+            """The step size parameter"""
+ 
         self.mu_data_fidelity = mu_data_fidelity
-        """The convexity constant of the data fidelity term.
-        """
+        """The convexity constant of the data fidelity term."""
         self.mu_penalty = mu_penalty
-        """The convexity constant of the penalty term.
-        """
+        """The convexity constant of the penalty term."""
         self.proximal_pars = proximal_pars
-        """Proximal parameters that are passed to prox-operator of penalty term. 
-        """
+        """Proximal parameters that are passed to prox-operator of penalty term. """
 
         self.t = 0
         self.t_old = 0
@@ -80,6 +65,7 @@ class FISTA(Solver):
         self.x_old = self.x
         self.t_old = self.t
 
-        self.x = self.setting.penalty.proximal(h-self.tau*self.setting.h_domain.gram_inv(self.setting.data_fid.gradient(h)), self.tau * self.regpar, self.proximal_pars)
-        """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        self.y = self.setting.op(self.x)
+        grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
+        self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
+        self.y, self.deriv = self.op.linearize(self.x)
+

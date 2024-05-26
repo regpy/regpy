@@ -2,12 +2,12 @@ import logging
 
 import numpy as np
 
-from regpy.solvers import RegularizationSetting, Solver
+from regpy.solvers import RegularizationSetting, RegSolver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.stoprules import CountIterations
 
 
-class IrgnmCG(Solver):
+class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
     \[
@@ -30,7 +30,9 @@ class IrgnmCG(Solver):
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
-        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+        Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+    cg_stop: int
+        Maximum number of inner CG iterations
     simplified_op : Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
@@ -38,32 +40,31 @@ class IrgnmCG(Solver):
     """
 
     def __init__(
-        self, setting, data, regpar, regpar_step=2 / 3, 
-         init=None, cg_pars=None, cgstop=None, 
-         inner_it_logging_level = logging.INFO, simplified_op = None
+               self, setting, data, regpar, regpar_step=2 / 3, 
+                 init=None, 
+                 cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
+                cgstop=1000, 
+                inner_it_logging_level = logging.WARNING, 
+                simplified_op = None
          ):
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
+        super().__init__(setting)
         self.data = data
         """The measured data."""
         if init is None:
-            init = self.setting.op.domain.zeros()
+            init = self.op.domain.zeros()
         self.init = np.asarray(init)
         """The initial guess."""
         self.x = np.copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
-            self.y = self.setting.op(self.x)
+            self.y = self.op(self.x)
         else:
-            self.y, self.deriv = self.setting.op.linearize(self.x)
+            self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        if cg_pars is None:
-            cg_pars = {}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
@@ -74,15 +75,14 @@ class IrgnmCG(Solver):
     def _next(self):
         if self.cgstop is not None:
             stoprule = CountIterations(self.cgstop)
-            # Disable info logging, but don't override log level for all
-            # CountIterations instances.
         else:
             stoprule = CountIterations(2**15)
+        # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(logging.WARNING)
         # Running Tikhonov solver
         step, _ = TikhonovCG(
-            setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+            setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
@@ -92,20 +92,117 @@ class IrgnmCG(Solver):
         self.x += step
         if hasattr(self,'simplified_op'):
             _, self.deriv = self.simplified_op.linearize(self.x)
-            self.y = self.setting.op(self.x)
+            self.y = self.op(self.x)
         else:
-            self.y , self.deriv = self.setting.op.linearize(self.x)
+            self.y , self.deriv = self.op.linearize(self.x)
         self.regpar *= self.regpar_step
         self._nr_inner_steps = stoprule.iteration
+        self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
     
     def nr_inner_its(self):
         return self._nr_inner_steps
         
+
+class LevenbergMarquardt(RegSolver):
+    r"""The Levenberg-Marquardt method. In each iteration, minimizes
+
+    \[
+        \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert h\Vert^{2}
+    \]
+
+    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
+
+    Parameters
+    ----------
+    setting : regpy.solvers.RegularizationSetting
+        The setting of the forward problem.
+    data : array-like
+        The measured data.
+    regpar : float
+        The initial regularization parameter. Must be positive.
+    regpar_step : float, optional
+        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
+    init : array-like, optional
+        The initial guess. Default: the zero array.
+    cg_pars : dict
+        Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+    cg_stop: int
+        Maximum number of inner CG iterations
+    simplified_op : Operator
+        An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
+        It is used for the derivative in the Newton equation. 
+        Default: None - then the derivative of setting.op is used.
+    """
+
+    def __init__(
+               self, setting, data, regpar, regpar_step=2 / 3, 
+                 init=None, 
+                 cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
+                cgstop=1000, 
+                inner_it_logging_level = logging.WARNING, 
+                simplified_op = None
+         ):
+        super().__init__(setting)
+        self.data = data
+        """The measured data."""
+        if init is None:
+            init = self.op.domain.zeros()
+        self.init = np.asarray(init)
+        """The initial guess."""
+        self.x = np.copy(self.init)
+        if simplified_op:
+            self.simplified_op = simplified_op
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.op(self.x)
+        else:
+            self.y, self.deriv = self.op.linearize(self.x)
+        self.regpar = regpar
+        """The regularizaton parameter."""
+        self.regpar_step = regpar_step
+        """The `regpar` factor."""
+        self.cg_pars = cg_pars
+        """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
+        self.cgstop = cgstop
+        """Maximum number of iterations for inner CG solver, or None"""
+        self.inner_it_logging_level = inner_it_logging_level
+        self._nr_inner_steps = 0
+
+    def _next(self):
+        if self.cgstop is not None:
+            stoprule = CountIterations(self.cgstop)
+        else:
+            stoprule = CountIterations(2**15)
+        # Disable info logging, but don't override log level for all CountIterations instances.
+        stoprule.log = self.log.getChild('CountIterations')
+        stoprule.log.setLevel(logging.WARNING)
+        # Running Tikhonov solver
+        step, _ = TikhonovCG(
+            setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
+            data=self.data - self.y,
+            regpar=self.regpar,
+            **self.cg_pars,
+            logging_level = self.inner_it_logging_level
+        ).run(stoprule=stoprule)
+        self.x += step
+        if hasattr(self,'simplified_op'):
+            _, self.deriv = self.simplified_op.linearize(self.x)
+            self.y = self.op(self.x)
+        else:
+            self.y , self.deriv = self.op.linearize(self.x)
+        self.regpar *= self.regpar_step
+        self._nr_inner_steps = stoprule.iteration
+        self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
+    
+    def nr_inner_its(self):
+        return self._nr_inner_steps
+
+
 from regpy.operators import MatrixMultiplication
 from regpy import util
 from scipy.sparse.linalg import eigsh
         
-class IrgnmCGPrec(Solver):
+class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
         \[
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
@@ -129,7 +226,9 @@ class IrgnmCGPrec(Solver):
 
     It is:
     \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
-    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j\]
+    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.\]
+
+    At the moment this method does not work for complex domains/codomains
 
     Parameters
     ----------
@@ -153,17 +252,15 @@ class IrgnmCGPrec(Solver):
         self, setting, data, regpar, regpar_step=2 / 3, 
         init=None, cg_pars=None,cgstop =None, precpars=None
         ):
-        super().__init__()
-        self.setting = setting
-        """The problem setting."""
+        super().__init__(setting)
         self.data = data
         """The measured data."""
         if init is None:
-            init = self.setting.op.domain.zeros()
+            init = self.op.domain.zeros()
         self.init = np.asarray(init)
         """The initial guess."""
         self.x = np.copy(self.init)
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
@@ -186,7 +283,7 @@ class IrgnmCGPrec(Solver):
             self.krylov_order = precpars['krylov_order']
             self.number_eigenvalues = precpars['number_eigenvalues']
 
-        self.krylov_basis = np.zeros((self.krylov_order, self.setting.h_domain.vecsp.size))
+        self.krylov_basis = np.zeros((self.krylov_order, self.h_domain.vecsp.size),dtype=self.op.domain.dtype)
         """Orthonormal Basis of Krylov subspace"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
@@ -205,7 +302,7 @@ class IrgnmCGPrec(Solver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+                setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
@@ -217,9 +314,9 @@ class IrgnmCGPrec(Solver):
             self.log.info('Spectral preconditioner updated')
           
         else:
-            preconditioner = MatrixMultiplication(self.M, domain=self.setting.h_domain.vecsp, codomain=self.setting.h_domain.vecsp)
+            preconditioner = MatrixMultiplication(self.M, domain=self.h_domain.vecsp, codomain=self.h_domain.vecsp)
             step, _ = TikhonovCG(
-                setting=RegularizationSetting(self.deriv, self.setting.h_domain, self.setting.h_codomain),
+                setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,
@@ -229,7 +326,7 @@ class IrgnmCGPrec(Solver):
             step = self.M @ step
             
         self.x += step
-        self.y, self.deriv = self.setting.op.linearize(self.x)
+        self.y, self.deriv = self.op.linearize(self.x)
         self.regpar *= self.regpar_step
         
         self.k+=1
@@ -240,12 +337,12 @@ class IrgnmCGPrec(Solver):
         """perform lanzcos method to calculate the preconditioner"""
         L = np.zeros((self.krylov_order, self.krylov_order))
         for i in range(0, self.krylov_order):
-            L[i, :] = np.dot(self.krylov_basis, self.setting.h_domain.gram_inv(
+            L[i, :] = np.dot(self.krylov_basis, self.h_domain.gram_inv(
                 self.deriv.adjoint(
-                    self.setting.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
+                    self.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
         """Express T*T in Krylov_basis"""
 
-        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues
+        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues, AND make shure it is a method that can handle complex matrices
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 

@@ -1,47 +1,49 @@
 import logging
 import numpy as np
 
-from regpy.solvers import Solver, RegularizationSetting
+from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 
-class ForwardBackwardSplitting(Solver):
+
+class ForwardBackwardSplitting(RegSolver):
     r"""
-    Minimizes $\mathcal{S}(f)+r\alpha*\mathcal{R}(f)$ with forward backward splitting. 
+    Minimizes \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)\) with forward backward splitting. 
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem. Includes both penalty $\mathcal{R}$ and data fidelity $\mathcal{S}$ functional. 
-    init : array-like
-        The initial guess. Must be in setting.op.domain 
+    setting : regpy.solvers.TikhonovRegularizationSetting
+        The setting of the forward problem. Includes both penalty \(\mathcal{R}\) and data fidelity \(\mathcal{S}\) functional. 
+    init : setting.domain
+        The initial guess. 
     tau : float , optional
-        The parameter to compute the proximal operator of the penalty term. Must be positive.
+        The step size parameter. Must be positive. 
+        Default is the operator norm of \(T^*T\) 
     regpar : float, optional
-        The regularization parameter $\alpha$. Must be positive.
+        The regularization parameter \(\alpha\). Must be positive.
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
     """
-    def __init__(self, setting, init, tau = 1, regpar = 1, proximal_pars = None):
-        assert isinstance(setting,RegularizationSetting), "Setting is not a RegularizationSetting instance."
-        super().__init__()
-        assert regpar > 0
-        assert tau > 0
-        assert init in setting.op.domain
-        self.setting = setting
-        """The problem setting."""
-        self.regpar = regpar
+    def __init__(self, setting, init, tau = None, proximal_pars = None):
+        assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
+        super().__init__(setting)
+        assert init in self.op.domain
+        self.regpar = setting.regpar
         """The regularization parameter."""
-        self.tau = tau
-        """The proximal operator parameter"""
+
+        self.x = init
+        self.y, self.deriv = self.op.linearize(self.x)
+
+        assert tau is None or tau>0
+        if tau is None:
+            self.tau = setting.op_norm(op=self.deriv)
+        else:
+            self.tau = tau
+            """The step size parameter"""
         self.proximal_pars = proximal_pars
 
         
-        self.x = init
-        self.y = self.setting.op(self.x)
-        
     def _next(self):
-        self.x-=self.tau*self.setting.h_domain.gram_inv(self.setting.data_fid.gradient(self.x)) 
-        self.x = self.setting.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
+        self.x-=self.tau*self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y)))
+        self.x = self.penalty.proximal(self.x, self.regpar*self.tau, self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        
-        self.y = self.setting.op(self.x)
-        
+        self.y,self.deriv = self.op.linearize(self.x)
+ 
