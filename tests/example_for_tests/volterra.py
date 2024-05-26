@@ -12,7 +12,7 @@ def test_volterra():
 
     from regpy.hilbert import L2, Sobolev
     from regpy.functionals import HilbertNorm, TV
-    from regpy.solvers import RegularizationSetting
+    from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
     import regpy.stoprules as rules
     from regpy.solvers.linear.tikhonov import TikhonovCG
 
@@ -74,10 +74,12 @@ def test_volterra():
     init = op.domain.ones()*0.0005
 
     #The penalty term: 1/2 * ||f||_{TV}^2
-    setting = RegularizationSetting(
+    setting = TikhonovRegularizationSetting(
         op=op, 
         penalty=TV(h_domain=Sobolev), 
-        data_fid=HilbertNorm(h_space=L2) * (op - data)
+        data_fid=HilbertNorm(h_space=L2), 
+        data_fid_shift = data,
+        regpar = 0.01
     )
 
     proximal_pars = {
@@ -86,10 +88,7 @@ def test_volterra():
             }
     # """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
-    tau = 0.01
-    alpha = 0.01
-
-    solver = FISTA(setting, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
+    solver = FISTA(setting, init, proximal_pars=proximal_pars)
     stoprule = (
         # Method is slow, so need to use large number of iterations
         rules.CountIterations(max_iterations=100000) +

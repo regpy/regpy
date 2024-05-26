@@ -10,7 +10,7 @@ import numpy as np
 
 import regpy.stoprules as rules
 from regpy.operators.ngsolve import Coefficient
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import TikhonovRegularizationSetting
 from regpy.solvers.nonlinear.forward_backward_splitting import ForwardBackwardSplitting
 from regpy.hilbert import L2, Sobolev
 from regpy.vecsps.ngsolve import NgsSpace
@@ -50,11 +50,12 @@ data = exact_data+noise
 init = domain.from_ngs ( 1 )
 init_data = op(init)
 
-data_fidelity_operator = op - data
-setting = RegularizationSetting(
+setting = TikhonovRegularizationSetting(
     op=op, 
     penalty=TV(h_domain=L2), 
-    data_fid=HilbertNorm(h_space=Sobolev) * data_fidelity_operator
+    data_fid=HilbertNorm(h_space=Sobolev),
+    data_fid_shift=data, 
+    regpar = 5*10**(-6)
 )
 
 
@@ -64,10 +65,8 @@ proximal_pars = {
         }
 """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
-tau = 10
-alpha = 5*10**(-6)
 
-solver = ForwardBackwardSplitting(setting, init, tau = tau, regpar = alpha, proximal_pars=proximal_pars)
+solver = ForwardBackwardSplitting(setting, init, proximal_pars=proximal_pars)
 stoprule = (
         rules.CountIterations(500) +
         rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=1.1))
