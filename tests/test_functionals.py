@@ -27,7 +27,7 @@ def check_conj_and_subgradient(F,u=None,w=None):
     u2 = Fs.subgradient(grad)
     assert F.is_subgradient(grad,u)#Check if functionals are subgradients of each other
     assert Fs.is_subgradient(u2,grad)
-    assert np.dot(u2,grad)-F(u2)-Fs(grad)<10e-15#Young equality
+    assert np.sum(u2*grad)-F(u2)-Fs(grad)<10e-15#Young equality
 
 def test_conj_and_subgradient_huber():
     grid = UniformGridFcts((-1,1,5))
