@@ -35,7 +35,7 @@ class PDHG(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
     """
     def __init__(self,  setting, init_domain, init_codomain_star, tau = 1, sigma = 1, 
-                 theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None
+                 theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None
                  ):
         assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)

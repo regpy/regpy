@@ -144,6 +144,69 @@ class Solver:
         return x, y
 
 
+class RegSolver(Solver):
+    r"""Abstract base class for solvers working with a regularization setting.
+     Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
+    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
+    may or may not be the same arrays as before, modified in-place).
+
+    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
+
+    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
+    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
+    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
+    called again. Most solvers will probably never converge on their own, but rely on the caller or a
+    `regpy.stoprules.StopRule` for termination.
+
+    Parameters
+    ----------
+    setting: RegularizationSetting
+        RegularizationSetting used for solver
+    x : numpy.ndarray
+        Initial argument for iteration. Defaults to None.
+    y : numpy.ndarray
+        Initial value at current iterate. Defaults to None.
+    """
+
+    def __init__(self,setting,x=None,y=None):
+        self.op=setting.op
+        """The operator."""
+        self.penalty = setting.penalty
+        """The penalty functional."""
+        self.data_fid = setting.data_fid
+        """The data misfit functional."""
+        self.h_domain = setting.h_domain
+        """The Hilbert space associated to penalty functional"""
+        self.h_codomain =  setting.h_codomain
+        """The Hilbert space associated to data fidelity functional"""
+        super().__init__(x,y)
+
+    def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
+        """
+        Run solver with Morozov's discrepancy principle as stopping rule.
+
+        Parameters
+        ----------
+        data: array-like
+            The right-hand side
+        delta: float, default:0
+            noise level
+        tau: float, default: 2.1
+            parameter in discrepancy principle
+        max_its: int, default: 1000
+            maximal number of iterations
+        """
+        stoprule =  (rules.CountIterations(max_iterations=max_its)
+                        + rules.Discrepancy(self.h_codomain.norm, data,
+                        noiselevel=delta, tau=tau)
+                    )
+        reco, reco_data = self.run(stoprule)
+        if not isinstance(stoprule.active_rule, rules.Discrepancy):
+            self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
+        return reco, reco_data
+
+
 class RegularizationSetting:
     """A Regularization *setting* for an inverse problem, used by solvers. A
     setting consists of
@@ -254,7 +317,7 @@ class RegularizationSetting:
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
     def op_norm(self,op = None, method = "lanczos"):
-        """Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
+        r"""Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
         by computing the largest eigenvalue with eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
         #@memoized_property
@@ -287,7 +350,6 @@ class RegularizationSetting:
             assert T.codomain == self.op.codomain
 
         if method == "power_method":
-            from regpy.solvers.linear import power_method
             return power_method(self, op = T)
         elif method == "lanczos":
             from regpy.operators import SciPyLinearOperator
@@ -296,7 +358,7 @@ class RegularizationSetting:
             raise NotImplementedError
 
     def is_hilbert_setting(self):
-        """Assert if the setting is a Hilbert space setting. 
+        r"""Assert if the setting is a Hilbert space setting. 
 
         Returns
         -------
@@ -350,7 +412,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
            \alpha\mathcal{R}^*(\alpha T^*p) + \mathcal{S}^*(- p) = \min!
         \]
         (To make this a Tikhonov functional again, the objective functional of the Rockafellar-Fenchel dual maximization problem
-        has been multipied by \(-\alpha\).)
+        has been multiplied by \(-\alpha\).)
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
@@ -405,65 +467,29 @@ class TikhonovRegularizationSetting(RegularizationSetting):
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
 
-class RegSolver(Solver):
-    r"""Abstract base class for solvers working with a regularization setting.
-     Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
-    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
-    may or may not be the same arrays as before, modified in-place).
-
-    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
-
-    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
-    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
-    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
-    called again. Most solvers will probably never converge on their own, but rely on the caller or a
-    `regpy.stoprules.StopRule` for termination.
+def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
+    r"""Approximation of operator norm by the power method.
 
     Parameters
     ----------
-    setting: RegularizationSetting
-        RegularizationSetting used for solver
-    x : numpy.ndarray
-        Initial argument for iteration. Defaults to None.
-    y : numpy.ndarray
-        Initial value at current iterate. Defaults to None.
+    setting : RegularizationSetting
+        Provides op and Gram. 
+    op : Operator,optional
+        Optionally overrides choice of operator (e.g. for linearization), Defaults: None
     """
-
-    def __init__(self,setting,x=None,y=None):
-        self.op=setting.op
-        """The operator."""
-        self.penalty = setting.penalty
-        """The penalty functional."""
-        self.data_fid = setting.data_fid
-        """The data misfit functional."""
-        self.h_domain = setting.h_domain
-        """The Hilbert space associated to penalty functional"""
-        self.h_codomain =  setting.h_codomain
-        """The Hilbert space associated to data fidelity functional"""
-        super().__init__(x,y)
-
-    def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
-        """
-        Run solver with Morozov's discrepancy principle as stopping rule.
-
-        Parameters
-        ----------
-        data: array-like
-            The right-hand side
-        delta: float, default:0
-            noise level
-        tau: float, default: 2.1
-            parameter in discrepancy principle
-        max_its: int, default: 1000
-            maximal number of iterations
-        """
-        stoprule =  (rules.CountIterations(max_iterations=max_its)
-                        + rules.Discrepancy(self.h_codomain.norm, data,
-                        noiselevel=delta, tau=tau)
-                    )
-        reco, reco_data = self.run(stoprule)
-        if not isinstance(stoprule.active_rule, rules.Discrepancy):
-            self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
-        return reco, reco_data
+    assert isinstance(setting,RegularizationSetting)
+    if not setting.is_hilbert_setting():
+        raise NotImplementedError
+    if op is None:
+        op = setting.op
     
+    x = setting.op.domain.rand()
+    relative_residual = np.inf
+    for i in range(max_iter):
+        if relative_residual < stopping_rule:
+            break
+        y = (setting.h_domain.gram_inv * op.adjoint * setting.h_codomain.gram * op)(x)
+        lmb = np.sqrt(np.inner(y, (op.adjoint * setting.h_codomain.gram * op)(x)))
+        relative_residual = setting.h_domain.norm(y - lmb * x)
+        x = y/lmb
+    return lmb
