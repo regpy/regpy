@@ -1,60 +1,56 @@
 import logging
 import numpy as np
 
-from regpy.solvers import RegSolver
+from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 from regpy import util
-from regpy.functionals import Functional
 
 class PDHG(RegSolver):
-    r"""The Primal-dual hybrid gradient (PDHG) or Chambolle-Pock Algorithm
+    r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
     For \(\theta=0)\ this is the Arrow-Hurwicz-Uzawa algorithm.
 
-    Solves the minimization problem: \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f))\
+    Solves the minimization problem: \(\mathcal{S}_{g^{\delta}}(Tf)+\alpha*\mathcal{R}(f))\
     by solving the saddle-point problem: 
     \[
-        \inf_f \sup_p [ \langle Tf,p\rangle+\alpha\mathcal{R}(f)-\mathcal{S}^\ast(p) ].
+        \inf_f \sup_p [ \langle Tf,p\rangle+\alpha\mathcal{R}(f)-\mathcal{S}_{g^{\delta}}^\ast(p) ].
     \]
-    Here \(\mathcal{S}^\ast)\ denotes the Fenchel conjugate functional.
+    Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. The operator needs to be linear.
-    data_fidelity_conjugate : regpy.functionals.Functional
-        The Fenchel conjugate of the data fidelity functional. Needs to have a prox-operator defined.
-    init_domain : array_like
+    init_domain : setting.op.domain
         The initial guess "f".
-    init_codomain : array-like
+    init_codomain : setting.op.codomain
         The initial guess "p". 
-    tau : float , optional
+    tau : float [default: 1]
         The parameter to compute the proximal operator of the penalty term. Must be positive. Stepsize of the primal step.
-    sigma : float , optional
+    sigma : float [default: 1]
         The parameter to compute the proximal operator of the data-fidelity term. Must be positive. Stepsize of the dual step.
-    regpar : float, optional
-        The regularization parameter. Must be positive.
-    theta : float, optional
+    theta : float [default: 1]
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
     proximal_pars_data_fidelity_conjugate : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
     proximal_pars_penalty : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
     """
-    def __init__(self,  setting, data_fidelity_conjugate, penalty, init_domain, init_codomain, tau = 1, sigma = 1, regpar = 1, theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None):
+    def __init__(self,  setting, init_domain, init_codomain_star, tau = 1, sigma = 1, 
+                 theta= 0, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None
+                 ):
+        assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)
         assert self.op.linear
-        self.data_fidelity_conjugate = data_fidelity_conjugate
-        """Conjugate functional of data fidelity functional. 
-        """
-        assert isinstance(self.data_fidelity_conjugate, Functional)
+        assert init_domain in self.op.domain
+        assert init_codomain_star in self.op.codomain
 
         self.x = init_domain
         self.x_old = self.x
         self.y = self.op(self.x)
-        self.p = init_codomain
+        self.pstar = init_codomain_star
 
         self.tau = tau
         self.sigma = sigma
-        self.regpar = regpar
+        self.regpar = setting.regpar
         self.theta = theta
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
@@ -62,8 +58,8 @@ class PDHG(RegSolver):
     def _next(self):
         primal_step = self.x - self.tau * self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.p)))
         self.x = self.penalty.proximal(primal_step, self.regpar * self.tau, self.proximal_pars_penalty)
-        dual_step = self.p + self.sigma * self.op( self.x+self.theta*(self.x-self.x_old) )
-        self.p = self.data_fidelity_conjugate.proximal(dual_step, self.sigma, self.proximal_pars_data_fidelity_conjugate)
+        dual_step = self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
+        self.pstar = self.data_fid.Conj.proximal(dual_step, self.sigma, self.proximal_pars_data_fidelity_conjugate)
         self.x_old = self.x
         self.y = self.op(self.x)
 
