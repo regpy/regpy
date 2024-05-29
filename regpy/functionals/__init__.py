@@ -685,8 +685,8 @@ class HorizontalShiftDilation(Functional):
     def __init__(self, F, dilation =1., shift = None):
         super().__init__(F.domain, h_domain = F.h_domain, 
                          linear = F.linear,
-                         Lipschitz = F.Lipschitz * (1. if shift is None else shift)**2,
-                         convexity_param= F.convexity_param  * (1. if shift is None else shift)**2
+                         Lipschitz = F.Lipschitz * dilation**2,
+                         convexity_param= F.convexity_param  * dilation**2
                          )
         assert shift is None or shift in self.domain
         assert np.isscalar(dilation) and util.is_real_dtype(dilation)
