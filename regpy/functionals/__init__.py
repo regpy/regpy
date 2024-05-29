@@ -1605,6 +1605,67 @@ class QuadraticIntv(IntegralFunctionalBase):
         return self.sigmanp.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
             np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
 
+
+class QuadraticNonneg(IntegralFunctionalBase):
+
+    r"""Functional 
+    \[
+    F(x) = 1/2 |x|^2    if x\geq 0
+
+    F(x) = \infty       if  x<0
+    \]
+    Parameters
+
+    ---------
+    domain : regpy.vecsps.MeasureSpaceFcts
+        domain on which functional is defined 
+
+    """
+
+
+    def  __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    def _f(self, u,**kwargs):
+        res =  u*u/2
+        res[u<0] = np.inf
+        return res    
+
+    def _f_deriv(self, u,**kwargs):
+        if np.min(u)<0:
+            raise NotInEssentialDomainError('QuadratiNonneg')
+        return u.copy()
+
+    def _f_prox(self,u,tau,**kwargs):
+        return np.maximum(u/(1+tau),0)
+
+    def _f_second_deriv(self, u,**kwargs):
+        if np.min(u)<0:
+            raise NotTwiceDifferentiableError('QuadraticNonneg')
+        else:
+            return np.ones_like(u)
+
+    def _f_conj(self, ustar,**kwargs):
+        res = ustar*ustar/2
+        res[ustar<0] = 0
+        return res
+
+    def _f_conj_deriv(self, ustar,**kwargs):
+        res = ustar.copy()
+        res[ustar<0] = 0
+        return res
+
+    def _f_conj_second_deriv(self, ustar,**kwargs):
+        return 1.* (ustar>=0)
+
+    def _f_conj_prox(self,ustar,tau,**kwargs):
+        res=ustar.copy()
+        res[ustar>0]*=(1/(1+tau))
+        return res
+
+    def _f_is_subgradient(self, ustar, x, eps=1e-10):
+        return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
+
 def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
     r""" Returns `Functional` defined by 
     \[
@@ -1634,6 +1695,26 @@ def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
     return alpha*HorizontalShiftDilation(F,shift=center) \
         + alpha*lin + alpha*offset
 
+def QuadraticLowerBound(domain, lb, x0,alpha=1.):
+    r""" Returns `Functional` defined by 
+
+    \[F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x
+     F(x) = np.inf else
+
+    \]
+
+    """
+    assert isinstance(domain,vecsps.MeasureSpaceFcts)
+    if isinstance(lb,float):
+        lb = lb*domain.ones()
+    assert lb in domain
+    assert x0 in domain 
+    assert isinstance(alpha,float)
+
+    F = QuadraticNonneg(domain)
+    lin = LinearFunctional(lb-x0,domain=domain,gradient_in_dual_space=False)
+    offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
+    return alpha*HorizontalShiftDilation(F,shift=lb)+ alpha*lin + alpha*offset
 
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
