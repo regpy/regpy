@@ -18,12 +18,13 @@ class FISTA(RegSolver):
         The initial guess
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
-    mu_penalty : float, optional
-        The convexity constant of the penalty term. 
+    op_lower_bound : float [default: 0]
+        lower bound of the operator: \(\|op(f)\|\geq op_lower_bound * \|f\| \).
+        Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     """
-    def __init__(self, setting, init, tau = None, mu_penalty = 0, mu_data_fidelity= 0, proximal_pars=None):
+    def __init__(self, setting, init, tau = None, op_lower_bound = 0, proximal_pars=None):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         assert init in self.op.domain
@@ -31,19 +32,18 @@ class FISTA(RegSolver):
         self.x = init
         self.y, self.deriv = self.op.linearize(self.x)
 
+        self.mu_penalty  = self.regpar * self.penalty.convexity_param
+        self.mu_data_fidelity = self.data_fid.convexity_param * op_lower_bound**2
+        self.proximal_pars = proximal_pars
+        """Proximal parameters that are passed to prox-operator of penalty term. """
+
         assert tau is None or tau>0
         if tau is None:
-            self.tau = setting.op_norm(op=self.deriv)
+            self.tau = 1./(setting.op_norm(op=self.deriv)*self.data_fid.Lipschitz)
         else:
             self.tau = tau
             """The step size parameter"""
  
-        self.mu_data_fidelity = mu_data_fidelity
-        """The convexity constant of the data fidelity term."""
-        self.mu_penalty = mu_penalty
-        """The convexity constant of the penalty term."""
-        self.proximal_pars = proximal_pars
-        """Proximal parameters that are passed to prox-operator of penalty term. """
 
         self.t = 0
         self.t_old = 0
@@ -68,4 +68,3 @@ class FISTA(RegSolver):
         grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y, self.deriv = self.op.linearize(self.x)
-
