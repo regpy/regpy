@@ -41,10 +41,23 @@ class Functional:
     ----------
     domain : regpy.vecsps.VectorSpace
         The uncerlying vector space for the function space on which it is defined.
-    h_domain : regpy.hilbert.HilbertSpace (default: `L2(domain)`)
-        The underlying Hilbert wrt which the proximal and the conjugate are computed.
+    h_domain : regpy.hilbert.HilbertSpace (default: None)
+        The underlying Hilbert wrt which the proximal mapping is computed.
+        In the default case `L2(domain)` is used. 
+        Also the parameter of strong convexity is defined w.r.t. this Hilbert norm.  
+    linear: bool [default: False]
+        If true, the functional should be linear. 
+    convexity_param: float [default: 0]
+        parameter of strong convexity of the functional. 
+        0 if the functional is not strongly convex.
+    Lipschitz: float [default: np.inf]
+        Lipschitz continuity constant of the gradient.  
+        np.inf the gradient is not Lipschitz continuous.
     """
-    def __init__(self, domain, h_domain=None, linear = False):
+    def __init__(self, domain, h_domain=None, 
+                 linear = False,
+                 convexity_param=0.,
+                 Lipschitz = np.inf):
         assert isinstance(domain, vecsps.VectorSpace)
         self.domain = domain
         """The underlying vector space."""
@@ -52,6 +65,10 @@ class Functional:
         """The underlying Hilbert space."""
         self.linear = linear
         """boolean indicating if the functional is linear"""
+        self.convexity_param = convexity_param
+        """parameter of strong convexity of the functional."""
+        self.Lipschitz = Lipschitz
+        """Lipschitz continuity constant of the gradient."""
 
     def __call__(self, x):
         assert x in self.domain
@@ -351,7 +368,10 @@ class Conj(Functional):
     def __init__(self, func):
         self.func = func
         """The underlying functional."""
-        super().__init__(func.domain, h_domain = func.h_domain)
+        super().__init__(func.domain, h_domain = func.h_domain,
+                         Lipschitz = 1/func.convexity_param if func.convexity_param>0 else np.inf,
+                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else np.inf
+                         )
 
     def __call__(self, x):
         return self.func._conj(x)
@@ -411,7 +431,7 @@ class LinearFunctional(Functional):
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None:
             domain = vecsps.VectorSpace(shape=gradient.shape,dtype=float)
-        super().__init__(domain=domain,h_domain=h_domain,linear=True)
+        super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0)
         assert gradient in self.domain
         if gradient_in_dual_space:
             self._gradient = gradient
@@ -489,7 +509,10 @@ class LinearCombination(Functional):
         else:
             domain = None
 
-        super().__init__(domain, linear = all(self.linear_table))
+        super().__init__(domain, linear = all(self.linear_table),
+                         convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
+                         Lipschitz = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs))
+                         )
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
             self.grad_sum = self.domain.zeros()
@@ -602,7 +625,10 @@ class VerticalShift(Functional):
     def __init__(self, func, offset):
         assert isinstance(func, Functional)
         assert np.isscalar(offset) and util.is_real_dtype(offset)
-        super().__init__(func.domain)
+        super().__init__(func.domain, linear = func.linear, 
+                         convexity_param= func. convexity_param,
+                         Lipschitz = func.Lipschitz
+                         )
         self.func = func
         """Functional to be offset.
         """
@@ -657,7 +683,11 @@ class HorizontalShiftDilation(Functional):
         Shift vector. 0 in the default case.
     """
     def __init__(self, F, dilation =1., shift = None):
-        super().__init__(F.domain, F.h_domain, F.linear)
+        super().__init__(F.domain, h_domain = F.h_domain, 
+                         linear = F.linear,
+                         Lipschitz = F.Lipschitz * (1. if shift is None else shift)**2,
+                         convexity_param= F.convexity_param  * (1. if shift is None else shift)**2
+                         )
         assert shift is None or shift in self.domain
         assert np.isscalar(dilation) and util.is_real_dtype(dilation)
         self.F = F
@@ -723,12 +753,21 @@ class Composed(Functional):
         Functional to be composed with. 
     op : `regpy.operators.Operator`
         Operator to be composed with. 
+    op_norm : float [default: np.inf]
+        Norm of the operator. Used only to define self.Lipschitz
+    op_lower_bound : float
+        Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
+        Used only to define self.convexity_param
     """
-    def __init__(self, func, op):
+    def __init__(self, func, op,op_norm = np.inf, op_lower_bound = 0):
         assert isinstance(func, Functional)
         assert isinstance(op, operators.Operator)
         assert func.domain == op.codomain
-        super().__init__(op.domain)
+        super().__init__(op.domain,
+                         linear = func.linear,
+                         convexity_param= func.convexity_param * op_lower_bound**2,
+                         Lipschitz= func.Lipschitz * op_norm**2   
+                         )
         if isinstance(func, type(self)):
             op = func.op * op
             func = func.func
@@ -1042,7 +1081,10 @@ class FunctionalProductSpace(Functional):
         self.funcs = funcs
         """List of the functionals on each summand of the direct sum domain.
         """
-        super().__init__(domain)
+        super().__init__(domain, linear = np.all([func.linear for func in funcs]),
+                        convexity_param = np.min([func.convexity_param for func in funcs]),
+                        Lipschitz = np.max([func.Lipschitz for func in funcs])
+                        )
 
     def _eval(self, x):
         splitted = self.domain.split(x)
@@ -1069,7 +1111,7 @@ class FunctionalProductSpace(Functional):
 
     def _hessian(self, x):
         splitted = self.domain.split(x)
-        return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i] for i in range(self.length))))
+        return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
 
     def _proximal(self, x, tau):
         splitted = self.domain.split(x)
@@ -1103,7 +1145,7 @@ class FunctionalProductSpace(Functional):
 
     def _hessian(self, xstar):
         splitted = self.domain.split(xstar)
-        return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i] for i in range(self.length))))
+        return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i]) for i in range(self.length)))
 
     def _conj_proximal(self, xstar, tau):
         splitted = self.domain.split(xstar)
@@ -1124,7 +1166,8 @@ class HilbertNormGeneric(Functional):
     """
     def __init__(self, h_space, h_domain=None):
         assert isinstance(h_space, hilbert.HilbertSpace)
-        super().__init__(h_space.vecsp, h_domain= h_domain or h_space)
+        super().__init__(h_space.vecsp, h_domain= h_domain or h_space,
+                         convexity_param=1., Lipschitz=1.)
         self.h_space = h_space
         """ Hilbert space used for norm.
         """
@@ -1152,11 +1195,11 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return np.real(np.vdot(x, self.h_space.gram(xstar))) / 2
+        return np.real(np.vdot(xstar, self.h_space.gram(xstar))) / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
-        y = np.real(np.vdot(x, gx)) / 2
+        y = np.real(np.vdot(xstar, gx)) / 2
         return y, gx
 
     def _conj_subgradient(self, xstar):
@@ -1206,11 +1249,11 @@ class IntegralFunctionalBase(Functional):
     wrt to that.
     """
 
-    def __init__(self,domain,h_domain,kwargs={}):
+    def __init__(self,domain,h_domain,**kwargs):
         assert isinstance(domain,vecsps.MeasureSpaceFcts)
         assert domain == h_domain.vecsp
         self.kwargs = kwargs
-        super().__init__(domain)
+        super().__init__(domain,**kwargs)
         self.h_domain = h_domain
         """ Hilbert space on `domain` wrt to which is the prox computed."""
 
@@ -1280,7 +1323,10 @@ class LppPower(IntegralFunctionalBase):
         assert np.isscalar(p) and p >1
         self.p = p
         self.q = p/(p-1)
-        super().__init__(domain, hilbert.L2(domain))
+        super().__init__(domain, hilbert.L2(domain),
+                         convexity_param = 2 if p==2 else 0,
+                         Lipschitz = 2 if p==2 else np.inf
+                         )
 
     def _f(self,v,**kwargs):
         return np.abs(v)**self.p/self.p
@@ -1386,10 +1432,10 @@ class KullbackLeibler(IntegralFunctionalBase):
     """
 
     def __init__(self, domain,**kwargs):
-        super().__init__(domain,hilbert.L2(domain))
         w=kwargs['w']
         assert w in domain
         assert np.min(w)>=0
+        super().__init__(domain,hilbert.L2(domain))
         self.kwargs = kwargs
 
     def _f(self, u,**kwargs):
@@ -1503,7 +1549,7 @@ class Huber(IntegralFunctionalBase):
     """
 
     def  __init__(self, domain,as_primal=True,sigma = 1.):
-        super().__init__(domain,hilbert.L2(domain))
+        super().__init__(domain,hilbert.L2(domain),Lipschitz=1)
         if as_primal:
             self.Conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
         assert isinstance(sigma, float) or sigma in domain 
@@ -1558,7 +1604,7 @@ class QuadraticIntv(IntegralFunctionalBase):
     """
 
     def  __init__(self, domain,as_primal=True,sigma=1.):
-        super().__init__(domain,hilbert.L2(domain))
+        super().__init__(domain,hilbert.L2(domain),convexity_param=1)
         if as_primal:        
             self.Conjugate = Huber(domain,as_primal=False,sigma=sigma)
         assert isinstance(sigma, float) or sigma in domain 
