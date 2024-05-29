@@ -1670,7 +1670,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
 
     def  __init__(self, domain):
-        super().__init__(domain,hilbert.L2(domain))
+        super().__init__(domain,hilbert.L2(domain),convexity_param = 1.)
 
     def _f(self, u,**kwargs):
         res =  u*u/2
