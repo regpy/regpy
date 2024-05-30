@@ -227,7 +227,7 @@ class Functional:
         assert grad in self.domain
         return y, grad
 
-    def proximal(self, x, tau, recursion_safeguard = False):
+    def proximal(self, x, tau, recursion_safeguard = False,**proximal_par):
         r"""Proximal operator 
         \[
             \mathrm{prox}_{\tau F}(x)=\arg \min _{v\in {\mathcal {X}}}(F(v)+{\frac{1}{2\tau}}\Vert v-x\Vert_{\mathcal {X}}^{2}).
@@ -248,29 +248,29 @@ class Functional:
         """
         assert x in self.domain
         try: 
-            proximal = self._proximal(x, tau)
+            proximal = self._proximal(x, tau,**proximal_par)
         except NotImplementedError:
             # evaluation by Moreau's identity
             if recursion_safeguard: 
                 raise NotImplementedError("Neither proximal nor conj_proximal are implemented.")
             else:
                 gram = self.h_domain.gram
-                proximal = x - tau *gram.inverse(self.conj_proximal(gram(x)/tau,1/tau,recursion_safeguard=True))
+                proximal = x - tau *gram.inverse(self.conj_proximal(gram(x)/tau,1/tau,recursion_safeguard=True,**proximal_par))
         assert proximal in self.domain
         return proximal
 
-    def conj_proximal(self, xstar, tau, recursion_safeguard = False):
+    def conj_proximal(self, xstar, tau, recursion_safeguard = False,**proximal_par):
         r"""Proximal operator of conjugate functional. Should not be called directly, but via self.Conj.proximal
         """
         assert xstar in self.domain
         try:
-            proximal = self._conj_proximal(xstar, tau)
+            proximal = self._conj_proximal(xstar, tau,**proximal_par)
         except NotImplementedError:
             if recursion_safeguard: 
                 raise NotImplementedError("neither proximal nor conj_proximal are implemented")
             else:
                 gram = self.h_domain.gram
-                proximal = xstar - tau * gram(self.proximal(gram.inverse(xstar),1/tau,recursion_safeguard=True))
+                proximal = xstar - tau * gram(self.proximal(gram.inverse(xstar),1/tau,recursion_safeguard=True,**proximal_par))
         assert proximal in self.domain
         return proximal 
 
@@ -299,10 +299,10 @@ class Functional:
     def _conj_hessian(self, xstar):
         raise NotImplementedError
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,**proximal_par):
         raise NotImplementedError
 
-    def _conj_proximal(self, xstar, tau):
+    def _conj_proximal(self, xstar, tau,**proximal_par):
         raise NotImplementedError
 
     def __mul__(self, other):
@@ -397,11 +397,11 @@ class Conj(Functional):
     def _conj_hessian(self, x):
         return self.func.hessian(x)
     
-    def _proximal(self, x,tau):
-        return self.func.conj_proximal(x,tau)
+    def _proximal(self, x,tau,**proximal_par):
+        return self.func.conj_proximal(x,tau,**proximal_par)
     
-    def _conj_proximal(self, x,tau):
-        return self.func.proximal(x,tau)    
+    def _conj_proximal(self, x,tau,**proximal_par):
+        return self.func.proximal(x,tau,**proximal_par)    
 
     @property
     def conj_functional(self):
@@ -461,10 +461,10 @@ class LinearFunctional(Functional):
         else:
             raise NotInEssentialDomainError('LinearFunctional.Conj')
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
 
-    def _conj_proximal(self, xstar, tau):
+    def _conj_proximal(self, xstar, tau,**proximal_par):
         return self._gradient.copy()
 
 
@@ -555,13 +555,13 @@ class LinearCombination(Functional):
             *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
         )
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,**proximal_par):
         if len(self.funcs) == 1:
-            return self.funcs[0].proximal(x,self.coeffs[0]*tau)
+            return self.funcs[0].proximal(x,self.coeffs[0]*tau,**proximal_par)
         elif self.linear_table.count(False)==0:
             return x-tau*self.grad_sum
         elif self.linear_table.count(False)==1:
-            return self.funcs[0].proximal(x-tau*self.grad_sum,self.coeffs[0]*tau)
+            return self.funcs[0].proximal(x-tau*self.grad_sum,self.coeffs[0]*tau,**proximal_par)
         else:
             return NotImplementedError
     
@@ -651,8 +651,8 @@ class VerticalShift(Functional):
     def _hessian(self, x):
         return self.func.hessian(x)
     
-    def _proximal(self, x, tau):
-        return self.func.proximal(x, tau)
+    def _proximal(self, x, tau,**proximal_par):
+        return self.func.proximal(x, tau,**proximal_par)
 
     def _conj(self,x):
         return self.func.Conj(x) - self.offset
@@ -666,8 +666,8 @@ class VerticalShift(Functional):
     def _conj_hessian(self, xstar):
         return self.func.Conj.hessian(xstar)
 
-    def _conj_proximal(self, x, tau):
-        return self.func.Conj.proximal(x, tau)
+    def _conj_proximal(self, x, tau,**proximal_par):
+        return self.func.Conj.proximal(x, tau,**proximal_par)
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional \(F\), i.e. replaces 
@@ -706,11 +706,11 @@ class HorizontalShiftDilation(Functional):
     def _hessian(self, x):
         return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,**proximal_par):
         if self.shift is None:
-            return              (1./self.dilation) * self.F.proximal(self.dilation*x,tau*self.dilation**2)
+            return              (1./self.dilation) * self.F.proximal(self.dilation*x,tau*self.dilation**2,**proximal_par)
         else:
-            return self.shift + (1./self.dilation) * self.F.proximal(self.dilation*(x-self.shift),tau*self.dilation**2)
+            return self.shift + (1./self.dilation) * self.F.proximal(self.dilation*(x-self.shift),tau*self.dilation**2,**proximal_par)
     
     def _conj(self,x_star):
         if self.shift is None:
@@ -739,9 +739,12 @@ class HorizontalShiftDilation(Functional):
     def _conj_hessian(self,x_star):
         return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
 
-    def _conj_proximal(self, xstar, tau):
+    def _conj_proximal(self, xstar, tau,**proximal_par):
         gram = self.h_domain.gram
-        return self.dilation*self.F.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),tau/self.dilation**2)
+        return self.dilation*self.F.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),
+                                                  tau/self.dilation**2,
+                                                  **proximal_par
+                                                  )
 
 class Composed(Functional):
     r"""Composition of an operator with a functional \(F\circ O\). This should not be called
@@ -1860,7 +1863,7 @@ class TVUniformGridFcts(Functional):
         """Computes the divergence of a vector field 'u'. 'u' is assumed to be
         a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
         regular grid"""
-        return 1/self.domain.spacing*np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i) for i in range(self.dim)])
+        return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i)/h for i,h in enumerate(self.domain.spacing)])
 
 def as_functional(func, vecsp):
     r"""Convert `func` to Functional instance on vecsp.
