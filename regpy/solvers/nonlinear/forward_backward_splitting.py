@@ -38,7 +38,7 @@ class ForwardBackwardSplitting(RegSolver):
         else:
             self.tau = tau
             """The step size parameter"""
-        self.proximal_pars = proximal_pars
+        self.proximal_pars = proximal_pars if proximal_pars is not None else {}
 
         
     def _next(self):

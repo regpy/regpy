@@ -83,7 +83,7 @@ class Functional:
         r"""
         Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
         \[
-            F(x+ h) \geq  F(x) + \np.dot(v,h) for all h
+            F(x+ h) \geq  F(x) + \np.vdot(v,h) for all h
         \]
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -113,7 +113,7 @@ class Functional:
         r"""
         Returns a subgradient \(\xi)\ of the functional at `x` characterized by
         \[
-            F(y) \geq  F(x) + np.dot(\xi,y-x) for all y  
+            F(y) \geq  F(x) + np.vdot(\xi,y-x) for all y  
         \]
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -414,7 +414,7 @@ class Conj(Functional):
 class LinearFunctional(Functional):
     r"""Linear functionals
     Linear functional given by
-        F(x) = np.dot(a, x)
+        F(x) = np.vdot(a, x)
     
     Parameters
     ----------
@@ -439,7 +439,7 @@ class LinearFunctional(Functional):
             self._gradient = self.h_domain.gram(gradient)
 
     def _eval(self,x):
-        return np.dot(self._gradient,x)
+        return np.vdot(self._gradient,x).real
 
     @property
     def gradient(self):
@@ -716,7 +716,7 @@ class HorizontalShiftDilation(Functional):
         if self.shift is None:
             return self.F._conj(x_star/self.dilation)             
         else:
-            return self.F._conj(x_star/self.dilation) + np.dot(x_star,self.shift)
+            return self.F._conj(x_star/self.dilation) + np.vdot(x_star,self.shift).real
 
     def _conj_subgradient(self,x_star):
         if self.shift is None:
