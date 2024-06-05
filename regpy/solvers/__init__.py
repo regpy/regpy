@@ -1,5 +1,6 @@
 """Solvers for inverse problems.
 """
+import numpy as np
 from scipy.sparse.linalg import eigsh
 
 from regpy.util import classlogger
