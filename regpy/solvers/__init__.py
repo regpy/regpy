@@ -417,7 +417,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
                                              HorizontalShiftDilation(self.data_fid.Conj, dilation=-1.),
-                                             HorizontalShiftDilation(self.penalty.Conj,dilation=self.regpar),
+                                             HorizontalShiftDilation(self.penalty.Conj,dilation=-self.regpar),
                                              regpar= 1/self.regpar
                                              )
 
@@ -431,19 +431,43 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         pstar: self.op.codomain
         Solution of the dual problem.
         """
-        return self.penalty.Conj.subgradient(-self.op.adjoint(pstar))
+        return self.penalty.Conj.subgradient(self.op.adjoint(pstar))
+    
+    def TstarDualToPrimalSolution(self,Tstarpstar):
+        r"""Yields a solution to the primal problem given the image of a solution to the dual problem undder \(T^*)\.
+        Returns an element of \(\partial \mathcal{R}^*(-Tstarpstar) )\ 
+        (without checks if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
+                
+        Parameters
+        -------
+        Tstarpstar: self.op.codomain
+        Adjoint operator applied to solution of the dual problem.
+        """
+        return self.penalty.Conj.subgradient(Tstarpstar)
 
     def PrimalToDualSolution(self,x):
         r"""Yields a solution to the dual problem given a solution to the primal problem.
-        Returns an element of \(\partial \mathcal{S}^*(Tx) )\ 
-        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}^*\) is not differentiable).
+        Returns an element of \(\partial \mathcal{S}(Tx) )\ 
+        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}\) is not differentiable).
 
         Parameters
         ----------------------------
         x: self.op.domain
         Solution of the primal problem.
         """
-        return (1/self.regpar) * self.data_fid.subgradient(self.op(x))
+        return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
+    
+    def TPrimalToDualSolution(self,y):
+        r"""Yields a solution to the dual problem given a solution to the primal problem.
+        Returns an element of \(\partial \mathcal{S}(Tx) )\ 
+        (without checks if the correct subgradient is picked if \(\mathcal{S}\) is not differentiable).
+
+        Parameters
+        ----------------------------
+        x: self.op.domain
+        Solution of the primal problem.
+        """
+        return (-1./self.regpar) * self.data_fid.subgradient(y)
 
     def isSaddlePoint(self,x,p,tol):
         r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
