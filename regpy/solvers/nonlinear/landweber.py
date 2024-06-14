@@ -33,7 +33,7 @@ class Landweber(RegSolver):
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, data, init, stepsize=None):
+    def __init__(self, setting, data, init, stepsize=None, op_norm_method = "lanczos"):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized with the measured data."""
@@ -41,7 +41,7 @@ class Landweber(RegSolver):
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
-        norm = setting.op_norm(op=self.deriv)
+        norm = setting.op_norm(op=self.deriv, method = op_norm_method)
         #compute norm after linearizing as because needs deriv as argument
 
         self.stepsize = stepsize or 0.9 / norm
