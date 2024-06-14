@@ -14,7 +14,7 @@ class FISTA(RegSolver):
     -----------
     setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
-    init : setting.op.domain
+    init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
@@ -24,12 +24,15 @@ class FISTA(RegSolver):
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     """
-    def __init__(self, setting, init, tau = None, op_lower_bound = 0, proximal_pars=None):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
-        assert init in self.op.domain
         self.regpar = setting.regpar
-        self.x = init
+        if init is None:
+            self.x = self.op.domain.zeros()
+        else:
+            assert init in self.op.domain
+            self.x = init
         self.y, self.deriv = self.op.linearize(self.x)
 
         self.mu_penalty  = self.regpar * self.penalty.convexity_param
