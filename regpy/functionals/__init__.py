@@ -1116,11 +1116,13 @@ class FunctionalProductSpace(Functional):
         splitted = self.domain.split(x)
         return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,proximal_par_list = None):
         splitted = self.domain.split(x)
+        if proximal_par_list is None:
+            proximal_par_list = [{}] *self.length
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].proximal(splitted[i], tau) )
+            proximals.append( self.funcs[i].proximal(splitted[i], tau,proximal_par_list[i]) )
         return np.asarray(proximals).flatten()
 
     def _conj(self, xstar):
@@ -1150,11 +1152,13 @@ class FunctionalProductSpace(Functional):
         splitted = self.domain.split(xstar)
         return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i]) for i in range(self.length)))
 
-    def _conj_proximal(self, xstar, tau):
+    def _conj_proximal(self, xstar, tau,proximal_par_list = None):
         splitted = self.domain.split(xstar)
+        if proximal_par_list is None:
+            proximal_par_list = [{}] *self.length
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau) )
+            proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau,proximal_par_list[i]) )
         return np.asarray(proximals).flatten()
 
 class HilbertNormGeneric(Functional):
