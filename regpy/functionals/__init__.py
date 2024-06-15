@@ -551,9 +551,14 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _hessian(self, x):
-        return operators.LinearCombination(
-            *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
-        )
+        if self.linear_table.count(False)==1: 
+            # separate implementation of this case to be able to use inverse of hessian
+            j = self.linear_table.index(False)
+            return self.coeffs[j] * self.funcs[j].hessian(x)
+        else:
+            return operators.LinearCombination(
+                *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
+            )
 
     def _proximal(self, x, tau,**proximal_par):
         if len(self.funcs) == 1:
@@ -625,7 +630,7 @@ class VerticalShift(Functional):
     def __init__(self, func, offset):
         assert isinstance(func, Functional)
         assert np.isscalar(offset) and util.is_real_dtype(offset)
-        super().__init__(func.domain, linear = func.linear, 
+        super().__init__(func.domain, linear = False, 
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz
                          )
@@ -684,7 +689,7 @@ class HorizontalShiftDilation(Functional):
     """
     def __init__(self, F, dilation =1., shift = None):
         super().__init__(F.domain, h_domain = F.h_domain, 
-                         linear = F.linear,
+                         linear = F.linear and shift is None,
                          Lipschitz = F.Lipschitz * dilation**2,
                          convexity_param= F.convexity_param  * dilation**2
                          )
@@ -1274,7 +1279,7 @@ class IntegralFunctionalBase(Functional):
         return self._f_deriv(v,**self.kwargs)*self.domain.measure
 
     def _hessian(self, v):
-        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs))
+        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs)*self.domain.measure)
 
     def _proximal(self, v, tau):
         return self._f_prox(v,tau,**self.kwargs)
@@ -1719,34 +1724,51 @@ class QuadraticNonneg(IntegralFunctionalBase):
     def _f_is_subgradient(self, ustar, x, eps=1e-10):
         return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
-def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
+class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
     \[
     F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
     F(x) = np.inf else
     \]
-    
-    """
-    assert isinstance(domain,vecsps.MeasureSpaceFcts)
-    if isinstance(lb,float):
-        lb = lb*domain.ones()
-    assert lb in domain
-    if isinstance(ub,float):
-        ub = ub*domain.ones()
-    assert ub in domain
-    assert np.all(lb<ub)
-    assert x0 in domain 
-    assert isinstance(alpha,float)
 
-    F = QuadraticIntv(domain,sigma=2./(ub-lb))
-    center = (ub+lb)/2
-    lin = LinearFunctional(center-x0,
-                           domain=domain,
-                           gradient_in_dual_space=False
-                           )
-    offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
-    return alpha*HorizontalShiftDilation(F,shift=center) \
-        + alpha*lin + alpha*offset
+    Parameters:
+    ------------------------------------------------------
+    domain: regpy.vecsps.MeasureSpaceFcts
+        domain on which functional is defined
+    lb: domain
+        lower bound
+    ub: domain
+        upper bound
+    x0: domain
+        reference value
+    alpha: float [default: 1]
+        regularization parameter
+
+    """
+    def __init__(self,domain, lb, ub, x0,alpha=1.):
+        assert isinstance(domain,vecsps.MeasureSpaceFcts)
+        if isinstance(lb,float):
+            lb = lb*domain.ones()
+        assert lb in domain
+        if isinstance(ub,float):
+            ub = ub*domain.ones()
+        assert ub in domain
+        assert np.all(lb<ub)
+        assert x0 in domain 
+        assert isinstance(alpha,float)
+
+        self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
+        F = QuadraticIntv(domain,sigma=2./(ub-lb))
+        center = (ub+lb)/2
+        lin = LinearFunctional(center-x0,
+                            domain=domain,
+                            gradient_in_dual_space=False
+                            )
+        offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
+        # return  alpha*HorizontalShiftDilation(F,shift=center) + alpha*lin + alpha*offset
+        super().__init__((alpha,HorizontalShiftDilation(F,shift=center)+offset),
+                          (alpha,lin)
+                          )
 
 def QuadraticLowerBound(domain, lb, x0,alpha=1.):
     r""" Returns `Functional` defined by 
