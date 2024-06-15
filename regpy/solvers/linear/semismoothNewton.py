@@ -1,8 +1,10 @@
 from regpy.solvers import RegSolver
 import numpy as np
 from regpy.operators import CoordinateMask 
-from regpy.solvers import RegularizationSetting
+from regpy.hilbert import GramHilbertSpace
+from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
+from regpy.functionals import QuadraticBilateralConstraints, HorizontalShiftDilation
 from regpy.stoprules import CountIterations
 import logging
 
@@ -20,6 +22,7 @@ class SemismoothNewton_bilateral(RegSolver):
     
     Parameters
     ----------
+    Either 3 positional argument: 
     setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data : array-like
@@ -41,10 +44,54 @@ class SemismoothNewton_bilateral(RegSolver):
     cg_logging_level: Loglevel
         default: logging.INFO
 
+        
+    or 1 positional argument:
+    setting : regpy.solver.TikhonovRegularizationSetting
+
+    In this case 
+    - setting.penalty has to be an instance of QuadraticBilateralConstraints, and psi_plus, psi_minus, and xref are extract from setting.
+    - setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
+    - regpar is setting.regpar
+    Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments. 
+
     """
-    def __init__(self,setting, data, regpar, xref = None, x0=None,psi_plus = None, psi_minus = None, cg_pars = None,
-                 logging_level = logging.INFO, cg_logging_level = logging.INFO):
-        assert isinstance(setting,RegularizationSetting)
+    
+    def __init__(self, *args,
+                 cg_pars = None, logging_level = logging.INFO, cg_logging_level = logging.INFO,x0=None,
+                 **kwargs
+                 ):
+        if len(args)==3:
+            setting, data, regpar = args
+            assert isinstance(setting,RegularizationSetting)
+            if 'psi_plus' in kwargs:
+                psi_plus = kwargs['psi_plus']
+            else:
+                psi_plus = None
+            if 'psi_minus' in kwargs:
+                psi_minus = kwargs['psi_minus']
+            else:
+                psi_minus = None
+            if 'xref' in kwargs:
+                xref = kwargs['xref']
+            else:
+                xref = None
+        elif len(args)==1:
+            Tsetting = args[0]
+            assert isinstance(Tsetting,TikhonovRegularizationSetting)
+            assert isinstance(Tsetting.penalty,QuadraticBilateralConstraints)
+            assert isinstance(Tsetting.data_fid,HorizontalShiftDilation)
+            psi_plus = Tsetting.penalty.ub
+            psi_minus = Tsetting.penalty.lb
+            xref = Tsetting.penalty.x0 
+            regpar = Tsetting.regpar
+            data = Tsetting.data_fid.shift
+            setting = RegularizationSetting(Tsetting.op,
+                                            GramHilbertSpace(Tsetting.penalty.hessian(0.5*(psi_plus+psi_minus))),
+                                            GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
+                                            )
+        else:
+            raise TypeError('SemismoothNewton_bilateral takes either 1 or 3 positional arguments ({} given)'.format(len(args)))
+                                
         super().__init__(setting)
         assert self.op.domain.dtype == float
         self.data=data
