@@ -4,7 +4,7 @@ from regpy.operators import CoordinateMask
 from regpy.hilbert import GramHilbertSpace
 from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
-from regpy.functionals import QuadraticBilateralConstraints, HorizontalShiftDilation
+from regpy.functionals import QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber
 from regpy.stoprules import CountIterations
 import logging
 
@@ -49,13 +49,17 @@ class SemismoothNewton_bilateral(RegSolver):
     setting : regpy.solver.TikhonovRegularizationSetting
 
     In this case 
-    - setting.penalty has to be an instance of QuadraticBilateralConstraints, and psi_plus, psi_minus, and xref are extract from setting.
+    - setting.penalty has to be an instance of one of the following classes: 
+        * QuadraticBilateralConstraints, 
+        * Conj of Huber
+        * Conj of HorizontalShiftDilation of Huber
+       Then psi_plus, psi_minus, and xref are extracted from setting.penalty.
     - setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
     - regpar is setting.regpar
     Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments. 
 
     """
-    
+
     def __init__(self, *args,
                  cg_pars = None, logging_level = logging.INFO, cg_logging_level = logging.INFO,x0=None,
                  **kwargs
@@ -78,15 +82,45 @@ class SemismoothNewton_bilateral(RegSolver):
         elif len(args)==1:
             Tsetting = args[0]
             assert isinstance(Tsetting,TikhonovRegularizationSetting)
-            assert isinstance(Tsetting.penalty,QuadraticBilateralConstraints)
             assert isinstance(Tsetting.data_fid,HorizontalShiftDilation)
-            psi_plus = Tsetting.penalty.ub
-            psi_minus = Tsetting.penalty.lb
-            xref = Tsetting.penalty.x0 
+            R = Tsetting.penalty
+            gram = Tsetting.h_domain.gram
+            if isinstance(R,QuadraticBilateralConstraints):
+                psi_plus = R.ub
+                psi_minus = R.lb
+                xref = R.x0
+            elif isinstance(R,Conj):
+                if isinstance(R.func,Huber):
+                    psi_plus = gram(1./R.func.sigma)
+                    psi_minus = gram(-1./R.func.sigma)
+                    xref = Tsetting.op.domain.zeros()
+                elif isinstance(R.func, HorizontalShiftDilation) and isinstance(R.func.F,Huber):
+                    psi_plus = gram(R.func.dilation/R.func.F.sigma)
+                    psi_minus = gram(-R.func.dilation/R.func.F.sigma)
+                    xref = - R.func.dilation * gram(R.func.shift)
+                else:
+                    raise TypeError('Unknown or inappropriate type of functional') 
+            elif isinstance(R,HorizontalShiftDilation) and isinstance(R.F,Conj):
+                assert R.shift is None and R.dilation==-1.
+                if isinstance(R.F.func,Huber):
+                    psi_plus = gram(1./R.F.func.sigma)
+                    psi_minus = gram(-1./R.F.func.sigma)
+                    xref = Tsetting.op.domain.zeros()
+                elif isinstance(R.F.func, HorizontalShiftDilation) and isinstance(R.F.func.F,Huber):
+                    psi_plus = gram(R.F.func.dilation/R.F.func.F.sigma)
+                    psi_minus = gram(-R.F.func.dilation/R.F.func.F.sigma)
+                    xref = R.F.func.dilation * gram(R.F.func.shift)
+                else:
+                    raise TypeError('Unknown or inappropriate type of functional')                 
+            else:
+                raise TypeError('Unknown or inappropriate type of functional') 
             regpar = Tsetting.regpar
-            data = Tsetting.data_fid.shift
+            if Tsetting.data_fid.shift is None:
+                data = Tsetting.op.codomain.zeros()
+            else:
+                data = Tsetting.data_fid.shift
             setting = RegularizationSetting(Tsetting.op,
-                                            GramHilbertSpace(Tsetting.penalty.hessian(0.5*(psi_plus+psi_minus))),
+                                            GramHilbertSpace(R.hessian(0.5*(psi_plus+psi_minus))),
                                             GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
                                             )
         else:
