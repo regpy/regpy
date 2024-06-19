@@ -368,7 +368,7 @@ class Conj(Functional):
     def __init__(self, func):
         self.func = func
         """The underlying functional."""
-        super().__init__(func.domain, h_domain = func.h_domain,
+        super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
                          Lipschitz = 1/func.convexity_param if func.convexity_param>0 else np.inf,
                          convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else np.inf
                          )
@@ -706,7 +706,7 @@ class HorizontalShiftDilation(Functional):
         return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift))
 
     def _is_subgradient(self, vstar, x):
-        return self.dilation * self.F._is_subgradient(vstar,self.dilation * (x if self.shift is None else x-self.shift))
+        return self.F._is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift))
 
     def _hessian(self, x):
         return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
@@ -729,17 +729,11 @@ class HorizontalShiftDilation(Functional):
         else:
             return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
 
-    def _conj_subgradient(self,x_star):
-        if self.shift is None:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation             
-        else:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
-
     def _conj_is_subgradient(self,v,x_star):
         if self.shift is None:
-            return self.F._conj_is_subgradient(v/self.dilation, x_star/self.dilation) 
+            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation) 
         else:
-            return self.F._conj_is_subgradient(v/self.dilation + self.shift, x_star/self.dilation)
+            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation)
 
     def _conj_hessian(self,x_star):
         return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
@@ -1234,39 +1228,37 @@ class IntegralFunctionalBase(Functional):
     F\colon X \to \mathbb{R}
     \]
     \[
-    v\mapsto \Int_\Omega f(v(x),w(x))\mathrm{d}x
+    v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
     \]
-    with \(f\colon \mathbb{R}^2\to \mathbb{R})\ some function and \(w\colon\Omega\to\mathbb{R})\
-    defining some reference function. 
+    with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
 
     Subclasses defining explicit functionals of this type have to implement
         `_f` evaluation the function \(f)\
         `_f_deriv` giving the derivative \(\partial_1 f)\
-        `_f_prox` giving the prox of \(v>->f(v,w))\
+        `_f_prox` giving the prox of \(v>->f(v,x))\
     since 
     \[
-    F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),w(x))
+    F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
     \]
     is a functional of the same type and
     \[
-    \mathrm{prox}_F(v)(x) = \mathrm{prox}_f(v(x),x).
+    \mathrm{prox}_F(v)(x) = \mathrm{prox}_{f(\cdot,x)}(v(x)).
     \]
 
     Parameters
     ----------
     domain : `regpy.vecsps.MeasureSpaceFcts`
         Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
-    h_domain : `regpy.hilbert.HilbertSpace`
-        Hilbert Space defined on `domain`. Proximal operator needs to be computed 
-    wrt to that.
+    h_domain : `regpy.hilbert.HilbertSpace` [default: None]
+        Hilbert space defined on `domain`. Proximal operator is computed  wrt to that. Default: `L2(domain)`
     """
 
-    def __init__(self,domain,h_domain,**kwargs):
+    def __init__(self,domain,h_domain = None,**kwargs):
         assert isinstance(domain,vecsps.MeasureSpaceFcts)
         assert domain == h_domain.vecsp
         self.kwargs = kwargs
         super().__init__(domain,**kwargs)
-        self.h_domain = h_domain
+        self.h_domain = L2(domain) if h_domain is None else h_domain
         """ Hilbert space on `domain` wrt to which is the prox computed."""
 
     def _eval(self, v):
