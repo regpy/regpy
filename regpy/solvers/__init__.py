@@ -407,69 +407,55 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         self.regpar = regpar
         """The regularization parameter"""
     
-    def DualSetting(self):
+    def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
         \[
-           \alpha\mathcal{R}^*(\alpha T^*p) + \mathcal{S}^*(- p) = \min!
+           \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
         \]
-        (To make this a Tikhonov functional again, the objective functional of the Rockafellar-Fenchel dual maximization problem
-        has been multiplied by \(-\alpha\).)
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
-                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-1.),
-                                             HorizontalShiftDilation(self.penalty.Conj,dilation=-self.regpar),
+                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-self.regpar),
+                                             self.penalty.Conj,
                                              regpar= 1/self.regpar
                                              )
 
-    def DualToPrimalSolution(self,pstar):
-        r"""Yields a solution to the primal problem given a solution to the dual problem.
-        Returns an element of \(\partial \mathcal{R}^*(-T^*p) )\ 
-        (without checks if pstar is a dual solution and if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
+    def dualToPrimal(self,pstar,argumentIsOperatorImage = False):
+        r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
+        If \(p\) is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
+        If \(\xi=T^*p\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\xi\) as argument and avoid an operator evaluation.
                 
         Parameters
         -------
-        pstar: self.op.codomain
-        Solution of the dual problem.
+        pstar: self.op.codomain (or self.op.domain if argumentIsOperatorImage=True)
+            argument to be transformed
+        argumentIsOperatorImage: boolean [default: False]
+            See above.
         """
-        return self.penalty.Conj.subgradient(self.op.adjoint(pstar))
+        if argumentIsOperatorImage:
+            return self.penalty.Conj.subgradient(pstar)
+        else:
+            return self.penalty.Conj.subgradient(self.op.adjoint(pstar))
+        
+
+    def primalToDual(self,x,argumentIsOperatorImage = False):
+        r"""
+        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
+        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
+        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
     
-    def TstarDualToPrimalSolution(self,Tstarpstar):
-        r"""Yields a solution to the primal problem given the image of a solution to the dual problem undder \(T^*)\.
-        Returns an element of \(\partial \mathcal{R}^*(-Tstarpstar) )\ 
-        (without checks if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
-                
-        Parameters
-        -------
-        Tstarpstar: self.op.codomain
-        Adjoint operator applied to solution of the dual problem.
-        """
-        return self.penalty.Conj.subgradient(Tstarpstar)
-
-    def PrimalToDualSolution(self,x):
-        r"""Yields a solution to the dual problem given a solution to the primal problem.
-        Returns an element of \(\partial \mathcal{S}(Tx) )\ 
-        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}\) is not differentiable).
-
         Parameters
         ----------------------------
-        x: self.op.domain
-        Solution of the primal problem.
+        x: self.op.domain (or self.op.codomain if argumentIsOperatorImage=True)
+            argument to be transformed
+        argumentIsOperatorImage: boolean [default: False]
+            See above.
         """
-        return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
+        if argumentIsOperatorImage:
+            return (-1./self.regpar) * self.data_fid.subgradient(y)
+        else:
+            return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
     
-    def TPrimalToDualSolution(self,y):
-        r"""Yields a solution to the dual problem given a solution to the primal problem.
-        Returns an element of \(\partial \mathcal{S}(Tx) )\ 
-        (without checks if the correct subgradient is picked if \(\mathcal{S}\) is not differentiable).
-
-        Parameters
-        ----------------------------
-        x: self.op.domain
-        Solution of the primal problem.
-        """
-        return (-1./self.regpar) * self.data_fid.subgradient(y)
-
     def isSaddlePoint(self,x,p,tol):
         r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
         or equivalently (in case of strong duality)
