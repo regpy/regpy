@@ -415,8 +415,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
-                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-self.regpar),
-                                             self.penalty.Conj,
+                                             HorizontalShiftDilation(self.data_fid.conj, dilation=-self.regpar),
+                                             self.penalty.conj,
                                              regpar= 1/self.regpar
                                              )
 
@@ -433,9 +433,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             See above.
         """
         if argumentIsOperatorImage:
-            return self.penalty.Conj.subgradient(pstar)
+            return self.penalty.conj.subgradient(pstar)
         else:
-            return self.penalty.Conj.subgradient(self.op.adjoint(pstar))
+            return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         
 
     def primalToDual(self,x,argumentIsOperatorImage = False):
@@ -474,7 +474,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         tol: float [default: 1e-10]
         Tolerance value
         """
-        return self.data_fid.Conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
+        return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
 

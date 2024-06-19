@@ -59,7 +59,7 @@ class PDHG(RegSolver):
         primal_step = self.x - self.tau * self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.p)))
         self.x = self.penalty.proximal(primal_step, self.regpar * self.tau, self.proximal_pars_penalty)
         dual_step = self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
-        self.pstar = self.data_fid.Conj.proximal(dual_step, self.sigma, self.proximal_pars_data_fidelity_conjugate)
+        self.pstar = self.data_fid.conj.proximal(dual_step, self.sigma, self.proximal_pars_data_fidelity_conjugate)
         self.x_old = self.x
         self.y = self.op(self.x)
 

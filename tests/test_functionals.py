@@ -5,11 +5,10 @@ import regpy.vecsps as vecsps
 from regpy.vecsps import UniformGridFcts
 
 
-
 def check_prox(F,u=None,tau=1):
     if(u is None):
         u=F.domain.rand()
-    Fs = F.Conj
+    Fs = F.conj
     prox = F.proximal(u,tau)
     gram = F.h_domain.gram
     proxstar = Fs.proximal(gram(u/tau),1/tau)
@@ -20,7 +19,7 @@ def check_conj_and_subgradient(F,u=None,w=None):
         u=F.domain.rand()
     if(w is None):
         w=F.domain.rand()
-    Fs = F.Conj
+    Fs = F.conj
     assert not F(w)==np.inf
     grad = F.subgradient(u)
     assert not Fs(grad)==np.inf

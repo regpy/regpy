@@ -4,7 +4,7 @@ from regpy.operators import CoordinateMask
 from regpy.hilbert import GramHilbertSpace
 from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
-from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber, LinearCombination
+from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, conj, Huber, LinearCombination
 from regpy.stoprules import CountIterations
 import logging
 
@@ -51,8 +51,8 @@ class SemismoothNewton_bilateral(RegSolver):
     In this case 
     - setting.penalty has to be an instance of one of the following classes: 
         * QuadraticBilateralConstraints, 
-        * Conj of Huber
-        * Conj of HorizontalShiftDilation of Huber
+        * conj of Huber
+        * conj of HorizontalShiftDilation of Huber
        Then psi_plus, psi_minus, xref and regpar are extracted from setting.penalty.
     - setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
     - regpar is setting.regpar
@@ -86,37 +86,6 @@ class SemismoothNewton_bilateral(RegSolver):
             R = Tsetting.penalty
             gram = Tsetting.h_domain.gram
             psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
-            """
-            if isinstance(R,QuadraticBilateralConstraints):
-                psi_plus = R.ub
-                psi_minus = R.lb
-                xref = R.x0
-            elif isinstance(R,Conj):
-                if isinstance(R.func,Huber):
-                    psi_plus = gram(1./R.func.sigma)
-                    psi_minus = gram(-1./R.func.sigma)
-                    xref = Tsetting.op.domain.zeros()
-                elif isinstance(R.func, HorizontalShiftDilation) and isinstance(R.func.F,Huber):
-                    psi_plus = gram(R.func.dilation/R.func.F.sigma)
-                    psi_minus = gram(-R.func.dilation/R.func.F.sigma)
-                    xref = - R.func.dilation * gram(R.func.shift)
-                else:
-                    raise TypeError('Unknown or inappropriate type of functional') 
-            elif isinstance(R,HorizontalShiftDilation) and isinstance(R.F,Conj):
-                assert R.shift is None and R.dilation==-1.
-                if isinstance(R.F.func,Huber):
-                    psi_plus = gram(1./R.F.func.sigma)
-                    psi_minus = gram(-1./R.F.func.sigma)
-                    xref = Tsetting.op.domain.zeros()
-                elif isinstance(R.F.func, HorizontalShiftDilation) and isinstance(R.F.func.F,Huber):
-                    psi_plus = gram(R.F.func.dilation/R.F.func.F.sigma)
-                    psi_minus = gram(-R.F.func.dilation/R.F.func.F.sigma)
-                    xref = R.F.func.dilation * gram(R.F.func.shift)
-                else:
-                    raise TypeError('Unknown or inappropriate type of functional')                 
-            else:
-                raise TypeError('Unknown or inappropriate type of functional') 
-            """
             regpar= Tsetting.regpar
             gramY = Tsetting.h_codomain.gram
             data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.domain.zeros()))
