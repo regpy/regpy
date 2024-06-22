@@ -511,7 +511,7 @@ class LinearCombination(Functional):
 
         super().__init__(domain, linear = all(self.linear_table),
                          convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
-                         Lipschitz = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs))
+                         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs))
                          )
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
