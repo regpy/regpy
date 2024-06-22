@@ -4,7 +4,7 @@ from regpy.operators import CoordinateMask
 from regpy.hilbert import GramHilbertSpace
 from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
-from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, conj, Huber, LinearCombination
+from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber, LinearCombination
 from regpy.stoprules import CountIterations
 import logging
 
