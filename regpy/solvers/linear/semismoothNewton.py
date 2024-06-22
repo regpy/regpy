@@ -88,7 +88,7 @@ class SemismoothNewton_bilateral(RegSolver):
             psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
             regpar= Tsetting.regpar
             gramY = Tsetting.h_codomain.gram
-            data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.domain.zeros()))
+            data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.codomain.zeros()))
             setting = RegularizationSetting(Tsetting.op,
                                             GramHilbertSpace(R.hessian(0.5*(psi_plus+psi_minus))),
                                             GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
