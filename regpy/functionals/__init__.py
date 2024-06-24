@@ -1201,7 +1201,7 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return np.real(np.vdot(xstar, self.h_space.gram(xstar))) / 2
+        return np.real(np.vdot(xstar, self.h_space.gram_inv(xstar))) / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
