@@ -3,6 +3,12 @@ import numpy as np
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 from regpy import util
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
@@ -45,13 +51,14 @@ class PDHG(RegSolver):
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True
+                 compute_y = True, logging_level = logging.INFO
                  ):
         assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)
         assert self.op.linear
         assert init_domain is None or init_domain in self.op.domain
         assert init_codomain_star is None or init_codomain_star in self.op.codomain
+        self.log.logging_level = logging_level
 
         if init_domain is None:
             if init_codomain_star is None:
@@ -72,32 +79,53 @@ class PDHG(RegSolver):
         self.y = self.op(self.x) if self.compute_y else None
 
         assert tau>=0 and sigma>=0
-        L = setting.op_norm()
+        L = np.sqrt(setting.op_norm())   
+        self.regpar = setting.regpar
         if tau==0 and sigma==0:
-            self.tau = 1/np.sqrt(L)
-            self.sigma = 1/np.sqrt(L)
+            self.tau = 1/L
+            self.sigma = 1/L
         elif tau==0 and sigma>0:
-            self.tau = 1./(L*self.sigma)
+            self.tau = 1./(L**2*self.sigma)
             self.sigma = sigma
         elif sigma==0 and tau>0:
-            self.sigma = 1./(L*self.tau)
+            self.sigma = 1./(L**2*self.tau)
             self.tau = tau
         else:
             self.sigma = sigma
             self.tau = tau
-    
-        self.regpar = setting.regpar
-        self.theta = theta
+
+        self.muR = setting.penalty.convexity_param
+        self.muSstar = self.regpar/setting.data_fid.Lipschitz
+        if self.muR>0:
+            if self.muSstar>0:
+                self.mu = 2*np.sqrt(self.muR * self.muSstar)/L
+                self.tau = self.mu/(2.*self.muR)
+                self.sigma = self.mu/(2.*self.muSstar)
+                self.theta = 1.
+                self.log.info('Using accelerated version 2 (geometric convergence)')
+            else:
+                self.theta = 0
+                self.log.info('Using accelerated version 1 (quadratic convergence)')                
+        else:
+            self.theta = theta
+            self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
-
+ 
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.op.adjoint(self.pstar))
         self.x = self.penalty.proximal(primal_step, self.tau, self.proximal_pars_penalty)
+        self.y = self.op(self.x) if self.compute_y else None
+
         dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
         self.pstar = (-1./self.regpar)*self.data_fid.conj.proximal(self.regpar*dual_step, self.regpar*self.sigma, self.proximal_pars_data_fidelity_conjugate)
-        self.x_old = self.x
-        self.y = self.op(self.x) if self.compute_y else None
+        self.x_old = self.x        
+        if self.muR>0 and self.muSstar==0:
+            self.theta = 1./np.sqrt(1+self.muR*self.tau)
+            self.tau *= self.theta
+            self.sigma /= self.theta
+ 
+
 
 
 class DouglasRachford(RegSolver):
