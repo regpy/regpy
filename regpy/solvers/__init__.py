@@ -434,7 +434,30 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             return self.penalty.conj.subgradient(pstar)
         else:
             return self.penalty.conj.subgradient(self.op.adjoint(pstar))
-        
+
+    def dualityGap(self, primal=None, dual=None):
+        r"""Computes the value of the duality gap 
+            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^*(-\alpha p) - \mathcal{R}^*(T^*p)
+
+        Parameters:
+        primal: setting.op.domain [default: None]
+            primal variable f
+        dual: setting.op.codomain [default: None]
+            dual variable p        
+        """        
+
+        assert not (primal is None and dual is None)
+        if primal is None:
+            f = self.dualToPrimal(dual)
+        else:
+            f = primal
+        if dual is None:
+            p = self.primalToDual(primal)
+        else:
+            p = dual
+        alpha = self.regpar
+
+        return 1./alpha * self.data_fid(self.op(f)) + self.penalty(f) + 1./alpha * self.data_fid.conj(-alpha*p) + self.penalty.conj(self.op.adjoint(p))
 
     def primalToDual(self,x,argumentIsOperatorImage = False):
         r"""
