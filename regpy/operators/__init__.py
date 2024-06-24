@@ -596,7 +596,15 @@ class SciPyLinearOperator(sla.LinearOperator):
     def __init__(self, op2):
         self.op2 = op2
         r"""the wrapped operator"""
-        super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+        # super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+        domain_shape=np.prod(op2.domain.shape)
+        codomain_shape=np.prod(op2.codomain.shape)
+        if(op2.domain.is_complex):
+            domain_shape*=2
+        if(op2.codomain.is_complex):
+            codomain_shape*=2
+        super().__init__(np.float64, (codomain_shape,domain_shape))
+
     
     def _matvec(self, x):
         r"""Applies the operator.
