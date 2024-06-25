@@ -610,10 +610,20 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0])
         elif self.linear_table.count(False)==0:
-            raise NotTwiceDifferentiableError('Conjugate of Linear combination of linear functionals')
+            raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return (1./self.coeffs[0])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j])
+        else:
+            return NotImplementedError
+
+    def _conj_proximal(self, xstar,tau):
+        if len(self.funcs) == 1:
+            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0])
+        elif self.linear_table.count(False)==0:
+            return self.grad_sum
+        elif self.linear_table.count(False)==1:
+            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*(xstar-self.grad_sum),tau/self.coeffs[0]) + self.grad_sum
         else:
             return NotImplementedError
 
@@ -1543,19 +1553,28 @@ class Huber(IntegralFunctionalBase):
     F(x) = 1/2 |x|^2                if  |x|\leq \sigma
     F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
     \]
-    ------
 
     Paramter: 
+    ------
+
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
         parameter in the Huber functional. 
+    as_primal: boolean [default:True]
+        If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
+        and precautions against an infinite recursion of conjugations are taken.
+    eps: float [default: 0.]
+        Only used for conjugate functional. See description of `QuadraticIntv`
     """
 
-    def  __init__(self, domain,as_primal=True,sigma = 1.):
-        super().__init__(domain,hilbert.L2(domain),Lipschitz=1)
+    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=0.):
         if as_primal:
-            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
+            super().__init__(domain,hilbert.L2(domain),Lipschitz=1)
+            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
+        else:
+            super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), Lipschitz=1)        
+            
         assert isinstance(sigma, float) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, float) :
@@ -1594,8 +1613,8 @@ class Huber(IntegralFunctionalBase):
 class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
     \[
-    F(x) = 1/2 |x|^2    if |x|\leq 1/\sigma(x)
-    F(x) = \infty    if |x|>1/\sigma(x)
+    F(x) = 1/2 |x|^2    if |x|\leq \sigma(x)
+    F(x) = \infty    if |x|>\sigma(x)
     \]
 
     Parameter
@@ -1605,35 +1624,44 @@ class QuadraticIntv(IntegralFunctionalBase):
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
         reciprocal of interval width. 
+    as_primal: boolean [default:True]
+        If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
+        and precautions against an infinite recursion are taken.
+    eps: float [default: 0.]
+        sigma is replace by sigma*(1+eps) on all operations except the proximal mapping to avoid np.inf return values 
+        or NotInEssentialDomain exceptions in the presence of rounding errors
     """
 
-    def  __init__(self, domain,as_primal=True,sigma=1.):
-        super().__init__(domain,hilbert.L2(domain),convexity_param=1)
-        if as_primal:        
+    def  __init__(self, domain,as_primal=True,sigma=1.,eps=0.):
+        if as_primal:
+            super().__init__(domain,hilbert.L2(domain),convexity_param=1)
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
+        else:
+            super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), convexity_param=1)
         assert isinstance(sigma, float) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, float):
             self.sigma = sigma * domain.ones()
         else:
             self.sigma = sigma 
+        self.sigmaeps = self.sigma*(1+1e-10) if eps>0 else self.sigma
 
     def _f(self, u,**kwargs):
         res =  u*u/2
-        res[self.sigma*np.abs(u)>1] = np.inf
+        res[np.abs(u)>self.sigmaeps] = np.inf
         return res    
    
     def _f_deriv(self, u,**kwargs):
-        if np.max(self.sigma*np.abs(u))>1:
+        if np.max(np.abs(u)/self.sigmaeps)>1.:
             raise NotInEssentialDomainError('QuadraticIntv')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
         res = u/(1+tau)
-        return res/np.maximum(self.sigma*np.abs(res),1)
+        return res/np.maximum(np.abs(res)/self.sigma,1)
 
     def _f_second_deriv(self, u,**kwargs):
-        if np.max(self.sigma*np.abs(u))>=1:
+        if np.max(np.abs(u)/self.sigmaeps)>=1.:
             raise NotTwiceDifferentiableError('QuadraticIntv')
         else:
             return np.ones_like(u)
@@ -1750,7 +1778,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         assert isinstance(alpha,float)
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        F = QuadraticIntv(domain,sigma=2./(ub-lb))
+        F = QuadraticIntv(domain,sigma=(ub-lb)/2.)
         center = (ub+lb)/2
         lin = LinearFunctional(center-x0,
                             domain=domain,
