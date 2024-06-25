@@ -204,7 +204,7 @@ class SemismoothNewton_bilateral(RegSolver):
                   + np.sum(np.logical_and(self.active_minus, np.logical_not(self.active_minus_old))) 
         removed_ind = np.sum(np.logical_and(self.active_plus_old, np.logical_not(self.active_plus))) \
                 + np.sum(np.logical_and(self.active_minus_old, np.logical_not(self.active_minus)))
-        self.log.debug('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
+        self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind
                                                                             )

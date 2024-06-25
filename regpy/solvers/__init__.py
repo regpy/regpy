@@ -473,7 +473,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             See above.
         """
         if argumentIsOperatorImage:
-            return (-1./self.regpar) * self.data_fid.subgradient(y)
+            return (-1./self.regpar) * self.data_fid.subgradient(x)
         else:
             return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
     

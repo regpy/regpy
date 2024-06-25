@@ -58,7 +58,8 @@ class PDHG(RegSolver):
         assert self.op.linear
         assert init_domain is None or init_domain in self.op.domain
         assert init_codomain_star is None or init_codomain_star in self.op.codomain
-        self.log.logging_level = logging_level
+        self.log.setLevel(logging_level)
+        self.setting = setting
 
         if init_domain is None:
             if init_codomain_star is None:
@@ -101,11 +102,11 @@ class PDHG(RegSolver):
                 self.mu = 2*np.sqrt(self.muR * self.muSstar)/L
                 self.tau = self.mu/(2.*self.muR)
                 self.sigma = self.mu/(2.*self.muSstar)
-                self.theta = 1.
-                self.log.info('Using accelerated version 2 (geometric convergence)')
+                self.theta = 1./(1.+self.mu)
+                self.log.info('Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(self.muR,self.muSstar,L,(1.+self.theta)/(2.+self.mu)))
             else:
                 self.theta = 0
-                self.log.info('Using accelerated version 1 (quadratic convergence)')                
+                self.log.info('Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(self.muR,L))                
         else:
             self.theta = theta
             self.log.info('Using unaccelerated version')            
@@ -124,6 +125,7 @@ class PDHG(RegSolver):
             self.theta = 1./np.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
+        self.log.debug('it. {}: duality gap={:.3e}'.format(self.iteration_step_nr,self.setting.dualityGap(primal=self.x)))
  
 
 
