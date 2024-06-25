@@ -37,7 +37,7 @@ class ForwardBackwardSplitting(RegSolver):
 
         assert tau is None or tau>0
         if tau is None:
-            self.tau = setting.op_norm(op=self.deriv)
+            self.tau = 1/setting.op_norm(op=self.deriv)
         else:
             self.tau = tau
             """The step size parameter"""
