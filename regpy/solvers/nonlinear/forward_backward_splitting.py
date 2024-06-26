@@ -3,6 +3,10 @@ import numpy as np
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class ForwardBackwardSplitting(RegSolver):
     r"""
@@ -21,8 +25,10 @@ class ForwardBackwardSplitting(RegSolver):
         The regularization parameter \(\alpha\). Must be positive.
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
+    logging_level: int [default: logging.INFO]
+        logging level
     """
-    def __init__(self, setting, init=None, tau = None, proximal_pars = None):
+    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
         self.regpar = setting.regpar
@@ -41,8 +47,15 @@ class ForwardBackwardSplitting(RegSolver):
         else:
             self.tau = tau
             """The step size parameter"""
-        self.proximal_pars = proximal_pars if proximal_pars is not None else {}
+        self.proximal_pars = proximal_pars
+        self.log.setlevel(logging_level)
 
+        try:
+            gap=self.setting.dualityGap(primal = self.x)
+            self.dualityGapWorks =True
+            self.log.info('initial duality gap: {}'.format(gap))
+        except NotImplementedError:
+            self.dualityGapWorks = False
         
     def _next(self):
         self.x-=self.tau*self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y)))
@@ -50,3 +63,7 @@ class ForwardBackwardSplitting(RegSolver):
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y,self.deriv = self.op.linearize(self.x)
  
+        if self.dualityGapWorks:
+            gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
+            self.log.debug('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,gap))
+            

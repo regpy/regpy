@@ -1,5 +1,10 @@
+import logging
 from regpy.util import classlogger
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class MissingValueError(Exception):
     pass
@@ -147,11 +152,12 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations, while_type = True):
+    def __init__(self, max_iterations, while_type = True,logging_level= logging.INFO):
         super().__init__()
         self.max_iterations = max_iterations
         self.iteration = 0
         self.while_type = while_type
+        self.log.setLevel(logging_level)
 
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)

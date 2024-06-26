@@ -28,6 +28,8 @@ class FISTA(RegSolver):
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
+    logging_level: [default: logging.INFO]
+        logging level
     """
     def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting)
