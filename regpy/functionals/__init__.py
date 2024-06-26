@@ -1811,6 +1811,100 @@ def QuadraticLowerBound(domain, lb, x0,alpha=1.):
     offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
     return alpha*HorizontalShiftDilation(F,shift=lb)+ alpha*lin + alpha*offset
 
+from scipy.linalg import ishermitian
+from numpy.linalg import eigvalsh,eigh
+
+class QuadraticPositiveSemidef(Functional):
+
+    r"""Functional 
+    \[
+    F(x) = 1/2 ||x||_{HS}^2    if x\geq 0
+
+    F(x) = \infty       else
+    \]
+    Parameters
+
+    ---------
+    regpy.vecsps.MeasureSpaceFcts
+
+        domain on which functional is defined 
+
+    """
+
+
+    def  __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    @staticmethod
+    def is_positive(rho,tol=1e-18):
+        if(not ishermitian(rho)):
+            return False
+        evs=eigvalsh(rho)
+        return evs[0]>-tol
+        
+    def _eval(self, x):
+        if(QuadraticPositiveSemidef.is_positive(x)):
+            return np.sum(np.abs(x)**2)/2
+        else:
+            return np.inf
+
+    def _proximal(self, x, tau):
+        evs,U=eigh(x)
+        evs=np.maximum(0,evs)/(1+tau)
+        return U@np.diag(evs)@np.conj(U).T
+    
+class QuadraticPositiveSemidefTr1(Functional):
+
+    r"""Functional 
+    \[
+    F(x) = 1/2 ||x||_{HS}^2    if x\geq 0 and tr(x)=1
+
+    F(x) = \infty       else
+    \]
+    Parameters
+
+    ---------
+    regpy.vecsps.MeasureSpaceFcts
+
+        domain on which functional is defined 
+
+    """
+
+
+    def  __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    @staticmethod
+    def is_positive(rho,tol=1e-15):
+        if(not ishermitian(rho)):
+            return False
+        evs=eigvalsh(rho)
+        return evs[0]>-tol
+    
+    
+    @staticmethod
+    def closest_point_simplex(p):
+        '''
+        Algorithm from Held, Wolfe and Crowder (1974), uses that p is already sorted in increasing order
+        '''
+        k=1
+        while((np.sum(p[-k:])-1)/k<p[-k] and k<p.shape[0]):
+            k+=1
+        t=(np.sum(p[-(k-1):])-1)/(k-1)
+        return np.maximum(p-t,0)
+        
+    def _eval(self, x):
+        if(QuadraticPositiveSemidefTr1.is_positive(x) and np.abs(np.trace(x)-1)<1e-15):
+            return np.sum(np.abs(x)**2)/2
+        else:
+            return np.inf
+
+    def _proximal(self, x, tau):
+        evs,U=eigh(x)
+        evs*=(1+tau)
+        cps=QuadraticPositiveSemidefTr1.closest_point_simplex(evs)
+        return U@np.diag(cps)@np.conj(U).T
+
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
 
