@@ -26,10 +26,10 @@ class Functional:
     and 
         `_subgradient` or `_linearize` : returning a subgradient at `x`.
     
-    The evalution of a specific functional on some element of the `domain` can be done by
-    simply caling the functional on that element. 
+    The evaluation of a specific functional on some element of the `domain` can be done by
+    simply calling the functional on that element. 
         
-    Funcationals can be added by taking `LinearCombination` of them. The `domain` has to be the
+    Functionals can be added by taking `LinearCombination` of them. The `domain` has to be the
     same for each functional. 
 
     They can also be multiplied by scalars or `np.ndarrays`of `domain.shape`or multiplied by 
@@ -148,7 +148,7 @@ class Functional:
         return np.linalg.norm(vstar-xi)<=eps*(np.linalg.norm(xi)+eps)
 
     def hessian(self, x,recursion_safeguard=False):
-        r"""The hessian of the functional at `x` as an `regpy.operators.Operator` maping form the 
+        r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
         functionals `domain` to it self. 
         It is defined by 
         \[
