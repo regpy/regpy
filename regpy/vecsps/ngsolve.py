@@ -49,7 +49,7 @@ class NgsSpace(VectorSpace):
 
     def ones(self):
         self._gfu_fes.Set(1)
-        return self._gfu_fes.FV().NumPy().copy()
+        return self._gfu_fes.vec.FV().NumPy().copy()
 
     def rand(self, rand=np.random.random_sample):
         r = rand(self._fes_util.ndof)
@@ -71,9 +71,12 @@ class NgsSpace(VectorSpace):
         gf.vec.FV().NumPy()[:] = array
         return gf
 
-    def from_ngs(self, coeff):
-        self._gfu_fes.Set(coeff)
-        return self._gfu_fes.vec.FV().NumPy().copy()
+    def from_ngs(self, ngs_elem):
+        if isinstance(ngs_elem,ngs.comp.GridFunction):
+            return ngs_elem.vec.FV().NumPy().copy()
+        else:
+            self._gfu_fes.Set(ngs_elem)
+            return self._gfu_fes.vec.FV().NumPy().copy()
     
     def draw(self, coefficient_array, name):
         assert isinstance(name, str)
@@ -81,6 +84,13 @@ class NgsSpace(VectorSpace):
         gfu_fes.vec.FV().NumPy()[:] = coefficient_array
         coefficientfunction = ngs.CoefficientFunction( gfu_fes )
         ngs.Draw(coefficientfunction, self.fes.mesh, name)
+
+    def is_on_boundary(self,array):
+        if self.bdr is None:
+            return False
+        gf = self.to_ngs(array)
+        ngs.Projector(self.fes.FreeDofs(), range=True).Project(gf.vec)
+        return np.all(gf.vec.FV().NumPy() == 0)
 
     def __add__(self, other):
         if isinstance(other, VectorSpace):
