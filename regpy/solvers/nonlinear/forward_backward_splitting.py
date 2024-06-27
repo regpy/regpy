@@ -12,29 +12,32 @@ class ForwardBackwardSplitting(RegSolver):
     ----------
     setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes both penalty \(\mathcal{R}\) and data fidelity \(\mathcal{S}\) functional. 
-    init : setting.domain
+    init : setting.domain [default: domain.zeros()]
         The initial guess. 
     tau : float , optional
         The step size parameter. Must be positive. 
-        Default is the operator norm of \(T^*T\) 
+        Default is the reciprocal of the operator norm of \(T^*T\) 
     regpar : float, optional
         The regularization parameter \(\alpha\). Must be positive.
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
     """
-    def __init__(self, setting, init, tau = None, proximal_pars = None):
+    def __init__(self, setting, init=None, tau = None, proximal_pars = None):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
-        assert init in self.op.domain
         self.regpar = setting.regpar
         """The regularization parameter."""
 
-        self.x = init
+        if init is None:
+            self.x = self.op.domain.zeros()
+        else:
+            assert init in self.op.domain
+            self.x = init
         self.y, self.deriv = self.op.linearize(self.x)
 
         assert tau is None or tau>0
         if tau is None:
-            self.tau = setting.op_norm(op=self.deriv)
+            self.tau = 1/setting.op_norm(op=self.deriv)
         else:
             self.tau = tau
             """The step size parameter"""

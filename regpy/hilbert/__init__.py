@@ -90,6 +90,16 @@ class HilbertSpace:
         """
         return functionals.HilbertNorm(self)
 
+    def dual_space(self):
+        """The dual space for the dual pairing given by np.vdot. 
+        The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpace`, but gram is replaced by gram_inv.
+
+        Returns
+        ---------
+        HilbertSpace
+        """
+        return GramHilbertSpace(gram = self.gram_inv,gram_inv = self.gram)
+
     def __eq__(self, other):
         if isinstance(other, type(self)):
             return self.vecsp == other.vecsp

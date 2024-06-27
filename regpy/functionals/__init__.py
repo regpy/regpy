@@ -180,7 +180,7 @@ class Functional:
         return h
 
     def conj_subgradient(self, xstar):
-        r"""Gradient of the conjugate functional. Should not be called directly, but via self.Conj.subgradient.  
+        r"""Gradient of the conjugate functional. Should not be called directly, but via self.conj.subgradient.  
         Requires the implementation of `_conj_subgradient`.       
         """
         assert xstar in self.domain
@@ -192,13 +192,13 @@ class Functional:
         return grad
 
     def conj_is_subgradient(self,v,xstar,eps = 1e-10):
-        r"""Returns `True` if \(v)\ is a subgradient of \(F.Conj)\ at \(x)\, otherwise `False`.
+        r"""Returns `True` if \(v)\ is a subgradient of \(F.conj)\ at \(x)\, otherwise `False`.
         """
         xi = self.conj_subgradient(xstar)
         return np.linalg.norm(v-xi)<=eps*(np.linalg.norm(xi)+eps)
 
     def conj_hessian(self,xstar, recursion_safeguard=False):
-        r"""The hessian of the functional. Should not be called directly, but via self.Conj.hessian.
+        r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
         """
         assert xstar in self.domain
         try:
@@ -215,7 +215,7 @@ class Functional:
 
     def conj_linearize(self, xstar):
         r"""
-        Linearizes the conjugate functional \(F^*\). Should not be called directly, but via self.Conj.linearize
+        Linearizes the conjugate functional \(F^*\). Should not be called directly, but via self.conj.linearize
         """
         assert xstar in self.domain
         try:
@@ -260,7 +260,7 @@ class Functional:
         return proximal
 
     def conj_proximal(self, xstar, tau, recursion_safeguard = False,**proximal_par):
-        r"""Proximal operator of conjugate functional. Should not be called directly, but via self.Conj.proximal
+        r"""Proximal operator of conjugate functional. Should not be called directly, but via self.conj.proximal
         """
         assert xstar in self.domain
         try:
@@ -348,7 +348,7 @@ class Functional:
         return self
 
     @util.memoized_property
-    def Conj(self):
+    def conj(self):
         """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
@@ -362,13 +362,13 @@ class Functional:
 class Conj(Functional):
     """An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
-    `Functional.Conj` property of a functional.
+    `Functional.conj` property of a functional.
     """
 
     def __init__(self, func):
         self.func = func
         """The underlying functional."""
-        super().__init__(func.domain, h_domain = func.h_domain,
+        super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
                          Lipschitz = 1/func.convexity_param if func.convexity_param>0 else np.inf,
                          convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else np.inf
                          )
@@ -459,7 +459,7 @@ class LinearFunctional(Functional):
         if xstar == self._gradient:
             return self.domain.zeros()
         else:
-            raise NotInEssentialDomainError('LinearFunctional.Conj')
+            raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -511,7 +511,7 @@ class LinearCombination(Functional):
 
         super().__init__(domain, linear = all(self.linear_table),
                          convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
-                         Lipschitz = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs))
+                         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs))
                          )
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
@@ -551,9 +551,14 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _hessian(self, x):
-        return operators.LinearCombination(
-            *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
-        )
+        if self.linear_table.count(False)==1: 
+            # separate implementation of this case to be able to use inverse of hessian
+            j = self.linear_table.index(False)
+            return self.coeffs[j] * self.funcs[j].hessian(x)
+        else:
+            return operators.LinearCombination(
+                *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
+            )
 
     def _proximal(self, x, tau,**proximal_par):
         if len(self.funcs) == 1:
@@ -605,10 +610,20 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0])
         elif self.linear_table.count(False)==0:
-            raise NotTwiceDifferentiableError('Conjugate of Linear combination of linear functionals')
+            raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return (1./self.coeffs[0])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j])
+        else:
+            return NotImplementedError
+
+    def _conj_proximal(self, xstar,tau):
+        if len(self.funcs) == 1:
+            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0])
+        elif self.linear_table.count(False)==0:
+            return self.grad_sum
+        elif self.linear_table.count(False)==1:
+            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*(xstar-self.grad_sum),tau/self.coeffs[0]) + self.grad_sum
         else:
             return NotImplementedError
 
@@ -625,7 +640,7 @@ class VerticalShift(Functional):
     def __init__(self, func, offset):
         assert isinstance(func, Functional)
         assert np.isscalar(offset) and util.is_real_dtype(offset)
-        super().__init__(func.domain, linear = func.linear, 
+        super().__init__(func.domain, linear = False, 
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz
                          )
@@ -655,19 +670,19 @@ class VerticalShift(Functional):
         return self.func.proximal(x, tau,**proximal_par)
 
     def _conj(self,x):
-        return self.func.Conj(x) - self.offset
+        return self.func.conj(x) - self.offset
     
     def _conj_subgradient(self, xstar):
-        return self.func.Conj.subgradient(xstar)
+        return self.func.conj.subgradient(xstar)
 
     def _conj_is_subgradient(self, v,xstar):
-        return self.func.Conj.is_subgradient(v,xstar)
+        return self.func.conj.is_subgradient(v,xstar)
 
     def _conj_hessian(self, xstar):
-        return self.func.Conj.hessian(xstar)
+        return self.func.conj.hessian(xstar)
 
     def _conj_proximal(self, x, tau,**proximal_par):
-        return self.func.Conj.proximal(x, tau,**proximal_par)
+        return self.func.conj.proximal(x, tau,**proximal_par)
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional \(F\), i.e. replaces 
@@ -684,7 +699,7 @@ class HorizontalShiftDilation(Functional):
     """
     def __init__(self, F, dilation =1., shift = None):
         super().__init__(F.domain, h_domain = F.h_domain, 
-                         linear = F.linear,
+                         linear = F.linear and shift is None,
                          Lipschitz = F.Lipschitz * dilation**2,
                          convexity_param= F.convexity_param  * dilation**2
                          )
@@ -701,7 +716,7 @@ class HorizontalShiftDilation(Functional):
         return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift))
 
     def _is_subgradient(self, vstar, x):
-        return self.dilation * self.F._is_subgradient(vstar,self.dilation * (x if self.shift is None else x-self.shift))
+        return self.F._is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift))
 
     def _hessian(self, x):
         return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
@@ -724,17 +739,11 @@ class HorizontalShiftDilation(Functional):
         else:
             return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
 
-    def _conj_subgradient(self,x_star):
-        if self.shift is None:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation             
-        else:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
-
     def _conj_is_subgradient(self,v,x_star):
         if self.shift is None:
-            return self.F._conj_is_subgradient(v/self.dilation, x_star/self.dilation) 
+            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation) 
         else:
-            return self.F._conj_is_subgradient(v/self.dilation + self.shift, x_star/self.dilation)
+            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation)
 
     def _conj_hessian(self,x_star):
         return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
@@ -1116,25 +1125,27 @@ class FunctionalProductSpace(Functional):
         splitted = self.domain.split(x)
         return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau,proximal_par_list = None):
         splitted = self.domain.split(x)
+        if proximal_par_list is None:
+            proximal_par_list = [{}] *self.length
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].proximal(splitted[i], tau) )
+            proximals.append( self.funcs[i].proximal(splitted[i], tau,proximal_par_list[i]) )
         return np.asarray(proximals).flatten()
 
     def _conj(self, xstar):
         splitted = self.domain.split(xstar)
         toret = 0 
         for i in range(self.length):
-            toret += self.funcs[i].Conj(splitted[i])
+            toret += self.funcs[i].conj(splitted[i])
         return toret
 
     def _conj_subgradient(self, xstar):
         splitted = self.domain.split(xstar)
         subgradients = []
         for i in range(self.length):
-            subgradients.append( self.funcs[i].Conj.subgradient(splitted[i]) )
+            subgradients.append( self.funcs[i].conj.subgradient(splitted[i]) )
         return np.asarray(subgradients).flatten()
 
     def _is_conj_subgradient(self,v, xstar):
@@ -1142,19 +1153,21 @@ class FunctionalProductSpace(Functional):
         v_splitted = self.domain.split(v)
         res = True
         for i in range(self.length):
-            if not self.funcs[i].Conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
+            if not self.funcs[i].conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
                 res = False
         return res
 
     def _hessian(self, xstar):
         splitted = self.domain.split(xstar)
-        return operators.DirectSum(tuple(self.funcs[i].Conj.hessian(splitted[i]) for i in range(self.length)))
+        return operators.DirectSum(tuple(self.funcs[i].conj.hessian(splitted[i]) for i in range(self.length)))
 
-    def _conj_proximal(self, xstar, tau):
+    def _conj_proximal(self, xstar, tau,proximal_par_list = None):
         splitted = self.domain.split(xstar)
+        if proximal_par_list is None:
+            proximal_par_list = [{}] *self.length
         proximals = []
         for i in range(self.length):
-            proximals.append( self.funcs[i].Conj.proximal(splitted[i], tau) )
+            proximals.append( self.funcs[i].conj.proximal(splitted[i], tau,proximal_par_list[i]) )
         return np.asarray(proximals).flatten()
 
 class HilbertNormGeneric(Functional):
@@ -1198,7 +1211,7 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return np.real(np.vdot(xstar, self.h_space.gram(xstar))) / 2
+        return np.real(np.vdot(xstar, self.h_space.gram_inv(xstar))) / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
@@ -1225,39 +1238,37 @@ class IntegralFunctionalBase(Functional):
     F\colon X \to \mathbb{R}
     \]
     \[
-    v\mapsto \Int_\Omega f(v(x),w(x))\mathrm{d}x
+    v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
     \]
-    with \(f\colon \mathbb{R}^2\to \mathbb{R})\ some function and \(w\colon\Omega\to\mathbb{R})\
-    defining some reference function. 
+    with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
 
     Subclasses defining explicit functionals of this type have to implement
         `_f` evaluation the function \(f)\
         `_f_deriv` giving the derivative \(\partial_1 f)\
-        `_f_prox` giving the prox of \(v>->f(v,w))\
+        `_f_prox` giving the prox of \(v>->f(v,x))\
     since 
     \[
-    F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),w(x))
+    F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
     \]
     is a functional of the same type and
     \[
-    \mathrm{prox}_F(v)(x) = \mathrm{prox}_f(v(x),x).
+    \mathrm{prox}_F(v)(x) = \mathrm{prox}_{f(\cdot,x)}(v(x)).
     \]
 
     Parameters
     ----------
     domain : `regpy.vecsps.MeasureSpaceFcts`
         Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
-    h_domain : `regpy.hilbert.HilbertSpace`
-        Hilbert Space defined on `domain`. Proximal operator needs to be computed 
-    wrt to that.
+    h_domain : `regpy.hilbert.HilbertSpace` [default: None]
+        Hilbert space defined on `domain`. Proximal operator is computed  wrt to that. Default: `L2(domain)`
     """
 
-    def __init__(self,domain,h_domain,**kwargs):
+    def __init__(self,domain,h_domain = None,**kwargs):
         assert isinstance(domain,vecsps.MeasureSpaceFcts)
         assert domain == h_domain.vecsp
         self.kwargs = kwargs
         super().__init__(domain,**kwargs)
-        self.h_domain = h_domain
+        self.h_domain = L2(domain) if h_domain is None else h_domain
         """ Hilbert space on `domain` wrt to which is the prox computed."""
 
     def _eval(self, v):
@@ -1270,7 +1281,7 @@ class IntegralFunctionalBase(Functional):
         return self._f_deriv(v,**self.kwargs)*self.domain.measure
 
     def _hessian(self, v):
-        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs))
+        return operators.PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs)*self.domain.measure)
 
     def _proximal(self, v, tau):
         return self._f_prox(v,tau,**self.kwargs)
@@ -1542,19 +1553,28 @@ class Huber(IntegralFunctionalBase):
     F(x) = 1/2 |x|^2                if  |x|\leq \sigma
     F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
     \]
-    ------
 
     Paramter: 
+    ------
+
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
         parameter in the Huber functional. 
+    as_primal: boolean [default:True]
+        If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
+        and precautions against an infinite recursion of conjugations are taken.
+    eps: float [default: 0.]
+        Only used for conjugate functional. See description of `QuadraticIntv`
     """
 
-    def  __init__(self, domain,as_primal=True,sigma = 1.):
-        super().__init__(domain,hilbert.L2(domain),Lipschitz=1)
+    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=0.):
         if as_primal:
-            self.Conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
+            super().__init__(domain,hilbert.L2(domain),Lipschitz=1)
+            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
+        else:
+            super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), Lipschitz=1)        
+            
         assert isinstance(sigma, float) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, float) :
@@ -1578,23 +1598,23 @@ class Huber(IntegralFunctionalBase):
         return (np.abs(u)<=self.sigma).astype(float)
 
     def _f_conj(self, ustar,**kwargs):
-        return self.Conjugate._f(ustar)    
+        return self.conjugate._f(ustar)    
    
     def _f_conj_deriv(self, ustar,**kwargs):
-        return self.Conjugate._f_deriv(ustar)
+        return self.conjugate._f_deriv(ustar)
 
     def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.Conjugate._f_second_deriv(ustar)
+        return self.conjugate._f_second_deriv(ustar)
 
     def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.Conjugate._f_prox(ustar,tau)
+        return self.conjugate._f_prox(ustar,tau)
 
 
 class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
     \[
-    F(x) = 1/2 |x|^2    if |x|\leq 1/\sigma(x)
-    F(x) = \infty    if |x|>1/\sigma(x)
+    F(x) = 1/2 |x|^2    if |x|\leq \sigma(x)
+    F(x) = \infty    if |x|>\sigma(x)
     \]
 
     Parameter
@@ -1604,50 +1624,59 @@ class QuadraticIntv(IntegralFunctionalBase):
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
         reciprocal of interval width. 
+    as_primal: boolean [default:True]
+        If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
+        and precautions against an infinite recursion are taken.
+    eps: float [default: 0.]
+        sigma is replace by sigma*(1+eps) on all operations except the proximal mapping to avoid np.inf return values 
+        or NotInEssentialDomain exceptions in the presence of rounding errors
     """
 
-    def  __init__(self, domain,as_primal=True,sigma=1.):
-        super().__init__(domain,hilbert.L2(domain),convexity_param=1)
-        if as_primal:        
-            self.Conjugate = Huber(domain,as_primal=False,sigma=sigma)
+    def  __init__(self, domain,as_primal=True,sigma=1.,eps=0.):
+        if as_primal:
+            super().__init__(domain,hilbert.L2(domain),convexity_param=1)
+            self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
+        else:
+            super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), convexity_param=1)
         assert isinstance(sigma, float) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, float):
             self.sigma = sigma * domain.ones()
         else:
             self.sigma = sigma 
+        self.sigmaeps = self.sigma*(1+1e-10) if eps>0 else self.sigma
 
     def _f(self, u,**kwargs):
         res =  u*u/2
-        res[self.sigma*np.abs(u)>1] = np.inf
+        res[np.abs(u)>self.sigmaeps] = np.inf
         return res    
    
     def _f_deriv(self, u,**kwargs):
-        if np.max(self.sigma*np.abs(u))>1:
+        if np.max(np.abs(u)/self.sigmaeps)>1.:
             raise NotInEssentialDomainError('QuadraticIntv')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
         res = u/(1+tau)
-        return res/np.maximum(self.sigma*np.abs(res),1)
+        return res/np.maximum(np.abs(res)/self.sigma,1)
 
     def _f_second_deriv(self, u,**kwargs):
-        if np.max(self.sigma*np.abs(u))>=1:
+        if np.max(np.abs(u)/self.sigmaeps)>=1.:
             raise NotTwiceDifferentiableError('QuadraticIntv')
         else:
             return np.ones_like(u)
 
     def _f_conj(self, ustar,**kwargs):
-        return self.Conjugate._f(ustar)    
+        return self.conjugate._f(ustar)    
    
     def _f_conj_deriv(self, ustar,**kwargs):
-        return self.Conjugate._f_deriv(ustar)
+        return self.conjugate._f_deriv(ustar)
 
     def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.Conjugate._f_second_deriv(ustar)
+        return self.conjugate._f_second_deriv(ustar)
 
     def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.Conjugate._f_prox(ustar,tau)
+        return self.conjugate._f_prox(ustar,tau)
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
@@ -1715,34 +1744,51 @@ class QuadraticNonneg(IntegralFunctionalBase):
     def _f_is_subgradient(self, ustar, x, eps=1e-10):
         return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
-def QuadraticBilateralConstraints(domain, lb, ub, x0,alpha=1.):
+class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
     \[
     F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
     F(x) = np.inf else
     \]
-    
-    """
-    assert isinstance(domain,vecsps.MeasureSpaceFcts)
-    if isinstance(lb,float):
-        lb = lb*domain.ones()
-    assert lb in domain
-    if isinstance(ub,float):
-        ub = ub*domain.ones()
-    assert ub in domain
-    assert np.all(lb<ub)
-    assert x0 in domain 
-    assert isinstance(alpha,float)
 
-    F = QuadraticIntv(domain,sigma=2./(ub-lb))
-    center = (ub+lb)/2
-    lin = LinearFunctional(center-x0,
-                           domain=domain,
-                           gradient_in_dual_space=False
-                           )
-    offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
-    return alpha*HorizontalShiftDilation(F,shift=center) \
-        + alpha*lin + alpha*offset
+    Parameters:
+    ------------------------------------------------------
+    domain: regpy.vecsps.MeasureSpaceFcts
+        domain on which functional is defined
+    lb: domain
+        lower bound
+    ub: domain
+        upper bound
+    x0: domain
+        reference value
+    alpha: float [default: 1]
+        regularization parameter
+
+    """
+    def __init__(self,domain, lb, ub, x0,alpha=1.):
+        assert isinstance(domain,vecsps.MeasureSpaceFcts)
+        if isinstance(lb,float):
+            lb = lb*domain.ones()
+        assert lb in domain
+        if isinstance(ub,float):
+            ub = ub*domain.ones()
+        assert ub in domain
+        assert np.all(lb<ub)
+        assert x0 in domain 
+        assert isinstance(alpha,float)
+
+        self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
+        F = QuadraticIntv(domain,sigma=(ub-lb)/2.)
+        center = (ub+lb)/2
+        lin = LinearFunctional(center-x0,
+                            domain=domain,
+                            gradient_in_dual_space=False
+                            )
+        offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
+        # return  alpha*HorizontalShiftDilation(F,shift=center) + alpha*lin + alpha*offset
+        super().__init__((alpha,HorizontalShiftDilation(F,shift=center)+offset),
+                          (alpha,lin)
+                          )
 
 def QuadraticLowerBound(domain, lb, x0,alpha=1.):
     r""" Returns `Functional` defined by 
@@ -1764,6 +1810,100 @@ def QuadraticLowerBound(domain, lb, x0,alpha=1.):
     lin = LinearFunctional(lb-x0,domain=domain,gradient_in_dual_space=False)
     offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
     return alpha*HorizontalShiftDilation(F,shift=lb)+ alpha*lin + alpha*offset
+
+from scipy.linalg import ishermitian
+from numpy.linalg import eigvalsh,eigh
+
+class QuadraticPositiveSemidef(Functional):
+
+    r"""Functional 
+    \[
+    F(x) = 1/2 ||x||_{HS}^2    if x\geq 0
+
+    F(x) = \infty       else
+    \]
+    Parameters
+
+    ---------
+    regpy.vecsps.MeasureSpaceFcts
+
+        domain on which functional is defined 
+
+    """
+
+
+    def  __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    @staticmethod
+    def is_positive(rho,tol=1e-18):
+        if(not ishermitian(rho)):
+            return False
+        evs=eigvalsh(rho)
+        return evs[0]>-tol
+        
+    def _eval(self, x):
+        if(QuadraticPositiveSemidef.is_positive(x)):
+            return np.sum(np.abs(x)**2)/2
+        else:
+            return np.inf
+
+    def _proximal(self, x, tau):
+        evs,U=eigh(x)
+        evs=np.maximum(0,evs)/(1+tau)
+        return U@np.diag(evs)@np.conj(U).T
+    
+class QuadraticPositiveSemidefTr1(Functional):
+
+    r"""Functional 
+    \[
+    F(x) = 1/2 ||x||_{HS}^2    if x\geq 0 and tr(x)=1
+
+    F(x) = \infty       else
+    \]
+    Parameters
+
+    ---------
+    regpy.vecsps.MeasureSpaceFcts
+
+        domain on which functional is defined 
+
+    """
+
+
+    def  __init__(self, domain):
+        super().__init__(domain,hilbert.L2(domain))
+
+    @staticmethod
+    def is_positive(rho,tol=1e-15):
+        if(not ishermitian(rho)):
+            return False
+        evs=eigvalsh(rho)
+        return evs[0]>-tol
+    
+    
+    @staticmethod
+    def closest_point_simplex(p):
+        '''
+        Algorithm from Held, Wolfe and Crowder (1974), uses that p is already sorted in increasing order
+        '''
+        k=1
+        while((np.sum(p[-k:])-1)/k<p[-k] and k<p.shape[0]):
+            k+=1
+        t=(np.sum(p[-(k-1):])-1)/(k-1)
+        return np.maximum(p-t,0)
+        
+    def _eval(self, x):
+        if(QuadraticPositiveSemidefTr1.is_positive(x) and np.abs(np.trace(x)-1)<1e-15):
+            return np.sum(np.abs(x)**2)/2
+        else:
+            return np.inf
+
+    def _proximal(self, x, tau):
+        evs,U=eigh(x)
+        evs*=(1+tau)
+        cps=QuadraticPositiveSemidefTr1.closest_point_simplex(evs)
+        return U@np.diag(cps)@np.conj(U).T
 
 class L1Generic(Functional):
     r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.

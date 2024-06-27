@@ -1,7 +1,12 @@
-import logging
 import numpy as np
+import logging
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class FISTA(RegSolver):
     r"""
@@ -14,7 +19,7 @@ class FISTA(RegSolver):
     -----------
     setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
-    init : setting.op.domain
+    init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
@@ -24,13 +29,18 @@ class FISTA(RegSolver):
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     """
-    def __init__(self, setting, init, tau = None, op_lower_bound = 0, proximal_pars=None):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
-        assert init in self.op.domain
+        self.setting = setting
         self.regpar = setting.regpar
-        self.x = init
+        if init is None:
+            self.x = self.op.domain.zeros()
+        else:
+            assert init in self.op.domain
+            self.x = init
         self.y, self.deriv = self.op.linearize(self.x)
+        self.log.setLevel(logging_level)
 
         self.mu_penalty  = self.regpar * self.penalty.convexity_param
         self.mu_data_fidelity = self.data_fid.convexity_param * op_lower_bound**2
@@ -51,6 +61,16 @@ class FISTA(RegSolver):
 
         self.x_old = self.x
         self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
+        if self.mu>0:
+            self.log.info('Set up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
+                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-np.sqrt(self.q)))
+        try:
+            gap=self.setting.dualityGap(primal = self.x)
+            self.dualityGapWorks =True
+            self.log.info('initial duality gap: {}'.format(gap))
+        except NotImplementedError:
+            self.dualityGapWorks = False
+
 
     def _next(self):
         if self.mu == 0:
@@ -68,3 +88,7 @@ class FISTA(RegSolver):
         grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y, self.deriv = self.op.linearize(self.x)
+
+        if self.dualityGapWorks:
+            gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
+            self.log.debug('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,gap))

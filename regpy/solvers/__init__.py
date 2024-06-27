@@ -246,8 +246,6 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
-        self._op_norm = None
-        """The operator norm of op with respect to h_domain and h_codomain."""
 
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
@@ -407,45 +405,78 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         self.regpar = regpar
         """The regularization parameter"""
     
-    def DualSetting(self):
+    def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
         \[
-           \alpha\mathcal{R}^*(\alpha T^*p) + \mathcal{S}^*(- p) = \min!
+           \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
         \]
-        (To make this a Tikhonov functional again, the objective functional of the Rockafellar-Fenchel dual maximization problem
-        has been multiplied by \(-\alpha\).)
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
-                                             HorizontalShiftDilation(self.data_fid.Conj, dilation=-1.),
-                                             HorizontalShiftDilation(self.penalty.Conj,dilation=self.regpar),
+                                             HorizontalShiftDilation(self.data_fid.conj, dilation=-self.regpar),
+                                             self.penalty.conj,
                                              regpar= 1/self.regpar
                                              )
 
-    def DualToPrimalSolution(self,pstar):
-        r"""Yields a solution to the primal problem given a solution to the dual problem.
-        Returns an element of \(\partial \mathcal{R}^*(-T^*p) )\ 
-        (without checks if pstar is a dual solution and if the correct subgradient is picked if \(\mathcal{R}^*\) is not differentiable).
+    def dualToPrimal(self,pstar,argumentIsOperatorImage = False):
+        r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
+        If \(p\) is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
+        If \(\xi=T^*p\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\xi\) as argument and avoid an operator evaluation.
                 
         Parameters
         -------
-        pstar: self.op.codomain
-        Solution of the dual problem.
+        pstar: self.op.codomain (or self.op.domain if argumentIsOperatorImage=True)
+            argument to be transformed
+        argumentIsOperatorImage: boolean [default: False]
+            See above.
         """
-        return self.penalty.Conj.subgradient(-self.op.adjoint(pstar))
+        if argumentIsOperatorImage:
+            return self.penalty.conj.subgradient(pstar)
+        else:
+            return self.penalty.conj.subgradient(self.op.adjoint(pstar))
 
-    def PrimalToDualSolution(self,x):
-        r"""Yields a solution to the dual problem given a solution to the primal problem.
-        Returns an element of \(\partial \mathcal{S}^*(Tx) )\ 
-        (without checks if x is a primal solution and if the correct subgradient is picked if \(\mathcal{S}^*\) is not differentiable).
+    def dualityGap(self, primal=None, dual=None):
+        r"""Computes the value of the duality gap 
+            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^*(-\alpha p) - \mathcal{R}^*(T^*p)
 
+        Parameters:
+        primal: setting.op.domain [default: None]
+            primal variable f
+        dual: setting.op.codomain [default: None]
+            dual variable p        
+        """        
+
+        assert not (primal is None and dual is None)
+        if primal is None:
+            f = self.dualToPrimal(dual)
+        else:
+            f = primal
+        if dual is None:
+            p = self.primalToDual(primal)
+        else:
+            p = dual
+        alpha = self.regpar
+
+        return 1./alpha * self.data_fid(self.op(f)) + self.penalty(f) + 1./alpha * self.data_fid.conj(-alpha*p) + self.penalty.conj(self.op.adjoint(p))
+
+    def primalToDual(self,x,argumentIsOperatorImage = False):
+        r"""
+        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
+        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
+        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
+    
         Parameters
         ----------------------------
-        x: self.op.domain
-        Solution of the primal problem.
+        x: self.op.domain (or self.op.codomain if argumentIsOperatorImage=True)
+            argument to be transformed
+        argumentIsOperatorImage: boolean [default: False]
+            See above.
         """
-        return (1/self.regpar) * self.data_fid.subgradient(self.op(x))
-
+        if argumentIsOperatorImage:
+            return (-1./self.regpar) * self.data_fid.subgradient(x)
+        else:
+            return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
+    
     def isSaddlePoint(self,x,p,tol):
         r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
         or equivalently (in case of strong duality)
@@ -464,7 +495,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         tol: float [default: 1e-10]
         Tolerance value
         """
-        return self.data_fid.Conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
+        return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
 
