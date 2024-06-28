@@ -41,10 +41,8 @@ class Landweber(RegSolver):
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
-        norm = setting.op_norm(op=self.deriv, method = op_norm_method)
-        #compute norm after linearizing as because needs deriv as argument
 
-        self.stepsize = stepsize or 0.9 / norm
+        self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)
         """The stepsize."""
 
     def _next(self):

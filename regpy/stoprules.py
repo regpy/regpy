@@ -1,5 +1,6 @@
 import logging
 from regpy.util import classlogger
+import numpy as np
 
 logging.basicConfig(
     level=logging.INFO,
@@ -251,7 +252,7 @@ class RelativeChangeData(StopRule):
         if y is None:
             raise MissingValueError
         change = self.norm(y - self.data_old)
-        self.data_old = y
+        self.data_old = np.copy(y)
         self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -288,7 +289,7 @@ class RelativeChangeSol(StopRule):
 
     def _stop(self, x, y=None):
         change = self.norm(x - self.sol_old)
-        self.sol_old = x
+        self.sol_old = np.copy(x)
         self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
