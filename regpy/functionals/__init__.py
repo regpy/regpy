@@ -42,9 +42,9 @@ class Functional:
     domain : regpy.vecsps.VectorSpace
         The uncerlying vector space for the function space on which it is defined.
     h_domain : regpy.hilbert.HilbertSpace (default: None)
-        The underlying Hilbert wrt which the proximal mapping is computed.
-        In the default case `L2(domain)` is used. 
-        Also the parameter of strong convexity is defined w.r.t. this Hilbert norm.  
+        The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
+        and the Lipschitz constant are defined with respect to this Hilbert space.
+        In the default case `L2(domain)` is used.   
     linear: bool [default: False]
         If true, the functional should be linear. 
     convexity_param: float [default: 0]
@@ -329,7 +329,7 @@ class Functional:
         if isinstance(other, Functional):
             return LinearCombination(self, other)
         elif np.isscalar(other):
-            return VerticalShift(self, other)
+            return self if other==0 else VerticalShift(self, other)
         return NotImplemented
 
     def __radd__(self, other):
@@ -416,6 +416,8 @@ class LinearFunctional(Functional):
     Linear functional given by
         F(x) = np.vdot(a, x)
     
+    +, +=, *, *= with `LinearFunctional`s and scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`s. 
+
     Parameters
     ----------
     gradient: domain
@@ -448,7 +450,6 @@ class LinearFunctional(Functional):
     def _subgradient(self,x):
         return self._gradient.copy()
 
-
     def _hessian(self, x):
         return operators.Zero(self.domain)
 
@@ -461,11 +462,193 @@ class LinearFunctional(Functional):
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
+    def _conj_is_subgradient(self,v,xstar):
+        return xstar==self.gradient
+
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
 
     def _conj_proximal(self, xstar, tau,**proximal_par):
         return self._gradient.copy()
+
+    def __add__(self, other):
+        if isinstance(other,LinearCombination):
+            return LinearFunctional(self.gradient+other.gradient,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+        elif isinstance(other,SquaredNorm):
+            return other + self
+        else:
+            return super().__add__(other)
+        
+    def __iadd__(self, other):
+        if isinstance(other,LinearCombination):
+            self.gradient += other.gradient
+            return self
+        else:
+            return NotImplemented
+        
+    def __rmul__(self, other):
+        if np.isscalar(other):
+            return LinearFunctional(other*self.gradient,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+        else:
+            return NotImplemented
+
+    def __imul__(self, other):
+        if np.isscalar(other):
+            self.gradient *=other
+            return self
+        else:
+            return NotImplemented
+
+class SquaredNorm(Functional):
+    """Functionals of the form 
+    \[
+    \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\angle b,x\rangle_X + c
+    \]
+    Here the linear term represents an inner product in the Hilbert space, not a pairing with the dual space.
+
+    +, +=, *, *= with `SquaredNorm`s, `LinearFunctional`s and scalars as other arguments are overwritten to yield the 
+    expected `SquaredNorm`s. 
+
+    Parameters
+    --------
+    domain : regpy.vecsps.VectorSpace
+        The uncerlying vector space for the function space on which it is defined.
+    h_domain : regpy.hilbert.HilbertSpace (default: None)
+        The underlying Hilbert space.
+    a: float [default:1]
+       coefficient of quadratic term
+    b: h_domain.domain [default:None]
+        coefficient of linear term. In the default case it is 0.
+    c: float [default: 0]
+        constant term
+    shift: h_domain.domain [default:None]
+        If not None, then we must have b is None and c==0. 
+        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift\|^2)\.
+    """
+
+    def __init__(self,domain,h_domain=None, a=1., b=None,c=0.,shift=None):
+        super().__init__(domain,h_domain=h_domain, 
+                        linear = (a==0 and shift is None and c==0),
+                        convexity_param = a,
+                        Lipschitz = a
+                        )
+        assert isinstance(a,float)
+        self.gram = self.h_domain.gram
+        self.a=a
+        if shift is None:
+            assert b is None or b in self.domain
+            self.b = self.domain.zeros() if b is None else b
+            assert isinstance(c,float)
+            self.c = c
+        else:
+            assert isinstance(shift, self.domain)
+            self.b = -self.a*shift
+            self.c = (self.a/2.) * self.h_domain.norm(shift)**2
+
+    def _eval(self, x):
+        return (self.a/2.) * self.h_domain.norm(x)**2  + self.h_domain.inner(self.b,x) + self.c
+    
+    def _subgradient(self, x):
+        return self.gram(self.a*x+self.b)
+    
+    def _hessian(self,x):
+        return self.a * self.gram
+    
+    def _proximal(self,z, tau, **proximal_par):
+        assert self.a>=0
+        return (1./(tau*self.a+1)) * (z-tau*self.b)
+    
+    def _conj(self, xstar):
+        bstar = self.gram(self.b)
+        if self.a>0:
+            return np.real(np.vdot(xstar-bstar, self.gram.inverse(xstar-bstar))) / (2.*self.a) - self.c
+        elif self.a==0:
+            eps = 1e-10
+            return -self.c if np.linalg.norm(xstar-bstar)<=eps*(np.linalg.norm(xstar)+eps) else np.inf
+        else:
+            return -np.inf
+
+    def _conj_subgradient(self, xstar):
+        bstar = self.gram(self.b)
+        if self.a>0:
+            return (1./self.a) * self.gram.inverse(xstar-bstar)
+        elif self.a==0:
+            return self.domain.zeros()
+        else:
+            return NotInEssentialDomainError
+        
+    def _conj_is_subgradient(self,v,xstar):
+        if self.a==0:
+            return xstar == self.gram(self.b)
+        elif self.a <0:
+            return False
+        else: 
+            return super()._conj_is_subgradient(v,xstar)
+    
+    def _conj_hessian(self, xstar):
+        if self.a>0:
+            return (1./self.a) * self.gram.inverse
+        else:
+            return NotTwiceDifferentiableError
+    
+    def _conj_proximal(self, zstar, tau, **proximal_par):
+        assert self.a>0
+        bstar = self.gram(self.b)
+        return (1./(1.+tau/self.a)) * (zstar-bstar) + bstar
+
+    def __add__(self, other):
+        if isinstance(other, SquaredNorm):
+            return SquaredNorm(self.domain, h_domain=self.h_domain,
+                               a = self.a+other.a,
+                               b = self.b+other.b,
+                               c = self.c+other.c 
+                               )
+        elif isinstance(other,LinearFunctional):
+            return SquaredNorm(self.domain, h_domain=self.h_domain,
+                               a = self.a,
+                               b = self.b+self.gram.inverse(other.gradient),
+                               c = self.c 
+                               )
+        elif np.isscalar(other):
+            return SquaredNorm(self.domain, h_domain=self.h_domain,
+                               a = self.a,
+                               b = self.b,
+                               c = self.c+other 
+                               )
+        return super().__add__(other)
+
+    def __iadd__(self, other):
+        if isinstance(other, SquaredNorm):
+            self.a += other.a,
+            self.b += other.b,
+            self.c += other.c
+            return self
+        elif isinstance(other,LinearFunctional):
+            self.b += self.gram.inverse(other.gradient),
+            return self
+        elif np.isscalar(other):
+            self.c += other 
+            return self
+        return NotImplemented
+
+    def __rmul__(self,other):
+        if np.isscalar(other):
+            return SquaredNorm(self.domain, h_domain=self.h_domain,
+                               a = other*self.a,
+                               b = other*self.b,
+                               c = other*self.c 
+                               )
+        else:
+            return NotImplemented
+
+    def __imul__(self, other):
+        if np.isscalar(other):
+            self.a *=other
+            self.b *=other
+            self.c *=other
+            return self
+        return NotImplemented
+
 
 
 class LinearCombination(Functional):
