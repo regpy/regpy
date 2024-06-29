@@ -333,7 +333,7 @@ class Functional:
         return NotImplemented
 
     def __radd__(self, other):
-        return self + other
+        return self+other
 
     def __sub__(self, other):
         return self + (-other)
@@ -454,7 +454,7 @@ class LinearFunctional(Functional):
         return operators.Zero(self.domain)
 
     def _conj(self,x_star):
-        0 if x_star == self._gradient else np.inf
+        return 0 if np.linalg.norm(x_star- self._gradient)==0 else np.inf
 
     def _conj_subgradient(self, xstar):
         if xstar == self._gradient:
@@ -472,13 +472,15 @@ class LinearFunctional(Functional):
         return self._gradient.copy()
 
     def __add__(self, other):
-        if isinstance(other,LinearCombination):
+        if isinstance(other,LinearFunctional):
             return LinearFunctional(self.gradient+other.gradient,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+        elif other in self.domain:
+            return LinearFunctional(self.gradient+other,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
         elif isinstance(other,SquaredNorm):
-            return other + self
+            return other+self
         else:
             return super().__add__(other)
-        
+
     def __iadd__(self, other):
         if isinstance(other,LinearCombination):
             self.gradient += other.gradient
@@ -1352,6 +1354,16 @@ class FunctionalProductSpace(Functional):
         for i in range(self.length):
             proximals.append( self.funcs[i].conj.proximal(splitted[i], tau,proximal_par_list[i]) )
         return np.asarray(proximals).flatten()
+    
+    def __add__(self,other):
+        if isinstance(other,FunctionalProductSpace):
+            return FunctionalProductSpace([F+G for F,G in zip(self.funcs,other,funcs)],self.domain)
+        else: 
+            return super().__add__(self,other)
+        
+    def __rmul__(self,other):
+        if np.isscalar(other):
+            return FunctionalProductSpace([other*F for F in self.funcs],self.domain)
 
 class HilbertNormGeneric(Functional):
     r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.

@@ -173,7 +173,9 @@ class VectorSpace:
         return operators.Identity(self)
 
     def __contains__(self, x):
-        if x.shape != self.shape:
+        if not isinstance(x,np.ndarray):
+            return False
+        elif x.shape != self.shape:
             return False
         elif util.is_complex_dtype(x.dtype):
             return self.is_complex
