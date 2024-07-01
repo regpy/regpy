@@ -312,6 +312,7 @@ class Monotonicity(StopRule):
     """
 
     def __init__(self, norm, data, init_data):
+        super().__init__()
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
