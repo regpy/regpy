@@ -303,21 +303,17 @@ class Monotonicity(StopRule):
     norm : callable
         The norm with respect to which the difference should be measured.
         Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    tolerance : int
-        At the tolerance:th iteration where the residual is growing the rule will be stopped. Default is 1.
     data : np array
         The data array
     init_data : np array
         initial guess in data space
     """
 
-    def __init__(self, norm, data, init_data, tolerance=1):
+    def __init__(self, norm, data, init_data):
         super().__init__()
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
-        self.tol_count = 0
-        self.tolerance = tolerance
 
     def __repr__(self):
         return 'Monotonicty'
@@ -332,8 +328,4 @@ class Monotonicity(StopRule):
             change, residual))
         #self.log.info('Monotonicity = {}'.format(
         #    change))
-        if change < 0:
-            self.tol_count += 1
-            if self.tol_count == self.tolerance:
-                return True
-        return False
+        return change < 0
