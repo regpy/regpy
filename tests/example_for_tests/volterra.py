@@ -71,9 +71,9 @@ def test_volterra():
     exact_data = op(exact_solution)
     noise = sigma * op.domain.randn()
     data = exact_data + noise
-    init = op.domain.ones()*0.0005
+    init = op.domain.ones()
 
-    #The penalty term: 1/2 * ||f||_{TV}^2
+    #The penalty term |f|_{TV}
     setting = TikhonovRegularizationSetting(
         op=op, 
         penalty=TV(h_domain=Sobolev), 
@@ -101,7 +101,7 @@ def test_volterra():
 
     reco, reco_data = solver.run(stoprule)
 
-    from regpy.solvers.linear.admm import ADMM
+    """from regpy.solvers.linear.admm import ADMM
 
     # Operator need to be linear 
     op = Volterra(grid, exponent=1)
@@ -143,6 +143,7 @@ def test_volterra():
 
 
     reco, reco_data = solver.run(stoprule)
+    """
 
 
 

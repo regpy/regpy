@@ -49,13 +49,9 @@ class FISTA(RegSolver):
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        assert tau is None or tau>0
-        if tau is None:
-            self.tau = 1./(setting.op_norm(op=self.deriv)*self.data_fid.Lipschitz)
-        else:
-            self.tau = tau
-            """The step size parameter"""
- 
+        self.tau = 1./(setting.op_norm(op=self.deriv)*self.data_fid.Lipschitz) if tau is None else tau
+        """The step size parameter"""
+        assert self.tau>0 
 
         self.t = 0
         self.t_old = 0
@@ -64,15 +60,10 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
         if self.mu>0:
-            self.log.info('Set up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
+            self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
                 self.mu_penalty,self.mu_data_fidelity,self.tau,1.-np.sqrt(self.q)))
-        try:
-            gap=self.setting.dualityGap(primal = self.x)
-            self.dualityGapWorks =True
-            self.log.info('initial duality gap: {}'.format(gap))
-        except NotImplementedError:
-            self.dualityGapWorks = False
-
+        else: 
+            self.log.info('Setting up FISTA with step length tau={:.3e}.'.format(self.tau))
 
     def _next(self):
         if self.mu == 0:
@@ -90,7 +81,3 @@ class FISTA(RegSolver):
         grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y, self.deriv = self.op.linearize(self.x)
-
-        if self.dualityGapWorks:
-            gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
-            self.log.debug('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,gap))
