@@ -34,13 +34,9 @@ class FISTA(RegSolver):
     def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
-        self.setting = setting
-        self.regpar = setting.regpar
-        if init is None:
-            self.x = self.op.domain.zeros()
-        else:
-            assert init in self.op.domain
-            self.x = init
+        self.x = self.op.domain.zeros() if init is None else init
+        assert init in self.op.domain
+        
         self.y, self.deriv = self.op.linearize(self.x)
         self.log.setLevel(logging_level)
 

@@ -31,9 +31,6 @@ class ForwardBackwardSplitting(RegSolver):
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
-        self.setting = setting
-        self.regpar = setting.regpar
-        """The regularization parameter."""
 
         self.x = self.op.domain.zeros() if init is None else init
         assert self.x in self.op.domain
