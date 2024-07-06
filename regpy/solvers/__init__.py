@@ -6,7 +6,7 @@ from scipy.sparse.linalg import eigsh
 from regpy.util import classlogger
 from regpy.util.operator_tests import test_adjoint, test_derivative
 from regpy.stoprules import NoneRule
-from regpy.functionals import  as_functional, Composed, HilbertNormGeneric, Functional, HorizontalShiftDilation
+from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
 from regpy.operators import Operator
 import regpy.stoprules as rules
 
@@ -323,9 +323,10 @@ class RegularizationSetting:
  
         Parameters
         ----------
-        T: linear Operator from self.domain to self.codomain [default=None]
+        op: linear `regpy.operators.Operator` from self.domain to self.codomain [default=None]
             Typically the derivative of the operator at some point. In the default case, self.op is used if self.op is linear. 
-
+        method: string [default: "lanczos"]
+            Method by which an approximation of the operator norm is computed. Alternative: "power_method"
         Returns
         -------
         scalar
@@ -396,10 +397,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         super().__init__(op,penalty=penalty, data_fid= data_fid)
 
         if not penalty_shift is None:
-            self.penalty = HorizontalShiftDilation(self.penalty,shift = penalty_shift)
+            self.penalty = self.penalty.shift(penalty_shift)
 
         if not data_fid_shift is None:
-            self.data_fid = HorizontalShiftDilation(self.data_fid,shift = data_fid_shift)
+            self.data_fid = self.data_fid.shift(data_fid_shift)
 
         assert isinstance(regpar,float) and regpar>=0
         self.regpar = regpar
@@ -413,7 +414,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
-                                             HorizontalShiftDilation(self.data_fid.conj, dilation=-self.regpar),
+                                             self.data_fid.conj.dilation(-self.regpar),
                                              self.penalty.conj,
                                              regpar= 1/self.regpar
                                              )
