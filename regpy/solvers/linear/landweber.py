@@ -38,7 +38,7 @@ class Landweber(RegSolver):
         self.x = init
         self.y = self.op(self.x)
         norm = setting.op_norm()
-        self.stepsize = stepsize or 1 / norm
+        self.stepsize = stepsize or 1 / norm**2
         """The stepsize."""
 
     def _next(self):

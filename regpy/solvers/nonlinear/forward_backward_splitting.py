@@ -38,7 +38,7 @@ class ForwardBackwardSplitting(RegSolver):
         self.x = self.op.domain.zeros() if init is None else init
         assert self.x in self.op.domain
         self.y, self.deriv = self.op.linearize(self.x)
-        self.tau = 1/setting.op_norm(op=self.deriv) if tau is None else tau
+        self.tau = 1/setting.op_norm(op=self.deriv)**2 if tau is None else tau
         """The step size parameter"""
         assert self.tau>0
         self.proximal_pars = proximal_pars

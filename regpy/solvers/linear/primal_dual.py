@@ -80,7 +80,7 @@ class PDHG(RegSolver):
         self.y = self.op(self.x) if self.compute_y else None
 
         assert tau>=0 and sigma>=0
-        L = np.sqrt(setting.op_norm())   
+        L = setting.op_norm()   
         self.regpar = setting.regpar
         if tau==0 and sigma==0:
             self.tau = 1/L
@@ -125,7 +125,7 @@ class PDHG(RegSolver):
             self.theta = 1./np.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        self.log.debug('it. {}: duality gap={:.3e}'.format(self.iteration_step_nr,self.setting.dualityGap(primal=self.x)))
+        self.log.info('it. {}: duality gap={:.3e}'.format(self.iteration_step_nr,self.setting.dualityGap(primal=self.x)))
  
 
 

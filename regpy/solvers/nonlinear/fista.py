@@ -49,7 +49,7 @@ class FISTA(RegSolver):
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        self.tau = 1./(setting.op_norm(op=self.deriv)*self.data_fid.Lipschitz) if tau is None else tau
+        self.tau = 1./(setting.op_norm(op=self.deriv)**2 * self.data_fid.Lipschitz) if tau is None else tau
         """The step size parameter"""
         assert self.tau>0 
 

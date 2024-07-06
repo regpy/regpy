@@ -40,7 +40,7 @@ class ForwardBackwardSplitting(RegSolver):
         self.x = self.op.domain.zeros() if init is None else init
         assert self.x in self.op.domain
         assert self.op.linear
-        self.tau = 1/setting.op_norm() if tau is None else tau
+        self.tau = 1/setting.op_norm()**2 if tau is None else tau
         """The step size parameter"""
         assert self.tau>0        
         self.proximal_pars = proximal_pars
@@ -105,7 +105,7 @@ class FISTA(RegSolver):
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        self.tau = 1./(setting.op_norm()*self.data_fid.Lipschitz) if tau is None else tau
+        self.tau = 1./(setting.op_norm()**2 * self.data_fid.Lipschitz) if tau is None else tau
         """The step size parameter"""
         assert self.tau>0
  

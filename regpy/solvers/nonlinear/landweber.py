@@ -42,7 +42,7 @@ class Landweber(RegSolver):
         self.deriv = deriv
         """The derivative at the current iterate."""
 
-        self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)
+        self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)**2
         """The stepsize."""
 
     def _next(self):
