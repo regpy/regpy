@@ -1,4 +1,3 @@
-import logging
 import numpy as np
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
@@ -59,7 +58,6 @@ class PDHG(RegSolver):
         assert init_domain is None or init_domain in self.op.domain
         assert init_codomain_star is None or init_codomain_star in self.op.codomain
         self.log.setLevel(logging_level)
-        self.setting = setting
 
         if init_domain is None:
             if init_codomain_star is None:
@@ -80,8 +78,7 @@ class PDHG(RegSolver):
         self.y = self.op(self.x) if self.compute_y else None
 
         assert tau>=0 and sigma>=0
-        L = setting.op_norm()   
-        self.regpar = setting.regpar
+        L = self.setting.op_norm()   
         if tau==0 and sigma==0:
             self.tau = 1/L
             self.sigma = 1/L
@@ -112,7 +109,8 @@ class PDHG(RegSolver):
             self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
- 
+        self.gap = self.setting.dualityGap(primal=self.x)   
+
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.op.adjoint(self.pstar))
         self.x = self.penalty.proximal(primal_step, self.tau, self.proximal_pars_penalty)
@@ -125,7 +123,7 @@ class PDHG(RegSolver):
             self.theta = 1./np.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        self.log.info('it. {}: duality gap={:.3e}'.format(self.iteration_step_nr,self.setting.dualityGap(primal=self.x)))
+        self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
  
 
 

@@ -33,9 +33,6 @@ class ForwardBackwardSplitting(RegSolver):
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
-        self.setting = setting
-        self.regpar = setting.regpar
-        """The regularization parameter."""
 
         self.x = self.op.domain.zeros() if init is None else init
         assert self.x in self.op.domain
@@ -51,7 +48,6 @@ class ForwardBackwardSplitting(RegSolver):
         try:
             self.gap=self.setting.dualityGap(primal = self.x)
             self.dualityGapWorks =True
-            self.log.info('initial duality gap: {:.3e}'.format(self.gap))
         except NotImplementedError:
             self.dualityGapWorks = False
         
@@ -63,7 +59,6 @@ class ForwardBackwardSplitting(RegSolver):
  
         if self.dualityGapWorks:
             self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
-            self.log.info('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,self.gap))
             
 class FISTA(RegSolver):
     r"""
@@ -91,8 +86,6 @@ class FISTA(RegSolver):
     def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
-        self.setting = setting
-        self.regpar = setting.regpar
         self.x = self.op.domain.zeros() if init is None else init
         assert self.x in self.op.domain    
         assert self.op.linear  
@@ -121,7 +114,6 @@ class FISTA(RegSolver):
         try:
             self.gap=self.setting.dualityGap(primal = self.x)
             self.dualityGapWorks =True
-            self.log.info('initial duality gap: {:.3e}'.format(self.gap))
         except NotImplementedError:
             self.dualityGapWorks = False
 
@@ -145,4 +137,3 @@ class FISTA(RegSolver):
 
         if self.dualityGapWorks:
             self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
-            self.log.info('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,self.gap))

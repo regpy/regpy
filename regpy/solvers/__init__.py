@@ -3,9 +3,10 @@
 import numpy as np
 from scipy.sparse.linalg import eigsh
 
+import logging
 from regpy.util import classlogger
 from regpy.util.operator_tests import test_adjoint, test_derivative
-from regpy.stoprules import NoneRule
+from regpy.stoprules import NoneRule, StopRule
 from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
 from regpy.operators import Operator
 import regpy.stoprules as rules
@@ -42,6 +43,7 @@ class Solver:
         handle the case when it is not available."""
         self.__converged = False
         self.iteration_step_nr = 0
+        """Current number of iterations performed."""
 
     def converge(self):
         """Mark the solver as converged. This is intended to be used by child classes
@@ -171,6 +173,7 @@ class RegSolver(Solver):
     """
 
     def __init__(self,setting,x=None,y=None):
+        assert isinstance(setting,RegularizationSetting)
         self.op=setting.op
         """The operator."""
         self.penalty = setting.penalty
@@ -181,6 +184,11 @@ class RegSolver(Solver):
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  setting.h_codomain
         """The Hilbert space associated to data fidelity functional"""
+        if isinstance(setting,TikhonovRegularizationSetting):
+            self.setting = setting
+            """The regularization setting"""
+            self.regpar = setting.regpar
+            """The regularizaiton parameter"""
         super().__init__(x,y)
 
     def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
@@ -316,8 +324,8 @@ class RegularizationSetting:
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
     def op_norm(self,op = None, method = "lanczos"):
-        r"""Approximate the operator norm of \(T^*T\) for a linear operator \(T\) with respect to a Hilbert space settings 
-        by computing the largest eigenvalue with eigsh from scipy. 
+        r"""Approximate the operator norm of \(T\) for a linear operator \(T\) with respect to the vector norms of h_domain and h_codomain. 
+        This is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
         #@memoized_property
  
@@ -353,7 +361,7 @@ class RegularizationSetting:
             return power_method(self, op = T)
         elif method == "lanczos":
             from regpy.operators import SciPyLinearOperator
-            return eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0]
+            return np.sqrt(eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
         else:
             raise NotImplementedError
 
@@ -499,6 +507,27 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
+class DualityGapStopping(StopRule):
+    def __init__(self,solver, threshold = 0.,max_iter=1000, logging_level = logging.INFO):
+        assert isinstance(solver,RegSolver)
+        assert hasattr(solver,'gap')
+        super().__init__()
+        self.solver = solver
+        self.threshold = threshold
+        self.max_iter = max_iter
+        self.log.setLevel(logging_level)
+        self.log.info('it. {}/{}: duality gap={:.3e}'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap))
+        self.gap_stat = []
+
+    def _stop(self,x,y=None):
+        self.gap_stat.append(self.solver.gap)
+        gap_stop = self.solver.gap<=self.threshold
+        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
+        if  self.solver.iteration_step_nr>=self.max_iter:
+            if not gap_stop:
+                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
+            return True            
+        return gap_stop 
 
 def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
     r"""Approximation of operator norm by the power method.
@@ -507,22 +536,22 @@ def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
     ----------
     setting : RegularizationSetting
         Provides op and Gram. 
-    op : Operator,optional
-        Optionally overrides choice of operator (e.g. for linearization), Defaults: None
+    op : Operator [default: None]
+        Optionally overrides choice of operator (e.g. for linearization)
     """
     assert isinstance(setting,RegularizationSetting)
-    if not setting.is_hilbert_setting():
-        raise NotImplementedError
     if op is None:
         op = setting.op
+    assert op.linear
     
     x = setting.op.domain.rand()
     relative_residual = np.inf
-    for i in range(max_iter):
+    for _ in range(max_iter):
         if relative_residual < stopping_rule:
             break
-        y = (setting.h_domain.gram_inv * op.adjoint * setting.h_codomain.gram * op)(x)
-        lmb = np.sqrt(np.inner(y, (op.adjoint * setting.h_codomain.gram * op)(x)))
+        ystar = (op.adjoint * setting.h_codomain.gram * op)(x)
+        y = setting.h_domain.gram_inv(ystar)
+        lmb = np.sqrt(np.vdot(y, ystar).real)
         relative_residual = setting.h_domain.norm(y - lmb * x)
         x = y/lmb
-    return lmb
+    return np.sqrt(lmb)
