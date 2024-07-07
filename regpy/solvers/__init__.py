@@ -11,6 +11,11 @@ from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
 from regpy.operators import Operator
 import regpy.stoprules as rules
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
+
 class Solver:
     r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
     repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
@@ -399,9 +404,13 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         If not None, the penalty functional is replaced by penalty(. - penalty_shift).
     data_fid_shift: op.co_domain [default: None]
         If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
+    logging_level: [default: logging.INFO]
+        logging level
     """
 
-    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None):
+    log = classlogger
+
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None, logging_level = logging.INFO,gap_threshold = 1e5):
         super().__init__(op,penalty=penalty, data_fid= data_fid)
 
         if not penalty_shift is None:
@@ -412,6 +421,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
         assert isinstance(regpar,float) and regpar>=0
         self.regpar = regpar
+        self.log.setLevel(logging_level)
+        self.gap_threshold = gap_threshold
         """The regularization parameter"""
     
     def dualSetting(self):
@@ -466,8 +477,18 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             p = dual
         alpha = self.regpar
 
-        return 1./alpha * self.data_fid(self.op(f)) + self.penalty(f) + 1./alpha * self.data_fid.conj(-alpha*p) + self.penalty.conj(self.op.adjoint(p))
-
+        dat = 1./alpha * self.data_fid(self.op(f))
+        pen = self.penalty(f)
+        ddat = self.penalty.conj(self.op.adjoint(p))
+        dpen = 1./alpha * self.data_fid.conj(-alpha*p)
+        res = dat+pen+ddat+dpen
+        ares = np.abs(dat)+np.abs(pen)+np.abs(ddat)+np.abs(dpen) 
+        if ares/res>1e10:
+            self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
+        elif ares/res>self.gap_threshold:
+            self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
+        return res
+    
     def primalToDual(self,x,argumentIsOperatorImage = False):
         r"""
         Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
