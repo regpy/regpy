@@ -255,7 +255,8 @@ class Functional:
                 raise NotImplementedError("Neither proximal nor conj_proximal are implemented.")
             else:
                 gram = self.h_domain.gram
-                proximal = x - tau *gram.inverse(self.conj_proximal(gram(x)/tau,1/tau,recursion_safeguard=True,**proximal_par))
+                gram_inv = self.h_domain.gram_inv
+                proximal = x - tau *gram_inv(self.conj_proximal(gram(x)/tau,1/tau,recursion_safeguard=True,**proximal_par))
         assert proximal in self.domain
         return proximal
 
@@ -270,7 +271,8 @@ class Functional:
                 raise NotImplementedError("neither proximal nor conj_proximal are implemented")
             else:
                 gram = self.h_domain.gram
-                proximal = xstar - tau * gram(self.proximal(gram.inverse(xstar),1/tau,recursion_safeguard=True,**proximal_par))
+                gram_inv = self.h_domain.gram_inv
+                proximal = xstar - tau * gram(self.proximal(gram_inv(xstar),1/tau,recursion_safeguard=True,**proximal_par))
         assert proximal in self.domain
         return proximal 
 
@@ -549,6 +551,7 @@ class SquaredNorm(Functional):
                         )
         assert isinstance(a,float)
         self.gram = self.h_domain.gram
+        self.gram_inv = self.h_domain.gram_inv
         self.a=a
         if shift is None:
             assert b is None or b in self.domain
@@ -576,7 +579,7 @@ class SquaredNorm(Functional):
     def _conj(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
-            return np.real(np.vdot(xstar-bstar, self.gram.inverse(xstar-bstar))) / (2.*self.a) - self.c
+            return np.real(np.vdot(xstar-bstar, self.gram_inv(xstar-bstar))) / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
             return -self.c if np.linalg.norm(xstar-bstar)<=eps*(np.linalg.norm(xstar)+eps) else np.inf
@@ -586,7 +589,7 @@ class SquaredNorm(Functional):
     def _conj_subgradient(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
-            return (1./self.a) * self.gram.inverse(xstar-bstar)
+            return (1./self.a) * self.gram_inv(xstar-bstar)
         elif self.a==0:
             return self.domain.zeros()
         else:
@@ -602,7 +605,7 @@ class SquaredNorm(Functional):
     
     def _conj_hessian(self, xstar):
         if self.a>0:
-            return (1./self.a) * self.gram.inverse
+            return (1./self.a) * self.gram_inv
         else:
             return NotTwiceDifferentiableError
     
@@ -635,7 +638,7 @@ class SquaredNorm(Functional):
         elif isinstance(other,LinearFunctional):
             return SquaredNorm(self.domain, h_domain=self.h_domain,
                                a = self.a,
-                               b = self.b+self.gram.inverse(other.gradient),
+                               b = self.b+self.gram_inv(other.gradient),
                                c = self.c 
                                )
         elif np.isscalar(other):
@@ -653,7 +656,7 @@ class SquaredNorm(Functional):
             self.c += other.c
             return self
         elif isinstance(other,LinearFunctional):
-            self.b += self.gram.inverse(other.gradient),
+            self.b += self.gram_inv(other.gradient),
             return self
         elif np.isscalar(other):
             self.c += other 
@@ -776,9 +779,10 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return self.funcs[0].proximal(x,self.coeffs[0]*tau,**proximal_par)
         elif self.linear_table.count(False)==0:
-            return x-tau*self.grad_sum
+            return x-tau*self.h_domain.gram_inv(self.grad_sum)
         elif self.linear_table.count(False)==1:
-            return self.funcs[0].proximal(x-tau*self.grad_sum,self.coeffs[0]*tau,**proximal_par)
+            j = self.linear_table.index(False)
+            return self.funcs[j].proximal(x-tau*self.h_domain.gram_inv(self.grad_sum),self.coeffs[j]*tau,**proximal_par)
         else:
             return NotImplementedError
     
@@ -825,7 +829,7 @@ class LinearCombination(Functional):
             raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return (1./self.coeffs[0])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j])
+            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j])
         else:
             return NotImplementedError
 
@@ -835,7 +839,8 @@ class LinearCombination(Functional):
         elif self.linear_table.count(False)==0:
             return self.grad_sum
         elif self.linear_table.count(False)==1:
-            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*(xstar-self.grad_sum),tau/self.coeffs[0]) + self.grad_sum
+            j = self.linear_table.index(False)            
+            return self.coeffs[j]*self.funcs[j]._conj_proximal((1./self.coeffs[j])*(xstar-self.grad_sum),tau/self.coeffs[j]) + self.grad_sum
         else:
             return NotImplementedError
 
@@ -2002,6 +2007,8 @@ class QuadraticBilateralConstraints(LinearCombination):
         assert np.all(lb<ub)
         if x0 is None:
             x0 =0.5*(lb+ub)
+        elif isinstance(x0,(float,int)):
+            x0 = x0*domain.ones()
         assert x0 in domain 
         assert isinstance(alpha,float)
 
