@@ -549,15 +549,15 @@ class SquaredNorm(Functional):
                         convexity_param = a,
                         Lipschitz = a
                         )
-        assert isinstance(a,float)
+        assert isinstance(a,(float,int))
         self.gram = self.h_domain.gram
         self.gram_inv = self.h_domain.gram_inv
-        self.a=a
+        self.a=float(a)
         if shift is None:
             assert b is None or b in self.domain
             self.b = self.domain.zeros() if b is None else b
-            assert isinstance(c,float)
-            self.c = c
+            assert isinstance(c,(float,int))
+            self.c = float(c)
         else:
             assert isinstance(shift, self.domain)
             self.b = -self.a*shift
@@ -1802,9 +1802,9 @@ class Huber(IntegralFunctionalBase):
         else:
             super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), Lipschitz=1)        
             
-        assert isinstance(sigma, float) or sigma in domain 
+        assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
-        if isinstance(sigma, float) :
+        if isinstance(sigma, (float,int)) :
             self.sigma = sigma * domain.ones()
         else:
             self.sigma = sigma 
@@ -1865,9 +1865,9 @@ class QuadraticIntv(IntegralFunctionalBase):
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
         else:
             super().__init__(domain,hilbert.L2(domain,weights=1./domain.measure**2), convexity_param=1)
-        assert isinstance(sigma, float) or sigma in domain 
+        assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
-        if isinstance(sigma, float):
+        if isinstance(sigma, (float,int)):
             self.sigma = sigma * domain.ones()
         else:
             self.sigma = sigma 
@@ -2010,7 +2010,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         elif isinstance(x0,(float,int)):
             x0 = x0*domain.ones()
         assert x0 in domain 
-        assert isinstance(alpha,float)
+        assert isinstance(alpha,(float,int))
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
         F = QuadraticIntv(domain,sigma=(ub-lb)/2.,eps=eps)
@@ -2052,7 +2052,7 @@ def QuadraticLowerBound(domain, lb, x0,a=1.):
     elif x0 is None:
         x0 = domain.zeros()
     assert x0 in domain 
-    assert isinstance(a,float)
+    assert isinstance(a,(float,int))
 
     F = QuadraticNonneg(domain)
     lin = LinearFunctional(lb-x0,domain=domain,gradient_in_dual_space=False)
