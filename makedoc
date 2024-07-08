@@ -7,6 +7,7 @@ from importlib.machinery import ModuleSpec
 from sys import meta_path
 from types import ModuleType
 
+# requires pdoc3 to be installed!
 import pdoc
 
 
@@ -50,10 +51,6 @@ try:
 except ModuleNotFoundError:
     mocked.append('ngsolve')
 
-try:
-    import pynfft
-except ModuleNotFoundError:
-    mocked.append('pynfft')
 
 meta_path.append(MockImporter(*mocked))
 
