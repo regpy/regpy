@@ -1,9 +1,9 @@
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 
-from regpy.operators.fresnel import xray_phase_contrast
+from examples.xray_phase_contrast.xray_phase_contrast_operator import get_xray_phase_contrast
 from regpy.hilbert import L2
 from regpy.vecsps import UniformGridFcts
-from regpy.solvers import HilbertSpaceSetting
+from regpy.solvers import RegularizationSetting
 import regpy.stoprules as rules
 
 import numpy as np
@@ -27,7 +27,7 @@ def test_xray_phase_contrast():
     grid = UniformGridFcts(np.arange(1024), np.arange(1024))
 
     # Forward operator
-    op = xray_phase_contrast(grid, fresnel_number)
+    op = get_xray_phase_contrast(grid, fresnel_number)
 
     # Create phantom phase-image (= padded example-image)
     exact_solution = ascent().astype(np.float64)
@@ -42,7 +42,7 @@ def test_xray_phase_contrast():
     data = exact_data + noise
 
     # Image-reconstruction using the IRGNM method
-    setting = HilbertSpaceSetting(op=op, h_domain=L2, h_codomain=L2)
+    setting = RegularizationSetting(op=op, penalty=L2, data_fid=L2)
     solver = IrgnmCG(setting, data, regpar=10)
     stoprule = (
         rules.CountIterations(max_iterations=10) +

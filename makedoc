@@ -51,10 +51,6 @@ try:
 except ModuleNotFoundError:
     mocked.append('ngsolve')
 
-try:
-    import pynfft
-except ModuleNotFoundError:
-    mocked.append('pynfft')
 
 meta_path.append(MockImporter(*mocked))
 
