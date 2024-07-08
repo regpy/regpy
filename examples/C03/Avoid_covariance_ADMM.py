@@ -4,9 +4,9 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
 from regpy.hilbert import L2, Sobolev
-from regpy.discrs import UniformGrid, Grid
-from regpy.solvers import HilbertSpaceSetting
-from regpy.solvers.irgnm import IrgnmCG
+from regpy.vecsps import UniformGridFcts, GridFcts
+from regpy.solvers import RegularizationSetting
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.operators import FourierTransform
 import regpy.stoprules as rules
 from regpy.operators import Exponential, SquaredModulus
@@ -29,24 +29,24 @@ logging.basicConfig(
 
 ################################################ Initialization parameters ################################
 N=256               # Pixel numbers
-M=30                # Shots per frame
-N_frame=4000        # Number of frames ( or realizations)
+M=10                # Shots per frame
+N_frame=1000        # Number of frames ( or realizations)
 T=10**12            # the observation time or the number of photon counts
 fresnel_number=1e-3   # not properly scaled
 coherence_len = 0.3 # coherence length
-N_b=4             # denotes the rank of the matrix V
-Newton_steps =10    # Number of Newton updates
+N_b=2             # denotes the rank of the matrix V
+Newton_steps =5    # Number of Newton updates
 CG_steps=15         # Number of Conjugate gradient steps
-N_ADMM=150          # Number of ADMM iterations
+N_ADMM=10          # Number of ADMM iterations
 sigma=0.5           # parameter used in the rapid deacaying function
 gamma=2           # proximity parameter
  ############################################################################
 # perform a uniform grid
 xsample=np.arange(-1,1-1/N,2/N)
 ysample=xsample
-grid=UniformGrid(xsample, ysample, dtype=complex)
+grid=UniformGridFcts(xsample, ysample, dtype=complex)
 # perform frequencies in a uniform grid
-freq = grid.frequencies()
+# freq = grid.frequencies()
 # perform Fresenel propagation operator
 fp=fresnel_prop(grid, number=complex(0, 1)/(2*fresnel_number))
     
@@ -112,15 +112,15 @@ phase=absorp
 #support_mask=((abs(X)<=0.801)*(abs(Y)<=0.801)).astype('int')  #constant rectangular bump
 support_mask=((abs(X)**2+abs(Y)**2)<=0.6).astype('int')   # constant circular bump
 contrast = (0.01+0.01*complex(0,1))*support_mask+(0.1*absorp + 0.2*complex(0,1) * phase)
-#grid=UniformGrid(xsample, ysample, dtype=complex)
-#grid_codomain=UniformGrid(N, N, N_b, dtype=complex)
-#grid_codomain_2=UniformGrid(N, N, N_b, N_b, dtype=complex)
-#grid_codomain_3=UniformGrid(2, N, N, N_b, N_b, dtype=complex)
+#grid=UniformGridFcts(xsample, ysample, dtype=complex)
+#grid_codomain=UniformGridFcts(N, N, N_b, dtype=complex)
+#grid_codomain_2=UniformGridFcts(N, N, N_b, N_b, dtype=complex)
+#grid_codomain_3=UniformGridFcts(2, N, N, N_b, N_b, dtype=complex)
 
-grid=Grid(xsample, ysample, dtype=complex)
-grid_codomain=Grid(N, N, N_b, dtype=complex)
-grid_codomain_2=Grid(N, N, N_b, N_b, dtype=complex)
-grid_codomain_3=Grid(2, N, N, N_b, N_b, dtype=complex)
+# grid=GridFcts(xsample, ysample, dtype=complex)
+grid_codomain=GridFcts(N, N, N_b, dtype=complex)
+grid_codomain_2=GridFcts(N, N, N_b, N_b, dtype=complex)
+grid_codomain_3=GridFcts(2, N, N, N_b, N_b, dtype=complex)
 # defines the support of the contrast 
 mask=(contrast!=0)
 #projection=CoordinateMask(grid, mask)
@@ -165,9 +165,9 @@ if gram_type=='L2':
         return x
     
 elif gram_type=='Sobolev':
-    from regpy.hilbert import SobolevUniformGrid
+    from regpy.hilbert import SobolevUniformGridFcts
     
-    sobolev_space=SobolevUniformGrid(op.domain, index=sobolev_index, axes=None)
+    sobolev_space=SobolevUniformGridFcts(op.domain, index=sobolev_index, axes=None)
     
     _gram=sobolev_space.gram
     _gram_inv=sobolev_space.gram_inv
@@ -302,19 +302,19 @@ cbar.formatter.set_powerlimits((0, 0))
 # to get 10^3 instead of 1e3
 cbar.formatter.set_useMathText(True)
 
-im3 = axs[1, 0].imshow(Vcov[:, 2].reshape(N, N).real/ np.linalg.norm(Vcov[:, 2].reshape(N, N).real),vmin=-0.01,vmax=0.01)
-axs[1, 0].axis('off')
-cbar=fig.colorbar(im3, ax=axs[1, 0])
-cbar.formatter.set_powerlimits((0, 0))
-# to get 10^3 instead of 1e3
-cbar.formatter.set_useMathText(True)
+# im3 = axs[1, 0].imshow(Vcov[:, 2].reshape(N, N).real/ np.linalg.norm(Vcov[:, 2].reshape(N, N).real),vmin=-0.01,vmax=0.01)
+# axs[1, 0].axis('off')
+# cbar=fig.colorbar(im3, ax=axs[1, 0])
+# cbar.formatter.set_powerlimits((0, 0))
+# # to get 10^3 instead of 1e3
+# cbar.formatter.set_useMathText(True)
 
-im4 = axs[1, 1].imshow(Vcov[:, 3].reshape(N, N).real/ np.linalg.norm(Vcov[:, 3].reshape(N, N).real),vmin=-0.01,vmax=0.01)
-axs[1, 1].axis('off')
-cbar=fig.colorbar(im4, ax=axs[1, 1])
-cbar.formatter.set_powerlimits((0, 0))
-# to get 10^3 instead of 1e3
-cbar.formatter.set_useMathText(True)
+# im4 = axs[1, 1].imshow(Vcov[:, 3].reshape(N, N).real/ np.linalg.norm(Vcov[:, 3].reshape(N, N).real),vmin=-0.01,vmax=0.01)
+# axs[1, 1].axis('off')
+# cbar=fig.colorbar(im4, ax=axs[1, 1])
+# cbar.formatter.set_powerlimits((0, 0))
+# # to get 10^3 instead of 1e3
+# cbar.formatter.set_useMathText(True)
 plt.tight_layout()
 plt.show()
 
@@ -322,8 +322,8 @@ plt.show()
 ############################################################
 V0=Vcov[:, 0].reshape(N, N).real/ np.linalg.norm(Vcov[:, 0].reshape(N, N).real)
 V1=Vcov[:, 1].reshape(N, N).real/ np.linalg.norm(Vcov[:, 1].reshape(N, N).real)                                                
-V2=Vcov[:, 2].reshape(N, N).real/ np.linalg.norm(Vcov[:, 2].reshape(N, N).real)
-V3=Vcov[:, 3].reshape(N, N).real/ np.linalg.norm(Vcov[:, 3].reshape(N, N).real)
+# V2=Vcov[:, 2].reshape(N, N).real/ np.linalg.norm(Vcov[:, 2].reshape(N, N).real)
+# V3=Vcov[:, 3].reshape(N, N).real/ np.linalg.norm(Vcov[:, 3].reshape(N, N).real)
 U_inci=V0+V1+V2+V3
 
 plt.figure()
@@ -358,15 +358,15 @@ axs[0, 1].axis('off')
 fig.colorbar(im2, ax=axs[0, 1])
 
 
-im3 = axs[1, 0].imshow(contrast.imag, vmin=vmin, vmax=vmax)
-axs[1, 0].set_title('Exact phase',fontsize=fontsize)
-axs[1, 0].axis('off')
-fig.colorbar(im3, ax=axs[1, 0])
+# im3 = axs[1, 0].imshow(contrast.imag, vmin=vmin, vmax=vmax)
+# axs[1, 0].set_title('Exact phase',fontsize=fontsize)
+# axs[1, 0].axis('off')
+# fig.colorbar(im3, ax=axs[1, 0])
 
-im4 = axs[1, 1].imshow(sol_it.imag, vmin=vmin, vmax=vmax)
-axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
-axs[1, 1].axis('off')
-fig.colorbar(im4, ax=axs[1, 1])
+# im4 = axs[1, 1].imshow(sol_it.imag, vmin=vmin, vmax=vmax)
+# axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
+# axs[1, 1].axis('off')
+# fig.colorbar(im4, ax=axs[1, 1])
 # Adjust layou
 plt.tight_layout()
 #plt.subplot_tool()
@@ -389,14 +389,14 @@ axs[0, 1].axis('off')
 #fig.colorbar(im2, ax=axs[0, 1])
 
 
-im3 = axs[1, 0].imshow(contrast.imag)
-axs[1, 0].set_title('Exact phase',fontsize=fontsize)
-axs[1, 0].axis('off')
-#fig.colorbar(im3, ax=axs[1, 0])
+# im3 = axs[1, 0].imshow(contrast.imag)
+# axs[1, 0].set_title('Exact phase',fontsize=fontsize)
+# axs[1, 0].axis('off')
+# #fig.colorbar(im3, ax=axs[1, 0])
 
-im4 = axs[1, 1].imshow(sol_it.imag)
-axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
-axs[1, 1].axis('off')
+# im4 = axs[1, 1].imshow(sol_it.imag)
+# axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
+# axs[1, 1].axis('off')
 #fig.colorbar(im4, ax=axs[1, 1])
 # Adjust layou
 plt.tight_layout()
@@ -415,10 +415,10 @@ im1 = axs[0, 0].imshow(contrast.real, vmin=0, vmax=0.1)
 axs[0, 0].axis('off')
 #fig.colorbar(im1, ax=axs[0, 0])
 
-im3 = axs[0, 1].imshow(contrast.imag, vmin=0, vmax=0.2)
-#axs[1, 0].set_title('Exact phase',fontsize=fontsize)
-axs[1, 0].axis('off')
-#fig.colorbar(im3, ax=axs[1, 0])
+# im3 = axs[0, 1].imshow(contrast.imag, vmin=0, vmax=0.2)
+# #axs[1, 0].set_title('Exact phase',fontsize=fontsize)
+# axs[1, 0].axis('off')
+# #fig.colorbar(im3, ax=axs[1, 0])
 
 im2 = axs[1, 0].imshow(sol_it.real, vmin=0, vmax=0.1)
 #axs[0, 1].set_title('Recovered absorption',fontsize=fontsize)
@@ -426,9 +426,9 @@ axs[0, 1].axis('off')
 #fig.colorbar(im2, ax=axs[0, 1])
 
 
-im4 = axs[1, 1].imshow(sol_it.imag, vmin=0, vmax=0.2)
-#axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
-axs[1, 1].axis('off')
+# im4 = axs[1, 1].imshow(sol_it.imag, vmin=0, vmax=0.2)
+# #axs[1, 1].set_title('Recovered phase',fontsize=fontsize)
+# axs[1, 1].axis('off')
 #fig.colorbar(im4, ax=axs[1, 1])
 # Adjust layou
 plt.tight_layout()
