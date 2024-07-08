@@ -117,7 +117,7 @@ class StarCurveDiscr(UniformGridFcts):
         self.zpabs=starcurve.zpabs
         self.zp=starcurve.zp
         self.zpp=starcurve.zpp
-        self.zppp=starcurve.zpp
+        self.zppp=starcurve.zppp
         self.normal=starcurve.normal
         return starcurve
 
