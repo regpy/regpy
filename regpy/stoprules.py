@@ -1,5 +1,11 @@
+import logging
 from regpy.util import classlogger
+import numpy as np
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class MissingValueError(Exception):
     pass
@@ -69,6 +75,17 @@ class StopRule:
         return CombineRules([self, other])
 
 
+class NoneRule(StopRule):
+    """Default stop rule that will never stop an iteration. The rule should not be used in normal setting
+    it provides a default for the solvers that would stop by triggering their converged statement. 
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def _stop(self, x, y=None):
+        return False
+
 class CombineRules(StopRule):
     """Combine several stopping rules into one.
 
@@ -136,23 +153,29 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations, while_type = True):
+    def __init__(self, max_iterations, while_type = True,logging_level= logging.INFO):
         super().__init__()
         self.max_iterations = max_iterations
-        if while_type:
-            self.iteration = -1
-        else:
-            self.iteration = 0
+        self.iteration = 0
+        self.while_type = while_type
+        self.log.setLevel(logging_level)
 
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
 
     def _stop(self, x, y=None):
-        self.iteration += 1
-        self.log.info(
-            'iteration = {} / {}'
-            .format(self.iteration, self.max_iterations))
-        return self.iteration >= self.max_iterations
+        if self.while_type:
+            self.iteration += 1
+            if  self.iteration <= self.max_iterations:
+                self.log.info(
+                    'iteration = {} / {}'
+                    .format(self.iteration, self.max_iterations))
+        else:
+            self.log.info(
+                'iteration = {} / {}'
+                .format(self.iteration, self.max_iterations))
+            self.iteration += 1
+        return self.iteration > self.max_iterations
 
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
@@ -229,7 +252,7 @@ class RelativeChangeData(StopRule):
         if y is None:
             raise MissingValueError
         change = self.norm(y - self.data_old)
-        self.data_old = y
+        self.data_old = np.copy(y)
         self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -266,7 +289,7 @@ class RelativeChangeSol(StopRule):
 
     def _stop(self, x, y=None):
         change = self.norm(x - self.sol_old)
-        self.sol_old = x
+        self.sol_old = np.copy(x)
         self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -275,13 +298,11 @@ class RelativeChangeSol(StopRule):
 class Monotonicity(StopRule):
     """Stops if the residual is growing again.
 
-        Parameters
+    Parameters
     ----------
     norm : callable
         The norm with respect to which the difference should be measured.
         Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    cutoff : float
-        The cutoff value at which the iteration should be stopped
     data : np array
         The data array
     init_data : np array
@@ -289,6 +310,7 @@ class Monotonicity(StopRule):
     """
 
     def __init__(self, norm, data, init_data):
+        super().__init__()
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
@@ -302,6 +324,8 @@ class Monotonicity(StopRule):
         residual = self.norm(self.data - y)
         change = self.residual - residual
         self.residual = residual
-        self.log.info('Monotonicity = {}'.format(
-            change))
+        self.log.info('Monotonicity = {}, residual = {}'.format(
+            change, residual))
+        #self.log.info('Monotonicity = {}'.format(
+        #    change))
         return change < 0
