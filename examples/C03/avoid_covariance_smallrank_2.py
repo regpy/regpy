@@ -10,6 +10,7 @@ from regpy.solvers.irgnm import IrgnmCG
 import regpy.stoprules as rules
 from regpy.operators import Exponential, SquaredModulus
 #from regpy.operators.fresnel import fresnel_propagator
+import matplotlib.animation as animation
 import time
 
 from x_ray_phase_contrast import Corr, _build_fresnel_2, fresnel_prop, Ptw_Multiplication, Mat, Theta, Tau, Proj
@@ -24,24 +25,51 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
 )
 
-
-N=256  #N^2 is the pixel number
+#%%%%%%%%%%%%%%%%%%%%%%%%%% Set parameters %%%%%%%%%%%%%%%%%%%%%%%
+N=200  #N^2 is the pixel number
 M=10   # Shots per frame
-N_frame=10000  # frames
-T=10**12       # the observation time or the number of photon counts
-fresnel_number=30 # not properly scaled
+N_frame=1000  # frames
+T=10**12        # the observation time or the number of photon counts
+fresnel_number=40 # not properly scaled
 coherence_len = 0.3 # coherence length
 N_b=4
 Newton_steps = 10
-CG_steps=10
-sobolev_index=1.5
-
+FISTA_steps = 10
+FISTA_ub_absorp = 0
+FISTA_lb_absorp = -1000
+FISTA_ub_phase = 1000
+FISTA_lb_phase = 0
+row_ab = floor(N/2)
+row_ph = floor(N/3)
+#%%%%%%%%%%%%%%%%%%%%%%%%% Create test image, Fresnel propagator matrix%%%%%%%%%%%%%%%%%%%%%%%
 xsample=np.arange(-1,1-1/N,2/N)
 ysample=xsample
 grid=UniformGridFcts(xsample, ysample, dtype=complex)
 
+cov_u=np.eye(N**2)
+
 fp=fresnel_prop(grid, number=complex(0, 1)/(2*fresnel_number))
 col=fresnel_prop(grid, coherence_len**2)
+    
+    
+"""import random
+#Create i.i.d Gaussians
+mus=np.zeros((N_b, 2))
+for i in range(0, N_b):
+    mus[i, 0]=random.uniform(-1, 1)
+    mus[i, 1]=random.uniform(-1, 1)
+
+sigma=0.1
+vec=np.zeros((N_b, N, N))
+for i in range(0, N_b):
+    vec[i, :, :]=np.exp(-(xsample-mus[i, 0])**2/2).reshape(N, 1)*np.exp(-(ysample-mus[i, 1])**2/2).reshape(1, N)
+
+#Multiplize with a rapid decaying function
+sigma=1
+vec=vec*np.exp(-(xsample)**2/(2*sigma**2)).reshape(N, 1)*np.exp(-(ysample)**2/(2*sigma**2)).reshape(1, N)
+
+U, S, V=np.linalg.svd(vec.reshape(N_b, N**2), full_matrices=False)
+Vcov=V.T.conj()*S"""
 
 vec=np.zeros((N_b, N, N), dtype=complex)
 for i in range(0, N_b):
@@ -73,17 +101,46 @@ Theta_op=Theta(N, N_b)
 #op=Proj_op*Tau_op*Mat_op
 op=Tau_op*Mat_op
 
+
+"""dom=Mat_op.domain.randn()
+codom=Mat_op.codomain.randn()
+y, deriv=Mat_op.linearize(contrast)
+first=np.vdot(deriv(dom), codom)
+second=np.vdot(dom, deriv._adjoint(codom))
+
+
+dom=Tau_op.domain.randn()
+codom=Tau_op.codomain.randn()
+_, deriv=Tau_op.linearize(y)
+first=np.vdot(deriv(dom), codom)
+second=np.vdot(dom, deriv._adjoint(codom))"""
+
     
 X,Y = np.meshgrid(xsample, ysample, sparse=False)
 
-absorp=np.load('cell1.npy')
-phase=np.load('cell2.npy')
 
+absorp_0=(abs(X)<0.8)*(abs(Y)<0.199)+(abs(X)<0.299)*(abs(Y)<0.7)+(X**2+Y**2<=0.5**2)*(X**2+Y**2>=0.45**2)
+absorp_0=absorp_0.astype('int')
+
+absorp_1=(X**2+Y**2<=0.501**2)*(X**2+Y**2>=0.45**2)
+absorp_1=absorp_1.astype('int')
+absorp=absorp_0+absorp_1
+
+phase = ((abs(X+Y) <=0.101)+(abs(X-Y) <= 0.101)).astype('int')
 support_mask=((abs(X)<=0.801)*(abs(Y)<=0.801)).astype('int')
 contrast = support_mask*(-0.1*absorp + 0.1*complex(0,1) * phase)
 
+FISTA_ub_ab = FISTA_ub_absorp*support_mask
+FISTA_lb_ab = FISTA_lb_absorp*support_mask
+FISTA_ub_ph = FISTA_ub_phase*support_mask
+FISTA_lb_ph = FISTA_lb_phase*support_mask
+
+
 ptw_detection= SquaredModulus(grid)
+#ptw_op=ptw_detection*fp*ex
 mult=Ptw_Multiplication(grid, np.exp(contrast))
+#basis_op= small_rank_basis(random_coeffs, codomain=mult.domain)
+#ptw_op=ptw_detection*fp*mult*basis_op
 ptw_op=ptw_detection*fp*mult
 
 taumat_0=Mat_op(contrast) 
@@ -108,20 +165,10 @@ for i in range(0, N_frame):
 
 intensities-=intens_tot/N_frame
 
-#def _gram_inv(x):
-#    return x
+#intensities=np.load('intensities.npy')
 
-#def _gram(x):
-#    return x
 
-from regpy.hilbert import SobolevUniformGridFcts
-
-sobolev_space=SobolevUniformGridFcts(op.domain, index=sobolev_index, axes=None)
-
-_gram=sobolev_space.gram
-_gram_inv=sobolev_space.gram_inv
-
-def _norm(taumat, deriv):
+def _norm(taumat):
     h=np.random.randn(N**2).reshape(N, N)
     norm = np.sqrt(np.real(np.vdot(h, h)))
     for count in range(10):
@@ -132,61 +179,17 @@ def _norm(taumat, deriv):
         derivh=M**2*Theta_op._deriv_adjoint(taumat, taumat, Proj_op(derivh))
         h=deriv._adjoint(Proj_op._adjoint(derivh))
         
-        norm = np.sqrt(np.real(np.vdot(_gram_inv(h), _gram_inv(h))))
+        norm = np.sqrt(np.real(np.vdot(h, h)))
     return np.sqrt(norm)
-
-
-def CG(backprop, op, taumat, Theta_op, Proj_op, max_iter=5, reg=0, tol=10**(-50)):
-    s_old_tilde=backprop
-    s_old=_gram_inv(s_old_tilde)
-    d=s_old
-    d_tilde=s_old_tilde    
-    kappa=1
-    x=op.domain.zeros()
-    counter=0
-    while counter<=max_iter and np.linalg.norm(s_old)>np.sqrt(kappa)*reg*tol:
-        mat=op(d)
-        z_adj_1=M**2*Theta_op._deriv_adjoint(taumat, taumat, Proj_op(mat))
-        z_adj=op._adjoint(Proj_op._adjoint(z_adj_1))
-        z_scalar=np.vdot(z_adj, d)
-        s_scalar=np.vdot(s_old_tilde, s_old)
-        d_scalar=np.vdot(d_tilde, d)
-        gamma=s_scalar/(reg*d_scalar+z_scalar)
-        x+=gamma*d
-        s_new_tilde=s_old_tilde-gamma*(z_adj+reg*d_tilde)
-        s_new=_gram_inv(s_new_tilde)
-        beta=np.vdot(s_new, s_new)/s_scalar
-        kappa=1+beta*kappa
-        d=s_new+beta*d
-        s_old=s_new.copy()
-        s_old_tilde=s_new_tilde.copy()
-        counter+=1
-    return x
-
-
-def CG_op(backprop, op, taumat, Theta_op, Proj_op, max_iter=5, reg=0, tol=10**(-50)):
-    r=_gram_inv(backprop)
-    d = r
-    counter=0
-    x=op.domain.zeros()
-    while counter<=max_iter and np.linalg.norm(r)>=tol:
-        mat=op(d)
-        z_adj_1=M**2*Theta_op._deriv_adjoint(taumat, taumat, Proj_op(mat))
-        z_adj=op._adjoint(Proj_op._adjoint(z_adj_1))
-        z=_gram_inv(z_adj)+reg*d
         
-        normsq_r_old=np.vdot(r, _gram(r)).real
-        scalar=np.vdot(d, _gram(z)).real
-        alpha=normsq_r_old/scalar
-        x = x + alpha*d
-        r = r - alpha*z
-        beta=np.vdot(r, _gram(r)).real/normsq_r_old
-        d = r + beta*d
-        print('residual=\n',np.linalg.norm(r))
-        counter+=1
-    return x
 
+
+#correlation_data=1/N_frame*intensities.reshape(N_frame, N**2).T.dot(intensities.reshape(N_frame, N**2).conj())
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Evaluate forward operator %%%%%%%%%%%%%%%%
 sol_it = np.zeros((N, N), dtype=complex)
+
+
 for Newton_it in range(Newton_steps):
     print(Newton_it)
     # evaluate forward operator at sol_it
@@ -199,24 +202,36 @@ for Newton_it in range(Newton_steps):
     #compute approximation to operator norm of linearized forward operator T
     # by power method (we compute the largest eigenvalue 1/mu of T'*T)
     
-    if Newton_it==0:
-        #reg=_norm(taumat, deriv)**2
-        reg=1e10
-    else:
-        reg*=0.9
-    #reg=10**5
-    print('reg=\n',reg)
+    mu=1/_norm(taumat)**2
+    print('mu=\n',mu)
     
-    Newton_up=CG_op(backprop, deriv, taumat, Theta_op, Proj_op, max_iter=CG_steps, reg=reg, tol=10**(-50))
-    
+    #%%%%%%%%%%%%solve normal equation of Newton's equation by FISTA %%%%%%%%%%%%%%#
+    Newton_up = 0*sol_it
+    Newton_up_old = Newton_up
+    t=0
+    for iteration in range(1, FISTA_steps):
+        # extra-gradient step
+        told = t
+        t = (1 + np.sqrt(1+4*t*t))/2
+        beta = (told-1)/t
+        y = Newton_up + beta*(Newton_up-Newton_up_old)
+        derivy=deriv(y)
+        derivy=M**2*Theta_op._deriv_adjoint(taumat, taumat, Proj_op(derivy))
+        FISTAup=deriv._adjoint(Proj_op._adjoint(derivy))
+        Newton_up_old = Newton_up
+        Newton_up = y-  mu*(FISTAup-backprop)
+        Newton_up = np.minimum(FISTA_ub_ab, np.maximum(FISTA_lb_ab,Newton_up.real)) \
+            + complex(0,1)*np.minimum(FISTA_ub_ph, np.maximum(FISTA_lb_ph,Newton_up.imag))
     sol_it = sol_it + Newton_up
 
 
-plt.figure()
-plt.imshow(Vcov[:, 0].reshape(N, N).real)
-plt.colorbar()
-plt.title('Sample incident')
-plt.show()
+
+#error[Newton_it]=np.linalg.norm(sol_it-exact_solution)/np.linalg.norm(exact_solution)
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Plot reaults %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%# 
+  
+ 
+#plt.semilogy([np.linalg.norm(x-exact_solution) for x in sol_it])
+
 
 plt.figure()
 plt.imshow(intens_tot)
@@ -250,13 +265,15 @@ plt.title('Exact phase')
 plt.show()
 
 plt.figure()
-plt.plot(sol_it[int(N/2), :].imag, label='recon phase')
-plt.plot(contrast[int(N/2), :].imag, label='true phase')
+plt.plot(sol_it[10, :].imag, label='recon phase')
+plt.plot(contrast[10, :].imag, label='true phase')
 plt.legend()
 plt.show()
 
 plt.figure()
-plt.plot(-sol_it[int(N/2), :].real, label='recon absorption')
-plt.plot(-contrast[int(N/2), :].real, label='true absorption')
+plt.plot(-sol_it[10, :].real, label='recon absorption')
+plt.plot(-contrast[10, :].real, label='true absorption')
 plt.legend()
 plt.show()
+
+
