@@ -507,7 +507,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         dual: setting.op.codomain [default: None]
             dual variable p        
         """        
-
+        assert self.setting.op.linear
         assert not (primal is None and dual is None)
         if primal is None:
             f = self.dualToPrimal(dual)
