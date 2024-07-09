@@ -45,7 +45,7 @@ def test_xray_phase_contrast():
     setting = RegularizationSetting(op=op, penalty=L2, data_fid=L2)
     solver = IrgnmCG(setting, data, regpar=10)
     stoprule = (
-        rules.CountIterations(max_iterations=10) +
+        rules.CountIterations(max_iterations=100) +
         rules.Discrepancy(
             setting.h_codomain.norm,
             data,
@@ -55,3 +55,5 @@ def test_xray_phase_contrast():
     )
 
     reco, reco_data = solver.run(stoprule)
+
+    assert stoprule.rules[1].triggered

@@ -39,7 +39,7 @@ def test_mediumscattering():
 
     exact_solution = projection(contrast)
     exact_data = op(exact_solution)
-    noise = 0.01 * op.codomain.randn()
+    noise = 0.001 * op.codomain.randn()
     data = exact_data + noise
     init = op.domain.zeros()
 
@@ -76,6 +76,7 @@ def test_mediumscattering():
     for reco, reco_data in solver.until(stoprule):
         solution = embedding(reco)
 
+    assert stoprule.rules[1].triggered
 
 
 
