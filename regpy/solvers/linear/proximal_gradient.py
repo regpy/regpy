@@ -136,4 +136,4 @@ class FISTA(RegSolver):
         self.y = self.op(self.x)
 
         if self.dualityGapWorks:
-            self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
+            self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True) )

@@ -404,13 +404,17 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         If not None, the penalty functional is replaced by penalty(. - penalty_shift).
     data_fid_shift: op.co_domain [default: None]
         If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
-    logging_level: [default: logging.INFO]
+    primal_setting: None or TikhonovRegularizationSetting [default:None]
+        Indicates whether or not a setting serves as primal setting. For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
+        This affects the duality relations and the duality gap. 
+    logging_level: int [default: logging.INFO]
         logging level
     """
 
     log = classlogger
 
-    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None, logging_level = logging.INFO,gap_threshold = 1e5):
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None, 
+                 primal_setting=None,logging_level = logging.INFO,gap_threshold = 1e5):
         super().__init__(op,penalty=penalty, data_fid= data_fid)
 
         if not penalty_shift is None:
@@ -424,6 +428,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
         """The regularization parameter"""
+        assert primal_setting is None or isinstance(primal_setting,TikhonovRegularizationSetting)
+        self.primal_setting = primal_setting
     
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
@@ -435,10 +441,12 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return TikhonovRegularizationSetting(self.op.adjoint,
                                              self.data_fid.conj.dilation(-self.regpar),
                                              self.penalty.conj,
-                                             regpar= 1/self.regpar
+                                             regpar= 1/self.regpar,
+                                             primal_setting = self,
+                                             logging_level=self.log.level
                                              )
 
-    def dualToPrimal(self,pstar,argumentIsOperatorImage = False):
+    def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
         r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
         If \(p\) is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
         If \(\xi=T^*p\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\xi\) as argument and avoid an operator evaluation.
@@ -449,12 +457,45 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             argument to be transformed
         argumentIsOperatorImage: boolean [default: False]
             See above.
+        own: bool [default: False]
+            Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
+            If true, the duality relations of the dual setting are used. 
         """
-        if argumentIsOperatorImage:
-            return self.penalty.conj.subgradient(pstar)
+        if self.primal_setting is None or own == True:
+            if argumentIsOperatorImage:
+                return self.penalty.conj.subgradient(pstar)
+            else:
+                assert self.op.linear
+                return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         else:
-            assert self.op.linear
-            return self.penalty.conj.subgradient(self.op.adjoint(pstar))
+            return self.primal_setting.primalToDual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
+            """Note that the dual variables of the dual problem differ by a factor -alpha_d from the primal variables of the primal problem.
+            Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
+            """
+        
+    def primalToDual(self,x,argumentIsOperatorImage = False, own=False):
+        r"""
+        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
+        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
+        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
+    
+        Parameters
+        ----------------------------
+        x: self.op.domain (or self.op.codomain if argumentIsOperatorImage=True)
+            argument to be transformed
+        argumentIsOperatorImage: boolean [default: False]
+            See above.
+        own: bool [default: False]
+            Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
+            If true, the duality relations of the dual setting are used. 
+        """
+        if self.primal_setting is None or own==True:
+            if argumentIsOperatorImage:
+                return (-1./self.regpar) * self.data_fid.subgradient(x)
+            else:
+                return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
+        else:
+            return self.primal_setting.dualToPrimal(x, argumentIsOperatorImage=argumentIsOperatorImage)
 
     def dualityGap(self, primal=None, dual=None):
         r"""Computes the value of the duality gap 
@@ -466,7 +507,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         dual: setting.op.codomain [default: None]
             dual variable p        
         """        
-        assert self.op.linear
+
         assert not (primal is None and dual is None)
         if primal is None:
             f = self.dualToPrimal(dual)
@@ -482,31 +523,16 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         pen = self.penalty(f)
         ddat = self.penalty.conj(self.op.adjoint(p))
         dpen = 1./alpha * self.data_fid.conj(-alpha*p)
-        res = dat+pen+ddat+dpen
         ares = np.abs(dat)+np.abs(pen)+np.abs(ddat)+np.abs(dpen) 
+        if not np.isfinite(ares):
+            self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e},'.format(pen,dat,dpen,ddat))
+            return np.inf
+        res = dat+pen+ddat+dpen
         if ares/res>1e10:
             self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         elif ares/res>self.gap_threshold:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
-    
-    def primalToDual(self,x,argumentIsOperatorImage = False):
-        r"""
-        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
-        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
-        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
-    
-        Parameters
-        ----------------------------
-        x: self.op.domain (or self.op.codomain if argumentIsOperatorImage=True)
-            argument to be transformed
-        argumentIsOperatorImage: boolean [default: False]
-            See above.
-        """
-        if argumentIsOperatorImage:
-            return (-1./self.regpar) * self.data_fid.subgradient(x)
-        else:
-            return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
     
     def isSaddlePoint(self,x,p,tol):
         r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
@@ -539,7 +565,6 @@ class DualityGapStopping(StopRule):
         self.threshold = threshold
         self.max_iter = max_iter
         self.log.setLevel(logging_level)
-        self.log.info('it. {}/{}: duality gap={:.3e}'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap))
         self.gap_stat = []
 
     def _stop(self,x,y=None):
