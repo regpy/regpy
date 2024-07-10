@@ -301,7 +301,7 @@ class RegularizationSetting:
         """
         if self.op.linear:
             return True
-        seq = test_derivative(self.op,steps=steps)
+        seq = test_derivative(self.op,steps=steps,ret_sequence=True)
         return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
     
     def h_adjoint(self,y=None):
