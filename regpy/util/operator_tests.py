@@ -102,6 +102,29 @@ def test_adjoint_derivative(op, tolerance=1e-10):
 
     
 def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, -8, -1)],adjoint_derivative=False):
+    """Numerically tests if operator is computed correctly.
+
+    Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
+    sequence of difference quotients and checking if they are decreasing. Checks if derivative is linear with correct adjoint.
+    Optionally checks correctness of adjoint derivative.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator.
+    tolerance : float, optional
+        The maximum allowed difference between the results. Defaults to 1e-10.
+    steps : list of float, optional
+        Steps used for the computation for the difference quotients. Should be chosen according to the expected regularity of the operator.
+        Defaults to [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
+    adjoint_derivative : bool, optional
+        If true the adjoint_derivative is also checked. Defaults to False.
+
+    Raises
+    ------
+    AssertionError
+        If the test fails.
+    """
     if(op.linear):
         for _ in range(sample_N):
             test_linearity(op,tolerance)
