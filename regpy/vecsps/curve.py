@@ -117,7 +117,7 @@ class StarCurveDiscr(UniformGridFcts):
         self.zpabs=starcurve.zpabs
         self.zp=starcurve.zp
         self.zpp=starcurve.zpp
-        self.zppp=starcurve.zpp
+        self.zppp=starcurve.zppp
         self.normal=starcurve.normal
         return starcurve
 
@@ -278,8 +278,8 @@ class GenTrig:
                 np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
 
         if self.nderivs>=3:
-            self.zppp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2, self.nvals))**3 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2, self.nvals))**3 * coeffhat[1,:])))).reshape(2, coeffhat[1, :].shape[0])
+            self.zppp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
         
         if self.nderivs>3:
             raise ValueError('only derivatives up to order 3 implemented')

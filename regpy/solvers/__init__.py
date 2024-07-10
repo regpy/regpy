@@ -465,6 +465,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             if argumentIsOperatorImage:
                 return self.penalty.conj.subgradient(pstar)
             else:
+                assert self.op.linear
                 return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         else:
             return self.primal_setting.primalToDual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
@@ -506,12 +507,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         dual: setting.op.codomain [default: None]
             dual variable p        
         """        
-
-        if self.primal_setting is not None:
-            new_primal = None if dual is None else - self.regpar * dual 
-            new_dual = None if primal is None else primal
-            return self.primal_setting.dualityGap(primal=new_primal,dual=new_dual)
-
+        assert self.setting.op.linear
         assert not (primal is None and dual is None)
         if primal is None:
             f = self.dualToPrimal(dual)
@@ -556,6 +552,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         tol: float [default: 1e-10]
         Tolerance value
         """
+        assert self.op.linear
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 

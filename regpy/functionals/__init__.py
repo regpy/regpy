@@ -543,8 +543,8 @@ class SquaredNorm(Functional):
         In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift\|^2)\.
     """
 
-    def __init__(self,domain,h_domain=None, a=1., b=None,c=0.,shift=None):
-        super().__init__(domain,h_domain=h_domain, 
+    def __init__(self, h_space, a=1., b=None,c=0.,shift=None):
+        super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
                         convexity_param = a,
                         Lipschitz = a
@@ -559,7 +559,7 @@ class SquaredNorm(Functional):
             assert isinstance(c,(float,int))
             self.c = float(c)
         else:
-            assert isinstance(shift, self.domain)
+            assert shift in self.domain
             self.b = -self.a*shift
             self.c = (self.a/2.) * self.h_domain.norm(shift)**2
 
@@ -615,14 +615,14 @@ class SquaredNorm(Functional):
         return (1./(1.+tau/self.a)) * (zstar-bstar) + bstar
 
     def dilation(self, dil):
-        return SquaredNorm(self.domain, h_domain=self.h_domain,
+        return SquaredNorm(self.h_domain,
                                a = dil**2 *self.a,
                                b = dil*self.b,
                                c = self.c 
                                )
 
     def shift(self, v):
-        return SquaredNorm(self.domain, h_domain=self.h_domain,
+        return SquaredNorm(self.h_domain,
                                a = self.a,
                                b = self.b-self.a*v,
                                c = self.c - self.h_domain.inner(self.b,v) + (self.a/2)* self.h_domain.norm(v)**2
@@ -630,19 +630,19 @@ class SquaredNorm(Functional):
 
     def __add__(self, other):
         if isinstance(other, SquaredNorm):
-            return SquaredNorm(self.domain, h_domain=self.h_domain,
+            return SquaredNorm(self.h_domain,
                                a = self.a+other.a,
                                b = self.b+other.b,
                                c = self.c+other.c 
                                )
         elif isinstance(other,LinearFunctional):
-            return SquaredNorm(self.domain, h_domain=self.h_domain,
+            return SquaredNorm(h_domain,
                                a = self.a,
                                b = self.b+self.gram_inv(other.gradient),
                                c = self.c 
                                )
         elif np.isscalar(other):
-            return SquaredNorm(self.domain, h_domain=self.h_domain,
+            return SquaredNorm(self.h_domain,
                                a = self.a,
                                b = self.b,
                                c = self.c+other 
@@ -665,7 +665,7 @@ class SquaredNorm(Functional):
 
     def __rmul__(self,other):
         if np.isscalar(other):
-            return SquaredNorm(self.domain, h_domain=self.h_domain,
+            return SquaredNorm(self.h_domain,
                                a = other*self.a,
                                b = other*self.b,
                                c = other*self.c 
@@ -1990,8 +1990,11 @@ class QuadraticBilateralConstraints(LinearCombination):
         reference value
     alpha: float [default: 1]
         regularization parameter
-
+    eps: real [default: 0]
+        Tolerance parameter for violations of the hard constraints (which may occur due to rounding errors).
+        If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
+
     def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,eps=0.):
         assert isinstance(domain,vecsps.MeasureSpaceFcts)
         if isinstance(lb,(float,int)):

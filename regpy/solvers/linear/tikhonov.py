@@ -1,7 +1,8 @@
 import logging
 import numpy as np
 
-from regpy.solvers import RegSolver
+from regpy.solvers import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from regpy.functionals import SquaredNorm
 
 from regpy.operators import Identity
 from regpy.stoprules import CountIterations
@@ -25,13 +26,16 @@ class TikhonovCG(RegSolver):
     ----------
     setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The regularization parameter. Must be positive.
-    xref: array-like, default: None
+    data : setting.op.codomain [default: None]
+        The measured data. 
+        If None, then setting must have SquaredNorm as data fidelity and penalty term. In this case xref is ignored, 
+        and if setting is a TikhonovRegularizationSetting, then also regpar is ignored.
+        If not None, then setting.penalty and setting.data_fid are ignored except for their Hilbert space structures. 
+    regpar : float [default:None]
+        The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
+    xref: setting.op.domain [default: None]
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
+    x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
     tol : float, default: None
         The absoluted tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
@@ -50,16 +54,36 @@ class TikhonovCG(RegSolver):
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
     def __init__(
-        self, setting, data, regpar, xref=None, x0 =None, 
+        self, setting, data=None, regpar=None, xref=None, 
+        x0 =None, 
         tol=None, reltolx=None, reltoly=None, 
         all_tol_criteria = True,
         krylov_basis=None, preconditioner=None,
         logging_level = logging.INFO
         ):
+        assert isinstance(setting,RegularizationSetting)
         assert setting.op.linear
 
         super().__init__(setting)
         self.log.setLevel(logging_level)
+        if data is None:
+            assert isinstance(self.data_fid,SquaredNorm)
+            data = (-1./self.data_fid.a) * self.data_fid.b
+
+            if xref is not None:
+                self.log.warning('Ignoring given parameter xref')
+            assert isinstance(self.penalty,SquaredNorm)                
+            xref = (-1./self.penalty.a) * self.penalty.b
+
+            if isinstance(setting,TikhonovRegularizationSetting):
+                if regpar is not None:
+                    self.log.warning('Ignoring given value of regularization parameter')
+                regpar = (self.penalty.a/self.data_fid.a) * self.regpar
+            else:
+                assert regpar is not None
+                regpar *= self.penalty.a/self.data_fid.a
+
+        assert regpar is not None
         self.regpar = regpar
         """The regularization parameter."""
         #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
@@ -259,6 +283,7 @@ class TikhonovAlphaGrid(RegSolver):
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
         super().__init__(setting)
+        self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -292,12 +317,12 @@ class TikhonovAlphaGrid(RegSolver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self.setting,data=self.data,regpar=alpha,xref=self.xref,x0=self.xref,
                                reltolx = self.tol_fac / np.sqrt(alpha),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar = alpha,xref=self.xref,x0=self.xref,
                                tol= self.tol_fac * self.delta / np.sqrt(alpha),
                                 logging_level=self.logging_level
                                )
@@ -325,6 +350,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
         super().__init__(setting)
+        self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -361,12 +387,12 @@ class NonstationaryIteratedTikhonov(RegSolver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
                                reltolx = self.tol_fac / np.sqrt(self.alpha_eff),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
                                tol= self.tol_fac * self.delta / np.sqrt(self.alpha_eff),
                                 logging_level=self.logging_level
                                )
