@@ -17,7 +17,7 @@ build_doc:
 
     # get necessary packages
     - apt update
-    - apt install openssh-client rclone
+    - apt install rclone -y
     # setup ssh key, based on official example: https://gitlab.com/gitlab-examples/ssh-private-key
     - eval $(ssh-agent -s) #start ssh agent
     - echo "$SFTP_KEY_VWEB_GWDG" | tr -d '\r' | ssh-add -
