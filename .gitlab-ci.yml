@@ -24,7 +24,7 @@ build_doc:
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
     # this can be done safer, we use this permissive version for public content
-    - ssh-keyscan -p 2222 webvm.num.math.uni-goettingen.de >> ~/.ssh/known_hosts
+    - ssh-keyscan -p 22 webvm.num.math.uni-goettingen.de >> ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
     # use rclone to sync to vwebfile.gwdg:
     - mkdir -p ~/.config/rclone
