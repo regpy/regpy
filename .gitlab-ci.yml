@@ -1,10 +1,22 @@
 image: python:latest
 
 stages:          # List of stages for jobs, and their order of execution
+  - build
   - test
 
 before_script: #'build' the project from setup files
   - pip install .
+
+build_doc:
+  stage: build
+  script:
+    - pip install pdoc3
+    - python makedoc
+    - mv doc/regpy public
+  artifacts:
+    paths:
+    - public
+
 
 test:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
