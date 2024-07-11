@@ -29,7 +29,7 @@ build_doc:
     # use rclone to sync to vwebfile.gwdg:
     - mkdir -p ~/.config/rclone
     - cp rclone.conf ~/.config/rclone/ #set up rclone
-    - rclone sync public/ gwdg_vweb:regpydoc # clone it
+    - rclone sync public/ gwdg_vweb:/var/www/num/regpy # clone it
 
   artifacts:
     paths:
