@@ -272,7 +272,7 @@ class Functional:
             else:
                 gram = self.h_domain.gram
                 gram_inv = self.h_domain.gram_inv
-                proximal = xstar - tau * gram(self.proximal(gram_inv(xstar),1/tau,recursion_safeguard=True,**proximal_par))
+                proximal = xstar - tau * gram(self.proximal(gram_inv(xstar/tau),1/tau,recursion_safeguard=True,**proximal_par))
         assert proximal in self.domain
         return proximal 
 
@@ -382,8 +382,10 @@ class Conj(Functional):
                          convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else np.inf
                          )
 
-    def __call__(self, x):
+    def _eval(self,x):
         return self.func._conj(x)
+    # def __call__(self, x):
+    #     return self.func._conj(x)
 
     def _conj(self, x):
         return self.func._eval(x)
@@ -1593,7 +1595,7 @@ class LppPower(IntegralFunctionalBase):
     def _f_conj_second_deriv(self, vstar,**kwargs):
         return (self.q-1)*np.abs(vstar)**(self.q-2)
     
-    def _f_prox_conj(self,v_star,tau,**kwargs):
+    def _f_conj_prox(self,v_star,tau,**kwargs):
         if self.p==2:
             return v_star/(1+tau)
         else:
