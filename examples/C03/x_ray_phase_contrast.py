@@ -8,6 +8,9 @@ from regpy.vecsps import UniformGridFcts
     
 class Corr(Operator):
     
+    """Maps: x -> 2* D x Cov(u) x^* D^*
+    """
+    
     def __init__(self, domain, codomain, fp, cov_u):
         self.cov_u=cov_u
         self.fp=fp
@@ -33,6 +36,11 @@ class Corr(Operator):
 
         
 def _build_fresnel_2(domain, number=complex(0,1)/80):
+    
+    """
+    Returns the Fresnel-propagator
+    """
+    
     N=domain.shape[0]
     ft = FourierTransform(domain, centered=True)
     frqs = ft.codomain.coords*0.5*np.pi*N
@@ -42,6 +50,10 @@ def _build_fresnel_2(domain, number=complex(0,1)/80):
 
 
 class fresnel_prop(Operator):
+    
+    """
+    Evaluation of Fresnelpropagator
+    """
     
     def __init__(self, domain, number=complex(0,1)/80):
         self.N=domain.shape[0]
@@ -58,7 +70,7 @@ class fresnel_prop(Operator):
         return np.fft.ifftshift(np.fft.ifft2(self.propagation_factor.T.conj()*np.fft.fft2(np.fft.fftshift(y))))
         
         
-class small_rank_basis(Operator):
+"""class small_rank_basis(Operator):
     
     def __init__(self, random_coeffs, codomain):
         self.random_coeffs=random_coeffs
@@ -71,7 +83,7 @@ class small_rank_basis(Operator):
         return vec.reshape(self.codomain.shape)
     
     def _adjoint(self, y):
-        return y.flatten()[self.random_coeffs]
+        return y.flatten()[self.random_coeffs]"""
     
     
 class Ptw_Multiplication(Operator):
@@ -106,6 +118,9 @@ class Ptw_Multiplication(Operator):
         
 class Tau(Operator):
     
+    """Mapping of A_{ijk} -> A_{ijk} A^*_{ijl}
+    """
+    
     def __init__(self, domain, codomain):
         self.N=domain.shape[0]
         self.k=domain.shape[-1]
@@ -127,6 +142,9 @@ class Tau(Operator):
         return first_adj+second_adj
     
 class Theta:
+    
+    """Mapping of DxE -> D E^*, we just apply _deriv_adjoint and _eval_adjoint
+    """
     
     def __init__(self, N, k):
         self.N=N
@@ -168,6 +186,49 @@ class Theta:
         return res
     
     
+class Theta_2(Operator):
+    
+    """Mapping of DxE -> D E^*, we just apply _deriv_adjoint and _eval_adjoint
+    """
+    
+    def __init__(self, domain, codomain, N, k):
+        self.N=N
+        self.k=k
+        super().__init__(domain, codomain, linear=False)
+    
+    def _deriv_adjoint(self, DE, dDE):
+        D=DE[0, ...]
+        E=DE[1, ...]
+        dD=dDE[0, ...]
+        dE=dDE[1, ...]
+        first=self._backprop(D, E, D, dE)
+        second=self._backprop(D, E, dD, E)
+        return first+second
+    
+    def _eval_adjoint(self, DE, C, k_C=None):
+        D=DE[0, ...]
+        E=DE[1, ...]
+        C_1=C[0, ...]
+        C_2=C[1, ...]
+        return self._backprop(D, E, C_1, C_2, k_G=k_C)
+    
+    def _backprop(self, DE, G_1, G_2, k_G=None):
+        if k_G is None:
+            k_G=self.k**2
+        D=DE[0, ...]
+        E=DE[1, ...]
+        D=D.reshape(self.N**2, self.k**2)
+        E=E.reshape(self.N**2, self.k**2)
+        G_1=G_1.reshape(self.N**2, k_G)
+        G_2=G_2.reshape(self.N**2, k_G)
+        first=np.dot(G_1, G_2.T.conj().dot(E))
+        second=np.dot(G_2, G_1.T.conj().dot(D))
+        res=np.zeros((2, self.N, self.N, self.k, self.k), dtype=complex)
+        res[0, ...]=first.reshape(self.N, self.N, self.k, self.k)
+        res[1, ...]=second.reshape(self.N, self.N, self.k, self.k)
+        return res
+    
+    
 class Proj(Operator):
     
     def __init__(self, domain, codomain):
@@ -186,6 +247,10 @@ class Proj(Operator):
     
     
 class Mat(Operator):
+    
+    """
+    Maps x-> D e^f V
+    """
     
     def __init__(self, domain, codomain, Vcov, fp):
         self.N=domain.shape[0]
@@ -216,3 +281,18 @@ class Mat(Operator):
             res+=right*left*np.exp(self.x.conj())
         return res
 
+
+class power(Operator):
+    
+    def __init__(self, domain, codomain):
+        self.N=domain.shape[0]
+        super.__init__(self, domain, codomain, linear=False)
+        
+    def _eval(self, x, differentiate=True):
+        return np.sum(abs(x)**2, axis=-1)
+    
+    def _derivative(self, h):
+        return 2*np.sum(self.x*h.conj(), axis=-1).real
+    
+    def _adjoint(self, y):
+        return 2*y.real.reshape(self.N, self.N, 1)*self.x.conj()
