@@ -31,3 +31,17 @@ def test_identity():
     op=Identity(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-x)<1e-20)
+
+def test_exponential():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=Exponential(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=Exponential(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
+
