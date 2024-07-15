@@ -1340,7 +1340,7 @@ class FunctionalProductSpace(Functional):
 
     def _hessian(self, x):
         splitted = self.domain.split(x)
-        return operators.DirectSum(tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
+        return operators.DirectSum(*tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
 
     def _proximal(self, x, tau,proximal_par_list = None):
         splitted = self.domain.split(x)
@@ -1374,9 +1374,9 @@ class FunctionalProductSpace(Functional):
                 res = False
         return res
 
-    def _hessian(self, xstar):
+    def _conj_hessian(self, xstar):
         splitted = self.domain.split(xstar)
-        return operators.DirectSum(tuple(self.funcs[i].conj.hessian(splitted[i]) for i in range(self.length)))
+        return operators.DirectSum(*tuple(self.funcs[i].conj.hessian(splitted[i]) for i in range(self.length)))
 
     def _conj_proximal(self, xstar, tau,proximal_par_list = None):
         splitted = self.domain.split(xstar)
