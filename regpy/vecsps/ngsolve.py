@@ -34,10 +34,10 @@ class NgsSpace(VectorSpace):
         try:
             self.codim = len(fes.components)
             assert self.codim == fes.mesh.dim
-            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0)
+            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0, complex = self.is_complex)
         except NgException:
             self.codim = 1
-            self._fes_util = ngs.L2(self.fes.mesh, order=0)
+            self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(fes)
 
