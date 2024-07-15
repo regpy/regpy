@@ -1,12 +1,43 @@
 image: python:latest
 
 stages:          # List of stages for jobs, and their order of execution
+  - build
   - test
+  - deploy
 
 before_script: #'build' the project from setup files
   - pip install .
+
+build_doc:
+  stage: build
+  script:
+    - pip install pdoc3
+    - python makedoc
+    - mv doc/regpy public
+
+    # get necessary packages
+    - apt update
+    - apt install rclone -y
+    # setup ssh key, based on official example: https://gitlab.com/gitlab-examples/ssh-private-key
+    - eval $(ssh-agent -s) #start ssh agent
+    - echo "$SFTP_KEY_VWEB_GWDG" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # this can be done safer, we use this permissive version for public content
+    - ssh-keyscan -p 22 webvm.num.math.uni-goettingen.de >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    # use rclone to sync to vwebfile.gwdg:
+    - mkdir -p ~/.config/rclone
+    - cp rclone.conf ~/.config/rclone/ #set up rclone
+    - rclone sync public/ gwdg_vweb:/var/www/num/regpy # clone it
+
+  artifacts:
+    paths:
+    - public
+
 
 test:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
   script:
     - pytest tests
+

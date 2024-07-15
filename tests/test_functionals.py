@@ -1,44 +1,32 @@
 import numpy as np
-import regpy.functionals as fct
-from regpy.functionals import QuadraticIntv, LinearFunctional, HorizontalShiftDilation
-import regpy.vecsps as vecsps
-from regpy.vecsps import UniformGridFcts
+from regpy.functionals import *
+from regpy.vecsps import UniformGridFcts,MeasureSpaceFcts
+from regpy.util import functional_tests as ft
 
 
-def check_prox(F,u=None,tau=1):
-    if(u is None):
-        u=F.domain.rand()
-    Fs = F.conj
-    prox = F.proximal(u,tau)
-    gram = F.h_domain.gram
-    proxstar = Fs.proximal(gram(u/tau),1/tau)
-    assert np.linalg.norm(u-prox-tau*gram.inverse(proxstar))<10e-15
+def test_huber():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    sigma=np.real(dom.ones())
+    sigma[0,0]=4
+    F=Huber(dom,sigma=sigma,eps=1e-10)
+    #essential domain of conjugate functional is |u_i|<=sigma
+    u_stars=[dom.rand() for _ in range(5)]
+    for i in range(len(u_stars)):
+        scales=np.random.uniform(0,1,dom.shape)
+        u_stars[i]*=scales/np.abs(u_stars[i])
+    assert F(2*dom.ones())==32.0
+    ft.test_functional(F,u_stars=u_stars)
 
-def check_conj_and_subgradient(F,u=None,w=None):
-    if(u is None):
-        u=F.domain.rand()
-    if(w is None):
-        w=F.domain.rand()
-    Fs = F.conj
-    assert not F(w)==np.inf
-    grad = F.subgradient(u)
-    assert not Fs(grad)==np.inf
-    u2 = Fs.subgradient(grad)
-    assert F.is_subgradient(grad,u)#Check if functionals are subgradients of each other
-    assert Fs.is_subgradient(u2,grad)
-    assert np.sum(u2*grad)-F(u2)-Fs(grad)<10e-15#Young equality
-
-def test_conj_and_subgradient_huber():
-    grid = UniformGridFcts((-1,1,5))
-    w = np.random.randint(10,size=(5,))+1.2
-    F0 = fct.Huber(grid,sigma=1./w)
-    F = fct.HorizontalShiftDilation(F0,dilation=0.5,shift=0.01*grid.ones())
-    check_conj_and_subgradient(F)
-
-def test_prox_huber():
-    grid = UniformGridFcts((-1,1,5))
-    w = np.random.randint(10,size=(5,))+1.2
-    F0 = fct.Huber(grid,sigma=1./w)
-    F = fct.HorizontalShiftDilation(F0,dilation=0.5,shift=0.01*grid.ones())
-    check_prox(F)
+def test_quadratic_intv():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    sigma=np.real(dom.ones())
+    sigma[0,0]=4
+    F=QuadraticIntv(dom,sigma=sigma,eps=1e-10)
+    #essential domain of functional is |u_i|<=sigma
+    u_s=[dom.rand() for _ in range(5)]
+    for i in range(len(u_s)):
+        scales=np.random.uniform(0,1,dom.shape)
+        u_s[i]*=scales/np.abs(u_s[i])
+    assert F(2*dom.ones())==np.inf
+    ft.test_functional(F,u_s=u_s)
 
