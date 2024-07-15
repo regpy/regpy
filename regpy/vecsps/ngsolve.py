@@ -56,7 +56,7 @@ class NgsSpace(VectorSpace):
         if self.is_complex and not is_complex_dtype(r.dtype):
             c = np.empty(self._fes_util.ndof, dtype=complex)
             c.real = r
-            c.imag = rand(self.fes_util.ndof)
+            c.imag = rand(self._fes_util.ndof)
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
