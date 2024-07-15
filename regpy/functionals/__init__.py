@@ -1807,21 +1807,17 @@ class Huber(IntegralFunctionalBase):
         assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, (float,int)) :
-            self.sigma = sigma * domain.ones()
+            self.sigma = np.real(sigma * domain.ones())
         else:
-            self.sigma = sigma 
+            self.sigma = np.real(sigma) 
 
     def _f(self, u,**kwargs):
-        res =  u*u/2
-        mask = np.abs(u)>=self.sigma
-        res[mask] = np.abs(u[mask])*self.sigma[mask]-0.5*self.sigma[mask]**2
-        return res    
-   
+        return np.where(np.abs(u)<=self.sigma,0.5*np.abs(u)**2,self.sigma*np.abs(u)-0.5*self.sigma**2)
+
+           
     def _f_deriv(self, u,**kwargs):
-        res = u.copy()
-        mask = np.abs(u)>self.sigma
-        res[mask] = self.sigma[mask]*np.sign(u[mask])
-        return res
+        return np.where(np.abs(u)<=self.sigma,u,self.sigma*u/np.abs(u))
+
 
     def _f_second_deriv(self, u, **kwargs):
         return (np.abs(u)<=self.sigma).astype(float)
@@ -1876,7 +1872,7 @@ class QuadraticIntv(IntegralFunctionalBase):
         self.sigmaeps = self.sigma*(1+eps) if eps>0 else self.sigma
 
     def _f(self, u,**kwargs):
-        res =  u*u/2
+        res =  0.5*np.abs(u)**2
         res[np.abs(u)>self.sigmaeps] = np.inf
         return res    
    
