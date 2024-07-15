@@ -45,3 +45,23 @@ def test_exponential():
     x=dom.randn()
     assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
 
+def test_real_part():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=RealPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.real(x))<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=RealPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.real(x))<1e-20)
+
+def test_imaginary_part():
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=ImaginaryPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.imag(x))<1e-20)
+
