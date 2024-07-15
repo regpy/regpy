@@ -31,6 +31,7 @@ def test_identity():
     op=Identity(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-x)<1e-20)
+    ot.test_operator(op)
 
 def test_exponential():
     #real
@@ -44,6 +45,7 @@ def test_exponential():
     op=Exponential(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
+    ot.test_operator(op)
 
 def test_real_part():
     #real
@@ -57,6 +59,7 @@ def test_real_part():
     op=RealPart(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-np.real(x))<1e-20)
+    ot.test_operator(op)
 
 def test_imaginary_part():
     #complex
@@ -64,4 +67,19 @@ def test_imaginary_part():
     op=ImaginaryPart(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-np.imag(x))<1e-20)
+    ot.test_operator(op)
+
+def test_zero():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=Zero(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x))<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=Zero(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x))<1e-20)
+    ot.test_operator(op)
 
