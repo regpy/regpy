@@ -83,3 +83,16 @@ def test_zero():
     assert np.max(np.abs(op(x))<1e-20)
     ot.test_operator(op)
 
+def test_squared_modulus():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=SquaredModulus(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=SquaredModulus(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
+    ot.test_operator(op)
