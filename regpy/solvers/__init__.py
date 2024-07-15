@@ -423,8 +423,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if not data_fid_shift is None:
             self.data_fid = self.data_fid.shift(data_fid_shift)
 
-        assert isinstance(regpar,float) and regpar>=0
-        self.regpar = regpar
+        assert isinstance(regpar,(float,int)) and regpar>=0
+        self.regpar = float(regpar)
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
         """The regularization parameter"""
