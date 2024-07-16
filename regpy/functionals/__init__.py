@@ -519,9 +519,9 @@ class LinearFunctional(Functional):
             return NotImplemented
 
 class SquaredNorm(Functional):
-    """Functionals of the form 
+    r"""Functionals of the form 
     \[
-    \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\angle b,x\rangle_X + c
+    \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\langle b,x\rangle_X + c
     \]
     Here the linear term represents an inner product in the Hilbert space, not a pairing with the dual space.
 

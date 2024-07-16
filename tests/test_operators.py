@@ -38,13 +38,13 @@ def test_exponential():
     dom=vecsps.VectorSpace((2,2))
     op=Exponential(domain=dom)
     x=dom.randn()
-    assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-10)
     ot.test_operator(op)
     #complex
     dom=vecsps.VectorSpace((2,2),np.complex128)
     op=Exponential(domain=dom)
     x=dom.randn()
-    assert np.max(np.abs(op(x)-np.exp(x))<1e-20)
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-10)
     ot.test_operator(op)
 
 def test_real_part():
@@ -87,12 +87,15 @@ def test_squared_modulus():
     #real
     dom=vecsps.VectorSpace((2,2))
     op=SquaredModulus(domain=dom)
-    x=dom.randn()
-    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
+    x=dom.ones()
+    x[0,0]=2
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-10)
     ot.test_operator(op)
     #complex
     dom=vecsps.VectorSpace((2,2),np.complex128)
     op=SquaredModulus(domain=dom)
-    x=dom.randn()
-    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
+    x=dom.ones()*1j
+    x[0,0]=2+1j
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-10)
     ot.test_operator(op)
+

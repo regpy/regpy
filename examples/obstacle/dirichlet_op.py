@@ -8,7 +8,6 @@ from functions.operator import op_K
 from functions.farfield_matrix import farfield_matrix
 from functions.setup_iop_data import setup_iop_data
 from regpy.operators import Operator
-from regpy.vecsps.curve import StarCurveDiscr
 from regpy.vecsps import GridFcts
 from regpy.vecsps.curve import GenTrigDiscr
 
@@ -163,33 +162,26 @@ class DirichletOp(Operator):
             return adj
 
 
-def create_synthetic_data(Dir_op, true_curve, N_ieq_synth=64, **kwargs):
-    bd_ex = StarCurveDiscr(2*N_ieq_synth)
-    """Exact curve class. 2*N_ieq_synth is the number of discretization points for the boundary integral 
-    equation when computing synthetic data (choose different to N_ieq to avoid inverse crime)."""
-    bd_ex_curve=bd_ex.bd_eval(true_curve, 3)
-    """Compute the grid points of the exact boundary and derivatives of the parametrization
-        and save these quantities as members of bd_ex set up the boudary integral operator."""
-
+def create_synthetic_data(Dir_op, true_curve, **kwargs):
     wdlTmp=1*Dir_op.w_dl
     Dir_op.w_dl=0
 
-    Iop_data = setup_iop_data(bd_ex, Dir_op.kappa)
+    Iop_data = setup_iop_data(true_curve, Dir_op.kappa)
     if Dir_op.w_sl!=0:
-        Iop = Dir_op.w_sl*op_S(bd_ex, Iop_data)
+        Iop = Dir_op.w_sl*op_S(true_curve, Iop_data)
     else:
-        Iop = np.zeros(np.size(bd_ex_curve.z, 1), np.size(bd_ex_curve.z, 1))
+        Iop = np.zeros(np.size(true_curve.z, 1), np.size(true_curve.z, 1))
     if Dir_op.w_dl!=0:
-        Iop = Iop + Dir_op.w_dl*(np.diag(bd_ex_curve.zpabs) + op_K(bd_ex, Iop_data))
+        Iop = Iop + Dir_op.w_dl*(np.diag(true_curve.zpabs) + op_K(true_curve, Iop_data))
         
-    FF_combined = farfield_matrix(bd_ex, Dir_op.meas_directions, Dir_op.kappa, Dir_op.w_sl, Dir_op.w_dl)
+    FF_combined = farfield_matrix(true_curve, Dir_op.meas_directions, Dir_op.kappa, Dir_op.w_sl, Dir_op.w_dl)
 
     farfield = np.zeros((Dir_op.N_meas, Dir_op.N_inc),dtype = complex)
     for l, dir in enumerate(Dir_op.inc_directions):
-        rhs = -2*np.exp(complex(0,1)*Dir_op.kappa*dir.dot(bd_ex_curve.z))*bd_ex_curve.zpabs
+        rhs = -2*np.exp(complex(0,1)*Dir_op.kappa*dir.dot(true_curve.z))*true_curve.zpabs
         rhs=rhs.flatten()
         phi = scla.solve(Iop, rhs)
         farfield[:,l]=FF_combined.dot(phi)
 
     Dir_op.w_dl=wdlTmp
-    return farfield, bd_ex_curve
+    return farfield, true_curve

@@ -229,7 +229,6 @@ class Operator:
                 deriv = Derivative(self.__get_handle()) 
                 adjoint_deriv = AdjointDerivative(self.__get_handle())
                 return Fstar_y, deriv, adjoint_deriv
-
     @util.memoized_property
     def adjoint(self):
         """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
@@ -265,7 +264,10 @@ class Operator:
         raise NotImplementedError
 
     def _adjoint_derivative(self, x):
-        return self._adjoint(self._derivative(x))
+        if self.linear:
+            return self._adjoint(self._eval(x))
+        else:
+            return self._adjoint(self._derivative(x))
 
     @property
     def inverse(self):
@@ -999,6 +1001,9 @@ class OuterShift(Operator):
 
     def _adjoint(self, y):
         return self._deriv.adjoint(y)
+    
+    def _adjoint_derivative(self, x):
+        return self._adjoint_deriv(x)
 
     def _adjoint_derivative(self,x):
         return self._adjoint_derivative(x)
