@@ -638,7 +638,7 @@ class SquaredNorm(Functional):
                                c = self.c+other.c 
                                )
         elif isinstance(other,LinearFunctional):
-            return SquaredNorm(h_domain,
+            return SquaredNorm(self.h_domain,
                                a = self.a,
                                b = self.b+self.gram_inv(other.gradient),
                                c = self.c 
@@ -1287,9 +1287,9 @@ class AbstractComposed(AbstractFunctional):
         return Composed(func=self.func(vecsp),op=self.op)
     
 
-class FunctionalProductSpace(Functional):
-    r"""Helper to define Functionals with respective prox-operators on product spaces (vecsps.DirectSum objects).
-    The functionals are given as a list of the functionals on the summands of the product space.
+class FunctionalOnDirectSum(Functional):
+    r"""Helper to define Functionals with respective prox-operators on sum spaces (vecsps.DirectSum objects).
+    The functionals are given as a list of the functionals on the summands of the sum space.
     \[
     F(x_1,... x_n) = \sum_{j=1}^n F_j(x_j)
     \]
@@ -1301,8 +1301,11 @@ class FunctionalProductSpace(Functional):
     domain : regpy.vecsps.DirectSum
         Domain on which the combined functional is defined. 
     """
-    def __init__(self, funcs, domain):
-        assert isinstance(domain, vecsps.DirectSum)
+    def __init__(self, funcs,domain=None):
+        if domain is not None:
+            assert isinstance(domain, vecsps.DirectSum())
+        else:
+            domain = vecsps.DirectSum(*tuple())
         self.length = len(domain.summands)
         """Number of the summands in the direct sum domain. 
         """
@@ -1390,14 +1393,14 @@ class FunctionalProductSpace(Functional):
         return np.asarray(proximals).flatten()
     
     def __add__(self,other):
-        if isinstance(other,FunctionalProductSpace):
-            return FunctionalProductSpace([F+G for F,G in zip(self.funcs,other.funcs)],self.domain)
+        if isinstance(other,FunctionalOnDirectSum):
+            return FunctionalOnDirectSum([F+G for F,G in zip(self.funcs,other.funcs)],self.domain)
         else: 
             return super().__add__(self,other)
         
     def __rmul__(self,other):
         if np.isscalar(other):
-            return FunctionalProductSpace([other*F for F in self.funcs],self.domain)
+            return FunctionalOnDirectSum([other*F for F in self.funcs],self.domain)
 
 class HilbertNormGeneric(Functional):
     r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.
