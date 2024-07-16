@@ -199,7 +199,7 @@ class Operator:
         """
         if self.linear:
             if adjoint_derivative:
-                return self.adjoint(self(x)), self.adjoint * self
+                return self._adjoint_derivative(x), AdjointDerivative(self)
             else:
                 return self(x), self
         else:
@@ -213,10 +213,11 @@ class Operator:
             else:
                 assert not self.domain or x in self.domain
                 self.__revoke()
-                y = self._eval(x, adjoint_derivative=True)
-                assert not self.codomain or y in self.codomain
+                _ = self._eval(x, adjoint_derivative=True)
+                y = self._adjoint_derivative(x)
+                assert not self.domain or y in self.domain
                 adjoint_deriv = AdjointDerivative(self.__get_handle())
-                return self._adjoint(y), adjoint_deriv
+                return y, adjoint_deriv
 
     @util.memoized_property
     def adjoint(self):
@@ -253,7 +254,10 @@ class Operator:
         raise NotImplementedError
 
     def _adjoint_derivative(self, x):
-        return self._adjoint(self._derivative(x))
+        if self.linear:
+            return self._adjoint(self._eval(x))
+        else:
+            return self._adjoint(self._derivative(x))
 
     @property
     def inverse(self):
@@ -971,12 +975,12 @@ class OuterShift(Operator):
         self.offset = np.copy(offset)
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
-        if differentiate or adjoint_derivative:
-            y, self._deriv = self.op.linearize(x, adjoint_derivative= adjoint_derivative)
-            if not adjoint_derivative:
-                return y + self.offset
-            else:
-                return self._adjoint(y+self.offset)
+        if differentiate:
+            y, self._deriv = self.op.linearize(x)
+            return y + self.offset
+        elif adjoint_derivative:
+            y, self._adjoint_deriv = self.op.linearize(x, adjoint_derivative = True)
+            return y + self._adjoint(self.offset)
         else:
             return self.op(x) + self.offset
 
@@ -985,6 +989,9 @@ class OuterShift(Operator):
 
     def _adjoint(self, y):
         return self._deriv.adjoint(y)
+    
+    def _adjoint_derivative(self, x):
+        return self._adjoint_deriv(x)
 
 class InnerShift(Operator):
     """Shift an operator by a constant offset in the domain.
