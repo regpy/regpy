@@ -95,9 +95,8 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=Fa
 def test_adjoint_derivative(op, tolerance=1e-10):
     x = op.domain.randn()
     h = op.domain.randn()
-    _, adjoint_derivative = op.linearize(x, adjoint_derivative=True)
+    _,deriv,adjoint_derivative = op.linearize(x, adjoint_derivative=True)
     adjoint_deriv_h = adjoint_derivative(h)
-    _, deriv = op.linearize(x)
     return np.all(np.abs(adjoint_deriv_h-deriv.adjoint(deriv(h)))<tolerance)
 
     
