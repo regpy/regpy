@@ -87,12 +87,13 @@ def test_squared_modulus():
     #real
     dom=vecsps.VectorSpace((2,2))
     op=SquaredModulus(domain=dom)
-    x=dom.randn()
+    x=dom.rand()
     assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
     ot.test_operator(op)
     #complex
     dom=vecsps.VectorSpace((2,2),np.complex128)
     op=SquaredModulus(domain=dom)
-    x=dom.randn()
+    x=dom.rand()
     assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-20)
     ot.test_operator(op)
+
