@@ -199,7 +199,7 @@ class Operator:
         """
         if self.linear:
             if adjoint_derivative:
-                return self(x), self.adjoint * self
+                return self.adjoint(self(x)), self.adjoint * self
             else:
                 return self(x), self
         else:
@@ -216,7 +216,7 @@ class Operator:
                 y = self._eval(x, adjoint_derivative=True)
                 assert not self.codomain or y in self.codomain
                 adjoint_deriv = AdjointDerivative(self.__get_handle())
-                return y, adjoint_deriv
+                return self._adjoint(y), adjoint_deriv
 
     @util.memoized_property
     def adjoint(self):
@@ -254,7 +254,7 @@ class Operator:
 
     def _adjoint_derivative(self, x):
         return self._adjoint(self._derivative(x))
-    
+
     @property
     def inverse(self):
         """A property containing the  inverse as an `Operator` instance. In most cases this will
@@ -550,8 +550,9 @@ class Composition(Operator):
             for op in self.ops[:0:-1]:
                 y, deriv = op.linearize(y)
                 self._outer_derivs.insert(0, deriv)
-            y, adjoint_deriv = self.ops[0].linearize(y,adjoint_derivative=True)
-            self._inner_adjoint_deriv = adjoint_deriv
+            y,  self._inner_adjoint_deriv = self.ops[0].linearize(y,adjoint_derivative=True)
+            for deriv in self._outer_derivs:
+                y = deriv.adjoint(y)
         else:
             for op in self.ops[::-1]:
                 y = op(y)
@@ -972,7 +973,10 @@ class OuterShift(Operator):
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
         if differentiate or adjoint_derivative:
             y, self._deriv = self.op.linearize(x, adjoint_derivative= adjoint_derivative)
-            return y + self.offset
+            if not adjoint_derivative:
+                return y + self.offset
+            else:
+                return self._adjoint(y+self.offset)
         else:
             return self.op(x) + self.offset
 
@@ -1311,7 +1315,7 @@ class VectorOfOperators(Operator):
         assert all(op.domain == self.domain for op in self.ops)
 
         if codomain is None:
-            codomain = vecsps.DirectSum
+            codomain = vecsps.DirectSum(*tuple([op.codomain for op in ops]))
         if isinstance(codomain, vecsps.VectorSpace):
             pass
         elif callable(codomain):

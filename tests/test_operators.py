@@ -31,3 +31,71 @@ def test_identity():
     op=Identity(domain=dom)
     x=dom.randn()
     assert np.max(np.abs(op(x)-x)<1e-20)
+    ot.test_operator(op)
+
+def test_exponential():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=Exponential(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-10)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=Exponential(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.exp(x))<1e-10)
+    ot.test_operator(op)
+
+def test_real_part():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=RealPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.real(x))<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=RealPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.real(x))<1e-20)
+    ot.test_operator(op)
+
+def test_imaginary_part():
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=ImaginaryPart(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x)-np.imag(x))<1e-20)
+    ot.test_operator(op)
+
+def test_zero():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=Zero(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x))<1e-20)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=Zero(domain=dom)
+    x=dom.randn()
+    assert np.max(np.abs(op(x))<1e-20)
+    ot.test_operator(op)
+
+def test_squared_modulus():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    op=SquaredModulus(domain=dom)
+    x=dom.ones()
+    x[0,0]=2
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-10)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    op=SquaredModulus(domain=dom)
+    x=dom.ones()*1j
+    x[0,0]=2+1j
+    assert np.max(np.abs(op(x)-np.abs(x)**2)<1e-10)
+    ot.test_operator(op)
+
