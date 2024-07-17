@@ -135,3 +135,20 @@ def test_coordinate_mask():
     assert np.max(np.abs(op(x)-np.array([[2+1j,0],[0,0]]))<1e-10)
     ot.test_operator(op)
 
+def test_pow():#uses PtwMultiplication
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    mult_op=PtwMultiplication(dom,factor=2)
+    op=Pow(mult_op,3)
+    x=dom.ones()
+    x[0,0]=2
+    assert np.max(np.abs(op(x)-np.array([[16,8],[8,8]]))<1e-10)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    mult_op=PtwMultiplication(dom,factor=1j)
+    op=Pow(mult_op,3)
+    x=dom.ones()
+    x[0,0]=2+1j
+    assert np.max(np.abs(op(x)-np.array([[1-2j,-1j],[-1j,-1j]]))<1e-10)
+    ot.test_operator(op)
