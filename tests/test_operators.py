@@ -117,3 +117,21 @@ def test_coordinate_projection():
     assert np.max(np.abs(op(x)-np.array([2+1j,1j]))<1e-10)
     ot.test_operator(op)
 
+def test_coordinate_mask():
+    #real
+    dom=vecsps.VectorSpace((2,2))
+    mask=np.array([[1,0],[0,1]],dtype=bool)
+    op=CoordinateMask(dom,mask)
+    x=dom.ones()
+    x[0,0]=2
+    assert np.max(np.abs(op(x)-np.array([[2,0],[0,1]]))<1e-10)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.VectorSpace((2,2),np.complex128)
+    mask=np.array([[1,0],[0,0]],dtype=bool)
+    op=CoordinateMask(dom,mask)
+    x=1j*dom.ones()
+    x[0,0]=2+1j
+    assert np.max(np.abs(op(x)-np.array([[2+1j,0],[0,0]]))<1e-10)
+    ot.test_operator(op)
+
