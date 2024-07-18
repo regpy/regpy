@@ -141,6 +141,40 @@ class Tau(Operator):
         first_adj=np.sum(C*self.A.conj().reshape(self.N, self.N, self.k, 1), axis=-2).conj()
         return first_adj+second_adj
     
+class Reshape(Operator):
+    
+    """Reshaping an operator"""
+    
+    def __init__(self, domain, codomain):
+        assert np.prod(domain.shape)==np.prod(codomain.shape)
+        
+        super().__init__(domain, codomain, linear=True)
+        
+    def _eval(self, x):
+        return x.reshape(self.codomain.shape)
+    
+    def _adjoint(self, y):
+        return y.reshape(self.domain.shape)
+    
+class Real_to_complex(Operator):
+    
+    def __init__(self, domain, codomain):
+        assert codomain.dtype==complex
+        assert domain.dtype!=complex
+        super().__init__(domain, codomain, linear=True)
+        
+    def _eval(self, x):
+        return x[0]+complex(0,1)*x[1]
+    
+    def _adjoint(self, y):
+        res=self.domain.zeros()
+        res[0]=y.real
+        res[1]=y.imag
+        return res
+        
+    
+    
+    
 class Theta:
     
     """Mapping of DxE -> D E^*, we just apply _deriv_adjoint and _eval_adjoint
