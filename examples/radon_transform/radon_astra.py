@@ -222,12 +222,7 @@ class RadonMatrixAstra2D(Operator):
         else:
             return self.A
 
-import astra 
-import numpy as np
-from regpy.operators import Operator
-from regpy.vecsps import UniformGridFcts
-
-class RegpyRadonAstra3D(Operator):
+class RadonAstra3D(Operator):
     def __init__(self,num_pix,num_det,angles,geom_type,source_to_origin=0.,origin_to_detector=0.,dp=1,affine_shift_fkts_dic = None) -> None:
         """creates 3D radon transform with the possibility of dynamic affine shifts
         !!!needs gpu (?nvdia i.e cuda?) to run
@@ -377,8 +372,8 @@ class RegpyRadonAstra3D(Operator):
             assert (aff_vec.shape[1] == 1) 
             geom_vecs[:,:2] += aff_vec
             
-        geom_vecs = np.array(np.split(geom_vecs,self.num_ang))
-        geom_vecs = np.swapaxes(geom_vecs,1,2).reshape(self.num_ang,12)
+        geom_vecs = np.array(np.split(geom_vecs,self.num_angles))
+        geom_vecs = np.swapaxes(geom_vecs,1,2).reshape(self.num_angles,12)
         return geom_vecs
 
 
