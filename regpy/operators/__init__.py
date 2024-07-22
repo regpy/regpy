@@ -342,6 +342,9 @@ class Operator:
 
     def __pos__(self):
         return self
+    
+    def __getitem__(self,val):
+        return PartOfOperator(self,val)
 
 
 class Adjoint(Operator):
@@ -602,6 +605,44 @@ class Composition(Operator):
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
+
+class PartOfOperator(Operator):
+
+
+    def __init__(self,base_op,index):
+        assert isinstance(base_op.codomain,vecsps.DirectSum)
+        self.base_op=base_op
+        if(isinstance(index,int)):
+            assert 0<=index and index<len(base_op.codomain.summands)
+            self.index=index
+            codomain=base_op.codomain.summands[index]
+        elif(isinstance(index,slice)):
+            raise NotImplementedError("Slicing currently not supported")
+        else:
+            raise ValueError(f"Invalid type {type(index)} for index")
+        super().__init__(self.base_op.domain,codomain,linear=self.base_op.linear)
+
+    def _get_codomain_part(self,y):
+        if(isinstance(self.index,int)):
+            return self.base_op.codomain.split(y)[self.index]
+
+    def _eval(self, x, differentiate=False):
+        y=self.base_op._eval(x,differentiate=differentiate)
+        return self._get_codomain_part(y)
+    
+    def _derivative(self, x):
+        y=self.base_op._derivative(x)
+        return self._get_codomain_part(y)
+
+    def _adjoint(self, y):
+        y_base_op=[]
+        if(isinstance(self.index,int)):
+            for i,summand in enumerate(self.base_op.codomain.summands):
+                if(i==self.index):
+                    y_base_op.append(y)
+                else:
+                    y_base_op.append(summand.zeros())
+        return self.base_op._adjoint(self.base_op.codomain.join(y_base_op))
 
 class SciPyLinearOperator(sla.LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
