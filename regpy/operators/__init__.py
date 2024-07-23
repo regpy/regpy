@@ -615,19 +615,40 @@ class PartOfOperator(Operator):
         if(isinstance(index,int)):
             assert 0<=index and index<len(base_op.codomain.summands)
             self.index=index
-            codomain=base_op.codomain.summands[index]
         elif(isinstance(index,slice)):
-            raise NotImplementedError("Slicing currently not supported")
+            index_list=list(range(len(self.base_op.codomain.summands))[index])
+            assert len(index_list)>0
+            if(len(index_list)==1):
+                self.index=index_list[0]
+            else:
+                self.index=index_list
+        elif(isinstance(index,tuple)):
+            assert all(isinstance(i,int) for i in index)
+            assert min(index)>=0 and max(index)<len(self.base_op.codomain.summands)
+            if(len(index)==1):
+                self.index=index[0]
+            else:
+                self.index=index
         else:
             raise ValueError(f"Invalid type {type(index)} for index")
+        if(isinstance(self.index,int)):
+            codomain=base_op.codomain.summands[self.index]
+        else:
+            codomain=vecsps.DirectSum(*[base_op.codomain.summands[i] for i in self.index])
         super().__init__(self.base_op.domain,codomain,linear=self.base_op.linear)
 
     def _get_codomain_part(self,y):
         if(isinstance(self.index,int)):
             return self.base_op.codomain.split(y)[self.index]
+        else:
+            y_parts=self.base_op.codomain.split(y)
+            return self.codomain.join(*[y_parts[i] for i in self.index])
 
     def _eval(self, x, differentiate=False):
-        y=self.base_op._eval(x,differentiate=differentiate)
+        if(self.base_op.linear):
+            y=self.base_op._eval(x)
+        else:
+            y=self.base_op._eval(x,differentiate=differentiate)
         return self._get_codomain_part(y)
     
     def _derivative(self, x):
@@ -635,14 +656,26 @@ class PartOfOperator(Operator):
         return self._get_codomain_part(y)
 
     def _adjoint(self, y):
-        y_base_op=[]
         if(isinstance(self.index,int)):
+            y_base_op=[]
             for i,summand in enumerate(self.base_op.codomain.summands):
                 if(i==self.index):
                     y_base_op.append(y)
                 else:
                     y_base_op.append(summand.zeros())
-        return self.base_op._adjoint(self.base_op.codomain.join(y_base_op))
+        else:
+            y_base_op=[summand.zeros() for summand in self.base_op.codomain.summands]
+            for i,y_i in enumerate(self.codomain.split(y)):
+                y_base_op[self.index[i]]+=y_i
+        return self.base_op._adjoint(self.base_op.codomain.join(*y_base_op))
+    
+    def __getitem__(self, val):#TODO add checks for ranges
+        assert isinstance(self.index,tuple)
+        if(isinstance(val,int) or isinstance(val,slice)):
+            return PartOfOperator(self.base_op,self.index[val])
+        elif(isinstance(val,tuple)):
+            return PartOfOperator(self.base_op,tuple(self.index[v] for v in val))
+
 
 class SciPyLinearOperator(sla.LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
