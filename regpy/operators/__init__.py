@@ -317,6 +317,18 @@ class Operator:
             return Composition(other, self) 
         else:
             return NotImplemented
+    
+    def __matmul__(self,other):
+        if isinstance(other, Operator) or isinstance(other,tuple):
+            return CompositionByGraph(self, other) 
+        else:
+            return NotImplemented
+    
+    def __rmatmul__(self,other):
+        if isinstance(other, Operator) or isinstance(other,tuple):
+            return CompositionByGraph(other, self) 
+        else:
+            return NotImplemented
 
     def __add__(self, other):
         if np.isscalar(other) and other == 0:
@@ -344,6 +356,8 @@ class Operator:
         return self
     
     def __getitem__(self,val):
+        if val is None:
+            return self
         return PartOfOperator(self,val)
 
 
@@ -606,17 +620,329 @@ class Composition(Operator):
     def __repr__(self):
         return util.make_repr(self, *self.ops)
 
-class PartOfOperator(Operator):
+class CompositionByGraph(Operator):
+    r"""
+    Store the Composition by defining a dictionary of execution dependencies
+    for F(D(A[0],B),C(A[1:],B)) we can write this as
 
+                       M
+          A    
+    [x] ---> [A[0]]  ----> [A[0]]   \_D_> [D]\ F
+    [y] \    [A[1:3]] \_/> [B   ]   /         --> [F] 
+         \B          --/\> [A[1:3]] \_C_> [C]/
+          \> [B]     ----> [B   ]   / 
+    
+    which would be stored as 
+    
+    {
+    A : {"in": }, "out" : {D:(0,0),C:([1,2],0)}}
+    B : {"in": }, "out" : {D:(0,1),C:(0,1)]}
+    C : {"in": {A:([1,2],0),B:(0,1)}, "out" : {F:(None,1)}}
+    D : {"in": {A:(0,0),B:(0,1)}, "out" : {F:(None,0)}}
+    F : {"in": {D:(None,0),C:(None,1)}, "out" :}
+    }
+
+    Parameters
+    ----------
+    *ops : Operator,tuple
+        List of operators or tuples to be composed to one operator. 
+    """
+    def __init__(self, *ops):
+        self.dict = {}
+        """Dictionary containing all the connections
+        """
+        self.lasts = []
+        """List of the last operators. If only one then list of length one.
+        """
+        self.indices = []
+        """List of the indexing of the operators in last
+        """
+        self.firsts = []
+        """List of the first operators. If only one then list of length one
+        """
+        linear = True
+        for op in ops:
+            if isinstance(op,CompositionByGraph):
+                if self.dict.keys() & op.dict.keys():
+                    raise ValueError("Loop detected! If using the same operator twice is required please make a copy!")
+                self.dict |= op.dict
+                if len(self.firsts)>0:
+                    i = 0
+                    if len(op.lasts) == 1:
+                        for first in self.firsts:
+                            self.dict[first]["in"][op.lasts[0]] = (op.indices[0],None)
+                            self.dict[op.lasts[0]]["out"][first] = (op.indices[0],None)
+                    elif len(op.lasts) == len(self.firsts):
+                        for first,last,index in zip(self.firsts,op.lasts,op.indices):
+                            self.dict[first]["in"][last] = (index,None)
+                            self.dict[last]["out"][first] = (index,None)
+                    else:
+                        raise IndexError("Not abele to match the composition.")
+                self.firsts = op.firsts
+                linear &= op.linear
+            elif isinstance(op,tuple):
+                firsts = []
+                tuple_dict = {}
+                if len(self.firsts) == len(op):
+                    for first,op_s in zip(self.firsts,list(op)):
+                        if isinstance(op_s,CompositionByGraph):
+                            assert set(firsts) <= tuple_dict.keys()& op_s.dict.keys()
+                            inter_keys = tuple_dict.keys() & op_s.dict.keys()
+                            dis_keys = op_s.dict.keys() - inter_keys
+                            tuple_dict |= { key : op_s.dict[key] for key in dis_keys}
+                            for key in inter_keys:
+                                tuple_dict[key]["out"] |= op_s.dict[key]["out"]
+                            firsts += [key for key in op_s.firsts if key not in set(firsts)]
+                            for ind,last in op_s.indices,op_s.lasts:
+                                tuple_dict[last]["out"] = {first:(ind,None)}
+                                self.dict[first]["in"] = {last:(ind,None)}
+                        elif isinstance(op_s,PartOfOperator):
+                            if op_s.base_op in set(firsts):
+                                tuple_dict[op_s.base_op]["out"] |= {first:(op_s.index,None)}
+                            else:
+                                tuple_dict[op_s.base_op] = {"in": {},"out" : {first:(op_s.index,None)}}
+                                firsts.append(op_s.base_op)
+                            self.dict[first]["in"] = {op_s.base_op:(op_s.index,None)}
+                        else:
+                            if op_s in firsts:
+                                tuple_dict[op_s]["out"] |= {first:(None,None)}
+                            else:
+                                tuple_dict[op_s] = {"in": {},"out" : {first:(None,None)}}
+                                firsts.append(op_s)
+                            self.dict[first]["in"] = {op_s:(None,None)}
+                        linear &= op_s.linear
+                elif len(self.firsts) == 1:
+                    first = self.firsts[0]
+                    for i,op_s in enumerate(list(op)):
+                        if isinstance(op_s,CompositionByGraph):
+                            assert set(firsts) <= tuple_dict.keys()& op_s.dict.keys()
+                            inter_keys = tuple_dict.keys() & op_s.dict.keys()
+                            dis_keys = op_s.dict.keys() - inter_keys
+                            tuple_dict |= { key : op_s.dict[key] for key in dis_keys}
+                            for key in inter_keys:
+                                tuple_dict[key]["out"] |= op_s.dict[key]["out"]
+                            firsts += [key for key in op_s.firsts if key not in set(firsts)]
+                            for ind,last in op_s.indices,op_s.lasts:
+                                tuple_dict[last]["out"] = {first:(ind,i)}
+                                self.dict[first]["in"] |= {last:(ind,i)}
+                        elif isinstance(op_s,PartOfOperator):
+                            if op_s.base_op in firsts:
+                                tuple_dict[op_s.base_op]["out"] |= {first:(op_s.index,i)}
+                            else:
+                                tuple_dict[op_s.base_op] = {"in": {},"out" : {first:(op_s.index,i)}}
+                                firsts.append(op_s.base_op)
+                            self.dict[first]["in"] |= {op_s.base_op:(op_s.index,i)}
+                        else:
+                            if op_s in firsts:
+                                tuple_dict[op_s]["out"] |= {first:(None,i)}
+                            else:
+                                tuple_dict[op_s] = {"in": {},"out" : {first:(None,i)}}
+                                firsts.append(op_s)
+                            self.dict[first]["in"] |= {op_s:(None,i)}
+                        linear &= op_s.linear
+                elif len(self.firsts) == 0:
+                    last = []
+                    indices = []
+                    for i,op_s in enumerate(list(op)):
+                        if isinstance(op_s,CompositionByGraph):
+                            assert set(firsts) <= tuple_dict.keys()& op_s.dict.keys()
+                            inter_keys = tuple_dict.keys() & op_s.dict.keys()
+                            dis_keys = op_s.dict.keys() - inter_keys
+                            tuple_dict |= { key : op_s.dict[key] for key in dis_keys}
+                            for key in inter_keys:
+                                tuple_dict[key]["out"] |= op_s.dict[key]["out"]
+                            firsts += [key for key in op_s.firsts if key not in set(firsts)]
+                            last += op_s.lasts
+                            indices += op_s.indices
+                        elif isinstance(op_s,PartOfOperator):
+                            if op_s.base_op not in firsts:
+                                tuple_dict[op_s.base_op] = {"in": {},"out" : {}}
+                                firsts.append(op_s.base_op)
+                            last.append(op_s.base_op)
+                            indices.append(op_s.index)
+                        else:
+                            if op_s not in firsts:
+                                tuple_dict[op_s] = {"in": {},"out" : {}}
+                                firsts.append(op_s)
+                            last.append(op_s)
+                            indices.append(None)
+                        linear &= op_s.linear
+                    self.lasts = last
+                    self.indices = indices
+                else:
+                    raise ValueError("Not abele to match the composition.")
+                self.firsts = firsts
+                self.dict |= tuple_dict
+            elif isinstance(op,PartOfOperator):
+                if len(self.firsts)>0:
+                    self.dict[op] = {"in":{},"out":{}}
+                    for first in self.firsts:
+                        self.dict[first]["in"][op] = (op.index,None)
+                        self.dict[op.base_op]["out"][first] =(op.index,None)
+                else:
+                    self.dict[op.base_op] = {"in":{},"out":{}}
+                    self.lasts=[op.base_op]
+                    self.indices = [op.index]
+                self.firsts = [op.base_op]
+                linear &= op.linear
+            elif isinstance(op,Operator):
+                if len(self.firsts)>0:
+                    self.dict[op] = {"in":{},"out":{}}
+                    for first in self.firsts:
+                        self.dict[first]["in"][op] = (None,None)
+                        self.dict[op]["out"][first] =(None,None)
+                else:
+                    self.dict[op] = {"in":{},"out":{}}
+                    self.lasts = [op]
+                    self.indices = [None]
+                self.firsts = [op]
+                linear &= op.linear
+        assert len(self.indices) == len(self.lasts)
+        domain = vecsps.DirectSum(*[op.domain for op in self.firsts])
+        codomain = vecsps.DirectSum(*[op[ind].codomain for op,ind in zip(self.lasts,self.indices)])
+        super().__init__(domain=domain,codomain=codomain,linear=linear)
+
+        
+    def _eval(self,x,differentiate=False):
+        eval_dict = {}
+        eval_order = []
+        if differentiate:
+            self.derivatives = {}
+            for x_i,op in zip(self.domain.split(x),self.firsts):
+                y, deriv = op.linearize(x_i)
+                eval_dict[op] = y
+                self.derivatives[op] = deriv
+                eval_order += list(self.dict[op]["out"].keys())
+            while eval_order:
+                op = eval_order.pop(0)
+                inp = self.dict[op]["in"]
+                if len(inp) == 1:
+                    op_ind,index = next(iter(inp.items()))
+                    x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
+                else:
+                    help_list = []
+                    for op_ind,index in inp.items():
+                        help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
+                    x_eval = op.domain.join(*help_list)
+                y, deriv = op.linearize(x_eval)
+                eval_dict[op] = y
+                self.derivatives[op] = deriv
+            return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
+        else:
+            for x_i,op in zip(self.domain.split(x),self.firsts):
+                eval_dict[op] = op(x_i)
+                eval_order += list(self.dict[op]["out"].keys())
+            while eval_order:
+                op = eval_order.pop(0)
+                inp = self.dict[op]["in"]
+                if len(inp) == 1:
+                    op_ind,index = next(iter(inp.items()))
+                    x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
+                else:
+                    help_list = []
+                    for op_ind,index in inp.items():
+                        help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
+                    x_eval = op.domain.join(*help_list)
+                eval_dict[op] = op(x_eval)
+            return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
+        
+    def _derivative(self,x):
+        eval_dict = {}
+        eval_order = []
+        for x_i,op in zip(self.domain.split(x),self.firsts):
+                eval_dict[op] = self.derivatives[op](x_i)
+                eval_order += list(self.dict[op]["out"].keys())
+        while eval_order:
+            op = eval_order.pop(0)
+            inp = self.dict[op]["in"]
+            if len(inp) == 1:
+                op_ind,index = next(iter(inp.items()))
+                x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
+            else:
+                help_list = []
+                for op_ind,index in inp.items():
+                    help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
+                x_eval = op.domain.join(*help_list)
+            eval_dict[op] = self.derivatives[op](x_eval)
+        return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
+    
+    def _adjoint(self,y):
+        eval_dict = {}
+        eval_order = []
+        if self.linear:
+            for y_i, op, index in zip(self.codomain.split(y),self.lasts,self.indices):
+                eval_dict[op] = op.adjoint(self._domain_transfer(op.codomain,None,y_i,(index,None)))
+                eval_order += list(self.dict[op]["in"].keys())
+            while eval_order:
+                op = eval_order.pop(0)
+                inp = self.dict[op]["out"]
+                y_eval = op.codomain.zeros()
+                for op_ind,index in inp.items():
+                    y_eval += self._domain_transfer(op.codomain,op_ind.domain,eval_dict[op_ind],index)
+                eval_dict[op] = op.adjoint(y_eval)
+            return self.domain.join(*[eval_dict[op] for op in self.firsts])
+        else:
+            for y_i, op, index in zip(self.codomain.split(y),self.lasts,self.indices):
+                eval_dict[op] = self.derivatives[op].adjoint(self._domain_transfer(op.codomain,None,y_i,(index,None)))
+                eval_order += list(self.dict[op]["in"].keys())
+            while eval_order:
+                op = eval_order.pop(0)
+                inp = self.dict[op]["out"]
+                y_eval = op.codomain.zeros()
+                for op_ind,index in inp.items():
+                    y_eval += self._domain_transfer(op.codomain,op_ind.domain,eval_dict[op_ind],index)
+                eval_dict[op] = self.derivatives[op].adjoint(y_eval)
+            return self.domain.join(*[eval_dict[op] for op in self.firsts])
+            
+    def _get_domain_part(self,domain,y,index):
+        if index is None:
+            return y
+        assert isinstance(domain,vecsps.DirectSum)
+        if(isinstance(index,int)):
+            return domain.split(y)[index]
+        else:
+            y_parts=domain.split(y)
+            return domain.join(*[y_parts[i] for i in index])
+    
+    def _domain_transfer(self,domain_new,domain_alt,y,index):
+        if index == (None,None):
+            return y
+        elif index[0] is None and isinstance(index[1],int):
+            assert isinstance(domain_alt,vecsps.DirectSum)
+            return domain_alt.split(y)[index[1]]
+        elif index[1] is None and isinstance(index[0],int):
+            assert isinstance(domain_new,vecsps.DirectSum)
+            y_new = domain_new.split(domain_new.zeros())
+            y_new[index[0]] = y
+            return domain_new.join(y_new)
+        else:
+            assert isinstance(domain_new,vecsps.DirectSum) and isinstance(domain_alt,vecsps.DirectSum)
+            if isinstance(index[0],int) and isinstance(index[1],int):
+                y_new = domain_new.split(domain_new.zeros())
+                y_new[index[0]] = domain_alt.split(y)[index[1]]
+                return domain_new.join(y_new)
+            else:
+                assert len(index[0]) == len(index[1])
+                y_new = domain_new.split(domain_new.zeros())
+                y_split = domain_alt.split(y)
+                for i,j in zip(index[0],index[1]):
+                    y_new[i]+=y_split[j]
+                return domain_new.join(y_new)
+                
+
+class PartOfOperator(Operator):
 
     def __init__(self,base_op,index):
         assert isinstance(base_op.codomain,vecsps.DirectSum)
         self.base_op=base_op
+        self.n_codim = len(base_op.codomain.summands)
         if(isinstance(index,int)):
-            assert 0<=index and index<len(base_op.codomain.summands)
+            assert -self.n_codim<=index and index<self.n_codim
             self.index=index
         elif(isinstance(index,slice)):
-            index_list=list(range(len(self.base_op.codomain.summands))[index])
+            assert index.stop is None or -self.n_codim<=index.stop and index.stop<self.n_codim
+            assert index.start is None or -self.n_codim<=index.start and index.start<self.n_codim
+            index_list=list(range(self.n_codim)[index])
             assert len(index_list)>0
             if(len(index_list)==1):
                 self.index=index_list[0]
@@ -624,7 +950,7 @@ class PartOfOperator(Operator):
                 self.index=index_list
         elif(isinstance(index,tuple)):
             assert all(isinstance(i,int) for i in index)
-            assert min(index)>=0 and max(index)<len(self.base_op.codomain.summands)
+            assert -self.n_codim<=min(index) and max(index)<self.n_codim
             if(len(index)==1):
                 self.index=index[0]
             else:
@@ -1370,6 +1696,8 @@ class DirectSum(Operator):
         return util.make_repr(self, *self.ops)
 
     def __getitem__(self, item):
+        if item is None:
+            return self
         return self.ops[item]
 
     def __iter__(self):
