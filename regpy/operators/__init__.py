@@ -774,6 +774,7 @@ class CompositionByGraph(Operator):
                     self.indices = indices
                 else:
                     raise ValueError("Not abele to match the composition.")
+                assert self.dict.keys().isdisjoint(tuple_dict.keys()), "Loop detected! If using the same operator twice is required please make a copy!"
                 self.firsts = firsts
                 self.dict |= tuple_dict
             elif isinstance(op,PartOfOperator):
@@ -812,54 +813,52 @@ class CompositionByGraph(Operator):
         eval_dict = {}
         eval_order = []
         if differentiate:
-            self.derivatives = {}
-            for x_i,op in zip(self.domain.split(x),self.firsts):
+            self.derivatives={}
+        for x_i,op in zip(self.domain.split(x),self.firsts):
+            if differentiate:
                 y, deriv = op.linearize(x_i)
                 eval_dict[op] = y
                 self.derivatives[op] = deriv
-                eval_order += list(self.dict[op]["out"].keys())
-            while eval_order:
-                op = eval_order.pop(0)
-                inp = self.dict[op]["in"]
-                if len(inp) == 1:
-                    op_ind,index = next(iter(inp.items()))
-                    x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
-                else:
-                    help_list = []
-                    for op_ind,index in inp.items():
-                        help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
-                    x_eval = op.domain.join(*help_list)
+            else:
+                eval_dict[op] = op(x_i)
+            eval_order += list(self.dict[op]["out"].keys()-set(eval_order))
+        while eval_order:
+            op = eval_order.pop(0)
+            inp = self.dict[op]["in"]
+            if inp.keys() - eval_dict.keys():
+                eval_order += list((inp.keys() - eval_dict.keys())-set(eval_order))
+                eval_order.append(op)
+                continue
+            if len(inp) == 1:
+                op_ind,index = next(iter(inp.items()))
+                x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
+            else:
+                help_list = []
+                for op_ind,index in inp.items():
+                    help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
+                x_eval = op.domain.join(*help_list)
+            if differentiate:
                 y, deriv = op.linearize(x_eval)
                 eval_dict[op] = y
                 self.derivatives[op] = deriv
-            return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
-        else:
-            for x_i,op in zip(self.domain.split(x),self.firsts):
-                eval_dict[op] = op(x_i)
-                eval_order += list(self.dict[op]["out"].keys())
-            while eval_order:
-                op = eval_order.pop(0)
-                inp = self.dict[op]["in"]
-                if len(inp) == 1:
-                    op_ind,index = next(iter(inp.items()))
-                    x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
-                else:
-                    help_list = []
-                    for op_ind,index in inp.items():
-                        help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
-                    x_eval = op.domain.join(*help_list)
+            else:
                 eval_dict[op] = op(x_eval)
-            return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
+            eval_order += list(self.dict[op]["out"].keys()-set(eval_order))
+        return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
         
     def _derivative(self,x):
         eval_dict = {}
         eval_order = []
         for x_i,op in zip(self.domain.split(x),self.firsts):
-                eval_dict[op] = self.derivatives[op](x_i)
-                eval_order += list(self.dict[op]["out"].keys())
+            eval_dict[op] = self.derivatives[op](x_i)
+            eval_order += list(self.dict[op]["out"].keys()-set(eval_order))
         while eval_order:
             op = eval_order.pop(0)
             inp = self.dict[op]["in"]
+            if inp.keys() - eval_dict.keys():
+                eval_order += list((inp.keys() - eval_dict.keys())-set(eval_order))
+                eval_order.append(op)
+                continue
             if len(inp) == 1:
                 op_ind,index = next(iter(inp.items()))
                 x_eval = self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0])
@@ -869,35 +868,34 @@ class CompositionByGraph(Operator):
                     help_list.append( self._get_domain_part(op_ind.codomain,eval_dict[op_ind],index[0]))
                 x_eval = op.domain.join(*help_list)
             eval_dict[op] = self.derivatives[op](x_eval)
+            eval_order += list(self.dict[op]["out"].keys()-set(eval_order))
         return self.codomain.join(*[self._get_domain_part(op.codomain,eval_dict[op],index) for op,index in zip(self.lasts,self.indices)])
     
     def _adjoint(self,y):
         eval_dict = {}
         eval_order = []
-        if self.linear:
-            for y_i, op, index in zip(self.codomain.split(y),self.lasts,self.indices):
+        for y_i, op, index in zip(self.codomain.split(y),self.lasts,self.indices):
+            if self.linear:
                 eval_dict[op] = op.adjoint(self._domain_transfer(op.codomain,None,y_i,(index,None)))
-                eval_order += list(self.dict[op]["in"].keys())
-            while eval_order:
-                op = eval_order.pop(0)
-                inp = self.dict[op]["out"]
-                y_eval = op.codomain.zeros()
-                for op_ind,index in inp.items():
-                    y_eval += self._domain_transfer(op.codomain,op_ind.domain,eval_dict[op_ind],index)
-                eval_dict[op] = op.adjoint(y_eval)
-            return self.domain.join(*[eval_dict[op] for op in self.firsts])
-        else:
-            for y_i, op, index in zip(self.codomain.split(y),self.lasts,self.indices):
+            else:
                 eval_dict[op] = self.derivatives[op].adjoint(self._domain_transfer(op.codomain,None,y_i,(index,None)))
-                eval_order += list(self.dict[op]["in"].keys())
-            while eval_order:
-                op = eval_order.pop(0)
-                inp = self.dict[op]["out"]
-                y_eval = op.codomain.zeros()
-                for op_ind,index in inp.items():
-                    y_eval += self._domain_transfer(op.codomain,op_ind.domain,eval_dict[op_ind],index)
+            eval_order += list(self.dict[op]["in"].keys()-set(eval_order))
+        while eval_order:
+            op = eval_order.pop(0)
+            inp = self.dict[op]["out"]
+            if inp.keys() - eval_dict.keys():
+                eval_order += list((inp.keys() - eval_dict.keys())-set(eval_order))
+                eval_order.append(op)
+                continue
+            y_eval = op.codomain.zeros()
+            for op_ind,index in inp.items():
+                y_eval += self._domain_transfer(op.codomain,op_ind.domain,eval_dict[op_ind],index)
+            if self.linear:
+                eval_dict[op] = op.adjoint(y_eval)
+            else: 
                 eval_dict[op] = self.derivatives[op].adjoint(y_eval)
-            return self.domain.join(*[eval_dict[op] for op in self.firsts])
+            eval_order += list(self.dict[op]["in"].keys()-set(eval_order))
+        return self.domain.join(*[eval_dict[op] for op in self.firsts])
             
     def _get_domain_part(self,domain,y,index):
         if index is None:
