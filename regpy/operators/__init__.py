@@ -633,7 +633,7 @@ class CompositionByGraph(Operator):
           \> [B]     ----> [B   ]   / 
     
     which would be stored as 
-    
+
     {
     A : {"in": }, "out" : {D:(0,0),C:([1,2],0)}}
     B : {"in": }, "out" : {D:(0,1),C:(0,1)]}
@@ -663,8 +663,7 @@ class CompositionByGraph(Operator):
         linear = True
         for op in ops:
             if isinstance(op,CompositionByGraph):
-                if self.dict.keys() & op.dict.keys():
-                    raise ValueError("Loop detected! If using the same operator twice is required please make a copy!")
+                assert self.dict.keys() & op.dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                 self.dict |= op.dict
                 if len(self.firsts)>0:
                     i = 0
@@ -686,20 +685,21 @@ class CompositionByGraph(Operator):
                 if len(self.firsts) == len(op):
                     for first,op_s in zip(self.firsts,list(op)):
                         if isinstance(op_s,CompositionByGraph):
-                            assert set(firsts) <= tuple_dict.keys()& op_s.dict.keys()
+                            assert set(firsts).isdisjoint(op_s.dict.keys()-set(op_s.firsts)), "Loop detected! If using the same operator twice is required please make a copy!"
                             inter_keys = tuple_dict.keys() & op_s.dict.keys()
                             dis_keys = op_s.dict.keys() - inter_keys
                             tuple_dict |= { key : op_s.dict[key] for key in dis_keys}
                             for key in inter_keys:
                                 tuple_dict[key]["out"] |= op_s.dict[key]["out"]
                             firsts += [key for key in op_s.firsts if key not in set(firsts)]
-                            for ind,last in op_s.indices,op_s.lasts:
+                            for ind,last in zip(op_s.indices,op_s.lasts):
                                 tuple_dict[last]["out"] = {first:(ind,None)}
                                 self.dict[first]["in"] = {last:(ind,None)}
                         elif isinstance(op_s,PartOfOperator):
                             if op_s.base_op in set(firsts):
                                 tuple_dict[op_s.base_op]["out"] |= {first:(op_s.index,None)}
                             else:
+                                assert op_s.base_op not in tuple_dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                                 tuple_dict[op_s.base_op] = {"in": {},"out" : {first:(op_s.index,None)}}
                                 firsts.append(op_s.base_op)
                             self.dict[first]["in"] = {op_s.base_op:(op_s.index,None)}
@@ -707,6 +707,7 @@ class CompositionByGraph(Operator):
                             if op_s in firsts:
                                 tuple_dict[op_s]["out"] |= {first:(None,None)}
                             else:
+                                assert op_s not in tuple_dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                                 tuple_dict[op_s] = {"in": {},"out" : {first:(None,None)}}
                                 firsts.append(op_s)
                             self.dict[first]["in"] = {op_s:(None,None)}
@@ -715,20 +716,21 @@ class CompositionByGraph(Operator):
                     first = self.firsts[0]
                     for i,op_s in enumerate(list(op)):
                         if isinstance(op_s,CompositionByGraph):
-                            assert set(firsts) <= tuple_dict.keys()& op_s.dict.keys()
+                            assert set(firsts).isdisjoint(op_s.dict.keys()-set(op_s.firsts)), "Loop detected! If using the same operator twice is required please make a copy!"
                             inter_keys = tuple_dict.keys() & op_s.dict.keys()
                             dis_keys = op_s.dict.keys() - inter_keys
                             tuple_dict |= { key : op_s.dict[key] for key in dis_keys}
                             for key in inter_keys:
                                 tuple_dict[key]["out"] |= op_s.dict[key]["out"]
                             firsts += [key for key in op_s.firsts if key not in set(firsts)]
-                            for ind,last in op_s.indices,op_s.lasts:
+                            for ind,last in zip(op_s.indices,op_s.lasts):
                                 tuple_dict[last]["out"] = {first:(ind,i)}
                                 self.dict[first]["in"] |= {last:(ind,i)}
                         elif isinstance(op_s,PartOfOperator):
                             if op_s.base_op in firsts:
                                 tuple_dict[op_s.base_op]["out"] |= {first:(op_s.index,i)}
                             else:
+                                assert op_s.base_op not in tuple_dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                                 tuple_dict[op_s.base_op] = {"in": {},"out" : {first:(op_s.index,i)}}
                                 firsts.append(op_s.base_op)
                             self.dict[first]["in"] |= {op_s.base_op:(op_s.index,i)}
@@ -736,6 +738,7 @@ class CompositionByGraph(Operator):
                             if op_s in firsts:
                                 tuple_dict[op_s]["out"] |= {first:(None,i)}
                             else:
+                                assert op_s not in tuple_dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                                 tuple_dict[op_s] = {"in": {},"out" : {first:(None,i)}}
                                 firsts.append(op_s)
                             self.dict[first]["in"] |= {op_s:(None,i)}
@@ -775,7 +778,8 @@ class CompositionByGraph(Operator):
                 self.dict |= tuple_dict
             elif isinstance(op,PartOfOperator):
                 if len(self.firsts)>0:
-                    self.dict[op] = {"in":{},"out":{}}
+                    assert op.base_op not in self.dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
+                    self.dict[op.base_op] = {"in":{},"out":{}}
                     for first in self.firsts:
                         self.dict[first]["in"][op] = (op.index,None)
                         self.dict[op.base_op]["out"][first] =(op.index,None)
@@ -787,6 +791,7 @@ class CompositionByGraph(Operator):
                 linear &= op.linear
             elif isinstance(op,Operator):
                 if len(self.firsts)>0:
+                    assert op not in self.dict.keys(), "Loop detected! If using the same operator twice is required please make a copy!"
                     self.dict[op] = {"in":{},"out":{}}
                     for first in self.firsts:
                         self.dict[first]["in"][op] = (None,None)
