@@ -288,7 +288,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
     Parameters
     ----------
     *ops : tuple of Operator
-    codomain : vecsps.VectorSpace or callable, optional
+    codomain : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
@@ -307,12 +307,12 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
 
         if codomain is None:
             codomain = vecsps.DirectSum
-        if isinstance(codomain, vecsps.VectorSpace):
+        if isinstance(codomain, vecsps.VectorSpaceBase):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
         else:
-            raise TypeError('codomain={} is neither a VectorSpace nor callable'.format(codomain))
+            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
         assert all(op.codomain == c for op, c in zip(ops, codomain))
 
         conns = []
@@ -355,12 +355,12 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     Parameters
     ----------
     *ops : tuple of Operator
-    domain : vecsps.VectorSpace
+    domain : vecsps.VectorSpaceBase
         The domain of the operator. It should usually be a direct sum of vector spaces
     distribution_mat : numpy.ndarray of bools
         The matrix that indicates which parts of the arguments are passed to which operator. If the entry M_i,j is True the
         j-th component of the argument is passed to the i-th operator.
-    codomain : vecsps.VectorSpace or callable, optional
+    codomain : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
@@ -374,12 +374,12 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         self.domain = domain
         if codomain is None:
             codomain = vecsps.DirectSum
-        if isinstance(codomain, vecsps.VectorSpace):
+        if isinstance(codomain, vecsps.VectorSpaceBase):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
         else:
-            raise TypeError('codomain={} is neither a VectorSpace nor callable'.format(codomain))
+            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
         assert all(op.codomain == c for op, c in zip(ops, codomain))
         self.distribution_mat=distribution_mat
         self.distribution_lists=[[j for j in range(distribution_mat.shape[1]) if distribution_mat[i,j]] for i in range(distribution_mat.shape[0])]

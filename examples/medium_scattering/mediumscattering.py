@@ -347,9 +347,9 @@ class MediumScatteringOneToMany(MediumScatteringBase):
         """The farfield matrix."""
 
         ninc, nfarfield = farfield_directions.shape[:2]
-        self.codomain = vecsps.VectorSpace(
+        self.codomain = vecsps.NumPyVectorSpace(
             shape=(nfarfield, ninc),
-            dtype=complex
+            dtype=np.complex128
         )
 
     def _compute_farfield(self, farfield, inc_idx, v):

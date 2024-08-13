@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+from copy import copy
 
 from regpy.solvers import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
 from regpy.functionals import SquaredNorm
@@ -112,7 +113,7 @@ class TikhonovCG(RegSolver):
             self.sq_norm_x = 0
         if self.reltoly is not None:
             self.g_y = self.h_codomain.gram(self.y)
-            self.norm_y = np.vdot(self.y,self.g_y)
+            self.norm_y = self.op.codomain.vec_type.vdot(self.y,self.g_y)
             if self.x0 is not None:
                 self.y0 = self.y
                 self.g_y0 = self.g_y
@@ -134,11 +135,11 @@ class TikhonovCG(RegSolver):
             self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
-        self.sq_norm_res = np.real(np.vdot(self.g_res, res))
+        self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
         """The squared norm of the residual."""
         self.dir = res
         """The direction of descent."""
-        self.g_dir = np.copy(self.g_res)
+        self.g_dir = copy(self.g_res)
         """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
@@ -159,30 +160,37 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
+        print(self.penalty)
+        print("penalty",self.penalty (self.g_dir))
+        print("stuff",self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir))
         stepsize = self.sq_norm_res / np.real(
-            np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
+            self.op.codomain.vec_type.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)
         ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
             if self.x0 is None:
-                self.sq_norm_x = np.real(np.vdot(self.x, self.h_domain.gram(self.x)))
+                self.sq_norm_x = self.h_domain.inner(self.x,self.x)
             else:
-                self.sq_norm_x = np.real(np.vdot(self.x-self.x0, self.h_domain.gram(self.x-self.x0)))
+                self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
+            print(self.sq_norm_x)
 
         self.y += stepsize * Tdir
         if self.reltoly is not None:
             self.g_y += stepsize * g_Tdir
             if self.x0 is None:
-                self.norm_y = np.real(np.vdot(self.g_y, self.y))
+                self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y, self.y))
             else: 
-                self.norm_y = np.real(np.vdot(self.g_y-self.g_y0, self.y-self.y0))
+                self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y-self.g_y0, self.y-self.y0))
+            print(self.norm_y)
 
         self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
-        self.sq_norm_res = np.real(np.vdot(self.g_res, res))
+        print(self.sq_norm_res)
+        self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
+        print(self.sq_norm_res)
         beta = self.sq_norm_res / sq_norm_res_old
 
         if self.krylov_basis is not None:
@@ -229,11 +237,14 @@ class TikhonovCG(RegSolver):
                 return self.converge()
             else:
                 self.log.debug(tol_report)
+            print(tol_report)
 
         self.dir *= beta
         self.dir += res
         self.g_dir *= beta
         self.g_dir += self.g_res
+        print(self.dir)
+        print(self.g_dir)
 
 
 class GeometricSequence:

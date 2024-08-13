@@ -14,7 +14,7 @@ def get_xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale

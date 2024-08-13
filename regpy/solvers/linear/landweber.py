@@ -49,5 +49,5 @@ class Landweber(RegSolver):
         self.y = self.op(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
-            norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
+            norm_residual = np.sqrt(np.real(self.op.codomain.vec_type.vdot(self._residual, self._gy_residual)))
             self.log.info('|residual| = {}'.format(norm_residual))

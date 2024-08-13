@@ -68,7 +68,7 @@ def test_wave_field_inversion():
 
     # Create exact data and Poisson data
     exact_data = op(projection(exact_solution))
-    data = np.random.poisson(intensity * exact_data)/intensity
+    data = op.codomain.poisson(intensity * exact_data)/intensity
 
     # define codomain Gram matrix based on observed data to approximate log-likelihood
     h_codomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)

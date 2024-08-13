@@ -1,5 +1,5 @@
 import logging
-
+from copy import copy
 import numpy as np
 
 from regpy.solvers import RegularizationSetting, RegSolver
@@ -52,9 +52,9 @@ class IrgnmCG(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -79,7 +79,7 @@ class IrgnmCG(RegSolver):
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel(logging.INFO)
         # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
@@ -148,9 +148,9 @@ class LevenbergMarquardt(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -257,9 +257,9 @@ class IrgnmCGPrec(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularizaton parameter."""

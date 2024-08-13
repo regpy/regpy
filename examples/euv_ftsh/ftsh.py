@@ -18,7 +18,7 @@ class sumoverwl(regpy.operators.Operator):
     
     Parameters
     ----------
-    domain: underlying VectorSpace.
+    domain: underlying VectorSpaceBase.
     freqaxis: the axis along which to sum.
     Returns
     -------

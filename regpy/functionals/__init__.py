@@ -39,7 +39,7 @@ class Functional:
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         The uncerlying vector space for the function space on which it is defined.
     h_domain : regpy.hilbert.HilbertSpace (default: None)
         The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
@@ -58,7 +58,7 @@ class Functional:
                  linear = False,
                  convexity_param=0.,
                  Lipschitz = np.inf):
-        assert isinstance(domain, vecsps.VectorSpace)
+        assert isinstance(domain, vecsps.VectorSpaceBase)
         self.domain = domain
         """The underlying vector space."""
         self.h_domain = hilbert.as_hilbert_space(h_domain,domain) or hilbert.L2(domain)
@@ -433,8 +433,8 @@ class LinearFunctional(Functional):
     ----------
     gradient: domain
         The gradient of the linear functional. \(a=gradient\) if gradient_in_dual_space == True
-    domain: regpy.vecsps.VectorSpace, optional
-        The VectorSpace on which the functional is defined
+    domain: regpy.vecsps.VectorSpaceBase, optional
+        The VectorSpaceBase on which the functional is defined
     h_domain: regpy.hilbert.HilbertSpace (default: `L2(domain)`)
         Hilbert space for proximity operator
     gradient_in_dual_space: bool (default: False)
@@ -443,7 +443,7 @@ class LinearFunctional(Functional):
     """
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None:
-            domain = vecsps.VectorSpace(shape=gradient.shape,dtype=float)
+            domain = vecsps.NumPyVectorSpace(shape=gradient.shape,dtype=float)
         super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0)
         assert gradient in self.domain
         if gradient_in_dual_space:
@@ -530,7 +530,7 @@ class SquaredNorm(Functional):
 
     Parameters
     --------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         The uncerlying vector space for the function space on which it is defined.
     h_domain : regpy.hilbert.HilbertSpace (default: None)
         The underlying Hilbert space.
@@ -581,7 +581,7 @@ class SquaredNorm(Functional):
     def _conj(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
-            return np.real(np.vdot(xstar-bstar, self.gram_inv(xstar-bstar))) / (2.*self.a) - self.c
+            return np.real(self.h_domain.domain.vec_type.vdot(xstar-bstar, self.gram_inv(xstar-bstar))) / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
             return -self.c if np.linalg.norm(xstar-bstar)<=eps*(np.linalg.norm(xstar)+eps) else np.inf
@@ -1135,13 +1135,13 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.args = {}
 
     def register(self, vecsp_type, impl=None):
-        """Either registers a new implementation on a specific `regpy.vecsps.VectorSpace` 
+        """Either registers a new implementation on a specific `regpy.vecsps.VectorSpaceBase` 
         for a given Abstract functional or returns as decorator that can output any implementation
         option for a given vector space.
 
         Parameters
         ----------
-        vecsp_type : `regpy.vecsps.VectorSpace`
+        vecsp_type : `regpy.vecsps.VectorSpaceBase`
             Vector Space on which the functional should be registered. 
         impl : regpy.functionals.Functional, optional
             The explicit implementation to be used for that Vector Space, by default None
@@ -1220,7 +1220,7 @@ class AbstractLinearCombination(AbstractFunctional):
             self.funcs.append(func)
 
     def __call__(self,vecsp):
-        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        assert isinstance(vecsp, vecsps.VectorSpaceBase), "vecsp is not a VectorSpaceBase instance"
         return LinearCombination(
             *((w,func(vecsp)) for w, func in zip(self.coeffs, self.funcs))
             )
@@ -1253,7 +1253,7 @@ class AbstractVerticalShift(AbstractFunctional):
         """
 
     def __call__(self,vecsp):
-        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        assert isinstance(vecsp, vecsps.VectorSpaceBase), "vecsp is not a VectorSpaceBase instance"
         return VerticalShift(func=self.func(vecsp),offset=self.offset)
     
 class AbstractComposed(AbstractFunctional):
@@ -1282,7 +1282,7 @@ class AbstractComposed(AbstractFunctional):
         """
 
     def __call__(self,vecsp):
-        assert isinstance(vecsp, vecsps.VectorSpace), "vecsp is not a VectorSpace instance"
+        assert isinstance(vecsp, vecsps.VectorSpaceBase), "vecsp is not a VectorSpaceBase instance"
         assert vecsp == self.op.codomain, "domain of functional must match codomain of operator"
         return Composed(func=self.func(vecsp),op=self.op)
     
@@ -1421,11 +1421,11 @@ class HilbertNormGeneric(Functional):
         """
 
     def _eval(self, x):
-        return np.real(np.vdot(x, self.h_space.gram(x))) / 2
+        return self.h_space.inner(x,x) / 2
 
     def _linearize(self, x):
         gx = self.h_space.gram(x)
-        y = np.real(np.vdot(x, gx)) / 2
+        y = np.real(self.h_space.domain.vec_type.vdot(x, gx)) / 2
         return y, gx
 
     def _subgradient(self, x):
@@ -2174,7 +2174,7 @@ class L1Generic(Functional):
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):
@@ -2280,7 +2280,7 @@ def as_functional(func, vecsp):
     ----------
     func : Functional or HilbertSapce or Operator or callable
         Functional or object from which to construct the Functional.
-    vecsp : VectorSpace
+    vecsp : VectorSpaceBase
         Underlying vector space for the functional. 
 
     Returns
@@ -2312,10 +2312,10 @@ def _register_functionals():
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
     HilbertNorm.register(hilbert.HilbertSpace, HilbertNormGeneric)
-    HilbertNorm.register(vecsps.VectorSpace,HilbertNormOnAbstractSpace)
+    HilbertNorm.register(vecsps.VectorSpaceBase,HilbertNormOnAbstractSpace)
 
-    L1.register(vecsps.VectorSpace, L1Generic)
+    L1.register(vecsps.NumPyVectorSpace, L1Generic)
     L1.register(vecsps.MeasureSpaceFcts, L1MeasureSpace)
 
-    TV.register(vecsps.VectorSpace, TVGeneric)
+    TV.register(vecsps.NumPyVectorSpace, TVGeneric)
     TV.register(vecsps.UniformGridFcts, TVUniformGridFcts)

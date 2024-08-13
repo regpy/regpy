@@ -14,7 +14,7 @@ def get_wave_field_reco(domain, fresnel_number,mask,sol_type = None,parallel = F
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale
@@ -59,8 +59,8 @@ class NemitzkyOpForG(Operator):
     r"""
     Parameters: 
     ----------
-    domain : regpy.vecsps.VectorSpace
-        A complex regpy.vecsps.VectorSpace.
+    domain : regpy.vecsps.VectorSpaceBase
+        A complex regpy.vecsps.VectorSpaceBase.
     N : int
         an integer representing the order of Bessel functions
     
@@ -101,8 +101,8 @@ class PtwDividedBessel(Operator):
     r"""
     Parameters: 
     -----------
-    domain : regpy.vecsps.VectorSpace
-        A real regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
+        A real regpy.vecsps.VectorSpaceBase
     N : int 
         an integer representing the order of Bessel functions
 
@@ -153,8 +153,8 @@ class ComplexNemitzkyOpForG(Operator):
     r"""
     Parameters: 
     ----------
-    domain : regpy.vecsps.VectorSpace
-        A complex regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
+        A complex regpy.vecsps.VectorSpaceBase
     N : int
         an integer representing the order of Bessel functions
 
@@ -222,7 +222,7 @@ def get_op_g_to_data(domain, fresnel_number,pad_amount,a_psi0_multiplier, \
 
     Parameters:
     ----------
-    domain : regpy.vecsps.VectorSpace
+    domain : regpy.vecsps.VectorSpaceBase
         The domain on which the operator is defined.
     fresnel_number : float
         Fresnel number of the imaging setup, defined with respect to the lengthscale

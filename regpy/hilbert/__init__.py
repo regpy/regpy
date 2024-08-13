@@ -26,14 +26,14 @@ class HilbertSpace:
 
     Parameters
     ----------
-    vecsp : regpy.vecsps.VectorSpace
+    vecsp : regpy.vecsps.VectorSpaceBase
         The underlying vector space. Should be the domain and codomain of the Gram matrix.
     """
 
     log = util.classlogger
 
     def __init__(self, vecsp):
-        assert isinstance(vecsp, vecsps.VectorSpace)
+        assert isinstance(vecsp, vecsps.VectorSpaceBase)
         self.vecsp = vecsp
         """The underlying vector space."""
 
@@ -65,7 +65,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return np.real(np.vdot(x, self.gram(y)))
+        return np.real(self.vecsp.vec_type.vdot(x, self.gram(y)))
 
     def norm(self, x):
         """Compute the norm of an element.
@@ -92,7 +92,7 @@ class HilbertSpace:
 
     def dual_space(self):
         """The dual space for the dual pairing given by np.vdot. 
-        The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpace`, but gram is replaced by gram_inv.
+        The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpaceBase`, but gram is replaced by gram_inv.
 
         Returns
         ---------
@@ -232,7 +232,7 @@ class DirectSum(HilbertSpace):
     flatten : bool, optional
         Whether summands that are themselves DirectSums should be merged into
         this instance. Default: False.
-    vecsp : vecsps.VectorSpace or callable, optional
+    vecsp : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be
         called with all summands' vector spaces passed as arguments and should
         return a vecsps.DirectSum instance. Default: vecsps.DirectSum.
@@ -257,12 +257,12 @@ class DirectSum(HilbertSpace):
 
         if vecsp is None:
             vecsp = vecsps.DirectSum
-        if isinstance(vecsp, vecsps.VectorSpace):
+        if isinstance(vecsp, vecsps.VectorSpaceBase):
             pass
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.summands))
         else:
-            raise TypeError('vecsp={} is neither a VectorSpace nor callable'.format(vecsp))
+            raise TypeError('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp))
         assert all(s.vecsp == d for s, d in zip(self.summands, vecsp))
 
         super().__init__(vecsp)
@@ -329,7 +329,7 @@ class TensorProd(HilbertSpace):
     flatten : bool, optional
         Whether factors that are themselves TensorProds should be merged into
         this instance. Default: False.
-    vecsp : vecsps.VectorSpace or callable, optional
+    vecsp : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be
         called with all factors' vector spaces passed as arguments and should
         return a vecsps.Prod instance. Default: vecsps.Prod.
@@ -354,12 +354,12 @@ class TensorProd(HilbertSpace):
 
         if vecsp is None:
             vecsp = vecsps.Prod
-        if isinstance(vecsp, vecsps.VectorSpace):
+        if isinstance(vecsp, vecsps.VectorSpaceBase):
             pass
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.factors))
         else:
-            raise TypeError('vecsp={} is neither a VectorSpace nor callable'.format(vecsp))
+            raise TypeError('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp))
         assert all(s.vecsp == d for s, d in zip(self.factors, vecsp))
 
         super().__init__(vecsp)
@@ -620,11 +620,11 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.vecsps.VectorSpace`.
+    """`L2` implementation on a generic `regpy.vecsps.VectorSpaceBase`.
     
     Parameters
     ----------
-    vecsp : VectorSpace
+    vecsp : VectorSpaceBase
         Underlying discretization
     weights : array-like
         Weight in the norm.
@@ -806,7 +806,7 @@ class HmDomain(HilbertSpace):
         """
         # impose exterior Neumann boundary conditions
         mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        vecsp = vecsps.VectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
+        vecsp = vecsps.NumPyVectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
         super().__init__(vecsp)
         self.G = np.zeros(mask.shape,dtype=int)
         interior_ind = mask==1
@@ -886,7 +886,7 @@ def _register_spaces():
 
     L2.register(vecsps.Prod, componentwise(L2,cls=TensorProd))
     L2.register(vecsps.DirectSum, componentwise(L2))
-    L2.register(vecsps.VectorSpace, L2Generic)
+    L2.register(vecsps.NumPyVectorSpace, L2Generic)
     L2.register(vecsps.MeasureSpaceFcts,L2MeasureSpaceFcts)
     L2.register(vecsps.UniformGridFcts, L2UniformGridFcts)
 

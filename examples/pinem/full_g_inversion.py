@@ -71,7 +71,7 @@ def calc_reco_amp_phase(reco,extension,op_domain,mask_a):
             the reconstruction
         extension : regpy.operators.Operator
             extension operator
-        op_domain : regpy.vecsps.VectorSpace
+        op_domain : regpy.vecsps.VectorSpaceBase
             domain of op
         mask_a : numpy.ndarray
             mask on domain of operator
@@ -103,7 +103,7 @@ def calc_reco_errors(reco_amp,reco_phase,exact_solution,op_domain):
             phase of reco
         exact_solution : numpy.ndarray
             exact solution
-        op_domain : regpy.vecsps.VectorSpace
+        op_domain : regpy.vecsps.VectorSpaceBase
             domain of op
 
     Returns 

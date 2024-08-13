@@ -1,12 +1,12 @@
 import numpy as np
 from regpy.operators import Operator
-from regpy.vecsps import VectorSpace,GridFcts,UniformGridFcts, Prod
+from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
 
 class BasisTransform(Operator):
     r"""
     Consider an evaluation domain given as Tensor product \(D_1\otimes \dots\otimes D_n\) with \(D_1,\dots,D_n\) being \(n\) 
-    `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
+    `regpy.vecsps.VectorSpaceBase`'s and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
     operator mapping coefficients to some function `f: eval_domain -> dtype`:
     \[
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).
@@ -91,7 +91,7 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
         assert len(coef_nr) == eval_domain.ndim 
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
-    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
+    coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)
@@ -128,7 +128,7 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
         assert len(coef_nr) == eval_domain.ndim 
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
-    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
+    coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)

@@ -56,7 +56,7 @@ def test_adjoint(op, tolerance=1e-10):
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
-    err = np.real(np.vdot(y, fx) - np.vdot(fty, x))
+    err = np.real(op.codomain.vec_type.vdot(y, fx) - op.domain.vec_type.vdot(fty, x))
     assert np.abs(err) < tolerance, 'err = {}'.format(err)
 
 

@@ -384,7 +384,7 @@ class circle(StarCurve):
 
 
 class GenTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
+    """Class for the `VectorSpaceBase` instance of `GenTrig` instances. It provides method `bd_eval` which 
     gives evaluates a curve `GenTrig` by name.  
 
     Parameters
@@ -548,7 +548,7 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
+    """Class for the `VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
     method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     Parameters

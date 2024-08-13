@@ -1,7 +1,7 @@
 """Finite element vector spaces using NGSolve
 
-This module implements a `regpy.vecsps.VectorSpace` instance for NGSolve spaces. This gives the basic
-interface to use FES spaces defined in `ngsolve` to be used as `VectorSpaces`in `regpy`.  
+This module implements a `regpy.vecsps.VectorSpaceBase` instance for NGSolve spaces. This gives the basic
+interface to use FES spaces defined in `ngsolve` to be used as `VectorSpaceBases`in `regpy`.  
 Operators are using such spaces are implemented in the `regpy.operators.ngsolve` module. Hilbert spaces 
 and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` and `regpy.functionals.ngsolve`
 respectively. 
@@ -9,12 +9,141 @@ respectively.
 
 import ngsolve as ngs
 import numpy as np
+from copy import copy
 
-from regpy.vecsps import VectorSpace, DirectSum
-from regpy.util import is_complex_dtype
+from regpy.vecsps import VectorBase, VectorSpaceBase, DirectSum
+from regpy.util import is_complex_dtype, classlogger
 
 
-class NgsSpace(VectorSpace):
+class NgsVector(VectorBase):
+    def __init__(self, fes, bdr=None):
+        assert isinstance(fes, ngs.FESpace)
+        self.fes = fes
+        self.bdr = bdr
+        super().__init__(ngs.BaseVector, (fes.ndof,), fes.is_complex)
+        # Checks if FES is Vector valued and stores the dimension in self.codim
+        from netgen.libngpy._meshing import NgException
+        try:
+            self.codim = len(fes.components)
+            assert self.codim == fes.mesh.dim
+            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0, complex = self.is_complex)
+        except NgException:
+            self.codim = 1
+            self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
+        self._gfu_util = ngs.GridFunction(self._fes_util)
+        self._gfu_fes = ngs.GridFunction(fes)
+
+    def zeros(self):
+        h = self._gfu_fes.vec.CreateVector()
+        h *= 0
+        return h
+    
+    def ones(self):
+        self._gfu_fes.Set(1)
+        return self._gfu_fes.vec
+    
+    def empty(self):
+        h = self._gfu_fes.vec.CreateVector()
+        h *= 0
+        return h
+    
+    def rand(self,random_generator = None):
+        random_generator = random_generator or np.random.random_sample 
+        r = random_generator(self._fes_util.ndof)
+        if self.is_complex and not is_complex_dtype(r.dtype):
+            c = np.empty(self._fes_util.ndof, dtype=complex)
+            c.real = r
+            c.imag = random_generator(self._fes_util.ndof)
+            self._gfu_util.vec.FV().NumPy()[:] = c            
+        else:
+            self._gfu_util.vec.FV().NumPy()[:] = r
+        self._gfu_fes.Set(self._gfu_util)
+        return self._gfu_fes.vec
+    
+    def poisson(self,x):
+        assert not self.is_complex
+        self._gfu_fes.vec.FV().NumPy[:] =  np.random.poisson(x.vec.FV().NumPy())
+        return self._gfu_fes.vec
+    
+
+    def is_vector(self,x):
+        if not isinstance(x,ngs.BaseVector):
+            return False
+        elif x.size != self.fes.ndof:
+            return False
+        elif x.is_complex:
+            return self.is_complex
+        else:
+            return True
+        
+    def vdot(self, x, y):
+        return ngs.InnerProduct(x,y)
+
+    def to_complex(self):
+        if self.is_complex:
+            return copy(self)
+        return NgsVector(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
+
+    def to_real(self):
+        if not self.is_complex:
+            return copy(self)
+        return NgsVector(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
+    
+    def flatten(self, x):
+        return x
+
+    def fromflat(self, x):
+        return x
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other,type(self)):
+            return False
+        return self.fes == other.fes
+    
+    def iter_basis(self):
+        r"""Generator iterating over the standard basis of the vector space. For efficiency,
+        the same array is returned in each step, and subsequently modified in-place. If you need
+        the array longer than that, perform a copy. In case of complex a vector space after each
+        each array modified in its place with a real one it returns the same vector with \(1i\)
+        in its place.   
+        """
+        elm = self.zeros()
+        for idx in range(self.shape[0]):
+            elm[idx] = 1
+            yield elm
+            if self.is_complex:
+                elm[idx] = 1j
+                yield elm
+            elm[idx] = 0
+
+
+class NgsVectorSpace(VectorSpaceBase):
+    """A vector space wrapping an `ngsolve.FESpace`.
+
+    Parameters
+    ----------
+    fes : ngsolve.FESpace
+       The wrapped NGSolve vector space.
+    bdr : 
+        Boundary of the NGSolve vector space.
+    """
+
+    log = classlogger
+
+    def __init__(self, fes, bdr=None):
+        super().__init__(NgsVector(fes=fes,bdr=bdr))
+        self.fes = self.vec_type.fes
+        self.bdr = self.vec_type.bdr
+        self.codim = self.vec_type.codim
+
+    def is_on_boundary(self,vec):
+        if self.bdr is None:
+            return False
+        ngs.Projector(self.fes.FreeDofs(), range=True).Project(vec)
+        return np.all(vec.FV().NumPy() == 0)
+
+
+class NgsSpace(VectorSpaceBase):
     """A vector space wrapping an `ngsolve.FESpace`.
 
     Parameters
@@ -93,7 +222,7 @@ class NgsSpace(VectorSpace):
         return np.all(gf.vec.FV().NumPy() == 0)
 
     def __add__(self, other):
-        if isinstance(other, VectorSpace):
+        if isinstance(other, VectorSpaceBase):
             product_space = DirectSum(self, other, flatten=True)
             if all(product_space.summands[i]==product_space.summands[0] for i in range(len(product_space.summands))):
                 product_space.fes = product_space.summands[0].fes
@@ -103,7 +232,7 @@ class NgsSpace(VectorSpace):
             return NotImplemented
 
     def __radd__(self, other):
-        if isinstance(other, VectorSpace):
+        if isinstance(other, VectorSpaceBase):
             product_space = DirectSum(other, self, flatten=True)
             if all(product_space.summands[i]==product_space.summands[0] for i in range(len(product_space.summands))):
                 product_space.fes = product_space.summands[0].fes
