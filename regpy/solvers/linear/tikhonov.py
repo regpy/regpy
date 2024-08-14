@@ -2,8 +2,15 @@ import logging
 import numpy as np
 from copy import copy
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
+
 from regpy.solvers import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
 from regpy.functionals import SquaredNorm
+
+from regpy.util import classlogger
 
 from regpy.operators import Identity
 from regpy.stoprules import CountIterations
@@ -54,6 +61,8 @@ class TikhonovCG(RegSolver):
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
+    log = classlogger
+
     def __init__(
         self, setting, data=None, regpar=None, xref=None, 
         x0 =None, 
@@ -160,9 +169,10 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
-        print(self.penalty)
-        print("penalty",self.penalty (self.g_dir))
-        print("stuff",self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir))
+        self.log.debug("self.Tdir = {}".format(Tdir))
+        self.log.debug("self.dir = {}".format(self.dir))
+        self.log.debug("self.dir = {}".format(self.penalty(self.dir)))
+        self.log.debug("vdot in domain {}".format(self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)))
         stepsize = self.sq_norm_res / np.real(
             self.op.codomain.vec_type.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)
         ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
@@ -173,7 +183,6 @@ class TikhonovCG(RegSolver):
                 self.sq_norm_x = self.h_domain.inner(self.x,self.x)
             else:
                 self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
-            print(self.sq_norm_x)
 
         self.y += stepsize * Tdir
         if self.reltoly is not None:
@@ -182,15 +191,14 @@ class TikhonovCG(RegSolver):
                 self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y, self.y))
             else: 
                 self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y-self.g_y0, self.y-self.y0))
-            print(self.norm_y)
 
         self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
-        print(self.sq_norm_res)
+        self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
-        print(self.sq_norm_res)
+        self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         beta = self.sq_norm_res / sq_norm_res_old
 
         if self.krylov_basis is not None:
@@ -237,14 +245,11 @@ class TikhonovCG(RegSolver):
                 return self.converge()
             else:
                 self.log.debug(tol_report)
-            print(tol_report)
 
         self.dir *= beta
         self.dir += res
         self.g_dir *= beta
         self.g_dir += self.g_res
-        print(self.dir)
-        print(self.g_dir)
 
 
 class GeometricSequence:

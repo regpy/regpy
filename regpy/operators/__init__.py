@@ -1229,25 +1229,23 @@ class DirectSum(Operator):
                 self.ops.append(op)
 
         if domain is None:
-            domain = vecsps.DirectSum
-        if isinstance(domain, vecsps.VectorSpaceBase):
+            domain = vecsps.DirectSum(*[op.domain for op in ops])
+        elif isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,ops)]):
             pass
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
         else:
             raise TypeError('domain={} is neither a VectorSpaceBase nor callable'.format(domain))
-        assert all(op.domain == d for op, d in zip(ops, domain))
 
         if codomain is None:
-            codomain = vecsps.DirectSum
-        if isinstance(codomain, vecsps.VectorSpaceBase):
+            codomain = vecsps.DirectSum(*[op.codomain for op in ops])
+        elif isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,ops)]):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
         else:
             raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
-        assert all(op.codomain == c for op, c in zip(ops, codomain))
-
+        
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
