@@ -26,7 +26,7 @@ All vector spaces are considered as real vector spaces, even if the dtype is com
 affects iteration over a basis as well as functions returning the dimension or flattening arrays.
 """
 
-from copy import copy
+from copy import copy,deepcopy
 import numpy as np
 from itertools import accumulate
 
@@ -336,6 +336,17 @@ class TupleVector:
     
     def __getitem__(self, item):
         return self.v[item]
+    
+    def __copy__(self):
+        return deepcopy(self)
+    
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        return result
 
 
 class VectorSum(VectorBase):

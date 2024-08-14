@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-from copy import copy
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -148,7 +147,7 @@ class TikhonovCG(RegSolver):
         """The squared norm of the residual."""
         self.dir = res
         """The direction of descent."""
-        self.g_dir = copy(self.g_res)
+        self.g_dir = self.g_res.copy()
         """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
@@ -167,15 +166,19 @@ class TikhonovCG(RegSolver):
 
 
     def _next(self):
+        self.log.debug("g_res = {}".format(self.g_res))
+        self.log.debug("g_dir = {}".format(self.g_dir))
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
         self.log.debug("self.Tdir = {}".format(Tdir))
         self.log.debug("self.dir = {}".format(self.dir))
-        self.log.debug("self.dir = {}".format(self.penalty(self.dir)))
+        self.log.debug("self.penalty(self.dir) = {}".format(self.penalty(self.g_dir)))
+        self.log.debug("vdot method")
         self.log.debug("vdot in domain {}".format(self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)))
         stepsize = self.sq_norm_res / np.real(
             self.op.codomain.vec_type.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)
         ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        self.log.debug("g_dir = {}".format(self.g_dir))
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
@@ -191,15 +194,19 @@ class TikhonovCG(RegSolver):
                 self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y, self.y))
             else: 
                 self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y-self.g_y0, self.y-self.y0))
+        self.log.debug("g_dir = {}".format(self.g_dir))
+        self.log.debug("g_dir compute = {}".format(self.regpar * self.penalty (self.g_dir)))
 
         self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.h_domain.gram_inv(self.g_res)
+        self.log.debug("g_dir = {}".format(self.g_dir))
 
         sq_norm_res_old = self.sq_norm_res
         self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
         self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         beta = self.sq_norm_res / sq_norm_res_old
+        self.log.debug("g_dir = {}".format(self.g_dir))
 
         if self.krylov_basis is not None:
             self.iteration_number+=1
@@ -248,8 +255,13 @@ class TikhonovCG(RegSolver):
 
         self.dir *= beta
         self.dir += res
+        self.log.debug("g_dir = {}".format(self.g_dir))
         self.g_dir *= beta
+        self.log.debug("beta = {}".format(beta))
+        self.log.debug("g_dir = {}".format(self.g_dir))
         self.g_dir += self.g_res
+        self.log.debug("g_res = {}".format(self.g_res))
+        self.log.debug("g_dir = {}".format(self.g_dir))
 
 
 class GeometricSequence:
