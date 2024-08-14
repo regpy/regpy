@@ -90,7 +90,7 @@ def test_wave_field_inversion():
         rules.Discrepancy(
             setting.h_codomain.norm,
             data,
-            noiselevel=setting.h_codomain.norm(np.sqrt(data/intensity)),
+            noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)),
             tau=1
         )
     )

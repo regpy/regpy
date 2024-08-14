@@ -347,6 +347,10 @@ class TupleVector:
         for k, v in self.__dict__.items():
             setattr(result, k, deepcopy(v, memo))
         return result
+    
+    def component_wise(self,method):
+        assert callable(method)
+        return TupleVector([method(s_k) for s_k in self])
 
 
 class VectorSum(VectorBase):

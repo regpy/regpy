@@ -68,7 +68,7 @@ exact_solution = exact_solution * mask  # - 4*(1-mask)
 
 # Create exact data and Poisson data
 exact_data = op(projection(exact_solution))
-data = np.random.poisson(intensity * exact_data)/intensity
+data = op.codomain.poisson(intensity * exact_data)/intensity
 
 # define codomain Gram matrix based on observed data to approximate log-likelihood
 h_codomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
@@ -90,7 +90,7 @@ stoprule = (
     rules.Discrepancy(
         setting.h_codomain.norm,
         data,
-        noiselevel=setting.h_codomain.norm(np.sqrt(data/intensity)),
+        noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)),
         tau=1
     )
 )
