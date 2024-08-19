@@ -20,8 +20,8 @@ class NgsL1(Functional):
     """
     def __init__(self, domain):
         #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsSpace
-        assert isinstance(domain, NgsSpace)
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+        assert isinstance(domain, NgsVectorSpace)
         self._gfu = ngs.GridFunction(domain.fes)
         if domain.codim > 1:
             self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
@@ -31,28 +31,28 @@ class NgsL1(Functional):
         super().__init__(domain)
 
     def _eval(self, x):
-        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu.vec.data = x
         coeff = ngs.CoefficientFunction(self._gfu)
         return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
 
     def _subgradient(self, x):
-        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu.vec.data = x
         self._gfu_util.Set(self._gfu)
         y = self._gfu_util.vec.FV().NumPy()
         self._gfu_util.vec.FV().NumPy()[:] = np.sign(y)
         self._gfu.Set(self._gfu_util)
-        return self._gfu.vec.FV().NumPy().copy()
+        return self._gfu.vec
 
     def _hessian(self, x):
         raise NotImplementedError
 
     def _proximal(self, x, tau): 
-        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu.vec.data = x
         self._gfu_util.Set(self._gfu)
         y = self._gfu_util.vec.FV().NumPy()
         self._gfu_util.vec.FV().NumPy()[:] = np.maximum(0, np.abs(y)-tau)*np.sign(y)
         self._gfu.Set(self._gfu_util)
-        return self._gfu.vec.FV().NumPy().copy()
+        return self._gfu.vec
 
 
 class NgsTV(Functional):
