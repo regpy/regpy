@@ -9,10 +9,102 @@ respectively.
 
 import ngsolve as ngs
 import numpy as np
-from copy import copy
+from copy import copy,deepcopy
+from dataclasses import dataclass, field
+from typing import Optional
 
 from regpy.vecsps import VectorBase, VectorSpaceBase, DirectSum
 from regpy.util import is_complex_dtype, classlogger
+
+@dataclass 
+class NgsBaseVector:
+    vec: ngs.la.BaseVector
+    copy: Optional[bool] = field(default=False)
+
+    def __post_init__(self):
+        if isinstance(self.vec,ngs.la.BaseVector):
+            if self.copy:
+                self.vec = deepcopy(self.vec)
+            pass
+        elif isinstance(self.vec,ngs.la.DynamicVectorExpression):
+            if self.copy:
+                self.vec = deepcopy(self.vec.Evaluate())
+            else:
+                self.vec = self.vec.Evaluate()
+        else:
+            raise TypeError("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec)))
+        self.size = self.vec.size
+        self.is_complex = self.vec.is_complex
+
+    def __iadd__(self,other):
+        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        self.vec.data += other.vec
+        return self
+
+    def __isub__(self,other):
+        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        self.vec.data -= other.vec
+        return self
+    
+    def __add__(self,other):
+        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        v = self.vec.CreateVector()
+        print("self",self.vec.FV().NumPy().__array_interface__)
+        print("other",other.vec.FV().NumPy().__array_interface__)
+        v.data = self.vec + other.vec
+        print("sum",v.FV().NumPy().__array_interface__)
+        return NgsBaseVector(v)
+    
+    def __radd__(self,other):
+        return self + other
+    
+    def __sub__(self,other):
+        return self + (-1*other)
+    
+    def __rsub__(self,other):
+        return (-1*self) + other
+    
+    def __imul__(self,other):
+        assert isinstance(other,float) or isinstance(other,int)
+        self.vec.data *= other
+        return self
+    
+    def __itruediv__(self,other):
+        assert isinstance(other,float) or isinstance(other,int)
+        self.vec.data /= other
+        return self
+    
+    def __mul__(self,other):
+        assert isinstance(other,float) or isinstance(other,int)
+        v = self.vec.CreateVector()
+        v.data = other * self.vec
+        return NgsBaseVector(v)
+        
+    def __rmul__(self,other):
+        return self * other
+
+    def __truediv__(self,other):
+        assert isinstance(other,float) or isinstance(other,int)
+        v = self.vec.CreateVector()
+        v.data = (1/other)*self.vec
+        return NgsBaseVector(v)
+    
+    def __getitem__(self,i):
+        return self.vec[i]
+    
+    def __setitem__(self,i,val):
+        self.vec[i] = val
+    
+    def __copy__(self):
+        return deepcopy(self)
+    
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        return result
 
 
 class NgsVector(VectorBase):
@@ -20,7 +112,7 @@ class NgsVector(VectorBase):
         assert isinstance(fes, ngs.FESpace)
         self.fes = fes
         self.bdr = bdr
-        super().__init__(ngs.BaseVector, (fes.ndof,), fes.is_complex)
+        super().__init__(NgsBaseVector, (fes.ndof,), fes.is_complex)
         # Checks if FES is Vector valued and stores the dimension in self.codim
         from netgen.libngpy._meshing import NgException
         try:
@@ -36,16 +128,16 @@ class NgsVector(VectorBase):
     def zeros(self):
         h = self._gfu_fes.vec.CreateVector()
         h *= 0
-        return h
+        return NgsBaseVector(h)
     
     def ones(self):
         self._gfu_fes.Set(1)
-        return self._gfu_fes.vec
+        return NgsBaseVector(self._gfu_fes.vec)
     
     def empty(self):
         h = self._gfu_fes.vec.CreateVector()
         h *= 0
-        return h
+        return NgsBaseVector(h)
     
     def rand(self,random_generator = None):
         random_generator = random_generator or np.random.random_sample 
@@ -58,16 +150,16 @@ class NgsVector(VectorBase):
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
         self._gfu_fes.Set(self._gfu_util)
-        return self._gfu_fes.vec
+        return NgsBaseVector(self._gfu_fes.vec)
     
     def poisson(self,x):
         assert not self.is_complex
         self._gfu_fes.vec.FV().NumPy[:] =  np.random.poisson(x.vec.FV().NumPy())
-        return self._gfu_fes.vec
+        return NgsBaseVector(self._gfu_fes.vec)
     
 
     def is_vector(self,x):
-        if not isinstance(x,ngs.BaseVector):
+        if not isinstance(x,NgsBaseVector):
             return False
         elif x.size != self.fes.ndof:
             return False
@@ -77,7 +169,7 @@ class NgsVector(VectorBase):
             return True
         
     def vdot(self, x, y):
-        return ngs.InnerProduct(x,y)
+        return ngs.InnerProduct(x.vec,y.vec)
 
     def to_complex(self):
         if self.is_complex:
@@ -266,15 +358,15 @@ class NgsSpace(VectorSpaceBase):
 from regpy.hilbert import L2, L2Boundary, Sobolev, SobolevBoundary, Hm0
 from regpy.hilbert.ngsolve import L2FESpace, SobolevFESpace, H10FESpace, L2BoundaryFESpace, SobolevBoundaryFESpace
 
-L2.register(NgsSpace, L2FESpace)
-Sobolev.register(NgsSpace,SobolevFESpace)
-Hm0.register(NgsSpace,H10FESpace)
-L2Boundary.register(NgsSpace, L2BoundaryFESpace)
-SobolevBoundary.register(NgsSpace,SobolevBoundaryFESpace)
+L2.register(NgsVectorSpace, L2FESpace)
+Sobolev.register(NgsVectorSpace,SobolevFESpace)
+Hm0.register(NgsVectorSpace,H10FESpace)
+L2Boundary.register(NgsVectorSpace, L2BoundaryFESpace)
+SobolevBoundary.register(NgsVectorSpace,SobolevBoundaryFESpace)
 
 
 from regpy.functionals.ngsolve import NgsL1,NgsTV
 from regpy.functionals import L1, TV
 
-L1.register(NgsSpace, NgsL1)
-TV.register(NgsSpace,NgsTV)
+L1.register(NgsVectorSpace, NgsL1)
+TV.register(NgsVectorSpace,NgsTV)

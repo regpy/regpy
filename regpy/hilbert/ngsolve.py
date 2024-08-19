@@ -1,6 +1,7 @@
 import ngsolve as ngs
 import numpy as np
 
+from regpy.vecsps.ngsolve import NgsBaseVector
 from regpy.hilbert import HilbertSpace
 from regpy.operators import Operator
 from regpy.util import memoized_property
@@ -19,8 +20,8 @@ class Matrix(Operator):
 
     def __init__(self, domain, form):
         #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsSpace
-        assert isinstance(domain, NgsSpace)
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+        assert isinstance(domain, NgsVectorSpace)
         if isinstance(form, ngs.BilinearForm):
             assert domain.fes == form.space
             form.Assemble()
@@ -37,14 +38,10 @@ class Matrix(Operator):
         self._inverse = None
 
     def _eval(self, x):
-        self._gfu_in.vec.FV().NumPy()[:] = x
-        self._gfu_out.vec.data = self.mat * self._gfu_in.vec
-        return self._gfu_out.vec.FV().NumPy().copy()
+        return NgsBaseVector(self.mat * x.vec,copy=True)
 
     def _adjoint(self, y):
-        self._gfu_in.vec.FV().NumPy()[:] = y
-        self._gfu_out.vec.data = self.mat.T * self._gfu_in.vec
-        return self._gfu_out.vec.FV().NumPy().copy()
+        return NgsBaseVector(self.mat.T * y.vec,copy=true)
 
     @property
     def inverse(self):

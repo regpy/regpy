@@ -5,6 +5,7 @@ import ngsolve as ngs
 import numpy as np
 
 from regpy.operators import Operator
+from regpy.vecsps.ngsolve import NgsVectorSpace
 
 class NGSolveOperator(Operator):
     def __init__(self, domain, codomain, linear = False):
@@ -302,25 +303,26 @@ class LinearFormGrad(NGSolveOperator):
         
 class BilinearForm(NGSolveOperator):
     
-        def __init__(self, domain, bf):
-            super().__init__(domain=domain, codomain=domain, linear=True)
-            self.bf=bf
-            
-            self.gfu=ngs.GridFunction(self.domain.fes)
-            self.gfu_adj=ngs.GridFunction(self.domain.fes)
-            
-            self.f_eval = ngs.LinearForm(self.domain.fes)
-            self.f_adj  = ngs.LinearForm(self.domain.fes)
-            
-        def _eval(self, argument):
-            self.f_eval.vec.FV().NumPy()[:]=argument
-            self.gfu.vec.data=self.bf.mat.Inverse()*self.f_eval.vec
-            return self.gfu.vec.FV().NumPy()[:]
+    def __init__(self, domain, bf):
+        assert isinstance(domain,NgsVectorSpace)
+        super().__init__(domain=domain, codomain=domain, linear=True)
+        self.bf=bf
         
-        def _adjoint(self, argument):
-            self.f_adj.vec.FV().NumPy()[:]=argument.conj()
-            self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse()*self.f_adj.vec
-            return self.gfu_adj.vec.FV().NumPy()[:].conj()
+        self.gfu=ngs.GridFunction(self.domain.fes)
+        self.gfu_adj=ngs.GridFunction(self.domain.fes)
+        
+        self.f_eval = ngs.LinearForm(self.domain.fes)
+        self.f_adj  = ngs.LinearForm(self.domain.fes)
+        
+    def _eval(self, argument):
+        self.f_eval.vec.FV().NumPy()[:]=argument
+        self.gfu.vec.data=self.bf.mat.Inverse()*self.f_eval.vec
+        return self.gfu.vec.FV().NumPy()[:]
+    
+    def _adjoint(self, argument):
+        self.f_adj.vec.FV().NumPy()[:]=argument.conj()
+        self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse()*self.f_adj.vec
+        return self.gfu_adj.vec.FV().NumPy()[:].conj()
         
 def _SolveSystem(domain, bf):
     
