@@ -172,13 +172,13 @@ class Operator:
         return set(self.__dict__)
 
     def __call__(self, x):
-        assert not self.domain or x in self.domain
+        assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
         if self.linear:
             y = self._eval(x)
         else:
             self.__revoke()
             y = self._eval(x, differentiate=False)
-        assert not self.codomain or y in self.codomain
+        assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
         return y
 
     def linearize(self, x, adjoint_derivative = False):
