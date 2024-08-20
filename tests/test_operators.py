@@ -1,5 +1,4 @@
 import numpy as np
-
 from regpy.operators import *
 from regpy.operators.convolution import *
 import regpy.util.operator_tests as ot
@@ -151,4 +150,10 @@ def test_pow():#uses PtwMultiplication
     x=dom.ones()
     x[0,0]=2+1j
     assert np.max(np.abs(op(x)-np.array([[1-2j,-1j],[-1j,-1j]]))<1e-10)
+    ot.test_operator(op)
+
+def test_matrix_multiplication():
+    op = MatrixMultiplication(np.random.rand(20,21),domain= UniformGridFcts(21),codomain=UniformGridFcts(20))
+    ot.test_operator(op)
+    op = MatrixMultiplication(np.random.rand(20,21)+1j*np.random.rand(20,21))
     ot.test_operator(op)
