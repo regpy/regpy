@@ -503,7 +503,10 @@ class UniformGridFcts(GridFcts):
         spacing = []
         for axis in self.axes:
             assert util.is_uniform(axis)
-            spacing.append(axis[1] - axis[0])
+            if(axis.shape[0]==1):
+                spacing.append(1.0)
+            else:
+                spacing.append(axis[1] - axis[0])
         self.spacing = np.asarray(spacing)
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
@@ -522,6 +525,7 @@ class UniformGridFcts(GridFcts):
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
         self.volume_elem=self.measure
         
+ugf=UniformGridFcts(2,1)
 
 class DirectSum(VectorSpace):
     """The direct sum of an arbirtary number of vector spaces.

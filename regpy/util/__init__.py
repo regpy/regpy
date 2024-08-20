@@ -93,6 +93,8 @@ def is_complex_dtype(obj):
 def is_uniform(x):
     x = np.asarray(x)
     assert x.ndim == 1
+    if(x.shape[0]==1):
+        return True
     diffs = x[1:] - x[:-1]
     return np.allclose(diffs, diffs[0])
 
