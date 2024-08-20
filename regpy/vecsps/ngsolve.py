@@ -19,15 +19,18 @@ from regpy.util import is_complex_dtype, classlogger
 @dataclass 
 class NgsBaseVector:
     vec: ngs.la.BaseVector
-    copy: Optional[bool] = field(default=False)
+    make_copy: Optional[bool] = field(default=False)
+
+    def copy(self):
+        return copy(self)
 
     def __post_init__(self):
         if isinstance(self.vec,ngs.la.BaseVector):
-            if self.copy:
+            if self.make_copy:
                 self.vec = deepcopy(self.vec)
             pass
         elif isinstance(self.vec,ngs.la.DynamicVectorExpression):
-            if self.copy:
+            if self.make_copy:
                 self.vec = deepcopy(self.vec.Evaluate())
             else:
                 self.vec = self.vec.Evaluate()

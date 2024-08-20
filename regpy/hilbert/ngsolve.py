@@ -38,10 +38,10 @@ class Matrix(Operator):
         self._inverse = None
 
     def _eval(self, x):
-        return NgsBaseVector(self.mat * x.vec,copy=True)
+        return NgsBaseVector(self.mat * x.vec,make_copy=True)
 
     def _adjoint(self, y):
-        return NgsBaseVector(self.mat.T * y.vec,copy=true)
+        return NgsBaseVector(self.mat.T * y.vec,make_copy=true)
 
     @property
     def inverse(self):
