@@ -41,7 +41,7 @@ class Matrix(Operator):
         return NgsBaseVector(self.mat * x.vec,make_copy=True)
 
     def _adjoint(self, y):
-        return NgsBaseVector(self.mat.T * y.vec,make_copy=true)
+        return NgsBaseVector(self.mat.T * y.vec,make_copy=True)
 
     @property
     def inverse(self):

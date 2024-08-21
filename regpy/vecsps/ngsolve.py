@@ -52,10 +52,7 @@ class NgsBaseVector:
     def __add__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
         v = self.vec.CreateVector()
-        print("self",self.vec.FV().NumPy().__array_interface__)
-        print("other",other.vec.FV().NumPy().__array_interface__)
         v.data = self.vec + other.vec
-        print("sum",v.FV().NumPy().__array_interface__)
         return NgsBaseVector(v)
     
     def __radd__(self,other):
@@ -131,16 +128,16 @@ class NgsVector(VectorBase):
     def zeros(self):
         h = self._gfu_fes.vec.CreateVector()
         h *= 0
-        return NgsBaseVector(h)
+        return NgsBaseVector(h,make_copy=True)
     
     def ones(self):
         self._gfu_fes.Set(1)
-        return NgsBaseVector(self._gfu_fes.vec)
+        return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
     def empty(self):
         h = self._gfu_fes.vec.CreateVector()
         h *= 0
-        return NgsBaseVector(h)
+        return NgsBaseVector(h,make_copy=True)
     
     def rand(self,random_generator = None):
         random_generator = random_generator or np.random.random_sample 
@@ -153,12 +150,12 @@ class NgsVector(VectorBase):
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
         self._gfu_fes.Set(self._gfu_util)
-        return NgsBaseVector(self._gfu_fes.vec)
+        return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
     def poisson(self,x):
         assert not self.is_complex
         self._gfu_fes.vec.FV().NumPy[:] =  np.random.poisson(x.vec.FV().NumPy())
-        return NgsBaseVector(self._gfu_fes.vec)
+        return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
 
     def is_vector(self,x):
