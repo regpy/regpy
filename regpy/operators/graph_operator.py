@@ -1,272 +1,183 @@
-from regpy.operators import Operator,PartOfOperator
+from regpy.operators import Operator,PartOfOperator,Identity
 from regpy import vecsps
 
-class OperatorAdress:
-
-    def get_adress_from_data(data,is_input_adress):
-        if(data is None):
-            return OperatorAdressNull(is_input_adress)
-        if(isinstance(data,OperatorAdress)):
-            assert data.is_input_adress==is_input_adress
-            return data
-        if(isinstance(data,OperatorNode)):
-            return OperatorAdressAll(data,is_input_adress)
-        if(isinstance(data,tuple)):
-            assert isinstance(data[0],OperatorNode)
-            assert len(tuple)==2
-            if(isinstance(data[1]),int):
-                return OperatorAdressIndex(data[0],is_input_adress,data[1])
-            if(isinstance(data[1],list)):
-                return OperatorAdressIndexList(data[0],is_input_adress,data[1])
-        raise ValueError(f"{data} cannot be converted to OperatorAdress")
-
-    def __init__(self,node,is_input_adress,adress_data=None):
-        self.node=node
-        assert isinstance(is_input_adress,bool)
-        self.is_input_adress=is_input_adress#decides if adress is adress on input or output of operator
-        self.adress_data=adress_data
-        if(node is not None):
-            self.relevant_dom=node.op.domain if is_input_adress else node.op.codomain
-
-    def __str__(self):
-        in_out="input" if self.is_input_adress else "output"
-        return f"{self.node.op}:{in_out}:{self.adress_data}"
-
-
-    def get_part_forward(self,x):
-        raise NotImplementedError
-    
-    def get_part_backward(self,y,split=False):
-        raise NotImplementedError
-
-class OperatorAdressNull(OperatorAdress):
-
-    def __init__(self,is_input_adress=False):
-        super().__init__(None,is_input_adress)
-    
-    def __str__(self):
-        return f"NullAdress"
-
-    def get_part_forward(self,x):
-        raise ValueError("Null adress cannot divide data.")
-    
-    def get_part_backward(self,y,split=False):
-        raise ValueError("Null adress cannot divide data.")
-
-class OperatorAdressAll(OperatorAdress):
-
-    def __init__(self,node,is_input_adress):
-        super().__init__(node,is_input_adress,'all')
-
-    def get_part_forward(self, x):
-        if(not self.is_input_adress):
-            assert x in self.node.codomain
-            return x
-        else:
-            if(isinstance(x,tuple)):
-                return self.relevant_dom.join(*x)
-            else:
-                return x
-
-    def get_part_backward(self,y,split=False):
-        if(self.is_input_adress):
-            if(split):
-                assert isinstance(self.relevant_dom,vecsps.DirectSum)
-                return self.relevant_dom.split(y)
-            else:
-                return y
-        else:
-            if(isinstance(y,tuple)):
-                return [('all',self.relevant_dom.join(*y))]
-            else:
-                return [('all',y)]
-
-
-class OperatorAdressIndex(OperatorAdress):
-
-    def __init__(self,node,is_input_adress,index):
-        super().__init__(node,is_input_adress,adress_data=index)
-        assert isinstance(self.relevant_dom,vecsps.DirectSum)
-        assert index<len(self.relevant_dom.summands) and index>=0
-        self.relevant_subdom=self.relevant_dom.summands[self.adress_data]
-        
-        
-    def get_part_forward(self,x):
-        if(not self.is_input_adress):
-            assert x in self.node.codomain
-            return self.relevant_dom.split(x)[self.adress_data]
-        else:
-            if(isinstance(x,tuple)):
-                return self.relevant_subdom.join(*x)
-            else:
-                return x
-            
-    def get_part_backward(self,y,split=False):
-        if(self.is_input_adress):
-            if(split):
-                assert isinstance(self.relevant_subdom,vecsps.DirectSum)
-                return self.relevant_subdom.split(y)
-            else:
-                return y
-        else:
-            if(isinstance(y,tuple)):
-                assert isinstance(self.relevant_subdom,vecsps.DirectSum)
-                return [(self.adress_data,self.relevant_subdom.join(*y))]
-            else:
-                return [(self.adress_data,y)]
-    
-class OperatorAdressIndexList(OperatorAdress):
-
-    def __init__(self, node, index_list):
-        is_input_adress=False#setting multiple inputs at once is forbidden
-        self.relevant_dom=node.op.domain if is_input_adress else node.op.codomain
-        assert isinstance(self.relevant_dom,vecsps.DirectSum)
-        assert len(index_list)>1 #Use index instead of list of length one
-        assert all(i<len(self.relevant_dom.summands) and i>=0 for i in index_list)
-        super().__init__(node, is_input_adress, index_list)
-
-    def get_part_forward(self,x):
-        x_split=self.relevant_dom.split(x)
-        return tuple([x_split[i] for i in self.adress_data])
-    
-    def get_part_backward(self, y, split=False):
-        assert isinstance(y,tuple)
-        return list(zip(self.adress_data,y))
 
 
 class OperatorNode:
-
-    def get_node_from_operator(op):
-        if(isinstance(op,PartOfOperator)):
-            node=OperatorNode(op.base_op)
-            out_adress=None
-            if(isinstance(op.index,int)):
-                out_adress=OperatorAdressIndex(node,False,op.index)
-            elif(isinstance(op.index,list)):
-                if(len(op.index)==1):
-                    out_adress=OperatorAdressIndex(node,False,op.index)
-                else:
-                    out_adress=OperatorAdressIndexList(node,False,op.index)
-            node.output_edges.append(Edge(out_adress,OperatorAdressNull(is_input_adress=True)))
-            return node
-        if(isinstance(op,Operator)):
-            node=OperatorNode(op)
-            node.output_edges.append(Edge(OperatorAdressAll(node,False),OperatorAdressNull(is_input_adress=True)))
 
     def __init__(self,op):
         self.op=op
         self.N_in=len(self.op.domain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
         self.N_out=len(self.op.codomain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
-        self.input_edges=Edge(OperatorAdressNull(),OperatorAdressAll(self,True))#can also be list
+        self.input_edges=[None for _ in range(self.N_in)]
         self.output_edges=[]
+
+    def __str__(self):
+        return str(self.op)
 
     def get_free_inputs(self):
         free_inputs=set()
-        if(isinstance(self.input_edges,list)):
-            for i, input_edge in enumerate(self.input_edges):
-                if(isinstance(input_edge.start_adress,OperatorAdressNull)):
-                    free_inputs.add(i)
-            if(len(free_inputs)==self.N_in):
-                free_inputs.add('all')
-            return free_inputs
-        else:
-            if(isinstance(self.input_edges.start_adress,OperatorAdressNull)):
-                return set(['all']+list(range(self.N)))
-            
+        for i in range(self.N_in):
+            if(self.input_edges[i] is None):
+                free_inputs.add(i)
+        return free_inputs
+    
     def combine_input(self,data_dict):
-        if(isinstance(self.input_edges),Edge):
-            return self.input_edges.pass_forward(data_dict[self.input_edges.start_adress.node])
+        assert all(edge is not None for edge in self.input_edges)
+        if(self.N_in==1):
+            edge=self.input_edges[0]
+            return edge.pass_forward(data_dict[edge.start_node])
         else:
-            parts=[]
-            for edge in self.input_edges:
-                parts.append(edge.pass_forward(data_dict[edge.start_adress.node]))
-            return self.op.domain.join(*parts)
-    
+            inputs=[edge.pass_forward(data_dict[edge.start_node]) for edge in self.input_edges]
+            return self.op.domain.join(*inputs)
+        
     def combine_output(self,data_dict):
-        if(not isinstance(self.op.codomain,vecsps.DirectSum)):
-            res=None
-            for edge in self.output_edges:
-                data=edge.pass_backward(data_dict[edge.end_adress.node])[0][1]
-                if(res is None):
-                    res=data
-                else:
-                    res+=data
-            return res
-        parts_all=None
-        parts_list=[None for _ in range(self.N_out)]
-        all_none=True
-        for edge in self.output_edges:
-            data_parts=edge.pass_backward(data_dict[edge.end_adress.node])
-            for part in data_parts:
-                if(part[0]=='all'):
-                    if(parts_all is None):
-                        parts_all=part[1]
+        if(self.output_edges==[]):
+            return self.op.codomain.zeros()
+        edge=self.output_edges[0]
+        data_list=edge.pass_backward(data_dict[edge.end_node])
+        for i in range(1,len(self.output_edges)):
+            edge=self.output_edges[i]
+            new_data=edge.pass_backward(data_dict[edge.end_node])
+            for i,d in enumerate(new_data):
+                if(d is not None):
+                    if(data_list[i] is None):
+                        data_list[i]=d
                     else:
-                        parts_all+=part[1]
-                else:
-                    all_none=False
-                    if(parts_list[part[0]] is None):
-                        parts_list[part[0]]=part[1]
-                    else:
-                        parts_list[part[0]]+=part[1]
-        if(all_none):
-            if(parts_all is None):
-                return self.codomain.zeros()
-            else:
-                return parts_all
-        else:
-            res=self.codomain.join(*parts_list)
-            if(parts_all is not None):
-                res+=parts_all
-            return res
-    
-    def connect(start_adress,end_adress,override_inputs=False):
-        new_edge=Edge(start_adress,end_adress)
-        #check if input is free
-        if(not override_inputs):
-            free_inputs=end_adress.node.get_free_inputs()
-            if(end_adress.adress_data not in free_inputs):
-                raise ValueError("Cannot override input {end_adress.adress_data}")
-        if(end_adress.adress_data=='all'):
-            end_adress.node.input_edges=new_edge
-        else:
-            end_adress.node.input_edges[end_adress.adress_data]=new_edge
-        start_adress.node.output_edges.append(new_edge)
-
-
+                        data_list[i]+=d
+        if(self.N_out==1):
+            return self.data_list[0]
+        for i,d in enumerate(data_list):
+            if(d is None):
+                data_list[i]=self.op.codomain.summands[i].zeros()
+        return self.op.codomain.join(*data_list)
 
 class Edge:
 
-    def __init__(self,start_adress,end_adress):
-        assert start_adress.is_input_adress==False
-        assert end_adress.is_input_adress
-        self.start_adress=start_adress
-        self.end_adress=end_adress
+    def __init__(self,start_node,end_node,start_list,end_index,overwrite=False):
+        assert isinstance(start_node,OperatorNode) or start_node is None
+        assert isinstance(end_node,OperatorNode) or end_node is None
+        assert isinstance(start_list,list)
+        assert isinstance(end_index,int)
+        self.start_node=start_node
+        self.end_node=end_node
+        self.start_list=start_list
+        self.end_index=end_index
+        if(self.start_node is not None):
+            assert all(i>=0 and i<self.start_node.N_out for i in self.start_list)
+            self.start_node.output_edges.append(self)
+        if(self.end_node is not None):
+            assert end_index<self.end_node.N_in
+            assert overwrite or self.end_node.input_edges[self.end_index] is None
+            if(overwrite and self.end_node.input_edges[self.end_index] is not None):
+                self.end_node.input_edges[self.end_index].remove()
+            self.end_node.input_edges[self.end_index]=self
+        if(self.end_node is not None):
+            if(self.end_node.N_in==1):
+                self.end_space=self.end_node.op.domain
+            else:
+                self.end_space=self.end_node.op.domain.summands[self.end_index]
+
+    def construct_start_space(self):
+        assert self.start_node is not None
+        if(self.start_node.N_out==1):
+            return self.start_node.op.codomain
+        if(len(self.start_list)==1):
+            return self.start_node.op.codomain.summands[self.start_list[0]]
+        return vecsps.DirectSum(*[self.start_node.codomain.summands[i] for i in self.start_list])
+
+    def remove(self):
+        if(self.start_node is not None):
+            self.start_node.output_edges.remove(self)
+        if(self.end_node is not None):
+            self.end_node.input_edges[self.end_index]=None
+        self.start_node=None
+        self.end_node=None
+
+    def __str__(self):
+        return f"{self.start_node}{self.start_list}-->[{self.end_index}]{self.end_node}"
 
     def pass_forward(self,x):
-        return self.end_adress.get_part_forward(self.start_adress.get_part_forward(x))
+        assert self.end_node is not None and self.start_node is not None
+        if(self.start_node.N_out==1):
+            if(len(self.start_list)==1):
+                return x
+            else:
+                return self.end_space.join(*[x for _ in self.start_list])
+        x_split=self.start_node.codomain.split(x)
+        if(len(self.start_list)==1):
+            return x_split[self.start_list[0]]
+        else:
+            return self.end_space.join(*[x_split[i] for i in self.start_list])
+            
 
     def pass_backward(self,y):
-        if(not isinstance(self.start_adress,OperatorAdressIndexList)):
-            return self.start_adress.get_part_backward(self.end_adress.get_part_backward(y))
-        else:
-            return self.start_adress.get_part_backward(self.end_adress.get_part_backward(y,split=True))
-
+        if(self.end_node.N_in>1):
+            y=self.end_node.op.domain.split(y)[self.end_index]
+        x_vals=[None for _ in range(self.start_node.N_out)]
+        if(len(self.start_list)==1):
+            x_vals[self.start_list[0]]=y
+            return x_vals
+        y_split=self.end_space.split(y)
+        for i,index in enumerate(self.start_list):
+            if(x_vals[index] is None):
+                x_vals[index]=y_split[i]
+            else:
+                x_vals[index]+=y_split[i]
+        return x_vals
+        
 
 class OperatorGraph(Operator):
 
     def __init__(self, operators,edges):
-        self.node_dict={op:OperatorNode.get_node_from_operator(op) for op in operators}
+        self.node_dict={op:OperatorNode(op) for op in operators}
+        self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
-        super().__init__(None, None, linear)
+        start_edges=[]
+        domains=[]
+        end_edges=[]
+        codomains=[]
+        for edge in edges:
+            op_start,start_list=edge[0]
+            op_end,end_index=edge[1]
+            start_node=self.node_dict[op_start] if op_start is not None else None
+            end_node=self.node_dict[op_end] if op_end is not None else None
+            new_edge=Edge(start_node,end_node,start_list,end_index)
+            self.edges.append(new_edge)
+            if(op_start is None):
+                start_edges.append(new_edge)
+                domains.append(new_edge.end_space)
+            if(op_end is None):
+                end_edges.append(new_edge)
+                codomains.append(new_edge.construct_start_space())
+        domain=vecsps.DirectSum(*domains) if len(domains)>1 else domains[0]
+        codomain=vecsps.DirectSum(*codomains) if len(codomains)>1 else codomains[0]
+        self.input_op=Identity(domain,copy=False)
+        self.output_op=Identity(codomain,copy=False)
+        self.node_dict.update({self.input_op:OperatorNode(self.input_op),self.output_op:OperatorNode(self.output_op)})
+        for i,edge in enumerate(start_edges):
+            edge.start_node=self.node_dict[self.input_op]
+            edge.start_list=[i]
+            self.node_dict[self.input_op].output_edges.append(edge)
+        for i,edge in enumerate(end_edges):
+            edge.end_node=self.node_dict[self.output_op]
+            edge.end_index=i
+            self.node_dict[self.output_op].input_edges[i]=edge
+        super().__init__(self.input_op.domain, self.output_op.codomain, linear)
 
 
 from regpy.operators import PtwMultiplication
+
 
 dom=vecsps.UniformGridFcts(2,4)
 A=PtwMultiplication(dom,2)
 B=PtwMultiplication(dom,3)
 C=PtwMultiplication(dom,4)
 
-og=OperatorGraph([A,B,C],None)
+og=OperatorGraph([A,B,C],[((None,[0]),(A,0)),((A,[0]),(B,0)),((B,[0]),(C,0)),((C,[0]),(None,0))])
+for v in og.node_dict.values():
+    print(v)
+    print(v.input_edges)
 print(og)
+print(og.domain)
+print(og.codomain)
