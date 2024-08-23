@@ -9,36 +9,20 @@ class OperatorNode:
         self.op=op
         self.N_in=len(self.op.domain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
         self.N_out=len(self.op.codomain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
-        self.input_edges=[None for _ in range(self.N_in)]
+        self.input_edges=[None]*self.N_in
         self.output_edges=[]
 
     def __str__(self):
         return str(self.op)
 
     def get_free_inputs(self):
-        free_inputs=set()
-        for i in range(self.N_in):
-            if(self.input_edges[i] is None):
-                free_inputs.add(i)
-        return free_inputs
+        return set([i for i in range(self.N_in) if self.input_edges[i] is None])
     
     def get_in_nodes(self):
-        res=set()
-        for edge in self.input_edges:
-            if(edge is not None):
-                in_node=edge.start_node
-                if(in_node is not None):
-                    res.add(in_node)
-        return res
+        return set([edge.start_node for edge in self.input_edges if edge is not None and edge.start_node is not None])
     
     def get_out_nodes(self):
-        res=set()
-        for edge in self.output_edges:
-            if(edge is not None):
-                out_node=edge.end_node
-                if(out_node is not None):
-                    res.add(out_node)
-        return res
+        return set([edge.end_node for edge in self.output_edges if edge is not None and edge.end_node is not None])
     
     def combine_input(self,data_dict):
         assert all(edge is not None for edge in self.input_edges)
@@ -46,8 +30,7 @@ class OperatorNode:
             edge=self.input_edges[0]
             return edge.pass_forward(data_dict[edge.start_node])
         else:
-            inputs=[edge.pass_forward(data_dict[edge.start_node]) for edge in self.input_edges]
-            return self.op.domain.join(*inputs)
+            return self.op.domain.join(*[edge.pass_forward(data_dict[edge.start_node]) for edge in self.input_edges])
         
     def combine_output(self,data_dict):
         if(self.output_edges==[]):
@@ -65,10 +48,8 @@ class OperatorNode:
                         data_list[i]+=d
         if(self.N_out==1):
             return data_list[0]
-        for i,d in enumerate(data_list):
-            if(d is None):
-                data_list[i]=self.op.codomain.summands[i].zeros()
-        return self.op.codomain.join(*data_list)
+        else:
+            return self.op.codomain.join(*[d if d is not None else self.op.codomain.summands[i].zeros() for i,d in enumerate(data_list)])
 
 class Edge:
 
@@ -122,27 +103,38 @@ class Edge:
                 return x
             else:
                 return self.end_space.join(*[x for _ in self.start_list])
-        x_split=self.start_node.codomain.split(x)
-        if(len(self.start_list)==1):
-            return x_split[self.start_list[0]]
         else:
-            return self.end_space.join(*[x_split[i] for i in self.start_list])
+            x_split=self.start_node.codomain.split(x)
+            if(len(self.start_list)==1):
+                return x_split[self.start_list[0]]
+            else:
+                return self.end_space.join(*[x_split[i] for i in self.start_list])
             
 
     def pass_backward(self,y):
         if(self.end_node.N_in>1):
             y=self.end_node.op.domain.split(y)[self.end_index]
-        x_vals=[None for _ in range(self.start_node.N_out)]
+        x_vals=[None] * self.start_node.N_out
         if(len(self.start_list)==1):
             x_vals[self.start_list[0]]=y
             return x_vals
-        y_split=self.end_space.split(y)
-        for i,index in enumerate(self.start_list):
-            if(x_vals[index] is None):
-                x_vals[index]=y_split[i]
-            else:
-                x_vals[index]+=y_split[i]
-        return x_vals
+        else:
+            y_split=self.end_space.split(y)
+            for i,index in enumerate(self.start_list):
+                if(x_vals[index] is None):
+                    x_vals[index]=y_split[i]
+                else:
+                    x_vals[index]+=y_split[i]
+            return x_vals
+        
+    def __get_item__(self,index):
+        assert isinstance(index,int)
+        if index == 0:
+            return self.start_node.op,self.start_list
+        elif index == 1:
+            return self.end_node.op,self.end_index
+        else:
+            raise IndexError("Only index 0 for start,1 for end allowed.")
         
 
 class OperatorGraph(Operator):
