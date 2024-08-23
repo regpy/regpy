@@ -22,6 +22,24 @@ class OperatorNode:
                 free_inputs.add(i)
         return free_inputs
     
+    def get_in_nodes(self):
+        res=set()
+        for edge in self.input_edges:
+            if(edge is not None):
+                in_node=edge.start_node
+                if(in_node is not None):
+                    res.add(in_node)
+        return res
+    
+    def get_out_nodes(self):
+        res=set()
+        for edge in self.output_edges:
+            if(edge is not None):
+                out_node=edge.end_node
+                if(out_node is not None):
+                    res.add(out_node)
+        return res
+    
     def combine_input(self,data_dict):
         assert all(edge is not None for edge in self.input_edges)
         if(self.N_in==1):
@@ -46,7 +64,7 @@ class OperatorNode:
                     else:
                         data_list[i]+=d
         if(self.N_out==1):
-            return self.data_list[0]
+            return data_list[0]
         for i,d in enumerate(data_list):
             if(d is None):
                 data_list[i]=self.op.codomain.summands[i].zeros()
@@ -129,7 +147,7 @@ class Edge:
 
 class OperatorGraph(Operator):
 
-    def __init__(self, operators,edges):
+    def __init__(self, operators,edges,calc_exec_order=True):
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
@@ -163,21 +181,80 @@ class OperatorGraph(Operator):
             edge.end_node=self.node_dict[self.output_op]
             edge.end_index=i
             self.node_dict[self.output_op].input_edges[i]=edge
+        if(calc_exec_order):
+            self.operators=self._calc_exec_order()
+        else:
+            self.operators=self.input_op+operators+self.output_op
         super().__init__(self.input_op.domain, self.output_op.codomain, linear)
 
+    def _calc_exec_order(self):
+        in_sets={op:self.node_dict[op].get_in_nodes() for op in self.node_dict.keys()}
+        out_sets={op:self.node_dict[op].get_out_nodes() for op in self.node_dict.keys()}
+        current_ops={self.input_op}
+        op_order=[]
+        while(current_ops!={self.output_op}):
+            if(current_ops==set()):
+                raise ValueError('Given graph has cycles or is not connected.')
+            current_op=current_ops.pop()
+            op_order.append(current_op)
+            potential_next=out_sets[current_op]
+            for next_node in potential_next:
+                in_sets[next_node.op].remove(self.node_dict[current_op])
+                if(in_sets[next_node.op]==set()):
+                    current_ops.add(next_node.op)
+        op_order.append(self.output_op)
+        return op_order
+    
+    def _eval(self, x, differentiate=False):
+        data_dict={self.node_dict[self.input_op]:x}
+        for i in range(1,len(self.operators)):
+            current_node=self.node_dict[self.operators[i]]
+            x_input=current_node.combine_input(data_dict)
+            if(current_node.op.linear):
+                y=current_node.op._eval(x_input)
+            else:
+                y=current_node.op._eval(x_input,differentiate=differentiate)
+            data_dict.update({current_node:y})
+        return data_dict[self.node_dict[self.output_op]]
+    
+    def _derivative(self, x):
+        data_dict={self.node_dict[self.input_op]:x}
+        for i in range(1,len(self.operators)):
+            current_node=self.node_dict[self.operators[i]]
+            x_input=current_node.combine_input(data_dict)
+            if(current_node.op.linear):
+                y=current_node.op._eval(x_input)
+            else:
+                y=current_node.op._derivative(x_input)
+            data_dict.update({current_node:y})
+        return data_dict[self.node_dict[self.output_op]]
+    
+    def _adjoint(self, y):
+        data_dict={self.node_dict[self.output_op]:y}
+        for i in range(1,len(self.operators)):
+            current_node=self.node_dict[self.operators[len(self.operators)-1-i]]
+            y_input=current_node.combine_output(data_dict)
+            x=current_node.op._adjoint(y_input)
+            data_dict.update({current_node:x})
+        return data_dict[self.node_dict[self.input_op]]
 
-from regpy.operators import PtwMultiplication
+        
 
 
-dom=vecsps.UniformGridFcts(2,4)
-A=PtwMultiplication(dom,2)
-B=PtwMultiplication(dom,3)
-C=PtwMultiplication(dom,4)
+# from regpy.operators import PtwMultiplication,SquaredModulus, Exponential
 
-og=OperatorGraph([A,B,C],[((None,[0]),(A,0)),((A,[0]),(B,0)),((B,[0]),(C,0)),((C,[0]),(None,0))])
-for v in og.node_dict.values():
-    print(v)
-    print(v.input_edges)
-print(og)
-print(og.domain)
-print(og.codomain)
+
+# dom=vecsps.UniformGridFcts(2,4)
+# A=PtwMultiplication(dom,2)
+# B=SquaredModulus(dom)
+# C=Exponential(dom)
+
+# og=OperatorGraph([A,B,C],[((None,[0]),(A,0)),((A,[0]),(B,0)),((A,[0]),(C,0)),((C,[0]),(None,0)),((B,[0]),(None,0))])
+# print(og.operators)
+# print(og.domain)
+# print(og.codomain)
+# x=3*og.domain.ones()
+# y,deriv=og.linearize(x)
+# print(y)
+# print(deriv(og.domain.ones()))
+# print(deriv.adjoint(og.codomain.ones()))
