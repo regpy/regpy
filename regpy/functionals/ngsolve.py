@@ -5,21 +5,22 @@ import numpy as np
 
 from regpy.hilbert import L2
 from regpy.functionals import Functional
+from regpy.vecsps.ngsolve import NgsBaseVector
 
 class SignumFilter(ngs.la.BaseMatrix):
     def __init__ (self, space, vec):
         self.super(ngs.la.SymmetricGS, self).__init__()
         self.gf = ngs.GridFunction(space)
         self.gf.vec.data = vec
-        self.gfout = ngs.GridFunction(space)
-        self.gf2 = ngs.GridFunction(space)
+        self.gf_out = ngs.GridFunction(space)
+        self.gf_help = ngs.GridFunction(space)
     
-    def Update(self, newvec):
-        self.gf.vec.data = newvec
+    def Update(self, new_vec):
+        self.gf.vec.data = new_vec
     
     def Mult (self, x, y):
         self.gf2.vec.data = x
-        self.gfout.Interpolate(IfPos(...self.gf...,1,-1)*self.gf2))
+        self.gf_out.Interpolate(ngs.IfPos(self.gf,1,-1)*self.gf2)
         y.data = self.gf.vec
     
     def Height (self):
@@ -45,6 +46,7 @@ class NgsL1(Functional):
         from regpy.vecsps.ngsolve import NgsVectorSpace
         assert isinstance(domain, NgsVectorSpace)
         self._gfu = ngs.GridFunction(domain.fes)
+        self._gfu_help = ngs.GridFunction(domain.fes)
         if domain.codim > 1:
             self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
         else:
@@ -58,23 +60,19 @@ class NgsL1(Functional):
         return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
 
     def _subgradient(self, x):
-        self._gfu.vec.data = x
-        self._gfu_util.Set(self._gfu)
-        y = self._gfu_util.vec.FV().NumPy()
-        self._gfu_util.vec.FV().NumPy()[:] = np.sign(y)
-        self._gfu.Set(self._gfu_util)
-        return self._gfu.vec
+        self._gfu.vec.data = x.vec
+        self._gfu_help.Interpolate(ngs.IfPos(self._gfu,1,-1)*self._gfu)
+        return NgsBaseVector(self._gfu_help.vec,make_copy=True)
 
     def _hessian(self, x):
         raise NotImplementedError
 
     def _proximal(self, x, tau): 
-        self._gfu.vec.data = x
-        self._gfu_util.Set(self._gfu)
-        y = self._gfu_util.vec.FV().NumPy()
-        self._gfu_util.vec.FV().NumPy()[:] = np.maximum(0, np.abs(y)-tau)*np.sign(y)
-        self._gfu.Set(self._gfu_util)
-        return self._gfu.vec
+        self._gfu.vec.data = x.vec
+        sign_x = ngs.IfPos(self._gfu)
+        t = sign_x*self._gfu-0.25
+        self._gfu_help = ngs.IfPos(t,1,0)*t*sign_x
+        return NgsBaseVector(self._gfu_help.vec,make_copy=True)
 
 
 class NgsTV(Functional):
@@ -93,26 +91,27 @@ class NgsTV(Functional):
 
     def __init__(self, domain, h_domain=L2):
         #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsSpace
-        assert isinstance(domain, NgsSpace)
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+        assert isinstance(domain, NgsVectorSpace)
         assert domain.codim == 1, "TV is not implemented for vector valued spaces." 
         super().__init__(domain,h_domain=h_domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
         self._gfu.Set(0)
         self._p = list(ngs.grad(self._gfu))
         self._q = list(ngs.grad(self._gfu))
+        self._gfu_update = ngs.GridFunction(self.domain.fes)
+        self._gfu_out = ngs.GridFunction(self.domain.fes)
         self._gfu_div = ngs.GridFunction(domain.fes)
         self._gfu_div.vec.FV().NumPy()[:] = ngsdivergence(self._p, self.domain.fes)
         self._fes_util = ngs.L2(self.domain.fes.mesh, order=0)
         self._gfu_util = ngs.GridFunction(self._fes_util)
 
     def _eval(self, x):
-        self._gfu.vec.FV().NumPy()[:] = x
+        self._gfu.vec.data = x.vec
         gradu = ngs.grad(self._gfu)
         tvnorm = 0
         for i in range(gradu.dim):
-            self._gfu_util.Set(gradu[i])
-            tvnorm += ngs.Integrate( ngs.Norm(self._gfu_util), self.domain.fes.mesh )
+            tvnorm += ngs.Integrate( ngs.Norm(gradu[i]), self.domain.fes.mesh )
         return tvnorm
 
     def _subgradient(self, x):
@@ -125,9 +124,7 @@ class NgsTV(Functional):
         self._gfu.Set(0)
         self._p = list(ngs.grad(self._gfu))
 
-        self._gfu.vec.FV().NumPy()[:] = x
-        self._gfu_update = ngs.GridFunction(self.domain.fes)
-        self._gfu_out = ngs.GridFunction(self.domain.fes)
+        self._gfu.vec.data = x.vec
         for i in range(maxiter):
             self._gfu_update.Set( self._gfu_div - self._gfu/tau )
             update= stepsize * ngs.grad( self._gfu_update )
@@ -137,7 +134,7 @@ class NgsTV(Functional):
                 self._p[i] = (self._p[i] + update[i]) / self._q[i]
             self._gfu_div.vec.FV().NumPy()[:] = ngsdivergence(self._p, self.domain.fes)
         self._gfu_out.Set(self._gfu - tau*self._gfu_div)
-        return self._gfu_out.vec.FV().NumPy().copy()        
+        return NgsBaseVector(self._gfu_out.vec,make_copy=True)  
 
 def ngsdivergence(p, fes):
     """Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
