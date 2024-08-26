@@ -228,11 +228,18 @@ class NgsVectorSpace(VectorSpaceBase):
         self.bdr = self.vec_type.bdr
         self.codim = self.vec_type.codim
 
-    def is_on_boundary(self,vec):
+    def is_on_boundary(self,x):
         if self.bdr is None:
             return False
-        ngs.Projector(self.fes.FreeDofs(), range=True).Project(vec)
-        return np.all(vec.FV().NumPy() == 0)
+        t = x.vec.CreateVector()
+        t.data = x.vec
+        ngs.Projector(self.fes.FreeDofs(), range=True).Project(t)
+        return np.all(t.FV().NumPy() == 0)
+    
+    def to_gf(self, x):
+        gf = ngs.GridFunction(self.fes)
+        gf.vec.data = x.vec
+        return gf
 
 
 class NgsSpace(VectorSpaceBase):

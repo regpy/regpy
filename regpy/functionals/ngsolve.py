@@ -6,6 +6,28 @@ import numpy as np
 from regpy.hilbert import L2
 from regpy.functionals import Functional
 
+class SignumFilter(ngs.la.BaseMatrix):
+    def __init__ (self, space, vec):
+        self.super(ngs.la.SymmetricGS, self).__init__()
+        self.gf = ngs.GridFunction(space)
+        self.gf.vec.data = vec
+        self.gfout = ngs.GridFunction(space)
+        self.gf2 = ngs.GridFunction(space)
+    
+    def Update(self, newvec):
+        self.gf.vec.data = newvec
+    
+    def Mult (self, x, y):
+        self.gf2.vec.data = x
+        self.gfout.Interpolate(IfPos(...self.gf...,1,-1)*self.gf2))
+        y.data = self.gf.vec
+    
+    def Height (self):
+        return self.space.ndof
+    
+    def Width (self):
+        return self.space.ndof
+
 
 class NgsL1(Functional):
     r"""Implementation of the \(L^1\)-norm on a given `NgsSpace`. It is registered under the
