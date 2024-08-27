@@ -120,7 +120,8 @@ class NgsTV(Functional):
     def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
         self._gfu.Set(0)
         self._p = ngs.grad(self._gfu)
-
+        self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
+        
         self._gfu.vec.data = x.vec
         for i in range(maxiter):
             self._gfu_update.Set( self._gfu_div - self._gfu/tau )
