@@ -97,14 +97,11 @@ class NgsTV(Functional):
         super().__init__(domain,h_domain=h_domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
         self._gfu.Set(0)
-        self._p = list(ngs.grad(self._gfu))
-        self._q = list(ngs.grad(self._gfu))
+        self._p = ngs.grad(self._gfu)
         self._gfu_update = ngs.GridFunction(self.domain.fes)
         self._gfu_out = ngs.GridFunction(self.domain.fes)
-        self._gfu_div = ngs.GridFunction(domain.fes)
-        self._gfu_div.vec.FV().NumPy()[:] = ngsdivergence(self._p, self.domain.fes)
-        self._fes_util = ngs.L2(self.domain.fes.mesh, order=0)
-        self._gfu_util = ngs.GridFunction(self._fes_util)
+        self._gfu_div = ngs.GridFunction(self.domain.fes)
+        self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
 
     def _eval(self, x):
         self._gfu.vec.data = x.vec
@@ -122,42 +119,41 @@ class NgsTV(Functional):
 
     def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
         self._gfu.Set(0)
-        self._p = list(ngs.grad(self._gfu))
+        self._p = ngs.grad(self._gfu)
 
         self._gfu.vec.data = x.vec
         for i in range(maxiter):
             self._gfu_update.Set( self._gfu_div - self._gfu/tau )
             update= stepsize * ngs.grad( self._gfu_update )
             #Calculate |update|
-            for i in range(len(self._p)):
-                self._q[i] = 1+ngs.Norm(update[i])
-                self._p[i] = (self._p[i] + update[i]) / self._q[i]
-            self._gfu_div.vec.FV().NumPy()[:] = ngsdivergence(self._p, self.domain.fes)
+            self._p = (self._p + update) / tuple([1+ngs.Norm(update[i]) for i in range(update.dim)])
+            self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
         self._gfu_out.Set(self._gfu - tau*self._gfu_div)
         return NgsBaseVector(self._gfu_out.vec,make_copy=True)  
 
-def ngsdivergence(p, fes):
-    """Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
-    p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
-    
-    Parameters
-    ----------
-    p : vector field
-        Vector field on a FES 'fes' for which to compute the divergence.
-    fes : ngsolve fes
-        Underlying FES.
+    @staticmethod
+    def ngsdivergence(p, fes):
+        """Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
+        p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
+        
+        Parameters
+        ----------
+        p : vector field
+            Vector field on a FES 'fes' for which to compute the divergence.
+        fes : ngsolve fes
+            Underlying FES.
 
-    Returns
-    -------
-    array
-        Values of the divergence of the given vector `p`
-    """
-    toret = np.zeros(fes.ndof)
-    gfu_in = ngs.GridFunction(fes)
-    gfu_out = ngs.GridFunction(fes)
-    for i in range(len(p)):
-        gfu_in.Set(p[i])
-        coeff = ngs.grad(gfu_in)[i]
-        gfu_out.Set(coeff)
-        toret += gfu_out.vec.FV().NumPy().copy()
-    return toret
+        Returns
+        -------
+        array
+            Values of the divergence of the given vector `p`
+        """
+        gfu_in = ngs.GridFunction(fes)
+        gfu_out = ngs.GridFunction(fes)
+        vec_out = gfu_in.vec.CreateVector()
+        for i in range(p.dim):
+            gfu_in.Set(p[i])
+            coeff = ngs.grad(gfu_in)[i]
+            gfu_out.Set(coeff)
+            vec_out.data += gfu_out.vec
+        return vec_out
