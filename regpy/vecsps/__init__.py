@@ -222,6 +222,9 @@ class VectorBase:
         """
         raise NotImplementedError
     
+    def norm(self,x):
+        return np.sqrt(np.real(self.vdot(x,x)))
+    
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
             return False
