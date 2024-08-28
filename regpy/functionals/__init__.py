@@ -145,7 +145,7 @@ class Functional:
             relative accuracy for the test
         """
         xi = self.subgradient(x)
-        return np.linalg.norm(vstar-xi)<=eps*(np.linalg.norm(xi)+eps)
+        return self.domain.vec_type.norm(vstar-xi)<=eps*(self.domain.vec_type.norm(xi)+eps)
 
     def hessian(self, x,recursion_safeguard=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
@@ -195,7 +195,7 @@ class Functional:
         r"""Returns `True` if \(v)\ is a subgradient of \(F.conj)\ at \(x)\, otherwise `False`.
         """
         xi = self.conj_subgradient(xstar)
-        return np.linalg.norm(v-xi)<=eps*(np.linalg.norm(xi)+eps)
+        return self.domain.vec_type.norm(v-xi)<=eps*(self.domain.vec_type.norm(xi)+eps)
 
     def conj_hessian(self,xstar, recursion_safeguard=False):
         r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
@@ -319,7 +319,7 @@ class Functional:
             return self
         elif isinstance(other, operators.Operator):
             return Composed(self, other)
-        elif np.isscalar(other) or isinstance(other, np.ndarray):
+        elif np.isscalar(other) or other in self.domain:
             return self * operators.PtwMultiplication(self.domain, other)
         return NotImplemented
 
@@ -452,7 +452,7 @@ class LinearFunctional(Functional):
             self._gradient = self.h_domain.gram(gradient)
 
     def _eval(self,x):
-        return np.vdot(self._gradient,x).real
+        return self.domain.vec_type.vdot(self._gradient,x).real
 
     @property
     def gradient(self):
@@ -465,7 +465,7 @@ class LinearFunctional(Functional):
         return operators.Zero(self.domain)
 
     def _conj(self,x_star):
-        return 0 if np.linalg.norm(x_star- self._gradient)==0 else np.inf
+        return 0 if self.domain.vec_type.norm(x_star- self._gradient)==0 else np.inf
 
     def _conj_subgradient(self, xstar):
         if xstar == self._gradient:
@@ -486,7 +486,7 @@ class LinearFunctional(Functional):
         return LinearFunctional(a*self.gradient,domain=self.domain,h_domain=self.h_domain,gradient_in_dual_space=True)
     
     def shift(self,v):
-        return self - np.vdot(self._gradient,v).real
+        return self - self.domain.vec_type.vdot(self._gradient,v).real
 
     def __add__(self, other):
         if isinstance(other,LinearFunctional):
@@ -584,7 +584,7 @@ class SquaredNorm(Functional):
             return np.real(self.h_domain.domain.vec_type.vdot(xstar-bstar, self.gram_inv(xstar-bstar))) / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
-            return -self.c if np.linalg.norm(xstar-bstar)<=eps*(np.linalg.norm(xstar)+eps) else np.inf
+            return -self.c if self.domain.vec_type.norm(xstar-bstar)<=eps*(self.domain.vec_type.norm(xstar)+eps) else np.inf
         else:
             return -np.inf
 
@@ -950,7 +950,7 @@ class HorizontalShiftDilation(Functional):
         if self.shift is None:
             return self.F._conj(x_star/self.dilation)             
         else:
-            return self.F._conj(x_star/self.dilation) + np.vdot(x_star,self.shift).real
+            return self.F._conj(x_star/self.dilation) + self.domain.vec_type.vdot(x_star,self.shift).real
 
     def _conj_subgradient(self,x_star):
         if self.shift is None:
@@ -1060,8 +1060,6 @@ class AbstractFunctionalBase:
             return self
         elif isinstance(other, operators.Operator):
             return AbstractComposed(self, other)
-        elif np.isscalar(other) or isinstance(other, np.ndarray):
-            return self * operators.PtwMultiplication(self.domain, other)
         return NotImplemented
 
     def __rmul__(self, other):
@@ -1302,95 +1300,66 @@ class FunctionalOnDirectSum(Functional):
         Domain on which the combined functional is defined. 
     """
     def __init__(self, funcs,domain=None):
+        assert isinstance(funcs,list) and all([isinstance(f_i, Functional) for f_i in funcs])
         if domain is not None:
-            assert isinstance(domain, vecsps.DirectSum())
+            assert isinstance(domain, vecsps.DirectSum)
+            assert len(funcs)==len(domain.summands)
+            assert all([f_i.domain == domain_i for f_i,domain_i in zip(funcs,domain.summands)]) 
         else:
-            domain = vecsps.DirectSum(*tuple())
+            domain = vecsps.DirectSum(*[f_i.domain for f_i in funcs])
         self.length = len(domain.summands)
         """Number of the summands in the direct sum domain. 
         """
-        for i in range(self.length):
-            assert isinstance(funcs[i], Functional)
-            assert funcs[i].domain == domain.summands[i] 
         self.funcs = funcs
         """List of the functionals on each summand of the direct sum domain.
         """
-        super().__init__(domain, linear = np.all([func.linear for func in funcs]),
-                        convexity_param = np.min([func.convexity_param for func in funcs]),
-                        Lipschitz = np.max([func.Lipschitz for func in funcs])
+        super().__init__(domain, linear = all([func.linear for func in funcs]),
+                        convexity_param = min([func.convexity_param for func in funcs]),
+                        Lipschitz = max([func.Lipschitz for func in funcs])
                         )
 
     def _eval(self, x):
-        splitted = self.domain.split(x)
         toret = 0 
-        for i in range(self.length):
-            toret += self.funcs[i](splitted[i])
+        for f_i,x_i in zip(self.funcs,x):
+            toret += f_i(x_i)
         return toret
 
     def _subgradient(self, x):
-        splitted = self.domain.split(x)
-        subgradients = []
-        for i in range(self.length):
-            subgradients.append( self.funcs[i].subgradient(splitted[i]) )
-        return np.asarray(subgradients).flatten()
+        return self.domain.join([f_i.subgradient(x_i) for f_i,x_i in zip(self.funcs,x)])
 
-    def _is_subgradient(self,v_star, x):
-        x_splitted = self.domain.split(x)
-        vstar_splitted = self.domain.split(v_star)
-        res = True
-        for i in range(self.length):
-            if not self.funcs[i].is_subgradient(vstar_splitted[i],x_splitted[i]):
-                res = False
-        return res
+    def _is_subgradient(self,vstar, x):
+        assert vstar in self.domain and x in self.domain
+        return all([f_i.is_subgradient(vstar_i,x_i) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
 
     def _hessian(self, x):
-        splitted = self.domain.split(x)
-        return operators.DirectSum(*tuple(self.funcs[i].hessian(splitted[i]) for i in range(self.length)))
+        return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
 
     def _proximal(self, x, tau,proximal_par_list = None):
-        splitted = self.domain.split(x)
         if proximal_par_list is None:
             proximal_par_list = [{}] *self.length
-        proximals = []
-        for i in range(self.length):
-            proximals.append( self.funcs[i].proximal(splitted[i], tau,proximal_par_list[i]) )
-        return np.asarray(proximals).flatten()
+        else:
+            assert len(proximal_par_list) == self.length
+        return self.domain.join([f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
     def _conj(self, xstar):
-        splitted = self.domain.split(xstar)
-        toret = 0 
-        for i in range(self.length):
-            toret += self.funcs[i].conj(splitted[i])
-        return toret
+        return sum([f_i.conj(xstar_i) for f_i,xstar_i in (self.funcs,xstar)])
 
     def _conj_subgradient(self, xstar):
-        splitted = self.domain.split(xstar)
-        subgradients = []
-        for i in range(self.length):
-            subgradients.append( self.funcs[i].conj.subgradient(splitted[i]) )
-        return np.asarray(subgradients).flatten()
+        return self.domain.join([f_i.conj.subgradient(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
 
     def _is_conj_subgradient(self,v, xstar):
-        xstar_splitted = self.domain.split(xstar)
-        v_splitted = self.domain.split(v)
-        res = True
-        for i in range(self.length):
-            if not self.funcs[i].conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
-                res = False
-        return res
+        assert v in self.domain and xstar in self.domain
+        return all([f_i.conj.is_subgradient(v_i,xstar_i) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
 
     def _conj_hessian(self, xstar):
-        splitted = self.domain.split(xstar)
-        return operators.DirectSum(*tuple(self.funcs[i].conj.hessian(splitted[i]) for i in range(self.length)))
+        return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))
 
     def _conj_proximal(self, xstar, tau,proximal_par_list = None):
-        splitted = self.domain.split(xstar)
         if proximal_par_list is None:
             proximal_par_list = [{}] *self.length
-        proximals = []
-        for i in range(self.length):
-            proximals.append( self.funcs[i].conj.proximal(splitted[i], tau,proximal_par_list[i]) )
-        return np.asarray(proximals).flatten()
+        else:
+            assert len(proximal_par_list) == self.length
+        return self.domain.join([f_i.conj.proximal(xstar_i,tau, proximal_par_i) for f_i,xstar_i,proximal_par_i in zip(self.funcs,xstar,proximal_par_list)])
     
     def __add__(self,other):
         if isinstance(other,FunctionalOnDirectSum):
@@ -1425,7 +1394,7 @@ class HilbertNormGeneric(Functional):
 
     def _linearize(self, x):
         gx = self.h_space.gram(x)
-        y = np.real(self.h_space.domain.vec_type.vdot(x, gx)) / 2
+        y = np.real(self.domain.vec_type.vdot(x, gx)) / 2
         return y, gx
 
     def _subgradient(self, x):
@@ -1443,11 +1412,11 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return np.real(np.vdot(xstar, self.h_space.gram_inv(xstar))) / 2
+        return np.real(self.domain.vec_type.vdot(xstar, self.h_space.gram_inv(xstar))) / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
-        y = np.real(np.vdot(xstar, gx)) / 2
+        y = np.real(self.domain.vec_type.vdot(xstar, gx)) / 2
         return y, gx
 
     def _conj_subgradient(self, xstar):
@@ -1913,7 +1882,6 @@ class QuadraticIntv(IntegralFunctionalBase):
 
 
 class QuadraticNonneg(IntegralFunctionalBase):
-
     r"""Functional 
     \[
     F(x) = 1/2 |x|^2    if x\geq 0
@@ -1927,7 +1895,6 @@ class QuadraticNonneg(IntegralFunctionalBase):
         domain on which functional is defined 
 
     """
-
 
     def  __init__(self, domain):
         super().__init__(domain,hilbert.L2(domain),convexity_param = 1.)
@@ -1971,6 +1938,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     def _f_is_subgradient(self, ustar, x, eps=1e-10):
         return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
+
 
 class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
@@ -2067,7 +2035,6 @@ from scipy.linalg import ishermitian
 from numpy.linalg import eigvalsh,eigh
 
 class QuadraticPositiveSemidef(Functional):
-
     r"""Functional 
     \[
     F(x) = 1/2 ||x||_{HS}^2    \text{if } x\geq 0 \text{ and (optional) } tr(x)=c
@@ -2087,7 +2054,6 @@ class QuadraticPositiveSemidef(Functional):
         tolerance for comparisons determining positive semidefiniteness and correctness of trace 
 
     """
-
 
     def  __init__(self, domain,trace_val=1.0,tol=1e-15):
         assert isinstance(domain,vecsps.UniformGridFcts)
@@ -2159,7 +2125,6 @@ class QuadraticPositiveSemidef(Functional):
             return self.domain.identity
         else:
             return NotInEssentialDomainError
-
         
     def _conj(self,xstar):
         evs=eigvalsh(xstar)
@@ -2169,16 +2134,18 @@ class QuadraticPositiveSemidef(Functional):
         else:
             return (np.sum(evs**2)+np.sum(evs**2,where=evs<0))/2
 
+
 class L1Generic(Functional):
-    r"""Generic \(L ^1\) Functional. Proximal implemented for default \(L^2\) as `h_domain`.
+    r"""Generic \(L ^1\) Functional. Proximal implemented for default `L2` as `h_domain`.
 
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain : regpy.vecsps.NumPyVectorSpace
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):
         super().__init__(domain)
+        assert isinstance(self.domain,vecsps.NumPyVectorSpace)
 
     def _eval(self, x):
         return np.sum(np.abs(x))
@@ -2195,7 +2162,7 @@ class L1Generic(Functional):
 
 
 class TVGeneric(Functional):
-    """Generic TV Functional. Proximal implemented for default L2 h_space
+    """Generic TV Functional. Proximal implemented for default `L2` as `h_space`
 
     NotImplemented yet!
     """
@@ -2211,8 +2178,9 @@ class TVGeneric(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
+
 class TVUniformGridFcts(Functional):
-    """Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
+    r"""Total Variation Norm: For \(C^1\) functions the \(l^1\)-norm of the gradient on a `UniformGrid`
 
     Parameters
     ----------
