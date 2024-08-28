@@ -337,8 +337,11 @@ class TupleVector:
     def __iter__(self):
         return iter(self.v)
     
-    def __getitem__(self, item):
-        return self.v[item]
+    def __getitem__(self, key):
+        return self.v[key]
+    
+    def __setitem__(self, key, item):
+        self.v[key] = item
     
     def __copy__(self):
         return deepcopy(self)

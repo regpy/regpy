@@ -91,7 +91,7 @@ class HilbertSpace:
         return functionals.HilbertNorm(self)
 
     def dual_space(self):
-        """The dual space for the dual pairing given by np.vdot. 
+        """The dual space for the dual pairing given by `domain.vec_type.vdot`. 
         The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpaceBase`, but gram is replaced by gram_inv.
 
         Returns
@@ -191,7 +191,6 @@ class HilbertPullBack(HilbertSpace):
         self.space = space
         """The codomain Hilbert space."""
         super().__init__(op.domain)
-        # TODO only compute on demand
         if not inverse:
             self.inverse = None
         elif inverse == 'conjugate':
@@ -213,7 +212,7 @@ class HilbertPullBack(HilbertSpace):
 
 
 class DirectSum(HilbertSpace):
-    """The direct sum of an arbirtary number of hilbert spaces, with optional
+    """The direct sum of an arbitrary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.DirectSum` of the underlying vector spaces of the summands.
 
@@ -256,15 +255,13 @@ class DirectSum(HilbertSpace):
                 self.weights.append(w)
 
         if vecsp is None:
-            vecsp = vecsps.DirectSum
-        if isinstance(vecsp, vecsps.VectorSpaceBase):
-            pass
+            vecsp = vecsps.DirectSum(*[h_space.domain for h_space in self.summands])
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.summands))
         else:
             raise TypeError('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp))
+        assert isinstance(vecsp, vecsps.DirectSum) and len(self.summands) == len(vecsp.summands)
         assert all(s.vecsp == d for s, d in zip(self.summands, vecsp))
-
         super().__init__(vecsp)
 
     def __eq__(self, other):
