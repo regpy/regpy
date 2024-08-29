@@ -1,5 +1,6 @@
 from regpy.operators import Operator,PartOfOperator,Identity
 from regpy import vecsps
+import itertools
 
 
 
@@ -53,7 +54,7 @@ class OperatorNode:
 
 class Edge:
 
-    def __init__(self,start_node,end_node,start_list,end_index,overwrite=False):
+    def __init__(self,start_node,end_node,start_list,end_index):
         assert isinstance(start_node,OperatorNode) or start_node is None
         assert isinstance(end_node,OperatorNode) or end_node is None
         assert isinstance(start_list,list)
@@ -67,11 +68,8 @@ class Edge:
             self.start_node.output_edges.append(self)
         if(self.end_node is not None):
             assert end_index<self.end_node.N_in
-            assert overwrite or self.end_node.input_edges[self.end_index] is None
-            if(overwrite and self.end_node.input_edges[self.end_index] is not None):
-                self.end_node.input_edges[self.end_index].remove()
+            assert self.end_node.input_edges[self.end_index] is None
             self.end_node.input_edges[self.end_index]=self
-        if(self.end_node is not None):
             if(self.end_node.N_in==1):
                 self.end_space=self.end_node.op.domain
             else:
@@ -104,7 +102,7 @@ class Edge:
             else:
                 return self.end_space.join(*[x for _ in self.start_list])
         else:
-            x_split=self.start_node.codomain.split(x)
+            x_split=self.start_node.op.codomain.split(x)
             if(len(self.start_list)==1):
                 return x_split[self.start_list[0]]
             else:
@@ -127,7 +125,7 @@ class Edge:
                     x_vals[index]+=y_split[i]
             return x_vals
         
-    def __get_item__(self,index):
+    def __getitem__(self,index):
         assert isinstance(index,int)
         if index == 0:
             return self.start_node.op,self.start_list
@@ -143,33 +141,39 @@ class OperatorGraph(Operator):
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
-        start_edges=[]
+        ed_in,ed_middle,ed_out=OperatorGraph._clean_edge_data(edges)
+        self.N_in=len(ed_in)
+        self.N_out=len(ed_out)
         domains=[]
-        end_edges=[]
         codomains=[]
-        for edge in edges:
+        for edge in ed_in:
+            op_end,end_index=edge[1]
+            new_edge=Edge(None,self.node_dict[op_end],[0],end_index)
+            self.edges.append(new_edge)
+            domains.append(new_edge.end_space)
+        for edge in ed_middle:
             op_start,start_list=edge[0]
             op_end,end_index=edge[1]
-            start_node=self.node_dict[op_start] if op_start is not None else None
-            end_node=self.node_dict[op_end] if op_end is not None else None
-            new_edge=Edge(start_node,end_node,start_list,end_index)
+            new_edge=Edge(self.node_dict[op_start],self.node_dict[op_end],start_list,end_index)
             self.edges.append(new_edge)
-            if(op_start is None):
-                start_edges.append(new_edge)
-                domains.append(new_edge.end_space)
-            if(op_end is None):
-                end_edges.append(new_edge)
-                codomains.append(new_edge.construct_start_space())
+        for edge in ed_out:
+            op_start,start_list=edge[0]
+            new_edge=Edge(self.node_dict[op_start],None,start_list,0)
+            self.edges.append(new_edge)
+            codomains.append(new_edge.construct_start_space())
         domain=vecsps.DirectSum(*domains) if len(domains)>1 else domains[0]
         codomain=vecsps.DirectSum(*codomains) if len(codomains)>1 else codomains[0]
         self.input_op=Identity(domain,copy=False)
         self.output_op=Identity(codomain,copy=False)
         self.node_dict.update({self.input_op:OperatorNode(self.input_op),self.output_op:OperatorNode(self.output_op)})
-        for i,edge in enumerate(start_edges):
+        for i in range(len(ed_in)):
+            edge=self.edges[i]
             edge.start_node=self.node_dict[self.input_op]
             edge.start_list=[i]
             self.node_dict[self.input_op].output_edges.append(edge)
-        for i,edge in enumerate(end_edges):
+        offset=len(ed_in)+len(ed_middle)
+        for i in range(len(ed_out)):
+            edge=self.edges[offset+i]
             edge.end_node=self.node_dict[self.output_op]
             edge.end_index=i
             self.node_dict[self.output_op].input_edges[i]=edge
@@ -178,6 +182,30 @@ class OperatorGraph(Operator):
         else:
             self.operators=self.input_op+operators+self.output_op
         super().__init__(self.input_op.domain, self.output_op.codomain, linear)
+
+    def _clean_edge_data(edge_data):
+        ed_dict={}
+        ed_in=[]
+        ed_middle=[]
+        ed_out=[]
+        for ed in edge_data:
+            if(ed[0][0]==None):
+                if(ed[1] not in ed_dict.keys()):
+                    ed_in.append(ed)
+                    ed_dict.update({ed[1]:('in',ed)})
+            elif(ed[1][0]==None):
+                ed_out.append(ed)
+            else:
+                if(ed[1] not in ed_dict.keys()):
+                    ed_middle.append(ed)
+                    ed_dict.update({ed[1]:('middle',ed)})
+                elif(ed_dict[ed[1]][0]=='in'):
+                    ed_middle.append(ed)
+                    ed_in.remove(ed_dict[ed[1]][1])
+                    ed_dict[ed[1]]=('middle',ed)
+                elif(ed_dict[ed[1]][1]!=ed):
+                    raise ValueError(f"Conflicting edge data {ed_dict[ed[1]][1]} and {ed}.")
+        return ed_in,ed_middle,ed_out
 
     def _calc_exec_order(self):
         in_sets={op:self.node_dict[op].get_in_nodes() for op in self.node_dict.keys()}
@@ -230,23 +258,63 @@ class OperatorGraph(Operator):
             data_dict.update({current_node:x})
         return data_dict[self.node_dict[self.input_op]]
 
-        
+
+def merge_operators(*op_eds):#input format is tuple with elements of form (ops,edges,N_in,N_out) edges are sorted
+    ops=set()
+    edge_data=[]
+    for op_ed in op_eds:
+        ops|=set(op_ed[0])
+        edges=op_ed[1]
+        N_out=op_ed[3]
+        if(N_out==1):
+            edge_data+=edges
+        else:
+            #combine multiple output edges into one single edge for each operator
+            out_edges=edges[len(edges)-N_out:]
+            edge_data+=edges[:len(edges)-N_out]
+            output_edge=((out_edges[0][0][0],itertools.chain.from_iterable(edge[0][1] for edge in out_edges)),(None,0))
+            edge_data.append(output_edge)
+    return OperatorGraph(list(ops),edge_data)
+
+def concatenate_operators(op_eds_start,op_eds_end):#input format is (ops,edges,N_in,N_out) edges are sorted
+    assert(op_eds_start[3]==op_eds_end[2])
+    offset_output=len(op_eds_start[1])-op_eds_start[3]
+    offset_input=op_eds_end[2]
+    start_output_eds=op_eds_start[1][offset_output:]
+    end_input_eds=op_eds_end[1][:offset_input]
+    bridge_eds=[]
+    for start_ed,end_ed in zip(start_output_eds,end_input_eds):
+        bridge_eds.append((start_ed[0],end_ed[1]))
+    return OperatorGraph(list(set(op_eds_start[0]+op_eds_end[0])),op_eds_start[1][:offset_output]+bridge_eds+op_eds_end[1][offset_input:])
+
+def get_operators_and_edges(op):#output format is (ops,edges,N_in,N_out) edges are sorted
+    assert isinstance(op,Operator)
+    if(isinstance(op,OperatorGraph)):
+        ops=op.operators[1:len(op.operators)-1]
+        edge_data=[]
+        for i,edge in enumerate(op.edges):
+            ed=[edge[0],edge[1]]
+            if(i<op.N_in):
+                ed[0]=(None,[0])
+            if(i>=len(op.edges)-op.N_out):
+                ed[1]=(None,0)
+            edge_data.append(tuple(ed))
+        return ops,edge_data,op.N_in,op.N_out
+    if(isinstance(op,PartOfOperator)):
+        ops=[op.base_op]
+        indices=[op.index] if isinstance(op.index,int) else op.index
+        N_in=1 if not isinstance(op.domain,vecsps.DirectSum) else len(op.domain.summands)
+        N_out=len(indices)
+        edge_data=[((None,[0]),(op.base_op,i)) for i in range(N_in)]
+        edge_data+=[((op.base_op,[indices[i]]),(None,0)) for i in range(N_out)]
+        return ops,edge_data,N_in,N_out
+    if(isinstance(op,Operator)):
+        ops=[op]
+        N_in=1 if not isinstance(op.domain,vecsps.DirectSum) else len(op.domain.summands)
+        N_out=1 if not isinstance(op.codomain,vecsps.DirectSum) else len(op.codomain.summands)
+        edge_data=[((None,[0]),(op,i)) for i in range(N_in)]
+        edge_data+=[((op,[i]),(None,0)) for i in range(N_out)]
+        return ops,edge_data,N_in,N_out
 
 
-# from regpy.operators import PtwMultiplication,SquaredModulus, Exponential
 
-
-# dom=vecsps.UniformGridFcts(2,4)
-# A=PtwMultiplication(dom,2)
-# B=SquaredModulus(dom)
-# C=Exponential(dom)
-
-# og=OperatorGraph([A,B,C],[((None,[0]),(A,0)),((A,[0]),(B,0)),((A,[0]),(C,0)),((C,[0]),(None,0)),((B,[0]),(None,0))])
-# print(og.operators)
-# print(og.domain)
-# print(og.codomain)
-# x=3*og.domain.ones()
-# y,deriv=og.linearize(x)
-# print(y)
-# print(deriv(og.domain.ones()))
-# print(deriv.adjoint(og.codomain.ones()))

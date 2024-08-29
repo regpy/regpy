@@ -21,6 +21,7 @@ import scipy.sparse.linalg as sla
 from regpy import functionals, util, vecsps
 
 
+
 class _Revocable:
     def __init__(self, val):
         self.__val = val
@@ -319,14 +320,23 @@ class Operator:
             return NotImplemented
     
     def __matmul__(self,other):
-        if isinstance(other, Operator) or isinstance(other,tuple):
-            return CompositionByGraph(self, other) 
+        from regpy.operators.graph_operator import get_operators_and_edges,merge_operators,concatenate_operators
+        if(isinstance(other,Operator)):
+            return concatenate_operators(get_operators_and_edges(other),get_operators_and_edges(self))
+        elif(isinstance(other,tuple)):
+            other_op=merge_operators(*[get_operators_and_edges(op) for op in other])
+            return concatenate_operators(get_operators_and_edges(other_op),get_operators_and_edges(self))
         else:
             return NotImplemented
+        
     
     def __rmatmul__(self,other):
-        if isinstance(other, Operator) or isinstance(other,tuple):
-            return CompositionByGraph(other, self) 
+        from regpy.operators.graph_operator import get_operators_and_edges,merge_operators,concatenate_operators
+        if(isinstance(other,Operator)):
+            return concatenate_operators(get_operators_and_edges(self),get_operators_and_edges(other))
+        # elif(isinstance(other,tuple)):
+        #     other_op=merge_operators(*[get_operators_and_edges(op) for op in other])
+        #     return concatenate_operators(get_operators_and_edges(other_op),get_operators_and_edges(self))
         else:
             return NotImplemented
 
