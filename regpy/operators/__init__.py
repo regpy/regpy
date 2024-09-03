@@ -1939,6 +1939,74 @@ class MatrixOfOperators(Operator):
     def __iter__(self):
         return iter(self.ops)
 
+class Sum(Operator):
+    r"""Maps element in direct sum of vector spaces to their sum.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, True)
+
+    def _eval(self,x):
+        return sum(self.domain.split(x))
+    
+    def _adjoint(self,y):
+        return self.domain.join(*[np.real(y) if summand.dtype==float else y for summand in self.domain.summands])
+    
+class Product(Operator):
+    r"""Maps element in direct sum of vector spaces to their product.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, False)
+
+    def _eval(self,x,differentiate=False):
+        x_split=self.domain.split(x)
+        y=x_split[0].copy()
+        for i in range(1,len(x_split)):
+            y*=x_split[i]
+        if(differentiate):
+            self.deriv_data=[y/x_j for x_j in x_split]
+        return y
+    
+    def _derivative(self, x):
+        x_split=self.domain.split(x)
+        y=self.deriv_data[0]*x_split[0]
+        for i in range(1,len(x_split)):
+            y+=self.deriv_data[i]*x_split[i]
+        return y
+
+    def _adjoint(self,y):
+        y_parts=[np.real(y*np.conj(self.deriv_data[i])) if summand.dtype==float else y*np.conj(self.deriv_data[i]) for i,summand in enumerate(self.domain.summands)]
+        return self.domain.join(*y_parts)
+
 
 class Exponential(Operator):
     r"""The pointwise exponential operator.
