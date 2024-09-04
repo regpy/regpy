@@ -20,3 +20,28 @@ y,deriv=E.linearize(x)
 print(y)
 print(deriv(E.domain.ones()))
 print(deriv.adjoint(E.codomain.ones()))
+
+from regpy.operators import Sum,Product
+import numpy as np
+dom1=vecsps.UniformGridFcts(2,4,dtype=np.complex128)
+dom2=vecsps.UniformGridFcts(2,4)
+dom3=vecsps.UniformGridFcts(2,4)
+
+dom_sum=dom1+dom2+dom3
+
+# sum_op=Sum(dom1+dom2+dom3)
+# print(sum_op(sum_op.domain.ones()))
+# from regpy.util.operator_tests import test_operator
+# test_operator(sum_op)
+# print(dom_sum.ones())
+
+prod_op=Product(dom1+dom2+dom3)
+
+y,deriv=prod_op.linearize(2*prod_op.domain.ones())
+
+print(y)
+print(deriv(prod_op.domain.ones()))
+print(prod_op.deriv_data)
+print(prod_op(prod_op.domain.ones()))
+from regpy.util.operator_tests import test_operator
+test_operator(prod_op)
