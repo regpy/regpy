@@ -282,6 +282,35 @@ class TupleVector:
         self.types = [type(v_i) for v_i in self.v]
         self.ndim = len(self.types)
 
+    def conj(self):
+        return TupleVector([v_i.conj() for v_i in self])
+    
+    @property
+    def real(self):
+        return TupleVector([v_i.real for v_i in self])
+    
+    @property
+    def real(self):
+        return TupleVector([v_i.imag for v_i in self])
+
+    def __eq__(self,other):
+        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i == o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+    
+    def __lt__(self, other):
+        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i < o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+
+    def __le__(self, other):
+        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i <= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+
+    def __ne__(self, other):
+        return not (self == other)
+    
+    def __ge__(self, other):
+        return isinstance(other,type(self)) and other <= self
+    
+    def __gt__(self, other):
+        return isinstance(other,type(self)) and other < self
+
     def __iadd__(self,other):
         assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
         v = self.v
@@ -338,10 +367,25 @@ class TupleVector:
         return iter(self.v)
     
     def __getitem__(self, key):
-        return self.v[key]
+        print(key)
+        if isinstance(key,slice) or isinstance(key,int):
+            return self.v[key]
+        elif isinstance(key,list) and len(key) == self.ndim:
+            return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
+        else:
+            raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
     
     def __setitem__(self, key, item):
-        self.v[key] = item
+        if isinstance(key,slice) or isinstance(key,int):
+            self.v[key] = item
+        elif isinstance(key,list) and len(key) == self.ndim: 
+            if isinstance(item,list) and len(item) == self.ndim:
+                for i in range(self.ndim):
+                    self.v[key[i]] = item[i]
+            else:
+                raise TypeError("items has to be a list of length {} not {} type".format(self.ndim,type(item)))                
+        else:
+            raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
     
     def __copy__(self):
         return deepcopy(self)
@@ -701,6 +745,21 @@ class VectorSpaceBase:
             The real space corresponding to this vector space.
         """
         return VectorSpaceBase(self.vec_type.to_real)
+    
+    def masked_space(self,mask):
+        """Gives a masked space given a mask.
+
+        Parameters
+        ----------
+        mask : boolean
+            mask for masking the vector space
+        
+        Returns
+        -------
+        VectorSpaceBase
+            The masked Space depending on the vector space.
+        """
+        raise NotImplementedError
 
     def __eq__(self, other):
         if isinstance(other, type(self)):
@@ -778,6 +837,13 @@ class NumPyVectorSpace(VectorSpaceBase):
         other.vec_type = NumPyVector(shape=self.shape,dtype=other.dtype)
         return other
     
+    def masked_space(self, mask):
+        mask = np.broadcast_to(mask, self.shape)
+        assert mask.dtype == bool
+        res = NumPyVectorSpace(np.sum(mask), dtype=self.dtype)
+        res.mask = mask
+        return res
+
     def __mul__(self, other):
         if isinstance(other, NumPyVectorSpace):
             return Prod(self, other)
@@ -1046,6 +1112,14 @@ class DirectSum(VectorSpaceBase):
         assert all(isinstance(s, VectorSpaceBase) for s in summands)
         self.summands = summands
         super().__init__(VectorSum(*[s.vec_type for s in summands],flatten=flatten))
+
+    def masked_space(self, mask):
+        if isinstance(mask,int):
+            self.summands[mask]
+        x = self.rand()
+        _ = x[mask]
+        x[mask] = self.ones()[mask]
+        return DirectSum(*[s_i.masked_space(m_i) for s_i,m_i in zip(self.summands,mask)])
 
     def __eq__(self, other):
         if isinstance(other, type(self)):

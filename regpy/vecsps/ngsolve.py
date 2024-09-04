@@ -39,6 +39,26 @@ class NgsBaseVector:
         self.size = self.vec.size
         self.is_complex = self.vec.is_complex
 
+    def conj(self):
+        z = self.vec.CreateVector()
+        for i in range(self.size): 
+            z[i] = self.vec[i].real - 1j*self.vec[i].imag
+        return NgsBaseVector(z)
+    
+    @property
+    def real(self):
+        z = self.vec.CreateVector()
+        for i in range(self.size): 
+            z[i] = self.vec[i].real
+        return NgsBaseVector(z)
+    
+    @property
+    def real(self):
+        z = self.vec.CreateVector()
+        for i in range(self.size): 
+            z[i] = self.vec[i].imag
+        return NgsBaseVector(z)
+
     def __iadd__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
         self.vec.data += other.vec
