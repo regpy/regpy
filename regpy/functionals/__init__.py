@@ -191,7 +191,7 @@ class Functional:
         assert grad in self.domain
         return grad
 
-    def conj_is_subgradient(self,v,xstar,eps = 1e-10):
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         r"""Returns `True` if \(v)\ is a subgradient of \(F.conj)\ at \(x)\, otherwise `False`.
         """
         xi = self.conj_subgradient(xstar)
@@ -393,14 +393,14 @@ class Conj(Functional):
     def _subgradient(self, x):
         return self.func.conj_subgradient(x)
 
-    def _is_subgradient(self, v,x):
-        return self.func.conj_is_subgradient(v,x)
+    def is_subgradient(self, v,x,eps = 1e-10):
+        return self.func._conj_is_subgradient(v,x,eps)
 
     def _conj_subgradient(self, x):
         return self.func.subgradient(x)
 
-    def _conj_is_subgradient(self, v,x):
-        return self.func.is_subgradient(x)
+    def _conj_is_subgradient(self, v,x,eps = 1e-10):
+        return self.func.is_subgradient(v,x,eps)
 
     def _hessian(self, x):
         return self.func.conj_hessian(x)
@@ -473,8 +473,8 @@ class LinearFunctional(Functional):
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
-    def _conj_is_subgradient(self,v,xstar):
-        return xstar==self.gradient
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
+        return np.linalg.norm(xstar-self.gradient)<eps
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -597,13 +597,13 @@ class SquaredNorm(Functional):
         else:
             return NotInEssentialDomainError
         
-    def _conj_is_subgradient(self,v,xstar):
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         if self.a==0:
-            return xstar == self.gram(self.b)
+            return np.linalg.norm(xstar-self.gram(self.b))<eps
         elif self.a <0:
             return False
         else: 
-            return super()._conj_is_subgradient(v,xstar)
+            return super()._conj_is_subgradient(v,xstar,eps)
     
     def _conj_hessian(self, xstar):
         if self.a>0:
@@ -763,7 +763,7 @@ class LinearCombination(Functional):
             return super().is_subgradient(vstar, x, eps)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j].is_subgradient((vstar-self.grad_sum)/self.coeffs[j],x)
+            return self.funcs[j].is_subgradient((vstar-self.grad_sum)/self.coeffs[j],x,eps)
         else:
             return NotImplementedError
 
@@ -813,14 +813,14 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
 
-    def _is_conj_subgradient(self, v, xstar):
+    def _conj_is_subgradient(self, v, xstar,eps = 1e-10):
         if len(self.funcs) == 1:
-            return self.funcs[0]._is_conj_subgradient(v,xstar/self.coeffs[0])
+            return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps)
         elif self.linear_table.count(False)==0:
             return xstar == self.grad_sum
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j]._is_conj_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j])
+            return self.funcs[j]._conj_is_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j],eps)
         else:
             return NotImplementedError
     
@@ -879,8 +879,8 @@ class VerticalShift(Functional):
     def _subgradient(self, x):
         return self.func._subgradient(x)
 
-    def _is_subgradient(self, vstar,x):
-        return self.func.is_subgradient(vstar,x)
+    def is_subgradient(self, vstar,x,eps = 1e-10):
+        return self.func.is_subgradient(vstar,x,eps)
     
     def _hessian(self, x):
         return self.func.hessian(x)
@@ -894,8 +894,8 @@ class VerticalShift(Functional):
     def _conj_subgradient(self, xstar):
         return self.func.conj.subgradient(xstar)
 
-    def _conj_is_subgradient(self, v,xstar):
-        return self.func.conj.is_subgradient(v,xstar)
+    def _conj_is_subgradient(self, v,xstar,eps = 1e-10):
+        return self.func.conj.is_subgradient(v,xstar,eps)
 
     def _conj_hessian(self, xstar):
         return self.func.conj.hessian(xstar)
@@ -934,8 +934,8 @@ class HorizontalShiftDilation(Functional):
     def _subgradient(self, x):
         return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift))
 
-    def _is_subgradient(self, vstar, x):
-        return self.F._is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift))
+    def is_subgradient(self, vstar, x, eps= 1e-10):
+        return self.F.is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),eps)
 
     def _hessian(self, x):
         return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
@@ -958,11 +958,11 @@ class HorizontalShiftDilation(Functional):
         else:
             return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
 
-    def _conj_is_subgradient(self,v,x_star):
+    def _conj_is_subgradient(self,v,x_star, eps= 1e-10):
         if self.shift is None:
-            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation) 
+            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation, eps) 
         else:
-            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation)
+            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation, eps)
 
     def _conj_hessian(self,x_star):
         return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
@@ -1334,12 +1334,12 @@ class FunctionalOnDirectSum(Functional):
             subgradients.append( self.funcs[i].subgradient(splitted[i]) )
         return np.asarray(subgradients).flatten()
 
-    def _is_subgradient(self,v_star, x):
+    def is_subgradient(self,v_star, x, eps= 1e-10):
         x_splitted = self.domain.split(x)
         vstar_splitted = self.domain.split(v_star)
         res = True
         for i in range(self.length):
-            if not self.funcs[i].is_subgradient(vstar_splitted[i],x_splitted[i]):
+            if not self.funcs[i].is_subgradient(vstar_splitted[i],x_splitted[i],eps):
                 res = False
         return res
 
@@ -1370,12 +1370,12 @@ class FunctionalOnDirectSum(Functional):
             subgradients.append( self.funcs[i].conj.subgradient(splitted[i]) )
         return np.asarray(subgradients).flatten()
 
-    def _is_conj_subgradient(self,v, xstar):
+    def _conj_is_subgradient(self,v, xstar, eps= 1e-10):
         xstar_splitted = self.domain.split(xstar)
         v_splitted = self.domain.split(v)
         res = True
         for i in range(self.length):
-            if not self.funcs[i].conj.is_subgradient(v_splitted[i],xstar_splitted[i]):
+            if not self.funcs[i].conj.is_subgradient(v_splitted[i],xstar_splitted[i], eps):
                 res = False
         return res
 
@@ -1659,7 +1659,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
             vstar[zeroind]=0
             return super().is_subgradient(vstar, x, eps)
 
-    def conj_is_subgradient(self, v, xstar, eps=1e-10):
+    def _conj_is_subgradient(self, v, xstar, eps=1e-10):
         return np.max(np.abs(xstar)<=1) and v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
 
 class KullbackLeibler(IntegralFunctionalBase):
@@ -1906,9 +1906,9 @@ class QuadraticIntv(IntegralFunctionalBase):
     def _f_conj_prox(self,ustar,tau,**kwargs):
         return self.conjugate._f_prox(ustar,tau)
 
-    def is_subgradient(self, vstar, x, eps=1e-10):
+    def is_subgradient(self, vstar, x, eps=1e-10):#TODO check
         grad = self.subgradient(x)
-        return self.sigmanp.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
+        return self.sigma*np.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
             np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
 
 
@@ -1969,7 +1969,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
         res[ustar>0]*=(1/(1+tau))
         return res
 
-    def _f_is_subgradient(self, ustar, x, eps=1e-10):
+    def _f_is_subgradient(self, ustar, x, eps=1e-10):#TODO replace
         return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
 class QuadraticBilateralConstraints(LinearCombination):
