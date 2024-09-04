@@ -253,8 +253,9 @@ class DirectSum(HilbertSpace):
             else:
                 self.summands.append(s)
                 self.weights.append(w)
-
-        if vecsp is None:
+        if isinstance(vecsp,vecsps.DirectSum):
+            pass
+        elif vecsp is None:
             vecsp = vecsps.DirectSum(*[h_space.domain for h_space in self.summands])
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.summands))
