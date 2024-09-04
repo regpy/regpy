@@ -474,7 +474,7 @@ class LinearFunctional(Functional):
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
-        return np.linalg.norm(xstar-self.gradient)<eps
+        return np.linalg.norm(xstar-self.gradient)<=eps*(np.linalg.norm(self.gradient)+eps)
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -599,7 +599,8 @@ class SquaredNorm(Functional):
         
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         if self.a==0:
-            return np.linalg.norm(xstar-self.gram(self.b))<eps
+            xi=self.gram(self.b)
+            return np.linalg.norm(xstar-xi)<=eps*(np.linalg.norm(xi)+eps)
         elif self.a <0:
             return False
         else: 
@@ -817,7 +818,7 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps)
         elif self.linear_table.count(False)==0:
-            return xstar == self.grad_sum
+            return np.linalg.norm(xstar-self.grad_sum)<=eps*(np.linalg.norm(self.grad_sum)+eps)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return self.funcs[j]._conj_is_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j],eps)
@@ -1851,7 +1852,7 @@ class QuadraticIntv(IntegralFunctionalBase):
     regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
-        reciprocal of interval width. 
+        interval width. 
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
@@ -1906,10 +1907,17 @@ class QuadraticIntv(IntegralFunctionalBase):
     def _f_conj_prox(self,ustar,tau,**kwargs):
         return self.conjugate._f_prox(ustar,tau)
 
-    def is_subgradient(self, vstar, x, eps=1e-10):#TODO check
+    def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
-        return self.sigma*np.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
-            np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
+        if(not np.all(np.abs(x)<=self.sigma)):
+            return False
+        if(not np.all(vstar[self.sigma==x]>=self.sigma)):
+            return False
+        if(not np.all(vstar[-self.sigma==x]<=-self.sigma)):
+            return False
+        if(np.linalg.norm(grad[np.abs(x)<self.sigma]-vstar[np.abs(x)<self.sigma]) <= eps*np.linalg.norm(grad[np.abs(x)<self.sigma])):
+            return True
+        return False
 
 
 class QuadraticNonneg(IntegralFunctionalBase):
@@ -1968,9 +1976,10 @@ class QuadraticNonneg(IntegralFunctionalBase):
         res=ustar.copy()
         res[ustar>0]*=(1/(1+tau))
         return res
+    
+    def is_subgradient(self, vstar, x, eps=1e-10):
+        return np.max(vstar[x<0])<=0 and np.linalg.norm(x[x>=0]-vstar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
-    def _f_is_subgradient(self, ustar, x, eps=1e-10):#TODO replace
-        return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
 class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
