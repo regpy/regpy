@@ -310,34 +310,37 @@ class TupleVector:
         return TupleVector([v_i.imag for v_i in self])
 
     def __eq__(self,other):
-        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i == o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        if isinstance(other,type(self)) and self.ndim == other.ndim:
+            return TupleVector([s_i == o_i for s_i,o_i in zip(self.v,other.v)])
+        else:
+            return TupleVector([s_i == other for s_i in self.v])
     
     def __lt__(self, other):
         if isinstance(other,type(self)) and self.ndim == other.ndim:
-            return TupleVector([s_i < o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+            return TupleVector([s_i < o_i for s_i,o_i in zip(self.v,other.v)])
         else:
-            return TupleVector([s_i < other for s_i,st_i in zip(self.v,self.types)])
+            return TupleVector([s_i < other for s_i in self.v])
 
     def __le__(self, other):
         if isinstance(other,type(self)) and self.ndim == other.ndim:
-            return TupleVector([s_i <= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+            return TupleVector([s_i <= o_i for s_i,o_i in zip(self.v,other.v)])
         else:
-            return TupleVector([s_i <= other for s_i,st_i in zip(self.v,self.types)])
+            return TupleVector([s_i <= other for s_i in self.v])
 
     def __ne__(self, other):
         return not (self == other)
     
     def __ge__(self, other):
         if isinstance(other,type(self)) and self.ndim == other.ndim:
-            return TupleVector([s_i >= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+            return TupleVector([s_i >= o_i for s_i,o_i in zip(self.v,other.v)])
         else:
-            return TupleVector([s_i >= other for s_i,st_i in zip(self.v,self.types)])
+            return TupleVector([s_i >= other for s_i in self.v])
     
     def __gt__(self, other):
         if isinstance(other,type(self)) and self.ndim == other.ndim:
-            return TupleVector([s_i > o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+            return TupleVector([s_i > o_i for s_i,o_i in zip(self.v,other.v)])
         else:
-            return TupleVector([s_i > other for s_i,st_i in zip(self.v,self.types)])
+            return TupleVector([s_i > other for s_i in self.v])
 
     def all(self):
         return all((v_i.all() for v_i in self.v))
@@ -410,7 +413,9 @@ class TupleVector:
     def __getitem__(self, key):
         if isinstance(key,slice) or isinstance(key,int):
             return self.v[key]
-        elif isinstance(key,list) and len(key) == self.ndim:
+        elif (isinstance(key,TupleVector) and self.ndim == key.ndim):
+            return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
+        elif (isinstance(key,list) and len(key) == self.ndim): 
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
         else:
             raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
@@ -418,14 +423,26 @@ class TupleVector:
     def __setitem__(self, key, item):
         if isinstance(key,slice) or isinstance(key,int):
             self.v[key] = item
-        elif isinstance(key,list) and len(key) == self.ndim: 
-            if isinstance(item,list) and len(item) == self.ndim:
-                for i in range(self.ndim):
-                    self.v[key[i]] = item[i]
+        elif (isinstance(key,list) and len(key) == self.ndim):
+            if (isinstance(item,list) and len(item) == self.ndim):
+                for k_i,item_i in zip(key,item):
+                    self.v[k_i] = item_i
+            elif np.isscalar(item):
+                for k_i in key:
+                    self.v[k_i] = item
             else:
                 raise TypeError("items has to be a list of length {} not {} type".format(self.ndim,type(item)))                
+        elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
+            if (isinstance(item,TupleVector) and item.ndim == key.ndim):
+                for v_i,k_i,item_i in zip(self.v,key,item):
+                    v_i[k_i] = item_i
+            elif np.isscalar(item):
+                for v_i,k_i in zip(self.v,key):
+                    v_i[k_i] = item
+            else:
+                raise TypeError("items has to be a TupleVector if key is TupleVector of ndim {} not {} type".format(self.ndim,type(item)))                
         else:
-            raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
+            raise KeyError("keys of type {} are not supported either int or list of length {} or TupleVector".format(type(key),self.ndim))
     
     def __copy__(self):
         return deepcopy(self)
