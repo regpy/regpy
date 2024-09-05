@@ -1,6 +1,4 @@
 from regpy.solvers import RegSolver
-from regpy.operators import SciPyLinearOperator
-from scipy.sparse.linalg import eigsh
 
 import logging
 import numpy as np

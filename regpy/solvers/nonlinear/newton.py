@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.sparse import linalg as spla
 from copy import deepcopy
 from regpy.solvers import RegSolver, RegularizationSetting
 import logging
@@ -46,7 +45,7 @@ class NewtonCG(RegSolver):
         if init is None:
             init = self.op.domain.zeros()
         """The initial guess."""
-        self.x = np.copy(init)
+        self.x = init.copy()
         if simplified_op:
             self.simplified_op = simplified_op
             """Simplified operator for derivative.

@@ -1,10 +1,8 @@
 import logging
-import numpy as np
 
 from regpy.solvers import RegularizationSetting, RegSolver
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
-from regpy.stoprules import CountIterations
 
 class IrgnmSemiSmooth(RegSolver):
     r"""
@@ -42,9 +40,9 @@ class IrgnmSemiSmooth(RegSolver):
         """The measured data"""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init.copy()
         """The initial guess."""
-        self.x=np.copy(self.init)
+        self.x=self.init.copy()
         self.regpar=regpar
         """The regularizaton parameter."""
         self.regpar_step = regpar_step
@@ -63,24 +61,27 @@ class IrgnmSemiSmooth(RegSolver):
         self.rhs=self.data-self.y+self.deriv(self.x)
         self.b=self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.rhs)))+self.regpar*self.init
         
+        self.lam_plus = self.op.domain.zeros()
+        self.lam_minus = self.op.domain.zeros()
         """Prepare newton-semismooth minimization"""
-        self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
-        self.lam_minus=-np.minimum(np.zeros(self.size), self.b-self._A(self.x))
+        z = self.b-self._A(self.x)
+        self.lam_plus[z>0] = z[z>0]
+        self.lam_minus[z<0] = -z[z<0]
 
         """sets where the upper constraint and the lower constarint are active"""
-        self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
-        self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
+        self.active_plus=(self.lam_plus+self.regpar*(self.x-self.psi_plus))>0
+        self.active_minus=(self.lam_minus-self.regpar*(self.x-self.psi_minus))>0
 
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         
         """compute active and inactive sets, need to be computed in each step again"""
-        self.active=np.zeros(self.size)
-        self.inactive=np.zeros(self.size)
+        self.active=self.op.domain.zeros()
+        self.inactive=self.op.domain.zeros()
         
     def _next(self):
         iter_count = 0
-        while iter_count<=20 and (iter_count==0 or np.sum([old != new for old, new in zip(self.active_plus_old,self.active_plus)])>3 or np.sum([old != new for old, new in zip(self.active_minus_old,self.active_minus)])>3):
+        while iter_count<=20 and (iter_count==0 or (self.active_plus_old != self.active_plus).sum()>3 or (self.active_minus_old != self.active_minus).sum()>3):
             self.active_plus_old=self.active_plus
             self.active_minus_old=self.active_minus
             self.inner_update()
@@ -91,13 +92,16 @@ class IrgnmSemiSmooth(RegSolver):
         self.rhs=self.data-self.y+self.deriv(self.x)
         self.b=self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.rhs)))+self.regpar*self.init
 
+        self.lam_plus = self.op.domain.zeros()
+        self.lam_minus = self.op.domain.zeros()
         #Prepare newton-semismooth minimization
-        self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
-        self.lam_minus=-np.minimum(np.zeros(self.size), self.b-self._A(self.x))
+        z = self.b-self._A(self.x)
+        self.lam_plus[z>0] = z[z>0]
+        self.lam_minus[z<0] = -z[z<0]
 
         #sets where the upper constraint and the lower constarint are active
-        self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
-        self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
+        self.active_plus=(self.lam_plus+self.regpar*(self.x-self.psi_plus))>0
+        self.active_minus=(self.lam_minus-self.regpar*(self.x-self.psi_minus))>0
 
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
@@ -106,12 +110,12 @@ class IrgnmSemiSmooth(RegSolver):
         
         
     def inner_update(self):
-        self.active=[self.active_plus[j] or self.active_minus[j] for j in range(self.size)]
-        self.inactive=[self.active[j]==False for j in range(self.size)]
+        self.active=self.op.domain.vec_type.logical_or(self.active_plus, self.active_minus)
+        self.inactive=self.op.domain.vec_type.logical_not(self.active)
 
         #On the active sets the solution takes the values of the constraints
-        self.x[self.active_plus]=self.psi_plus
-        self.x[self.active_minus]=self.psi_minus
+        self.x[self.active_plus]=self.psi_plus[self.active_plus]
+        self.x[self.active_minus]=self.psi_minus[self.active_minus]
 
         self.lam_plus[self.inactive]=0
         self.lam_plus[self.active_minus]=0
@@ -135,8 +139,8 @@ class IrgnmSemiSmooth(RegSolver):
         self.lam_minus[self.active_minus]=-self.b[self.active_minus]+self.lam_plus[self.active_minus]+z[self.active_minus]
 
         #Update active and inactive sets
-        self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
-        self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
+        self.active_plus=(self.lam_plus+self.regpar*(self.x-self.psi_plus))>0
+        self.active_minus=(self.lam_minus-self.regpar*(self.x-self.psi_minus))>0
         
     def _A(self, u):
         return self.regpar*u+self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.deriv(u))))
