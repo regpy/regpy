@@ -1,9 +1,6 @@
 import logging
-import numpy as np
 
 from regpy.solvers import RegSolver
-from regpy import util
-from regpy.functionals import Functional
 from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import Operator

@@ -108,24 +108,24 @@ class SemismoothNewton_bilateral(RegSolver):
             if xref is None:
                 self.x=self.op.domain.zeros()
             else:
-                self.x = np.copy(self.xref)
+                self.x = self.xref.copy()
         else:
-            self.x = np.copy(x0)
+            self.x = x0.copy()
         if cg_pars is None:
             cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         if psi_minus is None:
-            self.psi_minus = -np.inf*np.ones_like(self.x)
+            self.psi_minus = -np.inf*self.op.domain.ones()
         else:
             self.psi_minus=psi_minus
         """The lower bound."""
         if psi_plus is None:
-            self.psi_plus = np.inf*np.ones_like(self.x)
+            self.psi_plus = np.inf*self.op.domain.ones()
         else:
             self.psi_plus=psi_plus
         """The upper bound."""
-        assert np.all(self.psi_minus < self.psi_plus)
+        assert (self.psi_minus < self.psi_plus).all()
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
@@ -134,8 +134,8 @@ class SemismoothNewton_bilateral(RegSolver):
             self.b += self.regpar*self.xref
             
         """Prepare first iteration step"""
-        self.lam_plus = np.zeros_like(self.b)
-        self.lam_minus = np.zeros_like(self.b)
+        self.lam_plus = self.op.domain.zeros()
+        self.lam_minus = self.op.domain.zeros()
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -149,11 +149,11 @@ class SemismoothNewton_bilateral(RegSolver):
         cg_its = tikhcg.iteration_step_nr
         self.active_plus = (self.lam_plus +self.regpar*(self.x-self.psi_plus ))>=0 
         self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus))>=0 
-        if not np.any(self.active_plus) and not np.any(self.active_minus):
+        if not (self.active_plus).any() and not (self.active_minus).any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
         self.log.debug('it {}: CG its {}; changes active sets +{},-{}'.format(self.iteration_step_nr,cg_its,
-                                                                            np.sum(1.*self.active_minus+self.active_plus),0 )
+                                                                            (1.*self.active_minus+self.active_plus).sum(),0 )
         )
 
 
@@ -161,8 +161,8 @@ class SemismoothNewton_bilateral(RegSolver):
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
-        self.active  = np.logical_or(self.active_plus, self.active_minus)
-        self.inactive= np.logical_not(self.active)
+        self.active  = self.active_plus | self.active_minus
+        self.inactive= self.op.domain.vec_type.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
@@ -200,10 +200,10 @@ class SemismoothNewton_bilateral(RegSolver):
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
         self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus)) >=0
-        added_ind = np.sum(np.logical_and(self.active_plus,  np.logical_not(self.active_plus_old ))) \
-                  + np.sum(np.logical_and(self.active_minus, np.logical_not(self.active_minus_old))) 
-        removed_ind = np.sum(np.logical_and(self.active_plus_old, np.logical_not(self.active_plus))) \
-                + np.sum(np.logical_and(self.active_minus_old, np.logical_not(self.active_minus)))
+        added_ind = (self.op.domain.vec_type.logical_and(self.active_plus,  self.op.domain.vec_type.logical_not(self.active_plus_old ))).sum() \
+                  + (self.op.domain.vec_type.logical_and(self.active_minus, self.op.domain.vec_type.logical_not(self.active_minus_old))).sum() 
+        removed_ind = (self.op.domain.vec_type.logical_and(self.active_plus_old, self.op.domain.vec_type.logical_not(self.active_plus))).sum() \
+                + (self.op.domain.vec_type.logical_and(self.active_minus_old, self.op.domain.vec_type.logical_not(self.active_minus))).sum()
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind
@@ -325,9 +325,9 @@ class SemismoothNewton_nonneg(RegSolver):
             if xref is None:
                 self.x=self.op.domain.zeros()
             else:
-                self.x = np.copy(xref)
+                self.x = xref.copy()
         else:
-            self.x = np.copy(x0)
+            self.x = x0.copy()
             """The current iterate"""
         self.regpar=regpar
         """The regularizaton parameter."""
@@ -346,7 +346,7 @@ class SemismoothNewton_nonneg(RegSolver):
         if self.xref is not None:
             self.b += self.regpar*self.xref
 
-        self.lam = lambda0 if lambda0 is not None else np.zeros_like(self.b)
+        self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -359,18 +359,18 @@ class SemismoothNewton_nonneg(RegSolver):
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
         self.active= (self.lam-self.regpar*self.x)>=0 
-        if not np.any(self.active):
+        if not self.active.any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
         self.log.debug('it {}: CG its {}; changes active set +{},-{}'.format(self.iteration_step_nr,cg_its,
-                                                                            np.sum(1.*self.active),0 )
+                                                                            self.active.sum(),0 )
         )
 
     def _next(self):
 
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_old=self.active
-        self.inactive= np.logical_not(self.active)
+        self.inactive= self.op.domain.vec_type.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active]=0
@@ -398,7 +398,7 @@ class SemismoothNewton_nonneg(RegSolver):
         self.y = self.op(self.x)
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
-        bound = np.linalg.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vec_type.vdot(np.maximum(-aux,0),self.x)
+        bound = self.op.domain.vec_type.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vec_type.vdot(np.maximum(-aux,0),self.x)
         if np.sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()
@@ -408,8 +408,8 @@ class SemismoothNewton_nonneg(RegSolver):
 
         #Update active and inactive sets
         self.active = (self.lam-self.regpar*self.x)>=0
-        added_ind =  np.sum(np.logical_and(self.active, np.logical_not(self.active_old))) 
-        removed_ind = np.sum(np.logical_and(self.active_old, np.logical_not(self.active)))
+        added_ind = (self.op.domain.vec_type.logical_and(self.active, self.op.domain.vec_type.logical_not(self.active_old))).sum() 
+        removed_ind = (self.op.domain.vec_type.logical_and(self.active_old, self.op.domain.vec_type.logical_not(self.active))).sum()
         self.log.debug('it {}: CG its {}; changes active set +{},-{}; error bound {:1.2e}/{:1.2e}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind,

@@ -1,5 +1,4 @@
 from regpy.solvers import Solver 
-import numpy as np
 
 class RichardsonLucy(Solver):
     def __init__(self,op,data,x_init=None,sigma=0):

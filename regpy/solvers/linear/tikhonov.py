@@ -121,7 +121,7 @@ class TikhonovCG(RegSolver):
             self.sq_norm_x = 0
         if self.reltoly is not None:
             self.g_y = self.h_codomain.gram(self.y)
-            self.norm_y = self.op.codomain.vec_type.vdot(self.y,self.g_y)
+            self.norm_y = self.op.codomain.vdot(self.y,self.g_y)
             if self.x0 is not None:
                 self.y0 = self.y
                 self.g_y0 = self.g_y
@@ -143,7 +143,7 @@ class TikhonovCG(RegSolver):
             self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
-        self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
+        self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
         """The squared norm of the residual."""
         self.dir = res
         """The direction of descent."""
@@ -161,7 +161,7 @@ class TikhonovCG(RegSolver):
         self.krylov_basis=krylov_basis
         if self.krylov_basis is not None: 
             self.iteration_number=0
-            self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
+            self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
         """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
 
@@ -174,9 +174,9 @@ class TikhonovCG(RegSolver):
         self.log.debug("self.dir = {}".format(self.dir))
         self.log.debug("self.penalty(self.dir) = {}".format(self.penalty(self.g_dir)))
         self.log.debug("vdot method")
-        self.log.debug("vdot in domain {}".format(self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)))
+        self.log.debug("vdot in domain {}".format(self.op.domain.vdot(self.penalty (self.g_dir), self.dir)))
         stepsize = self.sq_norm_res / np.real(
-            self.op.codomain.vec_type.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vec_type.vdot(self.penalty (self.g_dir), self.dir)
+            self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)
         ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
         self.log.debug("g_dir = {}".format(self.g_dir))
 
@@ -191,9 +191,9 @@ class TikhonovCG(RegSolver):
         if self.reltoly is not None:
             self.g_y += stepsize * g_Tdir
             if self.x0 is None:
-                self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y, self.y))
+                self.norm_y = self.op.codomain.vdot(self.g_y, self.y).real
             else: 
-                self.norm_y = np.real(self.op.codomain.vec_type.vdot(self.g_y-self.g_y0, self.y-self.y0))
+                self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
         self.log.debug("g_dir = {}".format(self.g_dir))
         self.log.debug("g_dir compute = {}".format(self.regpar * self.penalty (self.g_dir)))
 
@@ -203,7 +203,7 @@ class TikhonovCG(RegSolver):
 
         sq_norm_res_old = self.sq_norm_res
         self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
-        self.sq_norm_res = np.real(self.op.domain.vec_type.vdot(self.g_res, res))
+        self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
         self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         beta = self.sq_norm_res / sq_norm_res_old
         self.log.debug("g_dir = {}".format(self.g_dir))
@@ -211,7 +211,7 @@ class TikhonovCG(RegSolver):
         if self.krylov_basis is not None:
             self.iteration_number+=1
             if self.iteration_number < self.krylov_basis.shape[0]:
-                self.krylov_basis[self.iteration_number, :] = res / np.linalg.norm(res)
+                self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
 
         self.kappa = 1 + beta * self.kappa
 
