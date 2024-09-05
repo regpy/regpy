@@ -223,7 +223,7 @@ class VectorBase:
         raise NotImplementedError
     
     def norm(self,x):
-        return np.sqrt(np.real(self.vdot(x,x)))
+        return np.sqrt(self.vdot(x,x).real)
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
@@ -289,6 +289,9 @@ class TupleVector:
     def real(self):
         return TupleVector([v_i.real for v_i in self])
     
+    def __len__(self):
+        return self.ndim
+    
     @property
     def real(self):
         return TupleVector([v_i.imag for v_i in self])
@@ -297,20 +300,38 @@ class TupleVector:
         return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i == o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
     
     def __lt__(self, other):
-        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i < o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        if isinstance(other,type(self)) and self.ndim == other.ndim:
+            return TupleVector([s_i < o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        else:
+            return TupleVector([s_i < other for s_i,st_i in zip(self.v,self.types)])
 
     def __le__(self, other):
-        return isinstance(other,type(self)) and self.ndim == other.ndim and all([s_i <= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        if isinstance(other,type(self)) and self.ndim == other.ndim:
+            return TupleVector([s_i <= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        else:
+            return TupleVector([s_i <= other for s_i,st_i in zip(self.v,self.types)])
 
     def __ne__(self, other):
         return not (self == other)
     
     def __ge__(self, other):
-        return isinstance(other,type(self)) and other <= self
+        if isinstance(other,type(self)) and self.ndim == other.ndim:
+            return TupleVector([s_i >= o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        else:
+            return TupleVector([s_i >= other for s_i,st_i in zip(self.v,self.types)])
     
     def __gt__(self, other):
-        return isinstance(other,type(self)) and other < self
+        if isinstance(other,type(self)) and self.ndim == other.ndim:
+            return TupleVector([s_i > o_i and st_i == ot_i for s_i,st_i,o_i,ot_i in zip(self.v,self.types,other.v,other.types)])
+        else:
+            return TupleVector([s_i > other for s_i,st_i in zip(self.v,self.types)])
 
+    def all(self):
+        return all((v_i.all() for v_i in self.v))
+
+    def any(self):
+        return any((v_i.any() for v_i in self.v))
+    
     def __iadd__(self,other):
         assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
         v = self.v
@@ -409,15 +430,15 @@ class VectorSum(VectorBase):
 
     def __init__(self, *summands,flatten=False) -> None:
         if flatten:
-            h = []
+            self.summands = []
             for s in summands:
                 if isinstance(s,VectorSum):
-                    h += s.summands
+                    self.summands.extend(s.summands)
                 else:
-                    h.append(s)
-            summands = h
-        self.summands = summands
-        self.n_components = len(summands)
+                    self.summands.append(s)
+        else:
+            self.summands = summands
+        self.n_components = len(self.summands)
         super().__init__(TupleVector, (np.sum([s.size for s in summands]),), complex = any([s.is_complex for s in summands]))
 
     def zeros(self):
@@ -439,10 +460,14 @@ class VectorSum(VectorBase):
         if isinstance(x,TupleVector) and x.ndim == self.n_components and all([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)]):
             return True
         else:
+            print(self.summands)
+            print(x.ndim, self.n_components)
+            print([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)])
             return False
         
     def vdot(self, x, y):
-        assert self.is_vector(x) and self.is_vector(y)
+        assert self.is_vector(x), "x of type {} is not a vector".format(type(x)) 
+        assert self.is_vector(y), "y of type {} is not a vector".format(type(y))
         return np.sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
     def to_complex(self):
@@ -768,6 +793,12 @@ class VectorSpaceBase:
             )
         else:
             return False
+        
+    def __iadd__(self, other):
+        if isinstance(other, VectorSpaceBase):
+            return DirectSum(self, other, flatten=True)
+        else:
+            return NotImplemented
 
     def __add__(self, other):
         if isinstance(other, VectorSpaceBase):
@@ -1110,7 +1141,15 @@ class DirectSum(VectorSpaceBase):
 
     def __init__(self, *summands, flatten=False):
         assert all(isinstance(s, VectorSpaceBase) for s in summands)
-        self.summands = summands
+        if flatten:
+            self.summands = []
+            for s in summands:
+                if isinstance(s,DirectSum):
+                    self.summands.extend(s.summands)
+                else:
+                    self.summands.append(s)
+        else:
+            self.summands = summands
         super().__init__(VectorSum(*[s.vec_type for s in summands],flatten=flatten))
 
     def masked_space(self, mask):
