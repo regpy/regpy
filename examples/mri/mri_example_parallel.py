@@ -25,7 +25,7 @@ noiselevel = 0.05
 
 # In real applications with data known before constructing the operator, estimate_sampling_pattern
 # can be used to determine the mask.
-mask = grid.zeros(dtype=bool)
+mask = grid.zeros() != 0 
 mask[::2] = True
 mask[:10] = True
 mask[-10:] = True
