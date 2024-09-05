@@ -5,6 +5,13 @@ import itertools
 
 
 class OperatorNode:
+    """Object that represents a node in a Graph of operators and manages the input and output from the edges to the operator.
+
+    Parameters
+    ----------
+    op : regpy.vecsps.Operator
+        The underlying operator
+    """
 
     def __init__(self,op):
         self.op=op
@@ -17,15 +24,38 @@ class OperatorNode:
         return str(self.op)
 
     def get_free_inputs(self):
+        """Calculates set of inputs with no assigned input edge.
+
+        Returns:
+            set: set of indices of inputs with no assigned input edge.
+        """        
         return set([i for i in range(self.N_in) if self.input_edges[i] is None])
     
     def get_in_nodes(self):
+        """Compute nodes where incoming edges come from.
+
+        Returns:
+            set: set of nodes
+        """        
         return set([edge.start_node for edge in self.input_edges if edge is not None and edge.start_node is not None])
     
     def get_out_nodes(self):
+        """Compute nodes where outgoing edges go to.
+
+        Returns:
+            set: set of nodes
+        """       
         return set([edge.end_node for edge in self.output_edges if edge is not None and edge.end_node is not None])
     
     def combine_input(self,data_dict):
+        """Combines the input from the input edges.
+
+        Parameteres:
+            data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
+
+        Returns:
+            np.ndarray: element in the domain of the operator
+        """        
         assert all(edge is not None for edge in self.input_edges)
         if(self.N_in==1):
             edge=self.input_edges[0]
@@ -34,6 +64,14 @@ class OperatorNode:
             return self.op.domain.join(*[edge.pass_forward(data_dict[edge.start_node]) for edge in self.input_edges])
         
     def combine_output(self,data_dict):
+        """Combines the output from the output edges. This is used for the evaluation of the adjoint.
+
+        Parameteres:
+            data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
+
+        Returns:
+            np.ndarray: element in the codomain of the operator
+        """           
         if(self.output_edges==[]):
             return self.op.codomain.zeros()
         edge=self.output_edges[0]
@@ -53,6 +91,19 @@ class OperatorNode:
             return self.op.codomain.join(*[d if d is not None else self.op.codomain.summands[i].zeros() for i,d in enumerate(data_list)])
 
 class Edge:
+    """Object that represents an edge in a Graph of operators and manages the data transport between operator nodes.
+
+    Parameters
+    ----------
+    start_node : OperatorNode
+        The node where the edge starts.
+    start_node : OperatorNode
+        The node where the edge starts.
+    start_list : list of int
+        list of output indices of the start node
+    end_index : int
+        index of input of the end node
+    """
 
     def __init__(self,start_node,end_node,start_list,end_index):
         assert isinstance(start_node,OperatorNode) or start_node is None
@@ -76,6 +127,11 @@ class Edge:
                 self.end_space=self.end_node.op.domain.summands[self.end_index]
 
     def construct_start_space(self):
+        """Constructs vector space corresponding to input of the edge.
+
+        Returns:
+            regpy.vecsps.VectorSpace: VectorSpace corresponding to combined input of this edge.
+        """        
         assert self.start_node is not None
         if(self.start_node.N_out==1):
             return self.start_node.op.codomain
@@ -84,6 +140,8 @@ class Edge:
         return vecsps.DirectSum(*[self.start_node.codomain.summands[i] for i in self.start_list])
 
     def remove(self):
+        """Removes this edge.
+        """
         if(self.start_node is not None):
             self.start_node.output_edges.remove(self)
         if(self.end_node is not None):
@@ -95,6 +153,14 @@ class Edge:
         return f"{self.start_node}{self.start_list}-->[{self.end_index}]{self.end_node}"
 
     def pass_forward(self,x):
+        """Passes and transforms data forwards through the edge.
+
+        Parameters:
+            x (_type_): element of the codomain of the operator of the input node.
+
+        Returns:
+            _type_: element of the part of the domain of the operator of the output node.
+        """        
         assert self.end_node is not None and self.start_node is not None
         if(self.start_node.N_out==1):
             if(len(self.start_list)==1):
@@ -110,6 +176,14 @@ class Edge:
             
 
     def pass_backward(self,y):
+        """Passes and transforms data backwards through the edge.
+
+        Parameters:
+            y (_type_): element of the part of the domain of the operator of the output node.
+
+        Returns:
+            list: list where each entry corresponds to that part of the codomain of the operator of the input node.
+        """ 
         if(self.end_node.N_in>1):
             y=self.end_node.op.domain.split(y)[self.end_index]
         x_vals=[None] * self.start_node.N_out
@@ -136,7 +210,18 @@ class Edge:
         
 
 class OperatorGraph(Operator):
+    """Operator that consists of different operators that are connected in a Graph structure.
 
+    Parameters
+    ----------
+    operators : list of regpy.vecsps.Operator
+        The underlying operators
+    edges : list of tuple
+        Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
+    calc_exex_order : bool, optional
+        If True the order of calculations of the operators is computed. Else it is assumed to be the order in which
+        the operators are given. Defaults to True.
+    """
     def __init__(self, operators,edges,calc_exec_order=True):
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
@@ -184,6 +269,22 @@ class OperatorGraph(Operator):
         super().__init__(self.input_op.domain, self.output_op.codomain, linear)
 
     def _clean_edge_data(edge_data):
+        """Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.
+        Additionally sorts edge data into incoming, middle and outgoing.
+
+        Parameters:
+            edge_data (list): list of edge data in format specified in constructor
+
+        Raises:
+            ValueError: if multiple different edges are assigned to same input of operator
+
+        Returns:
+            ed_in (list):  list of data for incoming edges
+
+            ed_middle (list): list of data for middle edges
+
+            ed_out (list): list of data for outgoing edges 
+        """        
         ed_dict={}
         ed_in=[]
         ed_middle=[]
@@ -208,6 +309,14 @@ class OperatorGraph(Operator):
         return ed_in,ed_middle,ed_out
 
     def _calc_exec_order(self):
+        """Computes execution order using a topological sort.
+
+        Raises:
+            ValueError: If the graph has cycles or start and end are not connected.
+
+        Returns:
+            list: List of ordered operators
+        """        
         in_sets={op:self.node_dict[op].get_in_nodes() for op in self.node_dict.keys()}
         out_sets={op:self.node_dict[op].get_out_nodes() for op in self.node_dict.keys()}
         current_ops={self.input_op}
@@ -259,7 +368,14 @@ class OperatorGraph(Operator):
         return data_dict[self.node_dict[self.input_op]]
 
 
-def merge_operators(*op_eds):#input format is tuple with elements of form (ops,edges,N_in,N_out) edges are sorted
+def merge_operators(*op_eds):
+    """Merges operator and edge data. Each input is a tuple with elements of the form (ops,edges,N_in,N_out). The
+    edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
+    This function is mainly inteded for use in generating Graphs from tuples i.e A@(B,C,D).
+
+    Returns:
+        OperatorGraph: Graph operator build from all edges and operators of merged parts.
+    """    
     ops=set()
     edge_data=[]
     for op_ed in op_eds:
@@ -276,7 +392,14 @@ def merge_operators(*op_eds):#input format is tuple with elements of form (ops,e
             edge_data.append(output_edge)
     return OperatorGraph(list(ops),edge_data)
 
-def concatenate_operators(op_eds_start,op_eds_end):#input format is (ops,edges,N_in,N_out) edges are sorted
+def concatenate_operators(op_eds_start,op_eds_end):
+    """Concatenates operator and edge data. Each input is a tuple with elements of the form (ops,edges,N_in,N_out). The
+    edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
+    This function is mainly inteded for use in generating graphs from other graphs or graphs and operators.
+
+    Returns:
+        OperatorGraph: Graph operator build by connecting outputs of start to inputs of end.
+    """   
     assert(op_eds_start[3]==op_eds_end[2])
     offset_output=len(op_eds_start[1])-op_eds_start[3]
     offset_input=op_eds_end[2]
@@ -288,6 +411,16 @@ def concatenate_operators(op_eds_start,op_eds_end):#input format is (ops,edges,N
     return OperatorGraph(list(set(op_eds_start[0]+op_eds_end[0])),op_eds_start[1][:offset_output]+bridge_eds+op_eds_end[1][offset_input:])
 
 def get_operators_and_edges(op):#output format is (ops,edges,N_in,N_out) edges are sorted
+    """Computes operators and edge data from an operator in a format that can be used to merge and concatenate
+    different types of operators.
+
+    Parameters:
+        op (Operator): operator from which edge data and underlying operators should be computed
+
+    Returns:
+        tuple: tuple in format (ops,edges,N_in,N_out). The
+        edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
+    """    
     assert isinstance(op,Operator)
     if(isinstance(op,OperatorGraph)):
         ops=op.operators[1:len(op.operators)-1]

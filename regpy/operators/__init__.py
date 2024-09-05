@@ -508,7 +508,7 @@ class LinearCombination(Operator):
             self._derivs = []
         for coeff, op in zip(self.coeffs, self.ops):
             if differentiate:
-                tup = op.linearize(x,adjoint_deriv=adjoint_deriv)
+                tup = op.linearize(x,adjoint_derivative=adjoint_derivative)
                 z = tup[0]
                 self._derivs.append(tup[1])
                 if adjoint_derivative:
