@@ -269,6 +269,19 @@ class VectorBase:
     def iter_basis(self):
         raise NotImplementedError
 
+    @staticmethod
+    def logical_and(x,y):
+        return x & y 
+    
+    @staticmethod
+    def logical_or(x,y):
+        return x | y 
+    
+    def logical_not(self,x):
+        return not x
+    
+    def logical_xor(self,x,y):
+        return x ^ y
 
 @dataclass 
 class TupleVector:
@@ -332,6 +345,13 @@ class TupleVector:
     def any(self):
         return any((v_i.any() for v_i in self.v))
     
+    def __or__(self,other):
+        assert isinstance(other,type(self)) and self.ndim == other.ndim 
+        return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
+    
+    def sum(self):
+        return sum((sum(v_i) for v_i in self.v))
+    
     def __iadd__(self,other):
         assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
         v = self.v
@@ -388,7 +408,6 @@ class TupleVector:
         return iter(self.v)
     
     def __getitem__(self, key):
-        print(key)
         if isinstance(key,slice) or isinstance(key,int):
             return self.v[key]
         elif isinstance(key,list) and len(key) == self.ndim:
@@ -495,7 +514,12 @@ class VectorSum(VectorBase):
             for b in s.iter_basis():
                 vec.v[i] = b
                 yield vec
-        
+    
+    def logical_not(self,x):
+        return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
+    
+    def logical_xor(self,x,y):
+        return TupleVector([s.logical_xor(x_i) for x_i,s in zip(x.v,self.summands)])
     
 class NumPyVector(VectorBase):
 
@@ -605,6 +629,20 @@ class NumPyVector(VectorBase):
                 elm[idx] = 1j
                 yield elm
             elm[idx] = 0
+    
+    @staticmethod
+    def logical_and(x,y):
+        return np.logical_and(x, y) 
+    
+    @staticmethod
+    def logical_or(x,y):
+        return np.logical_or(x, y) 
+    
+    def logical_not(self,x):
+        return np.logical_not(x) 
+    
+    def logical_xor(self,x,y):
+        return np.logical_xor(x, y) 
 
 
 class VectorSpaceBase:
@@ -785,6 +823,12 @@ class VectorSpaceBase:
             The masked Space depending on the vector space.
         """
         raise NotImplementedError
+    
+    def vdot(self,x,y):
+        return self.vec_type.vdot(x,y)
+    
+    def norm(self,x):
+        return self.vec_type.norm(x)
 
     def __eq__(self, other):
         if isinstance(other, type(self)):
