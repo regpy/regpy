@@ -97,7 +97,7 @@ def test_adjoint_derivative(op, tolerance=1e-10):
     h = op.domain.randn()
     _,deriv,adjoint_derivative = op.linearize(x, adjoint_derivative=True)
     adjoint_deriv_h = adjoint_derivative(h)
-    diff = adjoint_deriv_h-deriv.adjoint(deriv(h)
+    diff = adjoint_deriv_h-deriv.adjoint(deriv(h))
     assert (diff < tolerance).all() and (diff > -tolerance).all()
 
     
