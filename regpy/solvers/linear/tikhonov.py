@@ -175,11 +175,10 @@ class TikhonovCG(RegSolver):
         self.log.debug("self.penalty(self.dir) = {}".format(self.penalty(self.g_dir)))
         self.log.debug("vdot method")
         self.log.debug("vdot in domain {}".format(self.op.domain.vdot(self.penalty (self.g_dir), self.dir)))
-        stepsize = self.sq_norm_res / np.real(
+        stepsize = self.sq_norm_res / (
             self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)
-        ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        ).real # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
         self.log.debug("g_dir = {}".format(self.g_dir))
-
         self.x += stepsize * self.dir
         if self.reltolx is not None:
             if self.x0 is None:
