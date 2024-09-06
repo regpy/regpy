@@ -53,7 +53,7 @@ class NgsBaseVector:
         return NgsBaseVector(z)
     
     @property
-    def real(self):
+    def imag(self):
         z = self.vec.CreateVector()
         for i in range(self.size): 
             z[i] = self.vec[i].imag
@@ -114,6 +114,31 @@ class NgsBaseVector:
     
     def __setitem__(self,i,val):
         self.vec[i] = val
+
+    def __iter__(self):
+        return self.vec
+
+    def iter_basis(self):
+        v = NgsBaseVector(self.vec.CreateVector())
+        for i in self.size:
+            v[i] = 1 
+            yield v
+            if self.is_complex:
+                v[i] = 1j
+                yield v
+            v[i] = 0                
+
+    def __and__(self,x,y):
+        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        return (x_i == y_i for x_i,y_i in zip(x,y))
+    
+    def __or__(self,x,y):
+        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        return (x_i != y_i for x_i,y_i in zip(x,y))
+
+    def __xor__(self,x,y):
+        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        return (x_i != y_i for x_i,y_i in zip(x,y))
     
     def __copy__(self):
         return deepcopy(self)
@@ -227,6 +252,20 @@ class NgsVector(VectorBase):
                 elm[idx] = 1j
                 yield elm
             elm[idx] = 0
+
+    @staticmethod
+    def logical_and(x,y):
+        return x & y 
+    
+    @staticmethod
+    def logical_or(x,y):
+        return x | y 
+    
+    def logical_not(self,x):
+        return not x
+    
+    def logical_xor(self,x,y):
+        return x ^ y
 
 
 class NgsVectorSpace(VectorSpaceBase):

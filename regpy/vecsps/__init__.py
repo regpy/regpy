@@ -223,7 +223,7 @@ class VectorBase:
         raise NotImplementedError
     
     def norm(self,x):
-        return np.sqrt(self.vdot(x,x).real)
+        return np.sqrt(self.vdot(x,x).real).item()
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
@@ -504,7 +504,7 @@ class VectorSum(VectorBase):
     def vdot(self, x, y):
         assert self.is_vector(x), "x of type {} is not a vector".format(type(x)) 
         assert self.is_vector(y), "y of type {} is not a vector".format(type(y))
-        return np.sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
+        return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
     def to_complex(self):
         return VectorSum(*[s.to_complex for s in self.summands])
@@ -596,7 +596,7 @@ class NumPyVector(VectorBase):
             return False
         
     def vdot(self, x, y):
-        return np.vdot(x, y)
+        return np.vdot(x, y).item()
 
     def to_complex(self):
         return NumPyVector(self.shape,np.result_type(1j, self.dtype))
