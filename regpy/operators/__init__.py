@@ -733,11 +733,13 @@ class PtwMultiplication(Operator):
     domain : regpy.vecsps.VectorSpaceBase
         The underlying vector space
     factor : array-like
-        The factor by which to multiply. Can be anything that can be broadcast to `domain.shape`.
+        The factor by which to multiply. In case of domain being NumPyVectorSpace it can be anything that can be broadcast to `domain.shape`.
     """
     def __init__(self, domain, factor):
         # Check that factor can broadcast against domain elements without
         # increasing their size.
+        if isinstance(domain,vecsps.NumPyVectorSpace):
+            factor = np.broadcast_to(factor, domain.shape)
         if domain:
             assert np.isscalar(factor) or factor in domain
         self.factor = factor
@@ -772,7 +774,7 @@ class OuterShift(Operator):
     op : Operator
         The underlying operator.
     offset : op.codomain
-        The offset by which to shift. Can be anything that can be broadcast to `op.codomain.shape`.
+        The offset by which to shift. 
     """
     def __init__(self, op, offset):
         assert offset in op.codomain
@@ -814,7 +816,7 @@ class InnerShift(Operator):
     op : Operator
         The underlying operator.
     offset : op.domain
-        The offset by which to shift. Can be anything that can be broadcast to `op.domain.shape`.
+        The offset by which to shift. 
     """
     def __init__(self, op, offset):
         assert offset in op.domain
