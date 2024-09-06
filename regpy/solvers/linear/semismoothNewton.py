@@ -1,5 +1,7 @@
 from regpy.solvers import RegSolver
 import numpy as np
+from math import sqrt,inf
+
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
@@ -112,16 +114,16 @@ class SemismoothNewton_bilateral(RegSolver):
         else:
             self.x = x0.copy()
         if cg_pars is None:
-            cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
+            cg_pars = {'tol': 0.001/sqrt(self.regpar)}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         if psi_minus is None:
-            self.psi_minus = -np.inf*self.op.domain.ones()
+            self.psi_minus = -inf*self.op.domain.ones()
         else:
             self.psi_minus=psi_minus
         """The lower bound."""
         if psi_plus is None:
-            self.psi_plus = np.inf*self.op.domain.ones()
+            self.psi_plus = inf*self.op.domain.ones()
         else:
             self.psi_plus=psi_plus
         """The upper bound."""
@@ -332,7 +334,7 @@ class SemismoothNewton_nonneg(RegSolver):
         self.regpar=regpar
         """The regularizaton parameter."""
         if cg_pars is None:
-            cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
+            cg_pars = {'tol': 0.001/sqrt(self.regpar)}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.TOL = TOL
@@ -399,7 +401,7 @@ class SemismoothNewton_nonneg(RegSolver):
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
         bound = self.op.domain.vec_type.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vec_type.vdot(np.maximum(-aux,0),self.x)
-        if np.sqrt(bound)<=self.TOL:
+        if sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()
 
@@ -413,7 +415,7 @@ class SemismoothNewton_nonneg(RegSolver):
         self.log.debug('it {}: CG its {}; changes active set +{},-{}; error bound {:1.2e}/{:1.2e}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind,
-                                                                            np.sqrt(bound),self.TOL
+                                                                            sqrt(bound),self.TOL
                                                                             )
                         )
         if added_ind+removed_ind==0:
@@ -477,16 +479,16 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         inner_stoprule.log.setLevel(logging.WARNING)
         if not hasattr(self,'alpha_old'):
             SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,
-                                TOL = self.tol_fac / np.sqrt(self.alpha),
-                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
+                                TOL = self.tol_fac / sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
                                 cg_logging_level = logging.WARNING
                                )    
         else:
             lambda0 = (self.alpha/self.alpha_old)*self.lam
             SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,x0=self.x,lambda0=lambda0,
-                                TOL = self.tol_fac / np.sqrt(self.alpha),
-                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
+                                TOL = self.tol_fac / sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
                                 cg_logging_level = logging.WARNING
                                )

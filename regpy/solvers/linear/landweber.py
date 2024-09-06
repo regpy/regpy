@@ -1,7 +1,7 @@
 from regpy.solvers import RegSolver
 
 import logging
-import numpy as np
+from math import sqrt
 
 class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
@@ -49,5 +49,5 @@ class Landweber(RegSolver):
         self.y = self.op(self.x)
 
         if self.log.isEnabledFor(logging.INFO):
-            norm_residual = np.sqrt((self.op.codomain.vec_type.vdot(self._residual, self._gy_residual)).real)
+            norm_residual = sqrt((self.op.codomain.vec_type.vdot(self._residual, self._gy_residual)).real)
             self.log.info('|residual| = {}'.format(norm_residual))

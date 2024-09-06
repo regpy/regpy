@@ -1,6 +1,7 @@
 import logging
 from copy import copy
 import numpy as np
+from math import sqrt,isqrt
 
 from regpy.solvers import RegularizationSetting, RegSolver
 from regpy.solvers.linear.tikhonov import TikhonovCG
@@ -330,7 +331,7 @@ class IrgnmCGPrec(RegSolver):
         self.regpar *= self.regpar_step
         
         self.k+=1
-        if (int(np.sqrt(self.k)))**2 == self.k:
+        if (isqrt(self.k))**2 == self.k:
             self.need_prec_update = True
                        
     def _preconditioner_update(self):
@@ -346,13 +347,13 @@ class IrgnmCGPrec(RegSolver):
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
-        diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
+        diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
         M_krylov = np.float64(U @ diag_lamb @ U.transpose())
-        self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
         """Compute preconditioner"""
 
-        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - np.sqrt(self.regpar) )
+        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
         M_krylov = np.float64(U @ diag_lamb @ U.transpose())
-        self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 

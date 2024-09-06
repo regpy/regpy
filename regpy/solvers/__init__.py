@@ -1,6 +1,6 @@
 """Solvers for inverse problems.
 """
-import numpy as np
+import math as ma
 from scipy.sparse.linalg import eigsh
 
 import logging
@@ -263,7 +263,7 @@ class RegularizationSetting:
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
-        >   np.real(vec_typ.vdot(y, self.op(x)) - vec_typ.vdot(self.op.adjoint(y), x)) < tolerance
+        >  (vec_typ.vdot(y, self.op(x)) - vec_typ.vdot(self.op.adjoint(y), x)).real < tolerance
 
         If the operator is non-linear this will be done for the derivative.
 
@@ -366,7 +366,7 @@ class RegularizationSetting:
             return power_method(self, op = T)
         elif method == "lanczos":
             from regpy.operators import SciPyLinearOperator
-            return np.sqrt(eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
+            return ma.sqrt(eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
         else:
             raise NotImplementedError
 
@@ -523,10 +523,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         pen = self.penalty(f)
         ddat = self.penalty.conj(self.op.adjoint(p))
         dpen = 1./alpha * self.data_fid.conj(-alpha*p)
-        ares = np.abs(dat)+np.abs(pen)+np.abs(ddat)+np.abs(dpen) 
-        if not np.isfinite(ares):
+        ares = ma.fabs(dat)+ma.fabs(pen)+ma.fabs(ddat)+ma.fabs(dpen) 
+        if not ma.isfinite(ares):
             self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e},'.format(pen,dat,dpen,ddat))
-            return np.inf
+            return ma.inf
         res = dat+pen+ddat+dpen
         if ares/res>1e10:
             self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
@@ -593,13 +593,13 @@ def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
     assert op.linear
     
     x = setting.op.domain.rand()
-    relative_residual = np.inf
+    relative_residual = ma.inf
     for _ in range(max_iter):
         if relative_residual < stopping_rule:
             break
         ystar = (op.adjoint * setting.h_codomain.gram * op)(x)
         y = setting.h_domain.gram_inv(ystar)
-        lmb = np.sqrt(setting.op.codomain.vec_type.vdot(y, ystar).real)
+        lmb = ma.sqrt(setting.op.codomain.vec_type.vdot(y, ystar).real)
         relative_residual = setting.h_domain.norm(y - lmb * x)
         x = y/lmb
     return lmb

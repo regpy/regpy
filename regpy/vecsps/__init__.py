@@ -28,7 +28,7 @@ affects iteration over a basis as well as functions returning the dimension or f
 
 from copy import copy,deepcopy
 import numpy as np
-from itertools import accumulate
+from math import sqrt
 
 from dataclasses import dataclass
 from typing import List
@@ -223,7 +223,7 @@ class VectorBase:
         raise NotImplementedError
     
     def norm(self,x):
-        return np.sqrt(self.vdot(x,x).real).item()
+        return sqrt(self.vdot(x,x).real)
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):

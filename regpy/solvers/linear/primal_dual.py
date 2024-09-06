@@ -1,7 +1,6 @@
-import numpy as np
+import math as ma
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
-from regpy import util
 import logging
 
 logging.basicConfig(
@@ -96,7 +95,7 @@ class PDHG(RegSolver):
         self.muSstar = self.regpar/setting.data_fid.Lipschitz
         if self.muR>0:
             if self.muSstar>0:
-                self.mu = 2*np.sqrt(self.muR * self.muSstar)/L
+                self.mu = 2*ma.sqrt(self.muR * self.muSstar)/L
                 self.tau = self.mu/(2.*self.muR)
                 self.sigma = self.mu/(2.*self.muSstar)
                 self.theta = 1./(1.+self.mu)
@@ -120,7 +119,7 @@ class PDHG(RegSolver):
         self.pstar = (-1./self.regpar)*self.data_fid.conj.proximal(self.regpar*dual_step, self.regpar*self.sigma, self.proximal_pars_data_fidelity_conjugate)
         self.x_old = self.x        
         if self.muR>0 and self.muSstar==0:
-            self.theta = 1./np.sqrt(1+self.muR*self.tau)
+            self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
         self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 

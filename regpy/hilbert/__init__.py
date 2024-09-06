@@ -4,6 +4,7 @@
 from copy import copy
 
 import numpy as np
+import math as ma
 
 from regpy import util, functionals, operators, vecsps
 from scipy.sparse import csc_matrix
@@ -82,7 +83,7 @@ class HilbertSpace:
         float
             The norm.
         """
-        return np.sqrt(self.inner(x, x))
+        return ma.sqrt(self.inner(x, x))
 
     @util.memoized_property
     def norm_functional(self):

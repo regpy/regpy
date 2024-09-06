@@ -1,4 +1,4 @@
-import numpy as np
+from math import sqrt
 import logging
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
@@ -57,16 +57,16 @@ class FISTA(RegSolver):
         self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
         if self.mu>0:
             self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
-                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-np.sqrt(self.q)))
+                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-sqrt(self.q)))
         else: 
             self.log.info('Setting up FISTA with step length tau={:.3e}.'.format(self.tau))
 
     def _next(self):
         if self.mu == 0:
-            self.t = (1 + np.sqrt(1+4*self.t_old**2))/2
+            self.t = (1 + sqrt(1+4*self.t_old**2))/2
             beta = (self.t_old-1) / self.t
         else: 
-            self.t = (1-self.q*self.t_old**2+np.sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
+            self.t = (1-self.q*self.t_old**2+sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
             beta = (self.t_old-1)/self.t * (1+self.tau*self.mu_penalty-self.t*self.tau*self.mu)/(1-self.tau*self.mu_data_fidelity)
 
         h = self.x+beta*(self.x-self.x_old)

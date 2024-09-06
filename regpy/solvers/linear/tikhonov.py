@@ -1,5 +1,5 @@
 import logging
-import numpy as np
+from math import sqrt,inf
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -106,7 +106,7 @@ class TikhonovCG(RegSolver):
         self.reltoly = reltoly
         """The relative tolerance in the codomain."""
         if tol is None  and reltolx is None and reltoly is None:
-            self.reltolx = 10./np.sqrt(regpar)
+            self.reltolx = 10./sqrt(regpar)
 
         if x0 is not None:
             self.x = x0.copy()
@@ -219,7 +219,7 @@ class TikhonovCG(RegSolver):
             
             tol_report = 'it.{} kappa={} err/Tol '.format(self.iteration_step_nr,self.kappa)
             if self.reltolx is not None:
-                valx = np.sqrt(self.sq_norm_res / self.sq_norm_x / self.kappa) / self.regpar
+                valx = sqrt(self.sq_norm_res / self.sq_norm_x / self.kappa) / self.regpar
                 tol_report = tol_report+'rel X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
                 if valx < self.reltolx / (1 + self.reltolx):
                     self.isconverged['reltolx'] = True
@@ -227,7 +227,7 @@ class TikhonovCG(RegSolver):
                     self.isconverged['reltolx'] = False
 
             if self.reltoly is not None:
-                valy = np.sqrt(self.sq_norm_res / self.norm_y / self.kappa / self.regpar)
+                valy = sqrt(self.sq_norm_res / self.norm_y / self.kappa / self.regpar)
                 tol_report = tol_report+"rel Y:{:1.1e}/{:1.1e} ".format(valy,self.reltoly / (1 + self.reltoly))
                 if valy < self.reltoly / (1 + self.reltoly):
                     self.isconverged['reltoly'] = True
@@ -235,7 +235,7 @@ class TikhonovCG(RegSolver):
                     self.isconverged['reltoly'] = False    
 
             if self.tol is not None:
-                val = np.sqrt(self.sq_norm_res / self.kappa)/ self.regpar  
+                val = sqrt(self.sq_norm_res / self.kappa)/ self.regpar  
                 tol_report = tol_report+"abs X: {:1.1e}/{:1.1e}".format(val,self.tol)
                 if val < self.tol:
                    self.isconverged['tol'] = True
@@ -345,12 +345,12 @@ class TikhonovAlphaGrid(RegSolver):
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
             tikhcg =TikhonovCG(self.setting,data=self.data,regpar=alpha,xref=self.xref,x0=self.xref,
-                               reltolx = self.tol_fac / np.sqrt(alpha),
+                               reltolx = self.tol_fac / sqrt(alpha),
                                logging_level=self.logging_level
                                )
         else:
             tikhcg =TikhonovCG(self.setting,data = self.data,regpar = alpha,xref=self.xref,x0=self.xref,
-                               tol= self.tol_fac * self.delta / np.sqrt(alpha),
+                               tol= self.tol_fac * self.delta / sqrt(alpha),
                                 logging_level=self.logging_level
                                )
         self.x, self.y = tikhcg.run(inner_stoprule)
@@ -401,7 +401,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         otherwise relative tolerance in domain is tol_fac/sqrt(alpha)"""
         self.logging_level = logging_level
         """logging level for CG iteration."""
-        self.alpha_eff = np.inf
+        self.alpha_eff = inf
         """effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
 
     def _next(self):
@@ -415,12 +415,12 @@ class NonstationaryIteratedTikhonov(RegSolver):
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
             tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
-                               reltolx = self.tol_fac / np.sqrt(self.alpha_eff),
+                               reltolx = self.tol_fac / sqrt(self.alpha_eff),
                                logging_level=self.logging_level
                                )
         else:
             tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
-                               tol= self.tol_fac * self.delta / np.sqrt(self.alpha_eff),
+                               tol= self.tol_fac * self.delta / sqrt(self.alpha_eff),
                                 logging_level=self.logging_level
                                )
         self.x, self.y = tikhcg.run(inner_stoprule)

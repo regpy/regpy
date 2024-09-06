@@ -1,4 +1,4 @@
-import numpy as np
+from math import sqrt
 from copy import deepcopy
 from regpy.solvers import RegSolver, RegularizationSetting
 import logging
@@ -67,13 +67,13 @@ class NewtonCG(RegSolver):
         self._x_k = self.op.domain.zeros()
         # self._s += - self.deriv(self._x_k)
         self._s2 = self.h_codomain.gram(self._s)
-        self._norms0 = np.sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
+        self._norms0 = sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
         self._inner_prod = self.op.domain.vec_type.vdot(self._r, self._rtilde).real
      
-        while (self._k==0 or (np.sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
+        while (self._k==0 or (sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
                > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
             self._q2 = self.h_codomain.gram(self._q)
