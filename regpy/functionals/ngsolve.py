@@ -1,7 +1,6 @@
 '''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsSpace`. 
 '''
 import ngsolve as ngs
-import numpy as np
 
 from regpy.hilbert import L2
 from regpy.functionals import Functional

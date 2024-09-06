@@ -1,4 +1,4 @@
-import numpy as np
+from random import uniform
 
 
 def test_linearity(op, tolerance=1e-10):
@@ -24,9 +24,9 @@ def test_linearity(op, tolerance=1e-10):
     """
     x = op.domain.randn()
     y = op.domain.randn()
-    r= np.random.uniform(-10,10)
-    err_sum=np.max(np.abs((op(x)+op(y))-(op(x+y))))
-    err_mult=np.max(np.abs(op(r*x)-r*op(x)))
+    r= uniform(-10,10)
+    err_sum=op.domain.norm((op(x)+op(y))-(op(x+y)))
+    err_mult=op.domain.norm(op(r*x)-r*op(x))
     assert err_sum<tolerance, f'err = {err_sum}'
     assert err_mult<tolerance, f'err = {err_mult}'
 
@@ -56,8 +56,8 @@ def test_adjoint(op, tolerance=1e-10):
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
-    err = np.real(op.codomain.vec_type.vdot(y, fx) - op.domain.vec_type.vdot(fty, x))
-    assert np.abs(err) < tolerance, 'err = {}'.format(err)
+    err = (op.codomain.vec_type.vdot(y, fx) - op.domain.vec_type.vdot(fty, x)).real
+    assert abs(err) < tolerance, 'err = {}'.format(err)
 
 
 def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=False):

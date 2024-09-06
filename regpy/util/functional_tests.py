@@ -1,4 +1,4 @@
-import numpy as np
+from random import uniform
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     r"""Numerically test validity of moreaus identity for a given functional
@@ -60,7 +60,7 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
         v=func.domain.randn()
         v*=v_length/func.domain.norm(v)
     grad_u=func.subgradient(u)
-    err=func(u)-func(v)+np.real(func.domain.vdot(grad_u,v-u))
+    err=func(u)-func(v)+(func.domain.vdot(grad_u,v-u)).real
     assert err<tolerance,f'err={err}'
     
 # def test_subgradient_and_conj(func,u=None,eps=1e-10):
@@ -96,7 +96,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     if(u is None):
         u=func.domain.randn()
     grad_u=func.subgradient(u)
-    err=np.abs(np.real(func.domain.vdot(u,grad_u))-func(u)-func.conj(grad_u))
+    err=abs((func.domain.vdot(u,grad_u)).real-func(u)-func.conj(grad_u))
     assert err<tolerance,f'err={err}'
 
 def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_conj_N=5,print_results=False,tolerance=1e-10):
@@ -135,7 +135,7 @@ def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_
         print(type(func))
     for u in u_s:
         try:
-            tau=np.random.uniform(tolerance,4)
+            tau=uniform(tolerance,4)
             test_moreaus_identity(func,u,tau=tau,tolerance=tolerance)
         except(NotImplementedError):
             if(print_results):

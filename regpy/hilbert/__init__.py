@@ -4,7 +4,7 @@
 from copy import copy
 
 import numpy as np
-import math as ma
+from math import sqrt
 
 from regpy import util, functionals, operators, vecsps
 from scipy.sparse import csc_matrix
@@ -66,7 +66,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return np.real(self.vecsp.vec_type.vdot(x, self.gram(y)))
+        return (self.vecsp.vec_type.vdot(x, self.gram(y))).real
 
     def norm(self, x):
         """Compute the norm of an element.
@@ -83,7 +83,7 @@ class HilbertSpace:
         float
             The norm.
         """
-        return ma.sqrt(self.inner(x, x))
+        return sqrt(self.inner(x, x))
 
     @util.memoized_property
     def norm_functional(self):
@@ -120,7 +120,7 @@ class HilbertSpace:
             return NotImplemented
 
     def __rmul__(self, other):
-        if np.isreal(other):
+        if isinstance(other,float):
             return DirectSum((other, self), flatten=True)
         else:
             return NotImplemented
@@ -424,7 +424,7 @@ class AbstractSpaceBase:
             return NotImplemented
 
     def __rmul__(self, other):
-        if np.isreal(other):
+        if isinstance(other,float):
             return AbstractSum((other, self), flatten=True)
         else:
             return NotImplemented

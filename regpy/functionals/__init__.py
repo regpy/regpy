@@ -3,6 +3,7 @@ from collections import defaultdict
 from copy import copy
 
 import numpy as np
+from math import inf
 
 from regpy import operators, util, vecsps
 from regpy import hilbert
@@ -50,14 +51,14 @@ class Functional:
     convexity_param: float [default: 0]
         parameter of strong convexity of the functional. 
         0 if the functional is not strongly convex.
-    Lipschitz: float [default: np.inf]
+    Lipschitz: float [default: math.inf]
         Lipschitz continuity constant of the gradient.  
-        np.inf the gradient is not Lipschitz continuous.
+        math.inf the gradient is not Lipschitz continuous.
     """
     def __init__(self, domain, h_domain=None, 
                  linear = False,
                  convexity_param=0.,
-                 Lipschitz = np.inf):
+                 Lipschitz = inf):
         assert isinstance(domain, vecsps.VectorSpaceBase)
         self.domain = domain
         """The underlying vector space."""
@@ -83,7 +84,7 @@ class Functional:
         r"""
         Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
         \[
-            F(x+ h) \geq  F(x) + \np.vdot(v,h) for all h
+            F(x+ h) \geq  F(x) + vdot(v,h) for all h
         \]
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -113,7 +114,7 @@ class Functional:
         r"""
         Returns a subgradient \(\xi)\ of the functional at `x` characterized by
         \[
-            F(y) \geq  F(x) + np.vdot(\xi,y-x) for all y  
+            F(y) \geq  F(x) + vdot(\xi,y-x) for all y  
         \]
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -378,8 +379,8 @@ class Conj(Functional):
         self.func = func
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
-                         Lipschitz = 1/func.convexity_param if func.convexity_param>0 else np.inf,
-                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else np.inf
+                         Lipschitz = 1/func.convexity_param if func.convexity_param>0 else inf,
+                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf
                          )
 
     def _eval(self,x):
@@ -425,7 +426,7 @@ class Conj(Functional):
 class LinearFunctional(Functional):
     r"""Linear functionals
     Linear functional given by
-        F(x) = np.vdot(a, x)
+        F(x) = vdot(a, x)
     
     +, +=, *, *= with `LinearFunctional`s and scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`s. 
 
@@ -465,7 +466,7 @@ class LinearFunctional(Functional):
         return operators.Zero(self.domain)
 
     def _conj(self,x_star):
-        return 0 if self.domain.vec_type.norm(x_star- self._gradient)==0 else np.inf
+        return 0 if self.domain.vec_type.norm(x_star- self._gradient)==0 else inf
 
     def _conj_subgradient(self, xstar):
         if xstar == self._gradient:
@@ -581,12 +582,12 @@ class SquaredNorm(Functional):
     def _conj(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
-            return np.real(self.h_domain.domain.vec_type.vdot(xstar-bstar, self.gram_inv(xstar-bstar))) / (2.*self.a) - self.c
+            return (self.h_domain.domain.vec_type.vdot(xstar-bstar, self.gram_inv(xstar-bstar))).real / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
-            return -self.c if self.domain.vec_type.norm(xstar-bstar)<=eps*(self.domain.vec_type.norm(xstar)+eps) else np.inf
+            return -self.c if self.domain.vec_type.norm(xstar-bstar)<=eps*(self.domain.vec_type.norm(xstar)+eps) else inf
         else:
-            return -np.inf
+            return -inf
 
     def _conj_subgradient(self, xstar):
         bstar = self.gram(self.b)
@@ -792,7 +793,7 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0])
         elif self.linear_table.count(False)==0:
-            return 0 if xstar == self.grad_sum else np.inf
+            return 0 if xstar == self.grad_sum else inf
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return self.coeffs[j]*self.funcs[j]._conj((xstar-self.grad_sum)/self.coeffs[j])
@@ -990,7 +991,7 @@ class Composed(Functional):
         Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
         Used only to define self.convexity_param
     """
-    def __init__(self, func, op,op_norm = np.inf, op_lower_bound = 0):
+    def __init__(self, func, op,op_norm = inf, op_lower_bound = 0):
         assert isinstance(func, Functional)
         assert isinstance(op, operators.Operator)
         assert func.domain == op.codomain
@@ -1394,7 +1395,7 @@ class HilbertNormGeneric(Functional):
 
     def _linearize(self, x):
         gx = self.h_space.gram(x)
-        y = np.real(self.domain.vec_type.vdot(x, gx)) / 2
+        y = (self.domain.vec_type.vdot(x, gx)).real / 2
         return y, gx
 
     def _subgradient(self, x):
@@ -1412,11 +1413,11 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return np.real(self.domain.vec_type.vdot(xstar, self.h_space.gram_inv(xstar))) / 2
+        return (self.domain.vec_type.vdot(xstar, self.h_space.gram_inv(xstar))).real / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
-        y = np.real(self.domain.vec_type.vdot(xstar, gx)) / 2
+        y = (self.domain.vec_type.vdot(xstar, gx)).real / 2
         return y, gx
 
     def _conj_subgradient(self, xstar):
@@ -1877,7 +1878,7 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
-        return self.sigmanp.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
+        return self.sigma*np.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
             np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
 
 
@@ -2190,10 +2191,10 @@ class TVUniformGridFcts(Functional):
         Underlying Hilbert space for proximal. 
     """
     def __init__(self, domain, h_domain=None):
+        assert isinstance(domain, vecsps.UniformGridFcts)
         self.dim = np.size(domain.shape)
         """Dimension of the Uniform Grid functions.
         """
-        assert isinstance(domain, vecsps.UniformGridFcts)
         super().__init__(domain,h_domain=h_domain)
 
     def _eval(self, x):

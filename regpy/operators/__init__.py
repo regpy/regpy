@@ -10,10 +10,8 @@ The base class is `Operator`.
 
 from collections import defaultdict
 from copy import deepcopy
-from re import A
 
 import numpy as np
-from numpy.core.numeric import zeros_like
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix
 import scipy.sparse.linalg as sla
@@ -111,7 +109,7 @@ class Operator:
     Note that the adjoint should be computed with respect to the standard real inner product on the
     domain / codomain, given as
 
-        np.real(domain.vec_type.vdot(x, y)) or np.real(codomain.vec_type.vdot(x, y))
+        real(domain.vec_type.vdot(x, y)) or real(codomain.vec_type.vdot(x, y))
 
     Other inner products on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.
@@ -450,7 +448,9 @@ class LinearCombination(Operator):
                 not np.iscomplex(coeff)
                 or not op.codomain
                 or op.codomain.is_complex
-            ), "Complex coefficients can only used for operators with complex codomains"
+            ), "Complex coefficients can only be used for operators with complex codomains"
+            if isinstance(coeff,np.complex_) or isinstance(coeff,np.real_):
+                coeff = coeff.item()
             if isinstance(op, type(self)):
                 for c, o in zip(op.coeffs, op.ops):
                     coeff_for_op[o] += coeff * c
@@ -509,13 +509,13 @@ class LinearCombination(Operator):
             ops = self._derivs
         x = self.domain.zeros()
         for coeff, op in zip(self.coeffs, ops):
-            x += np.conj(coeff) * op.adjoint(y)
+            x += coeff.conjugate() * op.adjoint(y)
         return x
     
     def _adjoint_derivative(self, x):
         y = self.domain.zeros()
         for coeff, adjoint_deriv in zip(self.coeffs, self._adjoint_derivs):
-            y += np.abs(coeff)**2 * adjoint_deriv(x)
+            y += abs(coeff)**2 * adjoint_deriv(x)
         return y
 
     @property
