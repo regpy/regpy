@@ -449,7 +449,7 @@ class LinearCombination(Operator):
                 or not op.codomain
                 or op.codomain.is_complex
             ), "Complex coefficients can only be used for operators with complex codomains"
-            if isinstance(coeff,np.complex_) or isinstance(coeff,np.real_):
+            if isinstance(coeff,np.number):
                 coeff = coeff.item()
             if isinstance(op, type(self)):
                 for c, o in zip(op.coeffs, op.ops):
@@ -1384,8 +1384,8 @@ class MatrixMultiplication(Operator):
 
     def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
         assert len(matrix.shape) == 2
-        assert domain is not None or isinstance(domain,vecsps.NumPyVectorSpace), "Domain either non or NumPyVectorSpace given was {}".format(type(domain))
-        assert codomain is not None or isinstance(codomain,vecsps.NumPyVectorSpace), "Codomain either non or NumPyVectorSpace given was {}".format(type(codomain))
+        assert domain is None or isinstance(domain,vecsps.NumPyVectorSpace), "Domain either none or NumPyVectorSpace given was {}".format(type(domain))
+        assert codomain is None or isinstance(codomain,vecsps.NumPyVectorSpace), "Codomain either none or NumPyVectorSpace given was {}".format(type(codomain))
         self.matrix = matrix
         if dtype == None:
             dtype = matrix.dtype
