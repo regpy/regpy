@@ -353,7 +353,20 @@ class TupleVector:
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
     def sum(self):
-        return sum((sum(v_i) for v_i in self.v))
+        z = []
+        for v_i in self.v:
+            if isinstance(v_i,np.ndarray):
+                s = np.sum(v_i)
+            else:
+                try:
+                    s = sum(v_i)
+                except TypeError:
+                    s = v_i 
+            if isinstance(s,np.number):
+                z.append(s.item())
+            else:
+                z.append(s)
+        return sum(z)
     
     def __iadd__(self,other):
         assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
