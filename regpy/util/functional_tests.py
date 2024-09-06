@@ -10,7 +10,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     ----------
     func : regpy.functionals.Functional
         The functional.
-    u : np.ndarray
+    u : any
         Element in domain of func, if None it is chosen at random. Defaults to None.
     tau : float, optional
         Positive number tau in prox
@@ -27,7 +27,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     prox = func.proximal(u,tau)
     gram = func.h_domain.gram
     proxstar = func.conj.proximal(gram(u/tau),1/tau)
-    err=np.linalg.norm(u-prox-tau*gram.inverse(proxstar))
+    err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
     assert err<tolerance,f'err={err}'
 
 def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
@@ -40,9 +40,9 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
     ----------
     func : regpy.functionals.Functional
         The functional.
-    u : np.ndarray, optional
+    u : any, optional
         Element in essential domain of func, where gradient is computed. If None it is chosen at random. Defaults to None.
-    v : np.ndarray, optional
+    v : any, optional
         Element in domain of func, where gradient is computed. If None it is chosen at random with length given by v_length. Defaults to None.
     v_length : float, optional
         Positive number determining the length of v if it is not given explicitly. Defaults to 1e-5.
@@ -58,9 +58,9 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
         u=func.domain.randn()
     if(v is None):
         v=func.domain.randn()
-        v*=v_length/np.linalg.norm(v)
+        v*=v_length/func.domain.norm(v)
     grad_u=func.subgradient(u)
-    err=func(u)-func(v)+np.real(np.vdot(grad_u,v-u))
+    err=func(u)-func(v)+np.real(func.domain.vdot(grad_u,v-u))
     assert err<tolerance,f'err={err}'
     
 # def test_subgradient_and_conj(func,u=None,eps=1e-10):
@@ -83,7 +83,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     ----------
     func : regpy.functionals.Functional
         The functional.
-    u : np.ndarray, optional
+    u : any, optional
         Element in essential domain of func, where gradient is computed. If None it is chosen at random. Defaults to None.
     tolerance : float, optional
         The maximum allowed error. Defaults to 1e-10.
@@ -96,7 +96,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     if(u is None):
         u=func.domain.randn()
     grad_u=func.subgradient(u)
-    err=np.abs(np.real(np.vdot(u,grad_u))-func(u)-func.conj(grad_u))
+    err=np.abs(np.real(func.domain.vdot(u,grad_u))-func(u)-func.conj(grad_u))
     assert err<tolerance,f'err={err}'
 
 def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_conj_N=5,print_results=False,tolerance=1e-10):
@@ -108,13 +108,13 @@ def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_
     ----------
     func : regpy.functionals.Functional
         The functional.
-    u_s : list of np.ndarray, optional
+    u_s : list of any, optional
         List of elements in essential domain of func. If None it they chosen at random. Defaults to None.
     sample_N : int, optional
         If u_s i None this is the number of randomly generated elements in u_s. Defaults to 5.
     test_conj : bool, optional
         Determines wether the conjugate functional should be tested aswell. Defaluts to True.
-    u_stars : list of np.ndarray, optional
+    u_stars : list of any, optional
         Same as u_s but for conjugate functional. Defaults to None.
     sample_conj_N : int, optional
         Same as sample_N but for conjugate functional. Defaults to 5.

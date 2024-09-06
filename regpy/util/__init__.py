@@ -2,7 +2,6 @@ from functools import wraps
 from logging import getLogger
 
 import numpy as np
-from scipy.spatial import Voronoi
 
 
 @property
@@ -48,8 +47,6 @@ def complex2real(z, axis=-1):
     if z.flags.c_contiguous:
         x = z.view(dtype=z.real.dtype).reshape(z.shape + (2,))
     else:
-        # TODO Does this actually work in all cases, or do we have to perform a
-        # copy here?
         x = np.lib.stride_tricks.as_strided(
             z.real, shape=z.shape + (2,),
             strides=z.strides + (z.real.dtype.itemsize,))
