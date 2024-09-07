@@ -226,10 +226,24 @@ class NgsVector(VectorBase):
             return copy(self)
         return NgsVector(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
     
-    def flatten(self, x):
-        return x
+    def flatten(self, x:NgsBaseVector) -> np.ndarray:
+        if self.is_complex:
+            return np.concatenate([x.vec.FV().NumPy().real,x.vec.FV().NumPy().imag])
+        else:
+            return x.vec.FV().NumPy().copy()
 
-    def fromflat(self, x):
+    def fromflat(self, vec:np.ndarray) -> NgsBaseVector:
+        if vec.ndim == 1:
+            if self.is_complex and vec.size == self.shape[0] * 2:
+                x = self.zeros()
+                x.vec.FV().NumPy()[:] = vec[:self.shape[0]] + 1j*vec[self.shape[0]]
+            elif vec.size == self.shape[0]:
+                x = self.zeros()
+                x.vec.FV().NumPy()[:] = vec
+            else:
+                raise ValueError("provided vector has non fitting shape.")
+        else:
+            raise ValueError("Provided vector must be one dimensional")
         return x
     
     def __eq__(self, other: object) -> bool:
@@ -302,11 +316,11 @@ class NgsVectorSpace(VectorSpaceBase):
         gf.vec.data = x.vec
         return gf
     
-    def from_ngs(self, ngs_elem):
+    def from_ngs(self, ngs_elem, definedon : ngs.comp.Region|None = None):
         if isinstance(ngs_elem,ngs.comp.GridFunction):
             return NgsBaseVector(ngs_elem.vec,make_copy=True)
         else:
-            self._gfu_fes.Set(ngs_elem)
+            self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return self._help_x.copy()
 
     

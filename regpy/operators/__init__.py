@@ -1298,7 +1298,6 @@ class ApproximateHessian(Operator):
     def _adjoint(self, x):
         return self._eval(x)
 
-###################### General Operators that require NumPyVectorSpaces ######################
 
 class SciPyLinearOperator(sla.LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
@@ -1311,10 +1310,7 @@ class SciPyLinearOperator(sla.LinearOperator):
     """
     def __init__(self, op2):
         self.op2 = op2
-        assert isinstance(self.op2.domain, vecsps.NumPyVectorSpace), "Domain is not a NumPyVectorSpace"
-        assert isinstance(self.op2.codomain, vecsps.NumPyVectorSpace), "Codomain is not a NumPyVectorSpace"
         r"""the wrapped operator"""
-        # super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
         domain_shape=np.prod(op2.domain.shape)
         codomain_shape=np.prod(op2.codomain.shape)
         if(op2.domain.is_complex):
@@ -1354,6 +1350,7 @@ class SciPyLinearOperator(sla.LinearOperator):
         op2 = self.op2
         return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
 
+###################### General Operators that require NumPyVectorSpaces ######################
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 

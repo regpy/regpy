@@ -54,7 +54,15 @@ class VectorBase:
     def size(self):
         """The size of elements (as arrays) of this vector space."""
         return np.prod(self.shape)
-        
+    
+    @property
+    def real_size(self):
+        """The size of elements (as arrays) of this vector space when casting complex to real."""
+        if self.is_complex:
+            return np.prod(self.shape)*2
+        else:
+            return np.prod(self.shape)
+    
     def zeros(self):
         """Should generate a zero vector.
 
@@ -488,7 +496,11 @@ class VectorSum(VectorBase):
         else:
             self.summands = summands
         self.n_components = len(self.summands)
-        super().__init__(TupleVector, (np.sum([s.size for s in summands]),), complex = any([s.is_complex for s in summands]))
+        super().__init__(TupleVector, (sum([s.size for s in summands]),), complex = any([s.is_complex for s in summands]))
+
+    @property
+    def real_size(self):
+        return sum([s.real_size for s in self.summands]) 
 
     def zeros(self):
         return TupleVector([s.zeros() for s in self.summands])
@@ -525,13 +537,24 @@ class VectorSum(VectorBase):
     def to_real(self):
         return VectorSum(*[s.to_real for s in self.summands])
     
-    def flatten(self, x):
+    def flatten(self, x : TupleVector) -> np.ndarray:
         assert self.is_vector(x)
-        return TupleVector([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
+        return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
     
-    def fromflat(self, x):
-        assert isinstance(TupleVector) and x.ndim == self.n_components
-        return TupleVector([s.fromflat(x_i) for x_i,s in zip(x.v,self.summands)])
+    def fromflat(self, x : np.ndarray) -> TupleVector:
+        if x.ndim == 1 and np.isreal(x) and x.size == self.real_size:
+            ret = []
+            ind = 0
+            for s in self.summands:
+                if s.is_complex:
+                    ret.append(s.fromflat(x[ind:ind+2*s.size]))
+                    ind += 2*s.size
+                else:
+                    ret.append(s.fromflat(x[ind:ind+s.size]))
+                    ind += s.size
+            return TupleVector(ret)
+        else:
+            raise ValueError("x has to be of type np.ndarray not {}".format(type(x)))
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
@@ -617,7 +640,7 @@ class NumPyVector(VectorBase):
     def to_real(self):
         return NumPyVector(self.shape,np.empty(0, dtype=self.dtype).real.dtype)
     
-    def flatten(self, x):
+    def flatten(self, x : np.ndarray) -> np.ndarray:
         x = np.asarray(x)
         assert self.shape == x.shape
         if self.is_complex:
@@ -631,7 +654,7 @@ class NumPyVector(VectorBase):
             raise TypeError('Real vector space can not handle complex vectors')
         return x.ravel()
 
-    def fromflat(self, x):
+    def fromflat(self, x : np.ndarray) -> np.ndarray:
         x = np.asarray(x)
         assert util.is_real_dtype(x.dtype)
         if self.is_complex:
