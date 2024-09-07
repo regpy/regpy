@@ -120,8 +120,8 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
     def __init__(self, 
             domain : NgsVectorSpace, 
             sol_domain : NgsVectorSpace, 
-            bdr_val : type[NgsBaseVector|types.NoneType] = None, 
-            a_bdr_val : type[NgsBaseVector|types.NoneType] = None) -> None:
+            bdr_val : NgsBaseVector | types.NoneType = None, 
+            a_bdr_val : NgsBaseVector | types.NoneType = None) -> None:
         super().__init__(domain, sol_domain, linear = False)
         self.gfu_a=ngs.GridFunction(self.domain.fes)
         self.gfu_h=ngs.GridFunction(self.domain.fes)
@@ -210,7 +210,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         """
         raise NotImplementedError
     
-    def _bf_0(self) -> type[ngs.comp.BilinearForm|types.NoneType]:
+    def _bf_0(self) -> ngs.comp.BilinearForm | types.NoneType:
         r"""Implementation of \(b_0\) as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
         overwritten with subclasses.  
 
@@ -234,8 +234,8 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         return ngs.LinearForm(self.codomain.fes).Assemble()
         
     def _c_u(self,
-            h : NgsBaseVector) -> ngs.comp.BilinearForm:
-        self.gfu_h.vec.data = 1*h.vec
+            h : ngs.la.BaseVector) -> ngs.comp.BilinearForm:
+        self.gfu_h.vec.data = 1*h
         ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.gfu_h.vec)
         return self.c_u.Assemble()
     
@@ -418,8 +418,8 @@ class Coefficient(NGSolveOperator):
         self, 
         domain : NgsVectorSpace, 
         rhs : ngs.fem.CoefficientFunction, 
-        bc: type[ngs.fem.CoefficientFunction | types.NoneType]=None, 
-        codomain : type[NgsVectorSpace | types.NoneType] = None,
+        bc: ngs.fem.CoefficientFunction | types.NoneType=None, 
+        codomain : NgsVectorSpace | types.NoneType = None,
         diffusion : bool = False, 
         reaction : bool = True
     ) -> None:
@@ -547,7 +547,9 @@ class ProjectToBoundary(NGSolveOperator):
         Codomain onto which to project. Defaults: domain
     """
 
-    def __init__(self, domain: NgsVectorSpace, codomain: type[NgsVectorSpace | types.NoneType] = None) -> None:
+    def __init__(self, 
+            domain: NgsVectorSpace, 
+            codomain: NgsVectorSpace | types.NoneType = None) -> None:
         codomain = codomain or domain
         self.same_domain = codomain == domain
         super().__init__(domain, codomain)
