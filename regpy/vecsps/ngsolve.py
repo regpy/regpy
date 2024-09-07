@@ -13,7 +13,7 @@ from copy import copy,deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
 
-from regpy.vecsps import VectorBase, VectorSpaceBase, DirectSum
+from regpy.vecsps import VectorStructureBase, VectorSpaceBase, DirectSum
 from regpy.util import is_complex_dtype, classlogger
 
 @dataclass 
@@ -152,7 +152,7 @@ class NgsBaseVector:
         return result
 
 
-class NgsVector(VectorBase):
+class NgsVector(VectorStructureBase):
     def __init__(self, fes, bdr=None):
         assert isinstance(fes, ngs.FESpace)
         self.fes = fes

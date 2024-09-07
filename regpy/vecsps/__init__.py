@@ -35,7 +35,7 @@ from typing import List
 
 from regpy import util, operators
 
-class VectorBase:
+class VectorStructureBase:
 
     log = util.classlogger
 
@@ -56,12 +56,12 @@ class VectorBase:
         return np.prod(self.shape)
     
     @property
-    def real_size(self):
+    def real_size(self) -> int:
         """The size of elements (as arrays) of this vector space when casting complex to real."""
         if self.is_complex:
-            return np.prod(self.shape)*2
+            return int(np.prod(self.shape)*2)
         else:
-            return np.prod(self.shape)
+            return int(np.prod(self.shape))
     
     def zeros(self):
         """Should generate a zero vector.
@@ -111,7 +111,7 @@ class VectorBase:
         """
         raise NotImplementedError
     
-    def rand(self,x):
+    def rand(self,random_generator = None):
         """Generate a poisson vector.
 
         Parameters
@@ -151,7 +151,7 @@ class VectorBase:
 
         Returns
         -------
-        VectorBase
+        VectorStructureBase
             Same vectors with complex dtype. 
         
         Raises
@@ -166,7 +166,7 @@ class VectorBase:
 
         Returns
         -------
-        VectorBase
+        VectorStructureBase
             Same vectors with real dtype. 
         
         Raises
@@ -241,25 +241,25 @@ class VectorBase:
                 self.is_complex == other.is_complex)
 
     def __add__(self, other):
-        if isinstance(other, VectorBase):
+        if isinstance(other, VectorStructureBase):
             return VectorSum(self, other,flatten=True)
         else:
             return NotImplemented
 
     def __radd__(self, other):
-        if isinstance(other, VectorBase,flatten=True):
+        if isinstance(other, VectorStructureBase,flatten=True):
             return VectorSum(other, self)
         else:
             return NotImplemented
         
     # def __mul__(self, other):
-    #     if isinstance(other, VectorBase):
+    #     if isinstance(other, VectorStructureBase):
     #         return VectorProd(self, other)
     #     else:
     #         return NotImplemented
 
     # def __rmul__(self, other):
-    #     if isinstance(other, VectorBase):
+    #     if isinstance(other, VectorStructureBase):
     #         return VectorProd(other, self)
     #     else:
     #         return NotImplemented
@@ -481,11 +481,11 @@ class TupleVector:
         return TupleVector([method(s_k) for s_k in self])
 
 
-class VectorSum(VectorBase):
+class VectorSum(VectorStructureBase):
 
     log = util.classlogger
 
-    def __init__(self, *summands,flatten=False) -> None:
+    def __init__(self, *summands : type[VectorStructureBase], flatten: bool = False) -> None:
         if flatten:
             self.summands = []
             for s in summands:
@@ -499,25 +499,25 @@ class VectorSum(VectorBase):
         super().__init__(TupleVector, (sum([s.size for s in summands]),), complex = any([s.is_complex for s in summands]))
 
     @property
-    def real_size(self):
+    def real_size(self) -> int:
         return sum([s.real_size for s in self.summands]) 
 
-    def zeros(self):
+    def zeros(self) -> TupleVector:
         return TupleVector([s.zeros() for s in self.summands])
     
-    def ones(self):
+    def ones(self)-> TupleVector:
         return TupleVector([s.ones() for s in self.summands])
     
-    def empty(self):
+    def empty(self)-> TupleVector:
         return TupleVector([s.empty() for s in self.summands])
     
-    def rand(self,random_generator = None):
+    def rand(self,random_generator = None)-> TupleVector:
         return TupleVector([s.rand(random_generator=random_generator) for s in self.summands])
     
-    def poisson(self,x):
+    def poisson(self,x)-> TupleVector:
         return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
 
-    def is_vector(self,x):
+    def is_vector(self,x) -> bool:
         if isinstance(x,TupleVector) and x.ndim == self.n_components and all([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)]):
             return True
         else:
@@ -526,7 +526,7 @@ class VectorSum(VectorBase):
             print([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)])
             return False
         
-    def vdot(self, x, y):
+    def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
         assert self.is_vector(x), "x of type {} is not a vector".format(type(x)) 
         assert self.is_vector(y), "y of type {} is not a vector".format(type(y))
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
@@ -568,13 +568,14 @@ class VectorSum(VectorBase):
                 vec.v[i] = b
                 yield vec
     
-    def logical_not(self,x):
+    def logical_not(self,x) -> TupleVector:
         return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
     
-    def logical_xor(self,x,y):
+    def logical_xor(self,x,y) -> TupleVector:
         return TupleVector([s.logical_xor(x_i) for x_i,s in zip(x.v,self.summands)])
-    
-class NumPyVector(VectorBase):
+
+
+class NumPyVector(VectorStructureBase):
 
     log = util.classlogger
 
@@ -706,13 +707,13 @@ class VectorSpaceBase:
 
     Parameters
     ----------
-    vector_type : VectorBase
+    vector_type : VectorStructureBase
         The class of vectors used.
     """
 
     log = util.classlogger
 
-    def __init__(self, vector_type : VectorBase):
+    def __init__(self, vector_type : VectorStructureBase):
         self.vec_type = vector_type
         """The vector type"""
         self.shape = self.vec_type.shape
