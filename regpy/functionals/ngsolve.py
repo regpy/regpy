@@ -1,4 +1,4 @@
-'''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsSpace`. 
+'''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsVectorSpace`. 
 '''
 import ngsolve as ngs
 
@@ -30,14 +30,14 @@ class SignumFilter(ngs.la.BaseMatrix):
 
 
 class NgsL1(Functional):
-    r"""Implementation of the \(L^1\)-norm on a given `NgsSpace`. It is registered under the
+    r"""Implementation of the \(L^1\)-norm on a given `NgsVectorSpace`. It is registered under the
     Abstract functional `L1` and should not be called directly but rather used by defining the 
     abstract `L1` functional as the `penalty` or `data_fid` when initializing the regularization
     setting by calling `regpy.solvers.RegularizationSetting`.
 
     Parameters
     ----------
-    domain : NgsSpace
+    domain : NgsVectorSpace
         The underlying `ngsolve` space. 
     """
     def __init__(self, domain):
@@ -75,14 +75,14 @@ class NgsL1(Functional):
 
 
 class NgsTV(Functional):
-    r"""Implementation of the total variation functional \(TV\) on a given `NgsSpace`. It is 
+    r"""Implementation of the total variation functional \(TV\) on a given `NgsVectorSpace`. It is 
     registered under the Abstract functional `TV` and should not be called directly but rather 
     used by defining the abstract `TV` functional as the `penalty` or `data_fid` when initializing 
     the regularization setting by calling `regpy.solvers.RegularizationSetting`.
 
     Parameters
     ----------
-    domain : NgsSpace
+    domain : NgsVectorSpace
         The underlying `ngsolve` space.
     h_domain : HilbertSpace
         The Hilbert space wrt which the proximal gets computed. 
