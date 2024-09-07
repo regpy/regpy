@@ -1,5 +1,6 @@
 import ngsolve as ngs
 from regpy.operators.ngsolve import NGSolveOperator
+from regpy.vecsps.ngsolve import NgsBaseVector
 
 
 class TFM(NGSolveOperator):
@@ -36,6 +37,7 @@ class TFM(NGSolveOperator):
 
         # grid functions for later use
         self.gfu_eval = ngs.GridFunction(self.fes_codomain)  # solution, return value of _eval
+        self._y_eval = NgsBaseVector(self.gfu_eval.vec)
         self.gfu_adjoint = ngs.GridFunction(self.fes_domain) # grid function return value of adjoint (trace of gfu_adjoint_sol)
 
         self.gfu_bf = ngs.GridFunction(self.fes_codomain)  # grid function for defining integrator (bilinearform)
@@ -54,12 +56,6 @@ class TFM(NGSolveOperator):
         self.b = ngs.LinearForm(self.fes_domain)
         self.b += self.gfu_lf * v * ngs.ds(domain.bdr)
 
-
-        # Define linearform to trick ngsolve for computation of discrete adjoint
-        self.b_help = ngs.LinearForm(self.fes_domain)
-        self.b_help.Assemble()
-
-
         # Initialize preconditioner for solving the Dirichlet problems by ngs.BVP
         self.prec = ngs.Preconditioner(self.a, 'direct')
         self.a.Assemble()
@@ -70,24 +66,22 @@ class TFM(NGSolveOperator):
     def _eval(self, traction, differentiate=False):
 
         # Assemble Linearform, boundary term
-        self._read_in(traction, self.gfu_lf)
+        self.gfu_lf.vec.data = 1*traction.vec
         self.b.Assemble()
 
         self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 
-        return self.gfu_eval.vec.FV().NumPy()[:].copy()
+        return self._y_eval
 
 
     def _adjoint(self, displacement):
         # Bilinearform already assembled in init -> initialization with 0, s.t. object exists
         # Diskrete Adjoint w.r.t. standard inner product
 
-        self.b_help.vec.FV().NumPy()[:] = displacement.copy()
-        self._solve_dirichlet_problem(bf=self.a, lf=self.b_help, gf=self.gfu_adjoint, prec=self.prec)
-        self._read_in(self.gfu_adjoint.vec.FV().NumPy()[:].copy(), self.gfu_lf)
+        self._solve_dirichlet_problem(bf=self.a, lf=displacement, gf=self.gfu_adjoint, prec=self.prec)
+        self.gfu_lf.vec.data = self.gfu_adjoint.vec
         self.b.Assemble()
-
-        return self.b.vec.FV().NumPy()[:].copy()
+        return NgsBaseVector(self.b.vec,make_copy=True)
 
     def _strain(self,u):
         return 0.5 * (ngs.Grad(u) + ngs.Grad(u).trans)
