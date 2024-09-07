@@ -4,7 +4,7 @@ import ngsolve as ngs
 from ngsolve.webgui import Draw
 from netgen.occ import *
 
-from regpy.vecsps.ngsolve import NgsSpace
+from regpy.vecsps.ngsolve import NgsVectorSpace
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.landweber import Landweber
 import regpy.stoprules as rules
@@ -60,22 +60,22 @@ mesh_rec.Curve(3)
 
 fes_domain_gen = ngs.VectorH1(mesh_gen, order=k, dirichlet="bottom")
 # fes_domain = ngs.H1(mesh, order=k, dim=3)
-domain_gen = NgsSpace(fes_domain_gen, bdr='top')
+domain_gen = NgsVectorSpace(fes_domain_gen, bdr='top')
 
 fes_codomain_gen = ngs.VectorH1(mesh_gen, order=k, dirichlet="bottom")
 # fes_codomain = ngs.H1(mesh, order=k, dirichlet="bottom|side", dim=3)
-codomain_gen = NgsSpace(fes_codomain_gen)
+codomain_gen = NgsVectorSpace(fes_codomain_gen)
 
 op_gen = TFM(domain_gen, codomain=codomain_gen, mu=mu, lam=lam)
 
 
 fes_domain_rec = ngs.VectorH1(mesh_rec, order=k, dirichlet="bottom")
 # fes_domain = ngs.H1(mesh, order=k, dim=3)
-domain_rec = NgsSpace(fes_domain_rec, bdr='top')
+domain_rec = NgsVectorSpace(fes_domain_rec, bdr='top')
 
 fes_codomain_rec = ngs.VectorH1(mesh_rec, order=k, dirichlet="bottom")
 # fes_codomain = ngs.H1(mesh, order=k, dirichlet="bottom|side", dim=3)
-codomain_rec = NgsSpace(fes_codomain_rec)
+codomain_rec = NgsVectorSpace(fes_codomain_rec)
 
 op_rec = TFM(domain_rec, codomain=codomain_rec, mu=mu, lam=lam)
 
@@ -117,7 +117,7 @@ Draw(traction_true_gf, mesh_gen)
 displacement_true = op_gen(traction_true)
 
 
-Draw(codomain_gen.to_ngs(displacement_true))
+Draw(codomain_gen.to_gf(displacement_true))
 
 
 
@@ -126,10 +126,10 @@ np.random.seed(42)
 
 noise = 1e-6 * codomain_rec.randn()
 data_gf = ngs.GridFunction(fes_codomain_rec)
-data_gf.Set(codomain_gen.to_ngs(displacement_true))
+data_gf.Set(codomain_gen.to_gf(displacement_true))
 data = codomain_rec.from_ngs(data_gf) + noise
 
-Draw(codomain_rec.to_ngs(data), mesh_rec)
+Draw(codomain_rec.to_gf(data), mesh_rec)
 
 
 # ## Solve the Inverse Problem with regularization
@@ -152,16 +152,16 @@ Draw(codomain_rec.to_ngs(data), mesh_rec)
 setting = RegularizationSetting(op=op_rec, penalty=L2Boundary, data_fid=Hm0)
 init = domain_rec.from_ngs((0, 0, 0))
 
-landweber = Landweber(setting, data, init)
+landweber = Landweber(setting, data, init,op_norm_method="power_method")
 
 stoprule = (
         rules.CountIterations(100) +
-        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=1.04)
+        rules.Discrepancy(setting.h_codomain.norm, data, noiselevel=setting.h_codomain.norm(noise), tau=2.74)
 )
 
 reco, reco_data = landweber.run(stoprule)
 
-reco_gf = domain_rec.to_ngs(reco)
+reco_gf = domain_rec.to_gf(reco)
 
 
 # ## Compute Error
@@ -184,7 +184,7 @@ Draw(traction_true_gf, domain_rec.fes.mesh)
 
 Draw(reco_gf)
 
-error = traction_true_gf - domain_rec.to_ngs(reco)
+error = traction_true_gf - domain_rec.to_gf(reco)
 
 Draw(error, domain_rec.fes.mesh)
 
