@@ -1,7 +1,6 @@
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsps.ngsolve import NgsBaseVector
 from regpy.hilbert import HilbertSpace
 from regpy.operators import Operator
 from regpy.util import memoized_property
@@ -38,10 +37,14 @@ class Matrix(Operator):
         self._inverse = None
 
     def _eval(self, x):
-        return NgsBaseVector(self.mat * x.vec,make_copy=True)
+        res = self.domain.zeros()
+        res.vec.data = self.mat * x.vec
+        return res
 
     def _adjoint(self, y):
-        return NgsBaseVector(self.mat.T * y.vec,make_copy=True)
+        res = self.domain.zeros()
+        res.vec.data = self.mat.T * y.vec
+        return res
 
     @property
     def inverse(self):
