@@ -23,7 +23,7 @@ dependencies = [
 Homepage = "https://num.math.uni-goettingen.de/regpy/"
 
 [project.optional-dependencies]
-ngsolve = ["ngsolve>=6.2.2404.post2"]
+ngsolve = ["ngsolve>=6.2.2404.post2","netgen"]
 
 [build-system]
 requires = [
@@ -31,9 +31,3 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["regpy","examples"]
-
-[tool.setuptools.package-dir]
-"regpy" = "regpy"
-"examples" = "examples"
