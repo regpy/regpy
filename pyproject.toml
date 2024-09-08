@@ -23,7 +23,7 @@ dependencies = [
 Homepage = "https://num.math.uni-goettingen.de/regpy/"
 
 [project.optional-dependencies]
-ngsolve = ["ngsolve>=6.2.2404.post2","netgen"]
+ngsolve = ["ngsolve>=6.2.2404.post2"]
 
 [build-system]
 requires = [
