@@ -1,5 +1,5 @@
 [project]
-name = "name"
+name = "regpy"
 version = "0.3"
 authors = [
   { name="Thorsten Hohage", email="hohage@math.uni-goettingen.de" },
