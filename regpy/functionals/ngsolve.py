@@ -4,7 +4,6 @@ import ngsolve as ngs
 
 from regpy.hilbert import L2
 from regpy.functionals import Functional
-from regpy.vecsps.ngsolve import NgsBaseVector
 
 class SignumFilter(ngs.la.BaseMatrix):
     def __init__ (self, space, vec):
@@ -45,7 +44,8 @@ class NgsL1(Functional):
         from regpy.vecsps.ngsolve import NgsVectorSpace
         assert isinstance(domain, NgsVectorSpace)
         self._gfu = ngs.GridFunction(domain.fes)
-        self._gfu_help = ngs.GridFunction(domain.fes)
+        self._x_help = domain.zeros()
+        self._gfu_help = domain.to_gf(self._x_help)
         if domain.codim > 1:
             self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
         else:
@@ -61,7 +61,7 @@ class NgsL1(Functional):
     def _subgradient(self, x):
         self._gfu.vec.data = x.vec
         self._gfu_help.Interpolate(ngs.IfPos(self._gfu,1,-1)*self._gfu)
-        return NgsBaseVector(self._gfu_help.vec,make_copy=True)
+        return self._x_help
 
     def _hessian(self, x):
         raise NotImplementedError
@@ -71,7 +71,7 @@ class NgsL1(Functional):
         sign_x = ngs.IfPos(self._gfu)
         t = sign_x*self._gfu-0.25
         self._gfu_help = ngs.IfPos(t,1,0)*t*sign_x
-        return NgsBaseVector(self._gfu_help.vec,make_copy=True)
+        return self._x_help
 
 
 class NgsTV(Functional):
@@ -98,7 +98,8 @@ class NgsTV(Functional):
         self._gfu.Set(0)
         self._p = ngs.grad(self._gfu)
         self._gfu_update = ngs.GridFunction(self.domain.fes)
-        self._gfu_out = ngs.GridFunction(self.domain.fes)
+        self._x_out = domain.zeros()
+        self._gfu_out = domain.to_gf(self._x_out)
         self._gfu_div = ngs.GridFunction(self.domain.fes)
         self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
 
@@ -129,7 +130,7 @@ class NgsTV(Functional):
             self._p = (self._p + update) / tuple([1+ngs.Norm(update[i]) for i in range(update.dim)])
             self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
         self._gfu_out.Set(self._gfu - tau*self._gfu_div)
-        return NgsBaseVector(self._gfu_out.vec,make_copy=True)  
+        return self._x_out 
 
     @staticmethod
     def ngsdivergence(p, fes):
