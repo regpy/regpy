@@ -112,9 +112,9 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         The NgsVectorSpace on which the coefficients defined are.
     sol_domain : NgsVectorSpace
         The NgsVectorSpace on which the PDE solutions defined are.
-    bdr_val : NgsVector, optional
+    bdr_val : NgsBaseVector, optional
         Boundary value of the PDE solution of the forward evaluation, by default None
-    a_bdr_val : NgsVector, optional
+    a_bdr_val : NgsBaseVector, optional
         Boundary value of the coefficients, by default None
     """
     def __init__(self, 

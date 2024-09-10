@@ -152,7 +152,7 @@ class NgsBaseVector:
         return result
 
 
-class NgsVector(VectorStructureBase):
+class NgsVectorStructure(VectorStructureBase):
     def __init__(self, fes, bdr=None):
         assert isinstance(fes, ngs.FESpace)
         self.fes = fes
@@ -219,12 +219,12 @@ class NgsVector(VectorStructureBase):
     def to_complex(self):
         if self.is_complex:
             return copy(self)
-        return NgsVector(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
+        return NgsVectorStructure(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
     def to_real(self):
         if not self.is_complex:
             return copy(self)
-        return NgsVector(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
+        return NgsVectorStructure(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
     
     def flatten(self, x:NgsBaseVector) -> np.ndarray:
         if self.is_complex:
@@ -296,7 +296,7 @@ class NgsVectorSpace(VectorSpaceBase):
     log = classlogger
 
     def __init__(self, fes, bdr=None):
-        super().__init__(NgsVector(fes=fes,bdr=bdr))
+        super().__init__(NgsVectorStructure(fes=fes,bdr=bdr))
         self.fes = self.vec_type.fes
         self.bdr = self.vec_type.bdr
         self.codim = self.vec_type.codim

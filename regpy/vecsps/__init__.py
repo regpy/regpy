@@ -111,7 +111,7 @@ class VectorStructureBase:
         """
         raise NotImplementedError
     
-    def rand(self,random_generator = None):
+    def poisson(self,random_generator = None):
         """Generate a poisson vector.
 
         Parameters
@@ -242,13 +242,13 @@ class VectorStructureBase:
 
     def __add__(self, other):
         if isinstance(other, VectorStructureBase):
-            return VectorSum(self, other,flatten=True)
+            return SumVectorStructure(self, other,flatten=True)
         else:
             return NotImplemented
 
     def __radd__(self, other):
         if isinstance(other, VectorStructureBase,flatten=True):
-            return VectorSum(other, self)
+            return SumVectorStructure(other, self)
         else:
             return NotImplemented
         
@@ -268,7 +268,7 @@ class VectorStructureBase:
         assert isinstance(power, int)
         domain = self
         for i in range(power-1):
-            domain = VectorSum(domain, self,flatten=True)
+            domain = SumVectorStructure(domain, self,flatten=True)
         return domain
     
     def __iter__(self):
@@ -277,12 +277,10 @@ class VectorStructureBase:
     def iter_basis(self):
         raise NotImplementedError
 
-    @staticmethod
-    def logical_and(x,y):
+    def logical_and(self,x,y):
         return x & y 
-    
-    @staticmethod
-    def logical_or(x,y):
+
+    def logical_or(self,x,y):
         return x | y 
     
     def logical_not(self,x):
@@ -303,18 +301,18 @@ class TupleVector:
         self.types = [type(v_i) for v_i in self.v]
         self.ndim = len(self.types)
 
+    def __len__(self):
+        return self.ndim
+    
     def conj(self):
         return TupleVector([v_i.conj() for v_i in self])
-    
+
     @property
     def real(self):
         return TupleVector([v_i.real for v_i in self])
     
-    def __len__(self):
-        return self.ndim
-    
     @property
-    def real(self):
+    def imag(self):
         return TupleVector([v_i.imag for v_i in self])
 
     def __eq__(self,other):
@@ -481,7 +479,7 @@ class TupleVector:
         return TupleVector([method(s_k) for s_k in self])
 
 
-class VectorSum(VectorStructureBase):
+class SumVectorStructure(VectorStructureBase):
 
     log = util.classlogger
 
@@ -489,7 +487,7 @@ class VectorSum(VectorStructureBase):
         if flatten:
             self.summands = []
             for s in summands:
-                if isinstance(s,VectorSum):
+                if isinstance(s,SumVectorStructure):
                     self.summands.extend(s.summands)
                 else:
                     self.summands.append(s)
@@ -532,10 +530,10 @@ class VectorSum(VectorStructureBase):
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
     def to_complex(self):
-        return VectorSum(*[s.to_complex for s in self.summands])
+        return SumVectorStructure(*[s.to_complex for s in self.summands])
 
     def to_real(self):
-        return VectorSum(*[s.to_real for s in self.summands])
+        return SumVectorStructure(*[s.to_real for s in self.summands])
     
     def flatten(self, x : TupleVector) -> np.ndarray:
         assert self.is_vector(x)
@@ -572,10 +570,10 @@ class VectorSum(VectorStructureBase):
         return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
     
     def logical_xor(self,x,y) -> TupleVector:
-        return TupleVector([s.logical_xor(x_i) for x_i,s in zip(x.v,self.summands)])
+        return TupleVector([s.logical_xor(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
 
 
-class NumPyVector(VectorStructureBase):
+class NumPyVectorStructure(VectorStructureBase):
 
     log = util.classlogger
 
@@ -636,10 +634,10 @@ class NumPyVector(VectorStructureBase):
         return np.vdot(x, y).item()
 
     def to_complex(self):
-        return NumPyVector(self.shape,np.result_type(1j, self.dtype))
+        return NumPyVectorStructure(self.shape,np.result_type(1j, self.dtype))
 
     def to_real(self):
-        return NumPyVector(self.shape,np.empty(0, dtype=self.dtype).real.dtype)
+        return NumPyVectorStructure(self.shape,np.empty(0, dtype=self.dtype).real.dtype)
     
     def flatten(self, x : np.ndarray) -> np.ndarray:
         x = np.asarray(x)
@@ -935,7 +933,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     log = util.classlogger
 
     def __init__(self, shape:tuple, dtype=float):
-        super().__init__(NumPyVector(shape=shape,dtype=dtype))
+        super().__init__(NumPyVectorStructure(shape=shape,dtype=dtype))
         self.dtype = self.vec_type.dtype
 
     def complex_space(self):
@@ -949,7 +947,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         other = copy(self)
         other.dtype = np.result_type(1j, self.dtype)
-        other.vec_type = NumPyVector(shape=self.shape,dtype=other.dtype)
+        other.vec_type = NumPyVectorStructure(shape=self.shape,dtype=other.dtype)
         return other
 
     def real_space(self):
@@ -963,7 +961,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         other = copy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
-        other.vec_type = NumPyVector(shape=self.shape,dtype=other.dtype)
+        other.vec_type = NumPyVectorStructure(shape=self.shape,dtype=other.dtype)
         return other
     
     def masked_space(self, mask):
@@ -1248,7 +1246,7 @@ class DirectSum(VectorSpaceBase):
                     self.summands.append(s)
         else:
             self.summands = summands
-        super().__init__(VectorSum(*[s.vec_type for s in summands],flatten=flatten))
+        super().__init__(SumVectorStructure(*[s.vec_type for s in summands],flatten=flatten))
 
     def masked_space(self, mask):
         if isinstance(mask,int):
