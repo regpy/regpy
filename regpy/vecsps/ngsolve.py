@@ -21,6 +21,8 @@ class NgsBaseVector:
     vec: ngs.la.BaseVector
     make_copy: Optional[bool] = field(default=False)
 
+    __array_ufunc__ = None
+
     def copy(self):
         return copy(self)
 

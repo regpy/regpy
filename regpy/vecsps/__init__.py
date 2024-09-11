@@ -293,6 +293,8 @@ class VectorStructureBase:
 class TupleVector:
     v: List
 
+    __array_ufunc__ = None
+
     def copy(self):
         return copy(self)
 
@@ -402,28 +404,28 @@ class TupleVector:
         return (-1*self) + other
     
     def __imul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
         v = self.v
         for k in range(self.ndim):
             v[k] *= other
         return TupleVector(v)
     
     def __itruediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
         v = self.v
         for k in range(self.ndim):
             v[k] /= other
         return TupleVector(v)
     
     def __mul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
         return TupleVector([other * s_k for s_k in self])
         
     def __rmul__(self,other):
         return self * other
 
     def __truediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
         return TupleVector([s_k / other for s_k in self])
 
     def __iter__(self):
