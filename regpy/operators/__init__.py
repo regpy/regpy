@@ -176,7 +176,7 @@ class Operator:
         else:
             self.__revoke()
             y = self._eval(x, differentiate=False)
-        assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
+        assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(y),self.domain)
         return y
 
     def linearize(self, x, adjoint_derivative = False):
