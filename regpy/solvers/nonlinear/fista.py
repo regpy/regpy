@@ -14,6 +14,9 @@ class FISTA(RegSolver):
     \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
     \] 
     Gradient steps are performed on the first term, and proximal steps on the second term. 
+    The step sizes for the gradient steps are determined using a backtracking method introduced in
+    A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for
+    linear inverse problems. SIAM J. Imaging Sci., 2(1):183–202, 2009.
     
     Parameters:
     -----------
@@ -21,8 +24,10 @@ class FISTA(RegSolver):
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
     init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess
-    tau : float [default: None]
-        Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
+    tau : float [default: 10**16]
+        Initial step size of minimization procedure. Has to be suffidiently large.
+    eta : float [defualt 0.8]
+        Step size reduction constant.
     op_lower_bound : float [default: 0]
         lower bound of the operator: \(\|op(f)\|\geq op_lower_bound * \|f\| \).
         Used to define convexity parameter of data functional.     
@@ -31,13 +36,13 @@ class FISTA(RegSolver):
     logging_level: [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
+    def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         self.x = self.op.domain.zeros() if init is None else init
         assert init is None or init in self.op.domain
         
-        self.y, self.deriv = self.op.linearize(self.x)
+        self.y = self.op(self.x)
         self.log.setLevel(logging_level)
 
         self.mu_penalty  = self.regpar * self.penalty.convexity_param
@@ -45,7 +50,10 @@ class FISTA(RegSolver):
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        self.tau = 1./(setting.op_norm(op=self.deriv)**2 * self.data_fid.Lipschitz) if tau is None else tau
+        self.eta = eta
+        assert 0<self.eta<1
+
+        self.tau = tau
         """The step size parameter"""
         assert self.tau>0 
 
@@ -56,24 +64,33 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
         if self.mu>0:
-            self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
-                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-np.sqrt(self.q)))
-        else: 
-            self.log.info('Setting up FISTA with step length tau={:.3e}.'.format(self.tau))
+            self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e}'.format(
+                self.mu_penalty,self.mu_data_fidelity))
 
     def _next(self):
         if self.mu == 0:
             self.t = (1 + np.sqrt(1+4*self.t_old**2))/2
             beta = (self.t_old-1) / self.t
         else: 
+            self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
             self.t = (1-self.q*self.t_old**2+np.sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
             beta = (self.t_old-1)/self.t * (1+self.tau*self.mu_penalty-self.t*self.tau*self.mu)/(1-self.tau*self.mu_data_fidelity)
 
         h = self.x+beta*(self.x-self.x_old)
+        image_of_h, deriv = self.op.linearize(h)
 
         self.x_old = self.x
         self.t_old = self.t
 
-        grad = self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y) ))
+        data_fid_of_h = self.data_fid(image_of_h)
+        grad = self.h_domain.gram_inv(deriv.adjoint(self.data_fid.subgradient(image_of_h)))
+
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
-        self.y, self.deriv = self.op.linearize(self.x)
+
+        while True:
+            if self.data_fid(self.op(self.x)) <= data_fid_of_h + self.setting.h_domain.inner(self.x - h, grad) + (1/(2*self.tau))*self.setting.h_domain.inner(self.x - h, self.x - h):
+                break
+            self.tau *= self.eta
+            self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
+
+        self.y = self.op(self.x)
