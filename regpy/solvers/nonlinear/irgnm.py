@@ -33,7 +33,7 @@ class IrgnmCG(RegSolver):
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     cg_stop: int
         Maximum number of inner CG iterations
-    simplified_op : Operator
+    simplified_op : regpy.operators.Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
         Default: None - then the derivative of setting.op is used.
@@ -129,7 +129,7 @@ class LevenbergMarquardt(RegSolver):
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     cg_stop: int
         Maximum number of inner CG iterations
-    simplified_op : Operator
+    simplified_op : regpy.operators.Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
         Default: None - then the derivative of setting.op is used.

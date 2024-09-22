@@ -27,7 +27,7 @@ class OperatorAsWorker(mp.Process):
     conn : mp.connection.Connection
         connection object to receive commands and 
         send the results back to master
-    F : operators.Operator
+    F : regpy.operators.Operator
         the regpy operator
     """
     log = classlogger
@@ -275,7 +275,7 @@ class ParallelInterface:
 
 class ParallelVectorOfOperators(Operator,ParallelInterface):
     """Vector of operators in which all components are evaluated in parallel. 
-    The functionality is identical to the sequential analog VectorOfOperators: For
+    The functionality is identical to the sequential analog `VectorOfOperators`: For
 
         T_i : X -> Y_i
 
@@ -287,7 +287,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple of `regpy.operators.Operator`
     codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -354,7 +354,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple of `regpy.operators.Operator`
     domain : vecsps.VectorSpace
         The domain of the operator. It should usually be a direct sum of vector spaces
     distribution_mat : numpy.ndarray of bools

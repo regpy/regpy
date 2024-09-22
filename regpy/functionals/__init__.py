@@ -364,7 +364,7 @@ class Functional:
         Returns
         -------
         Adjoint
-            The adjoint as an `Operator` instance.
+            The adjoint as an `regpy.operators.Operator` instance.
         """
         return Conj(self)
 
@@ -977,7 +977,7 @@ class HorizontalShiftDilation(Functional):
 
 class Composed(Functional):
     r"""Composition of an operator with a functional \(F\circ O\). This should not be called
-    directly but rather used by multiplying the `Functional` object with an `Operator`.
+    directly but rather used by multiplying the `Functional` object with an `regpy.operators.Operator`.
 
     Parameters
     ----------
@@ -1259,7 +1259,7 @@ class AbstractVerticalShift(AbstractFunctional):
     
 class AbstractComposed(AbstractFunctional):
     r"""Abstract analogue to `Composed`. Composition of an operator with a functional \(F\circ O\). This should not be called
-    directly but rather used by multiplying the `AbstractFunctional` object with an `Operator`.
+    directly but rather used by multiplying the `AbstractFunctional` object with an `regpy.operators.Operator`.
 
     Parameters
     ----------
@@ -1270,7 +1270,7 @@ class AbstractComposed(AbstractFunctional):
     """
     def __init__(self, func, op):
         assert isinstance(func, AbstractFunctional), "func not a AbstractFunctional"
-        assert isinstance(op, operators.Operator), "op not a Operator"
+        assert isinstance(op, operators.Operator), "op not a regpy.operators.Operator"
         super().__init__(op.domain)
         if isinstance(func, type(self)):
             op = func.op * op
@@ -2080,7 +2080,6 @@ class QuadraticPositiveSemidef(Functional):
     r"""Functional 
     \[
     F(x) = 1/2 ||x||_{HS}^2    \text{if } x\geq 0 \text{ and (optional) } tr(x)=c
-
     F(x) = \infty       \text{else}
     \]
     Here x is a quadratic matrix and HS is the Hilbert-Schmidt norm. Conjugate functional
@@ -2287,7 +2286,7 @@ def as_functional(func, vecsp):
 
     Parameters
     ----------
-    func : Functional or HilbertSapce or Operator or callable
+    func : Functional or HilbertSapce or regpy.operators.Operator or callable
         Functional or object from which to construct the Functional.
     vecsp : VectorSpace
         Underlying vector space for the functional. 

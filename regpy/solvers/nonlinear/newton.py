@@ -34,7 +34,7 @@ class NewtonCG(RegSolver):
         Maximal number of inner CG iterations. (Default: 50)
     rho : number, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
-    simplified_op : Operator, optional
+    simplified_op : regpy.operators.Operator, optional
         Simplified operator to be used for the derivative. (Default: None)
     """
 

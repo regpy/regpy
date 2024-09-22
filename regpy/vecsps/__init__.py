@@ -525,7 +525,6 @@ class UniformGridFcts(GridFcts):
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
         self.volume_elem=self.measure
         
-ugf=UniformGridFcts(2,1)
 
 class DirectSum(VectorSpace):
     """The direct sum of an arbirtary number of vector spaces.
