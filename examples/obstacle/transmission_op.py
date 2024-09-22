@@ -18,7 +18,7 @@ class TransmissionOp(Operator):
     r"""Operator that maps an admissible boundary \partial D onto the corresponding far field pattern. 
     The related transmission problem for the Helmholtz equation is modeled by
 
-    \[
+	.. math::
         \begin{cases}
             \Delta u_i +\kappa_i^2 u_i = 0 & \text{ in } D \\
             \Delta u_e +\kappa_e^2 u_e = 0 & \text{ in } \mathbb{R}^2\backslash\overline{D}\\
@@ -26,7 +26,7 @@ class TransmissionOp(Operator):
             \frac{\partial u_i}{\partial\nu}=\rho\frac{\partial u}{\partial\nu} & \text{ on }\partial D\\
             \displaystyle{\lim_{r\to\infty}}r^{\frac{1}{2}}(\frac{\partial u_e}{\partial r}-i\kappa u_e)=0 &\text{ for } r=|x|.
         \end{cases}
-    \]
+
     where \rho\in\mathbb{C}\backslash 0, \(u=u_e+u^{inc}\) is the total field in \mathbb{R}^2\backslash\overline{D}.
 
     References

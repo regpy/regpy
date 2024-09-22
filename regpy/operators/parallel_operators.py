@@ -344,7 +344,9 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     r"""Vector of operators in which all components are evaluated in parallel and the input
     is assumed to be from direct sum of spaces that is then distributed to the operators that
     need it
-        \[T_i : X_{i_1}\times X_{i_2}... -> Y_i\]
+
+    .. math::
+        T_i : X_{i_1}\times X_{i_2}... -> Y_i
 
     we define
 

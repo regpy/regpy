@@ -7,13 +7,15 @@ import numpy as np
 
 class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
-    \[
+
+    .. math::
         F(x) = g^\delta,
-    \]
+
     where \(T)\ is a Frechet-differentiable operator, by gradient descent for the residual
-    \[
+    
+    .. math::
         \Vert F(x) - g^\delta\Vert^2,
-    \]
+
     where \(\Vert\cdot\Vert)\ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 

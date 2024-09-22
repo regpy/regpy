@@ -14,9 +14,10 @@ release = '0.3'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['autoapi.extension',
-    'sphinx.ext.intersphinx',
+extensions = [
     'sphinx.ext.napoleon',
+    'autoapi.extension',
+    'sphinx.ext.intersphinx',
     "sphinx.ext.viewcode",
     "nbsphinx",
     "sphinx_mdinclude"

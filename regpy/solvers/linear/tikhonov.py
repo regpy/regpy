@@ -9,9 +9,10 @@ from regpy.stoprules import CountIterations
 
 class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
-    \[
+    
+    .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
-    \]
+
     using a conjugate gradient method. 
     To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
     used, which can be implemented by updating a scalar parameter in each iteration. 
@@ -268,7 +269,7 @@ class TikhonovAlphaGrid(RegSolver):
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     max_CG_iter: integer, default 1000.
         maximum number of CG iterations. 
     xref: array-like, default None
@@ -339,7 +340,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     delta = float, default None

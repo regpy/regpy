@@ -4,9 +4,10 @@ import numpy as np
 
 class HilbertSchmidtLowRank(Functional):
     """ Functionals defined for pairs (U,V) of matrices of the form
-    \[
-    S(U,V) = \frac{1}{2}\|\Re(U*V^H) - \sum_j G_j G_j^H\|_Fro^2.
-    \]
+
+	.. math::
+        S(U,V) = \frac{1}{2}\|\Re(U*V^H) - \sum_j G_j G_j^H\|_Fro^2.
+
     Here Fro denotes the Frobenius norm, and $Re(A):= \frac{1}{2}(A+A^*)$. 
     U and V may be tensor of arbitrary identical dimensions.
     U and 

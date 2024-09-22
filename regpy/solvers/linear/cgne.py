@@ -6,7 +6,7 @@ from regpy.solvers.linear.tikhonov import TikhonovCG
 
 class CGNE(RegSolver):
     """
-    The conjugate gradient method applied to the normal equation \(T^*T=T^*g\) for solving linear inverse problems \(Tf=g\).
+    The conjugate gradient method applied to the normal equation :math:`T^*T=T^*g` for solving linear inverse problems :math:`Tf=g`.
     Regularization is achieved by early stopping, typically using the discrepancy principle. 
 
     Parameters: 

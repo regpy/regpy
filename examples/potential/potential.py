@@ -8,19 +8,19 @@ class Potential(Operator):
     r"""Operator that maps the shape of a homogeneous heat source to the heat flux measured at some
     circle outside of the object. The heat distributions satisfies
 
-    \[
+	.. math::
         \begin{cases}
             \Delta u = 1_K & \text{ in } \Omega \\
             u = 0          & \text{ on } \partial\Omega
         \end{cases}
-    \]
+
 
     where \(\partial\Omega\) is the measurement circle and \(K\) is the heat source. The operator
     maps the shape of the heat source to the Neumann data:
 
-    \[
+	.. math::
         \partial K \mapsto \left.\frac{\partial u}{\partial\nu}\right|_{\partial\Omega}.
-    \]
+
 
     Attributes
     ----------

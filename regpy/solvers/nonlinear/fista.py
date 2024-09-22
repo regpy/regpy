@@ -12,7 +12,7 @@ class FISTA(RegSolver):
     r"""
     The generalized FISTA algorithm for minimization of Tikhonov functionals
     \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
-    \] 
+
     Gradient steps are performed on the first term, and proximal steps on the second term. 
     
     Parameters:
@@ -24,7 +24,7 @@ class FISTA(RegSolver):
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
     op_lower_bound : float [default: 0]
-        lower bound of the operator: \(\|op(f)\|\geq op_lower_bound * \|f\| \).
+        lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\| `.
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 

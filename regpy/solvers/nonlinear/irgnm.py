@@ -10,12 +10,12 @@ from regpy.stoprules import CountIterations
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
-    \[
+    .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
-    \]
 
-    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
+
+    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
@@ -26,7 +26,7 @@ class IrgnmCG(RegSolver):
     regpar : float
         The initial regularization parameter. Must be positive.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
+        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
@@ -106,12 +106,12 @@ class IrgnmCG(RegSolver):
 class LevenbergMarquardt(RegSolver):
     r"""The Levenberg-Marquardt method. In each iteration, minimizes
 
-    \[
+    .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert h\Vert^{2}
-    \]
 
-    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
+
+    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
@@ -122,7 +122,7 @@ class LevenbergMarquardt(RegSolver):
     regpar : float
         The initial regularization parameter. Must be positive.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
+        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
@@ -204,29 +204,39 @@ from scipy.sparse.linalg import eigsh
         
 class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
-        \[
+
+    .. math::
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
-        \]
-    where \(F\) is a Frechet-differentiable operator, by solving in every iteration step the problem
-        \[
+
+    where :math:`F` is a Frechet-differentiable operator, by solving in every iteration step the problem
+    
+    .. math::
         \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
-        \]
-    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner \(M\).
-    The spectral preconditioner \(M\) is chosen, such that:
-        \[M  A  M \approx Id\]
-    where \(A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id\) 
+
+    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner :math:`M`.
+    The spectral preconditioner :math:`M` is chosen, such that:
+
+    .. math::
+        M  A  M \approx Id
+
+    where :math:`A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
-    the order of the number of iterations: \(\{v_j\}\)
+    the order of the number of iterations: :math:`\{v_j\}`
     We approximate A by the operator:
-    \[C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j\]
-    where lambda are the biggest eigenvalues of \(T*T\).
+
+    .. math::
+        C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j
+
+    where lambda are the biggest eigenvalues of :math:`T*T`.
     
-    We choose: \(M = C_k^{-1/2} and M^{-1} = C_k^{1/2}\)
+    We choose: :math:`M = C_k^{-1/2} and M^{-1} = C_k^{1/2}`
 
     It is:
-    \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
-    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.\]
+
+    .. math::
+        M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j
+        M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.
 
     At the moment this method does not work for complex domains/codomains
 

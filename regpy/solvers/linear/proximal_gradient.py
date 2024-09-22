@@ -10,20 +10,21 @@ logging.basicConfig(
 
 class ForwardBackwardSplitting(RegSolver):
     r"""    Minimizes 
-    \[
-    \mathcal{S}(Tf)+\alpha*\mathcal{R}(f)
-    \] 
+
+    .. math::
+        \mathcal{S}(Tf)+\alpha*\mathcal{R}(f)
+
     by forward backward splitting. 
 
     Parameters
     ----------
     setting : regpy.solvers.TikhonovRegularizationSetting
-        The setting of the forward problem. Includes both penalty \(\mathcal{R}\) and data fidelity \(\mathcal{S}\) functional. 
+        The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: None]
         The initial guess. (domain.zeros() in the default case)
     tau : float , optional
         The step size parameter. Must be positive. 
-        Default is the reciprocal of the operator norm of \(T^*T\) 
+        Default is the reciprocal of the operator norm of :math:`T^*T` 
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
     logging_level: int [default: logging.INFO]
@@ -64,7 +65,7 @@ class FISTA(RegSolver):
     r"""
     The generalized FISTA algorithm for minimization of Tikhonov functionals
     \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
-    \] 
+
     Gradient steps are performed on the first term, and proximal steps on the second term. 
     
     Parameters:
@@ -76,7 +77,7 @@ class FISTA(RegSolver):
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
     op_lower_bound : float [default: 0]
-        lower bound of the operator: \(\|op(f)\|\geq op_lower_bound * \|f\| \).
+        lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\| `.
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 

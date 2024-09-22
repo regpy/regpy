@@ -7,11 +7,13 @@ from regpy.vecsps import UniformGridFcts
 class Volterra(Operator):
     r"""The discrete Volterra operator. The Volterra operator \(V_n\) is defined as
 
-    \[ (V_n f)(x) = \int_0^x f(t)^n dt. \]
+	.. math::
+		 (V_n f)(x) = \int_0^x f(t)^n dt. 
 
     Its discrete form, using a Riemann sum, is simply
 
-    \[ (V_n x)_i = h \sum_{j \leq i} x_j^n, \]
+	.. math::
+		 (V_n x)_i = h \sum_{j \leq i} x_j^n, 
 
     where \(h\) is the grid spacing. \(V_1\) is linear.
 

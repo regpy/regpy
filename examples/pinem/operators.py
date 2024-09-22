@@ -112,8 +112,11 @@ class PtwDividedBessel(Operator):
     - A real-valued vector r on domain.  
 
     Output of eval: 
-    - A real vector of the same size with entries 
-    \[J_N(2r)r^{-N}.\]
+    - A real vector of the same size with entries
+
+	.. math::
+		J_N(2r)r^{-N}.
+
     """    
 
     def __init__(self, N,domain):
@@ -165,13 +168,14 @@ class ComplexNemitzkyOpForG(Operator):
 
     Output of eval: 
     - A complex vector of the same size as g with entries 
-    \[
-    J_N(2|g|)  \exp(i N \textrm{arg}(g)) = 
-    \begin{cases}
-    J_N(2|g|)*|g|^{-N} g^N ,\; N>=0, \\
-    J_N(2|g|)|g|^{-N} * \textrm{conj}(g)^N ,\; N <0
-    \end{cases}
-    \]
+
+	.. math::
+        J_N(2|g|)  \exp(i N \textrm{arg}(g)) = 
+        \begin{cases}
+        J_N(2|g|)*|g|^{-N} g^N ,\; N>=0, \\
+        J_N(2|g|)|g|^{-N} * \textrm{conj}(g)^N ,\; N <0
+        \end{cases}
+
     """
     def __init__(self, N, domain):
         assert domain.is_complex

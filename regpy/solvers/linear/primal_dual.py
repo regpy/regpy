@@ -15,9 +15,10 @@ class PDHG(RegSolver):
 
     Solves the minimization problem: \(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f))\
     by solving the saddle-point problem: 
-    \[
+    
+    .. math::
         \inf_f \sup_p [ - \langle Tf,p\rangle + \mathcal{R}(f)- \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) ].
-    \]
+
     Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
 
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
@@ -131,7 +132,7 @@ class PDHG(RegSolver):
 class DouglasRachford(RegSolver):
     r"""The Douglas-Rashford Splitting Algorithm
 
-    Minimizes \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)\)
+    Minimizes :math:`\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)`
 
     Parameters
     ----------

@@ -11,9 +11,10 @@ logging.basicConfig(
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
-    \[
+    
+    .. math::
         T(x) = y,
-    \]
+
     where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
@@ -115,7 +116,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         be in setting.op.codomain.
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number

@@ -31,9 +31,9 @@ def get_xray_phase_contrast(domain, fresnel_number, absorption_fraction=0.0):
     -----
     The forward operator \(F\) of X-ray phase contrast imaging is defined by
 
-    \[
+	.. math::
         F(\phi) = |D_F(exp(-(i + c_{\beta/\delta}) \cdot  phi))|^2 = I
-    \]
+
 
     where \(D_F\) is the Fresnel-propagator and \(c_{\beta/\delta}\) is
     a constant that parametrizes the magnitude of X-ray absorption versus X-ray

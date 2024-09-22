@@ -63,7 +63,7 @@ def test_adjoint(op, tolerance=1e-10):
 def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=False):
     r"""Numerically test derivative of operator.
 
-    Computes \( ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \)
+    Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
     for randomly chosen `x` and `v` and different `t` given in steps.
 
     Parameters

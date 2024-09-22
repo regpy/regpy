@@ -5,7 +5,7 @@ from regpy.vecsps import UniformGridFcts
 class GenCurve:
     r"""Base class for Parameterized smooth closed curve in R^2 
     ... without self-crossing parametrization by function z(t), 
-    0<=t<=2*pi (counter-clockwise). Note \(z(t)\) must return two 
+    0<=t<=2*pi (counter-clockwise). Note :math:`z(t)` must return two 
     values [x(t),y(t)].
 
     Subclasses should implement `_call` with the optional argument `der` 
@@ -143,10 +143,11 @@ class kite(GenCurve):
 class StarCurve(GenCurve):
     r"""Base class for radial curve in R^2 
     ... parameterized by 
-    \[
-      z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
-    \]
-     with a positive, 2pi-periodic function q. 
+
+    .. math::
+        z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
+
+    with a positive, 2pi-periodic function q. 
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -424,10 +425,11 @@ class GenTrigDiscr(UniformGridFcts):
     
 class GenTrig:
     r"""The class GenTrig describes boundaries of domains in R^2 which are
-     parameterized by
-     \[
-          z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
-     \]
+    parameterized by
+
+    .. math::
+        z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
+
      where z_1 and z_2 are trigonometric polynomials with N coefficient.
      Here N must be even, so the highest order monomial is cos(t*N/2),
      but sin(t*N/2) does not occur.

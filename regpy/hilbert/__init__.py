@@ -726,38 +726,38 @@ class SobolevUniformGridFcts(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class HmDomain(HilbertSpace):
-    r"""Implementation of a Sobolev space \(H^m(D)\) for a subset \(D\) of a `UniformGridFcts` grid.
-    \(D\) is characterized by a binary or integer-valued mask: `D={mask==1}`.
+    r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `UniformGridFcts` grid.
+    :math:`D` is characterized by a binary or integer-valued mask: `D={mask==1}`.
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
     Boundary condition at the exterior boundaries are specified by `ext_bd_cond`, default is Neumann ('Neum')
 
     `m=index` is a non-negative integer, the order or index of the Sobolev space.
-    The gram matrix is given by \((\alpha I - \Delta)^{-m}\).
+    The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
 
     By default it is assumed that the lengths in grid are given in physical dimensions,
     and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
 
-    If `weight` is specified, the Gram matrix will approximate \((\alpha I-{weight}\Delta)^{-m}\). `weight` should be slowly varying.
+    If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
 
     Parameters
     ----------
     grid : UniformGridFcts
         Underlying grid functions.
     mask : array-type
-        Mask to capture that subset \(D\) on which the Sobolev space is defined. Can only contain 
+        Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
         values `{-1,0,1}` or is a boolean. Shape has to match the shape of `grid`.
     h : tuple or None or string, optional
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
         "normalized". (Defaults: "normalized)
     index : int, optional
-        The Sobolev index \(m\). (Defaults: 1)
+        The Sobolev index :math:`m`. (Defaults: 1)
     weight : array-type, optional
         Weights to be applied to Laplacian in the gram matrix definition. (Defaults: None)
     ext_bd_cond : any, optional
         Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions. (Defaults: "Neum")
     alpha : scalar, optional
-        Parameter when computing the gram matrix as \((\alpha I - \Delta)^{-m}\). (Defaults: 1)
+        Parameter when computing the gram matrix as :math:`(\alpha I - \Delta)^{-m}`. (Defaults: 1)
     dtype : type, optional
         Type of underlying grid. (Defaults: float) 
     """

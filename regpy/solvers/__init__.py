@@ -285,9 +285,12 @@ class RegularizationSetting:
     def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
         r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
         provided derivative in the operator ,if it is a non-linear operator. It computes for 
-        the provided `steps` as \(t\)
-        \[ ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \]
-        wrt the \(L^2\)-norm and returns true if it is a decreasing sequence.
+        the provided `steps` as :math:`t`
+
+        .. math::
+            ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| 
+
+        wrt the :math:`L^2`-norm and returns true if it is a decreasing sequence.
 
         Parameters
         ----------
@@ -305,7 +308,7 @@ class RegularizationSetting:
         return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
     
     def h_adjoint(self,y=None):
-        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
+        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing :math:`G_X^{-1} \circ F \circ G_Y`.
 
         If the operator is non-linear this provided the adjoint to the derivative at `y`.
 
@@ -329,8 +332,8 @@ class RegularizationSetting:
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
     def op_norm(self,op = None, method = "lanczos"):
-        r"""Approximate the operator norm of \(T\) for a linear operator \(T\) with respect to the vector norms of h_domain and h_codomain. 
-        This is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
+        r"""Approximate the operator norm of :math:`T` for a linear operator :math:`T` with respect to the vector norms of h_domain and h_codomain. 
+        This is achieved by computing the largest eigenvalue of :math:`T^*T` using eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
         #@memoized_property
  
@@ -383,9 +386,10 @@ class RegularizationSetting:
 
 class TikhonovRegularizationSetting(RegularizationSetting):
     r"""Tikhonov regularization setting for minimizing a Tikhonov functional 
-    \[
-    \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
-    \]    
+
+    .. math::
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+
     In contrast to RegularizationSetting, the regularization parameter is fixed, 
     the data fidelity functional \(\mathcal{S}=self.data_fid)\ incorporates the data \(g^{\delta})\ of the inverse problem, 
     and the penalty term \(\mathcal{R})\ incorporates a potential initial guess.
@@ -395,7 +399,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
     op : regpy.operators.Operator
         The forward operator.
     penalty : regpy.functionals.Functional
-        The penalty functional \(\mathcal{R}\).
+        The penalty functional :math:`\mathcal{R}`.
     data_fid : regpy.functionals.Functional
         The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
     regpar: float [default: 1]
@@ -433,9 +437,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
     
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
-        \[
+        .. math::
            \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
-        \]
+
         """
         assert self.op.linear
         return TikhonovRegularizationSetting(self.op.adjoint,
@@ -448,8 +452,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
     def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
         r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
-        If \(p\) is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
-        If \(\xi=T^*p\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\xi\) as argument and avoid an operator evaluation.
+        If :math:`p` is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
+        If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
                 
         Parameters
         -------
@@ -477,7 +481,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         r"""
         Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
         If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
-        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
+        If :math:`\y=Tx` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\y` as argument and avoid an operator evaluation.
     
         Parameters
         ----------------------------
@@ -539,9 +543,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         or equivalently (in case of strong duality)
         - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
         - if 
-        \[
+        .. math::
         Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
-        \]
+
 
         Parameters
         ---------------------------

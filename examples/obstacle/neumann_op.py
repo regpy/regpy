@@ -16,13 +16,13 @@ class NeumannOp(Operator):
     r"""Operator that maps the shape of a sound-hard obstacle to the far-field measurements. 
     The scattering problem is modeled by
 
-    \[
+	.. math::
         \begin{cases}
             \Delta u +\kappa^2 u = 0 & \text{ in }\mathbb{R}^2\backslash\overline{D}\\
             \frac{\partial u}{\partial\nu}=0  & \text{ on }\partial D\\
             \displaystyle{\lim_{r\to\infty}}r^{\frac{1}{2}}(\frac{\partial u^s}{\partial r}-i\kappa u^s)=0 &\text{ for } r=|x|.
         \end{cases}
-    \]
+
 
     where \(u=u^s+u^i\) is the total field and \(D\) is the bounded obstacle in \mathbb{R}^2 with \(\partial D\in\mathcal{C}^2\).
     

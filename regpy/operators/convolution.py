@@ -143,21 +143,21 @@ class FresnelPropagator(ConvolutionOperator):
 
     Notes
     -----
-    The Fresnel-propagator \(D_F\) is a unitary Fourier-multiplier defined by
+    The Fresnel-propagator :math:`D_F` is a unitary Fourier-multiplier defined by
 
-    \[
+    .. math::
         D_F(f) = FT^{-1}(m_F \cdot FT(f))
-    \]
 
-    where \(FT(f)(\nu) = \int_{\mathbb{R}^2} \exp(-i\xi \cdot x) f(x) Dx\)
-    denotes the Fourier transform and the factor \(m_F\) is defined by
-    \(m_F(\xi) := \exp(-i \pi |\nu|^2 / F)\) with the Fresnel-number \(F\).
+
+    where :math:`FT(f)(\nu) = \int_{\mathbb{R}^2} \exp(-i\xi \cdot x) f(x) Dx`
+    denotes the Fourier transform and the factor :math:`m_F` is defined by
+    :math:`m_F(\xi) := \exp(-i \pi |\nu|^2 / F)` with the Fresnel-number :math:`F`.
     
     It should be noted that if the grid is not dimensionless, 
-    the frequency vector (here defined in units of \(1/\text{length}\) instead of \(2\pi/\text{length}\) 
+    the frequency vector (here defined in units of :math:`1/\text{length}` instead of :math:`2\pi/\text{length}` 
     is not dimensionless either. 
-    In this case, the Fresnel number is \(F = 1 / (\lambda d)\)  
-    with wavelength  \(lambda\) and propagation distance \(d\).
+    In this case, the Fresnel number is :math:`F = 1 / (\lambda d)`  
+    with wavelength  :math:`lambda` and propagation distance :math:`d`.
     """
 
     def __init__(self,grid, fresnel_number, pad_amount=None,first_conv_axis=0):

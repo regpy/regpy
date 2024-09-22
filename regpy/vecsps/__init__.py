@@ -34,7 +34,7 @@ from regpy import util, operators
 
 
 class VectorSpace:
-    r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
+    r"""Discrete space :math:`\mathbb{R}^\text{shape}` or :math:`\mathbb{C}^\text{shape}` (viewed as a real
     space) without any additional structure.
 
     VectorSpaces can be added, producing `DirectSum` instances.
@@ -99,7 +99,7 @@ class VectorSpace:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of complex a vector space after each
-        each array modefied in its place with a real one it returns the same vector with \(1i\)
+        each array modefied in its place with a real one it returns the same vector with :math:`1i`
         in its place.   
         """
         elm = self.zeros()
@@ -298,7 +298,7 @@ class VectorSpace:
         return domain
 
 class MeasureSpaceFcts(VectorSpace):
-    r"""Discrete space \(\mathbb{R}^N\) or \(\mathbb{C}^N\) (viewed as a real
+    r"""Discrete space :math:`\mathbb{R}^N` or :math:`\mathbb{C}^N` (viewed as a real
     space) with an additional measure that is given via a non-negative weight for each element of the space.
     Either the measure or the shape have to be specified. The measure defaults to the constant 1 measure for each point if it is not given.
 

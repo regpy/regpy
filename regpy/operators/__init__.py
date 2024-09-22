@@ -401,8 +401,8 @@ class Derivative(Operator):
 
 
 class AdjointDerivative(Operator):
-    r"""A proxy class wrapping a non-linear operator \(F\). Calling it will evaluate the coposition of the operator's
-    derivative adjoint with its derivative \(F'^\ast\circ F'\). This class should not be instantiated directly, 
+    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the coposition of the operator's
+    derivative adjoint with its derivative :math:`F'^\ast\circ F'`. This class should not be instantiated directly, 
     but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
     The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
     needed as it is a selfadjoint operator.   
@@ -604,7 +604,7 @@ class Composition(Operator):
         return util.make_repr(self, *self.ops)
 
 class SciPyLinearOperator(sla.LinearOperator):
-    r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
+    r"""A class wrapping a linear operator :math:`F` into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
     The domain and codomain are flattened.
     """
     def __init__(self, op2):
@@ -1147,7 +1147,7 @@ class FourierTransform(Operator):
         return util.make_repr(self, self.domain)
 
 class Power(Operator):
-    r"""The operator \(x \mapsto x^n\).
+    r"""The operator :math:`x \mapsto x^n`.
 
     Parameters
     ----------
@@ -1199,11 +1199,17 @@ class Power(Operator):
 
 class DirectSum(Operator):
     r"""The direct sum of operators. For
-    \[ T_i \colon X_i \to Y_i \]
+
+    .. math::
+        T_i \colon X_i \to Y_i 
+
     the direct sum
-    \[ T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) \]
-    is given by \(T(x)_i := T_i(x_i)\). As a matrix, this is the block-diagonal
-    with blocks \((T_i)\).
+
+    .. math::
+        T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) 
+
+    is given by :math:`T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
+    with blocks :math:`(T_i)`.
 
     Parameters
     ----------
@@ -1221,7 +1227,7 @@ class DirectSum(Operator):
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
-        r""" List of all operators \((T_1,\dots,T_n)\)"""
+        r""" List of all operators :math:`(T_1,\dots,T_n)`"""
         for op in ops:
             if flatten and isinstance(op, type(self)):
                 self.ops.extend(op.ops)
@@ -1303,14 +1309,16 @@ class DirectSum(Operator):
 
 class VectorOfOperators(Operator):
     r"""Vector of operators. For
-    \[
-    T_i \colon X \to Y_i
-    \]
+
+    .. math::
+        T_i \colon X \to Y_i
+
     we define
-    \[
-    T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := T_i(x)\). 
+
+    .. math::
+        T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := T_i(x)`. 
     
     Parameters
     ----------
@@ -1326,7 +1334,7 @@ class VectorOfOperators(Operator):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
         self.ops = ops
-        r"""List of all Operators \((T_1,\dots,T_n)\)"""
+        r"""List of all Operators :math:`(T_1,\dots,T_n)`"""
 
         if domain is None:
             self.domain = self.ops[0].domain
@@ -1390,14 +1398,16 @@ class VectorOfOperators(Operator):
 
 class MatrixOfOperators(Operator):
     r"""Matrix of operators. For
-    \[
-    T_ij \colon X_j \to Y_i
-    \]
+
+    .. math::
+        T_ij \colon X_j \to Y_i
+
     we define
-    \[
-    T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := \sum_j T_ij(x_j)\). 
+
+    .. math::
+        T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := \sum_j T_ij(x_j)`. 
     
     Parameters
     ----------
@@ -1414,7 +1424,7 @@ class MatrixOfOperators(Operator):
         ops_flat = [op for op_col in ops for op in op_col]
         assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
         self.ops = ops
-        r""" Matrix of Operators \((T_ij)\)"""
+        r""" Matrix of Operators :math:`(T_ij)`"""
 
         domains = [None]*len(ops)
         for j in range(len(ops)):

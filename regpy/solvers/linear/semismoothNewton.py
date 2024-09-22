@@ -15,10 +15,11 @@ logging.basicConfig(
 
 class SemismoothNewton_bilateral(RegSolver):
     r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
+
+    .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
         subject to bilateral constraints psi_minus \leq x \leq psi_plus
-    \]
+
     
     Parameters
     ----------
@@ -216,10 +217,11 @@ class SemismoothNewton_bilateral(RegSolver):
 def getPenaltyParamsFromFunctional(R,gram=None):
     r"""
     Extract the parameters `ub`, `lb`, `x0`, \(\alpah)\ from a functional 
-    \[
-    R(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
-    R(x) = \infty else
-    \]
+
+    .. math::
+        R(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
+        R(x) = \infty else
+
 
     Parameter
     -----------
@@ -248,11 +250,12 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     
 def getPenaltyParamsFromConjFunctional(Rs,gram):
     r"""
-    Extract the parameters `ub`, `lb`, `x0`, \(\alpah)\ from a functional \(R\), the conjugate of which has the form
-    \[
-    R^*(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
-    R^*(x) = \infty else
-    \]
+    Extract the parameters `ub`, `lb`, `x0`, :math:`\alpah)\ from a functional \(R`, the conjugate of which has the form
+
+    .. math::
+        R^*(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
+        R^*(x) = \infty else
+
 
     Parameter
     -----------
@@ -280,10 +283,11 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
 
 class SemismoothNewton_nonneg(RegSolver):
     r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
+    
+    .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
         subject to x>=0
-    \]
+
 
     Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stopping rule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
@@ -428,7 +432,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50
