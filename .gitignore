@@ -1,5 +1,5 @@
 *.pyc
-/doc
+/doc/build
 examples/data/
 examples/PINEM/data
 
