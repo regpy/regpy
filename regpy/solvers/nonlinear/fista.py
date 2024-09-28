@@ -42,7 +42,6 @@ class FISTA(RegSolver):
         self.x = self.op.domain.zeros() if init is None else init
         assert init is None or init in self.op.domain
         
-        self.y = self.op(self.x)
         self.log.setLevel(logging_level)
 
         self.mu_penalty  = self.regpar * self.penalty.convexity_param
@@ -53,8 +52,15 @@ class FISTA(RegSolver):
         self.eta = eta
         assert 0<self.eta<1
 
-        self.tau = tau
-        """The step size parameter"""
+        if self.data_fid.Lipschitz != np.inf:
+            self.y, deriv = self.op.linearize(self.x)
+            self.tau = 1./(setting.op_norm(op=deriv)**2 * self.data_fid.Lipschitz)
+            """The step size parameter"""
+            self.backtracking = False
+        else:
+            self.y = self.op(self.x)
+            self.tau = tau
+            self.backtracking = True
         assert self.tau>0 
 
         self.t = 0
@@ -86,8 +92,7 @@ class FISTA(RegSolver):
         grad = self.h_domain.gram_inv(deriv.adjoint(self.data_fid.subgradient(image_of_h)))
 
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
-
-        while True:
+        while self.backtracking:
             if self.data_fid(self.op(self.x)) <= data_fid_of_h + self.setting.h_domain.inner(self.x - h, grad) + (1/(2*self.tau))*self.setting.h_domain.inner(self.x - h, self.x - h):
                 break
             self.tau *= self.eta
