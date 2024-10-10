@@ -84,8 +84,9 @@ class NewtonCG(RegSolver):
             self._s2 += -self._alpha * self._q2
             self._rtilde = self.deriv.adjoint(self._s2)
             self._r = self.h_domain.gram_inv(self._rtilde)
+            self._old_inner_prod = self._inner_prod
             self._inner_prod = np.vdot(self._r, self._rtilde).real
-            self._beta = np.vdot(self._r, self._rtilde).real / self._inner_prod
+            self._beta = self._inner_prod / self._old_inner_prod
             self._d = self._r + self._beta * self._d
             self._k += 1
         self.log.info('Inner CG iteration required {} steps.'.format(self._k))
