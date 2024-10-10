@@ -1,26 +1,23 @@
 """VectorSpaces on which operators are defined.
 
 The classes in this module implement various vector spaces on which the
-`regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`,
+`regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`\,
 which represents plain numpy arrays of some shape and dtype. So far it is assumed that 
 vectors are always represented by numpy arrays. 
 
 VectorSpaces serve the following main purposes:
 
-- Derived classes can contain additional data like grid coordinates, bundling metadata in one
-place instead of having every operator generate linspaces / basis functions / whatever on their
-own.
-
-- Providing methods for generating elements of the proper shape and dtype, like zero arrays,
-random arrays or iterators over a basis.
-
-- Checking whether a given array is an element of the vector space. This is used for
-consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
-elements do not need to carry additional structure. Real arrays are considered as elements of
-complex vector spaces.
-
-- Checking whether two vector spaces are considered equal. This is used in consistency checks
-e.g. for operator compositions.
+ * Derived classes can contain additional data like grid coordinates, bundling metadata in one
+   place instead of having every operator generate linspaces / basis functions / whatever on their
+   own.
+ * Providing methods for generating elements of the proper shape and dtype, like zero arrays,
+   random arrays or iterators over a basis.
+ * Checking whether a given array is an element of the vector space. This is used for
+   consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
+   elements do not need to carry additional structure. Real arrays are considered as elements of
+   complex vector spaces.
+ * Checking whether two vector spaces are considered equal. This is used in consistency checks
+   e.g. for operator compositions.
 
 All vector spaces are considered as real vector spaces, even if the dtype is complex. This
 affects iteration over a basis as well as functions returning the dimension or flattening arrays.
@@ -313,7 +310,6 @@ class MeasureSpaceFcts(VectorSpace):
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
 
     """
-
     def __init__(self,measure=None,shape=None,dtype=float):
         assert measure is not None or shape is not None
         if(isinstance(measure, np.ndarray)):
@@ -329,10 +325,10 @@ class MeasureSpaceFcts(VectorSpace):
         #TODO: Make a default case            
         super().__init__(shape,dtype)
         self.measure=measure
-        r""" Stores values of point measures """
 
     @property
     def measure(self):
+        r""" Stores values of point measures """
         return self._measure
     
     @measure.setter
@@ -369,8 +365,6 @@ class GridFcts(MeasureSpaceFcts):
          of which must match the respective dimension's length. Besides that, no further structure
          is imposed or assumed, this parameter exists solely to keep everything related to the
          vector space in one place.
-
-         If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
         The dtype of the vector space.
     use_cell_measure : bool, optional
@@ -384,6 +378,10 @@ class GridFcts(MeasureSpaceFcts):
     boundary_ext_const: float or tuple of floats, optional
         Defines extension of cells at edges of each axis. Can be set to a constant for all axes, one constant for each axis
         or one constant for the start and one for the end of each axis. 
+
+    Notes
+    -----
+    If `axisdata` is given, the `coords` can be omitted.
     """
 
     def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
@@ -639,7 +637,7 @@ class Prod(VectorSpace):
     *factors : tuple of VectorSpace instances
         The vector spaces to be factored.
     flatten : bool, optional
-        Whether factors that are themselves `Prod`s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
+        Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
         Default: False
     """
 

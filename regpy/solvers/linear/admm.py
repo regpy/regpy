@@ -18,21 +18,21 @@ class ADMM(RegSolver):
     ADMM solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. Choosing 
 
     .. math::
-        A:=\begin{pmatrix} T \\ I \end{pmatrix} ,\;
-        B:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \;
-        b:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\;
-        F(f):= 0,\;
-        G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\;
+        A&:=\begin{pmatrix} T \\ I \end{pmatrix} ,\; \\
+        B&:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \; \\
+        b&:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\; \\
+        F(f)&:= 0,\; \\
+        G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}&:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\; \\
 
     leads to a nice splitting of the operator \(T)\ and the functional \(R)\ seen in the Lagrangian
 
     .. math::
-        L_\gamma(f,v_1,v_2,p_1,p_2):= 
-        \frac{1}{\alpha}S(v_1) + R(v_2) 
-        - \langle\gamma p_1,Tf-v_1\rangle 
-        - \langle\gamma p_2,f-v_2\rangle
-        + \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2
-        + \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
+        L_\gamma(f,v_1,v_2,p_1,p_2):=& \\
+        &\frac{1}{\alpha}S(v_1) + R(v_2) \\
+        &- \langle\gamma p_1,Tf-v_1\rangle \\
+        &- \langle\gamma p_2,f-v_2\rangle \\
+        &+ \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2 \\
+        &+ \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
 
     The minimization for \(f)\ simply reduces to the minimization of a quadratic Tikhonov functional.  This can 
     be achieved by the CG method, but ADMM is particularly efficient if a closed form expression is available for the 
@@ -141,14 +141,14 @@ class AMA(RegSolver):
     AMA solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. We choose
 
     .. math::
-    T=A, B=-I, b=0, f=u, F=R and G=R 
+        T=A, B=-I, b=0, f=u, F=R and G=R 
 
     In contrast to standard ADMM we neglected the quadratic term in the update formula for :math:`f=u` leading to the iteration
     
     .. math::
-       f^{l+1} := \argmin_f[R(f)-\langle T^*p^l,f\rangle]\;
-       g^{l+1} := \mathrm{prox}_{\gamma^{-1}S}(Tf^{l+1)-\gamma^{-1}p^l)
-       p^{l+1} := p^l + \gamma(T f^{l+1}-g^{l+1})
+       f^{l+1} &:= \argmin_f[R(f)-\langle T^*p^l,f\rangle]\; \\
+       g^{l+1} &:= \mathrm{prox}_{\gamma^{-1}S}(Tf^{l+1)-\gamma^{-1}p^l) \\
+       p^{l+1} &:= p^l + \gamma(T f^{l+1}-g^{l+1})
 
     
     Parameters

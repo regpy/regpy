@@ -153,11 +153,11 @@ class Solver:
 
 
 class RegSolver(Solver):
-    r"""Abstract base class for solvers working with a regularization setting.
-     Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
-    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
-    may or may not be the same arrays as before, modified in-place).
+    r"""Abstract base class for solvers working with a regularization setting. Solvers do not 
+    implement loops themselves, but are driven by repeatedly calling the `next` method. They 
+    expose the current iterate stored in and value as attributes `x` and `y`, and can be iterated 
+    over, yielding the `(x, y)` tuple on every iteration (which may or may not be the same 
+    arrays as before, modified in-place).
 
     There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
 
@@ -230,12 +230,12 @@ class RegularizationSetting:
     - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
 
     This class is mostly a container that keeps all of this data in one place and makes sure that
-    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`s 
+    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`\s 
     with the operator's domain and codomain.
 
     It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
+    or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
 
     Parameters
@@ -437,6 +437,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
     
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
+
         .. math::
            \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
 
@@ -456,7 +457,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
                 
         Parameters
-        -------
+        ----------
         pstar: self.op.codomain (or self.op.domain if argumentIsOperatorImage=True)
             argument to be transformed
         argumentIsOperatorImage: boolean [default: False]
@@ -479,9 +480,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         
     def primalToDual(self,x,argumentIsOperatorImage = False, own=False):
         r"""
-        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
-        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
-        If :math:`\y=Tx` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\y` as argument and avoid an operator evaluation.
+        Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tx)` 
+        If :math:`x` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
+        yields a solution to the dual problem. If :math:`\y=Tx` is already known, 
+        the option `argumentIsOperatorImage=True' can be used to pass :math:`\y` as argument and avoid an operator evaluation.
     
         Parameters
         ----------------------------
@@ -503,9 +505,12 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
     def dualityGap(self, primal=None, dual=None):
         r"""Computes the value of the duality gap 
+        
+        .. math::
             \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^*(-\alpha p) - \mathcal{R}^*(T^*p)
 
-        Parameters:
+        Parameters
+        ----------
         primal: setting.op.domain [default: None]
             primal variable f
         dual: setting.op.codomain [default: None]

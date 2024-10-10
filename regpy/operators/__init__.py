@@ -79,11 +79,11 @@ class Operator:
     should evaluate the  derivative, its adjoint or their composition at the same point `_eval` was 
     called. The reasoning is this
 
-    - In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
-      operator around some point, so the value is almost always needed.
-    - Many expensive computations, e.g. assembling of finite element matrices, need to be carried
-      out only once per linearization point, and can be shared between the operator and the
-      derivative, so they should only be computed once (in `_eval`).
+     * In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
+       operator around some point, so the value is almost always needed.
+     * Many expensive computations, e.g. assembling of finite element matrices, need to be carried
+       out only once per linearization point, and can be shared between the operator and the
+       derivative, so they should only be computed once (in `_eval`).
     
     For callers, this means that since the derivative shares data with the operator, it can't be
     reliably called after the operator has been evaluated somewhere else, since shared data may
@@ -719,17 +719,17 @@ class Identity(Operator):
         return util.make_repr(self, self.domain)
 
 class MatrixMultiplication(Operator):
-    """Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
+    r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
     are plain one dimensional `regpy.vecsps.VectorSpace` instances by default.
 
     Parameters
     ----------
     matrix : array-like
         The matrix.
-    inverse : Operator, array-like, 'inv', 'cholesky' or None, optional
+    inverse : Operator, array-like or None, optional
         How to implement the inverse operator. If available, this should be given as `Operator`
-        or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'´ or `'superLU'´, a
-        `CholeskyInverse´ or `SuperLU´´ instance will be returned.
+        or array. If `inv`\, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`\, a
+        `CholeskyInverse` or `SuperLU` instance will be returned.
     domain : regpy.vecsps.VectorSpace, optional
         The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
         matrix columns is used. Defaults to None.

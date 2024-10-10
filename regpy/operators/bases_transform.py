@@ -40,11 +40,11 @@ class BasisTransform(Operator):
         assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
-        """ `dtype ` of the vector spaces."""
+        """ `dtype` of the vector spaces."""
         self.ndim = coef_domain.ndim
         """ dimension of the `coef_domain`. """
         self.bases = bases
-        """List of all the bases transforms as a list of `np.ndarray`s
+        """List of all the bases transforms as a list of `np.ndarray`\s
         """
 
     def _eval(self, coef):
@@ -149,7 +149,9 @@ def bspline_basis(k,t,dim=1,add_points=10):
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
     The evaluation domain is a refined grid determined by the point added between points
     given by add_points:
-        `np.linspace(t[0],t[-1],t.size*add_points)`
+
+        np.linspace(t[0],t[-1],t.size*add_points)
+    
     Note, that to do that accurately construct Splines, we use the key extrapolate=False and extend the
     original knot points given in t by additionally 2k points with equidistant distance to T.
     

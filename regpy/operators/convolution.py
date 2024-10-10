@@ -15,7 +15,7 @@ class PaddingOperator(Operator):
         pad_amont = ((pad_top,pad_bottom),(pad_left,pad_right))
 
     Notes
-    -------
+    -----
     A wrapper of the np.pad function
     """
 
@@ -97,9 +97,9 @@ class ConvolutionOperator(Composition):
         return self._otf
 
 class GaussianBlur(ConvolutionOperator):
-    r"""Convolution with the shifted Gaussian kernel exp(-((x-shift)/kernel_width)^2).
-    For shift=0 it also represents the forward operator for the backward heat equation if 
-    kernel_width= 2\sqrt{t}.
+    r"""Convolution with the shifted Gaussian kernel .math:`exp(-((x-shift)/kernel_width)^2)`.
+    For :math:`shift=0` it also represents the forward operator for the backward heat equation if 
+    :math:`kernel_width= 2\sqrt{t}`.
     """
     def __init__(self,grid,kernel_width,shift=None,pad_amount= None,first_conv_axis=0):
         if shift==None:
@@ -117,7 +117,7 @@ class GaussianBlur(ConvolutionOperator):
                             )
             
 class ExponentialConvolution(ConvolutionOperator):
-    r"""Convolution with an exponential function exp(-|x|_1/a).
+    r"""Convolution with an exponential function :math:`exp(-|x|_1/a)`.
     """
     def __init__(self,grid,a,pad_amount= None,first_conv_axis=0):
         super().__init__(grid,

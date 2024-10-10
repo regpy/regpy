@@ -88,8 +88,8 @@ class Functional:
 
         Requires the implementation of either `_subgradient` or `_linearize`.
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         x : in self.domain
             Element at which will be linearized
 
@@ -118,8 +118,8 @@ class Functional:
 
         Requires the implementation of either `_subgradient` or `_linearize`.
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         x : in self.domain
             Element at which will be linearized
 
@@ -140,8 +140,8 @@ class Functional:
         r"""Returns `True` if \(v)\ is a subgradient of \(F)\ at \(x)\, otherwise `False`.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
 
-        Paramters
-        ---------
+        Parameters
+        ----------
         eps: float (default: 1e-10)
             relative accuracy for the test
         """
@@ -157,8 +157,8 @@ class Functional:
 
         Require either the implementation of _hessian or of _hessian_conj and _subgradient
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         `x` : `self.domain`
             Point in `domain` at which to compute the hessian. 
 
@@ -427,9 +427,12 @@ class Conj(Functional):
 class LinearFunctional(Functional):
     r"""Linear functionals
     Linear functional given by
-        F(x) = np.vdot(a, x)
+
+    .. math::
+        F(x) = \langel a, x\rangle
     
-    +, +=, *, *= with `LinearFunctional`s and scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`s. 
+    The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `LinearFunctional`\s and 
+    scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`\s. 
 
     Parameters
     ----------
@@ -528,8 +531,8 @@ class SquaredNorm(Functional):
 
     Here the linear term represents an inner product in the Hilbert space, not a pairing with the dual space.
 
-    +, +=, *, *= with `SquaredNorm`s, `LinearFunctional`s and scalars as other arguments are overwritten to yield the 
-    expected `SquaredNorm`s. 
+    The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `SquaredNorm`\s, `LinearFunctional`\s and scalars 
+    as other arguments are overwritten to yield the expected `SquaredNorm`\s. 
 
     Parameters
     --------
@@ -912,7 +915,7 @@ class HorizontalShiftDilation(Functional):
     :math:`F(x)` by \(F(dilation(x-shift)))
     
     Parameters
-    --------
+    ----------
     F: Functional
         The functional to be shifted and dilated.
     dilation: float [default: 1]
@@ -1481,9 +1484,10 @@ class IntegralFunctionalBase(Functional):
     with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
 
     Subclasses defining explicit functionals of this type have to implement
-        `_f` evaluation the function \(f)\
-        `_f_deriv` giving the derivative \(\partial_1 f)\
-        `_f_prox` giving the prox of \(v>->f(v,x))\
+     * `_f` evaluation the function \(f)\
+     * `_f_deriv` giving the derivative \(\partial_1 f)\
+     * `_f_prox` giving the prox of \(v>->f(v,x))\
+    
     since 
 
     .. math::
@@ -1797,9 +1801,8 @@ class Huber(IntegralFunctionalBase):
         F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
 
 
-    Paramter: 
-    ------
-
+    Parameters 
+    ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
@@ -1857,9 +1860,8 @@ class QuadraticIntv(IntegralFunctionalBase):
         F(x) = \infty    if |x|>\sigma(x)
 
 
-    Parameter
-    ---------
-
+    Parameters
+    ----------
     regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
@@ -1999,8 +2001,8 @@ class QuadraticBilateralConstraints(LinearCombination):
         F(x) = np.inf else
 
 
-    Parameters:
-    ------------------------------------------------------
+    Parameters
+    ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which functional is defined
     lb: domain
@@ -2057,7 +2059,7 @@ def QuadraticLowerBound(domain, lb, x0,a=1.):
 
 
     Parameters
-    ------
+    ----------
     domain: `vecsps.MeasureSpaceFcts`
         domain on which the functional is defined
     lb: domain or float [default: None]
@@ -2096,8 +2098,8 @@ class QuadraticPositiveSemidef(Functional):
 
     Here x is a quadratic matrix and HS is the Hilbert-Schmidt norm. Conjugate functional
     and prox are only correct for hermitian inputs.
-    Parameters
 
+    Parameters
     ---------
     domain: regpy.vecsps.UniformGridFcts
         two dimensional domain on which functional is defined, volume_elements have to be one

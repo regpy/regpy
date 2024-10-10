@@ -5,8 +5,13 @@ def test_linearity(op, tolerance=1e-10):
     """Numerically tests if operator is linear.
 
     Checks if ::
+
+    .. highlight:: python
+    .. code:: python
+
         op(x+y) == op(x)+op(y)
         r*op(x) == op(r*x)
+    
     for random choices of `x` and `y`.
 
     Parameters
@@ -33,7 +38,10 @@ def test_linearity(op, tolerance=1e-10):
 def test_adjoint(op, tolerance=1e-10):
     """Numerically test validity of :meth:`adjoint` method.
 
-    Checks if ::
+    Checks if
+
+    .. highlight:: python
+    .. code:: python
 
         inner(y, op(x)) == inner(op.adjoint(x), y)
 
@@ -64,7 +72,7 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=Fa
     r"""Numerically test derivative of operator.
 
     Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
-    for randomly chosen `x` and `v` and different `t` given in steps.
+    for randomly chosen .:math:`x` and :math:`v` and different :math:`t` given in steps.
 
     Parameters
     ----------

@@ -129,7 +129,8 @@ class GramHilbertSpace(HilbertSpace):
     """
     Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
     
-    Parameters:
+    Parameters
+    ----------
     gram: operator
         The Gram matrix of the discrete Hilbert space.
     gram_inv: operator, default =None
@@ -441,9 +442,12 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(vecsps.UniformGridFcts)
-              class SobolevUniformGridFcts(HilbertSpace):
-                  ...
+      .. highlight:: python
+      .. code-block:: python
+      
+            @Sobolev.register(vecsps.UniformGridFcts)
+            class SobolevUniformGridFcts(HilbertSpace):
+                ...
 
     - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all

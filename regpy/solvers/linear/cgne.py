@@ -9,16 +9,14 @@ class CGNE(RegSolver):
     The conjugate gradient method applied to the normal equation :math:`T^*T=T^*g` for solving linear inverse problems :math:`Tf=g`.
     Regularization is achieved by early stopping, typically using the discrepancy principle. 
 
-    Parameters: 
+    Parameters
+    ----------
     setting: RegularizationSetting
        Regularization setting involving Hilbert space norms
-
     data: array-like
         Right hand side g
-
     x0: array-like, default:None
         First iteration. zero() if None
-
     logging_level: default: logggin.INFO
         Controls amount of output
     """
@@ -41,7 +39,7 @@ class CGNE(RegSolver):
 
         self.g_res = self.op.adjoint(self.h_codomain.gram(data-self.y)) 
         """The gram matrix applied to the residual of the normal equation. 
-        g_res = T^* G_Y (data-T self.x)  in each iteration with operator T and Gram matrices G_x, G_Y.
+        :math:`g_res = T^* G_Y (data-T self.x)`  in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""

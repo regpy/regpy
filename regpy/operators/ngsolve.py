@@ -7,6 +7,17 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
+    """The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
+
+    Parameters
+    ----------
+    domain : NgsSpace 
+        The space for the domain.
+    codomain : NgsSpace
+        The space for the codomain.
+    linear : boolean, optional
+        True if linear else False. (Defaults: False)
+    """
     def __init__(self, domain, codomain, linear = False):
         super().__init__(domain = domain, codomain = codomain, linear = linear)
         self.gfu_read_in = ngs.GridFunction(self.domain.fes)
@@ -700,23 +711,30 @@ class EIT(NGSolveOperator):
 
 
 class ReactionNeumann(NGSolveOperator):
-    """
+    r"""
     Estimation of the reaction coefficient from boundary value measurements
 
-    PDE: -div(grad(u)) + s*u = 0 in Omega
-         du/dn = g on dOmega
+    PDE: :math:`-div(grad(u)) + s*u = 0 in Omega`
 
-    Evaluate: F: s \mapsto trace(u)
+    .. math:: 
+        du/dn = g on dOmega
+
+    Evaluate: :math:`F: s \mapsto trace(u)`
     Derivative:
-        -div(grad(v))+s*v = -h*u (=:f)
+
+    .. math::
+        -div(grad(v))+s*v = -h*u (=:f) \\
         dv/dn = 0 
 
-    Der: F'[s]: h \mapsto trace(v)
+    Der: :math:`F'[s]: h \mapsto trace(v)`
 
     Adjoint: 
-        -div(grad(w))+s*w = 0
+
+    .. math::
+        -div(grad(w))+s*w = 0 \\
         dw/dn = q
-    Adj: F'[s]^*: q \mapsto -u*w
+    
+    Adj: :math:`F'[s]^*: q \mapsto -u*w`
 
     proof:
     (F'h, q) = int_dOmega [trace(v) q] = int_dOmega [trace(v) dw/dn] = int_Omega [div(v grad w)] 

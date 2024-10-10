@@ -3,10 +3,10 @@ import numpy as np
 from regpy.vecsps import UniformGridFcts
 
 class GenCurve:
-    r"""Base class for Parameterized smooth closed curve in R^2 
-    ... without self-crossing parametrization by function z(t), 
-    0<=t<=2*pi (counter-clockwise). Note :math:`z(t)` must return two 
-    values [x(t),y(t)].
+    r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
+    without self-crossing parametrization by function :math:`z(t)`\, 
+    :math:`0\leq t\leq 2*\pi` (counter-clockwise). Note :math:`z(t)` must return two 
+    values :math:`[x(t),y(t)]`\.
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -35,9 +35,8 @@ class GenCurve:
         self._der = -1
 
         self.n = n
-        "number of evaluation points"
         self.der = der 
-        "number of derivatives to compute"
+
 
 
     def __call__(self,der=0):
@@ -50,6 +49,7 @@ class GenCurve:
     
     @property
     def der(self):
+        """number of derivatives to compute"""
         return self._der
 
     @der.setter
@@ -62,6 +62,7 @@ class GenCurve:
 
     @property    
     def n(self):
+        """number of evaluation points"""
         return self._n
     
     @n.setter
@@ -141,13 +142,13 @@ class kite(GenCurve):
 
 
 class StarCurve(GenCurve):
-    r"""Base class for radial curve in R^2 
-    ... parameterized by 
+    r"""Base class for radial curve in :math:`R^2` 
+    parameterized by 
 
     .. math::
         z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
 
-    with a positive, 2pi-periodic function q. 
+    with a positive, :math:`2\pi`\-periodic function :math:`q`\. 
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -711,16 +712,18 @@ def adjoint_rfft(y, size, n=None):
         return aux
 
 def adjoint_irfft(y, size=None):
-    """Compute the adjoint of `numpy.fft.irfft`. More concretely, the adjoint of
+    r"""Compute the adjoint of `numpy.fft.irfft`\. More concretely, the adjoint of
 
-        x |-> irfft(x, n)
+    .. math::
+        x \mapsto \mathrm{irfft}(x, n)
 
     is
 
-        y |-> adjoint_irfft(y, x.size)
+    .. math::
+        y \mapsto \mathrm{adjoint_irfft}(y, x.size)
 
-    Since the size of `x` can not be determined from `y`, it needs to be given explicitly. The
-    parameter `n`, however, is determined as the output size of `irfft`, so it does not not need to
+    Since the size of `x` can not be determined from `y`\, it needs to be given explicitly. The
+    parameter `n`, however, is determined as the output size of `irfft`\, so it does not not need to
     be specified for the adjoint.
 
     Parameters
