@@ -35,14 +35,14 @@ autoapi_options = [
     "imported-members",
 ]
 autoapi_add_toctree_entry = False
+# uncomment to determine bugs
+# autoapi_keep_files = True
 
 nbsphinx_allow_errors = True
 
 viewcode_follow_imported_members = True
 
-
 autodoc_typehints = "signature"
-# autoapi_keep_files = True
 
 # Napoleon settings
 napoleon_google_docstring = True
