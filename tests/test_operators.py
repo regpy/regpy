@@ -157,3 +157,42 @@ def test_matrix_multiplication():
     ot.test_operator(op)
     op = MatrixMultiplication(np.random.rand(20,21)+1j*np.random.rand(20,21))
     ot.test_operator(op)
+
+def test_PtwMultiplication():
+    dom = vecsps.VectorSpace((3,2))
+    factor = dom.rand()  
+    op = PtwMultiplication(dom,factor)
+    ot.test_operator(op)
+    dom = vecsps.VectorSpace((3,2),dtype=np.complex128)
+    factor = dom.rand()  
+    op = PtwMultiplication(dom,factor)
+    ot.test_operator(op)
+    
+def test_OuterShift():
+    dom = vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 10))
+    offset = dom.rand()
+    op_unshifted = volterra.Volterra(domain=dom,exponent=3)
+    op_shifted = OuterShift(op_unshifted,offset)
+    ot.test_operator(op_shifted)
+    x = dom.rand()
+    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)-offset)<1e-16)
+    dom=vecsps.VectorSpace((3,2),np.complex128)
+    offset = dom.rand()
+    op_unshifted = Exponential(domain=dom)
+    op_shifted = OuterShift(op_unshifted,offset)
+    ot.test_operator(op_shifted)
+    x = dom.rand()
+    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)-offset)<1e-16)
+
+      
+def test_InnerShift():
+    dom = vecsps.UniformGridFcts(np.linspace(0, 2 * np.pi, 10))
+    offset = dom.rand()
+    op_unshifted = volterra.Volterra(domain=dom,exponent=3)
+    op_shifted = InnerShift(op_unshifted,offset)
+    ot.test_operator(op_shifted)
+    dom=vecsps.VectorSpace((3,2),np.complex128)
+    offset = dom.rand()
+    op_unshifted = Exponential(domain=dom)
+    op_shifted = InnerShift(op_unshifted,offset)
+    ot.test_operator(op_shifted)
