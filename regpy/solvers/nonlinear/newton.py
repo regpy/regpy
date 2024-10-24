@@ -67,24 +67,24 @@ class NewtonCG(RegSolver):
         self._x_k = self.op.domain.zeros()
         # self._s += - self.deriv(self._x_k)
         self._s2 = self.h_codomain.gram(self._s)
-        self._norms0 = sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
+        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = self.op.domain.vec_type.vdot(self._r, self._rtilde).real
+        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
      
-        while (self._k==0 or (sqrt(self.op.codomain.vec_type.vdot(self._s2, self._s).real)
+        while (self._k==0 or (sqrt(self.op.codomain.vdot(self._s2, self._s).real)
                > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
             self._q2 = self.h_codomain.gram(self._q)
-            self._alpha = self._inner_prod / self.op.codomain.vec_type.vdot(self._q, self._q2).real
+            self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
             self._x_k += self._alpha * self._d
             self._s += -self._alpha * self._q
             self._s2 += -self._alpha * self._q2
             self._rtilde = self.deriv.adjoint(self._s2)
             self._r = self.h_domain.gram_inv(self._rtilde)
-            self._inner_prod = self.op.domain.vec_type.vdot(self._r, self._rtilde).real
-            self._beta = self.op.domain.vec_type.vdot(self._r, self._rtilde).real / self._inner_prod
+            self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
+            self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
             self._d = self._r + self._beta * self._d
             self._k += 1
         self.log.info('Inner CG iteration required {} steps.'.format(self._k))

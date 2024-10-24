@@ -13,7 +13,7 @@ from copy import copy,deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
 
-from regpy.vecsps import VectorStructureBase, VectorSpaceBase, DirectSum
+from regpy.vecsps import VectorSpaceBase, DirectSum
 from regpy.util import is_complex_dtype, classlogger
 
 @dataclass 
@@ -154,12 +154,24 @@ class NgsBaseVector:
         return result
 
 
-class NgsVectorStructure(VectorStructureBase):
+class NgsVectorSpace(VectorSpaceBase):
+    """A vector space wrapping an `ngsolve.FESpace`.
+
+    Parameters
+    ----------
+    fes : ngsolve.FESpace
+       The wrapped NGSolve vector space.
+    bdr : 
+        Boundary of the NGSolve vector space.
+    """
+
+    log = classlogger
+
     def __init__(self, fes, bdr=None):
         assert isinstance(fes, ngs.FESpace)
         self.fes = fes
         self.bdr = bdr
-        super().__init__(NgsBaseVector, (fes.ndof,), fes.is_complex)
+        super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex)
         # Checks if FES is Vector valued and stores the dimension in self.codim
         from netgen.libngpy._meshing import NgException
         try:
@@ -170,7 +182,8 @@ class NgsVectorStructure(VectorStructureBase):
             self.codim = 1
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
         self._gfu_util = ngs.GridFunction(self._fes_util)
-        self._gfu_fes = ngs.GridFunction(fes)
+        self._gfu_fes = ngs.GridFunction(self.fes)
+        self._help_x = NgsBaseVector(self._gfu_fes.vec)
 
     def zeros(self):
         h = self._gfu_fes.vec.CreateVector()
@@ -203,9 +216,8 @@ class NgsVectorStructure(VectorStructureBase):
         assert not self.is_complex
         self._gfu_fes.vec.FV().NumPy[:] =  np.random.poisson(x.vec.FV().NumPy())
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
-    
 
-    def is_vector(self,x):
+    def __contains__(self,x):
         if not isinstance(x,NgsBaseVector):
             return False
         elif x.size != self.fes.ndof:
@@ -218,15 +230,15 @@ class NgsVectorStructure(VectorStructureBase):
     def vdot(self, x, y):
         return ngs.InnerProduct(x.vec,y.vec)
 
-    def to_complex(self):
+    def complex_space(self):
         if self.is_complex:
             return copy(self)
-        return NgsVectorStructure(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
+        return NgsVectorSpace(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
-    def to_real(self):
+    def real_space(self):
         if not self.is_complex:
             return copy(self)
-        return NgsVectorStructure(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
+        return NgsVectorSpace(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
     
     def flatten(self, x:NgsBaseVector) -> np.ndarray:
         if self.is_complex:
@@ -269,12 +281,10 @@ class NgsVectorStructure(VectorStructureBase):
                 yield elm
             elm[idx] = 0
 
-    @staticmethod
-    def logical_and(x,y):
+    def logical_and(self,x,y):
         return x & y 
     
-    @staticmethod
-    def logical_or(x,y):
+    def logical_or(self,x,y):
         return x | y 
     
     def logical_not(self,x):
@@ -282,28 +292,6 @@ class NgsVectorStructure(VectorStructureBase):
     
     def logical_xor(self,x,y):
         return x ^ y
-
-
-class NgsVectorSpace(VectorSpaceBase):
-    """A vector space wrapping an `ngsolve.FESpace`.
-
-    Parameters
-    ----------
-    fes : ngsolve.FESpace
-       The wrapped NGSolve vector space.
-    bdr : 
-        Boundary of the NGSolve vector space.
-    """
-
-    log = classlogger
-
-    def __init__(self, fes, bdr=None):
-        super().__init__(NgsVectorStructure(fes=fes,bdr=bdr))
-        self.fes = self.vec_type.fes
-        self.bdr = self.vec_type.bdr
-        self.codim = self.vec_type.codim
-        self._gfu_fes = ngs.GridFunction(self.fes)
-        self._help_x = NgsBaseVector(self._gfu_fes.vec)
 
     def is_on_boundary(self,x):
         if self.bdr is None:

@@ -599,7 +599,7 @@ def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
             break
         ystar = (op.adjoint * setting.h_codomain.gram * op)(x)
         y = setting.h_domain.gram_inv(ystar)
-        lmb = ma.sqrt(setting.op.codomain.vec_type.vdot(y, ystar).real)
+        lmb = ma.sqrt(setting.op.codomain.vdot(y, ystar).real)
         relative_residual = setting.h_domain.norm(y - lmb * x)
         x = y/lmb
     return ma.sqrt(lmb)

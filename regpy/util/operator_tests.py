@@ -56,7 +56,7 @@ def test_adjoint(op, tolerance=1e-10):
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
-    err = (op.codomain.vec_type.vdot(y, fx) - op.domain.vec_type.vdot(fty, x)).real
+    err = (op.codomain.vdot(y, fx) - op.domain.vdot(fty, x)).real
     assert abs(err) < tolerance, 'err = {}'.format(err)
 
 
@@ -85,9 +85,9 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=Fa
     x = op.domain.randn()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
-    normh = op.domain.vec_type.norm(h)
+    normh = op.domain.norm(h)
     g = deriv(h)
-    seq=[op.codomain.vec_type.norm((op(x + step * h) - y) / step - g) / normh for step in steps]
+    seq=[op.codomain.norm((op(x + step * h) - y) / step - g) / normh for step in steps]
     if(ret_sequence):
         return seq
     assert all(seq_i >= seq_j for seq_i, seq_j in zip(seq, seq[1:])),f"convergence errors: {seq}"

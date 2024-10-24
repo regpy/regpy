@@ -110,8 +110,8 @@ class IrgnmSemiSmooth(RegSolver):
         
         
     def inner_update(self):
-        self.active=self.op.domain.vec_type.logical_or(self.active_plus, self.active_minus)
-        self.inactive=self.op.domain.vec_type.logical_not(self.active)
+        self.active=self.op.domain.logical_or(self.active_plus, self.active_minus)
+        self.inactive=self.op.domain.logical_not(self.active)
 
         #On the active sets the solution takes the values of the constraints
         self.x[self.active_plus]=self.psi_plus[self.active_plus]

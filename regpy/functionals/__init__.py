@@ -146,7 +146,7 @@ class Functional:
             relative accuracy for the test
         """
         xi = self.subgradient(x)
-        return self.domain.vec_type.norm(vstar-xi)<=eps*(self.domain.vec_type.norm(xi)+eps)
+        return self.domain.norm(vstar-xi)<=eps*(self.domain.norm(xi)+eps)
 
     def hessian(self, x,recursion_safeguard=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
@@ -196,7 +196,7 @@ class Functional:
         r"""Returns `True` if \(v)\ is a subgradient of \(F.conj)\ at \(x)\, otherwise `False`.
         """
         xi = self.conj_subgradient(xstar)
-        return self.domain.vec_type.norm(v-xi)<=eps*(self.domain.vec_type.norm(xi)+eps)
+        return self.domain.norm(v-xi)<=eps*(self.domain.norm(xi)+eps)
 
     def conj_hessian(self,xstar, recursion_safeguard=False):
         r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
@@ -453,7 +453,7 @@ class LinearFunctional(Functional):
             self._gradient = self.h_domain.gram(gradient)
 
     def _eval(self,x):
-        return self.domain.vec_type.vdot(self._gradient,x).real
+        return self.domain.vdot(self._gradient,x).real
 
     @property
     def gradient(self):
@@ -466,7 +466,7 @@ class LinearFunctional(Functional):
         return operators.Zero(self.domain)
 
     def _conj(self,x_star):
-        return 0 if self.domain.vec_type.norm(x_star- self._gradient)==0 else inf
+        return 0 if self.domain.norm(x_star- self._gradient)==0 else inf
 
     def _conj_subgradient(self, xstar):
         if xstar == self._gradient:
@@ -487,7 +487,7 @@ class LinearFunctional(Functional):
         return LinearFunctional(a*self.gradient,domain=self.domain,h_domain=self.h_domain,gradient_in_dual_space=True)
     
     def shift(self,v):
-        return self - self.domain.vec_type.vdot(self._gradient,v).real
+        return self - self.domain.vdot(self._gradient,v).real
 
     def __add__(self, other):
         if isinstance(other,LinearFunctional):
@@ -582,10 +582,10 @@ class SquaredNorm(Functional):
     def _conj(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
-            return (self.h_domain.domain.vec_type.vdot(xstar-bstar, self.gram_inv(xstar-bstar))).real / (2.*self.a) - self.c
+            return (self.h_domain.domain.vdot(xstar-bstar, self.gram_inv(xstar-bstar))).real / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
-            return -self.c if self.domain.vec_type.norm(xstar-bstar)<=eps*(self.domain.vec_type.norm(xstar)+eps) else inf
+            return -self.c if self.domain.norm(xstar-bstar)<=eps*(self.domain.norm(xstar)+eps) else inf
         else:
             return -inf
 
@@ -951,7 +951,7 @@ class HorizontalShiftDilation(Functional):
         if self.shift is None:
             return self.F._conj(x_star/self.dilation)             
         else:
-            return self.F._conj(x_star/self.dilation) + self.domain.vec_type.vdot(x_star,self.shift).real
+            return self.F._conj(x_star/self.dilation) + self.domain.vdot(x_star,self.shift).real
 
     def _conj_subgradient(self,x_star):
         if self.shift is None:
@@ -1395,7 +1395,7 @@ class HilbertNormGeneric(Functional):
 
     def _linearize(self, x):
         gx = self.h_space.gram(x)
-        y = (self.domain.vec_type.vdot(x, gx)).real / 2
+        y = (self.domain.vdot(x, gx)).real / 2
         return y, gx
 
     def _subgradient(self, x):
@@ -1413,11 +1413,11 @@ class HilbertNormGeneric(Functional):
             return inverse(self.h_domain.gram(x))
         
     def _conj(self, xstar):
-        return (self.domain.vec_type.vdot(xstar, self.h_space.gram_inv(xstar))).real / 2
+        return (self.domain.vdot(xstar, self.h_space.gram_inv(xstar))).real / 2
 
     def _conj_linearize(self, xstar):
         gx = self.h_space.gram_inv(xstar)
-        y = (self.domain.vec_type.vdot(xstar, gx)).real / 2
+        y = (self.domain.vdot(xstar, gx)).real / 2
         return y, gx
 
     def _conj_subgradient(self, xstar):

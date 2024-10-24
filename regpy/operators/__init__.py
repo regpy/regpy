@@ -109,7 +109,7 @@ class Operator:
     Note that the adjoint should be computed with respect to the standard real inner product on the
     domain / codomain, given as
 
-        real(domain.vec_type.vdot(x, y)) or real(codomain.vec_type.vdot(x, y))
+        real(domain.vdot(x, y)) or real(codomain.vdot(x, y))
 
     Other inner products on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.

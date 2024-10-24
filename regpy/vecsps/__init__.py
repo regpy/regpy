@@ -35,260 +35,6 @@ from typing import List
 
 from regpy import util, operators
 
-class VectorStructureBase:
-
-    log = util.classlogger
-
-    def __init__(self,type,shape,complex = False) -> None:
-        self.type = type
-        """The underlying type for the vectors.
-        """
-        self.shape = shape
-        """A tuple containing the shape of the vectors
-        """
-        self.is_complex = complex
-        """The data type of the entries in the vectors.
-        """
-
-    @property
-    def size(self):
-        """The size of elements (as arrays) of this vector space."""
-        return np.prod(self.shape)
-    
-    @property
-    def real_size(self) -> int:
-        """The size of elements (as arrays) of this vector space when casting complex to real."""
-        if self.is_complex:
-            return int(np.prod(self.shape)*2)
-        else:
-            return int(np.prod(self.shape))
-    
-    def zeros(self):
-        """Should generate a zero vector.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-    
-    def ones(self):
-        """Should generate a vector corresponding to the constant 1 function.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-
-    
-    def empty(self):
-        """Provides an empty vector.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-    
-    def rand(self,random_generator = None):
-        """Generate a random vector.
-
-        Parameters
-        ----------
-        random_generator : callable, optional
-            The random function to use. Should accept the shape as a tuple and return a real
-            array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
-            this. Default: None.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-    
-    def poisson(self,random_generator = None):
-        """Generate a poisson vector.
-
-        Parameters
-        ----------
-        x : self.type
-            the distribution to be used.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-
-    def is_vector(self,x):
-        """Determine if provided vector x is a Vector of this type.
-
-        Parameters
-        ----------
-        x : any
-            The vector to be checked if its a vector of this type.
-
-        Returns
-        -------
-        Boolean
-            Returns True if the vector belongs to this class of vectors.
-
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-
-    def to_complex(self):
-        """Returns the same vector class with complex dtype.
-
-        Returns
-        -------
-        VectorStructureBase
-            Same vectors with complex dtype. 
-        
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-
-    def to_real(self):
-        """Returns the same vector class with real dtype.
-
-        Returns
-        -------
-        VectorStructureBase
-            Same vectors with real dtype. 
-        
-        Raises
-        ------
-        NotImplemented
-            If subclass does not provide this method.
-        """
-        raise NotImplementedError
-    
-    def flatten(self,x):
-        """Transform the vector `x`, into a flattened array. Inverse
-        to `fromflat`.
-
-        Parameters
-        ----------
-        x : self.type
-            The vector to transform.
-
-        Returns
-        -------
-        array
-            The flattened array. If memory layout allows, it will be a view into `x`.
-        """
-        raise NotImplementedError
-    
-    def fromflat(self,x):
-        """Transform a flattened vector into an element of the vector space. Inverse to `flatten`.
-
-        Parameters
-        ----------
-        x : self.type
-            The flat vector to transform
-
-        Returns
-        -------
-        array
-            The reshaped array. If memory layout allows, this will be a view into `x`.
-        """
-        raise NotImplementedError
-    
-    def vdot(self,x,y):
-        """Return the vector dot product as defined for these vectors. Note
-        for complex vector it is supposed, that the second vector is conjugated.
-
-        Parameters
-        ----------
-        x : self.type
-            First vector.
-        y : self.type
-            second vector
-
-        Returns
-        -------
-        float or complex
-            The dot product of x and y
-
-        Raises
-        ------
-        NotImplementedError
-            _description_
-        """
-        raise NotImplementedError
-    
-    def norm(self,x):
-        return sqrt(self.vdot(x,x).real)
-    
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, type(self)):
-            return False
-        return (self.type == other.type and
-                self.shape == other.shape and
-                self.is_complex == other.is_complex)
-
-    def __add__(self, other):
-        if isinstance(other, VectorStructureBase):
-            return SumVectorStructure(self, other,flatten=True)
-        else:
-            return NotImplemented
-
-    def __radd__(self, other):
-        if isinstance(other, VectorStructureBase,flatten=True):
-            return SumVectorStructure(other, self)
-        else:
-            return NotImplemented
-        
-    # def __mul__(self, other):
-    #     if isinstance(other, VectorStructureBase):
-    #         return VectorProd(self, other)
-    #     else:
-    #         return NotImplemented
-
-    # def __rmul__(self, other):
-    #     if isinstance(other, VectorStructureBase):
-    #         return VectorProd(other, self)
-    #     else:
-    #         return NotImplemented
-
-    def __pow__(self, power):
-        assert isinstance(power, int)
-        domain = self
-        for i in range(power-1):
-            domain = SumVectorStructure(domain, self,flatten=True)
-        return domain
-    
-    def __iter__(self):
-        return self.iter_basis()
-
-    def iter_basis(self):
-        raise NotImplementedError
-
-    def logical_and(self,x,y):
-        return x & y 
-
-    def logical_or(self,x,y):
-        return x | y 
-    
-    def logical_not(self,x):
-        return not x
-    
-    def logical_xor(self,x,y):
-        return x ^ y
-
 @dataclass 
 class TupleVector:
     v: List
@@ -481,268 +227,65 @@ class TupleVector:
         return TupleVector([method(s_k) for s_k in self])
 
 
-class SumVectorStructure(VectorStructureBase):
-
-    log = util.classlogger
-
-    def __init__(self, *summands : type[VectorStructureBase], flatten: bool = False) -> None:
-        if flatten:
-            self.summands = []
-            for s in summands:
-                if isinstance(s,SumVectorStructure):
-                    self.summands.extend(s.summands)
-                else:
-                    self.summands.append(s)
-        else:
-            self.summands = summands
-        self.n_components = len(self.summands)
-        super().__init__(TupleVector, (sum([s.size for s in summands]),), complex = any([s.is_complex for s in summands]))
-
-    @property
-    def real_size(self) -> int:
-        return sum([s.real_size for s in self.summands]) 
-
-    def zeros(self) -> TupleVector:
-        return TupleVector([s.zeros() for s in self.summands])
-    
-    def ones(self)-> TupleVector:
-        return TupleVector([s.ones() for s in self.summands])
-    
-    def empty(self)-> TupleVector:
-        return TupleVector([s.empty() for s in self.summands])
-    
-    def rand(self,random_generator = None)-> TupleVector:
-        return TupleVector([s.rand(random_generator=random_generator) for s in self.summands])
-    
-    def poisson(self,x)-> TupleVector:
-        return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
-
-    def is_vector(self,x) -> bool:
-        if isinstance(x,TupleVector) and x.ndim == self.n_components and all([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)]):
-            return True
-        else:
-            print(self.summands)
-            print(x.ndim, self.n_components)
-            print([isinstance(x_i,t_i.type) for x_i,t_i in zip(x,self.summands)])
-            return False
-        
-    def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
-        assert self.is_vector(x), "x of type {} is not a vector".format(type(x)) 
-        assert self.is_vector(y), "y of type {} is not a vector".format(type(y))
-        return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
-
-    def to_complex(self):
-        return SumVectorStructure(*[s.to_complex for s in self.summands])
-
-    def to_real(self):
-        return SumVectorStructure(*[s.to_real for s in self.summands])
-    
-    def flatten(self, x : TupleVector) -> np.ndarray:
-        assert self.is_vector(x)
-        return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
-    
-    def fromflat(self, x : np.ndarray) -> TupleVector:
-        if x.ndim == 1 and np.isreal(x) and x.size == self.real_size:
-            ret = []
-            ind = 0
-            for s in self.summands:
-                if s.is_complex:
-                    ret.append(s.fromflat(x[ind:ind+2*s.size]))
-                    ind += 2*s.size
-                else:
-                    ret.append(s.fromflat(x[ind:ind+s.size]))
-                    ind += s.size
-            return TupleVector(ret)
-        else:
-            raise ValueError("x has to be of type np.ndarray not {}".format(type(x)))
-    
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, type(self)):
-            return False
-        return all([s == o for s,o in zip(self.summands,other.summands)])
-    
-    def iter_basis(self):
-        for i,s in enumerate(self.summands()):
-            vec = self.zeros()
-            for b in s.iter_basis():
-                vec.v[i] = b
-                yield vec
-    
-    def logical_not(self,x) -> TupleVector:
-        return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
-    
-    def logical_xor(self,x,y) -> TupleVector:
-        return TupleVector([s.logical_xor(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
-
-
-class NumPyVectorStructure(VectorStructureBase):
-
-    log = util.classlogger
-
-    def __init__(self, shape, dtype=float):
-        # Upcast dtype to represent at least (single-precision) floats, no
-        # bools or ints
-        dtype = np.result_type(np.float32, dtype)
-        # Allow only float and complexfloat, disallow objects, strings, times
-        # or other fancy dtypes
-        assert np.issubdtype(dtype, np.inexact)
-        self.dtype = dtype
-        try:
-            shape = tuple(shape)
-        except TypeError:
-            shape = (shape,)
-        super().__init__(np.ndarray, shape, util.is_complex_dtype(self.dtype))
-
-    def zeros(self):
-        return np.zeros(self.shape, dtype=self.dtype)
-    
-    def ones(self):
-        return np.ones(self.shape, dtype=self.dtype)
-
-    def empty(self):
-        return np.empty(self.shape, dtype=self.dtype)
-    
-    def rand(self,random_generator = None):
-        random_generator = random_generator or np.random.random_sample 
-        r = random_generator(self.shape)
-        if not np.can_cast(r.dtype, self.dtype):
-            raise ValueError(
-                'random generator {} can not produce values of dtype {}'.format(random_generator, self.dtype))
-        if util.is_complex_dtype(self.dtype) and not util.is_complex_dtype(r.dtype):
-            c = np.empty(self.shape, dtype=self.dtype)
-            c.real = r
-            c.imag = random_generator(self.shape)
-            return c
-        else:
-            return np.asarray(r, dtype=self.dtype)
-    
-    def poisson(self,x):
-        assert not self.is_complex
-        return np.random.poisson(x)
-
-    def is_vector(self,x):
-        if not isinstance(x,np.ndarray):
-            return False
-        elif x.shape != self.shape:
-            return False
-        elif util.is_complex_dtype(x.dtype):
-            return self.is_complex
-        elif util.is_real_dtype(x.dtype):
-            return True
-        else:
-            return False
-        
-    def vdot(self, x, y):
-        return np.vdot(x, y).item()
-
-    def to_complex(self):
-        return NumPyVectorStructure(self.shape,np.result_type(1j, self.dtype))
-
-    def to_real(self):
-        return NumPyVectorStructure(self.shape,np.empty(0, dtype=self.dtype).real.dtype)
-    
-    def flatten(self, x : np.ndarray) -> np.ndarray:
-        x = np.asarray(x)
-        assert self.shape == x.shape
-        if self.is_complex:
-            if util.is_complex_dtype(x.dtype):
-                return util.complex2real(x).ravel()
-            else:
-                aux = self.empty()
-                aux.real = x
-                return util.complex2real(aux).ravel()
-        elif util.is_complex_dtype(x.dtype):
-            raise TypeError('Real vector space can not handle complex vectors')
-        return x.ravel()
-
-    def fromflat(self, x : np.ndarray) -> np.ndarray:
-        x = np.asarray(x)
-        assert util.is_real_dtype(x.dtype)
-        if self.is_complex:
-            return util.real2complex(x.reshape(self.shape + (2,)))
-        else:
-            return x.reshape(self.shape)
-    
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other,type(self)) and self.dtype != other.dtype:
-            return False
-        return super().__eq__(other)
-
-    def iter_basis(self):
-        r"""Generator iterating over the standard basis of the vector space. For efficiency,
-        the same array is returned in each step, and subsequently modified in-place. If you need
-        the array longer than that, perform a copy. In case of complex a vector space after each
-        each array modefied in its place with a real one it returns the same vector with \(1i\)
-        in its place.   
-        """
-        elm = self.zeros()
-        for idx in np.ndindex(self.shape):
-            elm[idx] = 1
-            yield elm
-            if self.is_complex:
-                elm[idx] = 1j
-                yield elm
-            elm[idx] = 0
-    
-    @staticmethod
-    def logical_and(x,y):
-        return np.logical_and(x, y) 
-    
-    @staticmethod
-    def logical_or(x,y):
-        return np.logical_or(x, y) 
-    
-    def logical_not(self,x):
-        return np.logical_not(x) 
-    
-    def logical_xor(self,x,y):
-        return np.logical_xor(x, y) 
-
-
 class VectorSpaceBase:
     r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
     space) without any additional structure.
 
     VectorSpaceBases can be added, producing `DirectSum` instances.
 
+    The type if given can be used to implement the methods with the same name
+    given each can deal with the follwoing input the following methods:
+     - zeros(shape : tuple)
+     - ones(shape : tuple)
+     - empty(shape : tuple)
+     - rand(shape : tuple,random_generator : method)
+     - poisson(x : Vector of the Space)
+     - vdot(x : Vector of the Space, y : Vector of the Space)
+     - logical_and(x : boolean Vector of the Space, y : boolean Vector of the Space)
+     - logical_or(x : boolean Vector of the Space, y : boolean Vector of the Space)
+     - logical_not(x : boolean Vector of the Spac)
+     - logical_xor(x : boolean Vector of the Space, y : boolean Vector of the Space)
+     
+    for convinience these methods will be linked by the same name in this
+    class.
+
     Parameters
     ----------
-    vector_type : VectorStructureBase
+    type : object
         The class of vectors used.
     """
 
     log = util.classlogger
 
-    def __init__(self, vector_type : VectorStructureBase):
-        self.vec_type = vector_type
+    def __init__(self, vec_type : object, shape : tuple, complex : bool = False, type = None):
+        self.vec_type = vec_type
         """The vector type"""
-        self.shape = self.vec_type.shape
+        self.shape = shape
         """The vector space's shape"""
+        self.is_complex = complex
+        """Type of the vectors if different"""
+        self.type = type 
 
     def zeros(self):
         """Return the zero vector of the space.
         """
-        return self.vec_type.zeros()
+        if type is None:
+            raise NotImplementedError
+        return self.type.zeros(shape = self.shape)
     
     def ones(self):
         """Return the zero vector of the space.
         """
-        return self.vec_type.ones()
+        if type is None:
+            raise NotImplementedError
+        return self.type.ones(shape = self.shape)
 
     def empty(self):
         """Return an uninitalized element of the space.
         """
-        return self.vec_type.empty()
-
-    def iter_basis(self):
-        r"""Generator iterating over the standard basis of the vector space. For efficiency,
-        the same array is returned in each step, and subsequently modified in-place. If you need
-        the array longer than that, perform a copy. In case of complex a vector space after each
-        each array modefied in its place with a real one it returns the same vector with \(1i\)
-        in its place.   
-        """
-        for idx in self.vec_type:
-            yield idx
+        if type is None:
+            raise NotImplementedError
+        return self.type.empty(shape = self.shape)
 
     def rand(self, rand=None):
         """Return a random element of the space.
@@ -757,33 +300,87 @@ class VectorSpaceBase:
             array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
             this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
         """
-        return self.vec_type.rand(random_generator=rand)
+        if type is None:
+            raise NotImplementedError
+        return self.type.rand(shape = self.shape,random_generator=rand)
     
     def poisson(self, x):
         """Return a poisson distributed vector given the distribution x.
 
-        The random generator can be passed as argument. For complex dtypes, real and imaginary
-        parts are generated independently.
+        Parameters
+        ----------
+        x : self.vec_type
+            The distribution to be used.
+        """
+        if type is None:
+            raise NotImplementedError
+        assert x in self
+        return self.type.poisson(x)
+    
+    def vdot(self,x,y):
+        """Return the vector dot product as defined for these vectors. Note
+        for complex vector it is supposed, that the second vector is conjugated.
 
         Parameters
         ----------
-        rand : callable, optional
-            The random function to use. Should accept the shape as a tuple and return a real
-            array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
-            this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
+        x : self.type
+            First vector.
+        y : self.type
+            second vector
+
+        Returns
+        -------
+        float or complex
+            The dot product of x and y
         """
-        assert x in self
-        return self.vec_type.poisson(x)
+        if type is None:
+            raise NotImplementedError
+        return self.type.vdot(x,y)
+
+    def logical_and(self,x,y):
+        """Logical and of two boolean vectors
+        """
+        if type is None:
+            raise NotImplementedError
+        return self.type.logical_and(x,y) 
+
+    def logical_or(self,x,y):
+        """Logical or of two boolean vectors
+        """
+        if type is None:
+            raise NotImplementedError
+        return self.type.logical_or(x,y) 
+    
+    def logical_not(self,x):
+        """Logical not of a boolean vectors
+        """
+        if type is None:
+            raise NotImplementedError
+        return self.type.logical_not(x) 
+    
+    def logical_xor(self,x,y):
+        """Logical xor of two boolean vectors
+        """
+        if type is None:
+            raise NotImplementedError
+        return self.type.logical_xor(x,y) 
 
     def randn(self):
         """Like `rand`, but using a standard normal distribution."""
-        return self.rand(rand=np.random.standard_normal)
+        return self.rand(random_generator=np.random.standard_normal)
 
-    @property
-    def is_complex(self):
-        """Boolean indicating whether the dtype is complex"""
-        return self.vec_type.is_complex
-
+    def iter_basis(self):
+        r"""Generator iterating over the standard basis of the vector space. For efficiency,
+        the same array should returned in each step, and subsequently modified in-place. If you need
+        the array longer than that, perform a copy. In case of a complex vector space after each
+        each array modefied in its place with a real one it should return the same vector with \(1i\)
+        in its place.
+        """
+        raise NotImplementedError
+    
+    def __iter__(self):
+        return self.iter_basis()
+    
     @property
     def size(self):
         """The size of elements (as arrays) of this vector space."""
@@ -809,7 +406,7 @@ class VectorSpaceBase:
         return operators.Identity(self)
 
     def __contains__(self, x):
-        return self.vec_type.is_vector(x=x)
+        return isinstance(x,self.vec_type) and x.shape == self.shape
 
     def flatten(self, x):
         """Transform the vector `x`, an element of the vector space, into a flattened vector. Inverse
@@ -817,7 +414,7 @@ class VectorSpaceBase:
 
         Parameters
         ----------
-        x : self.vec_type.type
+        x : self.vec_type
             The vector to transform.
 
         Returns
@@ -825,8 +422,7 @@ class VectorSpaceBase:
         array
             The flattened array. If memory layout allows, it will be a view into `x`.
         """
-        assert x in self
-        return self.vec_type.flatten(x)
+        raise NotImplementedError
 
     def fromflat(self, x):
         """Transform a flattened vector into an element of the vector space. Inverse to `flatten`.
@@ -841,7 +437,7 @@ class VectorSpaceBase:
         array
             The reshaped array.
         """
-        return self.vec_type.fromflat(x)
+        raise NotImplementedError
 
     def complex_space(self):
         """Compute the corresponding complex vector space.
@@ -851,7 +447,7 @@ class VectorSpaceBase:
         VectorSpaceBase
             The complex space corresponding to this vector space.
         """
-        return VectorSpaceBase(self.vec_type.to_complex)
+        raise NotImplementedError
 
     def real_space(self):
         """Compute the corresponding real vector space.
@@ -861,7 +457,7 @@ class VectorSpaceBase:
         VectorSpaceBase
             The real space corresponding to this vector space.
         """
-        return VectorSpaceBase(self.vec_type.to_real)
+        raise NotImplementedError
     
     def masked_space(self,mask):
         """Gives a masked space given a mask.
@@ -878,19 +474,16 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def vdot(self,x,y):
-        return self.vec_type.vdot(x,y)
-    
     def norm(self,x):
-        return self.vec_type.norm(x)
+        return sqrt(self.vdot(x,x).real)
 
     def __eq__(self, other):
-        if isinstance(other, type(self)):
-            return (
-                self.vec_type == other.vec_type
-            )
-        else:
+        if not isinstance(other, type(self)):
             return False
+        return (self.type == other.type and
+                self.shape == other.shape and
+                self.is_complex == other.is_complex and
+                self.vec_type == other.vec_type)
         
     def __iadd__(self, other):
         if isinstance(other, VectorSpaceBase):
@@ -935,8 +528,47 @@ class NumPyVectorSpace(VectorSpaceBase):
     log = util.classlogger
 
     def __init__(self, shape:tuple, dtype=float):
-        super().__init__(NumPyVectorStructure(shape=shape,dtype=dtype))
-        self.dtype = self.vec_type.dtype
+        super().__init__(vec_type=np.ndarray,shape=shape, complex = util.is_complex_dtype(dtype),type = np)
+        self.dtype = dtype
+
+    def rand(self,random_generator = None):
+        random_generator = random_generator or np.random.random_sample 
+        r = random_generator(self.shape)
+        if not np.can_cast(r.dtype, self.dtype):
+            raise ValueError(
+                'random generator {} can not produce values of dtype {}'.format(random_generator, self.dtype))
+        if util.is_complex_dtype(self.dtype) and not util.is_complex_dtype(r.dtype):
+            c = np.empty(self.shape, dtype=self.dtype)
+            c.real = r
+            c.imag = random_generator(self.shape)
+            return c
+        else:
+            return np.asarray(r, dtype=self.dtype)
+
+    def poisson(self, x):
+        return np.random.poisson(x)
+        
+    def flatten(self, x : np.ndarray) -> np.ndarray:
+        x = np.asarray(x)
+        assert self.shape == x.shape
+        if self.is_complex:
+            if util.is_complex_dtype(x.dtype):
+                return util.complex2real(x).ravel()
+            else:
+                aux = self.empty()
+                aux.real = x
+                return util.complex2real(aux).ravel()
+        elif util.is_complex_dtype(x.dtype):
+            raise TypeError('Real vector space can not handle complex vectors')
+        return x.ravel()
+
+    def fromflat(self, x : np.ndarray) -> np.ndarray:
+        x = np.asarray(x)
+        assert util.is_real_dtype(x.dtype)
+        if self.is_complex:
+            return util.real2complex(x.reshape(self.shape + (2,)))
+        else:
+            return x.reshape(self.shape)
 
     def complex_space(self):
         """Compute the corresponding complex vector space.
@@ -949,7 +581,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         other = copy(self)
         other.dtype = np.result_type(1j, self.dtype)
-        other.vec_type = NumPyVectorStructure(shape=self.shape,dtype=other.dtype)
+        other.is_complex = True
         return other
 
     def real_space(self):
@@ -963,7 +595,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         other = copy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
-        other.vec_type = NumPyVectorStructure(shape=self.shape,dtype=other.dtype)
+        other.is_complex = False
         return other
     
     def masked_space(self, mask):
@@ -972,6 +604,22 @@ class NumPyVectorSpace(VectorSpaceBase):
         res = NumPyVectorSpace(np.sum(mask), dtype=self.dtype)
         res.mask = mask
         return res
+    
+    def iter_basis(self):
+        r"""Generator iterating over the standard basis of the vector space. For efficiency,
+        the same array is returned in each step, and subsequently modified in-place. If you need
+        the array longer than that, perform a copy. In case of complex a vector space after each
+        each array modefied in its place with a real one it returns the same vector with \(1i\)
+        in its place.   
+        """
+        elm = self.zeros()
+        for idx in np.ndindex(self.shape):
+            elm[idx] = 1
+            yield elm
+            if self.is_complex:
+                elm[idx] = 1j
+                yield elm
+            elm[idx] = 0
 
     def __mul__(self, other):
         if isinstance(other, NumPyVectorSpace):
@@ -1248,7 +896,79 @@ class DirectSum(VectorSpaceBase):
                     self.summands.append(s)
         else:
             self.summands = summands
-        super().__init__(SumVectorStructure(*[s.vec_type for s in summands],flatten=flatten))
+        super().__init__(vec_type=TupleVector,shape=(s.shape for s in self.summands),complex=any((s.is_complex for s in self.summands)))
+
+    @property
+    def size(self) -> int:
+        return sum([s.size for s in self.summands]) 
+    
+    @property
+    def real_size(self) -> int:
+        return sum([s.real_size for s in self.summands]) 
+
+    def zeros(self) -> TupleVector:
+        return TupleVector([s.zeros() for s in self.summands])
+    
+    def ones(self)-> TupleVector:
+        return TupleVector([s.ones() for s in self.summands])
+    
+    def empty(self)-> TupleVector:
+        return TupleVector([s.empty() for s in self.summands])
+    
+    def rand(self,random_generator = None)-> TupleVector:
+        return TupleVector([s.rand(random_generator=random_generator) for s in self.summands])
+    
+    def poisson(self,x)-> TupleVector:
+        return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
+
+    def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
+        assert x in self, "x of type {} is not a vector".format(type(x)) 
+        assert y in self, "y of type {} is not a vector".format(type(y))
+        return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
+
+    def logical_and(self,x,y) -> TupleVector:
+        return TupleVector([s.logical_and(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
+    
+    def logical_or(self,x,y) -> TupleVector:
+        return TupleVector([s.logical_or(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
+    
+    def logical_not(self,x) -> TupleVector:
+        return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
+    
+    def logical_xor(self,x,y) -> TupleVector:
+        return TupleVector([s.logical_xor(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
+
+    def complex_space(self):
+        return DirectSum(*[s.complex_space() for s in self.summands])
+
+    def real_space(self):
+        return DirectSum(*[s.real_space() for s in self.summands])
+    
+    def flatten(self, x : TupleVector) -> np.ndarray:
+        assert x in self
+        return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
+    
+    def fromflat(self, x : np.ndarray) -> TupleVector:
+        if x.ndim == 1 and np.isreal(x) and x.size == self.real_size:
+            ret = []
+            ind = 0
+            for s in self.summands:
+                if s.is_complex:
+                    ret.append(s.fromflat(x[ind:ind+2*s.size]))
+                    ind += 2*s.size
+                else:
+                    ret.append(s.fromflat(x[ind:ind+s.size]))
+                    ind += s.size
+            return TupleVector(ret)
+        else:
+            raise ValueError("x has to be of type np.ndarray not {}".format(type(x)))
+    
+    def iter_basis(self):
+        for i,s in enumerate(self.summands()):
+            vec = self.zeros()
+            for b in s.iter_basis():
+                vec.v[i] = b
+                yield vec
 
     def masked_space(self, mask):
         if isinstance(mask,int):

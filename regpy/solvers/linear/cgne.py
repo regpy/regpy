@@ -43,7 +43,7 @@ class CGNE(RegSolver):
         """
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
-        self.sq_norm_res = (self.op.domain.vec_type.vdot(self.g_res, res)).real
+        self.sq_norm_res = (self.op.domain.vdot(self.g_res, res)).real
         """The squared norm of the residual."""
         self.dir = res
         """The direction of descent."""
@@ -53,7 +53,7 @@ class CGNE(RegSolver):
     def _next(self):
         Tdir = self.op(self.dir)
         g_Tdir = self.h_codomain.gram(Tdir)
-        alpha = self.sq_norm_res / (self.op.codomain.vec_type.vdot(g_Tdir, Tdir)).real
+        alpha = self.sq_norm_res / (self.op.codomain.vdot(g_Tdir, Tdir)).real
 
         self.x += alpha * self.dir
 
@@ -63,7 +63,7 @@ class CGNE(RegSolver):
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
-        self.sq_norm_res = (self.op.codomain.vec_type.vdot(self.g_res, res)).real
+        self.sq_norm_res = (self.op.codomain.vdot(self.g_res, res)).real
         beta = self.sq_norm_res / sq_norm_res_old
 
         self.dir *= beta

@@ -66,7 +66,7 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return (self.vecsp.vec_type.vdot(x, self.gram(y))).real
+        return (self.vecsp.vdot(x, self.gram(y))).real
 
     def norm(self, x):
         """Compute the norm of an element.
@@ -92,7 +92,7 @@ class HilbertSpace:
         return functionals.HilbertNorm(self)
 
     def dual_space(self):
-        """The dual space for the dual pairing given by `domain.vec_type.vdot`. 
+        """The dual space for the dual pairing given by `domain.vdot`. 
         The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpaceBase`, but gram is replaced by gram_inv.
 
         Returns

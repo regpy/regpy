@@ -164,7 +164,7 @@ class SemismoothNewton_bilateral(RegSolver):
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         self.active  = self.active_plus | self.active_minus
-        self.inactive= self.op.domain.vec_type.logical_not(self.active)
+        self.inactive= self.op.domain.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
@@ -202,10 +202,10 @@ class SemismoothNewton_bilateral(RegSolver):
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
         self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus)) >=0
-        added_ind = (self.op.domain.vec_type.logical_and(self.active_plus,  self.op.domain.vec_type.logical_not(self.active_plus_old ))).sum() \
-                  + (self.op.domain.vec_type.logical_and(self.active_minus, self.op.domain.vec_type.logical_not(self.active_minus_old))).sum() 
-        removed_ind = (self.op.domain.vec_type.logical_and(self.active_plus_old, self.op.domain.vec_type.logical_not(self.active_plus))).sum() \
-                + (self.op.domain.vec_type.logical_and(self.active_minus_old, self.op.domain.vec_type.logical_not(self.active_minus))).sum()
+        added_ind = (self.op.domain.logical_and(self.active_plus,  self.op.domain.logical_not(self.active_plus_old ))).sum() \
+                  + (self.op.domain.logical_and(self.active_minus, self.op.domain.logical_not(self.active_minus_old))).sum() 
+        removed_ind = (self.op.domain.logical_and(self.active_plus_old, self.op.domain.logical_not(self.active_plus))).sum() \
+                + (self.op.domain.logical_and(self.active_minus_old, self.op.domain.logical_not(self.active_minus))).sum()
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind
@@ -372,7 +372,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_old=self.active
-        self.inactive= self.op.domain.vec_type.logical_not(self.active)
+        self.inactive= self.op.domain.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active]=0
@@ -400,7 +400,7 @@ class SemismoothNewton_nonneg(RegSolver):
         self.y = self.op(self.x)
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
-        bound = self.op.domain.vec_type.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vec_type.vdot(np.maximum(-aux,0),self.x)
+        bound = self.op.domain.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vdot(np.maximum(-aux,0),self.x)
         if sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()
@@ -410,8 +410,8 @@ class SemismoothNewton_nonneg(RegSolver):
 
         #Update active and inactive sets
         self.active = (self.lam-self.regpar*self.x)>=0
-        added_ind = (self.op.domain.vec_type.logical_and(self.active, self.op.domain.vec_type.logical_not(self.active_old))).sum() 
-        removed_ind = (self.op.domain.vec_type.logical_and(self.active_old, self.op.domain.vec_type.logical_not(self.active))).sum()
+        added_ind = (self.op.domain.logical_and(self.active, self.op.domain.logical_not(self.active_old))).sum() 
+        removed_ind = (self.op.domain.logical_and(self.active_old, self.op.domain.logical_not(self.active))).sum()
         self.log.debug('it {}: CG its {}; changes active set +{},-{}; error bound {:1.2e}/{:1.2e}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind,
