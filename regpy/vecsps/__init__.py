@@ -260,7 +260,7 @@ class VectorSpaceBase:
     def __init__(self, vec_type : object, shape : tuple, complex : bool = False, type = None):
         self.vec_type = vec_type
         """The vector type"""
-        self.shape = shape
+        self.shape = (shape,) if isinstance(shape,int) else shape
         """The vector space's shape"""
         self.is_complex = complex
         """Type of the vectors if different"""
@@ -528,8 +528,23 @@ class NumPyVectorSpace(VectorSpaceBase):
     log = util.classlogger
 
     def __init__(self, shape:tuple, dtype=float):
-        super().__init__(vec_type=np.ndarray,shape=shape, complex = util.is_complex_dtype(dtype),type = np)
+        super().__init__(vec_type=np.ndarray,shape=shape, complex = util.is_complex_dtype(np.array([],dtype=dtype)),type = np)
         self.dtype = dtype
+
+    def zeros(self):
+        """Return the zero vector of the space.
+        """
+        return np.zeros(shape = self.shape,dtype=self.dtype)
+    
+    def ones(self):
+        """Return the zero vector of the space.
+        """
+        return np.ones(shape = self.shape,dtype=self.dtype)
+
+    def empty(self):
+        """Return an uninitalized element of the space.
+        """
+        return np.empty(shape = self.shape,dtype=self.dtype)
 
     def rand(self,random_generator = None):
         random_generator = random_generator or np.random.random_sample 
@@ -537,7 +552,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         if not np.can_cast(r.dtype, self.dtype):
             raise ValueError(
                 'random generator {} can not produce values of dtype {}'.format(random_generator, self.dtype))
-        if util.is_complex_dtype(self.dtype) and not util.is_complex_dtype(r.dtype):
+        if util.is_complex_dtype(np.array([],dtype=self.dtype)) and not util.is_complex_dtype(r.dtype):
             c = np.empty(self.shape, dtype=self.dtype)
             c.real = r
             c.imag = random_generator(self.shape)
@@ -547,6 +562,16 @@ class NumPyVectorSpace(VectorSpaceBase):
 
     def poisson(self, x):
         return np.random.poisson(x)
+    
+    def __contains__(self, x):
+        if not super().__contains__(x):
+            return False
+        elif util.is_complex_dtype(x.dtype):
+            return self.is_complex
+        elif util.is_real_dtype(x.dtype):
+            return True
+        else:
+            return False
         
     def flatten(self, x : np.ndarray) -> np.ndarray:
         x = np.asarray(x)
@@ -896,6 +921,7 @@ class DirectSum(VectorSpaceBase):
                     self.summands.append(s)
         else:
             self.summands = summands
+        self.n_components = len(summands)
         super().__init__(vec_type=TupleVector,shape=(s.shape for s in self.summands),complex=any((s.is_complex for s in self.summands)))
 
     @property
@@ -986,6 +1012,10 @@ class DirectSum(VectorSpaceBase):
             )
         else:
             return NotImplemented
+        
+    def __contains__(self, x):
+        return isinstance(x,TupleVector) and x.ndim == self.n_components and all([x_i in s_i for x_i,s_i in zip(x,self.summands)])
+        
 
     def join(self, *xs):
         """Transform a collection of elements of the summands to an element of the direct sum.
