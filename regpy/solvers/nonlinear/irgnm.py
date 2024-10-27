@@ -275,7 +275,7 @@ class IrgnmCGPrec(RegSolver):
         """Counts the number of iterations"""
 
         if precpars is None:
-            self.krylov_order = 5
+            self.krylov_order = 6
             """Order of krylov space in which the spetcral preconditioner is computed"""
             self.number_eigenvalues = 4
             """Spectral preonditioner computed only from the biggest eigenvalues """
@@ -285,6 +285,10 @@ class IrgnmCGPrec(RegSolver):
 
         self.krylov_basis = np.zeros((self.krylov_order, self.h_domain.vecsp.size),dtype=self.op.domain.dtype)
         """Orthonormal Basis of Krylov subspace"""
+        self.krylov_basis_img = np.zeros((self.krylov_order, *self.h_codomain.vecsp.shape),dtype=self.op.codomain.dtype)
+        """Image of the Krylov Basis under the derivative of the operator"""
+        self.krylov_basis_img_2 = np.zeros((self.krylov_order, *self.h_codomain.vecsp.shape),dtype=self.op.codomain.dtype)
+        """Gram matrix applied to image of the Krylov Basis"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
     
@@ -309,6 +313,9 @@ class IrgnmCGPrec(RegSolver):
                 xref=self.init - self.x,
                 **self.cg_pars
             ).run(stoprule=stoprule)
+            for i in range(0, self.krylov_order):
+                self.krylov_basis_img[i, :] = self.deriv(self.krylov_basis[i, :])
+                self.krylov_basis_img_2[i, :] = self.h_codomain.gram(self.krylov_basis_img[i, :])
             self.need_prec_update = False
             self._preconditioner_update()
             self.log.info('Spectral preconditioner updated')
@@ -335,24 +342,24 @@ class IrgnmCGPrec(RegSolver):
                        
     def _preconditioner_update(self):
         """perform lanzcos method to calculate the preconditioner"""
-        L = np.zeros((self.krylov_order, self.krylov_order))
+        L = np.zeros((self.krylov_order, self.krylov_order), dtype=self.op.domain.dtype)
         for i in range(0, self.krylov_order):
-            L[i, :] = np.dot(self.krylov_basis, self.h_domain.gram_inv(
-                self.deriv.adjoint(
-                    self.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
+            L[i, i] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[i, :])
+            for j in range(i+1, self.krylov_order):
+                L[i, j] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[j, :])
+                L[j, i] = L[i, j].conjugate()
         """Express T*T in Krylov_basis"""
 
-        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues, AND make shure it is a method that can handle complex matrices
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
-        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
+        M_krylov = U @ diag_lamb @ U.transpose()
         self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
         """Compute preconditioner"""
 
         diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - np.sqrt(self.regpar) )
-        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
+        M_krylov = U @ diag_lamb @ U.transpose()
         self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 
