@@ -175,14 +175,14 @@ def test_OuterShift():
     op_shifted = OuterShift(op_unshifted,offset)
     ot.test_operator(op_shifted)
     x = dom.rand()
-    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)-offset)<1e-16)
+    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)+offset))<1e-15
     dom=vecsps.VectorSpace((3,2),np.complex128)
     offset = dom.rand()
     op_unshifted = Exponential(domain=dom)
     op_shifted = OuterShift(op_unshifted,offset)
     ot.test_operator(op_shifted)
     x = dom.rand()
-    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)-offset)<1e-16)
+    assert np.max(np.abs(op_unshifted(x)-op_shifted(x)+offset))<1e-15
 
       
 def test_InnerShift():
