@@ -30,3 +30,13 @@ def test_quadratic_intv():
     assert F(2*dom.ones())==np.inf
     ft.test_functional(F,u_s=u_s)
 
+def test_L1_generic():
+    dom = UniformGridFcts(2,10) 
+    x = np.linspace(-5,4.5,20).reshape(2,10)
+    F = L1Generic(dom)
+    assert (F(x) == 50.0)
+    for tau in [0.1,1,2]:
+        assert (F.proximal(x,tau) == np.maximum(0, np.abs(x)-tau)*np.sign(x)).all()
+    ft.test_functional(F)
+
+
