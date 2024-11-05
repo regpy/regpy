@@ -30,10 +30,14 @@ class Landweber(RegSolver):
         The initial guess.
     stepsize : float, optional
         The step length; must be chosen not too large. If omitted, it is guessed from the norm of
-        the derivative at the initial guess.
+        the derivative at the initial guess. Alternatively, if backtracking is used, stepsize defines an
+        initial guess for the step length which has to be sufficently large. If omitted the initial step
+        length will be 10**16.
+    backtracking : boolean, optional
+        Wether or not to use backtracking for finding a sufficient step length. Default: True.
     """
 
-    def __init__(self, setting, data, init, stepsize=None, op_norm_method = "lanczos"):
+    def __init__(self, setting, data, init, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized with the measured data."""
@@ -42,16 +46,50 @@ class Landweber(RegSolver):
         self.deriv = deriv
         """The derivative at the current iterate."""
 
-        self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)**2
-        """The stepsize."""
+        if backtracking:
+            self.backtracking = True
+            self.stepsize = stepsize or 10**16
+            """The stepsize."""
+        else:
+            self.backtracking = False
+            self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)**2
+        
+        self.eta = eta
+        """Factor for decreasing the stepsize."""
+        assert 0 < eta < 1
+
+        if self.backtracking:
+            self._residual = self.y - self.rhs
+            self._gy_residual = self.h_codomain.gram(self._residual)
+            self._old_err = np.vdot(self._residual, self._gy_residual).real
 
     def _next(self):
-        self._residual = self.y - self.rhs
-        self._gy_residual = self.h_codomain.gram(self._residual)
+        if not self.backtracking:
+            self._residual = self.y - self.rhs
+            self._gy_residual = self.h_codomain.gram(self._residual)
         self._update = self.deriv.adjoint(self._gy_residual)
-        self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
+        
+        while self.backtracking:
+            new_x = self.x - self.stepsize * self.h_domain.gram_inv(self._update)
+            self._residual = self.op(new_x) - self.rhs
+            self._gy_residual = self.h_codomain.gram(self._residual)
+            new_err = np.vdot(self._residual, self._gy_residual).real
+            if new_err < self._old_err:
+                self._old_err = new_err
+                break
+            else:
+                self.stepsize *= self.eta
+        
+        if self.backtracking:
+            self.x = new_x
+        else:
+            self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
         self.y, self.deriv = self.op.linearize(self.x)
 
+
         if self.log.isEnabledFor(logging.INFO):
-            norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
+            if self.backtracking:
+                norm_residual = np.sqrt(self._old_err)
+            else:
+                norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
             self.log.info('|residual| = {}'.format(norm_residual))
