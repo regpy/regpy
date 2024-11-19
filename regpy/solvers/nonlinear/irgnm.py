@@ -354,12 +354,12 @@ class IrgnmCGPrec(RegSolver):
         """Perform the computation of eigenvalues and eigenvectors"""
 
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
-        M_krylov = U @ diag_lamb @ U.transpose()
-        self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        self.M = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
         """Compute preconditioner"""
 
         diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - np.sqrt(self.regpar) )
-        M_krylov = U @ diag_lamb @ U.transpose()
-        self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 
