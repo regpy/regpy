@@ -280,3 +280,17 @@ def test_vector_of_operators():#uses Exponential and PtwMultiplication
     y=np.array([1,0,np.exp(1),0,np.exp(2),0,np.exp(3),0,0,0,0,2,0,4,0,6,0,0,3,0,6,0,9,0])
     assert np.max(np.abs(op(x)-y))<1e-15
     ot.test_operator(op)
+
+def test_matrix_of_operators():#uses Exponential and PtwMultiplication
+    #real
+    dom=vecsps.UniformGridFcts(2,2)
+    op1=Exponential(dom)
+    op2=PtwMultiplication(dom,2)
+    op3=PtwMultiplication(dom,3)
+    op4=PtwMultiplication(dom,4)
+    ops=[[op1,op2,None],[None,op3,op4]]
+    op=MatrixOfOperators(ops)
+    x=np.arange(8)
+    y=np.array([1,np.exp(1),np.exp(2),np.exp(3),12,17,22,27,16,20,24,28])
+    assert np.max(np.abs(op(x)-y))<1e-15
+    ot.test_operator(op)

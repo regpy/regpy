@@ -1468,8 +1468,8 @@ class MatrixOfOperators(Operator):
             for T_ij,res_i in zip(T_j,res):
                 if differentiate:
                     if T_ij:
-                        res,deriv = T_ij.linearize(x_j)
-                        res_i += res
+                        res_current,deriv = T_ij.linearize(x_j)
+                        res_i += res_current
                         Tprime_ij = deriv
                     else:
                         Tprime_ij = None
