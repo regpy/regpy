@@ -329,3 +329,12 @@ def test_convolution_operator():
     op=ConvolutionOperator(dom,fourier_multiplier=kernel2,pad_amount=((2,3),(1,2)))
     ot.test_operator(op)
 
+def test_gaussian_blur():
+    #real
+    dom=vecsps.UniformGridFcts(10,10)
+    op=GaussianBlur(dom,5,(2,1),pad_amount=((2,3),(1,2)),first_conv_axis=1)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.UniformGridFcts(10,10,dtype=np.complex128)
+    op=GaussianBlur(dom,5,(2,1),pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
