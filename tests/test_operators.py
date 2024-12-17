@@ -258,3 +258,25 @@ def test_direct_sum():#uses Exponential and PtwMultiplication
     op=DirectSum(op1,op3)
     assert np.max(np.abs(op(x)-y))<1e-10
     ot.test_operator(op)
+
+def test_vector_of_operators():#uses Exponential and PtwMultiplication
+    #real
+    dom=vecsps.UniformGridFcts(2,2)
+    op1=Exponential(dom)
+    op2=PtwMultiplication(dom,2)
+    op3=PtwMultiplication(dom,3)
+    op=VectorOfOperators([op1,op2,op3])
+    x=np.arange(4).reshape(2,2)
+    y=np.array([1,np.exp(1),np.exp(2),np.exp(3)]+[2*i for i in range(4)]+[3*i for i in range(4)])
+    assert np.max(np.abs(op(x)-y))<1e-15
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.UniformGridFcts(2,2,dtype=np.complex128)
+    op1=Exponential(dom)
+    op2=PtwMultiplication(dom,2j)
+    op3=PtwMultiplication(dom,3)
+    op=VectorOfOperators([op1,op2,op3])
+    x=np.arange(4).reshape(2,2)
+    y=np.array([1,0,np.exp(1),0,np.exp(2),0,np.exp(3),0,0,0,0,2,0,4,0,6,0,0,3,0,6,0,9,0])
+    assert np.max(np.abs(op(x)-y))<1e-15
+    ot.test_operator(op)
