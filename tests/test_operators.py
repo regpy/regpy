@@ -225,3 +225,36 @@ def test_power():
     print(op_power_float(x))
     assert np.max(np.abs(op_power_float(x)-np.array([[(1+1j)*np.sqrt(2)/2,np.sqrt(2)],[2**(0.25)*(np.cos(np.pi/8)+np.sin(np.pi/8)*1j),1-1j]])))<1e-15
     ot.test_operator(op_power_float)
+
+def test_direct_sum():#uses Exponential and PtwMultiplication
+    #real
+    dom1=vecsps.UniformGridFcts(2,2)
+    dom2=vecsps.UniformGridFcts(2,3,4)
+    op1=Exponential(dom1)
+    op2=PtwMultiplication(dom2,3)
+    op3=PtwMultiplication(dom2,4)
+    op=DirectSum(op1,op2)
+    x=np.arange(28)
+    assert np.max(np.abs(op(x)-np.array([1,np.exp(1),np.exp(2),np.exp(3)]+[3*i for i in range(4,28)])))<1e-15
+    ot.test_operator(op)
+    op=DirectSum(op2,op3)
+    x=np.arange(48)
+    assert np.max(np.abs(op(x)-np.array([3*i for i in range(0,24)]+[4*i for i in range(24,48)])))<1e-15
+    ot.test_operator(op)
+    #complex
+    dom1=vecsps.UniformGridFcts(2,2,dtype=np.complex128)
+    dom2=vecsps.UniformGridFcts(2,3,4)
+    dom3=vecsps.UniformGridFcts(2,dtype=np.complex128)
+    op1=Exponential(dom1)
+    op2=PtwMultiplication(dom2,3)
+    op3=Exponential(dom3)
+    op=DirectSum(op1,op2)
+    x=np.array([1,0,0,0,0,np.pi,2,-np.pi]+[i for i in range(24)])
+    y=np.array([np.exp(1),0,1,0,-1,0,-np.exp(2),0]+[3*i for i in range(24)])
+    assert np.max(np.abs(op(x)-y))<1e-10
+    ot.test_operator(op)
+    x=np.array([1,0,0,0,0,np.pi,2,-np.pi,2,0,3,np.pi])
+    y=np.array([np.exp(1),0,1,0,-1,0,-np.exp(2),0,np.exp(2),0,-np.exp(3),0])
+    op=DirectSum(op1,op3)
+    assert np.max(np.abs(op(x)-y))<1e-10
+    ot.test_operator(op)
