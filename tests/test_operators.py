@@ -310,3 +310,22 @@ def test_padding_operator():
     y[1:3,3:5]=1j
     assert np.max(np.abs(op(dom.ones()*1j)-y))<1e-15
     ot.test_operator(op)
+
+def test_convolution_operator():
+    #real
+    dom=vecsps.UniformGridFcts(10,10)
+    kernel=np.arange(15*7).reshape(15,7)
+    op=ConvolutionOperator(dom,fourier_multiplier=kernel,pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
+    kernel2=lambda a,b:a*b*1j
+    op=ConvolutionOperator(dom,fourier_multiplier=kernel2,pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.UniformGridFcts(10,10,dtype=np.complex128)
+    kernel=np.arange(15*13).reshape(15,13)
+    op=ConvolutionOperator(dom,fourier_multiplier=kernel,pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
+    kernel2=lambda a,b:a*np.conj(b)
+    op=ConvolutionOperator(dom,fourier_multiplier=kernel2,pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
+
