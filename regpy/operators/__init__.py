@@ -1160,7 +1160,8 @@ class Power(Operator):
     def __init__(self, power, domain, integer = False):
         self.integer = integer
         if integer:
-            assert(isinstance(power,np.uintc))
+            assert power>=0 and int(power)==power
+            power=int(power)
             self._power_bin = "{0:b}".format(power)
         self.power = power
         super().__init__(domain, domain)

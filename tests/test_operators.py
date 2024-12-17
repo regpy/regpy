@@ -196,3 +196,32 @@ def test_InnerShift():
     op_unshifted = Exponential(domain=dom)
     op_shifted = InnerShift(op_unshifted,offset)
     ot.test_operator(op_shifted)
+
+def test_power():
+    #real
+    dom=vecsps.UniformGridFcts(2,2)
+    op_power=Power(3.0,dom,integer=True)
+    x=np.arange(4).reshape(2,2)
+    assert np.max(np.abs(op_power(x)-np.array([[0,1],[8,27]])))<1e-15
+    ot.test_operator(op_power)
+    op_power_float=Power(0.5,dom)
+    x=np.arange(1,5).reshape(2,2)
+    assert np.max(np.abs(op_power_float(x)-np.array([[1,np.sqrt(2)],[np.sqrt(3),2]])))<1e-15
+    y, deriv = op_power_float.linearize(x)
+    ot.test_operator(deriv)
+    h = op_power_float.domain.rand()
+    normh = np.linalg.norm(h)
+    g = deriv(h)
+    seq=[np.linalg.norm((op_power_float(x + step * h) - y) / step - g) / normh for step in [10**k for k in range(-1, -8, -1)]]
+    assert all(seq_i >= seq_j for seq_i, seq_j in zip(seq, seq[1:])),f"convergence errors: {seq}"
+    #complex
+    dom=vecsps.UniformGridFcts(2,2,dtype=np.complex128)
+    op_power=Power(3.0,dom,integer=True)
+    x=np.array([[1j,2],[1+1j,-2j]])
+    assert np.max(np.abs(op_power(x)-np.array([[-1j,8],[-2+2j,8j]])))<1e-15
+    ot.test_operator(op_power)
+    op_power_float=Power(0.5,dom)
+    x=np.array([[1j,2],[1+1j,-2j]])
+    print(op_power_float(x))
+    assert np.max(np.abs(op_power_float(x)-np.array([[(1+1j)*np.sqrt(2)/2,np.sqrt(2)],[2**(0.25)*(np.cos(np.pi/8)+np.sin(np.pi/8)*1j),1-1j]])))<1e-15
+    ot.test_operator(op_power_float)
