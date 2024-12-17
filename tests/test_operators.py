@@ -348,3 +348,13 @@ def test_exponential_convolution():
     dom=vecsps.UniformGridFcts(10,10,dtype=np.complex128)
     op=ExponentialConvolution(dom,0.5,pad_amount=((2,3),(1,2)))
     ot.test_operator(op)
+
+def test_fresnel_propagator():
+    #real
+    dom=vecsps.UniformGridFcts(10,10)
+    op=ExponentialConvolution(dom,2.5,pad_amount=((2,3),(1,2)),first_conv_axis=1)
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.UniformGridFcts(10,10,dtype=np.complex128)
+    op=ExponentialConvolution(dom,2.5,pad_amount=((2,3),(1,2)))
+    ot.test_operator(op)
