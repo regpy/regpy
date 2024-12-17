@@ -294,3 +294,19 @@ def test_matrix_of_operators():#uses Exponential and PtwMultiplication
     y=np.array([1,np.exp(1),np.exp(2),np.exp(3),12,17,22,27,16,20,24,28])
     assert np.max(np.abs(op(x)-y))<1e-15
     ot.test_operator(op)
+
+def test_padding_operator():
+    #real
+    dom=vecsps.UniformGridFcts(2,2)
+    op=PaddingOperator(dom,((1,2),(3,4)))
+    y=np.zeros((5,9))
+    y[1:3,3:5]=1
+    assert np.max(np.abs(op(dom.ones())-y))<1e-15
+    ot.test_operator(op)
+    #complex
+    dom=vecsps.UniformGridFcts(2,2,dtype=np.complex128)
+    op=PaddingOperator(dom,((1,2),(3,4)))
+    y=np.zeros((5,9),dtype=np.complex128)
+    y[1:3,3:5]=1j
+    assert np.max(np.abs(op(dom.ones()*1j)-y))<1e-15
+    ot.test_operator(op)
