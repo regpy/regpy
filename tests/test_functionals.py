@@ -40,3 +40,21 @@ def test_L1_generic():
     ft.test_functional(F)
 
 
+def test_quadratic_positive_semidef():
+    N=5
+    dom=UniformGridFcts(N,N,dtype=np.complex128)
+    #without trace constraint
+    F=QuadraticPositiveSemidef(dom,tol=1e-10)
+    samples=10
+    orthos=np.random.randn(samples,2,N,N)
+    orthos=orthos[:,0]+1j*orthos[:,1]
+    orthos=np.linalg.qr(orthos)[0]
+    diags=np.random.uniform(0,20,size=(samples,N))
+    u_s=[orthos[i]@np.diag(diags[i])@np.conj(orthos[i].T) for i in range(samples)]
+    assert np.abs(0.5*np.sum(diags[0]**2)-F(u_s[0]))<1e-10
+    ft.test_functional(F,u_s=u_s,test_conj=False)
+    #with trace constraint
+    F_tr=QuadraticPositiveSemidef(dom,trace_val=2,tol=1e-10)
+    u_s_tr=[2*u/np.trace(u) for u in u_s]
+    assert np.abs(0.5*np.sum((2*diags[0]/np.sum(diags[0]))**2)-F_tr(u_s_tr[0]))<1e-10
+    ft.test_functional(F_tr,u_s_tr)

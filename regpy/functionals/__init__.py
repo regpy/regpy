@@ -2098,14 +2098,14 @@ class QuadraticPositiveSemidef(Functional):
     """
 
 
-    def  __init__(self, domain,trace_val=1.0,tol=1e-15):
+    def  __init__(self, domain,trace_val=None,tol=1e-15):
         assert isinstance(domain,vecsps.UniformGridFcts)
         assert domain.ndim==2
         assert domain.shape[0]==domain.shape[1]
         assert domain.volume_elem==1
         assert tol>=0
         assert trace_val is None or trace_val>0
-        self.tol=1e-15
+        self.tol=tol
         if(trace_val is not None):
             self.has_trace_constraint=True
             self.trace_val=trace_val
