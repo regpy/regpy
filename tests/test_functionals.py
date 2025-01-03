@@ -65,3 +65,9 @@ def test_kullback_leibler():
     u_s=[i*dom.rand() for i in range(1,11)]
     u_stars=[dom.rand() for i in range(10)]
     ft.test_functional(F,u_s=u_s,u_stars=u_stars)
+
+def test_relative_entropy():
+    dom=UniformGridFcts(2,2)
+    F=RelativeEntropy(dom,w=dom.ones())
+    u_s=[i*dom.rand() for i in range(1,11)]
+    ft.test_functional(F,u_s=u_s)

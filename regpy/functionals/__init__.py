@@ -1751,10 +1751,10 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     def _f(self, u,**kwargs):
         w=kwargs['w']        
-        res =  u * np.log(u/w)
-        ind_uneg = (u<0)
-        res[ind_uneg] = np.inf
-        res[u==0] = 0
+        ind_upos=(u>0)
+        res=np.zeros_like(u)
+        res[u<0] = np.inf
+        res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/w[ind_upos])
         return res    
    
     def _f_deriv(self, u,**kwargs):
