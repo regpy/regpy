@@ -1664,11 +1664,10 @@ class L1MeasureSpace(IntegralFunctionalBase):
         return np.max(np.abs(xstar)<=1) and v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
 
 class KullbackLeibler(IntegralFunctionalBase):
-    r"""Kullback-Leiber divergence define by
+    r"""Kullback-Leiber divergence defined by
     \[ 
         F(u,w) = KL(w,u) = \int (u(x) -w(x) - w(x)\ln \frac{u(x)}{w(x)}) dx
     \]
-
     Parameters
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
@@ -1687,9 +1686,9 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     def _f(self, u,**kwargs):
         w= kwargs['w']
-        ind_inf=(u<0)|((w==0)&(u>0))
-        ind_else=~(ind_inf|(u==0))
-        res=np.copy(w)
+        ind_inf=(u<0)|((u==0)&(w>0))
+        ind_else=~(ind_inf|(w==0))
+        res=np.copy(u)
         res[ind_inf]=np.inf
         res[ind_else]=u[ind_else]-w[ind_else] - w[ind_else] * np.log(u[ind_else]/w[ind_else])
         return res    
