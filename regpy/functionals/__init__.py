@@ -1687,11 +1687,11 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     def _f(self, u,**kwargs):
         w= kwargs['w']
-        res = u-w - w * np.log(u/w)
-        ind_uneg = (u<0)
-        res[ind_uneg] = np.inf
-        ind_uzero = np.logical_and(u==0,np.logical_not(w==0))
-        res[ind_uzero] = np.inf
+        ind_inf=(u<0)|((w==0)&(u>0))
+        ind_else=~(ind_inf|(u==0))
+        res=np.copy(w)
+        res[ind_inf]=np.inf
+        res[ind_else]=u[ind_else]-w[ind_else] - w[ind_else] * np.log(u[ind_else]/w[ind_else])
         return res    
    
     def _f_deriv(self, u,**kwargs):

@@ -58,3 +58,10 @@ def test_quadratic_positive_semidef():
     u_s_tr=[2*u/np.trace(u) for u in u_s]
     assert np.abs(0.5*np.sum((2*diags[0]/np.sum(diags[0]))**2)-F_tr(u_s_tr[0]))<1e-10
     ft.test_functional(F_tr,u_s_tr)
+
+def test_kullback_leibler():
+    dom=UniformGridFcts(2,2)
+    F=KullbackLeibler(dom,w=dom.ones())
+    u_s=[i*dom.rand() for i in range(1,11)]
+    u_stars=[dom.rand() for i in range(10)]
+    ft.test_functional(F,u_s=u_s,u_stars=u_stars)
