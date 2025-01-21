@@ -294,6 +294,44 @@ class Operator:
             return SciPyLinearOperator(self)
         else:
             raise RuntimeError('Operator is not linear.')
+        
+    def norm(self,h_domain=None,h_codomain=None,method='lanczos'):
+        if(not self.linear):
+            raise NotImplementedError
+        from regpy.hilbert import L2
+        if(h_domain is None):
+            h_domain=L2(self.domain)
+        else:
+            assert h_domain.vecsp==self.domain
+        if(h_codomain is None):
+            h_codomain=L2(self.codomain)
+        else:
+            assert h_codomain.vecsp==self.codomain
+        if method == "power":
+            return self._power_method(h_domain,h_codomain)
+        elif method == "lanczos":
+            from scipy.sparse import eigsh
+            return np.sqrt(eigsh(SciPyLinearOperator(self.adjoint * self.h_codomain.gram * self), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
+        else:
+            raise NotImplementedError
+
+    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12):
+        r"""Approximation of operator norm by the power method.
+
+        Parameters
+        ----------
+        """
+        x = self.domain.rand()
+        relative_residual = np.inf
+        for _ in range(max_iter):
+            if relative_residual < stopping_rule:
+                break
+            ystar = (self.adjoint * h_codomain.gram * self)(x)
+            y = h_domain.gram_inv(ystar)
+            lmb = np.sqrt(np.vdot(y, ystar).real)
+            relative_residual = h_domain.norm(y - lmb * x)
+            x = y/lmb
+        return np.sqrt(lmb)
 
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
