@@ -295,7 +295,30 @@ class Operator:
         else:
             raise RuntimeError('Operator is not linear.')
         
-    def norm(self,h_domain=None,h_codomain=None,method='lanczos'):
+    def norm(self,h_domain=None,h_codomain=None,method=None):
+        r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
+        By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
+        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
+        #@memoized_property
+ 
+        Parameters
+        ----------
+        h_domain: Hilbert space on the domain. Defaults to L2 if None.
+        h_codomain: Hilbert space on the codomain. Defaults to L2 if None.
+        method: string [default: None]
+            Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
+              if this is not set. Alternative: "power" for power method
+        Returns
+        -------
+        scalar
+            Approximation of the norm of T^*T. 
+
+        Raises
+        ------
+        NotImplementedError
+            If the operator is nonlinear or the method is not implemented.
+        """
+
         if(not self.linear):
             raise NotImplementedError
         from regpy.hilbert import L2
@@ -307,6 +330,7 @@ class Operator:
             h_codomain=L2(self.codomain)
         else:
             assert h_codomain.vecsp==self.codomain
+        method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
             return self._power_method(h_domain,h_codomain)
         elif method == "lanczos":
@@ -316,10 +340,14 @@ class Operator:
             raise NotImplementedError
 
     def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12):
-        r"""Approximation of operator norm by the power method.
+        r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
 
         Parameters
         ----------
+        h_domain: Hilbert space on the domain.
+        h_codomain: Hilbert space on the codomain.
+        max_iter: int maximum number of iterations
+        stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
         """
         x = self.domain.rand()
         relative_residual = np.inf
