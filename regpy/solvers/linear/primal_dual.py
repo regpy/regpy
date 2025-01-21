@@ -78,7 +78,7 @@ class PDHG(RegSolver):
         self.y = self.op(self.x) if self.compute_y else None
 
         assert tau>=0 and sigma>=0
-        L = self.setting.op_norm()   
+        L = self.setting.op.norm(self.setting.h_domain,self.setting.h_codomain)  
         if tau==0 and sigma==0:
             self.tau = 1/L
             self.sigma = 1/L
