@@ -1,7 +1,6 @@
 """Solvers for inverse problems.
 """
 import numpy as np
-from scipy.sparse.linalg import eigsh
 
 import logging
 from regpy.util import classlogger
@@ -325,51 +324,9 @@ class RegularizationSetting:
         if self.op.linear:
             return self.h_domain.gram_inv * self.op.adjoint * self.h_codomain.gram, self.op
         else:
-            _ , deriv = self.op.linearize(x)
+            _ , deriv = self.op.linearize(y)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
         
-    def op_norm(self,op = None, method = "lanczos"):
-        r"""Approximate the operator norm of \(T\) for a linear operator \(T\) with respect to the vector norms of h_domain and h_codomain. 
-        This is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
-        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
-        #@memoized_property
- 
-        Parameters
-        ----------
-        op: linear `regpy.operators.Operator` from self.domain to self.codomain [default=None]
-            Typically the derivative of the operator at some point. In the default case, self.op is used if self.op is linear. 
-        method: string [default: "lanczos"]
-            Method by which an approximation of the operator norm is computed. Alternative: "power_method"
-        Returns
-        -------
-        scalar
-            Approximation of the norm of T^*T. 
-
-        Raises
-        ------
-        NotImplementedError
-            If the setting is not a Hilbert space setting, meaning `penalty` and `data_fid`
-            are not `HilbertNormGeneric` instances this is not implemented.
-        """
-
-        if op is None:
-            if self.op.linear:
-                T= self.op
-            else:
-                raise NotImplementedError
-        else:
-            T=op
-            assert T.domain == self.op.domain
-            assert T.codomain == self.op.codomain
-
-        if method == "power_method":
-            return power_method(self, op = T)
-        elif method == "lanczos":
-            from regpy.operators import SciPyLinearOperator
-            return np.sqrt(eigsh(SciPyLinearOperator(T.adjoint * self.h_codomain.gram * T), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
-        else:
-            raise NotImplementedError
-
     def is_hilbert_setting(self):
         r"""Assert if the setting is a Hilbert space setting. 
 
@@ -576,30 +533,3 @@ class DualityGapStopping(StopRule):
                 self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
             return True            
         return gap_stop 
-
-def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
-    r"""Approximation of operator norm by the power method.
-
-    Parameters
-    ----------
-    setting : RegularizationSetting
-        Provides op and Gram. 
-    op : Operator [default: None]
-        Optionally overrides choice of operator (e.g. for linearization)
-    """
-    assert isinstance(setting,RegularizationSetting)
-    if op is None:
-        op = setting.op
-    assert op.linear
-    
-    x = setting.op.domain.rand()
-    relative_residual = np.inf
-    for _ in range(max_iter):
-        if relative_residual < stopping_rule:
-            break
-        ystar = (op.adjoint * setting.h_codomain.gram * op)(x)
-        y = setting.h_domain.gram_inv(ystar)
-        lmb = np.sqrt(np.vdot(y, ystar).real)
-        relative_residual = setting.h_domain.norm(y - lmb * x)
-        x = y/lmb
-    return np.sqrt(lmb)
