@@ -310,8 +310,8 @@ class Operator:
         if method == "power":
             return self._power_method(h_domain,h_codomain)
         elif method == "lanczos":
-            from scipy.sparse import eigsh
-            return np.sqrt(eigsh(SciPyLinearOperator(self.adjoint * self.h_codomain.gram * self), 1, M=SciPyLinearOperator(self.h_domain.gram),tol=0.01)[0][0])
+            from scipy.sparse.linalg import eigsh
+            return np.sqrt(eigsh(SciPyLinearOperator(self.adjoint * h_codomain.gram * self), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
         else:
             raise NotImplementedError
 

@@ -25,7 +25,7 @@ class FISTA(RegSolver):
     init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: 10**16]
-        Initial step size of minimization procedure. Has to be suffidiently large.
+        Initial step size of minimization procedure. Has to be sufficiently large.
     eta : float [defualt 0.8]
         Step size reduction constant.
     op_lower_bound : float [default: 0]
@@ -54,7 +54,7 @@ class FISTA(RegSolver):
 
         if self.data_fid.Lipschitz != np.inf:
             self.y, deriv = self.op.linearize(self.x)
-            self.tau = 1./(setting.op_norm(op=deriv)**2 * self.data_fid.Lipschitz)
+            self.tau = 1./(deriv.norm(setting.h_domain,setting.h_codomain)**2 * self.data_fid.Lipschitz)
             """The step size parameter"""
             self.backtracking = False
         else:
@@ -90,7 +90,6 @@ class FISTA(RegSolver):
 
         data_fid_of_h = self.data_fid(image_of_h)
         grad = self.h_domain.gram_inv(deriv.adjoint(self.data_fid.subgradient(image_of_h)))
-
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         while self.backtracking:
             if self.data_fid(self.op(self.x)) <= data_fid_of_h + self.setting.h_domain.inner(self.x - h, grad) + (1/(2*self.tau))*self.setting.h_domain.inner(self.x - h, self.x - h):
