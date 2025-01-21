@@ -52,7 +52,7 @@ class Landweber(RegSolver):
             """The stepsize."""
         else:
             self.backtracking = False
-            self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)**2
+            self.stepsize = stepsize or 0.9 / self.deriv.norm(setting.h_domain,setting.h_codomain, method = op_norm_method)**2
         
         self.eta = eta
         """Factor for decreasing the stepsize."""
