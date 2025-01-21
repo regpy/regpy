@@ -37,7 +37,7 @@ class Landweber(RegSolver):
         """The right hand side gets initialized to measured data"""
         self.x = init
         self.y = self.op(self.x)
-        norm = setting.op_norm()
+        norm = setting.op.norm(setting.h_domain,setting.h_codomain)
         self.stepsize = stepsize or 1 / norm**2
         """The stepsize."""
 
