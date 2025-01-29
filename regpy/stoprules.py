@@ -204,6 +204,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
+        self.hist_dic ={"relative discrepancy":[]}
 
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
@@ -215,6 +216,7 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
+        self.hist_dic["relative discrepancy"].append(rel)
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
