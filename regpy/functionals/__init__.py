@@ -1471,7 +1471,7 @@ class IntegralFunctionalBase(Functional):
     F\colon X \to \mathbb{R}
     \]
     \[
-    v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
+    v\mapsto \int_\Omega f(v(x),x)\mathrm{d}x
     \]
     with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
 
@@ -1946,7 +1946,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     def _f_deriv(self, u,**kwargs):
         if np.min(u)<0:
-            raise NotInEssentialDomainError('QuadratiNonneg')
+            raise NotInEssentialDomainError('QuadraticNonneg')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
