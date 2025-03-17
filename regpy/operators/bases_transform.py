@@ -50,7 +50,7 @@ class BasisTransform(Operator):
         if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
             return self.bases[0] @ coef
         elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
-            return np.linalg.multi_dot([self.bases[0].T, coef, self.bases[1]])
+            return np.linalg.multi_dot([self.bases[0], coef, self.bases[1].T])
         else:
             self.sumrule = "".join(chr(k) for k in range(65,65+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(97,97+self.ndim))
             self.einsum_path = np.einsum_path(self.sumrule,coef,*self.bases, optimize='optimal')[0]
