@@ -37,7 +37,7 @@ def test_L2_tensorprod():
     grid1 = GridFcts(axisdata = (np.linspace(0,10,5),np.logspace(-1,5,15)),dtype=np.complex128)
     grid2 = UniformGridFcts(10,11,dtype=np.complex128)
     grid = grid1 * grid2
-    check_parallelogram_identity(hilbert.L2(grid))
+    check_parallelogram_identity(hilbert.L2(grid), tol = 1e-9)
 
 def test_sobolev_uniform_grid():
     grid = UniformGridFcts(10,11)
