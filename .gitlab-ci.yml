@@ -7,10 +7,9 @@ stages:          # List of stages for jobs, and their order of execution
 
 build_doc:
   stage: build
-  image: debian:bookworm
+  image: docker.gitlab.gwdg.de/ngsuite/ngs-docker/ngs-docker:src
   script:
     - apt update && apt install -y python3 python3-pip python3-venv pandoc make
-    - pip install --upgrade pip
     - pip install -r doc/sphinx/requirements.txt
     - pip install .[ngsolve]  # install your package so AutoAPI can introspect it
     - cd doc/sphinx
