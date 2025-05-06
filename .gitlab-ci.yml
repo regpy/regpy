@@ -5,19 +5,38 @@ stages:          # List of stages for jobs, and their order of execution
   - test
   - deploy
 
-before_script: #'build' the project from setup files
-  - pip install .[ngsolve]
-
 build_doc:
   stage: build
+  image: python:3.10
   script:
-    - pip install pdoc3
-    - python makedoc
-    - mv doc/regpy public
+    - pip install -r doc/sphinx/requirements.txt
+    - pip install .[ngsolve]  # install your package so AutoAPI can introspect it
+    - cd doc/sphinx
+    - make html
+    - mkdir -p ../../public
+    - cp -r build/html/* ../../public  # GitLab Pages expects 'public/' at root
+  artifacts:
+    paths:
+      - public
+  # Docs build always runs
+  rules:
+    - when: always
 
+
+test:   # This job runs in the test stage.
+  stage: test    # It only starts when the job in the build stage completes successfully.
+  before_script: #'build' the project from setup files
+    - pip install .[ngsolve]
+  script:
+    - pytest tests
+
+deploy_doc:
+  stage: deploy
+  image: debian:bookworm
+  before_script:
     # get necessary packages
-    - apt update
-    - apt install rclone -y
+    - apt update && apt install -y rclone openssh-client
+
     # setup ssh key, based on official example: https://gitlab.com/gitlab-examples/ssh-private-key
     - eval $(ssh-agent -s) #start ssh agent
     - echo "$SFTP_KEY_VWEB_GWDG" | tr -d '\r' | ssh-add -
@@ -26,18 +45,13 @@ build_doc:
     # this can be done safer, we use this permissive version for public content
     - ssh-keyscan -p 22 webvm.num.math.uni-goettingen.de >> ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
+    
     # use rclone to sync to vwebfile.gwdg:
     - mkdir -p ~/.config/rclone
     - cp rclone.conf ~/.config/rclone/ #set up rclone
-    - rclone sync public/ gwdg_vweb:/var/www/num/regpy # clone it
-
-  artifacts:
-    paths:
-    - public
-
-
-test:   # This job runs in the test stage.
-  stage: test    # It only starts when the job in the build stage completes successfully.
   script:
-    - pytest tests
-
+    - rclone sync public/ gwdg_vweb:/var/www/num/regpy # clone it
+  dependencies:
+    - build_doc
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "release"'

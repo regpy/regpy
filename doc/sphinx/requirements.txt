@@ -1,0 +1,6 @@
+sphinx
+sphinx-autoapi
+nbsphinx
+sphinx-mdinclude
+jupyter  # required for nbsphinx to parse notebooks
+myst-parser  # for .md markdown files more broadly
