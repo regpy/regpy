@@ -6,3 +6,4 @@ furo
 ipykernel
 jupyter  # required for nbsphinx to parse notebooks
 myst-parser  # for .md markdown files more broadly
+pypandoc # Needed to parse the notebooks
