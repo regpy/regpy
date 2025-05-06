@@ -9,6 +9,7 @@ build_doc:
   stage: build
   image: python:3.10
   script:
+    - apt install pandoc
     - pip install -r doc/sphinx/requirements.txt
     - pip install .[ngsolve]  # install your package so AutoAPI can introspect it
     - cd doc/sphinx
@@ -25,6 +26,7 @@ build_doc:
 
 test:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
+  image: docker.gitlab.gwdg.de/ngsuite/ngs-docker/ngs-docker:src
   before_script: #'build' the project from setup files
     - pip install .[ngsolve]
   script:
