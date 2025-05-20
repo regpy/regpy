@@ -1,6 +1,6 @@
 [project]
 name = "regpy"
-version = "0.3"
+dynamic = ["version"]
 authors = [
   { name="Thorsten Hohage", email="hohage@math.uni-goettingen.de" },
 ]
@@ -21,6 +21,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://num.math.uni-goettingen.de/regpy/"
+github = "https://github.com/regpy/regpy"
 
 [project.optional-dependencies]
 ngsolve = ["ngsolve>=6.2.2404.post2"]
@@ -28,8 +29,14 @@ ngsolve = ["ngsolve>=6.2.2404.post2"]
 [build-system]
 requires = [
     "setuptools>=61.0",
+    "setuptools_scm"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+version_scheme = "post-release"  # optional
+local_scheme = "no-local-version"
+write_to = "your_package/_version.py"
 
 [tool.setuptools.packages.find]
 include = ["regpy*","examples*"]
