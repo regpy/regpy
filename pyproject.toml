@@ -24,7 +24,10 @@ Homepage = "https://num.math.uni-goettingen.de/regpy/"
 github = "https://github.com/regpy/regpy"
 
 [project.optional-dependencies]
-ngsolve = ["ngsolve>=6.2.2404.post2"]
+ngsolve = [
+    "ngsolve>=6.2.2404.post2",
+    "mkl>=2023.0.0,!=2025.0.*",
+]
 
 [build-system]
 requires = [
