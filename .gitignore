@@ -24,3 +24,4 @@ share/python-wheels/
 *.egg
 MANIFEST
 .vscode/
+regpy/_version.py
