@@ -10,10 +10,8 @@ The base class is `Operator`.
 
 from collections import defaultdict
 from copy import deepcopy
-from re import A
 
 import numpy as np
-from numpy.core.numeric import zeros_like
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix
 import scipy.sparse.linalg as sla

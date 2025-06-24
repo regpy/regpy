@@ -5,11 +5,7 @@ from scipy.sparse.linalg import eigsh
 
 import logging
 from regpy.util import classlogger
-from regpy.util.operator_tests import test_adjoint, test_derivative
-from regpy.stoprules import NoneRule, StopRule
-from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
-from regpy.operators import Operator
-import regpy.stoprules as rules
+from regpy.stoprules import NoneRule
 
 logging.basicConfig(
     level=logging.INFO,
@@ -211,12 +207,13 @@ class RegSolver(Solver):
         max_its: int, default: 1000
             maximal number of iterations
         """
-        stoprule =  (rules.CountIterations(max_iterations=max_its)
-                        + rules.Discrepancy(self.h_codomain.norm, data,
+        from regpy.stoprules import CountIterations, Discrepancy
+        stoprule =  (CountIterations(max_iterations=max_its)
+                        + Discrepancy(self.h_codomain.norm, data,
                         noiselevel=delta, tau=tau)
                     )
         reco, reco_data = self.run(stoprule)
-        if not isinstance(stoprule.active_rule, rules.Discrepancy):
+        if not isinstance(stoprule.active_rule, Discrepancy):
             self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
         return reco, reco_data
 
@@ -248,6 +245,8 @@ class RegularizationSetting:
         The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
+        from regpy.functionals import  as_functional, Composed
+        from regpy.operators import Operator
         assert isinstance(op,Operator)
         self.op = op
         """The operator."""
@@ -276,13 +275,14 @@ class RegularizationSetting:
         ---------
         Assertion is thrown by the `regpy.util.operator_tests.test_adjoint` when it does not fit. 
         """
+        from regpy.util.operator_tests import test_adjoint
         if self.op.linear:
             test_adjoint(self.op,tolerance=tolerance)
         else:
             _, deriv = self.op.linearize(self.op.domain.randn())
             test_adjoint(deriv, tolerance=tolerance)
 
-    def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
+    def check_deriv(self,steps=None):
         r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
         provided derivative in the operator ,if it is a non-linear operator. It computes for 
         the provided `steps` as :math:`t`
@@ -294,14 +294,17 @@ class RegularizationSetting:
 
         Parameters
         ----------
-        steps : float, optional
+        steps : list, optional
             A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
 
         Returns
         -------
         Boolean
-            True if the sequence provided by `regpy.util.operator_tests.test_adjoint` is decreasing.
+            True if the sequence provided by `regpy.util.operator_tests.test_derivative` is decreasing.
         """
+        from regpy.util.operator_tests import test_derivative
+        if steps is None:
+            steps = [10**k for k in range(-1, -8, -1)]
         if self.op.linear:
             return True
         seq = test_derivative(self.op,steps=steps,ret_sequence=True)
@@ -381,6 +384,7 @@ class RegularizationSetting:
         Boolean
             True if both `penalty` and `data_fid` are `HIlbertNormGeneric` functionals. 
         """
+        from regpy.functionals import  HilbertNormGeneric
         return isinstance(self.penalty,HilbertNormGeneric) and isinstance(self.data_fid,HilbertNormGeneric)
         
 
@@ -443,13 +447,14 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
         """
         assert self.op.linear
-        return TikhonovRegularizationSetting(self.op.adjoint,
-                                             self.data_fid.conj.dilation(-self.regpar),
-                                             self.penalty.conj,
-                                             regpar= 1/self.regpar,
-                                             primal_setting = self,
-                                             logging_level=self.log.level
-                                             )
+        return TikhonovRegularizationSetting(
+            self.op.adjoint,
+            self.data_fid.conj.dilation(-self.regpar),
+            self.penalty.conj,
+            regpar= 1/self.regpar,
+            primal_setting = self,
+            logging_level=self.log.level
+        )
 
     def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
         r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
@@ -565,26 +570,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
-class DualityGapStopping(StopRule):
-    def __init__(self,solver, threshold = 0.,max_iter=1000, logging_level = logging.INFO):
-        assert isinstance(solver,RegSolver)
-        assert hasattr(solver,'gap')
-        super().__init__()
-        self.solver = solver
-        self.threshold = threshold
-        self.max_iter = max_iter
-        self.log.setLevel(logging_level)
-        self.gap_stat = []
-
-    def _stop(self,x,y=None):
-        self.gap_stat.append(self.solver.gap)
-        gap_stop = self.solver.gap<=self.threshold
-        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
-        if  self.solver.iteration_step_nr>=self.max_iter:
-            if not gap_stop:
-                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
-            return True            
-        return gap_stop 
 
 def power_method(setting,op=None,max_iter=int(1e2),stopping_rule=1e-12):
     r"""Approximation of operator norm by the power method.
