@@ -1,4 +1,5 @@
 .. _examples:
+
 ========
 Examples
 ========
@@ -6,9 +7,7 @@ Examples
 List of examples
 ----------------
 
-When downloading from ``git-hub`` repository you can find the examples listed below in the folder ``examples``.
-These examples should provide an overview of how and for what ``RegPy`` might be used. 
-
+When downloading from ``git-hub`` repository you can find the examples listed below in the folder ``examples``. These examples should provide an overview of how and for what ``RegPy`` might be used.
 
 .. toctree::
    :maxdepth: 1
@@ -19,7 +18,4 @@ These examples should provide an overview of how and for what ``RegPy`` might be
    notebooks/obstacle_impulsive
    notebooks/pinem 
    notebooks/potential 
-   notebooks/tfm 
-
-
-
+   notebooks/tfm

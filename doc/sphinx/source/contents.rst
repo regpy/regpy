@@ -2,8 +2,14 @@
    :caption: Introduction
 
    index
-   
-   feature-details
+   usage
+
+.. toctree::
+   :caption: Tutorials
+
+   Operators
+   Spaces
+   Solvers
 
 .. toctree::
    :caption: Installation

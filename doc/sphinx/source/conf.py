@@ -20,7 +20,9 @@ extensions = [
     'sphinx.ext.intersphinx',
     "sphinx.ext.viewcode",
     "nbsphinx",
-    "sphinx_mdinclude"
+    # "sphinx_mdinclude",
+    "myst_parser",
+    "sphinx.ext.mathjax",
     ]
 
 templates_path = ['_templates']
@@ -65,7 +67,15 @@ napoleon_attr_annotations = True
 
 master_doc = "contents"
 
-source_suffix = ['.rst', '.md']
+myst_enable_extensions = [
+    "amsmath",
+    "dollarmath",
+]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 html_theme = 'furo'
 html_static_path = ['_static']
