@@ -1,9 +1,9 @@
 # Installation instructions
 ## Installation of `regpy`
 We provide currently a setup of `regpy` on your machine by:
-* [Building/Installing using pip](#installation-with-pip)
-* [Building/Installing from sources](#installation-from-source)
-* [Running in a docker image](#using-docker-image)
+* Building/Installing using pip
+* Building/Installing from sources
+* Running in a docker image
 
 In the following we discuss the installation steps for each method in more detail. If you observe any problems during the installation, please create an issue on github with detailed information so that we may reproduce the problem [github issue tracker](https://github.com/regpy/regpy/issues).
 

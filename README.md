@@ -13,7 +13,7 @@ For the current version we provide information and a detailed documentation unde
 We provide a explanation on how to use `RegPy` [here](./USAGE.md). On our website we provide some [usage examples](https://num.math.uni-goettingen.de/regpy/examples). These examples are jupyter notebooks that should provide a tutorial kind of introduction to the usage of `RegPy`.
 
 To get an full impression of the usage of `RegPy`, we provide many examples in the [`examples`
-folder on GitHub](./examples), as well as inside the release tarballs (see below). Most of the examples supply both a commented python script and a python notebook with more detailed explanation.
+folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well as inside the release tarballs (see below). Most of the examples supply both a commented python script and a python notebook with more detailed explanation.
 
 ## Installation
 
