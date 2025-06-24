@@ -176,8 +176,8 @@ class NgsVectorSpace(VectorSpaceBase):
         from netgen.libngpy._meshing import NgException
         try:
             self.codim = len(fes.components)
-            assert self.codim == fes.mesh.dim
-            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0, complex = self.is_complex)
+            # assert self.codim == fes.mesh.dim
+            self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)**self.codim
         except NgException:
             self.codim = 1
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
@@ -191,7 +191,10 @@ class NgsVectorSpace(VectorSpaceBase):
         return NgsBaseVector(h,make_copy=True)
     
     def ones(self):
-        self._gfu_fes.Set(1)
+        if self.codim == 1:
+            self._gfu_fes.Set(1)
+        else:
+            self._gfu_fes.Set(tuple(1 for _ in range(self.codim)))
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
     def empty(self):
