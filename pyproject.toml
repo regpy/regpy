@@ -6,6 +6,8 @@ authors = [
 ]
 description = "A python library to solve Inverse and Ill-Posed problems by regularization"
 readme = "README.md"
+license-files = ["LICENSE"]
+keywords = ["inverse problems", "ill-posed problems", "regularization", "numerical optimization", "numerical analysis"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -13,8 +15,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy>=1.14,<2.0", 
+    "numpy>=1.14,<3.0", 
     "scipy>=1.12,<2.0", 
+    "pooch>=1.8,<2.0", #Needed for scipy.datasets
     "pytest>=8.0,<9.0"
 ]
 
