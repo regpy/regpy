@@ -68,7 +68,7 @@ def test_adjoint(op, tolerance=1e-10):
     assert np.abs(err) < tolerance, 'err = {}'.format(err)
 
 
-def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=False):
+def test_derivative(op, steps=None,ret_sequence=False):
     r"""Numerically test derivative of operator.
 
     Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
@@ -90,6 +90,8 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=Fa
     list of float (optional)
         List of computed differences, one for each step. Only if ret_sequence is True. 
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     x = op.domain.randn()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
@@ -108,7 +110,7 @@ def test_adjoint_derivative(op, tolerance=1e-10):
     return np.all(np.abs(adjoint_deriv_h-deriv.adjoint(deriv(h)))<tolerance)
 
     
-def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, -8, -1)],adjoint_derivative=False):
+def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=False):
     """Numerically tests if operator is computed correctly.
 
     Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
@@ -132,6 +134,8 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, 
     AssertionError
         If the test fails.
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     if(op.linear):
         for _ in range(sample_N):
             test_linearity(op,tolerance)

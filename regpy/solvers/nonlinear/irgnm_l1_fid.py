@@ -40,33 +40,12 @@ class IrgnmL1Fid(Solver):
         The initial guess.
     alpha0 : float, optional
     alpha_step : float, optional
-        With these (alpha0, alpha_step) we compute the regulization parameter
+        With these (alpha0, alpha_step) we compute the regularization parameter
         for the k-th Newton step by alpha0*alpha_step^k.
     alpha_l1 : float, optional
         Parameter for the boundaries for the solution of
         ``scipy.optimize.minimize``.
-
-    Attributes
-    ----------
-    op : :class:`Operator <regpy.operators.Operator>`
-        The forward operator.
-    data : array
-        The right hand side.
     init : array
-        The initial guess.
-    k : int
-        The k-th iteration.
-    x : array
-        The current point.
-    y : array
-        The value at the current point.
-    alpha0 : float
-    alpha_step : float
-        Needed for the computation of the regulization parameter for the k-th
-        iteration.
-    alpha_l1 : float
-        Parameter for the boundaries for the solution of
-        ``scipy.optimize.minimize``.
     """
 
     def __init__(self, op, data, init,
@@ -76,16 +55,28 @@ class IrgnmL1Fid(Solver):
         #super().__init__(logging.getLogger(__name__))
         super().__init__()
         self.op = op
+        """The forward operator.
+        """
         self.data = data
+        """The right hand side.
+        """
         self.init = init
+        """The initial guess.
+        """
         self.x = self.init
+        """The current point."""
         self.y = self.op(self.x)
+        """The value at the current point."""
 
         # Initialization of some parameters for the iteration
         self.k = 0
+        """The k-th iteration."""
         self.alpha0 = alpha0
         self.alpha_step = alpha_step
+        """Needed for the computation of the regulation parameter for the k-th iteration."""
         self.alpha_l1 = alpha_l1
+        """Parameter for the boundaries for the solution of ``scipy.optimize.minimize``.
+        """
 
         # Computation of some parameters for the iteration
         self._gram_x = self.op.domain.gram(np.eye(len(self.x)))

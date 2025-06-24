@@ -194,12 +194,12 @@ class StarCurve(GenCurve):
     
     @property
     def zpabs(self):
-        """|z'(t)|"""
+        r""":math:`|z'(t)|`"""
         if self.zp is not None:
             return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
     @property
     def normal(self):
-        """Outer normal vector(not normalized)"""
+        r"""Outer normal vector(not normalized)"""
         if self.zp is not None:
             return np.append(self.zp[1,:], -self.zp[0,:]).reshape((2, self.n))
 
