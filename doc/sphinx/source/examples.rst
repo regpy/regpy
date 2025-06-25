@@ -19,3 +19,4 @@ When downloading from ``git-hub`` repository you can find the examples listed be
    notebooks/pinem 
    notebooks/potential 
    notebooks/tfm
+   notebooks/diffusion_coefficient

@@ -128,7 +128,7 @@ $$
 
 That is you can think of the implemented adjoint as the conjugate transpose of the the matrix it defines on the chosen discretization. The motivation of this implementation is that other inner products can be added later by applying specific Gram matrices implemented in `regpy.hilbert` module. Thus the operators (derivatives) adjoint implementation is independent of the inner product structure on the vector spaces and makes it possible to switch between them without recomputing and reimplementing the derivative and adjoint.
 
-#### Operator operations 
+#### Operator operations
 
 One of the main features of `Operator` are the basic operator algebra that is supported:
 
