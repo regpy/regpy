@@ -8,7 +8,7 @@ At the core of this framework are vector space structures, represented by the ba
 The inner product, as defined in the \:class:`HilbertSpace` structure, is given by:
 
 .. math::
-    \Re\left(x^T G_{\underline{\mathbb{X}}} y\right)
+    \Re\left(\overline{x}^T G_{\underline{\mathbb{X}}} y\right)
 
 This defines a real-valued inner product, making Hilbert spaces the first level of structure applied to vector spaces in this framework.
 
