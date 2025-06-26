@@ -48,6 +48,15 @@ pip install --editable .[ngsolve]
 For convenience we provide a [docker image](https://hub.docker.com) of `regpy`. How to install and use docker daemon can be found [here](https://docs.docker.com).
 
 Assuming you have a working docker daemon you can simply run the latest `regpy` docker with
+
 ~~~ bash
 docker run -i -t regpy/regpy:latest /bin/bash
 ~~~ 
+
+The image is also stuffed with a jupyter server. Thus running:
+
+~~~ bash
+docker run --name regpy-jupyter -p 8000:8000 regpy/regpy:latest
+~~~
+
+Creates 
