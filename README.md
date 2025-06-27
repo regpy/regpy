@@ -1,6 +1,12 @@
 # regpy: Python tools for regularization methods
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/regpy/regpy?label=latest%20release&logo=github)](https://github.com/regpy/regpy) 
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/regpy/regpy?label=latest%20release&logo=github)](https://github.com/regpy/regpy)
+
+[![PyPI](https://img.shields.io/pypi/v/regpy?color=blue&label=latest%20PyPI%20version&logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
+[![PyPI - Implementation](https://img.shields.io/pypi/implementation/regpy?logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/regpy?label=PyPI%20downloads&logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/regpy/regpy?logo=docker&logoColor=white)](https://hub.docker.com/repository/docker/regpy/regpy)
 
 `RegPy` is a python library for implementing and solving ill-posed inverse problems developed at the [Institute for Numerical and Applied Mathematics Goettingen](https://num.math.uni-goettingen.de). It provides tolls to implement your own forward model both linear and non-linear and a variety of regularization methods that can be stopped using common stopping rules.
 
