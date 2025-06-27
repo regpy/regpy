@@ -6,7 +6,7 @@ stages:          # List of stages for jobs, and their order of execution
   - deploy
 
 variables:
-  EXAMPLES_REPO: https://github.com/examples/regpy-examples.git
+  EXAMPLES_REPO: https://github.com/regpy/regpy-examples.git
 
 before_script:
   - git clone $EXAMPLES_REPO examples
