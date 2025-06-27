@@ -8,14 +8,13 @@ stages:          # List of stages for jobs, and their order of execution
 variables:
   EXAMPLES_REPO: https://github.com/regpy/regpy-examples.git
 
-before_script:
-  - git clone $EXAMPLES_REPO examples
-  - touch examples/__init__.py
-  - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
-
 build_doc:
   stage: build
   image: python:3.10
+  before_script:
+    - git clone $EXAMPLES_REPO examples
+    - touch examples/__init__.py
+    - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
   script:
     - apt update && apt install -y python3 python3-pip python3-venv pandoc make
     - pip install -r doc/sphinx/requirements.txt
@@ -35,7 +34,10 @@ build_doc:
 test:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
   image: python:3.10
-  before_script: #'build' the project from setup files
+  before_script:
+    - git clone $EXAMPLES_REPO examples
+    - touch examples/__init__.py
+    - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
     - pip install .[ngsolve]
   script:
     - pytest tests
