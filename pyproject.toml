@@ -44,5 +44,5 @@ local_scheme = "no-local-version"
 write_to = "regpy/_version.py"
 
 [tool.setuptools.packages.find]
-include = ["regpy*","examples*"]
-exclude = ["tests","nix"]
+include = ["regpy*"]
+exclude = ["tests","examples","nix"]
