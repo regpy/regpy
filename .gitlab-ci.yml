@@ -33,7 +33,7 @@ test_core:
   stage: test
   image: python:3.12
   before_script:
-    - pip install -[ngsolve]
+    - pip install .[ngsolve]
   script:
     - pytest tests/test_measure_space.py
     - pytest tests/test_spaces.py
