@@ -1,12 +1,12 @@
-"""Forward operators
+"""
+Forward operators
+=================
 
 This module provides the basis for defining forward operators, and implements some simple
 auxiliary operators. Actual forward problems are implemented in submodules.
 
 The base class is `Operator`.
 """
-
-# TODO Document all instance variables, so they appear in pdoc's output.
 
 from collections import defaultdict
 from copy import deepcopy
