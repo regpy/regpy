@@ -227,17 +227,18 @@ class OperatorGraph(Operator):
         linear=all(op.linear for op in  self.node_dict.keys())
         ed_in,ed_middle,ed_out=OperatorGraph._clean_edge_data(edges)
         print(ed_in)
-        print(ed_middle)
-        print(ed_out)
+        # print(ed_middle)
+        # print(ed_out)
         self.N_in=len(ed_in)
         self.N_out=len(ed_out)
-        domains=[]
+        domain=self._compute_domain(ed_in)
+        self.input_op=Identity(domain,copy=False)
+        self.node_dict.update({self.input_op:OperatorNode(self.input_op)})
         codomains=[]
         for edge in ed_in:
             op_end,end_index=edge[1]
-            new_edge=Edge(None,self.node_dict[op_end],[0],end_index)
+            new_edge=Edge(self.node_dict[self.input_op],self.node_dict[op_end],edge[0][1],end_index)
             self.edges.append(new_edge)
-            domains.append(new_edge.end_space)
         for edge in ed_middle:
             op_start,start_list=edge[0]
             op_end,end_index=edge[1]
@@ -248,16 +249,16 @@ class OperatorGraph(Operator):
             new_edge=Edge(self.node_dict[op_start],None,start_list,0)
             self.edges.append(new_edge)
             codomains.append(new_edge.construct_start_space())
-        domain=vecsps.DirectSum(*domains) if len(domains)>1 else domains[0]
         codomain=vecsps.DirectSum(*codomains) if len(codomains)>1 else codomains[0]
-        self.input_op=Identity(domain,copy=False)
+        
         self.output_op=Identity(codomain,copy=False)
-        self.node_dict.update({self.input_op:OperatorNode(self.input_op),self.output_op:OperatorNode(self.output_op)})
-        for i in range(len(ed_in)):
-            edge=self.edges[i]
-            edge.start_node=self.node_dict[self.input_op]
-            edge.start_list=[i]
-            self.node_dict[self.input_op].output_edges.append(edge)
+        self.node_dict.update({self.output_op:OperatorNode(self.output_op)})
+        # self.node_dict.update({self.input_op:OperatorNode(self.input_op),self.output_op:OperatorNode(self.output_op)})
+        # for i in range(len(ed_in)):
+        #     edge=self.edges[i]
+        #     edge.start_node=self.node_dict[self.input_op]
+        #     edge.start_list=[i]
+        #     self.node_dict[self.input_op].output_edges.append(edge)
         offset=len(ed_in)+len(ed_middle)
         for i in range(len(ed_out)):
             edge=self.edges[offset+i]
@@ -292,23 +293,31 @@ class OperatorGraph(Operator):
         ed_middle=[]
         ed_out=[]
         for ed in edge_data:
-            if(ed[0][0]==None):
+            if(ed[0][0]==None):#input edges
                 if(ed[1] not in ed_dict.keys()):
                     ed_in.append(ed)
                     ed_dict.update({ed[1]:('in',ed)})
-            elif(ed[1][0]==None):
+            elif(ed[1][0]==None):#output edges
                 ed_out.append(ed)
-            else:
+            else:#middle edges
                 if(ed[1] not in ed_dict.keys()):
                     ed_middle.append(ed)
                     ed_dict.update({ed[1]:('middle',ed)})
-                elif(ed_dict[ed[1]][0]=='in'):
-                    ed_middle.append(ed)
-                    ed_in.remove(ed_dict[ed[1]][1])
-                    ed_dict[ed[1]]=('middle',ed)
                 elif(ed_dict[ed[1]][1]!=ed):
                     raise ValueError(f"Conflicting edge data {ed_dict[ed[1]][1]} and {ed}.")
         return ed_in,ed_middle,ed_out
+
+    def _compute_domain(self,ed_in):
+        space_dict={}
+        for ed in ed_in:
+            total_domain=ed[1][0].domain[ed[1][1]] if isinstance(ed[1][0].domain,vecsps.DirectSum) else ed[1][0].domain
+            for j,index in enumerate(ed[0][1]):
+                domain=total_domain[j] if isinstance(total_domain,vecsps.DirectSum) else total_domain
+                if(index not in space_dict.keys()):
+                    space_dict.update({index:domain})
+                elif(space_dict[index]!=domain):
+                    raise ValueError(f"Input {index} used for different spaces")
+        return vecsps.DirectSum(*(space_dict[j] for j in sorted(space_dict.keys()))) if len(space_dict.keys())>1 else space_dict[space_dict.keys()[0]]
 
     def _calc_exec_order(self):
         """Computes execution order using a topological sort.
