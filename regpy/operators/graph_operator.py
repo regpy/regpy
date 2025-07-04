@@ -16,7 +16,7 @@ class OperatorNode:
     def __init__(self,op):
         self.op=op
         self.N_in=len(self.op.domain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
-        self.N_out=len(self.op.codomain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
+        self.N_out=len(self.op.codomain.summands) if isinstance(self.op.codomain,vecsps.DirectSum) else 1
         self.input_edges=[None]*self.N_in
         self.output_edges=[]
 
@@ -97,8 +97,8 @@ class Edge:
     ----------
     start_node : OperatorNode
         The node where the edge starts.
-    start_node : OperatorNode
-        The node where the edge starts.
+    end_node : OperatorNode
+        The node where the edge ends.
     start_list : list of int
         list of output indices of the start node
     end_index : int
@@ -227,6 +227,9 @@ class OperatorGraph(Operator):
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
         ed_in,ed_middle,ed_out=OperatorGraph._clean_edge_data(edges)
+        print(ed_in)
+        print(ed_middle)
+        print(ed_out)
         self.N_in=len(ed_in)
         self.N_out=len(ed_out)
         domains=[]
