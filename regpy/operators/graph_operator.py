@@ -1,6 +1,5 @@
-from regpy.operators import Operator,PartOfOperator,Identity
+from regpy.operators import Operator,Identity
 from regpy import vecsps
-import itertools
 
 
 
@@ -369,88 +368,6 @@ class OperatorGraph(Operator):
             x=current_node.op._adjoint(y_input)
             data_dict.update({current_node:x})
         return data_dict[self.node_dict[self.input_op]]
-
-
-def merge_operators(*op_eds):
-    """Merges operator and edge data. Each input is a tuple with elements of the form (ops,edges,N_in,N_out). The
-    edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
-    This function is mainly inteded for use in generating Graphs from tuples i.e A@(B,C,D).
-
-    Returns:
-        OperatorGraph: Graph operator build from all edges and operators of merged parts.
-    """    
-    ops=set()
-    edge_data=[]
-    for op_ed in op_eds:
-        ops|=set(op_ed[0])
-        edges=op_ed[1]
-        N_out=op_ed[3]
-        if(N_out==1):
-            edge_data+=edges
-        else:
-            #combine multiple output edges into one single edge for each operator
-            out_edges=edges[len(edges)-N_out:]
-            edge_data+=edges[:len(edges)-N_out]
-            output_edge=((out_edges[0][0][0],itertools.chain.from_iterable(edge[0][1] for edge in out_edges)),(None,0))
-            edge_data.append(output_edge)
-    return OperatorGraph(list(ops),edge_data)
-
-def concatenate_operators(op_eds_start,op_eds_end):
-    """Concatenates operator and edge data. Each input is a tuple with elements of the form (ops,edges,N_in,N_out). The
-    edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
-    This function is mainly inteded for use in generating graphs from other graphs or graphs and operators.
-
-    Returns:
-        OperatorGraph: Graph operator build by connecting outputs of start to inputs of end.
-    """   
-    assert(op_eds_start[3]==op_eds_end[2])
-    offset_output=len(op_eds_start[1])-op_eds_start[3]
-    offset_input=op_eds_end[2]
-    start_output_eds=op_eds_start[1][offset_output:]
-    end_input_eds=op_eds_end[1][:offset_input]
-    bridge_eds=[]
-    for start_ed,end_ed in zip(start_output_eds,end_input_eds):
-        bridge_eds.append((start_ed[0],end_ed[1]))
-    return OperatorGraph(list(set(op_eds_start[0]+op_eds_end[0])),op_eds_start[1][:offset_output]+bridge_eds+op_eds_end[1][offset_input:])
-
-def get_operators_and_edges(op):#output format is (ops,edges,N_in,N_out) edges are sorted
-    """Computes operators and edge data from an operator in a format that can be used to merge and concatenate
-    different types of operators.
-
-    Parameters:
-        op (Operator): operator from which edge data and underlying operators should be computed
-
-    Returns:
-        tuple: tuple in format (ops,edges,N_in,N_out). The
-        edge_data is sorted such that the first N_in edges are input edges and the last N_out edges are output edges.
-    """    
-    assert isinstance(op,Operator)
-    if(isinstance(op,OperatorGraph)):
-        ops=op.operators[1:len(op.operators)-1]
-        edge_data=[]
-        for i,edge in enumerate(op.edges):
-            ed=[edge[0],edge[1]]
-            if(i<op.N_in):
-                ed[0]=(None,[0])
-            if(i>=len(op.edges)-op.N_out):
-                ed[1]=(None,0)
-            edge_data.append(tuple(ed))
-        return ops,edge_data,op.N_in,op.N_out
-    if(isinstance(op,PartOfOperator)):
-        ops=[op.base_op]
-        indices=[op.index] if isinstance(op.index,int) else op.index
-        N_in=1 if not isinstance(op.domain,vecsps.DirectSum) else len(op.domain.summands)
-        N_out=len(indices)
-        edge_data=[((None,[0]),(op.base_op,i)) for i in range(N_in)]
-        edge_data+=[((op.base_op,[indices[i]]),(None,0)) for i in range(N_out)]
-        return ops,edge_data,N_in,N_out
-    if(isinstance(op,Operator)):
-        ops=[op]
-        N_in=1 if not isinstance(op.domain,vecsps.DirectSum) else len(op.domain.summands)
-        N_out=1 if not isinstance(op.codomain,vecsps.DirectSum) else len(op.codomain.summands)
-        edge_data=[((None,[0]),(op,i)) for i in range(N_in)]
-        edge_data+=[((op,[i]),(None,0)) for i in range(N_out)]
-        return ops,edge_data,N_in,N_out
 
 
 
