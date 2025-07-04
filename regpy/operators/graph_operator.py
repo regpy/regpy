@@ -250,15 +250,8 @@ class OperatorGraph(Operator):
             self.edges.append(new_edge)
             codomains.append(new_edge.construct_start_space())
         codomain=vecsps.DirectSum(*codomains) if len(codomains)>1 else codomains[0]
-        
         self.output_op=Identity(codomain,copy=False)
         self.node_dict.update({self.output_op:OperatorNode(self.output_op)})
-        # self.node_dict.update({self.input_op:OperatorNode(self.input_op),self.output_op:OperatorNode(self.output_op)})
-        # for i in range(len(ed_in)):
-        #     edge=self.edges[i]
-        #     edge.start_node=self.node_dict[self.input_op]
-        #     edge.start_list=[i]
-        #     self.node_dict[self.input_op].output_edges.append(edge)
         offset=len(ed_in)+len(ed_middle)
         for i in range(len(ed_out)):
             edge=self.edges[offset+i]
