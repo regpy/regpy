@@ -4,7 +4,7 @@ import numpy as np
 
 import logging
 from regpy.util import classlogger
-from regpy.util.operator_tests import test_adjoint, test_derivative
+from regpy.util.operator_tests import test_adjoint, test_derivative, test_affine_linearity
 from regpy.stoprules import NoneRule, StopRule
 from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
 from regpy.operators import Operator
@@ -271,15 +271,16 @@ class RegularizationSetting:
         tolerance : float
             Tolerance of the two computed inner products.
 
-        Assertion
-        ---------
-        Assertion is thrown by the `regpy.util.operator_tests.test_adjoint` when it does not fit. 
+        Returns
+        -------
+        bool
+            Tests either the operator or the derivative with `regpy.util.operator_tests.test_adjoint` and returns that value. 
         """
         if self.op.linear:
-            test_adjoint(self.op,tolerance=tolerance)
+            return test_adjoint(self.op,tolerance=tolerance)
         else:
             _, deriv = self.op.linearize(self.op.domain.randn())
-            test_adjoint(deriv, tolerance=tolerance)
+            return test_adjoint(deriv, tolerance=tolerance)
 
     def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
         r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
@@ -296,12 +297,11 @@ class RegularizationSetting:
         Returns
         -------
         Boolean
-            True if the sequence provided by `regpy.util.operator_tests.test_adjoint` is decreasing.
+            True if the operator is linear or affine linear or if test_derivative returns True.
         """
-        if self.op.linear:
+        if self.op.linear or test_affine_linearity(self.op):
             return True
-        seq = test_derivative(self.op,steps=steps,ret_sequence=True)
-        return all(seq_i > seq_j for seq_i, seq_j in zip(seq, seq[1:]))
+        return test_derivative(self.op,steps=steps)
     
     def h_adjoint(self,y=None):
         r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
