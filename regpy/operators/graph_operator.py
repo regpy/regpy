@@ -226,9 +226,6 @@ class OperatorGraph(Operator):
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
         ed_in,ed_middle,ed_out=OperatorGraph._clean_edge_data(edges)
-        print(ed_in)
-        # print(ed_middle)
-        # print(ed_out)
         self.N_in=len(ed_in)
         self.N_out=len(ed_out)
         domain=self._compute_domain(ed_in)
