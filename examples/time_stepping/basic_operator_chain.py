@@ -10,25 +10,25 @@ def time_dependent_operator_chain(time_step_ops,output_intermediate_solutions=Fa
 
     Returns:
         OperatorGraph: Operator that has the connections depicted below. 
-        False, False (Default)
+        False, True (Default)
         In0--->Op0--->Op1--->...--->OpN-1--->OpN--->Out0
                 /      /             /        /  
                /      /             /        /
              In1     In2          InN       InN+1
         ################################################
-        True, False
+        True, True
         In0--->Op0--->Op1--->...--->OpN-1--->OpN--->OutN
                / \    / \           / \      /  
               / Out0 /  Out1       / OutN-1 /
             In1     In2          InN       InN+1
         ################################################
-        False, True
+        False, False
         In0--->Op0--->Op1--->...--->OpN-1--->OpN--->Out0
                /      /             /        /  
               /      /             /        /
         In1__/______/_____________/________/
         ################################################
-        True, True
+        True, False
         In0--->Op0--->Op1--->...--->OpN-1--->OpN--->OutN
                / \    / \           / \      /  
               / Out0 /  Out1       / OutN-1 /
