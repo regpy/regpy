@@ -31,13 +31,13 @@ class Landweber(RegSolver):
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, data, init, stepsize=None):
+    def __init__(self, setting, data, init, stepsize=None, norm_method = None):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized to measured data"""
         self.x = init
         self.y = self.op(self.x)
-        norm = setting.op.norm(setting.h_domain,setting.h_codomain)
+        norm = setting.op.norm(setting.h_domain,setting.h_codomain, method = norm_method)
         self.stepsize = stepsize or 1 / norm**2
         """The stepsize."""
 

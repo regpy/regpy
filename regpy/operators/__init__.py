@@ -149,6 +149,8 @@ class Operator:
         a subclass of `regpy.vecsps.VectorSpace` or `None`."""
         self.linear = linear
         """Boolean indicating whether the operator is linear."""
+        self._constants = {}
+        """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain'}
 
     def __deepcopy__(self, memo):
@@ -175,10 +177,10 @@ class Operator:
     def __call__(self, x):
         assert not self.domain or x in self.domain
         if self.linear:
-            y = self._eval(x)
+            y = self._eval(self._insert_constants(x))
         else:
             self.__revoke()
-            y = self._eval(x, differentiate=False)
+            y = self._eval(self._insert_constants(x), differentiate=False)
         assert not self.codomain or y in self.codomain
         return y
 
@@ -210,11 +212,11 @@ class Operator:
                 return self(x), self
             else:
                 return self.adjoint(self(x)), self, self.adjoint * self
-        else:
+        else:            
             if not adjoint_derivative:
                 assert not self.domain or x in self.domain
                 self.__revoke()
-                y = self._eval(x, differentiate=True)
+                y = self._eval(self._insert_constants(x), differentiate=True)
                 assert not self.codomain or y in self.codomain
                 deriv = Derivative(self.__get_handle())
                 return y, deriv
@@ -222,14 +224,15 @@ class Operator:
                 assert not self.domain or x in self.domain
                 self.__revoke()
                 try:
-                    Fstar_y = self._eval(x, differentiate=True, adjoint_derivative=True)
+                    Fstar_y = self._eval(self._insert_constants(x), differentiate=True, adjoint_derivative=True)
                 except TypeError:
-                    y = self._eval(x, differentiate=True)
+                    y = self._eval(self._insert_constants(x), differentiate=True)
                     assert not self.codomain or y in self.codomain
                     Fstar_y = self._adjoint(y)
                 deriv = Derivative(self.__get_handle()) 
                 adjoint_deriv = AdjointDerivative(self.__get_handle())
                 return Fstar_y, deriv, adjoint_deriv
+    
     @util.memoized_property
     def adjoint(self):
         """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
@@ -361,7 +364,126 @@ class Operator:
             relative_residual = h_domain.norm(y - lmb * x)
             x = y/lmb
         return np.sqrt(lmb)
+    
+    def set_constant(self,c,index):
+        """Assuming the operator you defined has a domain that is composed of multiple
+        inputs and thus a direct sum, this method allows you to fix one of that inputs
+        as a constant. 
 
+        This method changes the domain to either a direct sum of the remaining
+        components or just the remaining component.
+
+        Moreover, it asserts if the remaining operator is linear using the utility method
+        and changes the linearity flag.
+
+        Parameters
+        ----------
+        c : array-type or scalar
+            The constant array to be set.
+        index : int
+            The index to be set as a constant. The index is with respect to the full domain.
+        """
+        if not hasattr(self, "full_domain"):
+            if not isinstance(self.domain,vecsps.DirectSum):
+                raise TypeError("Cannot set a constant when domain is {}, require the domain to be a DirectSum".format(type(self.domain)))
+            self.full_domain = deepcopy(self.domain)
+        
+        if not isinstance(index,int):
+            raise TypeError("The index has to be an integer, was given {}".format(type(index)))
+        if index<0 or index>=len(self.full_domain):
+            raise IndexError("The used index is {} is out of range.".format(index))
+        if len(set(range(len(self.full_domain)))-self._constants.keys()-{index}) == 0:
+            raise ValueError("By setting the index {} their is no input remaining please choose another index or release some other constant.".format(index))
+        if not np.isscalar(c) and c not in self.full_domain[index]:
+            raise ValueError("The given constant is neither in the {} component of type {}. Was given something of type {}".format(index,type(self.full_domain[index]),type(c)))
+        elif np.isscalar(c):
+            c = c*self.full_domain[index].ones()
+        
+        self._constants[index] = c
+        self.domain = vecsps.DirectSum(*[d_i for i,d_i in enumerate(self.full_domain) if i not in self._constants.keys()])
+        if len(self.domain) == 1:
+            self.domain = self.domain[0]
+        
+        if not self.linear:
+            self.linear = util.operator_tests.test_linearity(self)
+    
+    def reset_constants(self):
+        """Resets the constants set by `set_constant` to an empty dictionary. This will
+        also reset the domain to the full domain.
+        """
+        self._constants = {}
+        if hasattr(self, "full_domain"):
+            self.domain = self.full_domain
+        else:
+            raise RuntimeError("Cannot reset constants, no full domain set.")
+        self.linear = util.operator_tests.test_linearity(self)
+
+    def get_constants(self):
+        """Returns the constants set by `set_constant` as a dictionary. The keys are the indices
+        of the full domain and the values are the constants set.
+        
+        Returns
+        -------
+        dict
+            The dictionary with the constants set by `set_constant`.
+        """
+        return self._constants
+
+    def _insert_constants(self,x):
+        """Inserts the constants into the vector.
+
+        Parameters
+        ----------
+        x : array-type
+            The vector in the reduced domain that to be completed with constants.
+
+        Returns
+        -------
+        array-type
+            The vector in the full domain with the constants put into the places 
+            to be kept constant. If no constants are set return x. 
+        """
+        assert x in self.domain, "Somehow the passed vector does not belong to the reduced domain."
+        if hasattr(self, "full_domain") and len(self._constants)>0:
+            x_full_split = list(self.full_domain.split(self.full_domain.zeros()))
+            if isinstance(self.domain,vecsps.DirectSum):
+                x_split = list(self.domain.split(x))
+            else:
+                x_split = [x]
+            for i in range(len(self.full_domain)):
+                if i in self._constants.keys():
+                    x_full_split[i] = self._constants[i]
+                else:
+                    x_full_split[i] = x_split.pop(0)
+            return self.full_domain.join(*x_full_split)
+        else:
+            return x
+     
+    def _reduce_to_domain(self,y):
+        """Remove the constant coefficients in the vector where one has specified 
+        constants in the original operator.
+
+        Parameters
+        ----------
+        y : array-type
+            The vector in the full codomain that to be reduced to the new domain.
+
+        Returns
+        -------
+        array-type
+            The vector in the reduced domain with the the places 
+            to be kept constant removed. If no constants are set return x. 
+        """
+        if hasattr(self, "full_domain") and len(self._constants)>0:
+            assert y in self.full_domain, "Expected the vector to be in the full codomain of the Adjoint."
+            y_full_split = self.full_domain.split(y)
+            if isinstance(self.domain,vecsps.DirectSum):
+                return self.domain.join(*[y_full_split[i] for i in set(range(len(self.full_domain)))-self._constants.keys()])
+            else:
+                return [y_full_split[i] for i in set(range(len(self.full_domain)))-self._constants.keys()][0]
+        else:
+            return y
+    
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
             return self
@@ -428,13 +550,18 @@ class Adjoint(Operator):
         assert op.linear
         self.op = op
         """The underlying operator."""
+        self._constants = self.op._constants
+        """The constant inputs of the op need to be set in adjoint evaluation
+        """
+        if hasattr(self.op,"full_domain"):
+            self.full_domain = op.full_domain
         super().__init__(op.codomain, op.domain, linear=True)
 
     def _eval(self, x):
-        return self.op._adjoint(x)
+        return self._reduce_to_domain(self.op._adjoint(x))
 
     def _adjoint(self, x):
-        return self.op._eval(x)
+        return self.op._eval(self._insert_constants(x))
 
     @property
     def adjoint(self):
@@ -460,15 +587,19 @@ class Derivative(Operator):
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
-        """The underlying operator."""
         _op = op.get()
+        """The underlying operator."""
         super().__init__(_op.domain, _op.codomain, linear=True)
+        # Setting the corresponding constants of op to zero
+        if hasattr(_op,"full_domain"):
+            self.full_domain = _op.full_domain
+            self._constants = {index : self.full_domain[index].zeros() for index in _op._constants}
 
     def _eval(self, x):
         return self.op.get()._derivative(x)
 
     def _adjoint(self, x):
-        return self.op.get()._adjoint(x)
+        return self._reduce_to_domain(self.op.get()._adjoint(x))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
@@ -491,12 +622,16 @@ class AdjointDerivative(Operator):
         """The underlying operator."""
         _op = op.get()
         super().__init__(_op.domain, _op.domain, linear=True)
+        # Setting the corresponding constants of op to zero
+        if hasattr(self.op,"full_domain"):
+            self.full_domain = self.op.full_domain
+            self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
 
     def _eval(self, x):
-        return self.op.get()._adjoint_derivative(x)
+        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
 
     def _adjoint(self, x):
-        return self.op.get()._adjoint_derivative(x)
+        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
@@ -1401,7 +1536,10 @@ class DirectSum(Operator):
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
-        elms = self.domain.split(x)
+        if hasattr(self,"full_domain"):
+            elms = self.full_domain.split(x)
+        else:
+            elms = self.domain.split(x)
         if differentiate:
             linearizations = [op.linearize(elm,adjoint_derivative=adjoint_derivative) for op, elm in zip(self.ops, elms)]
             self._derivs = [l[1] for l in linearizations]
@@ -1412,7 +1550,10 @@ class DirectSum(Operator):
             return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
 
     def _derivative(self, x):
-        elms = self.domain.split(x)
+        if hasattr(self,"full_domain"):
+            elms = self.full_domain.split(x)
+        else:
+            elms = self.domain.split(x)
         return self.codomain.join(
             *(deriv(elm) for deriv, elm in zip(self._derivs, elms))
         )
@@ -1423,12 +1564,20 @@ class DirectSum(Operator):
             ops = self.ops
         else:
             ops = self._derivs
-        return self.domain.join(
-            *(op.adjoint(elm) for op, elm in zip(ops, elms))
-        )
+        if hasattr(self,"full_domain"):
+            return self.full_domain.join(
+                *(op.adjoint(elm) for op, elm in zip(ops, elms))
+            )
+        else:
+            return self.domain.join(
+                *(op.adjoint(elm) for op, elm in zip(ops, elms))
+            )
     
     def _adjoint_derivative(self, x):
-        elms = self.domain.split(x)
+        if hasattr(self,"full_domain"):
+            elms = self.full_domain.split(x)
+        else:
+            elms = self.domain.split(x)
         return self.domain.join(
             *(adjoint_deriv(elm) for adjoint_deriv, elm in zip(self._adjoint_derivs, elms))
         )
@@ -1609,7 +1758,10 @@ class MatrixOfOperators(Operator):
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
 
     def _eval(self, x, differentiate=False):
-        x_comp = self.domain.split(x)
+        if hasattr(self,"full_domain"):
+            x_comp = self.full_domain.split(x)
+        else:
+            x_comp = self.domain.split(x)
         res = self.codomain.split(self.codomain.zeros()) 
         Tprime = []
         Tadjprime = []
@@ -1637,7 +1789,10 @@ class MatrixOfOperators(Operator):
 
     def _derivative(self, x):
         res = self.codomain.split(self.codomain.zeros())
-        x_comp = self.domain.split(x)
+        if hasattr(self,"full_domain"):
+            x_comp = self.full_domain.split(x)
+        else:
+            x_comp = self.domain.split(x)
         for Tprime_j, x_j in zip(self._derivs,x_comp):
             for Tprime_ij,res_i in zip(Tprime_j,res):
                 if Tprime_ij:
@@ -1650,12 +1805,18 @@ class MatrixOfOperators(Operator):
             ops = self.ops
         else:
             ops = self._derivs
-        res_comp = self.domain.split(self.domain.zeros())    
+        if hasattr(self,"full_domain"):
+            res_comp = self.full_domain.split(self.full_domain.zeros())
+        else:
+            res_comp = self.domain.split(self.domain.zeros())
         for Tprime_j, res_j in zip(ops, res_comp):
             for Tprime_ij, y_i in zip(Tprime_j,y_comp):
                 if Tprime_ij:
                     res_j += Tprime_ij.adjoint(y_i)
-        return self.domain.join(*(res_j for res_j in res_comp))
+        if hasattr(self,"full_domain"):
+            return self.full_domain.join(*(res_j for res_j in res_comp))
+        else:
+            return self.domain.join(*(res_j for res_j in res_comp))
 
     @util.memoized_property
     def __repr__(self):
