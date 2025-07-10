@@ -21,6 +21,7 @@ import scipy.sparse.linalg as sla
 from regpy import functionals, util, vecsps
 
 
+
 class _Revocable:
     def __init__(self, val):
         self.__val = val
@@ -383,6 +384,8 @@ class Operator:
             return Composition(other, self) 
         else:
             return NotImplemented
+    
+
 
     def __add__(self, other):
         if np.isscalar(other) and other == 0:
@@ -408,6 +411,11 @@ class Operator:
 
     def __pos__(self):
         return self
+    
+    def __getitem__(self,val):
+        if val is None:
+            return self
+        return PartOfOperator(self,val)
 
 
 class Adjoint(Operator):
@@ -547,7 +555,7 @@ class LinearCombination(Operator):
             self._derivs = []
         for coeff, op in zip(self.coeffs, self.ops):
             if differentiate:
-                tup = op.linearize(x,adjoint_deriv=adjoint_deriv)
+                tup = op.linearize(x,adjoint_derivative=adjoint_derivative)
                 z = tup[0]
                 self._derivs.append(tup[1])
                 if adjoint_derivative:
@@ -668,6 +676,81 @@ class Composition(Operator):
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
+
+
+
+class PartOfOperator(Operator):
+
+    def __init__(self,base_op,index):
+        assert isinstance(base_op.codomain,vecsps.DirectSum)
+        self.base_op=base_op
+        self.n_codim = len(base_op.codomain.summands)
+        if(isinstance(index,int)):
+            assert -self.n_codim<=index and index<self.n_codim
+            self.index=index
+        elif(isinstance(index,slice)):
+            assert index.stop is None or -self.n_codim<=index.stop and index.stop<self.n_codim
+            assert index.start is None or -self.n_codim<=index.start and index.start<self.n_codim
+            index_list=list(range(self.n_codim)[index])
+            assert len(index_list)>0
+            if(len(index_list)==1):
+                self.index=index_list[0]
+            else:
+                self.index=index_list
+        elif(isinstance(index,tuple)):
+            assert all(isinstance(i,int) for i in index)
+            assert -self.n_codim<=min(index) and max(index)<self.n_codim
+            if(len(index)==1):
+                self.index=index[0]
+            else:
+                self.index=index
+        else:
+            raise ValueError(f"Invalid type {type(index)} for index")
+        if(isinstance(self.index,int)):
+            codomain=base_op.codomain.summands[self.index]
+        else:
+            codomain=vecsps.DirectSum(*[base_op.codomain.summands[i] for i in self.index])
+        super().__init__(self.base_op.domain,codomain,linear=self.base_op.linear)
+
+    def _get_codomain_part(self,y):
+        if(isinstance(self.index,int)):
+            return self.base_op.codomain.split(y)[self.index]
+        else:
+            y_parts=self.base_op.codomain.split(y)
+            return self.codomain.join(*[y_parts[i] for i in self.index])
+
+    def _eval(self, x, differentiate=False):
+        if(self.base_op.linear):
+            y=self.base_op._eval(x)
+        else:
+            y=self.base_op._eval(x,differentiate=differentiate)
+        return self._get_codomain_part(y)
+    
+    def _derivative(self, x):
+        y=self.base_op._derivative(x)
+        return self._get_codomain_part(y)
+
+    def _adjoint(self, y):
+        if(isinstance(self.index,int)):
+            y_base_op=[]
+            for i,summand in enumerate(self.base_op.codomain.summands):
+                if(i==self.index):
+                    y_base_op.append(y)
+                else:
+                    y_base_op.append(summand.zeros())
+        else:
+            y_base_op=[summand.zeros() for summand in self.base_op.codomain.summands]
+            for i,y_i in enumerate(self.codomain.split(y)):
+                y_base_op[self.index[i]]+=y_i
+        return self.base_op._adjoint(self.base_op.codomain.join(*y_base_op))
+    
+    def __getitem__(self, val):#TODO add checks for ranges
+        assert isinstance(self.index,tuple)
+        if(isinstance(val,int) or isinstance(val,slice)):
+            return PartOfOperator(self.base_op,self.index[val])
+        elif(isinstance(val,tuple)):
+            return PartOfOperator(self.base_op,tuple(self.index[v] for v in val))
+
 
 class SciPyLinearOperator(sla.LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
@@ -1363,6 +1446,8 @@ class DirectSum(Operator):
         return util.make_repr(self, *self.ops)
 
     def __getitem__(self, item):
+        if item is None:
+            return self
         return self.ops[item]
 
     def __iter__(self):
@@ -1581,6 +1666,74 @@ class MatrixOfOperators(Operator):
 
     def __iter__(self):
         return iter(self.ops)
+
+class Sum(Operator):
+    r"""Maps element in direct sum of vector spaces to their sum.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, True)
+
+    def _eval(self,x):
+        return sum(self.domain.split(x))
+    
+    def _adjoint(self,y):
+        return self.domain.join(*[np.real(y) if summand.dtype==float else y for summand in self.domain.summands])
+    
+class Product(Operator):
+    r"""Maps element in direct sum of vector spaces to their product.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, False)
+
+    def _eval(self,x,differentiate=False):
+        x_split=self.domain.split(x)
+        y=x_split[0].copy()
+        for i in range(1,len(x_split)):
+            y*=x_split[i]
+        if(differentiate):
+            self.deriv_data=[y/x_j for x_j in x_split]
+        return y
+    
+    def _derivative(self, x):
+        x_split=self.domain.split(x)
+        y=self.deriv_data[0]*x_split[0]
+        for i in range(1,len(x_split)):
+            y+=self.deriv_data[i]*x_split[i]
+        return y
+
+    def _adjoint(self,y):
+        y_parts=[np.real(y*np.conj(self.deriv_data[i])) if summand.dtype==float else y*np.conj(self.deriv_data[i]) for i,summand in enumerate(self.domain.summands)]
+        return self.domain.join(*y_parts)
 
 
 class Exponential(Operator):
