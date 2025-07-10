@@ -2,6 +2,9 @@ from regpy.operators import Exponential,Product,FourierTransform,PtwMultiplicati
 from regpy.operators.graph_operator import OperatorGraph
 from regpy.vecsps import UniformGridFcts
 import numpy as np
+from matplotlib import pyplot as plt
+
+#this is an unfinished stub for a future split step example
 
 def get_div_operator(domain,Nx,dt,L,half=False):
     ft=FourierTransform(domain)
@@ -17,7 +20,7 @@ def get_div_operator(domain,Nx,dt,L,half=False):
 
 dt=0.2 #time step
 Nt=24 #time step number
-Nx=100 #domain discretization
+Nx=200 #domain discretization
 L=8 #domain width
 
 domain=UniformGridFcts((-L/2,L/2,Nx),dtype=np.complex128)
@@ -43,21 +46,23 @@ edges.append(((half_end,[0]),(None,0)))
 
 
 full_op=OperatorGraph([exp_op,half_start,half_end]+diff_ops+prod_ops,edges)
-from matplotlib import pyplot as plt
 
-s=np.linspace(-4,4,100)**2
-g=np.exp(-(np.linspace(-4,4,100)+2)**2)
+xs=np.linspace(-L/2,L/2,Nx)
+s=xs**2
+s=(xs**4/16-2*xs**2/4+1)
+g=np.exp(-((xs))**2)
 
 w=full_op.domain.zeros()
-w[0:200:2]=s
-w[200:400:2]=g
+w[0:2*Nx:2]=s
+w[2*Nx:4*Nx:2]=g
 
 res=full_op(w)
 
 
 xs=np.linspace(-L/2,L/2,Nx)
+plt.ylim((-2,np.max(s)+1))
 plt.plot(xs,s)
-plt.plot(xs,g)
+# plt.plot(xs,g)
 plt.plot(xs,np.abs(res))
 plt.plot(xs,np.imag(res))
 plt.plot(xs,np.real(res))

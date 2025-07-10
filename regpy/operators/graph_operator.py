@@ -298,6 +298,15 @@ class OperatorGraph(Operator):
         return ed_in,ed_middle,ed_out
 
     def _compute_domain(self,ed_in):
+        """Computes domain of the whole operator by extracting and combining the domains from the input edge data
+
+        Parameter:
+            ed_in (list of tuple): List of input edge data
+
+
+        Returns:
+            vecsps.VectorSpace: domain of the operator
+        """        
         space_dict={}
         for ed in ed_in:
             total_domain=ed[1][0].domain[ed[1][1]] if isinstance(ed[1][0].domain,vecsps.DirectSum) else ed[1][0].domain
