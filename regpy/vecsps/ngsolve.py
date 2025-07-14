@@ -177,11 +177,27 @@ class NgsVectorSpace(VectorSpaceBase):
         try:
             self.codim = len(fes.components)
             # assert self.codim == fes.mesh.dim
-            self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)**self.codim
+            if (isinstance(fes,ngs.VectorH1),isinstance(fes,ngs.VectorL2),isinstance(fes,ngs.VectorValued)):
+                self._fes_util = ngs.VectorL2(self.fes.mesh, order = 0, dim = fes.dim, complex = self.is_complex)
+            else:
+                l_fes = []
+                for f in fes.components:
+                    if isinstance(f,ngs.ProductSpace):
+                        if (isinstance(f,ngs.VectorH1),isinstance(f,ngs.VectorL2),isinstance(f,ngs.VectorValued)):
+                            l_fes.append(ngs.VectorL2(self.fes.mesh, order = 0, complex = self.is_complex))
+                        else:
+                            raise ValueError
+                    else:
+                        l_fes.append(ngs.L2(self.fes.mesh, order=0, dim = f.dim, complex = self.is_complex))
+                self._fes_util = ngs.ProductSpace(*l_fes)
         except NgException:
             self.codim = 1
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
-        self._gfu_util = ngs.GridFunction(self._fes_util)
+        except ValueError:
+            self.log.warning("Tried to initialize with a product space of product spaces, which are not VectorH1, VectorL2 or VectorValued. Thus fes_util is not available and thus random generator will not work!")
+            self._fes_util = None
+        if self._fes_util is not None:
+            self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(self.fes)
         self._help_x = NgsBaseVector(self._gfu_fes.vec)
 
@@ -194,7 +210,8 @@ class NgsVectorSpace(VectorSpaceBase):
         if self.codim == 1:
             self._gfu_fes.Set(1)
         else:
-            self._gfu_fes.Set(tuple(1 for _ in range(self.codim)))
+            for gfu_i in self._gfu_fes.components:
+                gfu_i.Set(tuple(1 for _ in range(gfu_i.dim)))
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
     def empty(self):
@@ -203,6 +220,8 @@ class NgsVectorSpace(VectorSpaceBase):
         return NgsBaseVector(h,make_copy=True)
     
     def rand(self,random_generator = None):
+        if self._fes_util is None:
+            raise RuntimeError("the utility fes was not created random generator is not available!")
         random_generator = random_generator or np.random.random_sample 
         r = random_generator(self._fes_util.ndof)
         if self.is_complex and not is_complex_dtype(r.dtype):
@@ -212,7 +231,14 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
-        self._gfu_fes.Set(self._gfu_util)
+        print(self._gfu_util.vec)
+        if self.codim == 1:
+            self._gfu_fes.Set(self._gfu_util)
+        else:
+            for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
+                print(gfu_util_i.vec)
+                gfu_i.Set(gfu_util_i)
+            print(self._gfu_fes.vec)
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
     def poisson(self,x):
