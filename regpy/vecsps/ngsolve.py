@@ -231,19 +231,18 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
-        print(self._gfu_util.vec)
         if self.codim == 1:
             self._gfu_fes.Set(self._gfu_util)
         else:
             for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
-                print(gfu_util_i.vec)
                 gfu_i.Set(gfu_util_i)
-            print(self._gfu_fes.vec)
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
     
-    def poisson(self,x):
+    def poisson(self,x, n = 1):
         assert not self.is_complex
-        self._gfu_fes.vec.FV().NumPy[:] =  np.random.poisson(x.vec.FV().NumPy())
+        self._gfu_util.Set(self.to_gf(x))
+        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
+        self._gfu_fes.Set(self._gfu_util)
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
 
     def __contains__(self,x):
