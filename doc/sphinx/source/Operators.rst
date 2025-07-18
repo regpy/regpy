@@ -1,35 +1,55 @@
 Operators in RegPy
 ==================
 
-This tutorial provides a more detailed explanation than the general guide in :ref:`/usage.rst#forward-operator` on how to define custom operators using the base class :class:`Operator`.
+This tutorial provides a more detailed explanation than the general guide in :ref:`/usage.rst#forward-operator` on how to define 
+custom operators using the base class :class:`Operator`.
 
-Let us consider a forward problem between Hilbert spaces, defined as:
+In `RegPy` an operator represents a (possibly nonlinear) mapping between vector spaces :math:`\mathbb{X}` 
+and :math:`\mathbb{Y}`:
 
 .. math::
     F\colon \mathbb{X}\to\mathbb{Y}.
 
-In `RegPy`, such an operator is interpreted in its discretized form as:
+Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instance of the class :code:`regpy.vecspc.VectorSpace`. Examples of 
+such :code:`VectorSpace`s are sets of NumPy arrays of a fixed shape of a floating or complexfloating type. 
+We refer to :ref:`/spaces.rst` for further details. Considering complex vector spaces as real vector space of twice the dimension, 
+we can always think of :math:`\mathbb{X}= \mathbb{R}^N` and :math:`\mathbb{Y}= \mathbb{R}^M`.
+
+A linear operator :math:`T\colon \mathbb{X}\to\mathbb{Y}` can of course always be represented by a matrix 
+in :math:`\underline{T}\in\mathbb{R}^{N\times M}`, but it is often inefficient or impossible to set up this matrix, and all we neee is 
+a routine implementing matrix-vector products. Such a routine has to be implemented by in the :code:`_eval` method. 
+In addition we often need matrix-vector products with the transposed matrix  :math:`\underline{T}^{\top}` -- 
+the adjoint with respect to the standard Euclidean scalar products in :math:`\mathbb{R}^M` and :math:`\mathbb{R}^N`. 
+This is implemented in the method  :code:`_adjoint` method. 
+
+Complex spaces: If :math:`T_{\mathbb{C}}` is a :math:`\mathbb{C}`-linear mapping from 
+:math:`\mathbb{C}^N` to :math:`\mathbb{C}^M` represented by a matrix :math:`\underline{T}_{\mathbb{C}}\in\mathbb{C}^{N\times M}` and 
+:math:`T_{\mathbb{R}}:\mathbb{R}^{2N}\to\mathbb{R}^{2M}` is the :math:`\mathbb{R}`-linear mapping corresponding to the canonical 
+identifications :math:`\mathbb{C}^N=\mathbb{R}^{2N}` and :math:`\mathbb{C}^M=\mathbb{R}^{2M}`, which is represented by a matrix 
+:math:`\underline{T}_{\mathbb{R}}\in\mathbb{R}^{2N\times 2M}`, then the transpose conjugate matrix :math:`\underline{T}_{\mathbb{C}}^H` 
+and the transposed matrix :math:`\underline{T}_{\mathbb{R}}^{\top}` induce the same mapping. Hence for :math:`\mathbb{C}`-linear 
+mappings between complex vector spaces, :code:`_adjoint` should implement matrix vector products with the transpose conjugate matrix, 
+as natural, but we can keep thinking only about real vector spaces. 
+
+Often an additional Hilbert space structure is introduced in regularization methods for inverse problems. 
+If scalar products on :math:`\mathbb{X}` and :math:`\mathbb{Y}` are represented by the Gram matrices 
+:math:`G_{\mathbb{X}}` and :math:`G_{\mathbb{Y}}`, then the adjoint :math:`\underline{T^{ast}}` with respect to these 
+Hilbert space inner products is given by:
 
 .. math::
-    \underline{F}\colon \underline{\mathbb{X}}\to\underline{\mathbb{Y}}
+    T^\ast = G_{\mathbb{X}}^{-1} T^{\top} G_{\mathbb{Y}}.
 
-where :math:`\underline{\mathbb{X}}` and :math:`\underline{\mathbb{Y}}` are finite dimensional subspaces of :math:`\mathbb{X}` and :math:`\mathbb{Y}` respectively. In `RegPy`, we explicitly distinguish between the Hilbert space structure and the underlying vector space structure — see :ref:`/spaces.rst` for further details.
-
-The Hilbert space structure is only introduced when needed, typically during the regularization of an inverse problem. In the implementation, we treat :math:`\underline{\mathbb{X}}= \mathbb{R}^N` and :math:`\underline{\mathbb{Y}}= \mathbb{R}^M`, both equipped with the standard scalar product.
-
-For a linear forward operator :math:`T`, its discretization :math:`\underline{T}` is a matrix in :math:`\mathbb{R}^{N\times M}`. If the scalar products on :math:`\underline{\mathbb{X}}` and :math:`\underline{\mathbb{Y}}` are represented by the Gram matrices :math:`G_{\underline{\mathbb{X}}}` and :math:`G_{\underline{\mathbb{Y}}}`, then the discrete adjoint :math:`\underline{T^ast}` with respect to the Hilbert space inner products is given by:
-
-.. math::
-    \underline{T^\ast} = G_{\underline{\mathbb{X}}}^{-1} \underline{T}^{T} G_{\underline{\mathbb{Y}}}.
-
-Here, :math:`\underline{T}^T` denotes the transpose of the discrete matrix :math:`\underline{T}`, which is the adjoint with respect to the standard Euclidean scalar products in :math:`\mathbb{R}^M` and :math:`\mathbb{R}^N`.
-
-This decomposition motivates the design of operator implementations in `RegPy`: the adjoint of a linear operator is computed assuming the standard scalar product. If a different scalar product is required, it can later be incorporated by assigning the appropriate space structure (via Gram matrices) to the domain and codomain.
+This decomposition motivates the design of operator implementations in `RegPy`: the adjoint of a linear operator is computed assuming 
+the standard scalar product. If a different scalar product is required, it can later be incorporated by assigning the appropriate 
+space structure (via Gram matrices) to the domain and codomain. This separates the choice and implementation of operator representations 
+from the choice and implementation of data fidelity and penalty terms. 
 
 Using existing operators
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The easiest way to construct new operators is by using the existing operators in the `regpy.operators` module. This module provides many standard operators, such as multiplication, Fourier transform, convolution, and more. You can then combine these operators through direct sums or compositions to create new operators.
+The easiest way to construct new operators is by using the existing operators in the `regpy.operators` module. This module provides 
+many standard operators, such as multiplication, Fourier transform, convolution, and more. You can then combine these operators 
+through direct sums or compositions to create new operators.
 
 .. code-block:: python
 
@@ -52,12 +72,18 @@ Recall from :ref:`/usage.rst#operator-operations` that you have the following op
 Linear operators
 ~~~~~~~~~~~~~~~~
 
-An operator requires the definition of the vector space structure, meaning you must specify both the `domain` and `codomain` as subclasses of :class:`regpy.vecsps.VectorSpace`. This can be done by passing these values into the initialization method of the class, or by computing them within the class itself. These domains only define the basic vector structure that you want to use in the operator.
+An operator requires the definition of the vector space structure, meaning you must specify both the `domain` and `codomain` as 
+subclasses of :class:`regpy.vecsps.VectorSpace` (e.g., a space of NumPy arrays of a certain shape). 
+This can be done by passing these values into the initialization method of the class, 
+or by computing them within the class itself. These domains only define the basic vector structure that you want to use in the operator.
 
 The initialization
 ------------------
 
-Assuming for example you want to define an operator that maps from a uniformly discretized square domain to some the you could let the operator take tuples `(start,end,number)` for each dimension or some `numpy.linspace` instances to construct the according uniform grid space :class:`regpy.vecsps.UniformGridFcts`. A typical init could look like:
+Assuming for example you want to define an operator that maps from a uniformly discretized square domain to a uniformly 
+discretized square codomain. Then you could let 
+the operator take tuples `(start,end,number)` for each dimension or some `numpy.linspace` instances to construct the according uniform 
+grid space :class:`regpy.vecsps.UniformGridFcts`. A typical init could look like:
 
 .. code-block:: python
 
@@ -78,7 +104,10 @@ For a linear operator, you need to implement two methods:
 Example
 ^^^^^^^
 
-For example for a two dimensional Fourier transform on a centred square uniform grid. That is the domain is assumed to be :class:`regpy.vecsps.UniformGridFcts` that is two dimension for example :code:`domain=UniformGridFcts(d, d, dtype = np.complex128)` and where `d` defines a centred interval for example by :code:`d = (-1,1,100)`. Moreover, from the domain we can construct the codomain as a uniform grid computing the spacing from the spacing in the domain. Thus we obtain an initialization as follows
+For example, for a two dimensional Fourier transform on a centred square uniform grid. That is the domain is assumed to be 
+:class:`regpy.vecsps.UniformGridFcts` that is two dimension for example :code:`domain=UniformGridFcts(d, d, dtype = np.complex128)`
+and where `d` defines a centred interval for example by :code:`d = (-1,1,100)`. Moreover, from the domain we can construct the codomain 
+as a uniform grid computing the spacing from the spacing in the domain. Thus we obtain an initialization as follows
 
 .. code-block:: python
 
@@ -96,12 +125,17 @@ For example for a two dimensional Fourier transform on a centred square uniform 
 The evaluation method
 ---------------------
 
-The `_eval` method for a linear operator only takes one mandatory input usually named `x`. The method is only called by the super method `eval` which it self receives the input when an instances of the class gets called on a particular values. To be sure that the argument is in the domain the super method `eval` which should not be touched asserts if the argument belongs to the space. So the method that you have to implement can assume that `x` belongs to the domain which you have specified in the initialization. Your method is then required to return a value that belongs to the codomain. This property will be asserted in the evaluation to guarantee that the implementation is returning a valid object which can be treated as an element in the codomain.
+The `_eval` method for a linear operator only takes one mandatory input usually named `x`. The method is only called by the super 
+method `eval` which it self receives the input when an instances of the class gets called on a particular values. To be sure that 
+the argument is in the domain the super method `eval` which should not be touched asserts if the argument belongs to the space. 
+So the method that you have to implement can assume that `x` belongs to the domain which you have specified in the initialization. 
+Your method is then required to return a value that belongs to the codomain. This property will be asserted in the evaluation to 
+guarantee that the implementation is returning a valid object which can be treated as an element in the codomain.
 
 Example
 ^^^^^^^
 
-For the example, of the two dimensional Fourier transform we can use the `numpy` FFT implementation and define the evaluation as
+For the example of the two dimensional Fourier transform we can use the `numpy` FFT implementation and define the evaluation as
 
 .. code-block:: python
 
@@ -111,7 +145,7 @@ For the example, of the two dimensional Fourier transform we can use the `numpy`
 The adjoint evaluation method
 -----------------------------
 
-The `_adjoint` method works similarly to the `_eval` method. The operators adjoint is accessed by `my_op.adjoint(y)` to evaluate the adjoint. Corresponding to the evaluation the `adjoint` method which calls your particular implementation asserts first if the argument belongs to the codomain and then if the computed result form your method belongs to the domain. Thus guaranteeing a minimum constancy when using the methods. Most important `regpy` assumes that the implementation of the adjoint is with respect to the standard real scalar product :math:`\langle x,y\rangle = x^T y`.
+The `_adjoint` method works similarly to the `_eval` method. The operators adjoint is accessed by `my_op.adjoint(y)` to evaluate the adjoint. Corresponding to the evaluation the `adjoint` method which calls your particular implementation asserts first if the argument belongs to the codomain and then if the computed result form your method belongs to the domain. Thus guaranteeing a minimum constancy when using the methods. Most important `RegPy` assumes that the implementation of the adjoint is with respect to the standard real scalar product :math:`\langle x,y\rangle = x^T y`.
 
 In case you are unsure if your implementation of the adjoint works, we provide a utility check for operators in :meth:`regpy.util.operator_tests.test_adjoint`. Which you may use to assert if your adjoint is sufficiently good.
 
@@ -158,7 +192,8 @@ Thus if we combine the methods you can implement your own class for a linear ope
             # adjoint operator evaluates as x=T^Ty
             return x
 
-As an easy example you might want to checkout the Volterra problem in :ref:`/notebooks/volterra_main_example.ipynb` and as a more complicated example look at the `ngsolve` operator in :ref:`/notebooks/tfm.ipynb`.
+As an easy example you might want to look at the Volterra problem in :ref:`/notebooks/volterra_main_example.ipynb`. 
+For a more complicated example you may study the `NGSolve` operator in :ref:`/notebooks/tfm.ipynb`.
 
 Example
 ^^^^^^^
@@ -172,6 +207,7 @@ Returning the example of the Fourier transform we can combine the above code sni
     class SimpleFFTOnSquare(Operator):
         def __init__(self,d):
             domain = UniformGridFcts(d,d,dtype = complex)
+            # Compute dual grid arising if FFT is used as an approximation of the continuous Fourier transform 
             cd = (-1/2/domain.spacing[0],1/2/domain.spacing[0],domain.shape[0])
             codomain = UniformGridFcts(cd,cd,dtype = complex)
             super().__init__(
@@ -186,30 +222,49 @@ Returning the example of the Fourier transform we can combine the above code sni
         def _adjoint(self,y):
             return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(y), norm='ortho'))
 
-Note that the implement of the Fourier transform can be found in the :mod:`regpy.operators` and the simple version above is a stripped version for square uniform domains.
+This example is a simplified version of the Fourier transform implementated in the :mod:`regpy.operators`.
 
 .. _Non-linear_operators:
 
 Non-linear operators
 ~~~~~~~~~~~~~~~~~~~~
 
-For non-linear operators, you similarly need to define the domain and codomain when initializing. However, the structure of the evaluation has changed. The evaluation of the non-linear forward model remains and is associated with the `_eval` method. However, to solve the problem we need its linearization thus you have to define the Fréchet derivative and its adjoint.
+For non-linear operators, you similarly need to define the domain and codomain when initializing. However, the structure of the 
+evaluation has changed. The evaluation of the non-linear forward model remains and is associated with the `_eval` method. 
+However, to approximately solve the associated operator equation, we typically need its linearization, i.e., its 
+Fréchet derivative and the adjoint of the Fréchet derivative.
 
-The core idea in `RegPy` is to force a connection between the evaluation and the linearization. That is, typically you don't just need the derivative as an general method; rather, you require a linearization at a specific point. Therefore, you need both the evaluation :math:`F(x)` and the linear operator :math:`F'[x]`. Thus `RegPy` enforces this connection, by two main implementation choices:
+A core idea in the design of nonlinear operators in `RegPy` is to enforce a connection between the evaluation and the linearization. 
+The reason is that you typically need evaluations of the operator and its derivative at the same points, and often evaluations 
+of directional derivatives at the same point in many directions. The operations often share many computations that need to be done only 
+once. Therefore, the linear operator :math:`F'[x]` is optionally provided together with the evaluation function  
+:math:`F(x)`. More specifically, `RegPy` enforces this connection, by two main implementation choices:
 
-* a derivate is accessed by calling the :meth:`linearize` of the operator which evaluates the operator where it might precompute objects needed for the derivate and then returns both the evaluation and a linear operator that is the derivative
-* when ever the operator gets reevaluated at a location the derivate currently connected gets revoked and is not accessible any more
+* The derivate is accessed by calling the :meth:`linearize` of the operator which evaluates the operator where it might precompute 
+objects needed for the derivate and then returns both the evaluation and the derivative as a linear operator. 
+* Whenever the operator gets re-evaluated at another point, the derivate at the old evalution point is revoked and is 
+then not accessible any more.
 
-One of the main reasons to force to have such a connection between evaluation and derivate is to prevent the use of a derivative from a different location. Thus if you seriously want to use a derivate of a different location then you have to make a copy of the derivate.
+The main reason to enforce such a connection between evaluation and derivate is to prevent simultaneous use of derivatives at different points. 
+This would require simultaneous storage of the precomputations associated to the evaluations at these different points, which is not need in most cases. 
+If you really need to use derivates at different points simultaneously,  then you have to make a copy of the derivate.
 
 The methods for evaluation, derivative and adjoint
 --------------------------------------------------
 
-For the explained above structure of a non-linear operator, you need to implement the following methods:
+For the structure of a non-linear operator explained above, you need to implement the following methods:
 
-* `_eval`: his method computes the evaluation of the forward operator. It must also take two extra arguments, `derivative` and `adjoint_derivative`, which are booleans. These arguments determine whether you want to compute the derivative and/or the composition of the adjoint and the derivative. More details below in :ref:`eval_nonlinear`
-* `_derivative`:  This method computes the derivative of the forward operator at a specific location. The location is not an argument of the method. One has to construct a full Frechèt derivative operator using the `linearize` of the operator. The returned derivative then uses this method as evaluation.
-* `_adjoint`: This method computes the adjoint of the derivative of the forward operator.
+* `_eval`: Given :math:`x`, this method computes :math:`F(x)`, i.e. it evaluates the forward operator. It must also accept 
+two extra optionalal arguments, `derivative` and `adjoint_derivative`, which are booleans. These arguments determine whether you want 
+to compute the derivative and/or the composition of the adjoint and the derivative. More details below in :ref:`eval_nonlinear`
+* `_derivative`:  This method computes  :math:`F'[x]h` given :math:`h`, i.e. 
+the derivative of the forward operator in direction :math:`h` . The point :math:`x` is not an argument of the method, and users 
+should not call this method directly. They rather first call  the `linearize` method of the operator with argument `x`, which in turn calls 
+:code:`_eval` with argument `x` and `linearize=true` to obtain a (virtual) Jacobian :math:`F'[x]`. If this virtual Jacobian is 
+evaluated, it will call this method. * `_adjoint`: This method computes the adjoint of the derivative of the forward operator, i.e., 
+:math:`F'[x]^Ty'`. Again, :math:`x` is not an argument of this method, but it will be called by the virtual Jacobian 
+:math:`F'[x]` if the adjoint of the Jacobian is called by the user.
+
 
 .. _eval_nonlinear:
 
@@ -226,7 +281,7 @@ As already pointed out above and addressed in more detail later in :ref:`Lineari
             # Compute with x being in the my_domain what the operator evaluates as y=Tx
             if derivate:
                 self.x = x # Storing the location at which the linearization takes place
-                # make necessary precomutatoins for derivative at x
+                # make necessary precomputations for derivative at x
             return y
 
 In this general structure we store the point at which we computed the derivate as the attribute `x` of the operator. This attributes are then passed to the derivate.
@@ -234,7 +289,7 @@ In this general structure we store the point at which we computed the derivate a
 The _derivative and _adjoint method
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Now assuming you have already made all the precomutatoins such that you would be able to define the linear operator :math:`F'[x]`. Now if you recall (:ref:`Linear_Operator`) a linear operator only need to define what its evaluation and its adjoint are. So now you can think of :meth:`_derivative` as the :meth:`_eval` of the linear operator :math:`F'[x]` and the :meth:`_adjoint` is now the adjoint of this linear operator :math:`F'[x]^\ast`. Moreover, this is exactly how `RegPy` treats these methods. The derivate is itself just a linear operator, which is particularly linked to its full non-linear operator using the methods and attributes that are associated with it. In particular, the full non-linear operator instance can be revoked by this its derivative in case it gets reevaluated at a different location.
+Now assuming you have already made all the precomputations such that you would be able to define the linear operator :math:`F'[x]`. Now if you recall (:ref:`Linear_Operator`) a linear operator only need to define what its evaluation and its adjoint are. So now you can think of :meth:`_derivative` as the :meth:`_eval` of the linear operator :math:`F'[x]` and the :meth:`_adjoint` is now the adjoint of this linear operator :math:`F'[x]^\ast`. Moreover, this is exactly how `RegPy` treats these methods. The derivate is itself just a linear operator, which is particularly linked to its full non-linear operator using the methods and attributes that are associated with it. In particular, the full non-linear operator instance can be revoked by this its derivative in case it gets reevaluated at a different location.
 
 .. _Linearization_Method:
 
@@ -244,7 +299,8 @@ What happens when you linearize
 Thus, when `RegPy` linearizes an operator by calling its `linearize` method at a point :math:`x`, the following steps occur:
 
 1. The operator is evaluated, and the optional argument `derivative=True` is passed, so that the `_eval` method knows a derivative is required.
-2. Using the optional parameters, the operator prepares for linearization by precomputing and storing certain parameters as attributes.
+2. In this case the operator prepares the linearization by storing as attributes any intermediate quantities which arise in the 
+evaluation of the operator and which are needed again for the evaluation of the derivative.
 3. The linearize method returns both the evaluation (as an object in the codomain) and the derivative, represented as an :class:`Operator` mapping from the domain to the codomain.
 
 .. code-block:: python
@@ -278,9 +334,9 @@ Thus a typical implementation would look like this:
             # Compute with x being in the my_domain what the operator evaluates as y=Tx
             if derivate:
                 self.x = x # Storing the location at which the linearization takes place
-                # make necessary precomutatoins for derivative at x
+                # make necessary precomputations for derivative at x
             if adjoint_derivative:
-                # make necessary precomutatoins for the composition of adjoint and derivative
+                # make necessary precomputations for the composition of adjoint and derivative
             return y
 
         def _derivative(self,x):
@@ -291,7 +347,8 @@ Thus a typical implementation would look like this:
             # Compute with y being in the my_codomain what the standard adjoint of the derivative x = F'[self.x]*(y) at the predefined location self.x
             return x
 
-If one wishes to additionally use the evaluation of the composition of adjoint and derivative one can redefine the method `_adjoint_derivative` of the operator such that
+For some operators more efficient implementations of the composition of adjoint and derivative than the straightforward one exist.
+In this case one can redefine the method `_adjoint_derivative` of the operator as follows:
 
 .. code-block:: python
 
@@ -302,9 +359,12 @@ If one wishes to additionally use the evaluation of the composition of adjoint a
 Example
 -------
 
-Let us discuss as an example the simple point-wise squared modulus operator :math:`f\mapsto |f|^2` as found in :class:`regpy.operators.SquaredModulus`. The operators initialization just takes some domain and defines the codomain the real vector space of that domain.
+Let us discuss as an example the simple point-wise squared modulus operator :math:`x\mapsto |x|^2` as found in :class:`regpy.operators.SquaredModulus`. The operators initialization just takes some domain and defines the codomain the real vector space of that domain.
 
-Now we can recall that the derivate at a point :math:`f` is given by :math:`h\mapsto 2\Re(\overline{f}\cdot h)`. Thus in the precompute of the evaluation we should store the point-wise factor that is the function :math:`x` multiplied with the factor 2. Hence we obtain the evaluation method
+Note that the derivate at a point :math:`x` is given by :math:`h\mapsto 2\Re(\overline{x}\cdot h)`. Thus if :code:`_eval` is called 
+with the operator called with the option :code:`differentiate=True`, indicating that not only :math:`|x|^2` is needed, but also 
+later evaluations of the derivative at :math:`x` in different directions :math:`h`, 
+we should store the point-wise multiplier :math:`2*x`. Hence we obtain the evaluation method
 
 .. code-block:: python
 
@@ -354,7 +414,8 @@ Combining the above methods we obtain the operator for point-wise squared module
 Further examples
 ^^^^^^^^^^^^^^^^
 
-As an easy example you might want to checkout the Volterra problem in :ref:`/notebooks/volterra_main_example.ipynb` for the exponent not equal one we have a non-linear operator.
+As an easy example you might want to have a look at the Volterra problem in :ref:`/notebooks/volterra_main_example.ipynb`. 
+For the exponent not equal one we have a non-linear operator.
 
 
 `ngsolve` Operators
@@ -364,7 +425,7 @@ As an easy example you might want to checkout the Volterra problem in :ref:`/not
 
 Note that even for these type of operators `RegPy` requires you to implement the adjoint with respect to the standard scalar product!
 
-If you want to implement your own operator you should use the base class :class:`NgsOperator`. With this you have already some basic methods to deal with the `numpy` interface in `regpy` and the `ngsolve` interface.
+If you want to implement your own operator you should use the base class :class:`NgsOperator`. With this you have already some basic methods to deal with the `numpy` interface in `RegPy` and the `ngsolve` interface.
 
 .. caution::
     This Interface will be changed
@@ -376,7 +437,8 @@ For many problems that are based upon a scalar parameter identification problem 
 Commbined adjoint and derivative
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Now in some use cases it might be beneficial to not construct many object in the image space. Thus we may not want to evalute the operator (or derivate) and then apply its adjoint on the output but rather use a simplefied and less memory consuming implementation for this concatenation. In such a case one can use the `_adjoint_derivative` method and then calling linearize with the additional flag `adjoint_derivative` to get a third output which is a linear operator for the concatenation.
+Now in some use cases it might be beneficial to not construct any object in the image space. Thus we may not want to evalute the operator 
+(or derivate) and then apply its adjoint on the output but rather use a simplefied and less memory consuming implementation for this concatenation. In such a case one can use the `_adjoint_derivative` method and then calling linearize with the additional flag `adjoint_derivative` to get a third output which is a linear operator for the concatenation.
 
 .. warning::
-    Note that this simplefication is currently under further development and there are currently no solvers that rely on this reduction!
+    Note that this simplification is currently under further development and the released branch currently contains no solvers that rely on this reduction!
