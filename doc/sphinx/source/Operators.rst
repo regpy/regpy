@@ -10,8 +10,8 @@ and :math:`\mathbb{Y}`:
 .. math::
     F\colon \mathbb{X}\to\mathbb{Y}.
 
-Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instances of the class :code:`regpy.vecspc.VectorSpace`. Examples of 
-such :code:`VectorSpace`s (currently the only examples!) are sets of NumPy arrays of a fixed shape of a floating or complexfloating type 
+Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instances of the class :class:`VectorSpace`. Examples of 
+such :class:`VectorSpace`s (currently the only examples!) are sets of NumPy arrays of a fixed shape of a floating or complexfloating type 
 with the canonical addition and scalar multiplication. 
 We refer to :ref:`/spaces.rst` for further details. Considering complex vector spaces as real vector space of twice the dimension, 
 we can always think of :math:`\mathbb{X}= \mathbb{R}^N` and :math:`\mathbb{Y}= \mathbb{R}^M`.
@@ -39,11 +39,11 @@ In this case the above identity also holds true without the :code:`.real` parts.
 
 Often an additional Hilbert space structure is introduced in regularization methods for inverse problems. 
 If scalar products on :math:`\mathbb{X}` and :math:`\mathbb{Y}` are represented by the Gram matrices 
-:math:`G_{\mathbb{X}}` and :math:`G_{\mathbb{Y}}`, then the adjoint :math:`\underline{T^{ast}}` with respect to these 
+:math:`G_{\mathbb{X}}` and :math:`G_{\mathbb{Y}}`, then the adjoint :math:`T^{\ast}` with respect to these 
 Hilbert space inner products is given by:
 
 .. math::
-    T^\ast = G_{\mathbb{X}}^{-1} T^{\top} G_{\mathbb{Y}}.
+    T^{\ast} = G_{\mathbb{X}}^{-1} T^{\top} G_{\mathbb{Y}}.
 
 This decomposition motivates the design of operator implementations in `RegPy`: the adjoint of a linear operator is computed assuming 
 the standard scalar product. If a different scalar product is required, it can later be incorporated by assigning the appropriate 
@@ -151,7 +151,7 @@ For the example of the two dimensional Fourier transform we can use the `numpy` 
 The adjoint evaluation method
 -----------------------------
 
-The `_adjoint` method works similarly to the `_eval` method. The operators adjoint is accessed by `my_op.adjoint(y)` to evaluate the adjoint. Corresponding to the evaluation the `adjoint` method which calls your particular implementation asserts first if the argument belongs to the codomain and then if the computed result form your method belongs to the domain. Thus guaranteeing a minimum constancy when using the methods. Most important `RegPy` assumes that the implementation of the adjoint is with respect to the standard real scalar product :math:`\langle x,y\rangle = x^T y`.
+The `_adjoint` method works similarly to the `_eval` method. The operators adjoint is accessed by `my_op.adjoint(y)` to evaluate the adjoint. Corresponding to the evaluation the `adjoint` method which calls your particular implementation asserts first if the argument belongs to the codomain and then if the computed result form your method belongs to the domain. Thus guaranteeing a minimum constancy when using the methods. Most important `RegPy` assumes that the implementation of the adjoint is with respect to the standard real scalar product :math:`\langle x,y\rangle = x^{\top} y`.
 
 In case you are unsure if your implementation of the adjoint works, we provide a utility check for operators in :meth:`regpy.util.operator_tests.test_adjoint`. Which you may use to assert if your adjoint is sufficiently good.
 
@@ -176,26 +176,26 @@ Thus if we combine the methods you can implement your own class for a linear ope
     from regpy.operators import Operator
     class My_OwnOperator(Operator):
         def __init__(self,par_1,par_2, ...):
-            # Here you may do some initializing computations depending on your parameter
-            # In particular you have to compute the domain and codomain if you do not
-            # supply them as parameter
+            # Here you may do some initializing computations depending on your parameters.
+            # In particular you have to compute the domain and codomain if they do not
+            # have to be supplied as parameters.
             # At the end you have to call the super initialization by:
             super().__init__(
                 domain = my_domain,
-                #The particular discretization of the domain associated to a vector in R^N
+                #The preimage space (domain of definition) of the operator
                 codomain = my_codomain,
-                #The particular discretization of the codomain associated to a vector in R^N
+                #The image space of the operator
                 linear=True
                 # has to be set since the default is False
             )
 
         def _eval(self,x):
-            # Compute with x being in the my_domain what the operator evaluates as y=Tx
+            # Compute with x being in the my_domain the image y=Tx of x under the operator T.
             return y
 
         def _adjoint(self,y):
             # Compute with y being in the my_codomain what the standard
-            # adjoint operator evaluates as x=T^Ty
+            # adjoint operator evaluates as x=T^{\top}y
             return x
 
 As an easy example you might want to look at the Volterra problem in :ref:`/notebooks/volterra_main_example.ipynb`. 
@@ -246,10 +246,8 @@ of directional derivatives at the same point in many directions. The operations 
 once. Therefore, the linear operator :math:`F'[x]` is optionally provided together with the evaluation function  
 :math:`F(x)`. More specifically, `RegPy` enforces this connection, by two main implementation choices:
 
-* The derivate is accessed by calling the :meth:`linearize` of the operator which evaluates the operator where it might precompute 
-objects needed for the derivate and then returns both the evaluation and the derivative as a linear operator. 
-* Whenever the operator gets re-evaluated at another point, the derivate at the old evalution point is revoked and is 
-then not accessible any more.
+* The derivate is accessed by calling the :meth:`linearize` of the operator which evaluates the operator where it might precompute objects needed for the derivate and then returns both the evaluation and the derivative as a linear operator. 
+* Whenever the operator gets re-evaluated at another point, the derivate at the old evalution point is revoked and is then not accessible any more.
 
 The main reason to enforce such a connection between evaluation and derivate is to prevent simultaneous use of derivatives at different points. 
 This would require simultaneous storage of the precomputations associated to the evaluations at these different points, which is not need in most cases. 
@@ -260,17 +258,9 @@ The methods for evaluation, derivative and adjoint
 
 For the structure of a non-linear operator explained above, you need to implement the following methods:
 
-* `_eval`: Given :math:`x`, this method computes :math:`F(x)`, i.e. it evaluates the forward operator. It must also accept 
-two extra optionalal arguments, `derivative` and `adjoint_derivative`, which are booleans. These arguments determine whether you want 
-to compute the derivative and/or the composition of the adjoint and the derivative. More details below in :ref:`eval_nonlinear`
-* `_derivative`:  This method computes  :math:`F'[x]h` given :math:`h`, i.e. 
-the derivative of the forward operator in direction :math:`h` . The point :math:`x` is not an argument of the method, and users 
-should not call this method directly. They rather first call  the `linearize` method of the operator with argument `x`, which in turn calls 
-:code:`_eval` with argument `x` and `linearize=true` to obtain a (virtual) Jacobian :math:`F'[x]`. If this virtual Jacobian is 
-evaluated, it will call this method. * `_adjoint`: This method computes the adjoint of the derivative of the forward operator, i.e., 
-:math:`F'[x]^Ty'`. Again, :math:`x` is not an argument of this method, but it will be called by the virtual Jacobian 
-:math:`F'[x]` if the adjoint of the Jacobian is called by the user.
-
+* `_eval`: Given :math:`x`, this method computes :math:`F(x)`, i.e. it evaluates the forward operator. It must also accept two extra optional boolean arguments, `derivative` and `adjoint_derivative`. These arguments determine whether you want to compute the derivative and/or the composition of the adjoint and the derivative. More details below in :ref:`eval_nonlinear`
+* `_derivative`:  This method computes  :math:`F'[x]h` given :math:`h`, i.e.  the derivative of the forward operator in direction :math:`h` . The point :math:`x` is not an argument of the method, and users should not call this method directly. They rather first call  the `linearize` method of the operator with argument `x`, which in turn calls :code:`_eval` with argument `x` and `linearize=true` to obtain a (virtual) Jacobian :math:`F'[x]`. If this virtual Jacobian is evaluated, it will call this method. 
+* `_adjoint`: This method computes the adjoint of the derivative of the forward operator, i.e., :math:`F'[x]^{\top}y'`. Again, :math:`x` is not an argument of this method, but it will be called by the virtual Jacobian :math:`F'[x]` if the adjoint of the Jacobian is called by the user.
 
 .. _eval_nonlinear:
 
@@ -285,7 +275,7 @@ As already pointed out above and addressed in more detail later in :ref:`Lineari
 
     def _eval(self,x, derivative = False, adjoint_derivative = False):
             # Compute with x being in the my_domain what the operator evaluates as y=Tx
-            if derivate:
+            if derivative:
                 self.x = x # Storing the location at which the linearization takes place
                 # make necessary precomputations for derivative at x
             return y
@@ -305,8 +295,7 @@ What happens when you linearize
 Thus, when `RegPy` linearizes an operator by calling its `linearize` method at a point :math:`x`, the following steps occur:
 
 1. The operator is evaluated, and the optional argument `derivative=True` is passed, so that the `_eval` method knows a derivative is required.
-2. In this case the operator prepares the linearization by storing as attributes any intermediate quantities which arise in the 
-evaluation of the operator and which are needed again for the evaluation of the derivative.
+2. In this case the operator prepares the linearization by storing as attributes any intermediate quantities which arise in the evaluation of the operator and which are needed again for the evaluation of the derivative.
 3. The linearize method returns both the evaluation (as an object in the codomain) and the derivative, represented as an :class:`Operator` mapping from the domain to the codomain.
 
 .. code-block:: python
@@ -440,7 +429,7 @@ For many problems that are based upon a scalar parameter identification problem 
 
 .. _Adjoint_Derivative:
 
-Commbined adjoint and derivative
+Combined adjoint and derivative
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Now in some use cases it might be beneficial to not construct any object in the image space. Thus we may not want to evalute the operator 
