@@ -11,7 +11,7 @@ and :math:`\mathbb{Y}`:
     F\colon \mathbb{X}\to\mathbb{Y}.
 
 Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instances of the class :class:`VectorSpace`. Examples of 
-such :class:`VectorSpace`s (currently the only examples!) are sets of NumPy arrays of a fixed shape of a floating or complexfloating type 
+such :class:`VectorSpace` s (currently the only examples!) are sets of NumPy arrays of a fixed shape of a floating or complexfloating type 
 with the canonical addition and scalar multiplication. 
 We refer to :ref:`/spaces.rst` for further details. Considering complex vector spaces as real vector space of twice the dimension, 
 we can always think of :math:`\mathbb{X}= \mathbb{R}^N` and :math:`\mathbb{Y}= \mathbb{R}^M`.
@@ -27,16 +27,16 @@ Alternatively, we can view  :code:`_adjoint` as dual operator :math:`T':\mathbb{
 the dual pairing given by 
 
 .. math::
-    \langle u,v\rangle = numpy.vdot(x,y).real,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}.
+    \langle u,v\rangle = :code:`numpy.vdot(x,y).real`,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}.
 
 Hence the :code:`_eval` and :code:`_adjoint` methods (called by :code:`eval` and :code:`adjoint`) should be implemented 
 such that the following identity is always satisfied:
 
-.. math::
+.. code::
     numpy.vdot(T.eval(x),y).real == numpy.vdot(x,T.adjoint(y)).real
 
 We point out that if :math:`T` is :math:`\mathbb{C}`-linear, i.e. represented by a matrix :math:`\underline{T}\in\mathbb{C}^{N\times M}`,
-then this identity is satisfied if and only if :code:`T.adjoint` is represented by the transposed conjugate matrix of :math:`\underline{T}`.
+then this identity is satisfied if and only if :code:`T.adjoint(.)` is represented by the transposed conjugate matrix of :math:`\underline{T}`.
 In this case the above identity also holds true without the :code:`.real` parts. 
 
 Often an additional Hilbert space structure is introduced in regularization methods for inverse problems. 
@@ -262,7 +262,7 @@ For the structure of a non-linear operator explained above, you need to implemen
 
 * `_eval`: Given :math:`x`, this method computes :math:`F(x)`, i.e. it evaluates the forward operator. It must also accept two extra optional boolean arguments, `derivative` and `adjoint_derivative`. These arguments determine whether you want to compute the derivative and/or the composition of the adjoint and the derivative. More details below in :ref:`eval_nonlinear`
 * `_derivative`:  This method computes  :math:`F'[x]h` given :math:`h`, i.e.  the derivative of the forward operator in direction :math:`h` . The point :math:`x` is not an argument of the method, and users should not call this method directly. They rather first call  the `linearize` method of the operator with argument `x`, which in turn calls :code:`_eval` with argument `x` and `linearize=true` to obtain a (virtual) Jacobian :math:`F'[x]`. If this virtual Jacobian is evaluated, it will call this method. 
-* `_adjoint`: This method computes the adjoint of the derivative of the forward operator, i.e., :math:`F'[x]^{\top}y'`. Again, :math:`x` is not an argument of this method, but it will be called by the virtual Jacobian :math:`F'[x]` if the adjoint of the Jacobian is called by the user.
+* `_adjoint`: This method computes the adjoint of the derivative of the forward operator, i.e., :math:`F'[x]^{\top}y`. Again, :math:`x` is not an argument of this method, but it will be called by the virtual Jacobian :math:`F'[x]` if the adjoint of the Jacobian is called by the user.
 
 .. _eval_nonlinear:
 
