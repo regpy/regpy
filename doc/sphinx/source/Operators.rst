@@ -23,13 +23,15 @@ In addition we often need matrix-vector products with the transposed matrix  :ma
 the adjoint with respect to the standard real Euclidean scalar products in :math:`\mathbb{R}^M` and :math:`\mathbb{R}^N`. 
 This should be implemented in the :code:`_adjoint` method. 
 
-Alternatively, we can view  :code:`_adjoint` as dual operator :math:`T'\mathbb{Y}'=\mathbb{Y}\to \mathbb{X}'=\mathbb{X}` with 
+Alternatively, we can view  :code:`_adjoint` as dual operator :math:`T':\mathbb{Y}'=\mathbb{Y}\to \mathbb{X}'=\mathbb{X}` with 
 the dual pairing given by 
+
 .. math::
-    \langle u,v\rangle = numpy.vdot(x,y).real,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}
+    \langle u,v\rangle = numpy.vdot(x,y).real,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}.
 
 Hence the :code:`_eval` and :code:`_adjoint` methods (called by :code:`eval` and :code:`adjoint`) should be implemented 
 such that the following identity is always satisfied:
+
 .. math::
     numpy.vdot(T.eval(x),y).real == numpy.vdot(x,T.adjoint(y)).real
 
@@ -320,8 +322,8 @@ Thus a typical implementation would look like this:
             # In particular you have to compute the domain and codomain if you do not supply them as parameter
             # At the end you have to call the super initialization by:
             super().__init__(
-                domain = my_domain, #The particular discretization of the domain associated to a vector in R^N
-                codomain = my_codomain, #The particular discretization of the codomain associated to a vector in R^N
+                domain = my_domain, #The preimage space (or domain) X of the operator
+                codomain = my_codomain, #The the image space of the operator
                 linear=False # can also be left since the default is False
             )
 
