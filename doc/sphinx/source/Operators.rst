@@ -33,6 +33,7 @@ Hence the :code:`_eval` and :code:`_adjoint` methods (called by :code:`eval` and
 such that the following identity is always satisfied:
 
 .. code-block:: python
+
     numpy.vdot(T.eval(x),y).real == numpy.vdot(x,T.adjoint(y)).real
 
 We point out that if :math:`T` is :math:`\mathbb{C}`-linear, i.e. represented by a matrix :math:`\underline{T}\in\mathbb{C}^{N\times M}`,
@@ -344,14 +345,6 @@ Thus a typical implementation would look like this:
             # Compute with y being in the my_codomain what the standard adjoint of the derivative x = F'[self.x]*(y) at the predefined location self.x
             return x
 
-For some operators more efficient implementations of the composition of adjoint and derivative than the straightforward one exist.
-In this case one can redefine the method `_adjoint_derivative` of the operator as follows:
-
-.. code-block:: python
-
-    def _adjoint_derivative(self,x):
-    # compute for x in the my_domain the composition of derivative and its adjoint x = F'[self.x]*F'[self.x](x) at the predefined location self.x
-    return x
 
 Example
 -------
@@ -434,8 +427,15 @@ For many problems that are based upon a scalar parameter identification problem 
 Combined adjoint and derivative
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Now in some use cases it might be beneficial to not construct any object in the image space. Thus we may not want to evalute the operator 
-(or derivate) and then apply its adjoint on the output but rather use a simplefied and less memory consuming implementation for this concatenation. In such a case one can use the `_adjoint_derivative` method and then calling linearize with the additional flag `adjoint_derivative` to get a third output which is a linear operator for the concatenation.
+For some operators more efficient implementations of the composition of adjoint and derivative than the straightforward one exist.
+E.g., for inverse problems with correlation data the codomain of the operator is often so large that elements of this space would not fit into memory.
+In this case one can redefine the method `_adjoint_derivative` of the operator as follows:
+
+.. code-block:: python
+
+    def _adjoint_derivative(self,x):
+    # compute for x in the my_domain the composition of derivative and its adjoint x = F'[self.x]*F'[self.x](x) at the predefined location self.x
+    return x
 
 .. warning::
     Note that this simplification is currently under further development and the released branch currently contains no solvers that rely on this reduction!
