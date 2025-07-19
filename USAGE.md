@@ -28,7 +28,7 @@ For modelling forward operator we need two subpackges `regpy.operators` for the 
 
 ### Vector Spaces
 
-The spaces $X$ and $Y$ have to be discretized as discrete vector spaces, which are provided in `regpy.vecsps`. This discretization provides the base for the spaces that are used by `regpy.operators.Operator`. The base class for any discretization is `VectorSpace`, which represents any vector as plain numpy array of some shape and dtype. The vectors have to be `numpy.ndarrays`, which for example in the `ngsolve` extesion is done by conversion.
+The spaces $X$ and $Y$ have to be given as discrete vector spaces as provided in `regpy.vecsps`. The base class for any vector space is `VectorSpace`, which represents any vector as plain numpy array of some shape and dtype. The vectors have to be `numpy.ndarrays`, which for example in the `ngsolve` extesion is done by conversion.
 
 `VectorSpaces` serve the following main purposes:
 
@@ -39,7 +39,7 @@ The spaces $X$ and $Y$ have to be discretized as discrete vector spaces, which a
 * consistency checks 
   * providing a control routine whether a given element is an element of the vector space: simply used by `x in VectorSpaces`
   * test of equality of two vector spaces
-* Derived classes can contain additional data like grid coordinates or measures, bundling metadata in one place
+* Derived classes can contain additional data like grid coordinates or measures, bundling metadata in one place.
 
 All vector spaces are considered as **real vector spaces**, even if the dtype is complex.
 
@@ -56,15 +56,15 @@ More complicated vector spaces can be constructed from others by
 The base class `Operator` for forward operators provides a frame work for both linear and non-linear operators. Operator instances are callables, calling them with an array argument evaluates the operator at this position. If you wish to implement your own operator their are the following methods that you have to implement:
 
 * `_eval(self, x, differentiate=False)` for :math:`F(x)`
-* `_derivative(self, x)` for $F'[x_0]x$
-* `_adjoint(self, y)` for $F'[x_0]^\ast y$
+* `_derivative(self, x)` for $F'[x]h$
+* `_adjoint(self, y)` for $F'[x]^\ast y$
 
 These methods are not intended for external use. The idea is that whenever you have an operator $F\colon X\to Y$ you need to be able to
 
 * evaluate $F(x)$ for $x\in X$ and
 * linearize $F(x+h) = F(x)+F'[x]h$.
 
-Since the linearization is always bound to some point $x$ and its value $y=F(x)$ the implementation binds the linearization to an evaluation. That is linearizing by `Operator.linearize` will call the operator and evaluate `_eval` with the flag `differentiate=True` (to separate precomputations for the derivative) and returns a linear `Operator` i.e. $F'[x]$ that will call `_deivative` for evaluation and `_adjoint` for $F'[x]^\ast$. **Attention:** Since the linearization is bound to the location the implementation prevents the use of the derivate after an reevaluation of the operator. That is whenever you evaluate an operator after a linearization it will revoke the derivative automatically!
+Since the linearization is always bound to some point $x$ and its value $y=F(x)$ the implementation binds the linearization to an evaluation. That is linearizing by `Operator.linearize` will call the operator and evaluate `_eval` with the flag `differentiate=True` (to separate precomputations for the derivative) and returns a linear `Operator` i.e. $F'[x]$ that will call `_derivative` for evaluation and `_adjoint` for $F'[x]^\ast$. **Attention:** Since the linearization is bound to the location the implementation prevents the use of the derivate after a reevaluation of the operator. That is whenever you evaluate an operator after a linearization it will revoke the derivative automatically!
 
 #### Minimal example of non-linear operator
 
@@ -78,16 +78,17 @@ class op_name(Operator):
     def _eval(self,x,differentiate=false):
         # computations for y=F(x)
         if differentiate:
-            # precomputations for derivative
+            # precomputations for derivative at x 
+            # (e.g., store x as an attribute)
         return y
     
-    def _derivative(self,x):
-        # evaluation of the y=F[x_0](x) 
+    def _derivative(self,h):
+        # evaluation of the y=F[x](h) using precomputations by _eval
         return y
     
     def _adjoint(self,y):
-        # evaluation of the x=F[x_0]*(y) 
-        return x
+        # evaluation of the v=F[x]*(y) using precomputations by _eval
+        return v
 ```
 
 #### Minimal example of linear operator
@@ -116,7 +117,7 @@ Note that the linear operators only requires
     _adjoint(self, y)
 ```
 
-for its evaluation and its adjoint. So in this case the `_adjoint` methods implements the adjoint of the operator and not its adjoint.
+for its evaluation and its adjoint. 
 
 #### Adjoint of an operator
 
@@ -126,7 +127,8 @@ $$
     \langle x,y\rangle = \mathrm{Re}(\sum_i x_i \overline{y_i}).
 $$
 
-That is you can think of the implemented adjoint as the conjugate transpose of the the matrix it defines on the chosen discretization. The motivation of this implementation is that other inner products can be added later by applying specific Gram matrices implemented in `regpy.hilbert` module. Thus the operators (derivatives) adjoint implementation is independent of the inner product structure on the vector spaces and makes it possible to switch between them without recomputing and reimplementing the derivative and adjoint.
+That is you can think of the implemented adjoint as the conjugate transpose of the the matrix representing the linear mapping. 
+The motivation of this implementation is that other inner products can be added later by applying specific Gram matrices implemented in `regpy.hilbert` module. Thus the operators (derivatives) adjoint implementation is independent of the inner product structure on the vector spaces and makes it possible to switch between them without recomputing and reimplementing the derivative and adjoint.
 
 #### Operator operations
 
@@ -261,7 +263,7 @@ solver = TikhonovCG(
 )
 ```
 
-Solvers are implemented as subclasses of the abstract base class `regpy.solvers.Solver` or its subclass`regpy.solvers.RegSolver` which requires a before set regularization setting. Solvers do not implement loops themselves, but are driven by repeatedly calling the `next` method. They expose the current iterates stored as attributes `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which may or may not be the same arrays as before, modified in-place).
+Solvers are implemented as subclasses of the abstract base class `regpy.solvers.Solver` or its subclass`regpy.solvers.RegSolver` which requires a regularization setting. Solvers do not implement loops themselves, but are driven by repeatedly calling the `next` method. They expose the current iterates stored as attributes `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which may or may not be the same arrays as before, modified in-place).
 
 ```python
 for x,y in solver:
@@ -269,7 +271,7 @@ for x,y in solver:
     # do something with the iteration
 ```
 
-This runs the solver until it converges. Note, that it has no stopping criterion. To stop with different depending on the iteration number or the current iterates regpy supplies stop rules in the module `regpy.stoprules`. A stop rule can be used in different ways in connection with a solver. Note that once a solvers converged or a stop rule triggered it has to be reinitiated to restart.
+This runs the solver until it converges. Note, that it has no stopping criterion. To stop with different depending on the iteration number or the current iterates regpy supplies stopping rules in the module `regpy.stoprules`. A stopping rule can be used in different ways in connection with a solver. Note that once a solvers converged or a stopping rule triggered it has to be reinitiated to restart.
 
 ```python
 from regpy.stoprule import CountIterations
@@ -319,6 +321,6 @@ x,y = solver.runWithDP(
 )
 ```
 
-### Stop Rules
+### Stopping Rules
 
-As seen above stop rules are used to stop the iteration of an `Solver`. These stoprules are suppossed to choos the $\hat{\alpha}$ so that the reconstruction stays stable. Stop rules can be combined with standard sumation of two stoprules as illustrated above. Note that a stop rule has be reinitated for any other running solver.
+As seen above stopping rules are used to stop the iteration of an `Solver`. These stoprules are suppossed to choose the $\hat{\alpha}$ so that the reconstruction stays stable. Stopping rules can be combined with standard summation of two stoping prules as illustrated above. Note that a stopping rule has be reinitated for any other running solver.

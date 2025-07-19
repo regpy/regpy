@@ -10,26 +10,32 @@ and :math:`\mathbb{Y}`:
 .. math::
     F\colon \mathbb{X}\to\mathbb{Y}.
 
-Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instance of the class :code:`regpy.vecspc.VectorSpace`. Examples of 
-such :code:`VectorSpace`s are sets of NumPy arrays of a fixed shape of a floating or complexfloating type. 
+Here :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instances of the class :code:`regpy.vecspc.VectorSpace`. Examples of 
+such :code:`VectorSpace`s (currently the only examples!) are sets of NumPy arrays of a fixed shape of a floating or complexfloating type 
+with the canonical addition and scalar multiplication. 
 We refer to :ref:`/spaces.rst` for further details. Considering complex vector spaces as real vector space of twice the dimension, 
 we can always think of :math:`\mathbb{X}= \mathbb{R}^N` and :math:`\mathbb{Y}= \mathbb{R}^M`.
 
 A linear operator :math:`T\colon \mathbb{X}\to\mathbb{Y}` can of course always be represented by a matrix 
-in :math:`\underline{T}\in\mathbb{R}^{N\times M}`, but it is often inefficient or impossible to set up this matrix, and all we neee is 
+in :math:`\underline{T}\in\mathbb{R}^{N\times M}`, but it is often inefficient or impossible to set up this matrix, and all we need is 
 a routine implementing matrix-vector products. Such a routine has to be implemented by in the :code:`_eval` method. 
 In addition we often need matrix-vector products with the transposed matrix  :math:`\underline{T}^{\top}` -- 
-the adjoint with respect to the standard Euclidean scalar products in :math:`\mathbb{R}^M` and :math:`\mathbb{R}^N`. 
-This is implemented in the method  :code:`_adjoint` method. 
+the adjoint with respect to the standard real Euclidean scalar products in :math:`\mathbb{R}^M` and :math:`\mathbb{R}^N`. 
+This should be implemented in the :code:`_adjoint` method. 
 
-Complex spaces: If :math:`T_{\mathbb{C}}` is a :math:`\mathbb{C}`-linear mapping from 
-:math:`\mathbb{C}^N` to :math:`\mathbb{C}^M` represented by a matrix :math:`\underline{T}_{\mathbb{C}}\in\mathbb{C}^{N\times M}` and 
-:math:`T_{\mathbb{R}}:\mathbb{R}^{2N}\to\mathbb{R}^{2M}` is the :math:`\mathbb{R}`-linear mapping corresponding to the canonical 
-identifications :math:`\mathbb{C}^N=\mathbb{R}^{2N}` and :math:`\mathbb{C}^M=\mathbb{R}^{2M}`, which is represented by a matrix 
-:math:`\underline{T}_{\mathbb{R}}\in\mathbb{R}^{2N\times 2M}`, then the transpose conjugate matrix :math:`\underline{T}_{\mathbb{C}}^H` 
-and the transposed matrix :math:`\underline{T}_{\mathbb{R}}^{\top}` induce the same mapping. Hence for :math:`\mathbb{C}`-linear 
-mappings between complex vector spaces, :code:`_adjoint` should implement matrix vector products with the transpose conjugate matrix, 
-as natural, but we can keep thinking only about real vector spaces. 
+Alternatively, we can view  :code:`_adjoint` as dual operator :math:`T'\mathbb{Y}'=\mathbb{Y}\to \mathbb{X}'=\mathbb{X}` with 
+the dual pairing given by 
+.. math::
+    \langle u,v\rangle = numpy.vdot(x,y).real,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}
+
+Hence the :code:`_eval` and :code:`_adjoint` methods (called by :code:`eval` and :code:`adjoint`) should be implemented 
+such that the following identity is always satisfied:
+.. math::
+    numpy.vdot(T.eval(x),y).real == numpy.vdot(x,T.adjoint(y)).real
+
+We point out that if :math:`T` is :math:`\mathbb{C}`-linear, i.e. represented by a matrix :math:`\underline{T}\in\mathbb{C}^{N\times M}`,
+then this identity is satisfied if and only if :code:`T.adjoint` is represented by the transposed conjugate matrix of :math:`\underline{T}`.
+In this case the above identity also holds true without the :code:`.real` parts. 
 
 Often an additional Hilbert space structure is introduced in regularization methods for inverse problems. 
 If scalar products on :math:`\mathbb{X}` and :math:`\mathbb{Y}` are represented by the Gram matrices 
@@ -331,16 +337,16 @@ Thus a typical implementation would look like this:
             )
 
         def _eval(self,x, derivative = False, adjoint_derivative = False):
-            # Compute with x being in the my_domain what the operator evaluates as y=Tx
-            if derivate:
-                self.x = x # Storing the location at which the linearization takes place
+            # Compute with x being in the my_domain the image y=F(x) of x under F
+            if derivative:
+                self.x = x # Storing the point at which the operator is linearized
                 # make necessary precomputations for derivative at x
             if adjoint_derivative:
                 # make necessary precomputations for the composition of adjoint and derivative
             return y
 
-        def _derivative(self,x):
-            # compute for x in the my_domain the derivative y = F'[self.x](x) at the predefined location self.x
+        def _derivative(self,h):
+            # compute for h in the my_domain the derivative y = F'[self.x](h) at the point self.x saved by _eval
             return y
 
         def _adjoint(self,y):
