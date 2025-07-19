@@ -27,12 +27,12 @@ Alternatively, we can view  :code:`_adjoint` as dual operator :math:`T':\mathbb{
 the dual pairing given by 
 
 .. math::
-    \langle u,v\rangle = :code:`numpy.vdot(x,y).real`,\qquad u\in \mathbb{X}'=\mathbb{X}, v\in \mathbb{X}.
+    \langle u,v\rangle = \text{numpy.vdot(x,y).real},\qquad u\in \mathbb{X}'=\mathbb{X}, \; v\in \mathbb{X}.
 
 Hence the :code:`_eval` and :code:`_adjoint` methods (called by :code:`eval` and :code:`adjoint`) should be implemented 
 such that the following identity is always satisfied:
 
-.. code::
+.. code-block:: python
     numpy.vdot(T.eval(x),y).real == numpy.vdot(x,T.adjoint(y)).real
 
 We point out that if :math:`T` is :math:`\mathbb{C}`-linear, i.e. represented by a matrix :math:`\underline{T}\in\mathbb{C}^{N\times M}`,
