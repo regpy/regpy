@@ -15,7 +15,7 @@
    :caption: Installation
 
    installation
-   
+
 .. toctree::
    :caption: Examples
    :maxdepth: 1

@@ -16,6 +16,6 @@ When downloading from ``git-hub`` repository you can find the examples listed be
    notebooks/deconvolution_GD_methods
    notebooks/medium_scattering
    notebooks/parallel_mri
-   notebooks/potential 
+   notebooks/potential
    notebooks/tfm
    notebooks/diffusion_coefficient
