@@ -5,14 +5,15 @@ from scipy.interpolate import BSpline
 
 class BasisTransform(Operator):
     r"""
-    Consider an evaluation domain given as Tensor product \(D_1\otimes \dots\otimes D_n\) with \(D_1,\dots,D_n\) being \(n\) 
-    `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain \(V_1\otimes \dots\otimes V_m\) then we define an 
+    Consider an evaluation domain given as Tensor product :math:`D_1\otimes \dots\otimes D_n` with :math:`D_1,\dots,D_n` being :math:`n` 
+    `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain :math:`V_1\otimes \dots\otimes V_m` then we define an 
     operator mapping coefficients to some function `f: eval_domain -> dtype`:
-    \[
+
+    .. math::
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).
-    \]
-    So that the operator BasisTransform maps the coefficient tensor \(c = (c_\{k_1,....k_n\})\) to the tensor of function values
-    \((f(x))_{x in eval_domain}\)
+
+    So that the operator BasisTransform maps the coefficient tensor :math:`c = (c_\{k_1,....k_n\})` to the tensor of function values
+    :math:`(f(x))_{x in eval_domain}`
 
     Parameters
     ----------
@@ -21,11 +22,12 @@ class BasisTransform(Operator):
     coef_domain : regpy.vecsps.Prod   
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each V_i has size N_i
     bases : [ np.ndarray, ... ]
-        a list of matrices \([B_1,..., B_n]\) where the matrix \(B_l\) of size \(M_l \times N_l\) and contains the function values
-        of the basis \(\{b^l_0, b^l_{M_l-1}\}\) of the l-th coordinate:
-        \[
+        a list of matrices :math:`[B_1,..., B_n]` where the matrix :math:`B_l` of size :math:`M_l \times N_l` and contains the function values
+        of the basis :math:`\{b^l_0, b^l_{M_l-1}\}` of the l-th coordinate:
+
+        .. math::
             B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
-        \]
+
     """
     def __init__(self,coef_domain,eval_domain,bases,dtype=float):
         assert isinstance(coef_domain,Prod)
@@ -38,11 +40,11 @@ class BasisTransform(Operator):
         assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
-        """ `dtype ` of the vector spaces."""
+        """ `dtype` of the vector spaces."""
         self.ndim = coef_domain.ndim
         """ dimension of the `coef_domain`. """
         self.bases = bases
-        """List of all the bases transforms as a list of `np.ndarray`s
+        """List of all the bases transforms as a list of `np.ndarray`\s
         """
 
     def _eval(self, coef):
@@ -50,7 +52,7 @@ class BasisTransform(Operator):
         if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
             return self.bases[0] @ coef
         elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
-            return np.linalg.multi_dot([self.bases[0].T, coef, self.bases[1]])
+            return np.linalg.multi_dot([self.bases[0], coef, self.bases[1].T])
         else:
             self.sumrule = "".join(chr(k) for k in range(65,65+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(97,97+self.ndim))
             self.einsum_path = np.einsum_path(self.sumrule,coef,*self.bases, optimize='optimal')[0]
@@ -147,7 +149,9 @@ def bspline_basis(k,t,dim=1,add_points=10):
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
     The evaluation domain is a refined grid determined by the point added between points
     given by add_points:
-        `np.linspace(t[0],t[-1],t.size*add_points)`
+
+        np.linspace(t[0],t[-1],t.size*add_points)
+    
     Note, that to do that accurately construct Splines, we use the key extrapolate=False and extend the
     original knot points given in t by additionally 2k points with equidistant distance to T.
     

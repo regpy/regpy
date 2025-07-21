@@ -5,13 +5,15 @@ import numpy as np
 
 class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
-    \[
+
+    .. math::
         T(x) = g^\delta,
-    \]
+
     in Hilbert spaces by gradient descent for the residual
-    \[
+    
+    .. math::
         \Vert T(x) - g^\delta\Vert^2,
-    \]
+
     where \(\Vert\cdot\Vert)\ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 
@@ -38,7 +40,7 @@ class Landweber(RegSolver):
         self.x = init
         self.y = self.op(self.x)
         norm = setting.op_norm()
-        self.stepsize = stepsize or 1 / norm
+        self.stepsize = stepsize or 1 / norm**2
         """The stepsize."""
 
     def _next(self):

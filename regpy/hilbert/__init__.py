@@ -90,6 +90,16 @@ class HilbertSpace:
         """
         return functionals.HilbertNorm(self)
 
+    def dual_space(self):
+        """The dual space for the dual pairing given by np.vdot. 
+        The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpace`, but gram is replaced by gram_inv.
+
+        Returns
+        ---------
+        HilbertSpace
+        """
+        return GramHilbertSpace(gram = self.gram_inv,gram_inv = self.gram)
+
     def __eq__(self, other):
         if isinstance(other, type(self)):
             return self.vecsp == other.vecsp
@@ -119,7 +129,8 @@ class GramHilbertSpace(HilbertSpace):
     """
     Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
     
-    Parameters:
+    Parameters
+    ----------
     gram: operator
         The Gram matrix of the discrete Hilbert space.
     gram_inv: operator, default =None
@@ -431,9 +442,12 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(vecsps.UniformGridFcts)
-              class SobolevUniformGridFcts(HilbertSpace):
-                  ...
+      .. highlight:: python
+      .. code-block:: python
+      
+            @Sobolev.register(vecsps.UniformGridFcts)
+            class SobolevUniformGridFcts(HilbertSpace):
+                ...
 
     - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
@@ -716,38 +730,38 @@ class SobolevUniformGridFcts(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class HmDomain(HilbertSpace):
-    r"""Implementation of a Sobolev space \(H^m(D)\) for a subset \(D\) of a `UniformGridFcts` grid.
-    \(D\) is characterized by a binary or integer-valued mask: `D={mask==1}`.
+    r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `UniformGridFcts` grid.
+    :math:`D` is characterized by a binary or integer-valued mask: `D={mask==1}`.
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
     Boundary condition at the exterior boundaries are specified by `ext_bd_cond`, default is Neumann ('Neum')
 
     `m=index` is a non-negative integer, the order or index of the Sobolev space.
-    The gram matrix is given by \((\alpha I - \Delta)^{-m}\).
+    The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
 
     By default it is assumed that the lengths in grid are given in physical dimensions,
     and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
 
-    If `weight` is specified, the Gram matrix will approximate \((\alpha I-{weight}\Delta)^{-m}\). `weight` should be slowly varying.
+    If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
 
     Parameters
     ----------
     grid : UniformGridFcts
         Underlying grid functions.
     mask : array-type
-        Mask to capture that subset \(D\) on which the Sobolev space is defined. Can only contain 
+        Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
         values `{-1,0,1}` or is a boolean. Shape has to match the shape of `grid`.
     h : tuple or None or string, optional
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
         "normalized". (Defaults: "normalized)
     index : int, optional
-        The Sobolev index \(m\). (Defaults: 1)
+        The Sobolev index :math:`m`. (Defaults: 1)
     weight : array-type, optional
         Weights to be applied to Laplacian in the gram matrix definition. (Defaults: None)
     ext_bd_cond : any, optional
         Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions. (Defaults: "Neum")
     alpha : scalar, optional
-        Parameter when computing the gram matrix as \((\alpha I - \Delta)^{-m}\). (Defaults: 1)
+        Parameter when computing the gram matrix as :math:`(\alpha I - \Delta)^{-m}`. (Defaults: 1)
     dtype : type, optional
         Type of underlying grid. (Defaults: float) 
     """

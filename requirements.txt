@@ -1,0 +1,7 @@
+# requirements
+numpy>=1.14,<3.0 
+scipy>=1.12,<2.0
+pooch>=1.8,<2.0 #Needed for scipy.datasets
+
+# needed for testing
+pytest>=8.0,<9.0

@@ -1,0 +1,79 @@
+image: python:latest
+
+stages:          # List of stages for jobs, and their order of execution
+  - build
+  - test
+  - deploy
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+build_doc:
+  stage: build
+  image: python:3.12
+  before_script:
+    - touch examples/__init__.py
+    - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
+  script:
+    - apt update && apt install -y python3 python3-pip python3-venv pandoc make
+    - pip install -r doc/sphinx/requirements.txt
+    - pip install .[ngsolve]  # install regpy so AutoAPI can introspect it
+    - cd doc/sphinx
+    - make html
+    - mkdir -p ../../public
+    - cp -r build/html/* ../../public  # GitLab Pages expects 'public/' at root
+  artifacts:
+    paths:
+      - public
+  # Docs build always runs
+  rules:
+    - when: always
+
+test_core:
+  stage: test
+  image: python:3.12
+  before_script:
+    - pip install .[ngsolve]
+  script:
+    - pytest tests/test_measure_space.py
+    - pytest tests/test_spaces.py
+    - pytest tests/test_operators.py
+    - pytest tests/test_functionals.py
+    
+
+test_examples:   # This job runs in the test stage.
+  stage: test    # It only starts when the job in the build stage completes successfully.
+  needs: [test_core] # requires that the core tests were successful
+  image: python:3.12
+  before_script:
+    - touch examples/__init__.py
+    - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
+    - pip install .[ngsolve]
+  script:
+    - pytest tests/test_examples.py
+
+deploy_doc:
+  stage: deploy
+  image: debian:bookworm
+  before_script:
+    # get necessary packages
+    - apt update && apt install -y rclone openssh-client
+
+    # setup ssh key, based on official example: https://gitlab.com/gitlab-examples/ssh-private-key
+    - eval $(ssh-agent -s) #start ssh agent
+    - echo "$SFTP_KEY_VWEB_GWDG" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # this can be done safer, we use this permissive version for public content
+    - ssh-keyscan -p 22 webvm.num.math.uni-goettingen.de >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    
+    # use rclone to sync to vwebfile.gwdg:
+    - mkdir -p ~/.config/rclone
+    - cp rclone.conf ~/.config/rclone/ #set up rclone
+  script:
+    - rclone sync public/ gwdg_vweb:/var/www/num/regpy # clone it
+  dependencies:
+    - build_doc
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "release"'

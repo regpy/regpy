@@ -7,13 +7,15 @@ import numpy as np
 
 class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
-    \[
+
+    .. math::
         F(x) = g^\delta,
-    \]
+
     where \(T)\ is a Frechet-differentiable operator, by gradient descent for the residual
-    \[
+    
+    .. math::
         \Vert F(x) - g^\delta\Vert^2,
-    \]
+
     where \(\Vert\cdot\Vert)\ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 
@@ -33,7 +35,7 @@ class Landweber(RegSolver):
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, data, init, stepsize=None):
+    def __init__(self, setting, data, init, stepsize=None, op_norm_method = "lanczos"):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized with the measured data."""
@@ -41,10 +43,8 @@ class Landweber(RegSolver):
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
-        norm = setting.op_norm(op=self.deriv)
-        #compute norm after linearizing as because needs deriv as argument
 
-        self.stepsize = stepsize or 0.9 / norm
+        self.stepsize = stepsize or 0.9 / setting.op_norm(op=self.deriv, method = op_norm_method)**2
         """The stepsize."""
 
     def _next(self):

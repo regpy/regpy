@@ -1,8 +1,10 @@
 from regpy.solvers import RegSolver
 import numpy as np
 from regpy.operators import CoordinateMask 
-from regpy.solvers import RegularizationSetting
+from regpy.hilbert import GramHilbertSpace
+from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
 from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
+from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber, LinearCombination
 from regpy.stoprules import CountIterations
 import logging
 
@@ -12,20 +14,21 @@ logging.basicConfig(
 )
 
 class SemismoothNewton_bilateral(RegSolver):
-    r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
-        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
-        subject to bilateral constraints psi_minus \leq x \leq psi_plus
-    \]
+    r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
+
+    .. math::
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 
+
+    subject to bilateral constraints :math:`psi_{minus} \leq x \leq psi_{plus}`
+
     
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The regularization parameter. Must be positive.
+    *args : [regpy.solvers.RegularizationSetting,array-like,float] or [regpy.solver.TikhonovRegularizationSetting]
+        Either 3 positional arguments [setting : `regpy.solvers.RegularizationSetting`, data : `array-like`,
+        regpar : `float`] consisting og the regularization setting, data and a positive float for the 
+        regularization parameter or 1 positional argument [setting : regpy.solver.TikhonovRegularizationSetting] which 
+        already binds the former arguments together.
     xref: array-like, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: array-like, default: None
@@ -41,25 +44,72 @@ class SemismoothNewton_bilateral(RegSolver):
     cg_logging_level: Loglevel
         default: logging.INFO
 
+    Notes
+    -----
+    In this case 
+     * setting.penalty has to be an instance of one of the following classes: 
+        * QuadraticBilateralConstraints, 
+        * conj of Huber
+        * conj of HorizontalShiftDilation of Huber
+     * Then psi_plus, psi_minus, xref and regpar are extracted from setting.penalty.
+     * setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
+     * regpar is setting.regpar
+    
+    Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments. 
+
     """
-    def __init__(self,setting, data, regpar, xref = None, x0=None,psi_plus = None, psi_minus = None, cg_pars = None,
-                 logging_level = logging.INFO, cg_logging_level = logging.INFO):
-        assert isinstance(setting,RegularizationSetting)
+
+    def __init__(self, *args,
+                 cg_pars = None, logging_level = logging.INFO, cg_logging_level = logging.INFO,x0=None,
+                 **kwargs
+                 ):
+        if len(args)==3:
+            setting, data, regpar = args
+            assert isinstance(setting,RegularizationSetting)
+            if 'psi_plus' in kwargs:
+                psi_plus = kwargs['psi_plus']
+            else:
+                psi_plus = None
+            if 'psi_minus' in kwargs:
+                psi_minus = kwargs['psi_minus']
+            else:
+                psi_minus = None
+            if 'xref' in kwargs:
+                xref = kwargs['xref']
+            else:
+                xref = None
+            alpha_fac = 1.
+        elif len(args)==1:
+            Tsetting = args[0]
+            assert isinstance(Tsetting,TikhonovRegularizationSetting)
+            R = Tsetting.penalty
+            gram = Tsetting.h_domain.gram
+            psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
+            regpar= Tsetting.regpar
+            gramY = Tsetting.h_codomain.gram
+            data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.codomain.zeros()))
+            setting = RegularizationSetting(Tsetting.op,
+                                            GramHilbertSpace(R.hessian(0.5*(psi_plus+psi_minus))),
+                                            GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
+                                            )
+        else:
+            raise TypeError('SemismoothNewton_bilateral takes either 1 or 3 positional arguments ({} given)'.format(len(args)))
+                                
         super().__init__(setting)
         assert self.op.domain.dtype == float
         self.data=data
         """The measured data"""
-        self.xref = xref if xref is not None else setting.op.domain.zeros()
+        self.regpar=regpar * alpha_fac
+        """The regularizaton parameter."""
+        self.xref = (1./alpha_fac)*xref if xref is not None else setting.op.domain.zeros()
         """The initial guess."""
         if x0 is None:
             if xref is None:
                 self.x=self.op.domain.zeros()
             else:
-                self.x = np.copy(xref)
+                self.x = np.copy(self.xref)
         else:
             self.x = np.copy(x0)
-        self.regpar=regpar
-        """The regularizaton parameter."""
         if cg_pars is None:
             cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
         self.cg_pars = cg_pars
@@ -153,7 +203,7 @@ class SemismoothNewton_bilateral(RegSolver):
                   + np.sum(np.logical_and(self.active_minus, np.logical_not(self.active_minus_old))) 
         removed_ind = np.sum(np.logical_and(self.active_plus_old, np.logical_not(self.active_plus))) \
                 + np.sum(np.logical_and(self.active_minus_old, np.logical_not(self.active_minus)))
-        self.log.debug('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
+        self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind
                                                                             )
@@ -161,12 +211,80 @@ class SemismoothNewton_bilateral(RegSolver):
         if added_ind+removed_ind==0:
             self.converge()
 
+
+def getPenaltyParamsFromFunctional(R,gram=None):
+    r"""
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
+
+    .. math::
+        R(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if l_b\leq x\leq u_b\\
+        R(x) &= \infty else
+
+    Parameters
+    ----------
+    R: regpy.functional.Functional
+       The functional to be analyzed.
+    gram: regpy.operator.Operator [default: None]
+       Gram matrix of the dual Hilbert space. Only used if R is a conjugate functional       
+    """
+    assert isinstance(R,Functional)
+    if isinstance(R,QuadraticBilateralConstraints):
+        return R.ub, R.lb, R.x0, 1.
+    elif isinstance(R,HorizontalShiftDilation):
+        ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.F,gram)
+        if R.shift is None:
+            shift = R.domain.zeros()
+        else:
+            shift = R.shift
+        if R.dilation >0:
+            return shift + (1./R.dilation)*ub, shift + (1./R.dilation)*lb, shift+(1./R.dilation)*x0, alpha*R.dilation**2
+        else:
+            return shift + (1./R.dilation)*lb, shift + (1./R.dilation)*ub, shift+(1./R.dilation)*x0, alpha*R.dilation**2
+    elif isinstance(R,Conj):
+        return getPenaltyParamsFromConjFunctional(R.func,gram.inverse)
+    else:
+        raise TypeError('Unknown or inappropriate type of functional')
+    
+def getPenaltyParamsFromConjFunctional(Rs,gram):
+    r"""
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
+
+    .. math::
+        R^*(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub \\
+        R^*(x) &= \infty else
+
+
+    Parameters
+    ----------
+    Rs: regpy.functional.Functional
+       The functional to be analyzed.
+    gram: regpy.operator.Operator [default: None]
+       Gram matrix of the Hilbert space on which Rs is defined 
+    """
+    assert isinstance(Rs,Functional)
+    if isinstance(Rs,Huber):
+        return gram(Rs.sigma), gram(-Rs.sigma), gram.domain.zeros(), 1.
+    elif isinstance(Rs,LinearCombination):
+        assert len(Rs.coeffs)==1
+        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.funcs[0],gram)
+        lam = Rs.coeffs[0]
+        assert lam>0
+        return lam*ub, lam*lb, x0 , alpha/lam
+    elif isinstance(Rs,HorizontalShiftDilation):
+        assert Rs.dilation == 1.
+        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.F,gram)
+        return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
+    else:
+        raise TypeError('Unknown or inappropriate type of functional')
+
+
 class SemismoothNewton_nonneg(RegSolver):
     r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
-        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
+    
+    .. math::
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 \\
         subject to x>=0
-    \]
+
 
     Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stopping rule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
@@ -305,13 +423,14 @@ class SemismoothNewton_nonneg(RegSolver):
 class SemismoothNewtonAlphaGrid(RegSolver):
     r"""Class runnning Tikhononv regularization with bound constraints on a grid of different regularization parameters.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50

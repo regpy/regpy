@@ -7,26 +7,236 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
+    """The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
+
+    Parameters
+    ----------
+    domain : NgsSpace 
+        The space for the domain.
+    codomain : NgsSpace
+        The space for the codomain.
+    linear : boolean, optional
+        True if linear else False. (Defaults: False)
+    """
     def __init__(self, domain, codomain, linear = False):
         super().__init__(domain = domain, codomain = codomain, linear = linear)
         self.gfu_read_in = ngs.GridFunction(self.domain.fes)
 
     '''Reads in a coefficient vector of the domain and interpolates in the codomain.
     The result is saved in gfu'''
-    def _read_in(self, vector, gfu):
-        self.gfu_read_in.vec.FV().NumPy()[:] = vector
-        gfu.Set(self.gfu_read_in)
+    def _read_in(self, vector, gfu,definedonelements=None):
+        """Read in of a numpy array into a ngsolve grid function. Note You can also read into
+        ngsolve LinearForm.
 
-    '''Solves the dirichlet problem by ngsolve routines'''
-    def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
-       if prec_update:
-           prec.Update()
-       ngs.solvers.BVP(bf=bf, lf=lf, gf=gf, pre=prec,needsassembling=False, print=False)
-    
-    # def _solve_dirichlet_problem(self, bf, lf, gf, prec, prec_update=False):
-    #     gf.vec.data=bf.mat.Inverse()*lf.vec
+        Parameters
+        ----------
+        vector : numpy.array
+            Numpy array to be put into the `GridFunction`
+        gfu : ngsolve.GridFunction or ngsolve.LinearForm
+            ngsolve element to be written into.
+        definedonelements : pyngcore.pyngcore.BitArray, optional
+            BitArray representing the finite elements to be projected onto, by default None
+        """
+        gfu.vec.FV().NumPy()[:] = vector
+        if definedonelements is not None:
+            ngs.Projector(definedonelements, range=True).Project(gfu.vec)
+
+    def _solve_dirichlet_problem(self, bf, lf, gf, prec):
+        r"""Solves the problem 
+        \begin{align*}
+        b(u,v) = f(v) \;\forall v\; test\; functions,\\
+        u|_\Gamma = g
+        \end{align*}
+        The boundary values are given by what `gf` has as values on the boundary. 
+
+        Parameters
+        ----------
+        bf : ngs.BilinearForm
+            the bilinear form of the problem.
+        lf : ngs.LinearFrom
+            the linear form of the problem. 
+        gf : ngs.GridFunction
+            The grid functions on which to solve the solution will be put into these and they have to satisfy 
+            the boundary condition that you want.
+        prec : ngs.Preconditioner
+            preconditioner to be used with ngsolve.
+        """
+        gf.vec.data += bf.mat.Inverse(freedofs=self.codomain.fes.FreeDofs()) * (lf.vec - bf.mat * gf.vec)
+
         
+class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
+    r"""Provides a general setup for the forward problems mapping PDE coefficients to their solutions.
+    That is we assume that as variational formulation one can use 
+
+    .. math::
+        \forall v:    b_0(u,v) + b_a(u,v) = F(v)
+
+    with :math:`b_0` a bilinear form independent of the coefficient :math:`a` and :math:`F` some linear form.  
+    Furthermore :math:`b_a` the bilinear form that depends on :math:`a` has to be linear in :math:`a` so that 
+    one can define a bilinear form :math:`c_u(a,v)=b_a(u,v)`. More over we may assume some Dirichlet 
+    boundary conditions on :math:`u`.That is 
+
+    .. math::
+        F: a \mapsto u 
+
+
+    The Frechét derivative :math:`F'[a]h` in direction :math:`h` is then given as the variational 
+    solution :math:`u'` to 
+
+    .. math::
+        \forall v: b_0(u',v) + b_a(u',v) = -c_u(h,v)
+
+    with :math:`u=F(a)`. That is
+
+    .. math::
+        F'[a]: h \mapsto u' 
+
+
+    It's adjoint :math:`F'[a]^\ast g` is given as the linear form :math:`-c_u(\cdot,w)` for :math:`u=F(a)` and 
+    :math:`w` solving the problem 
+
+    .. math::
+        \forall v:  b_0(v,w) + b_a(v,w) = <g,v>.
+
+    That is
+
+    .. math::
+        F'[a]^\ast: g \mapsto -c_u(\cdot,w)
+
+
+    Notes
+    -----
+    A subclass implemented by a user has to at least implement the subroutine `_bf` which is the 
+    implementation of the bilinear form depending on the coefficient :math:`a`. Optional can the 
+    independent bilinear form :math:`b_0` be implemented as formal integrator in `_bf_0` and the 
+    linear form can be implemented in `_lf`. 
+
+    Parameters
+    ----------
+    domain : NgsSpace
+        The NgsSpace on which the coefficients defined are.
+    sol_domain : NgsSpace
+        The NgsSpace on which the PDE solutions defined are.
+    bdr_val : array type, optional
+        Boundary value of the PDE solution of the forward evaluation, by default None
+    a_bdr_val : array type, optional
+        Boundary value of the coefficients, by default None
+    """
+    def __init__(self, domain, sol_domain, bdr_val = None, a_bdr_val = None):
+        super().__init__(domain, sol_domain, linear = False)
+        self.gfu_a=ngs.GridFunction(self.domain.fes)
+        self.gfu_h=ngs.GridFunction(self.domain.fes)
+        self.gfu_a_bdr = ngs.GridFunction(self.domain.fes)
+        if a_bdr_val is not None:
+            assert self.domain.bdr is not None 
+            assert self.domain.is_on_boundary(a_bdr_val)
+            self._read_in(a_bdr_val,self.gfu_a_bdr)
+        self.gfu_deriv=ngs.GridFunction(self.codomain.fes)
+        self.gfu_adj_help=ngs.GridFunction(self.codomain.fes)
+        if bdr_val is not None and bdr_val in self.codomain:
+            self.gfu_eval=self.codomain.to_ngs(bdr_val)
+        else:
+            self.gfu_eval=ngs.GridFunction(self.codomain.fes)
+
+
+        self.u_a, self.v_a = self.domain.fes.TnT()
+        self.u, self.v = self.codomain.fes.TnT()
+        
+
+    def _eval(self, a, differentiate=False, adjoint_derivative=False):
+        self._read_in(a, self.gfu_a,definedonelements=self.domain.fes.FreeDofs())
+        self.gfu_a.vec.data = self.gfu_a.vec + self.gfu_a_bdr.vec
+        self.bf_mat = ngs.BilinearForm(self.codomain.fes)
+        self.bf_mat += self._bf(self.gfu_a,self.u,self.v) 
+        if self._bf_0() is not None:
+            self.bf_mat += self._bf_0()
+        self.bf_mat.Assemble()
+        self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
+        self.gfu_eval.vec.data += self.bf_mat_inv * (self._lf().vec - self.bf_mat.mat * self.gfu_eval.vec)
+        return self.gfu_eval.vec.FV().NumPy().copy()
+    
+    def _derivative(self, h):
+        lf = self._c_u(h)
+        self.gfu_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.gfu_deriv.vec)
+        return self.gfu_deriv.vec.FV().NumPy().copy()
+
+    def _adjoint(self, g):
+        lf = ngs.LinearForm(self.codomain.fes).Assemble()
+        self._read_in(g,lf)
+        self.gfu_adj_help.vec.data += self.bf_mat.mat.CreateTranspose().Inverse(freedofs=self.codomain.fes.FreeDofs()) * (lf.vec - self.bf_mat.mat.CreateTranspose() * self.gfu_adj_help.vec)
+        lf_adj = ngs.LinearForm(self.domain.fes)
+        lf_adj += -1*self._bf(self.v_a,self.gfu_eval,self.gfu_adj_help)
+        lf_adj.Assemble()
+        ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(lf_adj.vec)
+        return lf_adj.vec.FV().NumPy().copy()
+
+    def _bf(self,a,u,v):
+        r"""Implementation of :math:`b_a` as `ngsolve.comp.SumOfIntegrals` that is something similar to
+        `a*ngs.grad(u)*ngs.grad(v)*ngs.dx` where `u` ist used as trial functions and `v` as test 
+        functions. This method has to be implemented by 
+
+        Parameters
+        ----------
+        a : ngsolve.CoefficientFunction or ngsolve.GridFunction
+            the coefficient in the PDE
+        u : ngsolve.comp.ProxyFunction
+            Trial functions for PDE
+        v : ngsolve.comp.ProxyFunction
+            Test functions for PDE
+
+        Returns
+        ------
+        ngsolve.comp.SumOfIntegrals
+            the formal Integration formula of the bilinear form depending on the coefficient
+        """
+        raise NotImplementedError
+    
+    def _bf_0(self):
+        r"""Implementation of :math:`b_0` as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
+        overwritten with subclasses.  
+
+        Returns
+        -------
+        ngsolve.comp.SumOfIntegrals
+            the formal Integration formula of the bilinear form independent of the coefficient
+        """
+        return None
+    
+    def _lf(self):
+        r"""The Linear form of the PDE :math:`F` implemented as a fixed Linear form. Note that the 
+        Linear form has to be defined on the `codomain` as this is the domain of the solution of 
+        the PDE. By default this is the empty Linear form. 
+
+        Returns
+        ------
+        ngsolve.Linearform
+            Linear form of the PDE :math:`F` as `ngsolve.LinearForm`
+        """
+        return ngs.LinearForm(self.codomain.fes).Assemble()
+        
+    def _c_u(self,h):
+        self._read_in(h, self.gfu_h,definedonelements=self.domain.fes.FreeDofs())
+        lf = ngs.LinearForm(self.codomain.fes)
+        lf += self._bf(self.gfu_h,self.gfu_eval,self.v)
+        return lf.Assemble()
+
+    
+
 class SolveSystem(NGSolveOperator):
+    r"""Solve the system 
+    \begin(align*)
+    Lu = f \text{ in } \Omega, \\
+    u = 0  \text{ in } \partial\Omega
+    \begin{align*}
+    given f. 
+
+    Parameters
+    ----------
+    domain : NgsSpace
+        the underlying NgsSpace.
+    bf : ngs.BilinearForm
+        The bilinear form describing :math:`L`
+    """
     def __init__(self, domain, bf):
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
@@ -45,8 +255,7 @@ class SolveSystem(NGSolveOperator):
     def _eval(self, argument):
         self._read_in(argument, self.gfu)
         self.f.Assemble()
-        self.gfu_eval.vec.data=self.bf.mat.Inverse()*self.f.vec
-        #self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec, prec_update=True)
+        self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec)
         return self.gfu_eval.vec.FV().NumPy().copy()
     
     def _adjoint(self, argument, return_numpy=True):
@@ -143,7 +352,7 @@ def _SolveSystem(domain, bf):
 
 
 class Coefficient(NGSolveOperator):
-    """Diffusion and reaction coefficient problem
+    r"""Diffusion and reaction coefficient problem
     
     Identification of a diffusion coefficient:
     
@@ -215,11 +424,11 @@ class Coefficient(NGSolveOperator):
         self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # return value of derivative
         self.gfu_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for returning values in adjoint
 
-        self.gfu_bf = ngs.GridFunction(self.fes_codomain) # grid function for defining integrator (bilinearform)
+        self.gfu_bf = ngs.GridFunction(self.fes_domain) # grid function for defining integrator (bilinearform)
         self.gfu_lf = ngs.GridFunction(self.fes_codomain)  # grid function for defining right hand side (Linearform)
 
         self.gfu_inner_adj = ngs.GridFunction(self.fes_codomain) #computations in adjoint
-        self.gfu_inner_deriv = ngs.GridFunction(self.fes_codomain) #inner computations in derivative
+        self.gfu_inner_deriv = ngs.GridFunction(self.fes_domain) #inner computations in derivative
 
         #Test and Trial Function
         u, v = self.fes_codomain.TnT()
@@ -259,7 +468,7 @@ class Coefficient(NGSolveOperator):
         self.f.Assemble()
 
         # Solve system
-        self._solve_dirichlet_problem(self.a, self.f, self.gfu_eval, self.prec, prec_update=True)
+        self._solve_dirichlet_problem(self.a, self.f, self.gfu_eval, self.prec)
         if differentiate and self.diffusion:
             self.lf=LinearFormGrad(self.codomain, self.gfu_eval)
 
@@ -333,47 +542,50 @@ class ProjectToBoundary(NGSolveOperator):
 
 class EIT(NGSolveOperator):
     r"""Electrical Impedance Tomography Problem
-    
     PDE:
-    \[
-    -\textrm{div}(s \nabla u)+\alpha u=0 \;\text{ in } \Omega
-    \]
-    \[
-         s \frac{\textrm{d}u}{\textrm{d}n} = g \;\text{ on } \partial\Omega
-    \]
-    Evaluate: \(F\colon s \mapsto \mathrm{tr}(u)\)
+
+    .. math::
+        -\textrm{div}(s \nabla u)+\alpha u&=0 \;\text{ in } \Omega \\
+        s \frac{\textrm{d}u}{\textrm{d}n} &= g \;\text{ on } \partial\Omega
+
+    Evaluate: :math:`F\colon s \mapsto \mathrm{tr}(u)`
+
     Derivative:
-    \[
-    -\textrm{div}(s \nabla v)+\alpha v=\textrm{div}(h \nabla u) (=:f) 
-    \]
-    \[
-         s \frac{\textrm{d}v}{\textrm{d}n} = 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
-    \]
 
-    Der: \(F'[s]\colon h \mapsto \textrm{tr}(v)\)
+    .. math::
+        -\textrm{div}(s \nabla v)+\alpha v&=\textrm{div}(h \nabla u) (=:f) \\
+        s \frac{\textrm{d}v}{\textrm{d}n} &= 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
 
-    Adjoint:
-    \[
-    -\textrm{div}(s \nabla w)+\alpha w=0 
-    \]
-    \[
-         s \frac{\textrm{d}w}{\textrm{d}n} = q 
-    \]
+
+    Der: :math:`F'[s]\colon h \mapsto \textrm{tr}(v)`
+
+    Adjoint
+
+    .. math::
+        -\textrm{div}(s \nabla w)+\alpha w&=0 \\
+         s \frac{\textrm{d}w}{\textrm{d}n} &= q 
+
     
-    Adj: \(F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)\)
+    Adj: :math:`F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)`
 
-    Proof:
-    \[(F'h, q)=\int_{\partial\Omega} [\textrm{tr}(v) q] \]
-    \[= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \] 
-    \[= \int_{\Omega} [\textrm{div}(v s \nabla w )]\]
-    Note \(\textrm{div}(s \nabla w) = \alpha*w\), thus above equation shows:
-    \[(F'h, q) = (s \nabla v, \nabla w)+\alpha (v, w) \]
-    \[= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w)\]
-    \[= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w)\]
-    \[= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}]\]
-    \[= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \]
-    The last two terms are the same! It follows: \((F'h, q) = (h, -\nabla u \nabla w)\). Hence:
-    Adjoint: \(q \mapsto -\nabla u \nabla w\)
+    Proof
+
+    .. math::
+        (F'h, q)&=\int_{\partial\Omega} [\textrm{tr}(v) q] \\
+        &= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \\
+        &= \int_{\Omega} [\textrm{div}(v s \nabla w )]
+
+    Note :math:`\textrm{div}(s \nabla w) = \alpha*w`, thus above equation shows
+
+    .. math::
+        (F'h, q) &= (s \nabla v, \nabla w)+\alpha (v, w) \\
+        &= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w) \\
+        &= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w) \\
+        &= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
+        &= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
+
+    The last two terms are the same! It follows: :math:`(F'h, q) = (h, -\nabla u \nabla w)`. Hence:
+    Adjoint: :math:`q \mapsto -\nabla u \nabla w`
     """
 
     def __init__(self, domain, g, codomain=None, alpha=0.01):
@@ -443,7 +655,7 @@ class EIT(NGSolveOperator):
 
         # Solve system
             if i == 0:
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
             else: 
                 self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 
@@ -499,23 +711,30 @@ class EIT(NGSolveOperator):
 
 
 class ReactionNeumann(NGSolveOperator):
-    """
+    r"""
     Estimation of the reaction coefficient from boundary value measurements
 
-    PDE: -div(grad(u)) + s*u = 0 in Omega
-         du/dn = g on dOmega
+    PDE: :math:`-div(grad(u)) + s*u = 0 in Omega`
 
-    Evaluate: F: s \mapsto trace(u)
+    .. math:: 
+        du/dn = g on dOmega
+
+    Evaluate: :math:`F: s \mapsto trace(u)`
     Derivative:
-        -div(grad(v))+s*v = -h*u (=:f)
+
+    .. math::
+        -div(grad(v))+s*v = -h*u (=:f) \\
         dv/dn = 0 
 
-    Der: F'[s]: h \mapsto trace(v)
+    Der: :math:`F'[s]: h \mapsto trace(v)`
 
     Adjoint: 
-        -div(grad(w))+s*w = 0
+
+    .. math::
+        -div(grad(w))+s*w = 0 \\
         dw/dn = q
-    Adj: F'[s]^*: q \mapsto -u*w
+    
+    Adj: :math:`F'[s]^*: q \mapsto -u*w`
 
     proof:
     (F'h, q) = int_dOmega [trace(v) q] = int_dOmega [trace(v) dw/dn] = int_Omega [div(v grad w)] 
@@ -578,7 +797,7 @@ class ReactionNeumann(NGSolveOperator):
 
         # Solve system
             if i == 0:
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec, prec_update=True)
+                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
             else:
                 self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
 

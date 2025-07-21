@@ -1,16 +1,18 @@
 import logging
 import numpy as np
 
-from regpy.solvers import RegSolver
+from regpy.solvers import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from regpy.functionals import SquaredNorm
 
 from regpy.operators import Identity
 from regpy.stoprules import CountIterations
 
 class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
-    \[
+    
+    .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
-    \]
+
     using a conjugate gradient method. 
     To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
     used, which can be implemented by updating a scalar parameter in each iteration. 
@@ -25,13 +27,16 @@ class TikhonovCG(RegSolver):
     ----------
     setting : regpy.solvers.RegularizationSetting
         The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The regularization parameter. Must be positive.
-    xref: array-like, default: None
+    data : setting.op.codomain [default: None]
+        The measured data. 
+        If None, then setting must have SquaredNorm as data fidelity and penalty term. In this case xref is ignored, 
+        and if setting is a TikhonovRegularizationSetting, then also regpar is ignored.
+        If not None, then setting.penalty and setting.data_fid are ignored except for their Hilbert space structures. 
+    regpar : float [default:None]
+        The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
+    xref: setting.op.domain [default: None]
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
+    x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
     tol : float, default: None
         The absoluted tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
@@ -50,16 +55,36 @@ class TikhonovCG(RegSolver):
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
     def __init__(
-        self, setting, data, regpar, xref=None, x0 =None, 
+        self, setting, data=None, regpar=None, xref=None, 
+        x0 =None, 
         tol=None, reltolx=None, reltoly=None, 
         all_tol_criteria = True,
         krylov_basis=None, preconditioner=None,
         logging_level = logging.INFO
         ):
+        assert isinstance(setting,RegularizationSetting)
         assert setting.op.linear
 
         super().__init__(setting)
         self.log.setLevel(logging_level)
+        if data is None:
+            assert isinstance(self.data_fid,SquaredNorm)
+            data = (-1./self.data_fid.a) * self.data_fid.b
+
+            if xref is not None:
+                self.log.warning('Ignoring given parameter xref')
+            assert isinstance(self.penalty,SquaredNorm)                
+            xref = (-1./self.penalty.a) * self.penalty.b
+
+            if isinstance(setting,TikhonovRegularizationSetting):
+                if regpar is not None:
+                    self.log.warning('Ignoring given value of regularization parameter')
+                regpar = (self.penalty.a/self.data_fid.a) * self.regpar
+            else:
+                assert regpar is not None
+                regpar *= self.penalty.a/self.data_fid.a
+
+        assert regpar is not None
         self.regpar = regpar
         """The regularization parameter."""
         #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
@@ -135,9 +160,12 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
-        stepsize = self.sq_norm_res / np.real(
+        alpha_pre = np.real(
             np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
-        ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        )
+        if alpha_pre == 0:
+            raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
+        stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
@@ -214,10 +242,21 @@ class TikhonovCG(RegSolver):
 
 class GeometricSequence:
     r"""Iterator generating a geometric sequence
-    Parameters: alpha0, q
-    Yields: Sequence defined recursively by 
-        alpha_0 = alpha0
-        alpha_{n+1} = q*alpha_n
+    
+    Parameters
+    ----------
+    alpha0 : float
+        :math:`\alpha_0` the initial regularization parameter 
+    q : float
+        Rate of the geometric sequence
+
+    Notes
+    ----- 
+    Sequence defined recursively by
+    
+    .. math::
+        \alpha_0 &= \alpha_0 \\
+        \alpha_{n+1} &= q*\alpha_n
     """    
     def __init__(self, alpha0,q):
         self.alpha = alpha0
@@ -238,13 +277,14 @@ class TikhonovAlphaGrid(RegSolver):
     This allows to choose the regularization parameter by some stopping rule. 
     Tikhonov functionals are minimized by an inner CG iteration.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     max_CG_iter: integer, default 1000.
         maximum number of CG iterations. 
     xref: array-like, default None
@@ -254,11 +294,14 @@ class TikhonovAlphaGrid(RegSolver):
     tol_fac: float, default 0.5
         absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha)
 
+    Notes
+    -----
     Further keyword arguments for TikhonovCG can be given. 
     """
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
         super().__init__(setting)
+        self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -292,12 +335,12 @@ class TikhonovAlphaGrid(RegSolver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self.setting,data=self.data,regpar=alpha,xref=self.xref,x0=self.xref,
                                reltolx = self.tol_fac / np.sqrt(alpha),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.xref,x0=self.xref,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar = alpha,xref=self.xref,x0=self.xref,
                                tol= self.tol_fac * self.delta / np.sqrt(alpha),
                                 logging_level=self.logging_level
                                )
@@ -308,13 +351,14 @@ class NonstationaryIteratedTikhonov(RegSolver):
     r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
        Tikhonov functionals are minimized by an inner CG iteration.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     delta = float, default None
@@ -325,6 +369,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= logging.INFO):
         super().__init__(setting)
+        self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -361,12 +406,12 @@ class NonstationaryIteratedTikhonov(RegSolver):
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel(logging.WARNING)
         if self.delta is None:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
                                reltolx = self.tol_fac / np.sqrt(self.alpha_eff),
                                logging_level=self.logging_level
                                )
         else:
-            tikhcg =TikhonovCG(self,self.data,alpha,xref=self.x,x0=self.x,
+            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
                                tol= self.tol_fac * self.delta / np.sqrt(self.alpha_eff),
                                 logging_level=self.logging_level
                                )

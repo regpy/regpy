@@ -2,44 +2,19 @@ import numpy as np
 
 from regpy.vecsps import UniformGridFcts
 
-class GenCurveDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of GenCurve instances. It provides method `bd_eval` which 
-    gives the capability to evaluate a curve GenCurve by name.  
-
-    Parameters
-    ----------
-    n : int
-        number of discretization points 
-    """
-    def __init__(self, n):
-        assert isinstance(n, int)
-        self.n = n 
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
-
-    def bd_eval(self, name, der = 0):
-        """Compute a curve for the given coefficients. All parameters will be passed to the
-        constructor of `StarCurve`.
-        
-        Parameters
-        ----------
-        name : str
-            name of the method to evaluate as string
-        der : int, optional
-            Number of derivatives to compute , Defaults : 0
-        """
-        gencurve=GenCurve(name, self.n, der)
-        self.z=gencurve.z
-        self.zpabs=gencurve.zpabs
-        self.zp=gencurve.zp
-        self.zpp=gencurve.zpp
-        self.zppp=gencurve.zppp 
-        self.normal=gencurve.normal
-        return gencurve
-
 class GenCurve:
-    r"""Parameterized smooth closed curve in R^2 without self-crossing
-    parametrization by function z(t), 0<=t<=2*pi (counter-clockwise). 
-    Note \(z(t)\) must return two values [x(t),z(t)]
+    r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
+    without self-crossing parametrization by function :math:`z(t)`\, 
+    :math:`0\leq t\leq 2*\pi` (counter-clockwise). Note :math:`z(t)` must return two 
+    values :math:`[x(t),y(t)]`\.
+
+    Subclasses should implement `_call` with the optional argument `der` 
+    to determine which derivative to compute.
+
+    After initializing the curve additional derivatives can be computed by 
+    resetting the `der` property. The number of evaluation points can also be 
+    reset by setting the 'n` property with some new number resulting in a recompute
+    of all the evaluations. 
 
     Parameters
     ----------
@@ -47,142 +22,368 @@ class GenCurve:
         name of the curves
     n : int 
         number of discretization point
-    der : int
-        up to which derivative to compute, Defaults: 0
-
-    Raises
-    ------
-    ValueError
-        If der > 3, because only Derivative up to order 3 is implemented
+    der : int, optional
+        number of derivatives to initially compute.
     """
     
     def __init__(self, name, n, der = 0):
         self.name=name
-        self.z=None
-        self.zp=None
-        self.zpp=None
-        self.zppp=None
-        """Values of z(t) and its derivatives at equidistant grid"""
-        self.zpabs=None   
-        """|z'(t)|"""
-        self.normal=None 
-        """Outer normal vector(not normalized)"""
+        "Name of the true curve function"
+        
+        self._z = []
+        """List of all evaluations of z(t) and its derivatives. """
+        self._der = -1
 
-        t=2*np.pi*np.linspace(0, n-1, n)/n
-        self.z = eval(self.name)(t,0)
-
-        if der>=1:
-            self.zp = eval(self.name)(t,1)
-            self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
-            self.normal = np.append(self.zp[1,:],
-                -self.zp[0,:]).reshape(2, n)
-
-        if der>=2:
-            self.zpp = eval(self.name)(t,2)
-
-        if der>=3:
-            self.zppp = eval(self.name)(t,3)
-
-        if der>3:
-            raise ValueError('only derivatives up to order 3 implemented')
+        self.n = n
+        self.der = der 
 
 
-class StarCurveDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `StarCurve` instances. It provides method `bd_eval` which 
-    gives evaluates a curve `StarCurve` by name.  
+
+    def __call__(self,der=0):
+        res = self._call(der=der)
+        assert res.ndim == 2 and res.shape[0] == 2
+        return res
+    
+    def _call(self,der=0):
+        raise NotImplementedError
+    
+    @property
+    def der(self):
+        """number of derivatives to compute"""
+        return self._der
+
+    @der.setter
+    def der(self,der_new):
+        assert isinstance(der_new,int) and der_new <=3
+        if self.der < der_new:
+            for i in range(self.der+1,der_new+1):
+                self._z.append(self(i))
+                self._der += 1
+
+    @property    
+    def n(self):
+        """number of evaluation points"""
+        return self._n
+    
+    @n.setter
+    def n(self,n_new):
+        assert isinstance(n_new,int)
+        self.t = 2*np.pi*np.linspace(0, n_new-1, n_new)/n_new
+        self._n = n_new
+        for i in range(0,self.der+1):
+            self._z[i]= self(i)
+
+    @property
+    def z(self):
+        """Values of z(t) at equidistant grid"""
+        if self.der >= 0:
+            return self._z[0]
+        else:
+            raise ValueError
+    
+    @property
+    def zp(self):
+        """Values of z(t) its first derivatives at equidistant grid"""
+        if self.der >= 1:
+            return self._z[1]
+        else:
+            raise ValueError
+    
+    @property
+    def zpabs(self):
+        if self.zp is not None:
+            return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
+    @property
+    def normal(self):
+        if self.zp is not None:
+            return np.append(self.zp[1,:], -self.zp[0,:]).reshape((2, self.n))
+        
+    @property
+    def zpp(self):
+        """Values of z(t) its second derivatives at equidistant grid"""
+        if self.der >= 2:
+            return self._z[2]
+        else:
+            raise ValueError
+
+    @property
+    def zppp(self):
+        """Values of z(t) its third derivatives at equidistant grid"""
+        if self.der >= 3:
+            return self._z[3]
+        else:
+            raise ValueError
+
+
+class kite(GenCurve):
+    """Subclass of the `GenCurve` that gives a kite form. 
 
     Parameters
     ----------
     n : int
-        Number of discretization points. 
+        number of evaluation points on the parameterized curve.
+    der : int, optional
+        Number of derivatives to initially compute. Default: 0
     """
-    def __init__(self, n):
-        assert isinstance(n, int)
-        self.n = n
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
+    def __init__(self, n, der = 0):
+        super().__init__("kite",n,der=der)
 
-    def bd_eval(self, name, der=0):
-        """Compute a curve for the given coefficients. All parameters will be passed to the
-        constructor of `StarCurve`.
-        
-        Parameters
-        ----------
-        name : str
-            name of the method to evaluate
-        der : int, optional
-            Number of derivatives to compute , Defaults : 0
-        """
-        starcurve=StarCurve(name, self.n, der)
-        self.z=starcurve.z
-        self.zpabs=starcurve.zpabs
-        self.zp=starcurve.zp
-        self.zpp=starcurve.zpp
-        self.zppp=starcurve.zpp
-        self.normal=starcurve.normal
-        return starcurve
+    def _call(self, der=0):
+        if der==0:
+            return np.append(np.cos(self.t)+0.65*np.cos(2*self.t)-0.65,   1.5*np.sin(self.t)).reshape(2, self.n)
+        elif der==1:
+            return np.append(-np.sin(self.t)-1.3*np.sin(2*self.t)    ,    1.5*np.cos(self.t)).reshape(2, self.n)
+        elif der==2:
+            return np.append(-np.cos(self.t)-2.6*np.cos(2*self.t)    ,   -1.5*np.sin(self.t)).reshape(2, self.n)
+        elif der==3:
+            return np.append(np.sin(self.t)+5.2*np.sin(2*self.t)     ,   -1.5*np.cos(self.t)).reshape(2, self.n)
+        else:
+            raise ValueError('derivative not implemented')
 
-class StarCurve:
-    r"""Radial curve parameterized by 
-    \[
-      z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
-    \]
-     with a positive, 2pi-periodic function q. 
-     
+
+class StarCurve(GenCurve):
+    r"""Base class for radial curve in :math:`R^2` 
+    parameterized by 
+
+    .. math::
+        z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
+
+    with a positive, :math:`2\pi`\-periodic function :math:`q`\. 
+
+    Subclasses should implement `_call` with the optional argument `der` 
+    to determine which derivative to compute.
+
+    After initializing the curve additional derivatives can be computed by 
+    resetting the `der` property. The number of evaluation points can also be 
+    reset by setting the 'n` property with some new number resulting in a recompute
+    of all the evaluations. 
+
     Parameters
     ----------
     name : str 
         name of the curves
     n : int 
         number of discretization point
-    der : int
-        up to which derivative to compute, Defaults: 0
-
-    Raises
-    ------
-    ValueError
-        If der > 3, because only Derivative up to order 3 is implemented
+    der : int, optional
+        number of derivatives to initially compute.
     """
-    def __init__(self, name, n, der):
-      
-        self.name=name
+    def __init__(self, name, n, der = 0):
+        super().__init__(name,n,der=der)
 
-        t=2*np.pi*np.linspace(0, n-1, n)/n  
-        cost = np.cos(t)
-        sint = np.sin(t)
-
-        self.q = np.zeros((der+1,n))
-        """The first row of q contains values of q(t) at equidistant points
-        the second row values of q', the third row of q'' and so on"""
-
-        for j in range(0, der+1):
-            self.q[j, :]=eval(self.name)(t, j)
-        q=self.q
-        self.z = np.append(q[0, :]*cost,\
-            q[0,:]*sint).reshape((2, n))
-            
-        if der>=1:
-            self.zp = np.append(q[1,:]*cost - q[0,:]*sint,\
-                q[1,:]*sint + q[0,:]*cost).reshape((2, n))
-            self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
-            self.normal = np.append(self.zp[1,:],
-                -self.zp[0,:]).reshape((2, n))
-            """Outer normal vector"""
-
-        if der>=2:
-            self.zpp = np.append(q[2,:]*cost - 2*q[1,:]*sint - q[0,:]*cost,\
-                q[2,:]*sint + 2*q[1,:]*cost - q[0,:]*sint).reshape((2, n))
-
-        if der>=3:
-            self.zppp = np.append(q[3,:]*cost - 3*q[2,:]*sint - 3*q[1,:]*cost + q[0,:]*sint,\
-                q[3,:]*sint + 3*q[2,:]*cost - 3*q[1,:]*sint - q[0,:]*cost).reshape((2,n))
-                
-        if der>3:
-            raise ValueError('only derivatives up to order 3 implemented')
+    def __call__(self,der=0):
+        res = self._call(der=der)
+        assert res.ndim == 1
+        if der == 0:
+            return np.array([res*np.cos(self.t),res*np.sin(self.t)])
+        elif der == 1:
+            cost = np.cos(self.t)
+            sint = np.sin(self.t)
+            return np.array([res*cost,res*sint]) + np.array([[0,-1],[1,0]])@self.z
+        elif der == 2:
+            cost = np.cos(self.t)
+            sint = np.sin(self.t)
+            return np.array([res*cost, res*sint]) + 2*np.array([[0,-1],[1,0]])@self.zp + self.z
+        elif der == 3:
+            cost = np.cos(self.t)
+            sint = np.cos(self.t)
+            return np.array([res*cost ,res*sint]) + 3*np.array([[0,-1],[1,0]])@self.zpp + 3 * self.zp + np.array([[0,1],[-1,0]])@self.z
+        return res
+    
+    def _call(self,der=0):
+        raise NotImplementedError
+    
+    @property
+    def zpabs(self):
+        r""":math:`|z'(t)|`"""
+        if self.zp is not None:
+            return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
+    @property
+    def normal(self):
+        r"""Outer normal vector(not normalized)"""
+        if self.zp is not None:
+            return np.append(self.zp[1,:], -self.zp[0,:]).reshape((2, self.n))
 
     def radial(self, n):
         t=2*np.pi*np.linspace(0, n-1, n)/n
         rad = eval(self.name)(t, 0)
         return rad
+
+class peanut(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("peanut",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        if der==0:
+            return 1./2.*(3*cost**2+1)**(1./2)
+        elif der==1:
+            return -3./2./(4.*cost**2+sint**2)**(1./2)*cost*sint
+        elif der==2:
+            return  -3./2*(3.*cost**4+2.*cost**2-1)/(3*cost**2+1)**(3./2)
+        elif der==3:
+            return  3./2.*cost*sint*(9.*cost**4+6*cost**2+13)/(3*cost**2+1)**(5./2)
+        else:
+            raise ValueError('derivative not implemented')
+        return res
+
+class round_rect(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("round_rect",n,der=der)
+
+    def _call(self,der):
+        co = 2/3
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        if der==0:
+            return  (sint**10 + (co*cost)**10)**(-0.1)
+        elif der==1:
+            return  -1/10/(sint**10+co**10*cost**10)**(11/10)*(10*sint**9*cost-10*co**10*cost**9*sint)
+        elif der==2:
+            return  11/100/(sint**10+co**10*cost**10)**(21/10)*(10*sint**9*cost-10*co**10*cost**9*sint) \
+                **2-1/10/(sint**10+co**10*cost**10)**(11/10)*(90*sint**8*cost**2-10*sint**10+90*co**10 \
+                *cost**8*sint**2-10*co**10*cost**10)
+        elif der==3:
+            return  -231/1000/(sint**10+co**10*cost**10)**(31/10)**(10*sint**9*cost-10*co**10*cost**9*sint)**3+33 \
+                /100/(sint**10+co**10*cost**10)**(21/10)*(10*sint**9*cost-10*co**10*cost**9*sint) \
+                *(90*sint**8*cost**2-10*sint**10+90*co**10*cost**8*sint**2-10*co**10*cost**10)-1/10 \
+                /(sint**10+co**10*cost**10)**(11/10)*(720*sint**7*cost**3-280*sint**9*cost-720*co**10 \
+                *cost**7*sint**3+280*co**10*cost**9*sint)
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class apple(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("apple",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        cos2t = np.cos(2*self.t)
+        sin2t = np.sin(2*self.t)
+        if der==0:
+            return  (0.5+0.4*cost+0.1*sin2t)/(1+0.7*cost)
+        elif der==1:
+            return  (-2/5*sint+1/5*cos2t)/(1+7/10*cost)+7/10*(1/2+2/5*cost+1/10*sin2t)/(1+7/10*cost)**2*sint
+        elif der==2:
+            return  (-2/5*cost-2/5*sin2t)/(1+7/10*cost)+7/5*(-2/5*sint+1/5*cos2t)/(1+7/10*cost) \
+                **2*sint+49/50*(1/2+2/5*cost+1/10*sin2t)/(1+7/10*cost)**3*sint**2+7/10*(1/2+2/5  \
+                *cost+1/10*sin2t)/(1+7/10*cost)**2*cost
+        elif der==3:
+            return  (2/5*sint-4/5*cos2t)/(1+7/10*cost)+21/10*(-2/5*cost-2/5*sin2t)/(1+7/10*cost)**2 \
+                *sint+147/50*(-2/5*sint+1/5*cos2t)/(1+7/10*cost)**3*sint**2+21/10*(-2/5*sint+1/5 \
+                *cos2t)/(1+7/10*cost)**2*cost+1029/500*(1/2+2/5*cost+1/10*sin2t)/(1+7/10*cost) \
+                **4*sint**3+147/50*(1/2+2/5*cost+1/10*sin2t)/(1+7/10*cost)**3*sint*cost-7/10 \
+                *(1/2+2/5*cost+1/10*sin2t)/(1+7/10*cost)**2*sint
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class three_lobes(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("three_lobes",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        cos3t = np.cos(3*self.t)
+        sin3t = np.sin(3*self.t)
+        if der==0:
+            return  0.5 + 0.25*np.exp(-sin3t) - 0.1*sint
+        elif der==1:
+            return  -3/4*cos3t*np.exp(-sin3t)-1/10*cost
+        elif der==2:
+            return  9/4*sin3t*np.exp(-sin3t)+9/4*cos3t**2*np.exp(-sin3t)+1/10*sint
+        elif der==3:
+            return  27/4*cos3t*np.exp(-sin3t)-81/4*sin3t*cos3t*np.exp(-sin3t)-27/4*cos3t**3*np.exp(-sin3t)+1/10*cost
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class pinched_ellipse(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("pinched_ellipse",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        if der==0:
+            return  3/2*np.sqrt(1/4*cost**2 + sint**2)
+        elif der==1:
+            return  9/4/(-3*cost**2+4)**(1/2)*cost*sint
+        elif der==2:
+            return  9/4*(3*cost**4-8*cost**2+4)/(3*cost**2-4)/(-3*cost**2+4)**(1/2)
+        elif der==3:
+            return  -9/4*cost*sint*(9*cost**4-24*cost**2+28)/(3*cost**2-4)**2/(-3*cost**2+4)**(1/2)
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class smoothed_rectangle(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("smoothed_rectangle",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        if der==0:
+            return  (cost**10 +2/3*sint**10)**(-1/10)
+        elif der==1:
+            return  -1/10/(cost**10+2/3*sint**10)**(11/10)*(-10*cost**9*sint+20/3*sint**9*cost)
+        elif der==2:
+            return  11/100/(cost**10+2/3*sint**10)**(21/10)*(-10*cost**9*sint+20/3*sint**9*cost)**2 \
+                -1/10/(cost**10+2/3*sint**10)**(11/10)*(90*cost**8*sint**2-10*cost**10 \
+                +60*sint**8*cost**2-20/3*sint**10)
+        elif der==3:
+            return  -231/1000/(cost**10+2/3*sint**10)**(31/10)*(-10*cost**9*sint+20/3*sint**9*cost)**3 \
+                +33/100/(cost**10+2/3*sint**10)**(21/10)*(-10*cost**9*sint+20/3*sint**9*cost)* \
+                (90*cost**8*sint**2-10*cost**10+60*sint**8*cost**2-20/3*sint**10) \
+                -1/10/(cost**10+2/3*sint**10)**(11/10)*(-720*cost**7*sint**3+280*cost**9*sint \
+                +480*sint**7*cost**3-560/3*sint**9*cost)
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class nonsym_shape(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("nonsym_shape",n,der=der)
+
+    def _call(self,der):
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
+        if der==0:
+            return (1 + 0.9*cost + 0.1*np.sin(2*self.t))/(1 + 0.75*cost)
+        elif der==1:
+            return  4/5*(-3*sint+8*cost**2-4+3*cost**3)/(16+24*cost+9*cost**2)
+        elif der==2:
+            return  -4/5*(12*cost-9*cost**2+64*sint*cost+36*sint*cost**2+9*sint*cost**3+24*sint+18) \
+                /(64+144*cost+108*cost**2+27*cost**3)
+        elif der==3:
+            return  -4/5*(144*sint*cost+114*sint-40+240*cost**3+192*cost-27*sint*cost**2+368*cost**2 \
+                +144*cost**4+27*cost**5)/(256+768*cost+864*cost**2+432*cost**3+81*cost**4)
+        else:
+            raise ValueError('derivative not implemented')
+
+
+class circle(StarCurve):
+    
+    def __init__(self,n,der=0):
+        super().__init__("circle",n,der=der)
+
+    def _call(self,der):
+        if der==0:
+            return np.ones_like(self.t)
+        else:
+            return np.zeros_like(self.t)
+
 
 class GenTrigDiscr(UniformGridFcts):
     """Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
@@ -225,10 +426,11 @@ class GenTrigDiscr(UniformGridFcts):
     
 class GenTrig:
     r"""The class GenTrig describes boundaries of domains in R^2 which are
-     parameterized by
-     \[
-          z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
-     \]
+    parameterized by
+
+    .. math::
+        z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
+
      where z_1 and z_2 are trigonometric polynomials with N coefficient.
      Here N must be even, so the highest order monomial is cos(t*N/2),
      but sin(t*N/2) does not occur.
@@ -240,9 +442,9 @@ class GenTrig:
      ----------
      coeffs : array-like
         Coefficients for which to evaluate the curve
-    nvals : int 
+     nvals : int 
         Number of points to evaluate on
-    nderivs : int
+     nderivs : int
         Number of derivatives to compute 
      """
 
@@ -278,8 +480,8 @@ class GenTrig:
                 np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
 
         if self.nderivs>=3:
-            self.zppp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2, self.nvals))**3 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2, self.nvals))**3 * coeffhat[1,:])))).reshape(2, coeffhat[1, :].shape[0])
+            self.zppp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
         
         if self.nderivs>3:
             raise ValueError('only derivatives up to order 3 implemented')
@@ -349,8 +551,8 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides method `eval_curve` which 
-    gives evaluates a curve `StarTrigCurve` by name.  
+    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
+    method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     Parameters
     ----------
@@ -423,8 +625,8 @@ class StarTrigCurve:
         sint = np.sin(t)
 
         self.curve = np.zeros((self.nderivs + 1, 2, self.nvals))
-        
         """The points on the curve and its derivatives, shaped `(nderivs + 1, 2, nvals)`."""
+
         binom = np.ones(self.nderivs + 1, dtype=int)
         for n in range(self.nderivs + 1):
             binom[1:n] += binom[:n-1]
@@ -468,25 +670,23 @@ class StarTrigCurve:
 def trig_interpolate(val, n):
     """Computes `n` Fourier coeffients to the point values given by `val`
     such that `ifft(fftshift(coeffs))` is an interpolation of `val`."""
-    if n % 2 != 0:
-        ValueError('n should be even')
-    N = len(val)
-    coeffhat = np.fft.fft(val)
-    coeffs = np.zeros(n, dtype=complex)
-    if n >= N:
-        coeffs[:N // 2] = coeffhat[:N // 2]
-        coeffs[-(N // 2) + 1:] = coeffhat[N // 2 + 1:]
-        if n > N:
-            coeffs[N // 2] = 0.5 * coeffhat[N // 2]
-            coeffs[-(N // 2)] = 0.5 * coeffhat[N // 2]
-        else:
-            coeffs[N // 2] = coeffhat[N // 2]
+    n_val = len(val)
+    coeff_val = np.fft.fft(val)
+    if n == n_val:
+        return np.fft.ifftshift(coeff_val)
+    elif n > n_val:
+        coeffs = np.zeros(n, dtype=complex)
+        coeffs[:n_val // 2] = coeff_val[:n_val // 2]
+        coeffs[-(n_val // 2) - n_val % 2 + 1:] = coeff_val[-(n_val // 2) -n_val % 2 + 1:]
+        coeffs[n_val // 2] = 0.5 * coeff_val[n_val // 2]
+        coeffs[-(n_val // 2) - n_val % 2] = 0.5 * coeff_val[n_val // 2]
+        return n / n_val * np.fft.ifftshift(coeffs)
     else:
-        coeffs[:n // 2] = coeffhat[:n // 2]
-        coeffs[n // 2 + 1:] = coeffhat[-(n // 2) + 1:]
-        coeffs[n // 2] = 0.5 * (coeffhat[n // 2] + coeffhat[-(n // 2)])
-    coeffs = n / N * np.fft.ifftshift(coeffs)
-    return coeffs
+        coeffs = np.zeros(n, dtype=complex)
+        coeffs[:n // 2] = coeff_val[:n // 2]
+        coeffs[-(n // 2) - n % 2 + 1:] = coeff_val[-(n // 2)- n % 2 + 1:]
+        coeffs[n // 2] = 0.5 * (coeff_val[n // 2] + coeff_val[-(n // 2) - n % 2])
+        return n / n_val * np.fft.ifftshift(coeffs)
 
 def adjoint_rfft(y, size, n=None):
    
@@ -512,16 +712,18 @@ def adjoint_rfft(y, size, n=None):
         return aux
 
 def adjoint_irfft(y, size=None):
-    """Compute the adjoint of `numpy.fft.irfft`. More concretely, the adjoint of
+    r"""Compute the adjoint of `numpy.fft.irfft`\. More concretely, the adjoint of
 
-        x |-> irfft(x, n)
+    .. math::
+        x \mapsto \mathrm{irfft}(x, n)
 
     is
 
-        y |-> adjoint_irfft(y, x.size)
+    .. math::
+        y \mapsto \mathrm{adjoint_irfft}(y, x.size)
 
-    Since the size of `x` can not be determined from `y`, it needs to be given explicitly. The
-    parameter `n`, however, is determined as the output size of `irfft`, so it does not not need to
+    Since the size of `x` can not be determined from `y`\, it needs to be given explicitly. The
+    parameter `n`, however, is determined as the output size of `irfft`\, so it does not not need to
     be specified for the adjoint.
 
     Parameters
@@ -555,146 +757,3 @@ def adjoint_irfft(y, size=None):
         aux = np.zeros(size, dtype=result.dtype)
         aux[:result.size] = result
         return aux
-
-def peanut(t,der):
-      res=np.zeros(t.shape[0])
-      if der==0:
-        res = 1./2.*(3*np.cos(t)**2+1)**(1./2)
-      elif der==1:
-        res = -3./2./(4.*np.cos(t)**2+np.sin(t)**2)**(1./2)*np.cos(t)*np.sin(t)
-      elif der==2:
-        res = -3./2*(3.*np.cos(t)**4+2.*np.cos(t)**2-1)/(3*np.cos(t)**2+1)**(3./2)
-      elif der==3:
-        res = 3./2.*np.cos(t)*np.sin(t)*(9.*np.cos(t)**4+6*np.cos(t)**2+13)/(3*np.cos(t)**2+1)**(5./2)
-      else:
-        raise ValueError('derivative not implemented')
-      return res
-
-def round_rect(t,der):
-      co = 2/3
-      if der==0:
-        res = (np.sin(t)**10 + (co*np.cos(t))**10)**(-0.1)
-      elif der==1:
-        res = -1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))
-      elif der==2:
-        res = 11/100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
-            **2-1/10/(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10 \
-            *np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)
-      elif der==3:
-        res = -231/1000/(np.sin(t)**10+co**10*np.cos(t)**10)**(31/10)**(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t))**3+33 \
-            /100/(np.sin(t)**10+co**10*np.cos(t)**10)**(21/10)*(10*np.sin(t)**9*np.cos(t)-10*co**10*np.cos(t)**9*np.sin(t)) \
-            *(90*np.sin(t)**8*np.cos(t)**2-10*np.sin(t)**10+90*co**10*np.cos(t)**8*np.sin(t)**2-10*co**10*np.cos(t)**10)-1/10 \
-            /(np.sin(t)**10+co**10*np.cos(t)**10)**(11/10)*(720*np.sin(t)**7*np.cos(t)**3-280*np.sin(t)**9*np.cos(t)-720*co**10 \
-            *np.cos(t)**7*np.sin(t)**3+280*co**10*np.cos(t)**9*np.sin(t))
-      else:
-        raise ValueError('derivative not implemented')
-      return res
-
-def apple(t, der):
-      res=np.zeros(t.shape[0])
-      if der==0:
-        res = (0.5+0.4*np.cos(t)+0.1*np.sin(2*t))/(1+0.7*np.cos(t))
-      elif der==1:
-        res = (-2/5*np.sin(t)+1/5*np.cos(2*t))/(1+7/10*np.cos(t))+7/10*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**2*np.sin(t)
-      elif der==2:
-        res = (-2/5*np.cos(t)-2/5*np.sin(2*t))/(1+7/10*np.cos(t))+7/5*(-2/5*np.sin(t)+1/5*np.cos(2*t))/(1+7/10*np.cos(t)) \
-            **2*np.sin(t)+49/50*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**3*np.sin(t)**2+7/10*(1/2+2/5  \
-            *np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**2*np.cos(t)
-      elif der==3:
-        res = (2/5*np.sin(t)-4/5*np.cos(2*t))/(1+7/10*np.cos(t))+21/10*(-2/5*np.cos(t)-2/5*np.sin(2*t))/(1+7/10*np.cos(t))**2 \
-            *np.sin(t)+147/50*(-2/5*np.sin(t)+1/5*np.cos(2*t))/(1+7/10*np.cos(t))**3*np.sin(t)**2+21/10*(-2/5*np.sin(t)+1/5 \
-            *np.cos(2*t))/(1+7/10*np.cos(t))**2*np.cos(t)+1029/500*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t)) \
-            **4*np.sin(t)**3+147/50*(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**3*np.sin(t)*np.cos(t)-7/10 \
-            *(1/2+2/5*np.cos(t)+1/10*np.sin(2*t))/(1+7/10*np.cos(t))**2*np.sin(t)
-      else:
-        raise ValueError('derivative not implemented')
-      return res
-
-def three_lobes(t, der):
-     res=np.zeros(t.shape[0])
-     if der==0:
-        res = 0.5 + 0.25*np.exp(-np.sin(3*t)) - 0.1*np.sin(t)
-     elif der==1:
-        res = -3/4*np.cos(3*t)*np.exp(-np.sin(3*t))-1/10*np.cos(t)
-     elif der==2:
-        res = 9/4*np.sin(3*t)*np.exp(-np.sin(3*t))+9/4*np.cos(3*t)**2*np.exp(-np.sin(3*t))+1/10*np.sin(t)
-     elif der==3:
-        res = 27/4*np.cos(3*t)*np.exp(-np.sin(3*t))-81/4*np.sin(3*t)*np.cos(3*t)*np.exp(-np.sin(3*t))-27/4*np.cos(3*t)**3*np.exp(-np.sin(3*t))+1/10*np.cos(t)
-     else:
-        raise ValueError('derivative not implemented')
-     return res
-
-def pinched_ellipse(t, der):
-     res=np.zeros(t.shape[0])
-     if der==0:
-       res = 3/2*np.sqrt(1/4*np.cos(t)**2 + np.sin(t)**2)
-     elif der==1:
-       res = 9/4/(-3*np.cos(t)**2+4)**(1/2)*np.cos(t)*np.sin(t)
-     elif der==2:
-       res = 9/4*(3*np.cos(t)**4-8*np.cos(t)**2+4)/(3*np.cos(t)**2-4)/(-3*np.cos(t)**2+4)**(1/2)
-     elif der==3:
-        res = -9/4*np.cos(t)*np.sin(t)*(9*np.cos(t)**4-24*np.cos(t)**2+28)/(3*np.cos(t)**2-4)**2/(-3*np.cos(t)**2+4)**(1/2)
-     else:
-        raise ValueError('derivative not implemented')
-     return res
-
-def smoothed_rectangle(t, der):
-     res=np.zeros(t.shape[0])
-     if der==0:
-        res = (np.cos(t)**10 +2/3*np.sin(t)**10)**(-1/10)
-     elif der==1:
-        res = -1/10/(np.cos(t)**10+2/3*np.sin(t)**10)**(11/10)*(-10*np.cos(t)**9*np.sin(t)+20/3*np.sin(t)**9*np.cos(t))
-     elif der==2:
-        res = 11/100/(np.cos(t)**10+2/3*np.sin(t)**10)**(21/10)*(-10*np.cos(t)**9*np.sin(t)+20/3*np.sin(t)**9*np.cos(t))**2 \
-            -1/10/(np.cos(t)**10+2/3*np.sin(t)**10)**(11/10)*(90*np.cos(t)**8*np.sin(t)**2-10*np.cos(t)**10 \
-            +60*np.sin(t)**8*np.cos(t)**2-20/3*np.sin(t)**10)
-     elif der==3:
-        res = -231/1000/(np.cos(t)**10+2/3*np.sin(t)**10)**(31/10)*(-10*np.cos(t)**9*np.sin(t)+20/3*np.sin(t)**9*np.cos(t))**3 \
-            +33/100/(np.cos(t)**10+2/3*np.sin(t)**10)**(21/10)*(-10*np.cos(t)**9*np.sin(t)+20/3*np.sin(t)**9*np.cos(t))* \
-            (90*np.cos(t)**8*np.sin(t)**2-10*np.cos(t)**10+60*np.sin(t)**8*np.cos(t)**2-20/3*np.sin(t)**10) \
-            -1/10/(np.cos(t)**10+2/3*np.sin(t)**10)**(11/10)*(-720*np.cos(t)**7*np.sin(t)**3+280*np.cos(t)**9*np.sin(t) \
-            +480*np.sin(t)**7*np.cos(t)**3-560/3*np.sin(t)**9*np.cos(t))
-     else:
-        raise ValueError('derivative not implemented')
-     return res
-
-def nonsym_shape(t, der):
-     res=np.zeros(t.shape[0])
-     if der==0:
-        res =(1 + 0.9*np.cos(t) + 0.1*np.sin(2*t))/(1 + 0.75*np.cos(t))
-     elif der==1:
-        res = 4/5*(-3*np.sin(t)+8*np.cos(t)**2-4+3*np.cos(t)**3)/(16+24*np.cos(t)+9*np.cos(t)**2)
-     elif der==2:
-        res = -4/5*(12*np.cos(t)-9*np.cos(t)**2+64*np.sin(t)*np.cos(t)+36*np.sin(t)*np.cos(t)**2+9*np.sin(t)*np.cos(t)**3+24*np.sin(t)+18) \
-            /(64+144*np.cos(t)+108*np.cos(t)**2+27*np.cos(t)**3)
-     elif der==3:
-        res = -4/5*(144*np.sin(t)*np.cos(t)+114*np.sin(t)-40+240*np.cos(t)**3+192*np.cos(t)-27*np.sin(t)*np.cos(t)**2+368*np.cos(t)**2 \
-            +144*np.cos(t)**4+27*np.cos(t)**5)/(256+768*np.cos(t)+864*np.cos(t)**2+432*np.cos(t)**3+81*np.cos(t)**4)
-     else:
-        raise ValueError('derivative not implemented')
-     return res
-
-def circle(t, der):
-     if der==0:
-        res=np.ones(t.shape[0])
-     else:
-        res=np.zeros(t.shape[0])
-     return res
-
-def kite(t, der):
-    res=np.zeros((2,t.shape[0]))
-    n=t.shape[0]
-
-    if der==0:
-        res = np.append(np.cos(t)+0.65*np.cos(2*t)-0.65,   1.5*np.sin(t)).reshape(2, n)
-    elif der==1:
-        res = np.append(-np.sin(t)-1.3*np.sin(2*t)    ,    1.5*np.cos(t)).reshape(2, n)
-    elif der==2:
-        res = np.append(-np.cos(t)-2.6*np.cos(2*t)    ,   -1.5*np.sin(t)).reshape(2, n)
-    elif der==3:
-        res = np.append(np.sin(t)+5.2*np.sin(2*t)     ,   -1.5*np.cos(t)).reshape(2, n)
-    else:
-        raise ValueError('derivative not implemented')
-    return res
-
-
