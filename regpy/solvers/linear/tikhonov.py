@@ -160,9 +160,12 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
-        stepsize = self.sq_norm_res / np.real(
+        alpha_pre = np.real(
             np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
-        ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        )
+        if alpha_pre == 0:
+            raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
+        stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
