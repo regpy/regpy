@@ -20,7 +20,7 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 ### Fixed: Bugs that were fixed
 -->
 
-## [Unreleased]
+## [0.4.0]
 
 ### Added
 
