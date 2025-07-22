@@ -1,9 +1,0 @@
-2024-03-28 10:29:50,869 INFO root                 :: it.0, N=4, modulus: 0.2196, phase: 1.2922, norm: 1.1399
-2024-03-28 10:29:52,700 INFO Discrepancy          :: relative discrepancy = 8.86, tolerance = 1.00
-2024-03-28 10:29:52,701 INFO CountIterations      :: iteration = 0 / 20
-2024-03-28 10:29:59,319 INFO NewtonCG             :: Inner CG iteration required 3 steps.
-2024-03-28 10:30:03,720 INFO root                 :: it.1, N=4, modulus: 0.2171, phase: 1.2070, norm: 1.0298, resid.reduct: 0.8279
-2024-03-28 10:30:05,830 INFO Discrepancy          :: relative discrepancy = 7.33, tolerance = 1.00
-2024-03-28 10:30:05,830 INFO CountIterations      :: iteration = 1 / 20
-2024-03-28 10:30:11,252 INFO NewtonCG             :: Inner CG iteration required 7 steps.
-2024-03-28 10:30:15,732 INFO root                 :: it.2, N=4, modulus: 0.2061, phase: 1.0143, norm: 0.8539, resid.reduct: 0.8164
