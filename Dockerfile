@@ -49,6 +49,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Copy your project files into the container
 COPY . /app
+RUN chown -R appuser:appuser /app
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
@@ -62,12 +63,5 @@ ENV PYTHONPATH /app
 # Expose the port that the application listens on.
 EXPOSE 8000
 
-# Run the application.
-CMD python tests/test_examples.py 
-CMD python tests/test_functionals.py 
-CMD python tests/test_measure_space.py 
-CMD python tests/test_operators.py 
-CMD python tests/test_spaces.py
-
 # Start Jupyter when the container runs
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8000", "--no-browser", "--allow-root"]
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8000", "--no-browser", "--allow-root", "--notebook-dir=/app"]
