@@ -2,9 +2,9 @@
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/regpy/regpy?label=latest%20release&logo=github)](https://github.com/regpy/regpy)
 
-[![PyPI](https://img.shields.io/pypi/v/regpy?color=blue&label=latest%20PyPI%20version&logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
-[![PyPI - Implementation](https://img.shields.io/pypi/implementation/regpy?logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/regpy?label=PyPI%20downloads&logo=pypi&logoColor=white)](https://pypi.org/project/xfem/)
+[![PyPI](https://img.shields.io/pypi/v/regpy?color=blue&label=latest%20PyPI%20version&logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
+[![PyPI - Implementation](https://img.shields.io/pypi/implementation/regpy?logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/regpy?label=PyPI%20downloads&logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/regpy/regpy?logo=docker&logoColor=white)](https://hub.docker.com/repository/docker/regpy/regpy)
 
@@ -35,4 +35,4 @@ We provide different installation methods, such installation using `pip`, listed
 - [`ngsolve`](https://ngsolve.org/), for some forward operators that require solving PDEs. We provide an optional installation tag `ngsolve` when installing with `pip`.
 - [`bart`](https://mrirecon.github.io/bart/) (for the MRI operator)
 - `matplotlib` (for some of the examples)
-- [`pdoc3`](https://pdoc3.github.io/pdoc) (for generating the documentation)
+- [`sphinx`](https://www.sphinx-doc.org/en/master/) (for generating the documentation) further requirements in `doc/sphinx/requirements.txt`.
