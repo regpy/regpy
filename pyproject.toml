@@ -27,7 +27,7 @@ github = "https://github.com/regpy/regpy"
 
 [project.optional-dependencies]
 ngsolve = [
-    "ngsolve>=6.2.2404.post2",
+    "ngsolve>=6.2.2404.post2,<=6.2.2501",
     "mkl>=2023.0.0,!=2025.0.*",
 ]
 
