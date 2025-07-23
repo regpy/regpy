@@ -68,7 +68,7 @@ class IrgnmSemiSmooth(RegSolver):
         self.lam_plus=np.maximum(np.zeros(self.size), self.b-self._A(self.x))
         self.lam_minus=-np.minimum(np.zeros(self.size), self.b-self._A(self.x))
 
-        """sets where the upper constraint and the lower constarint are active"""
+        """sets where the upper constraint and the lower constraint are active"""
         self.active_plus=[self.lam_plus[j]+self.regpar*(self.x[j]-self.psi_plus)>0 for j in range(self.size)]
         self.active_minus=[self.lam_minus[j]-self.regpar*(self.x[j]-self.psi_minus)>0 for j in range(self.size)]
 

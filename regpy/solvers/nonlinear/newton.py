@@ -57,7 +57,7 @@ class NewtonCG(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.rho = rho
-        """A fix number related to the termination (0<rho<1)."""
+        r"""A fix number related to the termination :math:`(0<\rho<1)`."""
         self.cgmaxit = cgmaxit
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
@@ -148,7 +148,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         else:
             self._alphas = iter(alphas)
         self.alpha = next(self._alphas)
-        r"""Initial regularization parameter \(\alpha)\.
+        r"""Initial regularization parameter :math:`\alpha`.
         """
         self.alpha_old = self.alpha
         self.psi_minus = psi_minus

@@ -1,6 +1,6 @@
 # Usage of `RegPy`
 
-`regpy` is a library to solve inverse and ill-posed problems using regularisation methods. That is for a given forward operator
+`RegPy` is a library to solve inverse and ill-posed problems using regularisation methods. That is for a given forward operator
 
 $$
     F\colon X\to Y
@@ -14,7 +14,7 @@ $$
 
 given some obervation data $g^{obs}=g+\eta$. This would require the inverse $F^{-1}$, which in most cases is not continuous. Hence small perturbations by noise $\eta$ can make the inverse unstable. Such problems occur in many applications in imaging methods in physics, biology, medicine and more. For examples checkout the [examples](https://num.math.uni-goettingen.de/regpy/examples.html).
 
-`regpy` can be divided into three parts:
+`RegPy` can be divided into three parts:
 
 * modelling the forward operator: with `regpy.operators` and `regpy.vecsps`
 * modelling space structure, data-fidelity and regularisation functional: with `regpy.hilbert` and `regpy.functionals`
@@ -36,7 +36,7 @@ The spaces $X$ and $Y$ have to be given as discrete vector spaces as provided in
   * zero arrays `VectorSpaces.zeros()`
   * random arrays `VectorSpaces.rand()`
   * iterators over the basis
-* consistency checks 
+* consistency checks
   * providing a control routine whether a given element is an element of the vector space: simply used by `x in VectorSpaces`
   * test of equality of two vector spaces
 * Derived classes can contain additional data like grid coordinates or measures, bundling metadata in one place.
@@ -110,6 +110,7 @@ class op_name(Operator):
         # evaluation of the x=F*(y) 
         return x
 ```
+
 Note that the linear operators only requires
 
 ```python
@@ -117,7 +118,7 @@ Note that the linear operators only requires
     _adjoint(self, y)
 ```
 
-for its evaluation and its adjoint. 
+for its evaluation and its adjoint.
 
 #### Adjoint of an operator
 
@@ -127,7 +128,7 @@ $$
     \langle x,y\rangle = \mathrm{Re}(\sum_i x_i \overline{y_i}).
 $$
 
-That is you can think of the implemented adjoint as the conjugate transpose of the the matrix representing the linear mapping. 
+That is you can think of the implemented adjoint as the conjugate transpose of the the matrix representing the linear mapping.
 The motivation of this implementation is that other inner products can be added later by applying specific Gram matrices implemented in `regpy.hilbert` module. Thus the operators (derivatives) adjoint implementation is independent of the inner product structure on the vector spaces and makes it possible to switch between them without recomputing and reimplementing the derivative and adjoint.
 
 #### Operator operations
@@ -271,7 +272,7 @@ for x,y in solver:
     # do something with the iteration
 ```
 
-This runs the solver until it converges. Note, that it has no stopping criterion. To stop with different depending on the iteration number or the current iterates regpy supplies stopping rules in the module `regpy.stoprules`. A stopping rule can be used in different ways in connection with a solver. Note that once a solvers converged or a stopping rule triggered it has to be reinitiated to restart.
+This runs the solver until it converges. Note, that it has no stopping criterion. To stop with depending on the iteration number or the current iterates `RegPy` supplies stopping rules in the module `regpy.stoprules`. A stopping rule can be used in different ways in connection with a solver. Note that once a solvers converged or a stopping rule triggered it has to be reinitiated to restart.
 
 ```python
 from regpy.stoprule import CountIterations
@@ -296,7 +297,7 @@ for x,y in solver.until(stoprule):
     # do something with the iteration until the iteration counter is 500 or stop early if relative discrepancy is below 2.5
 ```
 
-The previous mehtods assumed one need the iterates. However, to simply run the solver until it stops and get the final iterate one can use the `Solver.run` method:
+The previous methods assumed one need the iterates. However, to simply run the solver until it stops and get the final iterate one can use the `Solver.run` method:
 
 ```python
 from regpy.stoprule import Discrepancy,CountIterations

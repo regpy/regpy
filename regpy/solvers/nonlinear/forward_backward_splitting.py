@@ -44,6 +44,6 @@ class ForwardBackwardSplitting(RegSolver):
     def _next(self):
         self.x-=self.tau*self.h_domain.gram_inv(self.deriv.adjoint(self.data_fid.subgradient(self.y)))
         self.x = self.penalty.proximal(self.x, self.regpar*self.tau, **self.proximal_pars)
-        """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
+        r"""Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y,self.deriv = self.op.linearize(self.x)
  

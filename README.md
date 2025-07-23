@@ -1,4 +1,4 @@
-# regpy: Python tools for regularization methods
+# `RegPy`: Python tools for regularization methods
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/regpy/regpy?label=latest%20release&logo=github)](https://github.com/regpy/regpy)
 
@@ -35,4 +35,4 @@ We provide different installation methods, such installation using `pip`, listed
 - [`ngsolve`](https://ngsolve.org/), for some forward operators that require solving PDEs. We provide an optional installation tag `ngsolve` when installing with `pip`.
 - [`bart`](https://mrirecon.github.io/bart/) (for the MRI operator)
 - `matplotlib` (for some of the examples)
-- [`sphinx`](https://www.sphinx-doc.org/en/master/) (for generating the documentation) further requirements in `doc/sphinx/requirements.txt`.
+- [`sphinx`](https://www.sphinx-doc.org/en/master/) (for generating the documentation) further requirements in `doc/sphinx/requirements.txt`

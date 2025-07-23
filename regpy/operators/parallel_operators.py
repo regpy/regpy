@@ -41,7 +41,7 @@ class OperatorAsWorker(mp.Process):
         """connection to master"""
 
     def run(self):
-        """Starts the process. While running the process may receive the commands:
+        r"""Starts the process. While running the process may receive the commands:
         'eval_nodiff': evaluates the operator with differentiate=False
         'eval_diff': evaluates the operator with differentiate=True
         'deriv': returns linearize
@@ -157,6 +157,7 @@ class ParallelInterface:
     def terminate_managed_instances(manager_id):
         r"""
         Terminate all instances of ParallelInterface associated with manager_id or a higher id
+
         Parameters
         ----------
         manager_id : int
@@ -274,7 +275,7 @@ class ParallelInterface:
 
 
 class ParallelVectorOfOperators(Operator,ParallelInterface):
-    """Vector of operators in which all components are evaluated in parallel. 
+    r"""Vector of operators in which all components are evaluated in parallel. 
     The functionality is identical to the sequential analog `VectorOfOperators`: For
 
         T_i : X -> Y_i

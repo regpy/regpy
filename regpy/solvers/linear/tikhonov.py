@@ -394,7 +394,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         self.logging_level = logging_level
         """logging level for CG iteration."""
         self.alpha_eff = np.inf
-        """effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
+        r"""effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
 
     def _next(self):
         try:

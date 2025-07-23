@@ -360,7 +360,7 @@ class Functional:
 
     @util.memoized_property
     def conj(self):
-        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
         Returns
@@ -371,7 +371,7 @@ class Functional:
         return Conj(self)
 
 class Conj(Functional):
-    """An proxy class wrapping a functional. Calling it will evaluate the functional's
+    r"""An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
     `Functional.conj` property of a functional.
     """
@@ -693,7 +693,7 @@ class SquaredNorm(Functional):
 
 
 class LinearCombination(Functional):
-    """Linear combination of functionals. 
+    r"""Linear combination of functionals. 
 
     Parameters
     ----------
@@ -1056,7 +1056,7 @@ class Composed(Functional):
             return NotImplementedError
 
 class AbstractFunctionalBase:
-    """Class representing abstract functionals without reference to a concrete implementation.
+    r"""Class representing abstract functionals without reference to a concrete implementation.
 
     Abstract functionals do not have elements, properties or any other structure, their sole purpose is
     to pick the proper concrete implementation for a given vector space.
@@ -1106,7 +1106,7 @@ class AbstractFunctionalBase:
 
 
 class AbstractFunctional(AbstractFunctionalBase):
-    """An abstract functional that can be called on a vector space to get the corresponding
+    r"""An abstract functional that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractFunctionals provides two kinds of functionality:
@@ -1144,7 +1144,7 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.args = {}
 
     def register(self, vecsp_type, impl=None):
-        """Either registers a new implementation on a specific `regpy.vecsps.VectorSpace` 
+        r"""Either registers a new implementation on a specific `regpy.vecsps.VectorSpace` 
         for a given Abstract functional or returns as decorator that can output any implementation
         option for a given vector space.
 
@@ -2217,7 +2217,7 @@ class L1Generic(Functional):
 
 
 class TVGeneric(Functional):
-    """Generic TV Functional. Proximal implemented for default L2 h_space
+    r"""Generic TV Functional. Proximal implemented for default L2 h_space
 
     NotImplemented yet!
     """
@@ -2234,7 +2234,7 @@ class TVGeneric(Functional):
         return NotImplementedError
 
 class TVUniformGridFcts(Functional):
-    """Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
+    r"""Total Variation Norm: For C^1 functions the l1-norm of the gradient on a Uniform Grid
 
     Parameters
     ----------
@@ -2278,7 +2278,7 @@ class TVUniformGridFcts(Functional):
         return x-tau*self._divergenceuniformgrid(p)
 
     def _gradientuniformgrid(self, u):
-        """Computes the gradient of field given by 'u'. 'u' is defined on a 
+        r"""Computes the gradient of field given by 'u'. 'u' is defined on a 
         equidistant grid. Returns a list of vectors that are the derivatives in each 
         dimension."""
         # Need to reshape spacing otherwise getting braodcasting error
@@ -2286,7 +2286,7 @@ class TVUniformGridFcts(Functional):
         return 1/self.domain.spacing.reshape(shape)*np.array(np.gradient(u))
 
     def _divergenceuniformgrid(self, u):
-        """Computes the divergence of a vector field 'u'. 'u' is assumed to be
+        r"""Computes the divergence of a vector field 'u'. 'u' is assumed to be
         a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
         regular grid"""
         return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i)/h for i,h in enumerate(self.domain.spacing)])
@@ -2327,7 +2327,7 @@ def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
 
 
 def _register_functionals():
-    """Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
+    r"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
     method described in `AbstractFunctional` does not work due to circular depenencies when
     loading modules.
 

@@ -2,7 +2,7 @@ import numpy as np
 
 
 def test_linearity(op, tolerance=1e-10):
-    """Numerically tests if operator is linear.
+    r"""Numerically tests if operator is linear.
 
     Checks if ::
 
@@ -36,7 +36,7 @@ def test_linearity(op, tolerance=1e-10):
     assert err_mult<tolerance, f'err = {err_mult}'
 
 def test_adjoint(op, tolerance=1e-10):
-    """Numerically test validity of :meth:`adjoint` method.
+    r"""Numerically test validity of :meth:`adjoint` method.
 
     Checks if
 

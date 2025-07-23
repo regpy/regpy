@@ -82,9 +82,9 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     Checks if:
 
     .. math::
-        F(u)+F*(u*)=\langle u*,u \rangle.
+        F(u)+F^\ast(u^\ast)=\langle u^\ast,u \rangle.
     
-    where u* is in the subradient of F at u.
+    where :math:`u^\ast` is in the subradient of :math:`F` at :math:`u`.
 
     Parameters
     ----------

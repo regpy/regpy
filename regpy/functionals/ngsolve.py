@@ -118,7 +118,7 @@ class NgsTV(Functional):
         return self._gfu_out.vec.FV().NumPy().copy()        
 
 def ngsdivergence(p, fes):
-    """Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
+    r"""Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
     p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
     
     Parameters

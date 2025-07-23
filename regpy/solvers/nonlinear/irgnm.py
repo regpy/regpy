@@ -61,7 +61,7 @@ class IrgnmCG(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         self.cg_pars = cg_pars
@@ -156,7 +156,7 @@ class LevenbergMarquardt(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         self.cg_pars = cg_pars
@@ -270,7 +270,7 @@ class IrgnmCGPrec(RegSolver):
         self.x = np.copy(self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         if cg_pars is None:
@@ -348,7 +348,7 @@ class IrgnmCGPrec(RegSolver):
             L[i, :] = np.dot(self.krylov_basis, self.h_domain.gram_inv(
                 self.deriv.adjoint(
                     self.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
-        """Express T*T in Krylov_basis"""
+        r"""Express `T*T` in Krylov_basis"""
 
         #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues, AND make shure it is a method that can handle complex matrices
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')

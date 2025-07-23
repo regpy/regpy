@@ -116,7 +116,7 @@ class GenCurve:
 
 
 class kite(GenCurve):
-    """Subclass of the `GenCurve` that gives a kite form. 
+    r"""Subclass of the `GenCurve` that gives a kite form. 
 
     Parameters
     ----------
@@ -386,7 +386,7 @@ class circle(StarCurve):
 
 
 class GenTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
+    r"""Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
     gives evaluates a curve `GenTrig` by name.  
 
     Parameters
@@ -400,7 +400,7 @@ class GenTrigDiscr(UniformGridFcts):
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def bd_eval(self, coeffs, nvals=None, nderivs=0):
-        """Compute a curve for the given coefficients. All parameters will be passed to the
+        r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
         Parameters
@@ -551,7 +551,7 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
+    r"""Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
     method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     Parameters
@@ -585,7 +585,7 @@ class StarTrigDiscr(UniformGridFcts):
         )
 
 class StarTrigCurve: 
-    """A class representing star shaped 2d curves with radial function parametrized in a
+    r"""A class representing star shaped 2d curves with radial function parametrized in a
     trigonometric basis. Should usually be instantiated via `StarTrigDiscr.eval_curve`.
 
     Parameters

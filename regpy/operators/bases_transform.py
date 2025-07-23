@@ -40,11 +40,11 @@ class BasisTransform(Operator):
         assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
-        """ `dtype` of the vector spaces."""
+        r""" `dtype` of the vector spaces."""
         self.ndim = coef_domain.ndim
-        """ dimension of the `coef_domain`. """
+        r""" dimension of the `coef_domain`. """
         self.bases = bases
-        """List of all the bases transforms as a list of `np.ndarray`\s
+        r"""List of all the bases transforms as a list of `np.ndarray`\s
         """
 
     def _eval(self, coef):
@@ -71,7 +71,7 @@ class BasisTransform(Operator):
 
 
 def chebyshev_basis(coef_nr,eval_domain,dtype=float):
-    """Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
+    r"""Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
     Parameters
@@ -107,7 +107,7 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
     return BasisTransform(coef_domain,eval_domain,bases,dtype)
 
 def legendre_basis(coef_nr,eval_domain,dtype=float):
-    """Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
+    r"""Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
     Parameters
@@ -144,7 +144,7 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
     return BasisTransform(coef_domain,eval_domain,bases,dtype)
 
 def bspline_basis(k,t,dim=1,add_points=10):
-    """Implements a B-Spline basis in an arbitrary Dimension (given by dim)
+    r"""Implements a B-Spline basis in an arbitrary Dimension (given by dim)
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
     The evaluation domain is a refined grid determined by the point added between points

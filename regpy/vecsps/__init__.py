@@ -1,4 +1,4 @@
-"""VectorSpaces on which operators are defined.
+r"""VectorSpaces on which operators are defined.
 
 The classes in this module implement various vector spaces on which the
 `regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`\,
@@ -73,7 +73,7 @@ class VectorSpace:
         return np.zeros(self.shape, dtype=dtype or self.dtype)
 
     def ones(self, dtype=None):
-        """Return an element of the space initalized to 1.
+        """Return an element of the space initialized to 1.
 
         Parameters
         ----------
@@ -83,7 +83,7 @@ class VectorSpace:
         return np.ones(self.shape, dtype=dtype or self.dtype)
 
     def empty(self, dtype=None):
-        """Return an uninitalized element of the space.
+        r"""Return an uninitalized element of the space.
 
         Parameters
         ----------
@@ -109,7 +109,7 @@ class VectorSpace:
             elm[idx] = 0
 
     def rand(self, rand=np.random.random_sample, dtype=None):
-        """Return a random element of the space.
+        r"""Return a random element of the space.
 
         The random generator can be passed as argument. For complex dtypes, real and imaginary
         parts are generated independently.
@@ -182,7 +182,7 @@ class VectorSpace:
             return False
 
     def flatten(self, x):
-        """Transform the array `x`, an element of the vector space, into a 1d real array. Inverse
+        r"""Transform the array `x`, an element of the vector space, into a 1d real array. Inverse
         to `fromflat`.
 
         Parameters
@@ -209,7 +209,7 @@ class VectorSpace:
         return x.ravel()
 
     def fromflat(self, x):
-        """Transform a real 1d array into an element of the vector space. Inverse to `flatten`.
+        r"""Transform a real 1d array into an element of the vector space. Inverse to `flatten`.
 
         Parameters
         ----------
@@ -229,7 +229,7 @@ class VectorSpace:
             return x.reshape(self.shape)
 
     def complex_space(self):
-        """Compute the corresponding complex vector space.
+        r"""Compute the corresponding complex vector space.
 
         Returns
         -------
@@ -242,7 +242,7 @@ class VectorSpace:
         return other
 
     def real_space(self):
-        """Compute the corresponding real vector space.
+        r"""Compute the corresponding real vector space.
 
         Returns
         -------
@@ -407,7 +407,7 @@ class GridFcts(MeasureSpaceFcts):
             #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
-        """The coordinate arrays, broadcast to the shape of the grid. The shape will be
+        r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
 
@@ -422,7 +422,7 @@ class GridFcts(MeasureSpaceFcts):
         self.axes = axes
         """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
-        """The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
+        r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
             super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype)
@@ -464,7 +464,7 @@ class GridFcts(MeasureSpaceFcts):
             
 
 class UniformGridFcts(GridFcts):
-    """A vector space representing functions defined on a rectangular grid with equidistant axes.
+    r"""A vector space representing functions defined on a rectangular grid with equidistant axes.
     The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
@@ -525,7 +525,7 @@ class UniformGridFcts(GridFcts):
         
 
 class DirectSum(VectorSpace):
-    """The direct sum of an arbirtary number of vector spaces.
+    r"""The direct sum of an arbirtary number of vector spaces.
 
     Elements of the direct sum will always be 1d real arrays.
 
@@ -570,7 +570,7 @@ class DirectSum(VectorSpace):
             return NotImplemented
 
     def join(self, *xs):
-        """Transform a collection of elements of the summands to an element of the direct sum.
+        r"""Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
         ----------
@@ -590,7 +590,7 @@ class DirectSum(VectorSpace):
         return elm
 
     def split(self, x):
-        """Split an element of the direct sum into a tuple of elements of the summands.
+        r"""Split an element of the direct sum into a tuple of elements of the summands.
 
         The result arrays may be views into `x`, if memory layout allows it. For complex
         summands, a necessary condition is that the elements' real and imaginary parts are
@@ -623,7 +623,7 @@ class DirectSum(VectorSpace):
 
 
 class Prod(VectorSpace):
-    """The tensor product of an arbitrary number of vector spaces.
+    r"""The tensor product of an arbitrary number of vector spaces.
 
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
@@ -648,7 +648,7 @@ class Prod(VectorSpace):
         """List of the `VectorSpaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1
-        """Poduct of the `volume_elem` of all factors that have defined this property. """
+        """Product of the `volume_elem` of all factors that have defined this property. """
         if factors[0].is_complex:
             dt=np.complex128
         else:
@@ -672,7 +672,7 @@ class Prod(VectorSpace):
         )
 
     def product(self, *xs):
-        """Transform a collection of elements of the factors into an element of the tensor product by an outer product.
+        r"""Transform a collection of elements of the factors into an element of the tensor product by an outer product.
 
         Parameters
         ----------

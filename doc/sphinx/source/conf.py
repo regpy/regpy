@@ -9,7 +9,8 @@
 project = 'RegPy'
 copyright = '2024, Thorsten Hohage'
 author = 'Thorsten Hohage'
-release = '0.3'
+version = '0.4'
+release = '0.4.1'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

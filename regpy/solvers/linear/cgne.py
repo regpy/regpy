@@ -5,7 +5,7 @@ from regpy.solvers.linear.tikhonov import TikhonovCG
 
 
 class CGNE(RegSolver):
-    """
+    r"""
     The conjugate gradient method applied to the normal equation :math:`T^*T=T^*g` for solving linear inverse problems :math:`Tf=g`.
     Regularization is achieved by early stopping, typically using the discrepancy principle. 
 
@@ -26,7 +26,7 @@ class CGNE(RegSolver):
         super().__init__(setting)
         self.log.setLevel(logging_level)
         self.x0 = x0
-        """The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
+        r"""The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
 
         if x0 is not None:
             self.x = x0.copy()
@@ -38,7 +38,7 @@ class CGNE(RegSolver):
             self.y = self.op.codomain.zeros()
 
         self.g_res = self.op.adjoint(self.h_codomain.gram(data-self.y)) 
-        """The gram matrix applied to the residual of the normal equation. 
+        r"""The gram matrix applied to the residual of the normal equation. 
         :math:`g_res = T^* G_Y (data-T self.x)`  in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         res = self.h_domain.gram_inv(self.g_res)

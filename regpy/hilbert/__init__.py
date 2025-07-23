@@ -1,4 +1,4 @@
-"""Concrete and abstract Hilbert spaces on vector spaces.
+r"""Concrete and abstract Hilbert spaces on vector spaces.
 """
 
 from copy import copy
@@ -13,7 +13,7 @@ class HilbertSpace:
     # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
     #   gram property
 
-    """Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
+    r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
     should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
     `regpy.util.memoized_property` can be used.
 
@@ -44,14 +44,14 @@ class HilbertSpace:
 
     @property
     def gram_inv(self):
-        """The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
+        r"""The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
         to be implemented if the `gram` property does not return an invertible operator (i.e. one
         that implements `regpy.operators.Operator.inverse`).
         """
         return self.gram.inverse
 
     def inner(self, x, y):
-        """Compute the inner product between to elements.
+        r"""Compute the inner product between to elements.
 
         This is a convenience wrapper around `gram`.
 
@@ -68,7 +68,7 @@ class HilbertSpace:
         return np.real(np.vdot(x, self.gram(y)))
 
     def norm(self, x):
-        """Compute the norm of an element.
+        r"""Compute the norm of an element.
 
         This is a convenience wrapper around `norm`.
 
@@ -86,12 +86,12 @@ class HilbertSpace:
 
     @util.memoized_property
     def norm_functional(self):
-        """The squared norm functional as a `regpy.functionals.Functional` instance.
+        r"""The squared norm functional as a `regpy.functionals.Functional` instance.
         """
         return functionals.HilbertNorm(self)
 
     def dual_space(self):
-        """The dual space for the dual pairing given by np.vdot. 
+        r"""The dual space for the dual pairing given by np.vdot. 
         The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpace`, but gram is replaced by gram_inv.
 
         Returns
@@ -126,7 +126,7 @@ class HilbertSpace:
 
 
 class GramHilbertSpace(HilbertSpace):
-    """
+    r"""
     Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
     
     Parameters
@@ -154,7 +154,7 @@ class GramHilbertSpace(HilbertSpace):
 
 
 class HilbertPullBack(HilbertSpace):
-    """Pullback of a Hilbert space on the codomain of an operator to its domain.
+    r"""Pullback of a Hilbert space on the codomain of an operator to its domain.
 
     For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
 
@@ -214,7 +214,7 @@ class HilbertPullBack(HilbertSpace):
 
 
 class DirectSum(HilbertSpace):
-    """The direct sum of an arbirtary number of hilbert spaces, with optional
+    r"""The direct sum of an arbirtary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.DirectSum` of the underlying vector spaces of the summands.
 
@@ -399,7 +399,7 @@ class TensorProd(HilbertSpace):
 
 
 class AbstractSpaceBase:
-    """Class representing abstract hilbert spaces without reference to a concrete implementation.
+    r"""Class representing abstract hilbert spaces without reference to a concrete implementation.
 
     The motivation for using this construction is to be able to specify e.g. a Tikhonov penalty
     without requiring knowledge of the concrete vector space the forward operator uses. See the
@@ -433,7 +433,7 @@ class AbstractSpaceBase:
 
 
 class AbstractSpace(AbstractSpaceBase):
-    """An abstract Hilbert space that can be called on a vector space to get the corresponding
+    r"""An abstract Hilbert space that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractSpaces provide two kinds of functionality:
@@ -510,7 +510,7 @@ class AbstractSpace(AbstractSpaceBase):
 
 
 class AbstractSum(AbstractSpaceBase):
-    """Weighted sum of abstract Hilbert spaces.
+    r"""Weighted sum of abstract Hilbert spaces.
 
     The constructor arguments work like for concrete `regpy.hilbert.HilbertSpace`s, which see.
     Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
@@ -554,7 +554,7 @@ class AbstractSum(AbstractSpaceBase):
 
 
 def as_hilbert_space(h, vecsp):
-    """Convert h to HilbertSpace instance on vecsp.
+    r"""Convert h to HilbertSpace instance on vecsp.
 
     - If h is an Operator, it's wrapped in a GramHilbertSpace.
     - If h is callable, e.g. an AbstractSpace, it is called on vecsp to
@@ -574,26 +574,26 @@ def as_hilbert_space(h, vecsp):
 
 
 L2 = AbstractSpace('L2')
-"""L2 `AbstractSpace`."""
+r""":math:`L^2` `AbstractSpace`."""
 
 Sobolev = AbstractSpace('Sobolev')
-"""Sobolev `AbstractSpace`"""
+r"""Sobolev `AbstractSpace`"""
 
 Hm = AbstractSpace('Hm')
-"""H^m `AbstractSpace`"""
+r""":math:`H^m` `AbstractSpace`"""
 
 Hm0 = AbstractSpace('Hm0')
-"""H^m_0 `AbstractSpace`"""
+r""":math:`H^m_0` `AbstractSpace`"""
 
 L2Boundary = AbstractSpace('L2Boundary')
-"""L2 `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
+r""":math:`L^2` `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 SobolevBoundary = AbstractSpace('SobolevBoundary')
-"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
+r"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 
 def componentwise(dispatcher, cls=DirectSum):
-    """Return a callable that iterates over the components of some vector space, constructing a
+    r"""Return a callable that iterates over the components of some vector space, constructing a
     `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
         L2.register(vecsps.DirectSum, componentwise(L2))
@@ -624,7 +624,7 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.vecsps.VectorSpace`.
+    r"""`L2` implementation on a generic `regpy.vecsps.VectorSpace`.
     
     Parameters
     ----------
@@ -646,7 +646,7 @@ class L2Generic(HilbertSpace):
             return operators.PtwMultiplication(self.vecsp, self.weights)
         
 class L2MeasureSpaceFcts(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
+    r"""`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
     
     Parameters
     ----------
@@ -673,7 +673,7 @@ class L2MeasureSpaceFcts(HilbertSpace):
 
 
 class L2UniformGridFcts(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
+    r"""`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
     element.
     """
 
@@ -690,7 +690,7 @@ class L2UniformGridFcts(HilbertSpace):
 
 
 class SobolevUniformGridFcts(HilbertSpace):
-    """`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
+    r"""`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
 
     Parameters
     ----------
@@ -823,7 +823,7 @@ class HmDomain(HilbertSpace):
             self.weight = np.pad(weight,1,'edge')
 
     def I_minus_Delta(self):
-        """
+        r"""
         I_minus_Delta is the sparse form of the sum of the `alpha*identity` and the negative Laplacian on the domain D 
         defined by masking with `mask`.
         """
@@ -881,7 +881,7 @@ class HmDomain(HilbertSpace):
 
 
 def _register_spaces():
-    """Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
+    r"""Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
     loading modules.
 

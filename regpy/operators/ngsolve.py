@@ -1,4 +1,4 @@
-"""PDE forward operators using NGSolve
+r"""PDE forward operators using NGSolve
 """
 
 import ngsolve as ngs
@@ -7,7 +7,7 @@ import numpy as np
 from regpy.operators import Operator
 
 class NGSolveOperator(Operator):
-    """The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
+    r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
 
     Parameters
     ----------
@@ -25,7 +25,7 @@ class NGSolveOperator(Operator):
     '''Reads in a coefficient vector of the domain and interpolates in the codomain.
     The result is saved in gfu'''
     def _read_in(self, vector, gfu,definedonelements=None):
-        """Read in of a numpy array into a ngsolve grid function. Note You can also read into
+        r"""Read in of a numpy array into a ngsolve grid function. Note You can also read into
         ngsolve LinearForm.
 
         Parameters

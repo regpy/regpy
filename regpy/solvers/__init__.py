@@ -53,7 +53,7 @@ class Solver:
         self.__converged = True
 
     def next(self):
-        """Perform a single iteration.
+        r"""Perform a single iteration.
 
         Returns
         -------
@@ -68,7 +68,7 @@ class Solver:
         return True
 
     def _next(self):
-        """Perform a single iteration. This is an abstract method called from the public method
+        r"""Perform a single iteration. This is an abstract method called from the public method
         `next`. Child classes should override it.
 
         The main difference to `next` is that `_next` does not have a return value. If the solver
@@ -77,7 +77,7 @@ class Solver:
         raise NotImplementedError
 
     def __iter__(self):
-        """Return an iterator on the iterates of the solver.
+        r"""Return an iterator on the iterates of the solver.
 
         Yields
         ------
@@ -88,7 +88,7 @@ class Solver:
             yield self.x, self.y
 
     def while_(self, stoprule=NoneRule()):
-        """Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
 
@@ -112,7 +112,7 @@ class Solver:
 
 
     def until(self, stoprule=NoneRule()):
-        """Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
 
@@ -136,7 +136,7 @@ class Solver:
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=NoneRule()):
-        """Run the solver with the given stopping rule. This method simply runs the generator
+        r"""Run the solver with the given stopping rule. This method simply runs the generator
         `regpy.solvers.Solver.while_` and returns the final `(x, y)` pair.
         """
         for x, y in self.while_(stoprule):
@@ -189,11 +189,11 @@ class RegSolver(Solver):
             self.setting = setting
             """The regularization setting"""
             self.regpar = setting.regpar
-            """The regularizaiton parameter"""
+            """The regularization parameter"""
         super().__init__(x,y)
 
     def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
-        """
+        r"""
         Run solver with Morozov's discrepancy principle as stopping rule.
 
         Parameters
@@ -219,7 +219,7 @@ class RegSolver(Solver):
 
 
 class RegularizationSetting:
-    """A Regularization *setting* for an inverse problem, used by solvers. A
+    r"""A Regularization *setting* for an inverse problem, used by solvers. A
     setting consists of
 
     - a forward operator,
@@ -262,7 +262,10 @@ class RegularizationSetting:
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
-        >   np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
+
+        .. code-block:: python
+    
+            np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
 
         If the operator is non-linear this will be done for the derivative.
 
@@ -457,8 +460,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         )
 
     def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
-        r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
-        If :math:`p` is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
+        r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
+        If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
         If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
                 
         Parameters
