@@ -1008,37 +1008,6 @@ class OuterShift(Operator):
     def _adjoint_derivative(self,x):
         return self._adjoint_derivative(x)
 
-class InnerShift(Operator):
-    r"""Shift an operator by a constant offset in the domain.
-
-    Parameters
-    ----------
-    op : Operator
-        The underlying operator.
-    offset : array-like
-        The offset by which to shift. Can be anything that can be broadcast to `op.domain.shape`.
-    """
-    def __init__(self, op, offset):
-        assert offset in op.domain
-        super().__init__(op.domain, op.codomain)
-        if isinstance(op, type(self)):
-            offset = offset + op.offset
-            op = op.op
-        self.op = op
-        self.offset = np.copy(offset)
-
-    def _eval(self, x, differentiate=False):
-        if differentiate:
-            y, self._deriv = self.op.linearize(x-self.offset)
-            return y 
-        else:
-            return self.op(x - self.offset)
-
-    def _derivative(self, h):
-        return self._deriv(h)
-
-    def _adjoint(self, y):
-        return self._deriv.adjoint(y)
 
 class InnerShift(Operator):
     r"""Shift an operator by a constant offset in the domain.
