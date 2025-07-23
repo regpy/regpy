@@ -12,7 +12,7 @@ $$
     F(f) = g
 $$
 
-given some obervation data $g^{obs}=g+\eta$. This would require the inverse $F^{-1}$, which in most cases is not continuous. Hence small perturbations by noise $\eta$ can make the inverse unstable. Such problems occur in many applications in imaging methods in physics, biology, medicine and more. For examples checkout the [examples](https://num.math.uni-goettingen.de/regpy/examples.html).
+given some observation data $g^{obs}=g+\eta$. This would require the inverse $F^{-1}$, which in most cases is not continuous. Hence small perturbations by noise $\eta$ can make the inverse unstable. Such problems occur in many applications in imaging methods in physics, biology, medicine and more. For examples checkout the [examples](https://num.math.uni-goettingen.de/regpy/examples.html).
 
 `RegPy` can be divided into three parts:
 
