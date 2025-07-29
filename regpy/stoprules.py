@@ -102,15 +102,16 @@ class CombineRules(StopRule):
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
         """
-        for rule in rules:
-            if type(rule) is type(self) and rule.op is self.op:
-                self.rules.extend(rule.rules)
-            else:
-                self.rules.append(rule)
         self.op = op
         r""":class:`~regpy.operators.Operator` or `None`
         The forward operator.
         """
+        for rule in rules:
+            if type(rule) is type(self) and hasattr(rule,"op") and rule.op is self.op:
+                self.rules.extend(rule.rules)
+            else:
+                self.rules.append(rule)
+        
         self.active_rule = None
         r"""
         The rule that triggered the stop condition, or `None` if no rule has triggered yet.
