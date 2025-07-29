@@ -113,12 +113,12 @@ class CombineRules(StopRule):
     def __init__(self, rules, op=None):
         super().__init__()
         self.rules = []
-        self.op = op
         for rule in rules:
-            if type(rule) is type(self) and hasattr(rule,"op") and rule.op is self.op:
+            if type(rule) is type(self) and rule.op is self.op:
                 self.rules.extend(rule.rules)
             else:
                 self.rules.append(rule)
+        self.op = op
         self.active_rule = None
 
     def __repr__(self):
