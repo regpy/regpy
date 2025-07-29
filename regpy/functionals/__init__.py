@@ -887,7 +887,7 @@ class VerticalShift(Functional):
         return self.func.hessian(x)
     
     def _proximal(self, x, tau,**proximal_par):
-        return self.func.proximal(x, tau,**proximal_par)
+        return self.func.proximal(x + self.offset, tau,**proximal_par) - self.offset
 
     def _conj(self,x):
         return self.func.conj(x) - self.offset
