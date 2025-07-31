@@ -1340,13 +1340,13 @@ class FunctionalOnDirectSum(Functional):
             proximal_par_list = [{}] *self.length
         else:
             assert len(proximal_par_list) == self.length
-        return self.domain.join([f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
+        return self.domain.join(*[f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
     def _conj(self, xstar):
         return sum([f_i.conj(xstar_i) for f_i,xstar_i in (self.funcs,xstar)])
 
     def _conj_subgradient(self, xstar):
-        return self.domain.join([f_i.conj.subgradient(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
+        return self.domain.join(*[f_i.conj.subgradient(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
 
     def _is_conj_subgradient(self,v, xstar):
         assert v in self.domain and xstar in self.domain
@@ -1360,7 +1360,7 @@ class FunctionalOnDirectSum(Functional):
             proximal_par_list = [{}] *self.length
         else:
             assert len(proximal_par_list) == self.length
-        return self.domain.join([f_i.conj.proximal(xstar_i,tau, proximal_par_i) for f_i,xstar_i,proximal_par_i in zip(self.funcs,xstar,proximal_par_list)])
+        return self.domain.join(*[f_i.conj.proximal(xstar_i,tau, proximal_par_i) for f_i,xstar_i,proximal_par_i in zip(self.funcs,xstar,proximal_par_list)])
     
     def __add__(self,other):
         if isinstance(other,FunctionalOnDirectSum):
