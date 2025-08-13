@@ -19,6 +19,23 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 ### Fixed: Bugs that were fixed
 -->
+## [0.4.2]
+
+### Added
+
+- added citation doi from zenodo including citation file CITATION.cff
+
+## Changed
+
+- amended a problem when combining more than two stop rules
+
+## [0.4.1]
+
+### Changed
+
+- fixed some minor errors in documentation
+- some issues in the testing were fixed
+- Examples have been moved to a extra submodule
 
 ## [0.4.0]
 
