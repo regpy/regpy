@@ -1515,7 +1515,6 @@ class CoordinateMask(Operator):
         Boolean mask of the subset onto which to project.
     """
     def __init__(self, domain, mask):
-        assert isinstance(domain,vecsps.NumPyVectorSpace)
         self.mask = mask
         super().__init__(
             domain=domain,
@@ -1524,10 +1523,14 @@ class CoordinateMask(Operator):
         )
 
     def _eval(self, x):
-        return np.where(self.mask==False, 0, x)
+        res = self.domain.zeros()
+        res[self.mask] = x[self.mask]
+        return res
 
     def _adjoint(self, x):
-        return np.where(self.mask==False, 0, x)
+        res = self.domain.zeros()
+        res[self.mask] = x[self.mask]
+        return res
 
     def __repr__(self):
         return util.make_repr(self, self.domain)
