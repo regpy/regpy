@@ -182,7 +182,7 @@ class TupleVector:
             return self.v[key]
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim):
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
-        elif (isinstance(key,list) and len(key) == self.ndim): 
+        elif (isinstance(key,list) or isinstance(key,tuple)) and len(key) == self.ndim: 
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
         else:
             raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
@@ -190,13 +190,16 @@ class TupleVector:
     def __setitem__(self, key, item):
         if isinstance(key,slice) or isinstance(key,int):
             self.v[key] = item
-        elif (isinstance(key,list) and len(key) == self.ndim):
+        elif (isinstance(key,list) or isinstance(key,tuple)) and len(key) == self.ndim:
             if (isinstance(item,list) and len(item) == self.ndim):
                 for k_i,item_i in zip(key,item):
                     self.v[k_i] = item_i
             elif np.isscalar(item):
                 for k_i in key:
                     self.v[k_i] = item
+            elif isinstance(item,TupleVector) and item.ndim == self.ndim:
+                for k_i,item_i in zip(key,item.v):
+                    self.v[k_i] = item_i
             else:
                 raise TypeError("items has to be a list of length {} not {} type".format(self.ndim,type(item)))                
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
@@ -474,6 +477,22 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
+    def IfPos(self, x):
+        """Analyses which components contribute to the positive part of the 
+        function corresponding to the vector.
+
+        Parameters
+        ----------
+        x : array-like
+            The vector to analyse.
+
+        Returns
+        -------
+        mask : array-like
+            Mask for the vector components contributing to the positive part of a function.
+        """
+        raise NotImplementedError
+    
     def norm(self,x):
         return sqrt(self.vdot(x,x).real)
 
@@ -630,6 +649,27 @@ class NumPyVectorSpace(VectorSpaceBase):
         res.mask = mask
         return res
     
+    def IfPos(self, x):
+        """Analyses which components contribute to the positive part of the 
+        function corresponding to the vector.
+
+        Parameters
+        ----------
+        x : ndarray
+            The vector to analyse.
+
+        Returns
+        -------
+        mask : BitArray
+            Mask for the vector components contributing to the positive part of a function.
+        """
+        if not x in self:
+            raise ValueError("The vector {} is not an element of the vector space {}".format(x,self))
+        if not self.is_complex: 
+            return x > 0
+        else:
+            return TypeError("The vector space {} is complex, use IfPos only works for real valued functions.".format(self))
+
     def iter_basis(self):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
@@ -1003,6 +1043,24 @@ class DirectSum(VectorSpaceBase):
         _ = x[mask]
         x[mask] = self.ones()[mask]
         return DirectSum(*[s_i.masked_space(m_i) for s_i,m_i in zip(self.summands,mask)])
+    
+    def IfPos(self, x):
+        """Analyses which components contribute to the positive part of the 
+        function corresponding to the vector.
+
+        Parameters
+        ----------
+        x : TupleVector
+            The vector to analyse.
+
+        Returns
+        -------
+        mask : tuple(BitArray)
+            Tuple of masks for the vector components contributing to the positive part of a function.
+        """
+        if not x in self:
+            raise ValueError("x of type {} is not a vector in {}".format(type(x),type(self)))
+        return tuple(s_i.IfPos(x_i) for s_i,x_i in zip(self.summands,x.v))
 
     def __eq__(self, other):
         if isinstance(other, type(self)):

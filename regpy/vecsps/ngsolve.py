@@ -12,8 +12,9 @@ import numpy as np
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
+from pyngcore.pyngcore import BitArray
 
-from regpy.vecsps import VectorSpaceBase, DirectSum
+from regpy.vecsps import VectorSpaceBase
 from regpy.util import is_complex_dtype, classlogger
 
 @dataclass 
@@ -112,7 +113,10 @@ class NgsBaseVector:
         return NgsBaseVector(v)
     
     def __getitem__(self,i):
-        return self.vec[i]
+        if isinstance(i,BitArray):
+            return self.vec
+        else:
+            return self.vec[i]
     
     def __setitem__(self,i,val):
         self.vec[i] = val
@@ -292,6 +296,29 @@ class NgsVectorSpace(VectorSpaceBase):
         if not isinstance(other,type(self)):
             return False
         return self.fes == other.fes
+    
+    def IfPos(self, x):
+        """Analyses which components contribute to the positive part of the 
+        function corresponding to the vector.
+
+        Parameters
+        ----------
+        x : NgsBaseVector
+            The vector to analyse.
+
+        Returns
+        -------
+        mask : BitArray
+            A BitArray of masks for the vector components contributing to the positive part of a function.
+        """
+        if not x in self:
+            raise ValueError("The vector {} is not an element of the vector space {}".format(x,self))
+        if not self.is_complex: 
+            self._gfu_fes.vec.data = x.vec
+            self._gfu_fes.Set(ngs.IfPos(self._gfu_fes,1,0))
+            return BitArray([v_i==0 for v_i in self._gfu_fes.vec])
+        else:
+            return TypeError("The vector space {} is complex, use IfPos only works for real valued functions.".format(self))
     
     def iter_basis(self):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
