@@ -19,6 +19,50 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 ### Fixed: Bugs that were fixed
 -->
+
+## [Unreleased]
+
+### Added
+
+- More test
+
+#### Additions to `regpy.operators`
+
+- Operator norm: added `norm` as method to Operator to compute its norm. It uses either the new private method `_power_method` or Lanczos method using SciPy
+- Setting constants in an operator:
+  - Assuming the domain is a direct sum of components one can use the methods `set_constant(c,index)` to set a constant value at certain locations
+  - To reset to the original operator without constants one can use the method `reset_constants()`
+  - to get the currently set constants one can use `get_constants()`
+- Added `PartOfOperator` as an `operators.Operator`. Making it possible to restrict to components of the codomain. One can simply index an operator by standard indexing using integers tuples, lists or slicing
+- Added `Sum` and `Product` which simply take the sum or product respectively of elements in a direct sum of identical summands
+- New submodule `operators.graph_operatos` implementing general graphs of operators
+  - The new classes are `OperatorNode`, `Edge` and `OperatorGraph` representing nodes, edges and the entire graph respectively
+
+### Changed: Changes in existing functionality
+
+#### Changes to Solvers
+
+- `PDGH` introduced extra flag `compude_gap` that decides if the duality gap should be computed.
+- `FISTA` revision and choice of step-size by backtracking
+- `Landweber` Revised now backtracking for step-size choice available
+
+#### Changes in Utility
+
+- `operator_tests`, Changed functionality from asserts to actual logged information in warnings
+- introduced test for affine linearity
+
+#### Changes in stop rules
+
+- introduced `hist_dict` to `Discrepancy` that keeps a history of the discrepancy
+
+### Deprecated: Features soon to be removed
+
+### Removed: Features removed in this version
+
+### Fixed:
+
+- `IRGNM` revision previously the computed and used Krylov basis was not working
+
 ## [0.4.2]
 
 ### Added
