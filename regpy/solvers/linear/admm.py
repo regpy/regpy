@@ -16,22 +16,24 @@ logging.basicConfig(
 class ADMM(RegSolver):
     r"""The ADMM method for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\. 
     ADMM solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. Choosing 
-    \[
-        A:=\begin{pmatrix} T \\ I \end{pmatrix} ,\;
-        B:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \;
-        b:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\;
-        F(f):= 0,\;
-        G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\;
-    \]
+
+    .. math::
+        A&:=\begin{pmatrix} T \\ I \end{pmatrix} ,\; \\
+        B&:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \; \\
+        b&:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\; \\
+        F(f)&:= 0,\; \\
+        G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}&:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\; \\
+
     leads to a nice splitting of the operator \(T)\ and the functional \(R)\ seen in the Lagrangian
-    \[
-        L_\gamma(f,v_1,v_2,p_1,p_2):= 
-        \frac{1}{\alpha}S(v_1) + R(v_2) 
-        - \langle\gamma p_1,Tf-v_1\rangle 
-        - \langle\gamma p_2,f-v_2\rangle
-        + \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2
-        + \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
-    \]
+
+    .. math::
+        L_\gamma(f,v_1,v_2,p_1,p_2):=& \\
+        &\frac{1}{\alpha}S(v_1) + R(v_2) \\
+        &- \langle\gamma p_1,Tf-v_1\rangle \\
+        &- \langle\gamma p_2,f-v_2\rangle \\
+        &+ \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2 \\
+        &+ \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
+
     The minimization for \(f)\ simply reduces to the minimization of a quadratic Tikhonov functional.  This can 
     be achieved by the CG method, but ADMM is particularly efficient if a closed form expression is available for the 
     Tikhonov regularizer as for convolution operators or a matrix factorization. A corresponding `regpy.operators.operator` 
@@ -137,15 +139,17 @@ class ADMM(RegSolver):
 class AMA(RegSolver):
     r"""The alternating minimization algorithm (AMA) for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\ with \(R)\ strongly convex.
     AMA solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. We choose
-    \[
-    T=A, B=-I, b=0, f=u, F=R and G=R 
-    \]
-    In contrast to standard ADMM we neglected the quadratic term in the update formula for \(f=u\) leading to the iteration
-    \[
-       f^{l+1} := \argmin_f[R(f)-\langle T^*p^l,f\rangle]\;
-       g^{l+1} := \mathrm{prox}_{\gamma^{-1}S}(Tf^{l+1)-\gamma^{-1}p^l)
-       p^{l+1} := p^l + \gamma(T f^{l+1}-g^{l+1})
-    \]
+
+    .. math::
+        T=A, B=-I, b=0, f=u, F=R and G=R 
+
+    In contrast to standard ADMM we neglected the quadratic term in the update formula for :math:`f=u` leading to the iteration
+    
+    .. math::
+       f^{l+1} &:= \argmin_f[R(f)-\langle T^*p^l,f\rangle]\; \\
+       g^{l+1} &:= \mathrm{prox}_{\gamma^{-1}S}(Tf^{l+1)-\gamma^{-1}p^l) \\
+       p^{l+1} &:= p^l + \gamma(T f^{l+1}-g^{l+1})
+
     
     Parameters
     ----------

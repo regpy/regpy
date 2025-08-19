@@ -9,9 +9,10 @@ from regpy.stoprules import CountIterations
 
 class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
-    \[
+    
+    .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
-    \]
+
     using a conjugate gradient method. 
     To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
     used, which can be implemented by updating a scalar parameter in each iteration. 
@@ -159,9 +160,12 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
-        stepsize = self.sq_norm_res / np.real(
+        alpha_pre = np.real(
             np.vdot(g_Tdir, Tdir) + self.regpar * np.vdot(self.penalty (self.g_dir), self.dir)
-        ) # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        )
+        if alpha_pre == 0:
+            raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
+        stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
         self.x += stepsize * self.dir
         if self.reltolx is not None:
@@ -238,10 +242,21 @@ class TikhonovCG(RegSolver):
 
 class GeometricSequence:
     r"""Iterator generating a geometric sequence
-    Parameters: alpha0, q
-    Yields: Sequence defined recursively by 
-        alpha_0 = alpha0
-        alpha_{n+1} = q*alpha_n
+    
+    Parameters
+    ----------
+    alpha0 : float
+        :math:`\alpha_0` the initial regularization parameter 
+    q : float
+        Rate of the geometric sequence
+
+    Notes
+    ----- 
+    Sequence defined recursively by
+    
+    .. math::
+        \alpha_0 &= \alpha_0 \\
+        \alpha_{n+1} &= q*\alpha_n
     """    
     def __init__(self, alpha0,q):
         self.alpha = alpha0
@@ -262,13 +277,14 @@ class TikhonovAlphaGrid(RegSolver):
     This allows to choose the regularization parameter by some stopping rule. 
     Tikhonov functionals are minimized by an inner CG iteration.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     max_CG_iter: integer, default 1000.
         maximum number of CG iterations. 
     xref: array-like, default None
@@ -278,6 +294,8 @@ class TikhonovAlphaGrid(RegSolver):
     tol_fac: float, default 0.5
         absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha)
 
+    Notes
+    -----
     Further keyword arguments for TikhonovCG can be given. 
     """
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
@@ -333,13 +351,14 @@ class NonstationaryIteratedTikhonov(RegSolver):
     r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
        Tikhonov functionals are minimized by an inner CG iteration.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     delta = float, default None
@@ -375,7 +394,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         self.logging_level = logging_level
         """logging level for CG iteration."""
         self.alpha_eff = np.inf
-        """effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
+        r"""effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
 
     def _next(self):
         try:

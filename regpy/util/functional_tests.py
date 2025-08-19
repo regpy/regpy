@@ -4,7 +4,9 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     r"""Numerically test validity of moreaus identity for a given functional
 
     Checks if:
-    \[u=prox_{\tau F}(u)+\tau prox_{\frac{1}{\tau}F(\frac{u}{\tau})\].
+
+    .. math::
+        u=prox_{\tau F}(u)+\tau prox_{\frac{1}{\tau}F(\frac{u}{\tau}).
 
     Parameters
     ----------
@@ -34,7 +36,9 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
     r"""Numerically test validity of subgradient for a given functional
 
     Checks if:
-    \[0\geq F(u)-F(v)+\langle \grad F(u),v-u \rangle\].
+
+    .. math::
+        0\geq F(u)-F(v)+\langle \grad F(u),v-u \rangle
 
     Parameters
     ----------
@@ -76,8 +80,11 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     r"""Numerically test validity of young equality for a given functional
 
     Checks if:
-    \[F(u)+F*(u*)=\langle u*,u \rangle\].
-    where u* is in the subradient of F at u.
+
+    .. math::
+        F(u)+F^\ast(u^\ast)=\langle u^\ast,u \rangle.
+    
+    where :math:`u^\ast` is in the subradient of :math:`F` at :math:`u`.
 
     Parameters
     ----------

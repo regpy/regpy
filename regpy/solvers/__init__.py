@@ -4,11 +4,8 @@ import numpy as np
 
 import logging
 from regpy.util import classlogger
-from regpy.util.operator_tests import test_adjoint, test_derivative, test_affine_linearity
-from regpy.stoprules import NoneRule, StopRule
-from regpy.functionals import  as_functional, Composed, HilbertNormGeneric
-from regpy.operators import Operator
-import regpy.stoprules as rules
+from regpy.stoprules import NoneRule
+from regpy.util.operator_tests import test_derivative
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,7 +53,7 @@ class Solver:
         self.__converged = True
 
     def next(self):
-        """Perform a single iteration.
+        r"""Perform a single iteration.
 
         Returns
         -------
@@ -71,7 +68,7 @@ class Solver:
         return True
 
     def _next(self):
-        """Perform a single iteration. This is an abstract method called from the public method
+        r"""Perform a single iteration. This is an abstract method called from the public method
         `next`. Child classes should override it.
 
         The main difference to `next` is that `_next` does not have a return value. If the solver
@@ -80,7 +77,7 @@ class Solver:
         raise NotImplementedError
 
     def __iter__(self):
-        """Return an iterator on the iterates of the solver.
+        r"""Return an iterator on the iterates of the solver.
 
         Yields
         ------
@@ -91,7 +88,7 @@ class Solver:
             yield self.x, self.y
 
     def while_(self, stoprule=NoneRule()):
-        """Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
 
@@ -115,7 +112,7 @@ class Solver:
 
 
     def until(self, stoprule=NoneRule()):
-        """Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stopping rule triggers.
 
@@ -139,7 +136,7 @@ class Solver:
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=NoneRule()):
-        """Run the solver with the given stopping rule. This method simply runs the generator
+        r"""Run the solver with the given stopping rule. This method simply runs the generator
         `regpy.solvers.Solver.while_` and returns the final `(x, y)` pair.
         """
         for x, y in self.while_(stoprule):
@@ -152,11 +149,11 @@ class Solver:
 
 
 class RegSolver(Solver):
-    r"""Abstract base class for solvers working with a regularization setting.
-     Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
-    `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
-    may or may not be the same arrays as before, modified in-place).
+    r"""Abstract base class for solvers working with a regularization setting. Solvers do not 
+    implement loops themselves, but are driven by repeatedly calling the `next` method. They 
+    expose the current iterate stored in and value as attributes `x` and `y`, and can be iterated 
+    over, yielding the `(x, y)` tuple on every iteration (which may or may not be the same 
+    arrays as before, modified in-place).
 
     There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
 
@@ -192,11 +189,11 @@ class RegSolver(Solver):
             self.setting = setting
             """The regularization setting"""
             self.regpar = setting.regpar
-            """The regularizaiton parameter"""
+            """The regularization parameter"""
         super().__init__(x,y)
 
     def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
-        """
+        r"""
         Run solver with Morozov's discrepancy principle as stopping rule.
 
         Parameters
@@ -210,18 +207,19 @@ class RegSolver(Solver):
         max_its: int, default: 1000
             maximal number of iterations
         """
-        stoprule =  (rules.CountIterations(max_iterations=max_its)
-                        + rules.Discrepancy(self.h_codomain.norm, data,
+        from regpy.stoprules import CountIterations, Discrepancy
+        stoprule =  (CountIterations(max_iterations=max_its)
+                        + Discrepancy(self.h_codomain.norm, data,
                         noiselevel=delta, tau=tau)
                     )
         reco, reco_data = self.run(stoprule)
-        if not isinstance(stoprule.active_rule, rules.Discrepancy):
+        if not isinstance(stoprule.active_rule, Discrepancy):
             self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
         return reco, reco_data
 
 
 class RegularizationSetting:
-    """A Regularization *setting* for an inverse problem, used by solvers. A
+    r"""A Regularization *setting* for an inverse problem, used by solvers. A
     setting consists of
 
     - a forward operator,
@@ -229,12 +227,12 @@ class RegularizationSetting:
     - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
 
     This class is mostly a container that keeps all of this data in one place and makes sure that
-    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`s 
+    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`\s 
     with the operator's domain and codomain.
 
     It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
+    or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
 
     Parameters
@@ -247,6 +245,8 @@ class RegularizationSetting:
         The data misfit functional.
     """
     def __init__(self, op, penalty, data_fid):
+        from regpy.functionals import  as_functional, Composed
+        from regpy.operators import Operator
         assert isinstance(op,Operator)
         self.op = op
         """The operator."""
@@ -262,7 +262,10 @@ class RegularizationSetting:
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
-        >   np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
+
+        .. code-block:: python
+    
+            np.real(np.vdot(y, self.op(x)) - np.vdot(self.op.adjoint(y), x)) < tolerance
 
         If the operator is non-linear this will be done for the derivative.
 
@@ -276,22 +279,26 @@ class RegularizationSetting:
         bool
             Tests either the operator or the derivative with `regpy.util.operator_tests.test_adjoint` and returns that value. 
         """
+        from regpy.util.operator_tests import test_adjoint
         if self.op.linear:
             return test_adjoint(self.op,tolerance=tolerance)
         else:
             _, deriv = self.op.linearize(self.op.domain.randn())
             return test_adjoint(deriv, tolerance=tolerance)
 
-    def check_deriv(self,steps=[10**k for k in range(-1, -8, -1)]):
+    def check_deriv(self,steps=None):
         r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
         provided derivative in the operator ,if it is a non-linear operator. It computes for 
-        the provided `steps` as \(t\)
-        \[ ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \]
-        wrt the \(L^2\)-norm and returns true if it is a decreasing sequence.
+        the provided `steps` as :math:`t`
+
+        .. math::
+            ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| 
+
+        wrt the :math:`L^2`-norm and returns true if it is a decreasing sequence.
 
         Parameters
         ----------
-        steps : float, optional
+        steps : list, optional
             A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
 
         Returns
@@ -299,12 +306,13 @@ class RegularizationSetting:
         Boolean
             True if the operator is linear or affine linear or if test_derivative returns True.
         """
+        from regpy.util.operator_tests import test_derivative, test_affine_linearity
         if self.op.linear or test_affine_linearity(self.op):
             return True
         return test_derivative(self.op,steps=steps)
     
     def h_adjoint(self,y=None):
-        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing \(G_X^{-1} \circ F \circ G_Y\).
+        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing :math:`G_X^{-1} \circ F \circ G_Y`.
 
         If the operator is non-linear this provided the adjoint to the derivative at `y`.
 
@@ -335,14 +343,16 @@ class RegularizationSetting:
         Boolean
             True if both `penalty` and `data_fid` are `HIlbertNormGeneric` functionals. 
         """
+        from regpy.functionals import  HilbertNormGeneric
         return isinstance(self.penalty,HilbertNormGeneric) and isinstance(self.data_fid,HilbertNormGeneric)
         
 
 class TikhonovRegularizationSetting(RegularizationSetting):
     r"""Tikhonov regularization setting for minimizing a Tikhonov functional 
-    \[
-    \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
-    \]    
+
+    .. math::
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+
     In contrast to RegularizationSetting, the regularization parameter is fixed, 
     the data fidelity functional \(\mathcal{S}=self.data_fid)\ incorporates the data \(g^{\delta})\ of the inverse problem, 
     and the penalty term \(\mathcal{R})\ incorporates a potential initial guess.
@@ -352,7 +362,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
     op : regpy.operators.Operator
         The forward operator.
     penalty : regpy.functionals.Functional
-        The penalty functional \(\mathcal{R}\).
+        The penalty functional :math:`\mathcal{R}`.
     data_fid : regpy.functionals.Functional
         The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
     regpar: float [default: 1]
@@ -390,26 +400,28 @@ class TikhonovRegularizationSetting(RegularizationSetting):
     
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
-        \[
+
+        .. math::
            \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
-        \]
+
         """
         assert self.op.linear
-        return TikhonovRegularizationSetting(self.op.adjoint,
-                                             self.data_fid.conj.dilation(-self.regpar),
-                                             self.penalty.conj,
-                                             regpar= 1/self.regpar,
-                                             primal_setting = self,
-                                             logging_level=self.log.level
-                                             )
+        return TikhonovRegularizationSetting(
+            self.op.adjoint,
+            self.data_fid.conj.dilation(-self.regpar),
+            self.penalty.conj,
+            regpar= 1/self.regpar,
+            primal_setting = self,
+            logging_level=self.log.level
+        )
 
     def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
-        r""" Returns an element of \(\partial \mathcal{R}^*(T^*p) )\ 
-        If \(p\) is a solution to the dual problem and \(\partial\mathcal{R}^*)\ is a singleton, this yields a solution to the primal problem. 
-        If \(\xi=T^*p\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\xi\) as argument and avoid an operator evaluation.
+        r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
+        If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
+        If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
                 
         Parameters
-        -------
+        ----------
         pstar: self.op.codomain (or self.op.domain if argumentIsOperatorImage=True)
             argument to be transformed
         argumentIsOperatorImage: boolean [default: False]
@@ -432,9 +444,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         
     def primalToDual(self,x,argumentIsOperatorImage = False, own=False):
         r"""
-        Returns an element of \( (-1/\alpha) \partial \mathcal{S}(Tx) )\ 
-        If x is a solution to the primal problem and \partial \mathcal{S} is a singleton, this yields a solution to the dual problem.
-        If \(\y=Tx\) is already known, the option `argumentIsOperatorImage=True' can be used to pass \(\y\) as argument and avoid an operator evaluation.
+        Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tx)` 
+        If :math:`x` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
+        yields a solution to the dual problem. If :math:`\y=Tx` is already known, 
+        the option `argumentIsOperatorImage=True' can be used to pass :math:`\y` as argument and avoid an operator evaluation.
     
         Parameters
         ----------------------------
@@ -456,9 +469,12 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
     def dualityGap(self, primal=None, dual=None):
         r"""Computes the value of the duality gap 
+        
+        .. math::
             \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^*(-\alpha p) - \mathcal{R}^*(T^*p)
 
-        Parameters:
+        Parameters
+        ----------
         primal: setting.op.domain [default: None]
             primal variable f
         dual: setting.op.codomain [default: None]
@@ -496,9 +512,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         or equivalently (in case of strong duality)
         - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
         - if 
-        \[
+        .. math::
         Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
-        \]
+
 
         Parameters
         ---------------------------
@@ -513,23 +529,3 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
-class DualityGapStopping(StopRule):
-    def __init__(self,solver, threshold = 0.,max_iter=1000, logging_level = logging.INFO):
-        assert isinstance(solver,RegSolver)
-        assert hasattr(solver,'gap')
-        super().__init__()
-        self.solver = solver
-        self.threshold = threshold
-        self.max_iter = max_iter
-        self.log.setLevel(logging_level)
-        self.gap_stat = []
-
-    def _stop(self,x,y=None):
-        self.gap_stat.append(self.solver.gap)
-        gap_stop = self.solver.gap<=self.threshold
-        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
-        if  self.solver.iteration_step_nr>=self.max_iter:
-            if not gap_stop:
-                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
-            return True            
-        return gap_stop 

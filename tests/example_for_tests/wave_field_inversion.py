@@ -17,8 +17,8 @@ def test_wave_field_inversion():
         format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
     )
 
-    r"""Shows inversion of imaging system with modeled by Fresnel propagator. The (complex) image \(x\) is reconstructed from
-    \(|\mathcal{D}_{+N}(x)|^{2}) and \(|\mathcal{D}_{-N}(x)|^{2}) where \(\mathcal{D}\) is the Fresnel propagator.
+    r"""Shows inversion of imaging system with modeled by Fresnel propagator. The (complex) image :math:`x` is reconstructed from
+    :math:`|\mathcal{D}_{+N}(x)|^{2}) and \(|\mathcal{D}_{-N}(x)|^{2}) where \(\mathcal{D}` is the Fresnel propagator.
     The reconstruction is done using the iteratively regularized Gauss-Newton method.
     """
 

@@ -1,26 +1,23 @@
-"""VectorSpaces on which operators are defined.
+r"""VectorSpaces on which operators are defined.
 
 The classes in this module implement various vector spaces on which the
-`regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`,
+`regpy.operators.Operator` implementations are defined. The base class is `VectorSpace`\,
 which represents plain numpy arrays of some shape and dtype. So far it is assumed that 
 vectors are always represented by numpy arrays. 
 
 VectorSpaces serve the following main purposes:
 
-- Derived classes can contain additional data like grid coordinates, bundling metadata in one
-place instead of having every operator generate linspaces / basis functions / whatever on their
-own.
-
-- Providing methods for generating elements of the proper shape and dtype, like zero arrays,
-random arrays or iterators over a basis.
-
-- Checking whether a given array is an element of the vector space. This is used for
-consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
-elements do not need to carry additional structure. Real arrays are considered as elements of
-complex vector spaces.
-
-- Checking whether two vector spaces are considered equal. This is used in consistency checks
-e.g. for operator compositions.
+ * Derived classes can contain additional data like grid coordinates, bundling metadata in one
+   place instead of having every operator generate linspaces / basis functions / whatever on their
+   own.
+ * Providing methods for generating elements of the proper shape and dtype, like zero arrays,
+   random arrays or iterators over a basis.
+ * Checking whether a given array is an element of the vector space. This is used for
+   consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
+   elements do not need to carry additional structure. Real arrays are considered as elements of
+   complex vector spaces.
+ * Checking whether two vector spaces are considered equal. This is used in consistency checks
+   e.g. for operator compositions.
 
 All vector spaces are considered as real vector spaces, even if the dtype is complex. This
 affects iteration over a basis as well as functions returning the dimension or flattening arrays.
@@ -34,7 +31,7 @@ from regpy import util, operators
 
 
 class VectorSpace:
-    r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
+    r"""Discrete space :math:`\mathbb{R}^\text{shape}` or :math:`\mathbb{C}^\text{shape}` (viewed as a real
     space) without any additional structure.
 
     VectorSpaces can be added, producing `DirectSum` instances.
@@ -76,7 +73,7 @@ class VectorSpace:
         return np.zeros(self.shape, dtype=dtype or self.dtype)
 
     def ones(self, dtype=None):
-        """Return an element of the space initalized to 1.
+        """Return an element of the space initialized to 1.
 
         Parameters
         ----------
@@ -86,7 +83,7 @@ class VectorSpace:
         return np.ones(self.shape, dtype=dtype or self.dtype)
 
     def empty(self, dtype=None):
-        """Return an uninitalized element of the space.
+        r"""Return an uninitalized element of the space.
 
         Parameters
         ----------
@@ -99,7 +96,7 @@ class VectorSpace:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of complex a vector space after each
-        each array modefied in its place with a real one it returns the same vector with \(1i\)
+        each array modefied in its place with a real one it returns the same vector with :math:`1i`
         in its place.   
         """
         elm = self.zeros()
@@ -112,7 +109,7 @@ class VectorSpace:
             elm[idx] = 0
 
     def rand(self, rand=np.random.random_sample, dtype=None):
-        """Return a random element of the space.
+        r"""Return a random element of the space.
 
         The random generator can be passed as argument. For complex dtypes, real and imaginary
         parts are generated independently.
@@ -185,7 +182,7 @@ class VectorSpace:
             return False
 
     def flatten(self, x):
-        """Transform the array `x`, an element of the vector space, into a 1d real array. Inverse
+        r"""Transform the array `x`, an element of the vector space, into a 1d real array. Inverse
         to `fromflat`.
 
         Parameters
@@ -212,7 +209,7 @@ class VectorSpace:
         return x.ravel()
 
     def fromflat(self, x):
-        """Transform a real 1d array into an element of the vector space. Inverse to `flatten`.
+        r"""Transform a real 1d array into an element of the vector space. Inverse to `flatten`.
 
         Parameters
         ----------
@@ -232,7 +229,7 @@ class VectorSpace:
             return x.reshape(self.shape)
 
     def complex_space(self):
-        """Compute the corresponding complex vector space.
+        r"""Compute the corresponding complex vector space.
 
         Returns
         -------
@@ -245,7 +242,7 @@ class VectorSpace:
         return other
 
     def real_space(self):
-        """Compute the corresponding real vector space.
+        r"""Compute the corresponding real vector space.
 
         Returns
         -------
@@ -298,7 +295,7 @@ class VectorSpace:
         return domain
 
 class MeasureSpaceFcts(VectorSpace):
-    r"""Discrete space \(\mathbb{R}^N\) or \(\mathbb{C}^N\) (viewed as a real
+    r"""Discrete space :math:`\mathbb{R}^N` or :math:`\mathbb{C}^N` (viewed as a real
     space) with an additional measure that is given via a non-negative weight for each element of the space.
     Either the measure or the shape have to be specified. The measure defaults to the constant 1 measure for each point if it is not given.
 
@@ -313,7 +310,6 @@ class MeasureSpaceFcts(VectorSpace):
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
 
     """
-
     def __init__(self,measure=None,shape=None,dtype=float):
         assert measure is not None or shape is not None
         if(isinstance(measure, np.ndarray)):
@@ -329,10 +325,10 @@ class MeasureSpaceFcts(VectorSpace):
         #TODO: Make a default case            
         super().__init__(shape,dtype)
         self.measure=measure
-        r""" Stores values of point measures """
 
     @property
     def measure(self):
+        r""" Stores values of point measures """
         return self._measure
     
     @measure.setter
@@ -369,8 +365,6 @@ class GridFcts(MeasureSpaceFcts):
          of which must match the respective dimension's length. Besides that, no further structure
          is imposed or assumed, this parameter exists solely to keep everything related to the
          vector space in one place.
-
-         If `axisdata` is given, the `coords` can be omitted.
     dtype : data-type, optional
         The dtype of the vector space.
     use_cell_measure : bool, optional
@@ -384,6 +378,10 @@ class GridFcts(MeasureSpaceFcts):
     boundary_ext_const: float or tuple of floats, optional
         Defines extension of cells at edges of each axis. Can be set to a constant for all axes, one constant for each axis
         or one constant for the start and one for the end of each axis. 
+
+    Notes
+    -----
+    If `axisdata` is given, the `coords` can be omitted.
     """
 
     def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
@@ -409,7 +407,7 @@ class GridFcts(MeasureSpaceFcts):
             #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
-        """The coordinate arrays, broadcast to the shape of the grid. The shape will be
+        r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         assert self.coords[0].ndim == len(self.coords)
 
@@ -424,7 +422,7 @@ class GridFcts(MeasureSpaceFcts):
         self.axes = axes
         """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
-        """The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
+        r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
             super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype)
@@ -466,7 +464,7 @@ class GridFcts(MeasureSpaceFcts):
             
 
 class UniformGridFcts(GridFcts):
-    """A vector space representing functions defined on a rectangular grid with equidistant axes.
+    r"""A vector space representing functions defined on a rectangular grid with equidistant axes.
     The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
@@ -525,10 +523,9 @@ class UniformGridFcts(GridFcts):
             super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
         self.volume_elem=self.measure
         
-ugf=UniformGridFcts(2,1)
 
 class DirectSum(VectorSpace):
-    """The direct sum of an arbirtary number of vector spaces.
+    r"""The direct sum of an arbirtary number of vector spaces.
 
     Elements of the direct sum will always be 1d real arrays.
 
@@ -573,7 +570,7 @@ class DirectSum(VectorSpace):
             return NotImplemented
 
     def join(self, *xs):
-        """Transform a collection of elements of the summands to an element of the direct sum.
+        r"""Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
         ----------
@@ -593,7 +590,7 @@ class DirectSum(VectorSpace):
         return elm
 
     def split(self, x):
-        """Split an element of the direct sum into a tuple of elements of the summands.
+        r"""Split an element of the direct sum into a tuple of elements of the summands.
 
         The result arrays may be views into `x`, if memory layout allows it. For complex
         summands, a necessary condition is that the elements' real and imaginary parts are
@@ -626,7 +623,7 @@ class DirectSum(VectorSpace):
 
 
 class Prod(VectorSpace):
-    """The tensor product of an arbitrary number of vector spaces.
+    r"""The tensor product of an arbitrary number of vector spaces.
 
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
@@ -640,7 +637,7 @@ class Prod(VectorSpace):
     *factors : tuple of VectorSpace instances
         The vector spaces to be factored.
     flatten : bool, optional
-        Whether factors that are themselves `Prod`s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
+        Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
         Default: False
     """
 
@@ -651,7 +648,7 @@ class Prod(VectorSpace):
         """List of the `VectorSpaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1
-        """Poduct of the `volume_elem` of all factors that have defined this property. """
+        """Product of the `volume_elem` of all factors that have defined this property. """
         if factors[0].is_complex:
             dt=np.complex128
         else:
@@ -675,7 +672,7 @@ class Prod(VectorSpace):
         )
 
     def product(self, *xs):
-        """Transform a collection of elements of the factors into an element of the tensor product by an outer product.
+        r"""Transform a collection of elements of the factors into an element of the tensor product by an outer product.
 
         Parameters
         ----------

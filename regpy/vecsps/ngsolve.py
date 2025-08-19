@@ -1,4 +1,4 @@
-"""Finite element vector spaces using NGSolve
+r"""Finite element vector spaces using NGSolve
 
 This module implements a `regpy.vecsps.VectorSpace` instance for NGSolve spaces. This gives the basic
 interface to use FES spaces defined in `ngsolve` to be used as `VectorSpaces`in `regpy`.  
@@ -15,7 +15,7 @@ from regpy.util import is_complex_dtype
 
 
 class NgsSpace(VectorSpace):
-    """A vector space wrapping an `ngsolve.FESpace`.
+    r"""A vector space wrapping an `ngsolve.FESpace`.
 
     Parameters
     ----------
@@ -33,8 +33,8 @@ class NgsSpace(VectorSpace):
         from netgen.libngpy._meshing import NgException
         try:
             self.codim = len(fes.components)
-            assert self.codim == fes.mesh.dim
-            self._fes_util = ngs.VectorL2(self.fes.mesh, order=0, complex = self.is_complex)
+            # assert self.codim == fes.mesh.dim
+            self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)**self.codim
         except NgException:
             self.codim = 1
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
@@ -48,7 +48,10 @@ class NgsSpace(VectorSpace):
             return NotImplemented
 
     def ones(self):
-        self._gfu_fes.Set(1)
+        if self.codim == 1:
+            self._gfu_fes.Set(1)
+        else:
+            self._gfu_fes.Set(tuple(1 for _ in range(self.codim)))
         return self._gfu_fes.vec.FV().NumPy().copy()
 
     def rand(self, rand=np.random.random_sample):

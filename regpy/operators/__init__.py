@@ -1,12 +1,12 @@
-"""Forward operators
+r"""
+Forward operators
+=================
 
 This module provides the basis for defining forward operators, and implements some simple
 auxiliary operators. Actual forward problems are implemented in submodules.
 
 The base class is `Operator`.
 """
-
-# TODO Document all instance variables, so they appear in pdoc's output.
 
 from collections import defaultdict
 from copy import deepcopy
@@ -51,7 +51,7 @@ class _Revocable:
 
 
 class Operator:
-    """Base class for forward operators. Both linear and non-linear operators are handled. Operator
+    r"""Base class for forward operators. Both linear and non-linear operators are handled. Operator
     instances are callable, calling them with an array argument evaluates the operator.
 
     Subclasses implementing non-linear operators should implement the following methods:
@@ -80,11 +80,11 @@ class Operator:
     should evaluate the  derivative, its adjoint or their composition at the same point `_eval` was 
     called. The reasoning is this
 
-    - In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
-      operator around some point, so the value is almost always needed.
-    - Many expensive computations, e.g. assembling of finite element matrices, need to be carried
-      out only once per linearization point, and can be shared between the operator and the
-      derivative, so they should only be computed once (in `_eval`).
+     * In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
+       operator around some point, so the value is almost always needed.
+     * Many expensive computations, e.g. assembling of finite element matrices, need to be carried
+       out only once per linearization point, and can be shared between the operator and the
+       derivative, so they should only be computed once (in `_eval`).
     
     For callers, this means that since the derivative shares data with the operator, it can't be
     reliably called after the operator has been evaluated somewhere else, since shared data may
@@ -142,13 +142,13 @@ class Operator:
         assert not domain or isinstance(domain, vecsps.VectorSpace)
         assert not codomain or isinstance(codomain, vecsps.VectorSpace)
         self.domain = domain
-        """The vector space on which the operator is defined. Either a
+        r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpace` or `None`."""
         self.codomain = codomain
-        """The vector space on which the operator values are defined. Either
+        r"""The vector space on which the operator values are defined. Either
         a subclass of `regpy.vecsps.VectorSpace` or `None`."""
         self.linear = linear
-        """Boolean indicating whether the operator is linear."""
+        r"""Boolean indicating whether the operator is linear."""
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain'}
@@ -166,7 +166,7 @@ class Operator:
 
     @property
     def attrs(self):
-        """The set of all instance attributes. Useful for updating the `_consts` attribute via
+        r"""The set of all instance attributes. Useful for updating the `_consts` attribute via
 
             self._consts.update(self.attrs)
 
@@ -185,7 +185,7 @@ class Operator:
         return y
 
     def linearize(self, x, adjoint_derivative = False):
-        """Linearize the operator around some point.
+        r"""Linearize the operator around some point.
 
         Parameters
         ----------
@@ -235,7 +235,7 @@ class Operator:
     
     @util.memoized_property
     def adjoint(self):
-        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
         Returns
@@ -275,14 +275,14 @@ class Operator:
 
     @property
     def inverse(self):
-        """A property containing the  inverse as an `Operator` instance. In most cases this will
+        r"""A property containing the  inverse as an `Operator` instance. In most cases this will
         just raise a `NotImplementedError`, but subclasses may override this if possible and useful.
         To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
         useful."""
         raise NotImplementedError
 
     def as_linear_operator(self):
-        """Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
+        r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
 
         Returns
         -------
@@ -541,7 +541,7 @@ class Operator:
 
 
 class Adjoint(Operator):
-    """An proxy class wrapping a linear operator. Calling it will evaluate the operator's
+    r"""An proxy class wrapping a linear operator. Calling it will evaluate the operator's
     adjoint. This class should not be instantiated directly, but rather through the
     `Operator.adjoint` property of a linear operator.
     """
@@ -549,7 +549,7 @@ class Adjoint(Operator):
     def __init__(self, op):
         assert op.linear
         self.op = op
-        """The underlying operator."""
+        r"""The underlying operator."""
         self._constants = self.op._constants
         """The constant inputs of the op need to be set in adjoint evaluation
         """
@@ -576,7 +576,7 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
-    """An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
+    r"""An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
     `Operator.linearize` method of a non-linear operator.
     """
@@ -587,6 +587,7 @@ class Derivative(Operator):
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
+        r"""The underlying operator."""
         _op = op.get()
         """The underlying operator."""
         super().__init__(_op.domain, _op.codomain, linear=True)
@@ -606,8 +607,8 @@ class Derivative(Operator):
 
 
 class AdjointDerivative(Operator):
-    r"""A proxy class wrapping a non-linear operator \(F\). Calling it will evaluate the coposition of the operator's
-    derivative adjoint with its derivative \(F'^\ast\circ F'\). This class should not be instantiated directly, 
+    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the coposition of the operator's
+    derivative adjoint with its derivative :math:`F'^\ast\circ F'`. This class should not be instantiated directly, 
     but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
     The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
     needed as it is a selfadjoint operator.   
@@ -619,7 +620,7 @@ class AdjointDerivative(Operator):
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
-        """The underlying operator."""
+        r"""The underlying operator."""
         _op = op.get()
         super().__init__(_op.domain, _op.domain, linear=True)
         # Setting the corresponding constants of op to zero
@@ -638,8 +639,8 @@ class AdjointDerivative(Operator):
 
 
 class LinearCombination(Operator):
-    """A linear combination of operators. This class should normally not be instantiated directly,
-    but rather through adding and multipliying `Operator` instances and scalars.
+    r"""A linear combination of operators. This class should normally not be instantiated directly,
+    but rather through adding and multiplying `Operator` instances and scalars.
     """
 
     def __init__(self, *args):
@@ -742,8 +743,8 @@ class LinearCombination(Operator):
 
 
 class Composition(Operator):
-    """A composition of operators. This class should normally not be instantiated directly,
-    but rather through multipliying `Operator` instances.
+    r"""A composition of operators. This class should normally not be instantiated directly,
+    but rather through multiplying `Operator` instances.
     """
 
     def __init__(self, *ops):
@@ -888,7 +889,7 @@ class PartOfOperator(Operator):
 
 
 class SciPyLinearOperator(sla.LinearOperator):
-    r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
+    r"""A class wrapping a linear operator :math:`F` into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
     The domain and codomain are flattened.
     """
     def __init__(self, op2):
@@ -935,7 +936,7 @@ class SciPyLinearOperator(sla.LinearOperator):
         return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
 
 class Pow(Operator):
-    """Power of a linear operator A, mapping a domain into itself, i.e. 
+    r"""Power of a linear operator A, mapping a domain into itself, i.e. 
        A * A * ... * A
 
        Parameters
@@ -969,7 +970,7 @@ class Pow(Operator):
         return Pow(self.op.inverse,self.exponent)
 
 class Identity(Operator):
-    """The identity operator on a vector space. 
+    r"""The identity operator on a vector space. 
     By default, a copy is performed to prevent callers from
     accidentally modifying the argument when modifying the return value.
 
@@ -1003,17 +1004,17 @@ class Identity(Operator):
         return util.make_repr(self, self.domain)
 
 class MatrixMultiplication(Operator):
-    """Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
+    r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
     are plain one dimensional `regpy.vecsps.VectorSpace` instances by default.
 
     Parameters
     ----------
     matrix : array-like
         The matrix.
-    inverse : Operator, array-like, 'inv', 'cholesky' or None, optional
+    inverse : Operator, array-like or None, optional
         How to implement the inverse operator. If available, this should be given as `Operator`
-        or array. If `'inv'`, `numpy.linalg.inv` will be used. If `'cholesky'´ or `'superLU'´, a
-        `CholeskyInverse´ or `SuperLU´´ instance will be returned.
+        or array. If `inv`\, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`\, a
+        `CholeskyInverse` or `SuperLU` instance will be returned.
     domain : regpy.vecsps.VectorSpace, optional
         The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
         matrix columns is used. Defaults to None.
@@ -1069,7 +1070,7 @@ class MatrixMultiplication(Operator):
         return util.make_repr(self, self.matrix)
 
 class CholeskyInverse(Operator):
-    """Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
+    r"""Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
     it needs to assemble a full matrix, this should not be used for high-dimensional operators.
 
     Parameters
@@ -1112,7 +1113,7 @@ class CholeskyInverse(Operator):
         return util.make_repr(self, self.op)
 
 class SuperLUInverse(Operator):
-    """Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
+    r"""Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
 
     Parameters
     ----------
@@ -1149,7 +1150,7 @@ class SuperLUInverse(Operator):
         return util.make_repr(self, self.op)
 
 class CoordinateProjection(Operator):
-    """A projection operator onto a subset of the domain. The codomain is a one-dimensional
+    r"""A projection operator onto a subset of the domain. The codomain is a one-dimensional
     `regpy.vecsps.VectorSpace` of the same dtype as the domain.
 
     Parameters
@@ -1181,7 +1182,7 @@ class CoordinateProjection(Operator):
         return util.make_repr(self, self.domain, self.mask)
 
 class CoordinateMask(Operator):
-    """A projection operator onto a subset of the domain. The remaining array elements are set to zero.
+    r"""A projection operator onto a subset of the domain. The remaining array elements are set to zero.
 
     Parameters
     ----------
@@ -1209,7 +1210,7 @@ class CoordinateMask(Operator):
 
 
 class PtwMultiplication(Operator):
-    """A multiplication operator by a constant factor.
+    r"""A multiplication operator by a constant factor.
 
     Parameters
     ----------
@@ -1249,7 +1250,7 @@ class PtwMultiplication(Operator):
         return util.make_repr(self, self.domain)
 
 class OuterShift(Operator):
-    """Shift an operator by a constant offset in the codomain.
+    r"""Shift an operator by a constant offset in the codomain.
 
     Parameters
     ----------
@@ -1292,8 +1293,9 @@ class OuterShift(Operator):
     def _adjoint_derivative(self,x):
         return self._adjoint_derivative(x)
 
+
 class InnerShift(Operator):
-    """Shift an operator by a constant offset in the domain.
+    r"""Shift an operator by a constant offset in the domain.
 
     Parameters
     ----------
@@ -1311,9 +1313,9 @@ class InnerShift(Operator):
         self.op = op
         self.offset = np.copy(offset)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
-            y, self._deriv = self.op.linearize(x-self.offset)
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
+            y, self._deriv = self.op.linearize(x-self.offset, adjoint_derivative=adjoint_derivative)
             return y 
         else:
             return self.op(x - self.offset)
@@ -1326,7 +1328,7 @@ class InnerShift(Operator):
 
 
 class FourierTransform(Operator):
-    """Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
+    r"""Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
 
     Parameters
     ----------
@@ -1384,7 +1386,7 @@ class FourierTransform(Operator):
             return np.real(x)
         
     def frequencies(self,domain,centered=False, axes=None, rfft=False):
-        """Compute the grid of frequencies for an FFT on this grid instance.
+        r"""Compute the grid of frequencies for an FFT on this grid instance.
 
         Parameters
         ----------
@@ -1431,7 +1433,7 @@ class FourierTransform(Operator):
         return util.make_repr(self, self.domain)
 
 class Power(Operator):
-    r"""The operator \(x \mapsto x^n\).
+    r"""The operator :math:`x \mapsto x^n`.
 
     Parameters
     ----------
@@ -1484,11 +1486,17 @@ class Power(Operator):
 
 class DirectSum(Operator):
     r"""The direct sum of operators. For
-    \[ T_i \colon X_i \to Y_i \]
+
+    .. math::
+        T_i \colon X_i \to Y_i 
+
     the direct sum
-    \[ T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) \]
-    is given by \(T(x)_i := T_i(x_i)\). As a matrix, this is the block-diagonal
-    with blocks \((T_i)\).
+
+    .. math::
+        T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) 
+
+    is given by :math:`T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
+    with blocks :math:`(T_i)`.
 
     Parameters
     ----------
@@ -1506,7 +1514,7 @@ class DirectSum(Operator):
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
-        r""" List of all operators \((T_1,\dots,T_n)\)"""
+        r""" List of all operators :math:`(T_1,\dots,T_n)`"""
         for op in ops:
             if flatten and isinstance(op, type(self)):
                 self.ops.extend(op.ops)
@@ -1545,6 +1553,10 @@ class DirectSum(Operator):
             self._derivs = [l[1] for l in linearizations]
             if adjoint_derivative:
                 self._adjoint_derivs = [l[2] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
+        elif adjoint_derivative:
+            linearizations = [op.linearize(elm,adjoint_derivative=True) for op, elm in zip(self.ops, elms)]
+            self._adjoint_derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(elm) for op, elm in zip(self.ops, elms)))
@@ -1604,14 +1616,16 @@ class DirectSum(Operator):
 
 class VectorOfOperators(Operator):
     r"""Vector of operators. For
-    \[
-    T_i \colon X \to Y_i
-    \]
+
+    .. math::
+        T_i \colon X \to Y_i
+
     we define
-    \[
-    T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := T_i(x)\). 
+
+    .. math::
+        T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := T_i(x)`. 
     
     Parameters
     ----------
@@ -1627,7 +1641,7 @@ class VectorOfOperators(Operator):
         assert all([isinstance(op, Operator) for op in ops])
         assert ops
         self.ops = ops
-        r"""List of all Operators \((T_1,\dots,T_n)\)"""
+        r"""List of all Operators :math:`(T_1,\dots,T_n)`"""
 
         if domain is None:
             self.domain = self.ops[0].domain
@@ -1691,14 +1705,16 @@ class VectorOfOperators(Operator):
 
 class MatrixOfOperators(Operator):
     r"""Matrix of operators. For
-    \[
-    T_ij \colon X_j \to Y_i
-    \]
+
+    .. math::
+        T_ij \colon X_j \to Y_i
+
     we define
-    \[
-    T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := \sum_j T_ij(x_j)\). 
+
+    .. math::
+        T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := \sum_j T_ij(x_j)`. 
     
     Parameters
     ----------
@@ -1715,7 +1731,7 @@ class MatrixOfOperators(Operator):
         ops_flat = [op for op_col in ops for op in op_col]
         assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
         self.ops = ops
-        r""" Matrix of Operators \((T_ij)\)"""
+        r""" Matrix of Operators :math:`(T_ij)`"""
 
         domains = [None]*len(ops)
         for j in range(len(ops)):
@@ -1909,8 +1925,8 @@ class Exponential(Operator):
     def __init__(self, domain):
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._exponential_factor = np.exp(x)
             return self._exponential_factor
         return np.exp(x)
@@ -1923,7 +1939,7 @@ class Exponential(Operator):
 
 
 class RealPart(Operator):
-    """The pointwise real part operator.
+    r"""The pointwise real part operator.
 
     Parameters
     ----------
@@ -1947,7 +1963,7 @@ class RealPart(Operator):
 
 
 class ImaginaryPart(Operator):
-    """The pointwise imaginary part operator.
+    r"""The pointwise imaginary part operator.
 
     Parameters
     ----------
@@ -1972,7 +1988,7 @@ class ImaginaryPart(Operator):
 
 
 class SquaredModulus(Operator):
-    """The pointwise squared modulus operator.
+    r"""The pointwise squared modulus operator.
 
     Parameters
     ----------
@@ -1988,8 +2004,8 @@ class SquaredModulus(Operator):
             codomain = None
         super().__init__(domain, codomain)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._factor = 2 * x
         return x.real**2 + x.imag**2
 
@@ -2001,7 +2017,7 @@ class SquaredModulus(Operator):
 
 
 class Zero(Operator):
-    """The constant zero operator.
+    r"""The constant zero operator.
 
     Parameters
     ----------
@@ -2022,7 +2038,7 @@ class Zero(Operator):
         return self.domain.zeros()
 
 class ApproximateHessian(Operator):
-    """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
+    r"""An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
     using finite differences of it `gradient` if it is implemented for that functional.
 
     Parameters

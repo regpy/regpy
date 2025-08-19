@@ -11,15 +11,17 @@ logging.basicConfig(
 class FISTA(RegSolver):
     r"""
     The generalized FISTA algorithm for minimization of Tikhonov functionals
-    \[ \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
-    \] 
+    
+    .. math:: 
+        \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
+
     Gradient steps are performed on the first term, and proximal steps on the second term. 
     The step sizes for the gradient steps are determined using a backtracking method introduced in
     A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for
     linear inverse problems. SIAM J. Imaging Sci., 2(1):183–202, 2009.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     setting : regpy.solvers.TikhonovRegularizationSetting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
     init : setting.op.domain [defaul: setting.op.domain.zeros()]
@@ -29,7 +31,7 @@ class FISTA(RegSolver):
     eta : float [defualt 0.8]
         Step size reduction constant.
     op_lower_bound : float [default: 0]
-        lower bound of the operator: \(\|op(f)\|\geq op_lower_bound * \|f\| \).
+        lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\|`\.
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 

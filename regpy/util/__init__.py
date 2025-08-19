@@ -7,7 +7,7 @@ from scipy.spatial import Voronoi
 
 @property
 def classlogger(self):
-    """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
+    r"""The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
     fully qualified name. Subclasses should use it instead of `print` for any kind of status
     information to allow users to control output formatting, verbosity and persistence.
 

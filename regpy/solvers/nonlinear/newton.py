@@ -11,9 +11,10 @@ logging.basicConfig(
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
-    \[
+    
+    .. math::
         T(x) = y,
-    \]
+
     where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
@@ -34,7 +35,7 @@ class NewtonCG(RegSolver):
         Maximal number of inner CG iterations. (Default: 50)
     rho : number, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
-    simplified_op : Operator, optional
+    simplified_op : regpy.operators.Operator, optional
         Simplified operator to be used for the derivative. (Default: None)
     """
 
@@ -56,7 +57,7 @@ class NewtonCG(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.rho = rho
-        """A fix number related to the termination (0<rho<1)."""
+        r"""A fix number related to the termination :math:`(0<\rho<1)`."""
         self.cgmaxit = cgmaxit
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
@@ -185,7 +186,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         be in setting.op.codomain.
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
@@ -217,7 +218,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         else:
             self._alphas = iter(alphas)
         self.alpha = next(self._alphas)
-        r"""Initial regularization parameter \(\alpha)\.
+        r"""Initial regularization parameter :math:`\alpha`.
         """
         self.alpha_old = self.alpha
         self.psi_minus = psi_minus

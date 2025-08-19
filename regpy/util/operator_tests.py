@@ -2,11 +2,16 @@ import numpy as np
 
 
 def test_linearity(op, tolerance=1e-10):
-    """Numerically tests if operator is linear.
+    r"""Numerically tests if operator is linear.
 
     Checks if ::
+
+    .. highlight:: python
+    .. code:: python
+
         op(x+y) == op(x)+op(y)
         r*op(x) == op(r*x)
+    
     for random choices of `x` and `y`.
 
     Parameters
@@ -34,7 +39,7 @@ def test_linearity(op, tolerance=1e-10):
     else:
         op.log.warning(f'Linearity test failed: err_sum = {err_sum}, err_mult = {err_mult}')
         return False
-
+    
 def test_affine_linearity(op, tolerance=1e-10):
     """NUmerically test if the operator is affine linear. 
     
@@ -69,7 +74,10 @@ def test_affine_linearity(op, tolerance=1e-10):
 def test_adjoint(op, tolerance=1e-10):
     """Numerically test validity of :meth:`adjoint` method.
 
-    Checks if ::
+    Checks if
+
+    .. highlight:: python
+    .. code:: python
 
         inner(y, op(x)) == inner(op.adjoint(x), y)
 
@@ -101,11 +109,11 @@ def test_adjoint(op, tolerance=1e-10):
         return False
 
 
-def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
+def test_derivative(op, steps=None,ret_sequence=False):
     r"""Numerically test derivative of operator.
 
-    Computes \( ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \)
-    for randomly chosen `x` and `v` and different `t` given in steps.
+    Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
+    for randomly chosen .:math:`x` and :math:`v` and different :math:`t` given in steps.
 
     Parameters
     ----------
@@ -120,6 +128,8 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)]):
     bool
         If the sequence of differences is decreasing then True, otherwise False. 
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     x = op.domain.randn()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
@@ -162,7 +172,7 @@ def test_adjoint_derivative(op, tolerance=1e-10):
         return False
 
     
-def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, -8, -1)],adjoint_derivative=False):
+def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=False):
     """Numerically tests if operator is computed correctly.
 
     Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
@@ -186,6 +196,8 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, 
     AssertionError
         If the test fails.
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     if(op.linear):
         op.log.info('Testing linearity of operator.')
         for _ in range(sample_N):

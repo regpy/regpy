@@ -3,10 +3,10 @@ import numpy as np
 from regpy.vecsps import UniformGridFcts
 
 class GenCurve:
-    r"""Base class for Parameterized smooth closed curve in R^2 
-    ... without self-crossing parametrization by function z(t), 
-    0<=t<=2*pi (counter-clockwise). Note \(z(t)\) must return two 
-    values [x(t),y(t)].
+    r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
+    without self-crossing parametrization by function :math:`z(t)`\, 
+    :math:`0\leq t\leq 2*\pi` (counter-clockwise). Note :math:`z(t)` must return two 
+    values :math:`[x(t),y(t)]`\.
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -35,9 +35,8 @@ class GenCurve:
         self._der = -1
 
         self.n = n
-        "number of evaluation points"
         self.der = der 
-        "number of derivatives to compute"
+
 
 
     def __call__(self,der=0):
@@ -50,6 +49,7 @@ class GenCurve:
     
     @property
     def der(self):
+        """number of derivatives to compute"""
         return self._der
 
     @der.setter
@@ -62,6 +62,7 @@ class GenCurve:
 
     @property    
     def n(self):
+        """number of evaluation points"""
         return self._n
     
     @n.setter
@@ -115,7 +116,7 @@ class GenCurve:
 
 
 class kite(GenCurve):
-    """Subclass of the `GenCurve` that gives a kite form. 
+    r"""Subclass of the `GenCurve` that gives a kite form. 
 
     Parameters
     ----------
@@ -141,12 +142,13 @@ class kite(GenCurve):
 
 
 class StarCurve(GenCurve):
-    r"""Base class for radial curve in R^2 
-    ... parameterized by 
-    \[
-      z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
-    \]
-     with a positive, 2pi-periodic function q. 
+    r"""Base class for radial curve in :math:`R^2` 
+    parameterized by 
+
+    .. math::
+        z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
+
+    with a positive, :math:`2\pi`\-periodic function :math:`q`\. 
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -192,12 +194,12 @@ class StarCurve(GenCurve):
     
     @property
     def zpabs(self):
-        """|z'(t)|"""
+        r""":math:`|z'(t)|`"""
         if self.zp is not None:
             return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
     @property
     def normal(self):
-        """Outer normal vector(not normalized)"""
+        r"""Outer normal vector(not normalized)"""
         if self.zp is not None:
             return np.append(self.zp[1,:], -self.zp[0,:]).reshape((2, self.n))
 
@@ -384,7 +386,7 @@ class circle(StarCurve):
 
 
 class GenTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
+    r"""Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
     gives evaluates a curve `GenTrig` by name.  
 
     Parameters
@@ -398,7 +400,7 @@ class GenTrigDiscr(UniformGridFcts):
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def bd_eval(self, coeffs, nvals=None, nderivs=0):
-        """Compute a curve for the given coefficients. All parameters will be passed to the
+        r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
         Parameters
@@ -424,10 +426,11 @@ class GenTrigDiscr(UniformGridFcts):
     
 class GenTrig:
     r"""The class GenTrig describes boundaries of domains in R^2 which are
-     parameterized by
-     \[
-          z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
-     \]
+    parameterized by
+
+    .. math::
+        z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
+
      where z_1 and z_2 are trigonometric polynomials with N coefficient.
      Here N must be even, so the highest order monomial is cos(t*N/2),
      but sin(t*N/2) does not occur.
@@ -548,7 +551,7 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    """Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
+    r"""Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
     method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     Parameters
@@ -582,7 +585,7 @@ class StarTrigDiscr(UniformGridFcts):
         )
 
 class StarTrigCurve: 
-    """A class representing star shaped 2d curves with radial function parametrized in a
+    r"""A class representing star shaped 2d curves with radial function parametrized in a
     trigonometric basis. Should usually be instantiated via `StarTrigDiscr.eval_curve`.
 
     Parameters
@@ -709,16 +712,18 @@ def adjoint_rfft(y, size, n=None):
         return aux
 
 def adjoint_irfft(y, size=None):
-    """Compute the adjoint of `numpy.fft.irfft`. More concretely, the adjoint of
+    r"""Compute the adjoint of `numpy.fft.irfft`\. More concretely, the adjoint of
 
-        x |-> irfft(x, n)
+    .. math::
+        x \mapsto \mathrm{irfft}(x, n)
 
     is
 
-        y |-> adjoint_irfft(y, x.size)
+    .. math::
+        y \mapsto \mathrm{adjoint_irfft}(y, x.size)
 
-    Since the size of `x` can not be determined from `y`, it needs to be given explicitly. The
-    parameter `n`, however, is determined as the output size of `irfft`, so it does not not need to
+    Since the size of `x` can not be determined from `y`\, it needs to be given explicitly. The
+    parameter `n`, however, is determined as the output size of `irfft`\, so it does not not need to
     be specified for the adjoint.
 
     Parameters
