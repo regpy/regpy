@@ -1,4 +1,4 @@
-"""Concrete and abstract Hilbert spaces on vector spaces.
+r"""Concrete and abstract Hilbert spaces on vector spaces.
 """
 
 from copy import copy
@@ -14,7 +14,7 @@ class HilbertSpace:
     # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
     #   gram property
 
-    """Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
+    r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
     should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
     `regpy.util.memoized_property` can be used.
 
@@ -45,14 +45,14 @@ class HilbertSpace:
 
     @property
     def gram_inv(self):
-        """The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
+        r"""The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
         to be implemented if the `gram` property does not return an invertible operator (i.e. one
         that implements `regpy.operators.Operator.inverse`).
         """
         return self.gram.inverse
 
     def inner(self, x, y):
-        """Compute the inner product between to elements.
+        r"""Compute the inner product between to elements.
 
         This is a convenience wrapper around `gram`.
 
@@ -69,7 +69,7 @@ class HilbertSpace:
         return (self.vecsp.vdot(x, self.gram(y))).real
 
     def norm(self, x):
-        """Compute the norm of an element.
+        r"""Compute the norm of an element.
 
         This is a convenience wrapper around `norm`.
 
@@ -87,12 +87,12 @@ class HilbertSpace:
 
     @util.memoized_property
     def norm_functional(self):
-        """The squared norm functional as a `regpy.functionals.Functional` instance.
+        r"""The squared norm functional as a `regpy.functionals.Functional` instance.
         """
         return functionals.HilbertNorm(self)
 
     def dual_space(self):
-        """The dual space for the dual pairing given by `domain.vdot`. 
+        r"""The dual space for the dual pairing given by `domain.vdot`. 
         The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpaceBase`, but gram is replaced by gram_inv.
 
         Returns
@@ -127,10 +127,11 @@ class HilbertSpace:
 
 
 class GramHilbertSpace(HilbertSpace):
-    """
+    r"""
     Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
     
-    Parameters:
+    Parameters
+    ----------
     gram: operator
         The Gram matrix of the discrete Hilbert space.
     gram_inv: operator, default =None
@@ -154,7 +155,7 @@ class GramHilbertSpace(HilbertSpace):
 
 
 class HilbertPullBack(HilbertSpace):
-    """Pullback of a Hilbert space on the codomain of an operator to its domain.
+    r"""Pullback of a Hilbert space on the codomain of an operator to its domain.
 
     For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
 
@@ -213,7 +214,7 @@ class HilbertPullBack(HilbertSpace):
 
 
 class DirectSum(HilbertSpace):
-    """The direct sum of an arbitrary number of hilbert spaces, with optional
+    r"""The direct sum of an arbitrary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.DirectSum` of the underlying vector spaces of the summands.
 
@@ -397,7 +398,7 @@ class TensorProd(HilbertSpace):
 
 
 class AbstractSpaceBase:
-    """Class representing abstract hilbert spaces without reference to a concrete implementation.
+    r"""Class representing abstract hilbert spaces without reference to a concrete implementation.
 
     The motivation for using this construction is to be able to specify e.g. a Tikhonov penalty
     without requiring knowledge of the concrete vector space the forward operator uses. See the
@@ -431,7 +432,7 @@ class AbstractSpaceBase:
 
 
 class AbstractSpace(AbstractSpaceBase):
-    """An abstract Hilbert space that can be called on a vector space to get the corresponding
+    r"""An abstract Hilbert space that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractSpaces provide two kinds of functionality:
@@ -440,9 +441,12 @@ class AbstractSpace(AbstractSpaceBase):
       as the concrete implementation of this abstract space for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
 
-              @Sobolev.register(vecsps.UniformGridFcts)
-              class SobolevUniformGridFcts(HilbertSpace):
-                  ...
+      .. highlight:: python
+      .. code-block:: python
+      
+            @Sobolev.register(vecsps.UniformGridFcts)
+            class SobolevUniformGridFcts(HilbertSpace):
+                ...
 
     - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
@@ -505,7 +509,7 @@ class AbstractSpace(AbstractSpaceBase):
 
 
 class AbstractSum(AbstractSpaceBase):
-    """Weighted sum of abstract Hilbert spaces.
+    r"""Weighted sum of abstract Hilbert spaces.
 
     The constructor arguments work like for concrete `regpy.hilbert.HilbertSpace`s, which see.
     Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
@@ -549,7 +553,7 @@ class AbstractSum(AbstractSpaceBase):
 
 
 def as_hilbert_space(h, vecsp):
-    """Convert h to HilbertSpace instance on vecsp.
+    r"""Convert h to HilbertSpace instance on vecsp.
 
     - If h is an Operator, it's wrapped in a GramHilbertSpace.
     - If h is callable, e.g. an AbstractSpace, it is called on vecsp to
@@ -569,26 +573,26 @@ def as_hilbert_space(h, vecsp):
 
 
 L2 = AbstractSpace('L2')
-"""L2 `AbstractSpace`."""
+r""":math:`L^2` `AbstractSpace`."""
 
 Sobolev = AbstractSpace('Sobolev')
-"""Sobolev `AbstractSpace`"""
+r"""Sobolev `AbstractSpace`"""
 
 Hm = AbstractSpace('Hm')
-"""H^m `AbstractSpace`"""
+r""":math:`H^m` `AbstractSpace`"""
 
 Hm0 = AbstractSpace('Hm0')
-"""H^m_0 `AbstractSpace`"""
+r""":math:`H^m_0` `AbstractSpace`"""
 
 L2Boundary = AbstractSpace('L2Boundary')
-"""L2 `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
+r""":math:`L^2` `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 SobolevBoundary = AbstractSpace('SobolevBoundary')
-"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
+r"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 
 def componentwise(dispatcher, cls=DirectSum):
-    """Return a callable that iterates over the components of some vector space, constructing a
+    r"""Return a callable that iterates over the components of some vector space, constructing a
     `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
 
         L2.register(vecsps.DirectSum, componentwise(L2))
@@ -619,7 +623,7 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 class L2Generic(HilbertSpace):
-    """`L2` implementation on a generic `regpy.vecsps.VectorSpaceBase`.
+    r"""`L2` implementation on a generic `regpy.vecsps.VectorSpaceBase`.
     
     Parameters
     ----------
@@ -641,7 +645,7 @@ class L2Generic(HilbertSpace):
             return operators.PtwMultiplication(self.vecsp, self.weights)
         
 class L2MeasureSpaceFcts(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
+    r"""`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
     
     Parameters
     ----------
@@ -668,7 +672,7 @@ class L2MeasureSpaceFcts(HilbertSpace):
 
 
 class L2UniformGridFcts(HilbertSpace):
-    """`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
+    r"""`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
     element.
     """
 
@@ -685,7 +689,7 @@ class L2UniformGridFcts(HilbertSpace):
 
 
 class SobolevUniformGridFcts(HilbertSpace):
-    """`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
+    r"""`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
 
     Parameters
     ----------
@@ -725,38 +729,38 @@ class SobolevUniformGridFcts(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class HmDomain(HilbertSpace):
-    r"""Implementation of a Sobolev space \(H^m(D)\) for a subset \(D\) of a `UniformGridFcts` grid.
-    \(D\) is characterized by a binary or integer-valued mask: `D={mask==1}`.
+    r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `UniformGridFcts` grid.
+    :math:`D` is characterized by a binary or integer-valued mask: `D={mask==1}`.
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
     Boundary condition at the exterior boundaries are specified by `ext_bd_cond`, default is Neumann ('Neum')
 
     `m=index` is a non-negative integer, the order or index of the Sobolev space.
-    The gram matrix is given by \((\alpha I - \Delta)^{-m}\).
+    The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
 
     By default it is assumed that the lengths in grid are given in physical dimensions,
     and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
 
-    If `weight` is specified, the Gram matrix will approximate \((\alpha I-{weight}\Delta)^{-m}\). `weight` should be slowly varying.
+    If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
 
     Parameters
     ----------
     grid : UniformGridFcts
         Underlying grid functions.
     mask : array-type
-        Mask to capture that subset \(D\) on which the Sobolev space is defined. Can only contain 
+        Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
         values `{-1,0,1}` or is a boolean. Shape has to match the shape of `grid`.
     h : tuple or None or string, optional
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
         "normalized". (Defaults: "normalized)
     index : int, optional
-        The Sobolev index \(m\). (Defaults: 1)
+        The Sobolev index :math:`m`. (Defaults: 1)
     weight : array-type, optional
         Weights to be applied to Laplacian in the gram matrix definition. (Defaults: None)
     ext_bd_cond : any, optional
         Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions. (Defaults: "Neum")
     alpha : scalar, optional
-        Parameter when computing the gram matrix as \((\alpha I - \Delta)^{-m}\). (Defaults: 1)
+        Parameter when computing the gram matrix as :math:`(\alpha I - \Delta)^{-m}`. (Defaults: 1)
     dtype : type, optional
         Type of underlying grid. (Defaults: float) 
     """
@@ -818,7 +822,7 @@ class HmDomain(HilbertSpace):
             self.weight = np.pad(weight,1,'edge')
 
     def I_minus_Delta(self):
-        """
+        r"""
         I_minus_Delta is the sparse form of the sum of the `alpha*identity` and the negative Laplacian on the domain D 
         defined by masking with `mask`.
         """
@@ -876,7 +880,7 @@ class HmDomain(HilbertSpace):
 
 
 def _register_spaces():
-    """Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
+    r"""Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
     loading modules.
 

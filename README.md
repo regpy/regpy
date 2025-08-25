@@ -1,25 +1,28 @@
-# regpy: Python tools for regularization methods
+# `RegPy`: Python tools for regularization methods
 
-For information and detailed documentation, please visit <https://num.math.uni-goettingen.de/regpy/>.
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/regpy/regpy?label=latest%20release&logo=github)](https://github.com/regpy/regpy)
 
-A library for implementing and solving ill-posed inverse problems developed at the [Institute for
-Numerical and Applied Mathematics Goettingen](https://num.math.uni-goettingen.de).
+[![PyPI](https://img.shields.io/pypi/v/regpy?color=blue&label=latest%20PyPI%20version&logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
+[![PyPI - Implementation](https://img.shields.io/pypi/implementation/regpy?logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/regpy?label=PyPI%20downloads&logo=pypi&logoColor=white)](https://pypi.org/project/regpy/)
 
-This project is now low beta quality software and still under under heavy development. 
-Therefore, expect bugs and partially undocumented tools.
+[![Docker Pulls](https://img.shields.io/docker/pulls/regpy/regpy?logo=docker&logoColor=white)](https://hub.docker.com/repository/docker/regpy/regpy)
+
+`RegPy` is a Python library developed at the [Institute for Numerical and Applied Mathematics](https://num.math.uni-goettingen.de) at the University of Göttingen. It provides tools to implement custom forward models -- both linear and non-linear -- as well as a variety of regularization methods and stopping rules.
+
+This project is currently approaching beta quality state, but remains under active development. As a result, you may run into bugs or partially undocumented features. If you run into any issues we welcome any information on our [GitHub issue tracker](https://github.com/regpy/regpy/issues).
+
+Detailed information and documentation of the current version can be found at <https://num.math.uni-goettingen.de/regpy/>.
 
 ## Usage examples
 
-To get an impression of how using `regpy` looks, there are some examples in the [`examples`
-folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well as inside the release tarballs (see below). Most of the examples supply both a commented python script and a python notebook with more detailed explanation. 
+We offer an explanation on how to use `RegPy` [here](./USAGE.md) and our website features several detailed [usage examples](https://num.math.uni-goettingen.de/regpy/examples). These examples are provided as Jupyter notebooks that serve as a tutorial-style introduction to `RegPy`.
+
+For a more comprehensive overview of `RegPy`'s capabilities, we provide numerous examples in the [examples GitHub repository](https://github.com/regpy/regpy-examples). These examples are also part of the docker image provided on [DockerHub](https://hub.docker.com/repository/docker/regpy/regpy) (see in the installation instructions for details). Most examples include both a commented Python script and a Jupyter notebook with more detailed explanations.
 
 ## Installation
 
-### Obtaining the source code
-
-- The source code is on GitHub ([regpy/regpy](https://github.com/regpy/regpy)).
-- Releases are at the corresponding [release page](https://github.com/regpy/regpy/releases). The
-  current version is 0.3.
+We provide different installation methods, such installation using `pip`, listed and explained in [INSTALLATION.md](./INSTALLATION.md).
 
 ### Dependencies
 
@@ -28,28 +31,7 @@ folder on GitHub](https://github.com/regpy/regpy/tree/release/examples), as well
 
 #### Optional dependencies
 
-- [`ngsolve`](https://ngsolve.org/) (for some forward operators that require solving PDEs)
+- [`ngsolve`](https://ngsolve.org/), for some forward operators that require solving PDEs. We provide an optional installation tag `ngsolve` when installing with `pip`.
 - [`bart`](https://mrirecon.github.io/bart/) (for the MRI operator)
 - `matplotlib` (for some of the examples)
-- [`pdoc3`](https://pdoc3.github.io/pdoc) (for generating the documentation)
-
-### Installation with `pip`
-
-A basic `setup.py` is provided, but the package is not on PyPI yet. To install it, clone this
-repository or download the release tarball, and run
-
-~~~ bash
-pip install .
-~~~
-
-from the project's root folder. If you want to modify `regpy` itself, you can use
-
-~~~ bash
-pip install --editable .
-~~~
-
-to have Python load `regpy` from your current directory rather than copying it to its library
-folder.
-
-In both cases, you can add `--no-deps` to prevent installing dependencies automatically,
-in case you want to install them via some other package manager.
+- [`sphinx`](https://www.sphinx-doc.org/en/master/) (for generating the documentation) further requirements in `doc/sphinx/requirements.txt`

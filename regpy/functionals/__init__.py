@@ -35,7 +35,7 @@ class Functional:
 
     They can also be multiplied by scalars or `np.ndarrays`of `domain.shape`or multiplied by 
     `regpy.operators.Operator`. This leads to a functional that is composed with the operator
-    \(F\circ O\) where \(F\) is the functional and \(O)\ some operator. Multiplying by a scalar
+    :math:`F\circ O` where :math:`F` is the functional and \(O)\ some operator. Multiplying by a scalar
     results in a composition with the `PtwMultiplication` operator.
 
     Parameters
@@ -83,22 +83,23 @@ class Functional:
     def linearize(self, x):
         r"""
         Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
-        \[
-            F(x+ h) \geq  F(x) + vdot(v,h) for all h
-        \]
+
+        .. math::
+            F(x+ h) \geq  F(x) + \np.vdot(v,h) for all h
+
         Requires the implementation of either `_subgradient` or `_linearize`.
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         x : in self.domain
             Element at which will be linearized
 
         Return
         ------
         y 
-            Value of \(F(x)\).
+            Value of :math:`F(x)`.
         grad : in self.domain
-            Subgradient of \(F\) at \(x\).        
+            Subgradient of :math:`F` at :math:`x`.        
         """
         assert x in self.domain
         try:
@@ -111,15 +112,15 @@ class Functional:
         return y, grad
 
     def subgradient(self, x):
-        r"""
-        Returns a subgradient \(\xi)\ of the functional at `x` characterized by
-        \[
-            F(y) \geq  F(x) + vdot(\xi,y-x) for all y  
-        \]
+        r"""Returns a subgradient \(\xi)\ of the functional at `x` characterized by
+
+        .. math::
+            F(y) \geq  F(x) + np.vdot(\xi,y-x) for all y  
+
         Requires the implementation of either `_subgradient` or `_linearize`.
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         x : in self.domain
             Element at which will be linearized
 
@@ -140,8 +141,8 @@ class Functional:
         r"""Returns `True` if \(v)\ is a subgradient of \(F)\ at \(x)\, otherwise `False`.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
 
-        Paramters
-        ---------
+        Parameters
+        ----------
         eps: float (default: 1e-10)
             relative accuracy for the test
         """
@@ -150,15 +151,15 @@ class Functional:
 
     def hessian(self, x,recursion_safeguard=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
-        functionals `domain` to it self. 
-        It is defined by 
-        \[
-         F(x+h) = F(x) + (\nabla F)(x)^T h + \frac{1}{2} h^T Hess F(x) h + \mathcal{o}(\|h\|^2)
-        \]
+        functionals `domain` to it self. It is defined by 
+
+        .. math::
+            F(x+h) = F(x) + (\nabla F)(x)^T h + \frac{1}{2} h^T Hess F(x) h + \mathcal{o}(\|h\|^2)
+
         Require either the implementation of _hessian or of _hessian_conj and _subgradient
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         `x` : `self.domain`
             Point in `domain` at which to compute the hessian. 
 
@@ -192,7 +193,7 @@ class Functional:
         assert grad in self.domain
         return grad
 
-    def conj_is_subgradient(self,v,xstar,eps = 1e-10):
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         r"""Returns `True` if \(v)\ is a subgradient of \(F.conj)\ at \(x)\, otherwise `False`.
         """
         xi = self.conj_subgradient(xstar)
@@ -216,7 +217,7 @@ class Functional:
 
     def conj_linearize(self, xstar):
         r"""
-        Linearizes the conjugate functional \(F^*\). Should not be called directly, but via self.conj.linearize
+        Linearizes the conjugate functional :math:`F^*`. Should not be called directly, but via self.conj.linearize
         """
         assert xstar in self.domain
         try:
@@ -230,9 +231,10 @@ class Functional:
 
     def proximal(self, x, tau, recursion_safeguard = False,**proximal_par):
         r"""Proximal operator 
-        \[
+
+        .. math::
             \mathrm{prox}_{\tau F}(x)=\arg \min _{v\in {\mathcal {X}}}(F(v)+{\frac{1}{2\tau}}\Vert v-x\Vert_{\mathcal {X}}^{2}).
-        \]
+
         Requires either an implementation of `_proximal` or of `_subgradient` and `_conj_proximal`.
 
         Parameters
@@ -245,7 +247,7 @@ class Functional:
         Returns
         -------
         proximal : `self.domain`
-            the computed proximal at \(x\) with parameter \(\tau\).
+            the computed proximal at :math:`x` with parameter :math:`\tau`.
         """
         assert x in self.domain
         try: 
@@ -359,18 +361,18 @@ class Functional:
 
     @util.memoized_property
     def conj(self):
-        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
         Returns
         -------
         Adjoint
-            The adjoint as an `Operator` instance.
+            The adjoint as an `regpy.operators.Operator` instance.
         """
         return Conj(self)
 
 class Conj(Functional):
-    """An proxy class wrapping a functional. Calling it will evaluate the functional's
+    r"""An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
     `Functional.conj` property of a functional.
     """
@@ -394,14 +396,14 @@ class Conj(Functional):
     def _subgradient(self, x):
         return self.func.conj_subgradient(x)
 
-    def _is_subgradient(self, v,x):
-        return self.func.conj_is_subgradient(v,x)
+    def is_subgradient(self, v,x,eps = 1e-10):
+        return self.func._conj_is_subgradient(v,x,eps)
 
     def _conj_subgradient(self, x):
         return self.func.subgradient(x)
 
-    def _conj_is_subgradient(self, v,x):
-        return self.func.is_subgradient(x)
+    def _conj_is_subgradient(self, v,x,eps = 1e-10):
+        return self.func.is_subgradient(v,x,eps)
 
     def _hessian(self, x):
         return self.func.conj_hessian(x)
@@ -426,21 +428,24 @@ class Conj(Functional):
 class LinearFunctional(Functional):
     r"""Linear functionals
     Linear functional given by
-        F(x) = vdot(a, x)
+
+    .. math::
+        F(x) = \langel a, x\rangle
     
-    +, +=, *, *= with `LinearFunctional`s and scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`s. 
+    The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `LinearFunctional`\s and 
+    scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`\s. 
 
     Parameters
     ----------
     gradient: domain
-        The gradient of the linear functional. \(a=gradient\) if gradient_in_dual_space == True
+        The gradient of the linear functional. :math:`a=gradient` if gradient_in_dual_space == True
     domain: regpy.vecsps.VectorSpaceBase, optional
         The VectorSpaceBase on which the functional is defined
     h_domain: regpy.hilbert.HilbertSpace (default: `L2(domain)`)
         Hilbert space for proximity operator
     gradient_in_dual_space: bool (default: False)
         If false, the argument gradient is considered as an element of the primal space, 
-        and \(a = h_domain.gram(gradient).\).
+        and :math:`a = h_domain.gram(gradient).`.
     """
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None:
@@ -474,8 +479,8 @@ class LinearFunctional(Functional):
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
-    def _conj_is_subgradient(self,v,xstar):
-        return xstar==self.gradient
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
+        return np.linalg.norm(xstar-self.gradient)<=eps*(np.linalg.norm(self.gradient)+eps)
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -521,13 +526,14 @@ class LinearFunctional(Functional):
 
 class SquaredNorm(Functional):
     r"""Functionals of the form 
-    \[
-    \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\langle b,x\rangle_X + c
-    \]
+
+    .. math::
+        \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\langle b,x\rangle_X + c
+
     Here the linear term represents an inner product in the Hilbert space, not a pairing with the dual space.
 
-    +, +=, *, *= with `SquaredNorm`s, `LinearFunctional`s and scalars as other arguments are overwritten to yield the 
-    expected `SquaredNorm`s. 
+    The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `SquaredNorm`\s, `LinearFunctional`\s and scalars 
+    as other arguments are overwritten to yield the expected `SquaredNorm`\s. 
 
     Parameters
     --------
@@ -598,13 +604,14 @@ class SquaredNorm(Functional):
         else:
             return NotInEssentialDomainError
         
-    def _conj_is_subgradient(self,v,xstar):
+    def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         if self.a==0:
-            return xstar == self.gram(self.b)
+            xi=self.gram(self.b)
+            return np.linalg.norm(xstar-xi)<=eps*(np.linalg.norm(xi)+eps)
         elif self.a <0:
             return False
         else: 
-            return super()._conj_is_subgradient(v,xstar)
+            return super()._conj_is_subgradient(v,xstar,eps)
     
     def _conj_hessian(self, xstar):
         if self.a>0:
@@ -687,7 +694,7 @@ class SquaredNorm(Functional):
 
 
 class LinearCombination(Functional):
-    """Linear combination of functionals. 
+    r"""Linear combination of functionals. 
 
     Parameters
     ----------
@@ -764,7 +771,7 @@ class LinearCombination(Functional):
             return super().is_subgradient(vstar, x, eps)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j].is_subgradient((vstar-self.grad_sum)/self.coeffs[j],x)
+            return self.funcs[j].is_subgradient((vstar-self.grad_sum)/self.coeffs[j],x,eps)
         else:
             return NotImplementedError
 
@@ -814,14 +821,14 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
 
-    def _is_conj_subgradient(self, v, xstar):
+    def _conj_is_subgradient(self, v, xstar,eps = 1e-10):
         if len(self.funcs) == 1:
-            return self.funcs[0]._is_conj_subgradient(v,xstar/self.coeffs[0])
+            return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps)
         elif self.linear_table.count(False)==0:
-            return xstar == self.grad_sum
+            return np.linalg.norm(xstar-self.grad_sum)<=eps*(np.linalg.norm(self.grad_sum)+eps)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j]._is_conj_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j])
+            return self.funcs[j]._conj_is_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j],eps)
         else:
             return NotImplementedError
     
@@ -880,8 +887,8 @@ class VerticalShift(Functional):
     def _subgradient(self, x):
         return self.func._subgradient(x)
 
-    def _is_subgradient(self, vstar,x):
-        return self.func.is_subgradient(vstar,x)
+    def is_subgradient(self, vstar,x,eps = 1e-10):
+        return self.func.is_subgradient(vstar,x,eps)
     
     def _hessian(self, x):
         return self.func.hessian(x)
@@ -895,8 +902,8 @@ class VerticalShift(Functional):
     def _conj_subgradient(self, xstar):
         return self.func.conj.subgradient(xstar)
 
-    def _conj_is_subgradient(self, v,xstar):
-        return self.func.conj.is_subgradient(v,xstar)
+    def _conj_is_subgradient(self, v,xstar,eps = 1e-10):
+        return self.func.conj.is_subgradient(v,xstar,eps)
 
     def _conj_hessian(self, xstar):
         return self.func.conj.hessian(xstar)
@@ -905,11 +912,11 @@ class VerticalShift(Functional):
         return self.func.conj.proximal(x, tau,**proximal_par)
 
 class HorizontalShiftDilation(Functional):
-    r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional \(F\), i.e. replaces 
-    \(F(x)\) by \(F(dilation(x-shift)))
+    r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional :math:`F`, i.e. replaces 
+    :math:`F(x)` by \(F(dilation(x-shift)))
     
     Parameters
-    --------
+    ----------
     F: Functional
         The functional to be shifted and dilated.
     dilation: float [default: 1]
@@ -935,8 +942,8 @@ class HorizontalShiftDilation(Functional):
     def _subgradient(self, x):
         return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift))
 
-    def _is_subgradient(self, vstar, x):
-        return self.F._is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift))
+    def is_subgradient(self, vstar, x, eps= 1e-10):
+        return self.F.is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),eps)
 
     def _hessian(self, x):
         return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
@@ -959,11 +966,11 @@ class HorizontalShiftDilation(Functional):
         else:
             return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
 
-    def _conj_is_subgradient(self,v,x_star):
+    def _conj_is_subgradient(self,v,x_star, eps= 1e-10):
         if self.shift is None:
-            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation) 
+            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation, eps) 
         else:
-            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation)
+            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation, eps)
 
     def _conj_hessian(self,x_star):
         return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
@@ -976,8 +983,8 @@ class HorizontalShiftDilation(Functional):
                                                   )
 
 class Composed(Functional):
-    r"""Composition of an operator with a functional \(F\circ O\). This should not be called
-    directly but rather used by multiplying the `Functional` object with an `Operator`.
+    r"""Composition of an operator with a functional :math:`F\circ O`. This should not be called
+    directly but rather used by multiplying the `Functional` object with an `regpy.operators.Operator`.
 
     Parameters
     ----------
@@ -1050,7 +1057,7 @@ class Composed(Functional):
             return NotImplementedError
 
 class AbstractFunctionalBase:
-    """Class representing abstract functionals without reference to a concrete implementation.
+    r"""Class representing abstract functionals without reference to a concrete implementation.
 
     Abstract functionals do not have elements, properties or any other structure, their sole purpose is
     to pick the proper concrete implementation for a given vector space.
@@ -1098,28 +1105,30 @@ class AbstractFunctionalBase:
 
 
 class AbstractFunctional(AbstractFunctionalBase):
-    """An abstract functional that can be called on a vector space to get the corresponding
+    r"""An abstract functional that can be called on a vector space to get the corresponding
     concrete implementation.
 
     AbstractFunctionals provides two kinds of functionality:
 
-    - A decorator method `register(vecsp_type)` that can be used to declare some class or function
-      as the concrete implementation of this abstract functional for vector spaces of type `vecsp_type`
-      or subclasses thereof, e.g.:
+     * A decorator method `register(vecsp_type)` that can be used to declare some class or function
+       as the concrete implementation of this abstract functional for vector spaces of type `vecsp_type`
+       or subclasses thereof, e.g.:
+     * AbstractFunctionals are callable. Calling them on a vector space and arbitrary optional
+       keyword arguments finds the corresponding concrete `regpy.functionals.Functional` among all
+       registered implementations. If there are implementations for multiple base classes of the
+       vector space type, the most specific one will be chosen. The chosen implementation will
+       then be called with the vector space and the keyword arguments, and the result will be
+       returned.
+    
+    .. highlight:: python
+    .. code-block:: python
+    
+        @TV.register(vecsps.UniformGridFcts)
+        class TVUniformGridFcts(HilbertSpace):
+            ...
 
-              @TV.register(vecsps.UniformGridFcts)
-              class TVUniformGridFcts(HilbertSpace):
-                  ...
-
-    - AbstractFunctionals are callable. Calling them on a vector space and arbitrary optional
-      keyword arguments finds the corresponding concrete `regpy.functionals.Functional` among all
-      registered implementations. If there are implementations for multiple base classes of the
-      vector space type, the most specific one will be chosen. The chosen implementation will
-      then be called with the vector space and the keyword arguments, and the result will be
-      returned.
-
-      If called without a vector space as positional argument, it returns a new abstract functional
-      with all passed keyword arguments remembered as defaults.
+    If called without a vector space as positional argument, it returns a new abstract functional
+    with all passed keyword arguments remembered as defaults.
 
     Parameters
     ----------
@@ -1134,7 +1143,7 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.args = {}
 
     def register(self, vecsp_type, impl=None):
-        """Either registers a new implementation on a specific `regpy.vecsps.VectorSpaceBase` 
+        r"""Either registers a new implementation on a specific `regpy.vecsps.VectorSpaceBase` 
         for a given Abstract functional or returns as decorator that can output any implementation
         option for a given vector space.
 
@@ -1256,8 +1265,8 @@ class AbstractVerticalShift(AbstractFunctional):
         return VerticalShift(func=self.func(vecsp),offset=self.offset)
     
 class AbstractComposed(AbstractFunctional):
-    r"""Abstract analogue to `Composed`. Composition of an operator with a functional \(F\circ O\). This should not be called
-    directly but rather used by multiplying the `AbstractFunctional` object with an `Operator`.
+    r"""Abstract analogue to `Composed`. Composition of an operator with a functional :math:`F\circ O`. This should not be called
+    directly but rather used by multiplying the `AbstractFunctional` object with an `regpy.operators.Operator`.
 
     Parameters
     ----------
@@ -1268,7 +1277,7 @@ class AbstractComposed(AbstractFunctional):
     """
     def __init__(self, func, op):
         assert isinstance(func, AbstractFunctional), "func not a AbstractFunctional"
-        assert isinstance(op, operators.Operator), "op not a Operator"
+        assert isinstance(op, operators.Operator), "op not a regpy.operators.Operator"
         super().__init__(op.domain)
         if isinstance(func, type(self)):
             op = func.op * op
@@ -1289,9 +1298,10 @@ class AbstractComposed(AbstractFunctional):
 class FunctionalOnDirectSum(Functional):
     r"""Helper to define Functionals with respective prox-operators on sum spaces (vecsps.DirectSum objects).
     The functionals are given as a list of the functionals on the summands of the sum space.
-    \[
-    F(x_1,... x_n) = \sum_{j=1}^n F_j(x_j)
-    \]
+
+    .. math::
+        F(x_1,... x_n) = \sum_{j=1}^n F_j(x_j)
+
 
     Parameters
     ----------
@@ -1328,9 +1338,9 @@ class FunctionalOnDirectSum(Functional):
     def _subgradient(self, x):
         return self.domain.join([f_i.subgradient(x_i) for f_i,x_i in zip(self.funcs,x)])
 
-    def _is_subgradient(self,vstar, x):
+    def _is_subgradient(self,vstar, x, eps= 1e-10):
         assert vstar in self.domain and x in self.domain
-        return all([f_i.is_subgradient(vstar_i,x_i) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
+        return all([f_i.is_subgradient(vstar_i,x_i,eps) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
 
     def _hessian(self, x):
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
@@ -1339,7 +1349,7 @@ class FunctionalOnDirectSum(Functional):
         if proximal_par_list is None:
             proximal_par_list = [{}] *self.length
         else:
-            assert len(proximal_par_list) == self.length
+            assert len(p_conj_subgradient(self,v, xstar):roximal_par_list) == self.length
         return self.domain.join(*[f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
     def _conj(self, xstar):
@@ -1348,9 +1358,9 @@ class FunctionalOnDirectSum(Functional):
     def _conj_subgradient(self, xstar):
         return self.domain.join(*[f_i.conj.subgradient(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
 
-    def _is_conj_subgradient(self,v, xstar):
+    def _conj_is_subgradient(self,v, xstar, eps= 1e-10):
         assert v in self.domain and xstar in self.domain
-        return all([f_i.conj.is_subgradient(v_i,xstar_i) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
+        return all([f_i.conj.is_subgradient(v_i,xstar_i,eps) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
 
     def _conj_hessian(self, xstar):
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))
@@ -1373,7 +1383,7 @@ class FunctionalOnDirectSum(Functional):
             return FunctionalOnDirectSum([other*F for F in self.funcs],self.domain)
 
 class HilbertNormGeneric(Functional):
-    r"""Generic implementation of the HilbertNorm \(1/2*\Vert x\Vert^2\). Proximal operator defined on `h_space`.
+    r"""Generic implementation of the HilbertNorm :math:`1/2*\Vert x\Vert^2`. Proximal operator defined on `h_space`.
 
     Parameters
     ----------
@@ -1436,26 +1446,28 @@ class HilbertNormGeneric(Functional):
 class IntegralFunctionalBase(Functional):
     r"""
     This class provides a general framework for Integral functionals of the type
-    \[
-    F\colon X \to \mathbb{R}
-    \]
-    \[
-    v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
-    \]
+    
+    .. math::
+        F\colon X \to \mathbb{R}
+        v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
+
     with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
 
     Subclasses defining explicit functionals of this type have to implement
-        `_f` evaluation the function \(f)\
-        `_f_deriv` giving the derivative \(\partial_1 f)\
-        `_f_prox` giving the prox of \(v>->f(v,x))\
+     * `_f` evaluation the function \(f)\
+     * `_f_deriv` giving the derivative \(\partial_1 f)\
+     * `_f_prox` giving the prox of \(v>->f(v,x))\
+    
     since 
-    \[
-    F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
-    \]
+
+    .. math::
+        F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
+
     is a functional of the same type and
-    \[
-    \mathrm{prox}_F(v)(x) = \mathrm{prox}_{f(\cdot,x)}(v(x)).
-    \]
+
+    .. math::
+        \mathrm{prox}_F(v)(x) = \mathrm{prox}_{f(\cdot,x)}(v(x)).
+
 
     Parameters
     ----------
@@ -1575,7 +1587,7 @@ class LppPower(IntegralFunctionalBase):
             raise NotImplementedError('prox of conjugate of LppPower')
 
 class L1MeasureSpace(IntegralFunctionalBase):
-    r"""\(L ^1\) Functional on `MeasureSpace`. Proximal implemented for default \(L^2\) as `h_domain`.
+    r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.
 
     Parameters
     ----------
@@ -1629,14 +1641,15 @@ class L1MeasureSpace(IntegralFunctionalBase):
             vstar[zeroind]=0
             return super().is_subgradient(vstar, x, eps)
 
-    def conj_is_subgradient(self, v, xstar, eps=1e-10):
+    def _conj_is_subgradient(self, v, xstar, eps=1e-10):
         return np.max(np.abs(xstar)<=1) and v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
 
 class KullbackLeibler(IntegralFunctionalBase):
-    r"""Kullback-Leiber divergence define by
-    \[ 
+    r"""Kullback-Leiber divergence defined by
+
+    .. math::
         F(u,w) = KL(w,u) = \int (u(x) -w(x) - w(x)\ln \frac{u(x)}{w(x)}) dx
-    \]
+
 
     Parameters
     ----------
@@ -1656,11 +1669,11 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     def _f(self, u,**kwargs):
         w= kwargs['w']
-        res = u-w - w * np.log(u/w)
-        ind_uneg = (u<0)
-        res[ind_uneg] = np.inf
-        ind_uzero = np.logical_and(u==0,np.logical_not(w==0))
-        res[ind_uzero] = np.inf
+        ind_inf=(u<0)|((u==0)&(w>0))
+        ind_else=~(ind_inf|(w==0))
+        res=np.copy(u)
+        res[ind_inf]=np.inf
+        res[ind_else]=u[ind_else]-w[ind_else] - w[ind_else] * np.log(u[ind_else]/w[ind_else])
         return res    
    
     def _f_deriv(self, u,**kwargs):
@@ -1699,9 +1712,10 @@ class KullbackLeibler(IntegralFunctionalBase):
 
 class RelativeEntropy(IntegralFunctionalBase):
     r"""Kullback-Leiber divergence define by
-    \[ 
+
+    .. math::
         F(u,w) = \int (u(x)\ln \frac{u(x)}{w(x)}) dx
-    \]
+
 
     Parameters
     ----------
@@ -1721,10 +1735,10 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     def _f(self, u,**kwargs):
         w=kwargs['w']        
-        res =  u * np.log(u/w)
-        ind_uneg = (u<0)
-        res[ind_uneg] = np.inf
-        res[u==0] = 0
+        ind_upos=(u>0)
+        res=np.zeros_like(u)
+        res[u<0] = np.inf
+        res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/w[ind_upos])
         return res    
    
     def _f_deriv(self, u,**kwargs):
@@ -1751,14 +1765,14 @@ class RelativeEntropy(IntegralFunctionalBase):
 
 class Huber(IntegralFunctionalBase):
     r"""Huber functional 
-    \[
-    F(x) = 1/2 |x|^2                if  |x|\leq \sigma
-    F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
-    \]
 
-    Paramter: 
-    ------
+    .. math::
+        F(x) = 1/2 |x|^2                if  |x|\leq \sigma
+        F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
 
+
+    Parameters 
+    ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
@@ -1810,18 +1824,18 @@ class Huber(IntegralFunctionalBase):
 
 class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
-    \[
-    F(x) = 1/2 |x|^2    if |x|\leq \sigma(x)
-    F(x) = \infty    if |x|>\sigma(x)
-    \]
 
-    Parameter
-    ---------
+    .. math::
+        F(x) = 1/2 |x|^2    if |x|\leq \sigma(x)
+        F(x) = \infty    if |x|>\sigma(x)
 
+
+    Parameters
+    ----------
     regpy.vecsps.MeasureSpaceFcts
         domain on which Huber functional is defined
     sigma: float or domain [default: 1]
-        reciprocal of interval width. 
+        interval width. 
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
@@ -1878,20 +1892,26 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
-        return self.sigma*np.max(np.abs(x))<=1 and vstar[self.sigma*x==1]>=1 and vstar[self.sigma*x==-1]<=-1 and \
-            np.linalg.norm(grad[self.sigma*np.abs(x)<1]-vstar[self.sigma*np.abs(x)<1]) <= eps*np.linalg.norm(grad[self.sigma*np.abs(x)<1])
+        if(not np.all(np.abs(x)<=self.sigma)):
+            return False
+        if(not np.all(vstar[self.sigma==x]>=self.sigma)):
+            return False
+        if(not np.all(vstar[-self.sigma==x]<=-self.sigma)):
+            return False
+        if(np.linalg.norm(grad[np.abs(x)<self.sigma]-vstar[np.abs(x)<self.sigma]) <= eps*np.linalg.norm(grad[np.abs(x)<self.sigma])):
+            return True
+        return False
 
 
 class QuadraticNonneg(IntegralFunctionalBase):
     r"""Functional 
-    \[
-    F(x) = 1/2 |x|^2    if x\geq 0
 
-    F(x) = \infty       if  x<0
-    \]
+    .. math::
+        F(x) = 1/2 |x|^2    if x\geq 0
+        F(x) = \infty       if  x<0
+
     Parameters
-
-    ---------
+    ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         domain on which functional is defined 
 
@@ -1907,7 +1927,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     def _f_deriv(self, u,**kwargs):
         if np.min(u)<0:
-            raise NotInEssentialDomainError('QuadratiNonneg')
+            raise NotInEssentialDomainError('QuadraticNonneg')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
@@ -1936,20 +1956,23 @@ class QuadraticNonneg(IntegralFunctionalBase):
         res=ustar.copy()
         res[ustar>0]*=(1/(1+tau))
         return res
+    
+    def is_subgradient(self, vstar, x, eps=1e-10):
+        return np.max(vstar[x<0])<=0 and np.linalg.norm(x[x>=0]-vstar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
 
-    def _f_is_subgradient(self, ustar, x, eps=1e-10):
-        return np.max(ustar[x<0])<=0 and np.linalg.norm(x[x>=0]-ustar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
+
 
 
 class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
-    \[
-    F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
-    F(x) = np.inf else
-    \]
 
-    Parameters:
-    ------------------------------------------------------
+    .. math::
+        F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
+        F(x) = np.inf else
+
+
+    Parameters
+    ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which functional is defined
     lb: domain
@@ -2003,10 +2026,10 @@ def QuadraticLowerBound(domain, lb, x0,a=1.):
 
     \[F(x) = \frac{a}{2}\|x-x0\|^2  if lb\leq x
      F(x) = np.inf else
-    \]
+
 
     Parameters
-    ------
+    ----------
     domain: `vecsps.MeasureSpaceFcts`
         domain on which the functional is defined
     lb: domain or float [default: None]
@@ -2037,15 +2060,15 @@ from numpy.linalg import eigvalsh,eigh
 
 class QuadraticPositiveSemidef(Functional):
     r"""Functional 
-    \[
-    F(x) = 1/2 ||x||_{HS}^2    \text{if } x\geq 0 \text{ and (optional) } tr(x)=c
 
-    F(x) = \infty       \text{else}
-    \]
+    .. math::
+        F(x) = 1/2 ||x||_{HS}^2    \text{if } x\geq 0 \text{ and (optional) } tr(x)=c
+        F(x) = \infty       \text{else}
+
     Here x is a quadratic matrix and HS is the Hilbert-Schmidt norm. Conjugate functional
     and prox are only correct for hermitian inputs.
-    Parameters
 
+    Parameters
     ---------
     domain: regpy.vecsps.UniformGridFcts
         two dimensional domain on which functional is defined, volume_elements have to be one
@@ -2056,14 +2079,14 @@ class QuadraticPositiveSemidef(Functional):
 
     """
 
-    def  __init__(self, domain,trace_val=1.0,tol=1e-15):
+    def  __init__(self, domain,trace_val=None,tol=1e-15):
         assert isinstance(domain,vecsps.UniformGridFcts)
         assert domain.ndim==2
         assert domain.shape[0]==domain.shape[1]
         assert domain.volume_elem==1
         assert tol>=0
         assert trace_val is None or trace_val>0
-        self.tol=1e-15
+        self.tol=tol
         if(trace_val is not None):
             self.has_trace_constraint=True
             self.trace_val=trace_val
@@ -2083,7 +2106,7 @@ class QuadraticPositiveSemidef(Functional):
     @staticmethod
     def closest_point_simplex(p,a):
         r'''
-        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex \(\{q:q_{i}\qeq 0,\sum q_{i}=a\}\).
+        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\qeq 0,\sum q_{i}=a\}`.
         It uses that p is already sorted in increasing order.
 
         Parameters
@@ -2137,7 +2160,7 @@ class QuadraticPositiveSemidef(Functional):
 
 
 class L1Generic(Functional):
-    r"""Generic \(L ^1\) Functional. Proximal implemented for default `L2` as `h_domain`.
+    r"""Generic :math:`L ^1` Functional. Proximal implemented for default :math:`L^2` as `h_domain`.
 
     Parameters
     ----------
@@ -2163,7 +2186,7 @@ class L1Generic(Functional):
 
 
 class TVGeneric(Functional):
-    """Generic TV Functional. Proximal implemented for default `L2` as `h_space`
+    r"""Generic TV Functional. Proximal implemented for default `L2` as `h_space`
 
     NotImplemented yet!
     """
@@ -2181,7 +2204,7 @@ class TVGeneric(Functional):
 
 
 class TVUniformGridFcts(Functional):
-    r"""Total Variation Norm: For \(C^1\) functions the \(l^1\)-norm of the gradient on a `UniformGrid`
+    r"""Total Variation Norm: For :math:`C^1` functions the :math:`l^1`-norm of the gradient on a `UniformGrid`
 
     Parameters
     ----------
@@ -2225,7 +2248,7 @@ class TVUniformGridFcts(Functional):
         return x-tau*self._divergenceuniformgrid(p)
 
     def _gradientuniformgrid(self, u):
-        """Computes the gradient of field given by 'u'. 'u' is defined on a 
+        r"""Computes the gradient of field given by 'u'. 'u' is defined on a 
         equidistant grid. Returns a list of vectors that are the derivatives in each 
         dimension."""
         # Need to reshape spacing otherwise getting braodcasting error
@@ -2233,7 +2256,7 @@ class TVUniformGridFcts(Functional):
         return 1/self.domain.spacing.reshape(shape)*np.array(np.gradient(u))
 
     def _divergenceuniformgrid(self, u):
-        """Computes the divergence of a vector field 'u'. 'u' is assumed to be
+        r"""Computes the divergence of a vector field 'u'. 'u' is assumed to be
         a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
         regular grid"""
         return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i)/h for i,h in enumerate(self.domain.spacing)])
@@ -2247,7 +2270,7 @@ def as_functional(func, vecsp):
 
     Parameters
     ----------
-    func : Functional or HilbertSapce or Operator or callable
+    func : Functional or HilbertSapce or regpy.operators.Operator or callable
         Functional or object from which to construct the Functional.
     vecsp : VectorSpaceBase
         Underlying vector space for the functional. 
@@ -2274,7 +2297,7 @@ def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
 
 
 def _register_functionals():
-    """Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
+    r"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
     method described in `AbstractFunctional` does not work due to circular depenencies when
     loading modules.
 

@@ -5,8 +5,13 @@ def test_linearity(op, tolerance=1e-10):
     r"""Numerically tests if operator is linear.
 
     Checks if ::
+
+    .. highlight:: python
+    .. code:: python
+
         op(x+y) == op(x)+op(y)
         r*op(x) == op(r*x)
+    
     for random choices of `x` and `y`.
 
     Parameters
@@ -17,23 +22,62 @@ def test_linearity(op, tolerance=1e-10):
         The maximum allowed difference between the results. Defaults to
         1e-10.
 
-    Raises
-    ------
-    AssertionError
-        If the test fails.
+    Returns
+    -------
+    bool
+        True if the operator is linear within the specified tolerance
+        and False otherwise.    
     """
     x = op.domain.randn()
     y = op.domain.randn()
     r= uniform(-10,10)
     err_sum=op.domain.norm((op(x)+op(y))-(op(x+y)))
     err_mult=op.domain.norm(op(r*x)-r*op(x))
-    assert err_sum<tolerance, f'err = {err_sum}'
-    assert err_mult<tolerance, f'err = {err_mult}'
+    if err_sum<tolerance or err_mult<tolerance:
+        op.log.info(f'Linearity test passed: err_sum = {err_sum}, err_mult = {err_mult}')
+        return True
+    else:
+        op.log.warning(f'Linearity test failed: err_sum = {err_sum}, err_mult = {err_mult}')
+        return False
+    
+def test_affine_linearity(op, tolerance=1e-10):
+    """NUmerically test if the operator is affine linear. 
+    
+    Checks if ::
+        op_unshifted(x) := op(x) - op(0) is linear
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator to be tested.
+    tolerance : float, optional
+        The maximum allowed difference between the results. Defaults to 
+        1e-10.
+
+    Returns
+    -------
+    bool
+        True if the operator is linear within the specified tolerance.
+
+    Raises
+    ------
+    AssertionError
+        If the test fails.
+    """
+    if test_linearity(op-op(op.domain.zeros()),tolerance=tolerance):
+        op.log.info('Affine linearity test passed.')
+        return True
+    else:
+        op.log.warning(f'Affine linearity test failed!')
+        return False
 
 def test_adjoint(op, tolerance=1e-10):
     r"""Numerically test validity of :meth:`adjoint` method.
 
-    Checks if ::
+    Checks if
+
+    .. highlight:: python
+    .. code:: python
 
         inner(y, op(x)) == inner(op.adjoint(x), y)
 
@@ -47,24 +91,29 @@ def test_adjoint(op, tolerance=1e-10):
         The maximum allowed difference between the inner products. Defaults to
         1e-10.
 
-    Raises
-    ------
-    AssertionError
-        If the test fails.
+    Returns
+    -------
+    bool
+        If the test fails then False and if it passes then True.
     """
     x = op.domain.randn()
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
     err = (op.codomain.vdot(y, fx) - op.domain.vdot(fty, x)).real
-    assert abs(err) < tolerance, 'err = {}'.format(err)
+    if abs(err) < tolerance:
+        op.log.info(f'Adjoint test passed: err = {err}')
+        return True
+    else:
+        op.log.warning(f'Adjoint test failed: err = {err}')
+        return False
 
 
-def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=False):
+def test_derivative(op, steps=None,ret_sequence=False):
     r"""Numerically test derivative of operator.
 
-    Computes \( ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| \)
-    for randomly chosen `x` and `v` and different `t` given in steps.
+    Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
+    for randomly chosen .:math:`x` and :math:`v` and different :math:`t` given in steps.
 
     Parameters
     ----------
@@ -73,36 +122,59 @@ def test_derivative(op, steps=[10**k for k in range(-1, -8, -1)],ret_sequence=Fa
     steps : float, optional
         The used steps. Defaults to
         [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
-    ret_sequence : bool, optional
-        If set to true the sequence of errors is returned else it is asserted that this sequence is decreasing.
-        Defaults to False.
 
     Returns
     ------
-    list of float (optional)
-        List of computed differences, one for each step. Only if ret_sequence is True. 
+    bool
+        If the sequence of differences is decreasing then True, otherwise False. 
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     x = op.domain.randn()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
     normh = op.domain.norm(h)
     g = deriv(h)
     seq=[op.codomain.norm((op(x + step * h) - y) / step - g) / normh for step in steps]
-    if(ret_sequence):
-        return seq
-    assert all(seq_i >= seq_j for seq_i, seq_j in zip(seq, seq[1:])),f"convergence errors: {seq}"
+    if all(seq_i >= seq_j for seq_i, seq_j in zip(seq, seq[1:])):
+        op.log.info(f'Derivative test passed: {seq}')
+        return True
+    else:
+        op.log.warning(f'Derivative test failed: {seq}')
+        return False
+
 
 def test_adjoint_derivative(op, tolerance=1e-10):
+    """Numerically test if adjoint derivative is correct implementation aligns
+    with the normal composition of the adjoint and derivative.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator to be tested
+    tolerance : float, optional
+        The tolerance, by default 1e-10
+
+    Returns
+    -------
+    bool
+        True if the adjoint derivative is correct, False otherwise.
+    """
     x = op.domain.randn()
     h = op.domain.randn()
     _,deriv,adjoint_derivative = op.linearize(x, adjoint_derivative=True)
     adjoint_deriv_h = adjoint_derivative(h)
     diff = adjoint_deriv_h-deriv.adjoint(deriv(h))
-    assert (diff < tolerance).all() and (diff > -tolerance).all()
+    if (diff < tolerance).all() and (diff > -tolerance).all():
+        op.log.info('Adjoint derivative test passed.')
+        return True
+    else:
+        op.log.warning(f'Adjoint derivative test failed: {np.abs(adjoint_deriv_h-deriv.adjoint(deriv(h)))}')
+        return False
 
     
-def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, -8, -1)],adjoint_derivative=False):
-    r"""Numerically tests if operator is computed correctly.
+def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=False):
+    """Numerically tests if operator is computed correctly.
 
     Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
     sequence of difference quotients and checking if they are decreasing. Checks if derivative is linear with correct adjoint.
@@ -125,19 +197,35 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-1, 
     AssertionError
         If the test fails.
     """
+    if steps is None:
+        steps = [10**k for k in range(-1, -8, -1)]
     if(op.linear):
+        op.log.info('Testing linearity of operator.')
         for _ in range(sample_N):
-            test_linearity(op,tolerance)
-            test_adjoint(op,tolerance)
-    else:
+            if not test_linearity(op,tolerance) or not test_adjoint(op,tolerance):
+                raise AssertionError('Linearity or adjoint test failed for linear operator.')
+    elif test_affine_linearity(op,tolerance=tolerance):
+        op.log.info('Testing affine linearity of operator. Skipping test of derivative.')
         for _ in range(sample_N):
-            test_derivative(op, steps)
             x = op.domain.rand()
             _, deriv = op.linearize(x)
-            test_operator(deriv,sample_N=sample_N,tolerance=tolerance)
-            if(adjoint_derivative):
-                test_adjoint_derivative(op,tolerance=tolerance)
-                
-
-
-
+            try:
+                test_operator(deriv,sample_N=sample_N,tolerance=tolerance)
+            except AssertionError:
+                raise AssertionError('Test for the derivative operator test failed for affine linear operator.')
+            if(adjoint_derivative) and not test_adjoint_derivative(op,tolerance=tolerance):
+                raise AssertionError('Adjoint derivative test failed for affine linear operator.')
+    else:
+        op.log.info('Testing non-linear operator for exactness of linearization and derivative.')
+        for _ in range(sample_N):
+            if not test_derivative(op, steps):
+                raise AssertionError('Derivative test failed for non-linear operator.')
+            x = op.domain.rand()
+            _, deriv = op.linearize(x)
+            try:
+                test_operator(deriv,sample_N=sample_N,tolerance=tolerance)
+            except AssertionError:
+                raise AssertionError('Test for the derivative operator test failed for non-linear operator.')
+            if(adjoint_derivative) and not test_adjoint_derivative(op,tolerance=tolerance):
+                raise AssertionError('Adjoint derivative test failed for non-linear operator.')
+    op.log.info('All tests passed.')

@@ -10,9 +10,10 @@ logging.basicConfig(
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
-    \[
+    
+    .. math::
         T(x) = y,
-    \]
+
     where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
@@ -33,7 +34,7 @@ class NewtonCG(RegSolver):
         Maximal number of inner CG iterations. (Default: 50)
     rho : number, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
-    simplified_op : Operator, optional
+    simplified_op : regpy.operators.Operator, optional
         Simplified operator to be used for the derivative. (Default: None)
     """
 
@@ -55,7 +56,7 @@ class NewtonCG(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.rho = rho
-        """A fix number related to the termination (0<rho<1)."""
+        r"""A fix number related to the termination :math:`(0<\rho<1)`."""
         self.cgmaxit = cgmaxit
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
@@ -98,6 +99,75 @@ class NewtonCG(RegSolver):
     def nr_inner_its(self):
         return self._k
 
+class NewtonCGFrozen(RegSolver):
+    r"""The frozen Newton-CG method. Like Newton-CG but freezes the derivative for some time to avoid 
+    recomputing it. 
+
+    Parameters
+    ----------
+    setting : RegularizationSetting
+        The regularization setting includes the operator and penalty and data fidelity functionals.
+    data : array-like
+        The rhs y of the equation to be solved. Must be in setting.op.codomain.
+    init : array-like, optional
+        Initial guess to exact solution. (Default: setting.op.domain.zeros())
+    cgmaxit : number, optional
+        Maximal number of inner CG iterations. (Default: 50)
+    rho : number, optional
+        A fix number related to the termination (0<rho<1). (Default: 0.8)
+    """
+    def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
+        super().__init__(setting)
+        self.data = data
+        self.x = init
+        _, self.deriv = self.op.linearize(self.x)
+        self._n = 1
+        self._op_copy = deepcopy(self.op)
+        self._outer_update()
+        self.rho = rho
+        self.cgmaxit = cgmaxit
+
+    def _outer_update(self):
+        if int(self._n / 10) * 10 == self._n:
+            _, self.deriv = self.op.linearize(self.x)
+        self._x_k = self.op.domain.zeros()
+        #        self._x_k = 1j*np.zeros(np.shape(self.x))
+        self.y = self._op_copy(self.x)
+        self._residual = self.data - self.y
+        #        _, self.deriv=self.op.linearize(self.x)
+        self._s = self._residual - self.deriv(self._x_k)
+        self._s2 = self.h_codomain.gram(self._s)
+        self._rtilde = self.deriv.adjoint(self._s2)
+        self._r = self.h_domain.gram_inv(self._rtilde)
+        self._d = self._r
+        self._inner_prod = np.vdot(self._r, self._rtilde).real
+        self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
+        self._k = 1
+        self._n += 1
+
+    def _inner_update(self):
+        _, self.deriv = self.op.linearize(self.x)
+        self._q = self.deriv(self._d)
+        self._q2 = self.h_codomain.gram(self._q)
+        self._alpha = self._inner_prod / np.vdot(self._q, self._q2).real
+        self._s += -self._alpha * self._q
+        self._s2 += -self._alpha * self._q2
+        self._rtilde = self.deriv.adjoint(self._s2)
+        self._r = self.h_domain.gram_inv(self._rtilde)
+        self._beta = np.vdot(self._r, self._rtilde).real / self._inner_prod
+
+    def _next(self):
+        while (
+            np.sqrt(np.vdot(self._s2, self._s).real) > self.rho * self._norms0
+            and self._k <= self.cgmaxit
+        ):
+            self._inner_update()
+            self._x_k += self._alpha * self._d
+            self._d = self._r + self._beta * self._d
+            self._k += 1
+        self.x += self._x_k
+        self._outer_update()
+
 from regpy.solvers.linear.semismoothNewton import SemismoothNewton_bilateral
 from regpy.solvers.linear.tikhonov import GeometricSequence, TikhonovCG
 from regpy.stoprules import CountIterations
@@ -114,7 +184,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         be in setting.op.codomain.
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
@@ -146,7 +216,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         else:
             self._alphas = iter(alphas)
         self.alpha = next(self._alphas)
-        r"""Initial regularization parameter \(\alpha)\.
+        r"""Initial regularization parameter :math:`\alpha`.
         """
         self.alpha_old = self.alpha
         self.psi_minus = psi_minus

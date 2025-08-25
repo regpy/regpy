@@ -13,24 +13,20 @@ class MissingValueError(Exception):
 class StopRule:
     """Abstract base class for stopping rules.
 
-    Attributes
-    ----------
-    x, y : arrays or `None`
-        The chosen solution. Stopping rules may decide to yield a result
-        different from the last iterate. Therefore, after :meth:`stop` has
-        triggered, it should store the solution in this attribute. Before
-        triggering, these attributes contain the iterates passed to
-        :meth:`stop`.
-    triggered: bool
-        Whether the stopping rule decided to stop.
+    The attributes :attr:`x` and :attr:`y` are set to the current iterate from the solver. The method :meth:`stop` then checks whether the stopping rule should trigger using the private method :meth:`_stop_`. If it does, then the attribute :attr:`triggered` is set to true and the method :meth:`stop` returns `True`. Note that a later call to :meth:`stop` will not evaluate the rule again since the attribute :attr:`triggered` is set to `True`. 
     """
 
     log = classlogger
 
     def __init__(self):
         self.x = None
+        """The current iterate. This is set by the solver when calling :meth:`stop`."""
         self.y = None
+        """The operator value at the current iterate. This is set by the solver when calling :meth:`stop`. Can be `None` if not available."""
         self.triggered = False
+        """
+        Whether the stopping rule decided to stop.
+        """
 
     def stop(self, x, y=None):
         """Check whether to stop iterations.
@@ -98,27 +94,26 @@ class CombineRules(StopRule):
     op : :class:`~regpy.operators.Operator`, optional
         If any rule needs the operator value and none is given to :meth:`stop`,
         the operator is used to compute it.
-
-    Attributes
-    ----------
-    rules : list of :class:`StopRule`
-        The combined rules.
-    op : :class:`~regpy.operators.Operator` or `None`
-        The forward operator.
-    active_rule : :class:`StopRule` or `None`
-        The rule that triggered.
     """
 
     def __init__(self, rules, op=None):
         super().__init__()
         self.rules = []
+        r"""List of :class:`StopRule` the combined rules.
+        """
+        self.op = op
+        r""":class:`~regpy.operators.Operator` or `None`
+        The forward operator.
+        """
         for rule in rules:
-            if type(rule) is type(self) and rule.op is self.op:
+            if type(rule) is type(self) and hasattr(rule,"op") and rule.op is self.op:
                 self.rules.extend(rule.rules)
             else:
                 self.rules.append(rule)
-        self.op = op
         self.active_rule = None
+        r"""
+        The rule that triggered the stop condition, or `None` if no rule has triggered yet.
+        """
 
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
@@ -203,6 +198,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
+        self.hist_dic ={"relative discrepancy":[]}
 
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
@@ -214,6 +210,7 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
+        self.hist_dic["relative discrepancy"].append(rel)
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
@@ -328,3 +325,26 @@ class Monotonicity(StopRule):
         #self.log.info('Monotonicity = {}'.format(
         #    change))
         return change < 0
+
+
+class DualityGapStopping(StopRule):
+    def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = logging.INFO):
+        from regpy.solvers import RegSolver
+        assert isinstance(solver,RegSolver)
+        assert hasattr(solver,'gap')
+        super().__init__()
+        self.solver = solver
+        self.threshold = threshold
+        self.max_iter = max_iter
+        self.log.setLevel(logging_level)
+        self.gap_stat = []
+
+    def _stop(self,x,y=None):
+        self.gap_stat.append(self.solver.gap)
+        gap_stop = self.solver.gap<=self.threshold
+        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
+        if  self.solver.iteration_step_nr>=self.max_iter:
+            if not gap_stop:
+                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
+            return True            
+        return gap_stop 

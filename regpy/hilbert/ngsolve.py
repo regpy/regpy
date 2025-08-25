@@ -6,7 +6,7 @@ from regpy.operators import Operator
 from regpy.util import memoized_property
 
 class Matrix(Operator):
-    """An operator defined by an NGSolve bilinear form. This is a helper to define 
+    r"""An operator defined by an NGSolve bilinear form. This is a helper to define 
     Gram matrices by a bilinear form.  
 
     Parameters
@@ -61,7 +61,7 @@ class Matrix(Operator):
 
 
 class L2FESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`."""
+    r"""The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
@@ -71,7 +71,7 @@ class L2FESpace(HilbertSpace):
 
 
 class SobolevFESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
+    r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
@@ -81,7 +81,7 @@ class SobolevFESpace(HilbertSpace):
 
 
 class H10FESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
+    r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
 
     @memoized_property
     def gram(self):
@@ -92,7 +92,7 @@ class H10FESpace(HilbertSpace):
 
 
 class L2BoundaryFESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
+    r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         assert vecsp.bdr is not None
         super().__init__(vecsp)
@@ -109,7 +109,7 @@ class L2BoundaryFESpace(HilbertSpace):
 
 
 class SobolevBoundaryFESpace(HilbertSpace):
-    """The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVEcotrSpace`."""
+    r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         assert vecsp.bdr is not None
         super().__init__(vecsp)

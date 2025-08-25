@@ -1,5 +1,5 @@
 *.pyc
-/doc
+/doc/regpy
 examples/data/
 examples/PINEM/data
 
@@ -25,3 +25,4 @@ share/python-wheels/
 MANIFEST
 .vscode/
 .gitlab-ci-local.yml
+regpy/_version.py

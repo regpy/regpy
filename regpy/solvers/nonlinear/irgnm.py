@@ -11,12 +11,11 @@ from regpy.stoprules import CountIterations
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
-    \[
+    .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
-    \]
 
-    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
+    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
@@ -27,14 +26,14 @@ class IrgnmCG(RegSolver):
     regpar : float
         The initial regularization parameter. Must be positive.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
+        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     cg_stop: int
         Maximum number of inner CG iterations
-    simplified_op : Operator
+    simplified_op : regpy.operators.Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
         Default: None - then the derivative of setting.op is used.
@@ -63,7 +62,7 @@ class IrgnmCG(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         self.cg_pars = cg_pars
@@ -107,12 +106,11 @@ class IrgnmCG(RegSolver):
 class LevenbergMarquardt(RegSolver):
     r"""The Levenberg-Marquardt method. In each iteration, minimizes
 
-    \[
+    .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert h\Vert^{2}
-    \]
 
-    where \(T\) is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    \(regpar_n\) is a decreasing geometric sequence of regularization parameters.
+    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
@@ -123,14 +121,14 @@ class LevenbergMarquardt(RegSolver):
     regpar : float
         The initial regularization parameter. Must be positive.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: \(2/3\).
+        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
         The initial guess. Default: the zero array.
     cg_pars : dict
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     cg_stop: int
         Maximum number of inner CG iterations
-    simplified_op : Operator
+    simplified_op : regpy.operators.Operator
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
         Default: None - then the derivative of setting.op is used.
@@ -159,7 +157,7 @@ class LevenbergMarquardt(RegSolver):
         else:
             self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         self.cg_pars = cg_pars
@@ -205,29 +203,39 @@ from scipy.sparse.linalg import eigsh
         
 class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
-        \[
+
+    .. math::
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
-        \]
-    where \(F\) is a Frechet-differentiable operator, by solving in every iteration step the problem
-        \[
+
+    where :math:`F` is a Frechet-differentiable operator, by solving in every iteration step the problem
+    
+    .. math::
         \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
-        \]
-    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner \(M\).
-    The spectral preconditioner \(M\) is chosen, such that:
-        \[M  A  M \approx Id\]
-    where \(A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id\) 
+
+    with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner :math:`M`.
+    The spectral preconditioner :math:`M` is chosen, such that:
+
+    .. math::
+        M  A  M \approx Id
+
+    where :math:`A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
-    the order of the number of iterations: \(\{v_j\}\)
+    the order of the number of iterations: :math:`\{v_j\}`
     We approximate A by the operator:
-    \[C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j\]
-    where lambda are the biggest eigenvalues of \(T*T\).
+
+    .. math::
+        C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j
+
+    where lambda are the biggest eigenvalues of :math:`T*T`.
     
-    We choose: \(M = C_k^{-1/2} and M^{-1} = C_k^{1/2}\)
+    We choose: :math:`M = C_k^{-1/2} and M^{-1} = C_k^{1/2}`
 
     It is:
-    \[M     : v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j\] 
-    \[M^{-1}: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.\]
+
+    .. math::
+        M     &: v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j \\
+        M^{-1}&: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.
 
     At the moment this method does not work for complex domains/codomains
 
@@ -263,7 +271,7 @@ class IrgnmCGPrec(RegSolver):
         self.x = copy(self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         if cg_pars is None:
@@ -276,7 +284,7 @@ class IrgnmCGPrec(RegSolver):
         """Counts the number of iterations"""
 
         if precpars is None:
-            self.krylov_order = 5
+            self.krylov_order = 6
             """Order of krylov space in which the spetcral preconditioner is computed"""
             self.number_eigenvalues = 4
             """Spectral preonditioner computed only from the biggest eigenvalues """
@@ -286,6 +294,10 @@ class IrgnmCGPrec(RegSolver):
 
         self.krylov_basis = np.zeros((self.krylov_order, self.h_domain.vecsp.size),dtype=self.op.domain.dtype)
         """Orthonormal Basis of Krylov subspace"""
+        self.krylov_basis_img = np.zeros((self.krylov_order, *self.h_codomain.vecsp.shape),dtype=self.op.codomain.dtype)
+        """Image of the Krylov Basis under the derivative of the operator"""
+        self.krylov_basis_img_2 = np.zeros((self.krylov_order, *self.h_codomain.vecsp.shape),dtype=self.op.codomain.dtype)
+        """Gram matrix applied to image of the Krylov Basis"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
     
@@ -310,6 +322,9 @@ class IrgnmCGPrec(RegSolver):
                 xref=self.init - self.x,
                 **self.cg_pars
             ).run(stoprule=stoprule)
+            for i in range(0, self.krylov_order):
+                self.krylov_basis_img[i, :] = self.deriv(self.krylov_basis[i, :])
+                self.krylov_basis_img_2[i, :] = self.h_codomain.gram(self.krylov_basis_img[i, :])
             self.need_prec_update = False
             self._preconditioner_update()
             self.log.info('Spectral preconditioner updated')
@@ -336,24 +351,24 @@ class IrgnmCGPrec(RegSolver):
                        
     def _preconditioner_update(self):
         """perform lanzcos method to calculate the preconditioner"""
-        L = np.zeros((self.krylov_order, self.krylov_order))
+        L = np.zeros((self.krylov_order, self.krylov_order), dtype=self.op.domain.dtype)
         for i in range(0, self.krylov_order):
-            L[i, :] = np.dot(self.krylov_basis, self.h_domain.gram_inv(
-                self.deriv.adjoint(
-                    self.h_codomain.gram(self.deriv((self.krylov_basis[i, :]))))))
-        """Express T*T in Krylov_basis"""
+            L[i, i] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[i, :])
+            for j in range(i+1, self.krylov_order):
+                L[i, j] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[j, :])
+                L[j, i] = L[i, j].conjugate()
+        r"""Express `T*T` in Krylov_basis"""
 
-        #TODO: Replace eigsh by Lanczos method to estimate the greatest eigenvalues, AND make shure it is a method that can handle complex matrices
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
-        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
-        self.M = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        self.M = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
         """Compute preconditioner"""
 
         diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
-        M_krylov = np.float64(U @ diag_lamb @ U.transpose())
-        self.M_inverse = self.krylov_basis.transpose() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 

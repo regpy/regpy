@@ -1,11 +1,13 @@
 [project]
 name = "regpy"
-version = "0.3"
+dynamic = ["version"]
 authors = [
   { name="Thorsten Hohage", email="hohage@math.uni-goettingen.de" },
 ]
 description = "A python library to solve Inverse and Ill-Posed problems by regularization"
 readme = "README.md"
+license-files = ["LICENSE"]
+keywords = ["inverse problems", "ill-posed problems", "regularization", "numerical optimization", "numerical analysis"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -13,24 +15,34 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy>=1.14,<2.0", 
+    "numpy>=1.14,<3.0", 
     "scipy>=1.12,<2.0", 
-    "pooch>=1.8,<2.0",
+    "pooch>=1.8,<2.0", #Needed for scipy.datasets
     "pytest>=8.0,<9.0"
 ]
 
 [project.urls]
 Homepage = "https://num.math.uni-goettingen.de/regpy/"
+github = "https://github.com/regpy/regpy"
 
 [project.optional-dependencies]
-ngsolve = ["ngsolve>=6.2.2404.post2"]
+ngsolve = [
+    "ngsolve>=6.2.2404.post2,<=6.2.2501",
+    "mkl>=2023.0.0,!=2025.0.*",
+]
 
 [build-system]
 requires = [
     "setuptools>=61.0",
+    "setuptools_scm"
 ]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev" # optional
+local_scheme = "no-local-version"
+write_to = "regpy/_version.py"
+
 [tool.setuptools.packages.find]
-include = ["regpy*","examples*"]
-exclude = ["tests","nix"]
+include = ["regpy*"]
+exclude = ["tests","examples","nix"]

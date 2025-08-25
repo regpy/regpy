@@ -5,13 +5,15 @@ from math import sqrt
 
 class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
-    \[
+
+    .. math::
         T(x) = g^\delta,
-    \]
+
     in Hilbert spaces by gradient descent for the residual
-    \[
+    
+    .. math::
         \Vert T(x) - g^\delta\Vert^2,
-    \]
+
     where \(\Vert\cdot\Vert)\ is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 
@@ -31,13 +33,13 @@ class Landweber(RegSolver):
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, data, init, stepsize=None):
+    def __init__(self, setting, data, init, stepsize=None, norm_method = None):
         super().__init__(setting)
         self.rhs = data
         """The right hand side gets initialized to measured data"""
         self.x = init
         self.y = self.op(self.x)
-        norm = setting.op_norm()
+        norm = setting.op.norm(setting.h_domain,setting.h_codomain, method = norm_method)
         self.stepsize = stepsize or 1 / norm**2
         """The stepsize."""
 

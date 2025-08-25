@@ -1,4 +1,4 @@
-"""PDE forward operators using NGSolve
+r"""PDE forward operators using NGSolve
 """
 import types 
 
@@ -9,6 +9,17 @@ from regpy.operators import Operator
 from regpy.vecsps.ngsolve import NgsVectorSpace,NgsBaseVector
 
 class NGSolveOperator(Operator):
+    r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
+
+    Parameters
+    ----------
+    domain : NgsSpace 
+        The space for the domain.
+    codomain : NgsSpace
+        The space for the codomain.
+    linear : boolean, optional
+        True if linear else False. (Defaults: False)
+    """
     def __init__(self, 
             domain : NgsVectorSpace, 
             codomain : NgsVectorSpace, 
@@ -22,7 +33,7 @@ class NGSolveOperator(Operator):
             vector, 
             gfu,
             definedonelements =None):
-        """Read in of a numpy array into a ngsolve grid function. Note You can also read into
+        r"""Read in of a numpy array into a ngsolve grid function. Note You can also read into
         ngsolve LinearForm.
 
         Parameters
@@ -68,43 +79,48 @@ class NGSolveOperator(Operator):
 class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
     r"""Provides a general setup for the forward problems mapping PDE coefficients to their solutions.
     That is we assume that as variational formulation one can use 
-    \[
-    \forall v:    b_0(u,v) + b_a(u,v) = F(v)
-    \] 
-    with \(b_0\) a bilinear form independent of the coefficient \(a\) and \(F\) some linear form.  
-    Furthermore \(b_a\) the bilinear form that depends on \(a\) has to be linear in \(a\) so that 
-    one can define a bilinear form \(c_u(a,v)=b_a(u,v)\). More over we may assume some Dirichlet 
-    boundary conditions on \(u\).That is 
-    \[
+
+    .. math::
+        \forall v:    b_0(u,v) + b_a(u,v) = F(v)
+
+    with :math:`b_0` a bilinear form independent of the coefficient :math:`a` and :math:`F` some linear form.  
+    Furthermore :math:`b_a` the bilinear form that depends on :math:`a` has to be linear in :math:`a` so that 
+    one can define a bilinear form :math:`c_u(a,v)=b_a(u,v)`. More over we may assume some Dirichlet 
+    boundary conditions on :math:`u`.That is 
+
+    .. math::
         F: a \mapsto u 
-    \]
 
-    The Frechét derivative \(F'[a]h\) in direction \(h\) is then given as the variational 
-    solution \(u'\) to 
-    \[
-    \forall v: b_0(u',v) + b_a(u',v) = -c_u(h,v)
-    \]
-    with \(u=F(a)\). That is
-    \[
+    The Frechét derivative :math:`F'[a]h` in direction :math:`h` is then given as the variational 
+    solution :math:`u'` to 
+
+    .. math::
+        \forall v: b_0(u',v) + b_a(u',v) = -c_u(h,v)
+
+    with :math:`u=F(a)`. That is
+
+    .. math::
         F'[a]: h \mapsto u' 
-    \]
 
-    It's adjoint \(F'[a]^\ast g\) is given as the linear form \(-c_u(\cdot,w)\) for \(u=F(a)\) and 
-    \(w\) solving the problem 
-    \[
-    \forall v:  b_0(v,w) + b_a(v,w) = <g,v>.
-    \]
+    It's adjoint :math:`F'[a]^\ast g` is given as the linear form :math:`-c_u(\cdot,w)` for :math:`u=F(a)` and 
+    :math:`w` solving the problem 
+
+    .. math::
+        \forall v:  b_0(v,w) + b_a(v,w) = <g,v>.
+
     That is
-    \[
+
+    .. math::
         F'[a]^\ast: g \mapsto -c_u(\cdot,w)
-    \]
+
 
     Notes
     -----
     A subclass implemented by a user has to at least implement the subroutine `_bf` which is the 
-    implementation of the bilinear form depending on the coefficient \(a\). Optional can the 
-    independent bilinear form \(b_0\) be implemented as formal integrator in `_bf_0` and the 
+    implementation of the bilinear form depending on the coefficient :math:`a`. Optional can the 
+    independent bilinear form :math:`b_0` be implemented as formal integrator in `_bf_0` and the 
     linear form can be implemented in `_lf`. 
+
 
     Parameters
     ----------
@@ -190,7 +206,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
             a : ngs.fem.CoefficientFunction,
             u : ngs.fem.CoefficientFunction,
             v : ngs.fem.CoefficientFunction) -> ngs.comp.BilinearForm:
-        r"""Implementation of \(b_a\) as `ngsolve.comp.SumOfIntegrals` that is something similar to
+        r"""Implementation of :math:`b_a` as `ngsolve.comp.SumOfIntegrals` that is something similar to
         `a*ngs.grad(u)*ngs.grad(v)*ngs.dx` where `u` ist used as trial functions and `v` as test 
         functions. This method has to be implemented by 
 
@@ -211,7 +227,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         raise NotImplementedError
     
     def _bf_0(self) -> ngs.comp.BilinearForm | types.NoneType:
-        r"""Implementation of \(b_0\) as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
+        r"""Implementation of :math:`b_0` as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
         overwritten with subclasses.  
 
         Returns
@@ -222,14 +238,14 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         return None
     
     def _lf(self) -> ngs.comp.LinearForm:
-        r"""The Linear form of the PDE \(F\) implemented as a fixed Linear form. Note that the 
+        r"""The Linear form of the PDE :math:`F` implemented as a fixed Linear form. Note that the 
         Linear form has to be defined on the `codomain` as this is the domain of the solution of 
         the PDE. By default this is the empty Linear form. 
 
         Returns
         ------
         ngsolve.Linearform
-            Linear form of the PDE \(F\) as `ngsolve.LinearForm`
+            Linear form of the PDE :math:`F` as `ngsolve.LinearForm`
         """
         return ngs.LinearForm(self.codomain.fes).Assemble()
         
@@ -253,7 +269,7 @@ class SolveSystem(NGSolveOperator):
     domain : NgsVectorSpace
         the underlying NgsVectorSpace.
     bf : ngs.BilinearForm
-        The bilinear form describing \(L\)
+        The bilinear form describing :math:`L`
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
@@ -587,47 +603,50 @@ class ProjectToBoundary(NGSolveOperator):
 
 class EIT(NGSolveOperator):
     r"""Electrical Impedance Tomography Problem
-    
     PDE:
-    \[
-    -\textrm{div}(s \nabla u)+\alpha u=0 \;\text{ in } \Omega
-    \]
-    \[
-         s \frac{\textrm{d}u}{\textrm{d}n} = g \;\text{ on } \partial\Omega
-    \]
-    Evaluate: \(F\colon s \mapsto \mathrm{tr}(u)\)
+
+    .. math::
+        -\textrm{div}(s \nabla u)+\alpha u&=0 \;\text{ in } \Omega \\
+        s \frac{\textrm{d}u}{\textrm{d}n} &= g \;\text{ on } \partial\Omega
+
+    Evaluate: :math:`F\colon s \mapsto \mathrm{tr}(u)`
+
     Derivative:
-    \[
-    -\textrm{div}(s \nabla v)+\alpha v=\textrm{div}(h \nabla u) (=:f) 
-    \]
-    \[
-         s \frac{\textrm{d}v}{\textrm{d}n} = 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
-    \]
 
-    Der: \(F'[s]\colon h \mapsto \textrm{tr}(v)\)
+    .. math::
+        -\textrm{div}(s \nabla v)+\alpha v&=\textrm{div}(h \nabla u) (=:f) \\
+        s \frac{\textrm{d}v}{\textrm{d}n} &= 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
 
-    Adjoint:
-    \[
-    -\textrm{div}(s \nabla w)+\alpha w=0 
-    \]
-    \[
-         s \frac{\textrm{d}w}{\textrm{d}n} = q 
-    \]
+
+    Der: :math:`F'[s]\colon h \mapsto \textrm{tr}(v)`
+
+    Adjoint
+
+    .. math::
+        -\textrm{div}(s \nabla w)+\alpha w&=0 \\
+         s \frac{\textrm{d}w}{\textrm{d}n} &= q 
+
     
-    Adj: \(F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)\)
+    Adj: :math:`F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)`
 
-    Proof:
-    \[(F'h, q)=\int_{\partial\Omega} [\textrm{tr}(v) q] \]
-    \[= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \] 
-    \[= \int_{\Omega} [\textrm{div}(v s \nabla w )]\]
-    Note \(\textrm{div}(s \nabla w) = \alpha*w\), thus above equation shows:
-    \[(F'h, q) = (s \nabla v, \nabla w)+\alpha (v, w) \]
-    \[= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w)\]
-    \[= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w)\]
-    \[= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}]\]
-    \[= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \]
-    The last two terms are the same! It follows: \((F'h, q) = (h, -\nabla u \nabla w)\). Hence:
-    Adjoint: \(q \mapsto -\nabla u \nabla w\)
+    Proof
+
+    .. math::
+        (F'h, q)&=\int_{\partial\Omega} [\textrm{tr}(v) q] \\
+        &= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \\
+        &= \int_{\Omega} [\textrm{div}(v s \nabla w )]
+
+    Note :math:`\textrm{div}(s \nabla w) = \alpha*w`, thus above equation shows
+
+    .. math::
+        (F'h, q) &= (s \nabla v, \nabla w)+\alpha (v, w) \\
+        &= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w) \\
+        &= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w) \\
+        &= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
+        &= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
+
+    The last two terms are the same! It follows: :math:`(F'h, q) = (h, -\nabla u \nabla w)`. Hence:
+    Adjoint: :math:`q \mapsto -\nabla u \nabla w`
     """
 
     def __init__(self, domain, g, codomain=None, alpha=0.01):
@@ -753,23 +772,30 @@ class EIT(NGSolveOperator):
 
 
 class ReactionNeumann(NGSolveOperator):
-    """
+    r"""
     Estimation of the reaction coefficient from boundary value measurements
 
-    PDE: -div(grad(u)) + s*u = 0 in Omega
-         du/dn = g on dOmega
+    PDE: :math:`-div(grad(u)) + s*u = 0 in Omega`
 
-    Evaluate: F: s \mapsto trace(u)
+    .. math:: 
+        du/dn = g on dOmega
+
+    Evaluate: :math:`F: s \mapsto trace(u)`
     Derivative:
-        -div(grad(v))+s*v = -h*u (=:f)
+
+    .. math::
+        -div(grad(v))+s*v = -h*u (=:f) \\
         dv/dn = 0 
 
-    Der: F'[s]: h \mapsto trace(v)
+    Der: :math:`F'[s]: h \mapsto trace(v)`
 
     Adjoint: 
-        -div(grad(w))+s*w = 0
+
+    .. math::
+        -div(grad(w))+s*w = 0 \\
         dw/dn = q
-    Adj: F'[s]^*: q \mapsto -u*w
+    
+    Adj: :math:`F'[s]^*: q \mapsto -u*w`
 
     proof:
     (F'h, q) = int_dOmega [trace(v) q] = int_dOmega [trace(v) dw/dn] = int_Omega [div(v grad w)] 

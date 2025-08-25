@@ -6,7 +6,7 @@ import numpy as np
 
 @property
 def classlogger(self):
-    """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
+    r"""The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
     fully qualified name. Subclasses should use it instead of `print` for any kind of status
     information to allow users to control output formatting, verbosity and persistence.
 
@@ -90,6 +90,8 @@ def is_complex_dtype(obj):
 def is_uniform(x):
     x = np.asarray(x)
     assert x.ndim == 1
+    if(x.shape[0]==1):
+        return True
     diffs = x[1:] - x[:-1]
     return np.allclose(diffs, diffs[0])
 

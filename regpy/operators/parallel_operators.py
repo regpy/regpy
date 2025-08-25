@@ -27,7 +27,7 @@ class OperatorAsWorker(mp.Process):
     conn : mp.connection.Connection
         connection object to receive commands and 
         send the results back to master
-    F : operators.Operator
+    F : regpy.operators.Operator
         the regpy operator
     """
     log = classlogger
@@ -41,7 +41,7 @@ class OperatorAsWorker(mp.Process):
         """connection to master"""
 
     def run(self):
-        """Starts the process. While running the process may receive the commands:
+        r"""Starts the process. While running the process may receive the commands:
         'eval_nodiff': evaluates the operator with differentiate=False
         'eval_diff': evaluates the operator with differentiate=True
         'deriv': returns linearize
@@ -157,6 +157,7 @@ class ParallelInterface:
     def terminate_managed_instances(manager_id):
         r"""
         Terminate all instances of ParallelInterface associated with manager_id or a higher id
+
         Parameters
         ----------
         manager_id : int
@@ -274,8 +275,8 @@ class ParallelInterface:
 
 
 class ParallelVectorOfOperators(Operator,ParallelInterface):
-    """Vector of operators in which all components are evaluated in parallel. 
-    The functionality is identical to the sequential analog VectorOfOperators: For
+    r"""Vector of operators in which all components are evaluated in parallel. 
+    The functionality is identical to the sequential analog `VectorOfOperators`: For
 
         T_i : X -> Y_i
 
@@ -287,7 +288,7 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple of `regpy.operators.Operator`
     codomain : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -343,7 +344,9 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     r"""Vector of operators in which all components are evaluated in parallel and the input
     is assumed to be from direct sum of spaces that is then distributed to the operators that
     need it
-        \[T_i : X_{i_1}\times X_{i_2}... -> Y_i\]
+
+    .. math::
+        T_i : X_{i_1}\times X_{i_2}... -> Y_i
 
     we define
 
@@ -353,7 +356,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple of `regpy.operators.Operator`
     domain : vecsps.VectorSpaceBase
         The domain of the operator. It should usually be a direct sum of vector spaces
     distribution_mat : numpy.ndarray of bools

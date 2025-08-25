@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.4
 
 # Comments are provided throughout this file to help you get started.
 # If you need more help, visit the Dockerfile reference guide at
@@ -6,7 +6,7 @@
 
 # Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
 
-ARG PYTHON_VERSION=3.10.12
+ARG PYTHON_VERSION=3.12.3
 FROM python:${PYTHON_VERSION}-slim as base
 
 # Prevents Python from writing pyc files.
@@ -18,31 +18,44 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Install required system packages and clean up
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/go/dockerfile-user-best-practices/
 ARG UID=10001
 RUN adduser \
     --disabled-password \
     --gecos "" \
-    --home "/nonexistent" \
+    --home "/home/appuser" \
     --shell "/sbin/nologin" \
     --no-create-home \
     --uid "${UID}" \
     appuser
 
-# Download dependencies as a separate step to take advantage of Docker's caching.
-# Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
-# Leverage a bind mount to requirements.txt to avoid having to copy them into
-# into this layer.
+RUN mkdir -p /home/appuser && chown appuser:appuser /home/appuser
+
+ENV HOME=/home/appuser
+
+# Install pip, setuptools, and wheel, and upgrade
+RUN pip install --upgrade pip setuptools wheel
+
+# Install Jupyter, matplotlib and ngsolve and cache pip packages
 RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=requirements.txt,target=requirements.txt \
-    python -m pip install -r requirements.txt
+    pip install notebook jupyterlab webgui_jupyter_widgets matplotlib ngsolve
+
+# Copy your project files into the container
+COPY . /app
+RUN chown -R appuser:appuser /app
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 # Switch to the non-privileged user to run the application.
 USER appuser
-
-# Copy the source code into the container.
-COPY . .
 
 # Add folder and subfolders to Python path
 ENV PYTHONPATH /app
@@ -50,9 +63,5 @@ ENV PYTHONPATH /app
 # Expose the port that the application listens on.
 EXPOSE 8000
 
-# Run the application.
-CMD python tests/test_examples.py 
-CMD python tests/test_functionals.py 
-CMD python tests/test_measure_space.py 
-CMD python tests/test_operators.py 
-CMD python tests/test_spaces.py
+# Start Jupyter when the container runs
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8000", "--no-browser", "--allow-root", "--notebook-dir=/app"]

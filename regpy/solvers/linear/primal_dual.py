@@ -14,9 +14,10 @@ class PDHG(RegSolver):
 
     Solves the minimization problem: \(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f))\
     by solving the saddle-point problem: 
-    \[
+    
+    .. math::
         \inf_f \sup_p [ - \langle Tf,p\rangle + \mathcal{R}(f)- \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) ].
-    \]
+
     Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
 
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
@@ -25,7 +26,8 @@ class PDHG(RegSolver):
     Parameters
     ----------
     setting : regpy.solvers.TikhonovRegularizationSetting
-        The setting of the forward problem. The operator needs to be linear.
+        The setting of the forward problem. The operator needs to be linear and
+        "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
     init_domain : setting.op.domain [default: None]
         The initial guess "f". If None, it will be either initialized by 0 or using the optimality conditions in case 
         init_codomain_star is given.
@@ -46,10 +48,14 @@ class PDHG(RegSolver):
     compute_y : boolean [True]
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
         so this may considerably increase computational costs. If False, None is returned for y_k. 
+    compute_gap : boolean [default: True]
+        If True the duality gap is computed each Term. For this 'penalty.conj' and 'data_fid.conj'
+        need to be implemented, if not a warning is frown and this is set to False. it is not nessesary 
+        to compute the gap for the algorithm, but it might be used in stopping criteria.
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True, logging_level = logging.INFO
+                 compute_y = True,compute_gap =True, logging_level = logging.INFO
                  ):
         assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)
@@ -74,10 +80,11 @@ class PDHG(RegSolver):
 
         self.x_old = self.x
         self.compute_y = compute_y
+        self.compute_gap = compute_gap
         self.y = self.op(self.x) if self.compute_y else None
 
         assert tau>=0 and sigma>=0
-        L = self.setting.op_norm()   
+        L = self.setting.op.norm(self.setting.h_domain,self.setting.h_codomain)  
         if tau==0 and sigma==0:
             self.tau = 1/L
             self.sigma = 1/L
@@ -108,7 +115,14 @@ class PDHG(RegSolver):
             self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
-        self.gap = self.setting.dualityGap(primal=self.x)   
+        if self.compute_gap:
+            try:
+                self.gap = self.setting.dualityGap(primal=self.x)
+            except:
+                self.log.warning('missing implemtation in fuctionals to compute duality gap. The gap is not computed')
+                self.compute_gap = False
+                self.gap = None      
+
 
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.op.adjoint(self.pstar))
@@ -122,7 +136,9 @@ class PDHG(RegSolver):
             self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
+        if self.compute_gap:
+            self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
+
  
 
 
@@ -130,7 +146,7 @@ class PDHG(RegSolver):
 class DouglasRachford(RegSolver):
     r"""The Douglas-Rashford Splitting Algorithm
 
-    Minimizes \(\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)\)
+    Minimizes :math:`\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)`
 
     Parameters
     ----------

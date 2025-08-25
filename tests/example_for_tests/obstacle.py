@@ -27,7 +27,7 @@ def test_obstacle():
     setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
 
     #Exact data
-    farfield, exact_solution = create_synthetic_data(op, apple(64,der=3))
+    farfield, _ = create_synthetic_data(op, apple(64,der=3))
 
     # Gaussian data 
     noiselevel=0.01
@@ -40,29 +40,17 @@ def test_obstacle():
     init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
     init = init.flatten()
 
-    #Solver: NewtonCG or IrgnmCG
     solver = NewtonCG(
         setting, data, init = init,
-            cgmaxit=50, rho=0.6
+            cgmaxit=50, rho=0.8
     )
 
-    """
-    solver = IrgnmCG(
-        setting, data,
-        regpar=1.,
-        regpar_step=0.5,
-        init=init,
-        cg_pars=dict(
-            tol=1e-4
-        )
-    )
-    """
     stoprule = (
-        rules.CountIterations(100) +
+        rules.CountIterations(10) +
         rules.Discrepancy(
             setting.h_codomain.norm, data,
             noiselevel=noiselevel,
-            tau=2.1
+            tau=2.4
         )
     )
 

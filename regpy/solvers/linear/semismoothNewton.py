@@ -16,21 +16,21 @@ logging.basicConfig(
 )
 
 class SemismoothNewton_bilateral(RegSolver):
-    r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
-        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
-        subject to bilateral constraints psi_minus \leq x \leq psi_plus
-    \]
+    r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
+
+    .. math::
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 
+
+    subject to bilateral constraints :math:`psi_{minus} \leq x \leq psi_{plus}`
+
     
     Parameters
     ----------
-    Either 3 positional argument: 
-    setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The regularization parameter. Must be positive.
+    *args : [regpy.solvers.RegularizationSetting,array-like,float] or [regpy.solver.TikhonovRegularizationSetting]
+        Either 3 positional arguments [setting : `regpy.solvers.RegularizationSetting`, data : `array-like`,
+        regpar : `float`] consisting og the regularization setting, data and a positive float for the 
+        regularization parameter or 1 positional argument [setting : regpy.solver.TikhonovRegularizationSetting] which 
+        already binds the former arguments together.
     xref: array-like, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: array-like, default: None
@@ -46,18 +46,17 @@ class SemismoothNewton_bilateral(RegSolver):
     cg_logging_level: Loglevel
         default: logging.INFO
 
-        
-    or 1 positional argument:
-    setting : regpy.solver.TikhonovRegularizationSetting
-
+    Notes
+    -----
     In this case 
-    - setting.penalty has to be an instance of one of the following classes: 
+     * setting.penalty has to be an instance of one of the following classes: 
         * QuadraticBilateralConstraints, 
         * conj of Huber
         * conj of HorizontalShiftDilation of Huber
-       Then psi_plus, psi_minus, xref and regpar are extracted from setting.penalty.
-    - setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
-    - regpar is setting.regpar
+     * Then psi_plus, psi_minus, xref and regpar are extracted from setting.penalty.
+     * setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
+     * regpar is setting.regpar
+    
     Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments. 
 
     """
@@ -217,14 +216,14 @@ class SemismoothNewton_bilateral(RegSolver):
 
 def getPenaltyParamsFromFunctional(R,gram=None):
     r"""
-    Extract the parameters `ub`, `lb`, `x0`, \(\alpah)\ from a functional 
-    \[
-    R(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
-    R(x) = \infty else
-    \]
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
 
-    Parameter
-    -----------
+    .. math::
+        R(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if l_b\leq x\leq u_b\\
+        R(x) &= \infty else
+
+    Parameters
+    ----------
     R: regpy.functional.Functional
        The functional to be analyzed.
     gram: regpy.operator.Operator [default: None]
@@ -250,14 +249,15 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     
 def getPenaltyParamsFromConjFunctional(Rs,gram):
     r"""
-    Extract the parameters `ub`, `lb`, `x0`, \(\alpah)\ from a functional \(R\), the conjugate of which has the form
-    \[
-    R^*(x) = \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub
-    R^*(x) = \infty else
-    \]
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
 
-    Parameter
-    -----------
+    .. math::
+        R^*(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub \\
+        R^*(x) &= \infty else
+
+
+    Parameters
+    ----------
     Rs: regpy.functional.Functional
        The functional to be analyzed.
     gram: regpy.operator.Operator [default: None]
@@ -282,10 +282,11 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
 
 class SemismoothNewton_nonneg(RegSolver):
     r"""Semismooth Newton method for minimizing quadratic Tikhonov functionals
-    \[
-        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
+    
+    .. math::
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 \\
         subject to x>=0
-    \]
+
 
     Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stopping rule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
@@ -424,13 +425,14 @@ class SemismoothNewton_nonneg(RegSolver):
 class SemismoothNewtonAlphaGrid(RegSolver):
     r"""Class runnning Tikhononv regularization with bound constraints on a grid of different regularization parameters.
 
-    Parameters:
+    Parameters
+    ----------
     setting:  regpy.solvers.RegularizationSetting
         The setting of the forward problem.
     data: array-like
         The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence \((alpha0*q^n)_{n=0,1,2,...}\) is generated.
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50

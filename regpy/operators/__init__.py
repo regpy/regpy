@@ -1,12 +1,12 @@
-"""Forward operators
+r"""
+Forward operators
+=================
 
 This module provides the basis for defining forward operators, and implements some simple
 auxiliary operators. Actual forward problems are implemented in submodules.
 
 The base class is `Operator`.
 """
-
-# TODO Document all instance variables, so they appear in pdoc's output.
 
 from collections import defaultdict
 from copy import deepcopy
@@ -17,6 +17,7 @@ from scipy.sparse import csc_matrix
 import scipy.sparse.linalg as sla
 
 from regpy import functionals, util, vecsps
+
 
 
 class _Revocable:
@@ -48,7 +49,7 @@ class _Revocable:
 
 
 class Operator:
-    """Base class for forward operators. Both linear and non-linear operators are handled. Operator
+    r"""Base class for forward operators. Both linear and non-linear operators are handled. Operator
     instances are callable, calling them with an array argument evaluates the operator.
 
     Subclasses implementing non-linear operators should implement the following methods:
@@ -77,11 +78,11 @@ class Operator:
     should evaluate the  derivative, its adjoint or their composition at the same point `_eval` was 
     called. The reasoning is this
 
-    - In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
-      operator around some point, so the value is almost always needed.
-    - Many expensive computations, e.g. assembling of finite element matrices, need to be carried
-      out only once per linearization point, and can be shared between the operator and the
-      derivative, so they should only be computed once (in `_eval`).
+     * In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
+       operator around some point, so the value is almost always needed.
+     * Many expensive computations, e.g. assembling of finite element matrices, need to be carried
+       out only once per linearization point, and can be shared between the operator and the
+       derivative, so they should only be computed once (in `_eval`).
     
     For callers, this means that since the derivative shares data with the operator, it can't be
     reliably called after the operator has been evaluated somewhere else, since shared data may
@@ -139,13 +140,15 @@ class Operator:
         assert not domain or isinstance(domain, vecsps.VectorSpaceBase)
         assert not codomain or isinstance(codomain, vecsps.VectorSpaceBase)
         self.domain = domain
-        """The vector space on which the operator is defined. Either a
+        r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
         self.codomain = codomain
-        """The vector space on which the operator values are defined. Either
+        r"""The vector space on which the operator values are defined. Either
         a subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
         self.linear = linear
-        """Boolean indicating whether the operator is linear."""
+        r"""Boolean indicating whether the operator is linear."""
+        self._constants = {}
+        """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain'}
 
     def __deepcopy__(self, memo):
@@ -161,7 +164,7 @@ class Operator:
 
     @property
     def attrs(self):
-        """The set of all instance attributes. Useful for updating the `_consts` attribute via
+        r"""The set of all instance attributes. Useful for updating the `_consts` attribute via
 
             self._consts.update(self.attrs)
 
@@ -172,15 +175,15 @@ class Operator:
     def __call__(self, x):
         assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
         if self.linear:
-            y = self._eval(x)
+            y = self._eval(self._insert_constants(x))
         else:
             self.__revoke()
-            y = self._eval(x, differentiate=False)
+            y = self._eval(self._insert_constants(x), differentiate=False)
         assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(y),self.domain)
         return y
 
     def linearize(self, x, adjoint_derivative = False):
-        """Linearize the operator around some point.
+        r"""Linearize the operator around some point.
 
         Parameters
         ----------
@@ -207,11 +210,11 @@ class Operator:
                 return self(x), self
             else:
                 return self.adjoint(self(x)), self, self.adjoint * self
-        else:
+        else:            
             if not adjoint_derivative:
                 assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
                 self.__revoke()
-                y = self._eval(x, differentiate=True)
+                y = self._eval(self._insert_constants(x), differentiate=True)
                 assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
                 deriv = Derivative(self.__get_handle())
                 return y, deriv
@@ -219,9 +222,9 @@ class Operator:
                 assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
                 self.__revoke()
                 try:
-                    Fstar_y = self._eval(x, differentiate=True, adjoint_derivative=True)
+                    Fstar_y = self._eval(self._insert_constants(x), differentiate=True, adjoint_derivative=True)
                 except TypeError:
-                    y = self._eval(x, differentiate=True)
+                    y = self._eval(self._insert_constants(x), differentiate=True)
                     assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
                     Fstar_y = self._adjoint(y)
                 deriv = Derivative(self.__get_handle()) 
@@ -230,7 +233,7 @@ class Operator:
     
     @util.memoized_property
     def adjoint(self):
-        """For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
+        r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
 
         Returns
@@ -270,14 +273,14 @@ class Operator:
 
     @property
     def inverse(self):
-        """A property containing the  inverse as an `Operator` instance. In most cases this will
+        r"""A property containing the  inverse as an `Operator` instance. In most cases this will
         just raise a `NotImplementedError`, but subclasses may override this if possible and useful.
         To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
         useful."""
         raise NotImplementedError
 
     def as_linear_operator(self):
-        """Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
+        r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
 
         Returns
         -------
@@ -293,7 +296,192 @@ class Operator:
             return SciPyLinearOperator(self)
         else:
             raise RuntimeError('Operator is not linear.')
+        
+    def norm(self,h_domain=None,h_codomain=None,method=None):
+        r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
+        By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
+        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
+        #@memoized_property
+ 
+        Parameters
+        ----------
+        h_domain: Hilbert space on the domain. Defaults to L2 if None.
+        h_codomain: Hilbert space on the codomain. Defaults to L2 if None.
+        method: string [default: None]
+            Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
+              if this is not set. Alternative: "power" for power method
+        Returns
+        -------
+        scalar
+            Approximation of the norm of T^*T. 
 
+        Raises
+        ------
+        NotImplementedError
+            If the operator is nonlinear or the method is not implemented.
+        """
+
+        if(not self.linear):
+            raise NotImplementedError
+        from regpy.hilbert import L2
+        if(h_domain is None):
+            h_domain=L2(self.domain)
+        else:
+            assert h_domain.vecsp==self.domain
+        if(h_codomain is None):
+            h_codomain=L2(self.codomain)
+        else:
+            assert h_codomain.vecsp==self.codomain
+        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+        if method == "power":
+            return self._power_method(h_domain,h_codomain)
+        elif method == "lanczos":
+            from scipy.sparse.linalg import eigsh
+            return np.sqrt(eigsh(SciPyLinearOperator(self.adjoint * h_codomain.gram * self), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
+        else:
+            raise NotImplementedError
+
+    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12):
+        r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
+
+        Parameters
+        ----------
+        h_domain: Hilbert space on the domain.
+        h_codomain: Hilbert space on the codomain.
+        max_iter: int maximum number of iterations
+        stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
+        """
+        x = self.domain.rand()
+        relative_residual = np.inf
+        for _ in range(max_iter):
+            if relative_residual < stopping_rule:
+                break
+            ystar = (self.adjoint * h_codomain.gram * self)(x)
+            y = h_domain.gram_inv(ystar)
+            lmb = np.sqrt(np.vdot(y, ystar).real)
+            relative_residual = h_domain.norm(y - lmb * x)
+            x = y/lmb
+        return np.sqrt(lmb)
+    
+    def set_constant(self,c,index):
+        """Assuming the operator you defined has a domain that is composed of multiple
+        inputs and thus a direct sum, this method allows you to fix one of that inputs
+        as a constant. 
+
+        This method changes the domain to either a direct sum of the remaining
+        components or just the remaining component.
+
+        Moreover, it asserts if the remaining operator is linear using the utility method
+        and changes the linearity flag.
+
+        Parameters
+        ----------
+        c : array-type or scalar
+            The constant array to be set.
+        index : int
+            The index to be set as a constant. The index is with respect to the full domain.
+        """
+        if not hasattr(self, "full_domain"):
+            if not isinstance(self.domain,vecsps.DirectSum):
+                raise TypeError("Cannot set a constant when domain is {}, require the domain to be a DirectSum".format(type(self.domain)))
+            self.full_domain = deepcopy(self.domain)
+        
+        if not isinstance(index,int):
+            raise TypeError("The index has to be an integer, was given {}".format(type(index)))
+        if index<0 or index>=len(self.full_domain):
+            raise IndexError("The used index is {} is out of range.".format(index))
+        if len(set(range(len(self.full_domain)))-self._constants.keys()-{index}) == 0:
+            raise ValueError("By setting the index {} their is no input remaining please choose another index or release some other constant.".format(index))
+        if not np.isscalar(c) and c not in self.full_domain[index]:
+            raise ValueError("The given constant is neither in the {} component of type {}. Was given something of type {}".format(index,type(self.full_domain[index]),type(c)))
+        elif np.isscalar(c):
+            c = c*self.full_domain[index].ones()
+        
+        self._constants[index] = c
+        self.domain = vecsps.DirectSum(*[d_i for i,d_i in enumerate(self.full_domain) if i not in self._constants.keys()])
+        if len(self.domain) == 1:
+            self.domain = self.domain[0]
+        
+        if not self.linear:
+            self.linear = util.operator_tests.test_linearity(self)
+    
+    def reset_constants(self):
+        """Resets the constants set by `set_constant` to an empty dictionary. This will
+        also reset the domain to the full domain.
+        """
+        self._constants = {}
+        if hasattr(self, "full_domain"):
+            self.domain = self.full_domain
+        else:
+            raise RuntimeError("Cannot reset constants, no full domain set.")
+        self.linear = util.operator_tests.test_linearity(self)
+
+    def get_constants(self):
+        """Returns the constants set by `set_constant` as a dictionary. The keys are the indices
+        of the full domain and the values are the constants set.
+        
+        Returns
+        -------
+        dict
+            The dictionary with the constants set by `set_constant`.
+        """
+        return self._constants
+
+    def _insert_constants(self,x):
+        """Inserts the constants into the vector.
+
+        Parameters
+        ----------
+        x : array-type
+            The vector in the reduced domain that to be completed with constants.
+
+        Returns
+        -------
+        array-type
+            The vector in the full domain with the constants put into the places 
+            to be kept constant. If no constants are set return x. 
+        """
+        assert x in self.domain, "Somehow the passed vector does not belong to the reduced domain."
+        if hasattr(self, "full_domain") and len(self._constants)>0:
+            x_full_split = list(self.full_domain.split(self.full_domain.zeros()))
+            if isinstance(self.domain,vecsps.DirectSum):
+                x_split = list(self.domain.split(x))
+            else:
+                x_split = [x]
+            for i in range(len(self.full_domain)):
+                if i in self._constants.keys():
+                    x_full_split[i] = self._constants[i]
+                else:
+                    x_full_split[i] = x_split.pop(0)
+            return self.full_domain.join(*x_full_split)
+        else:
+            return x
+     
+    def _reduce_to_domain(self,y):
+        """Remove the constant coefficients in the vector where one has specified 
+        constants in the original operator.
+
+        Parameters
+        ----------
+        y : array-type
+            The vector in the full codomain that to be reduced to the new domain.
+
+        Returns
+        -------
+        array-type
+            The vector in the reduced domain with the the places 
+            to be kept constant removed. If no constants are set return x. 
+        """
+        if hasattr(self, "full_domain") and len(self._constants)>0:
+            assert y in self.full_domain, "Expected the vector to be in the full codomain of the Adjoint."
+            y_full_split = self.full_domain.split(y)
+            if isinstance(self.domain,vecsps.DirectSum):
+                return self.domain.join(*[y_full_split[i] for i in set(range(len(self.full_domain)))-self._constants.keys()])
+            else:
+                return [y_full_split[i] for i in set(range(len(self.full_domain)))-self._constants.keys()][0]
+        else:
+            return y
+    
     def __mul__(self, other):
         if np.isscalar(other) and other == 1:
             return self
@@ -316,6 +504,8 @@ class Operator:
             return Composition(other, self) 
         else:
             return NotImplemented
+    
+
 
     def __add__(self, other):
         if np.isscalar(other) and other == 0:
@@ -344,25 +534,40 @@ class Operator:
     
     def __pow__(self, power):
         return Pow(self, power)
+    
+    def __getitem__(self,val):
+        if val is None:
+            return self
+        return PartOfOperator(self,val)
 
 
 class Adjoint(Operator):
-    """An proxy class wrapping a linear operator. Calling it will evaluate the operator's
+    r"""An proxy class wrapping a linear operator. Calling it will evaluate the operator's
     adjoint. This class should not be instantiated directly, but rather through the
     `Operator.adjoint` property of a linear operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this adjoint.
     """
 
     def __init__(self, op):
         assert op.linear
         self.op = op
-        """The underlying operator."""
+        r"""The underlying operator."""
+        self._constants = self.op._constants
+        """The constant inputs of the op need to be set in adjoint evaluation
+        """
+        if hasattr(self.op,"full_domain"):
+            self.full_domain = op.full_domain
         super().__init__(op.codomain, op.domain, linear=True)
 
     def _eval(self, x):
-        return self.op._adjoint(x)
+        return self._reduce_to_domain(self.op._adjoint(x))
 
     def _adjoint(self, x):
-        return self.op._eval(x)
+        return self.op._eval(self._insert_constants(x))
 
     @property
     def adjoint(self):
@@ -377,9 +582,14 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
-    """An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
+    r"""An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
     `Operator.linearize` method of a non-linear operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this derivative.
     """
 
     def __init__(self, op):
@@ -388,26 +598,36 @@ class Derivative(Operator):
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
-        """The underlying operator."""
+        r"""The underlying operator."""
         _op = op.get()
+        """The underlying operator."""
         super().__init__(_op.domain, _op.codomain, linear=True)
+        # Setting the corresponding constants of op to zero
+        if hasattr(_op,"full_domain"):
+            self.full_domain = _op.full_domain
+            self._constants = {index : self.full_domain[index].zeros() for index in _op._constants}
 
     def _eval(self, x):
         return self.op.get()._derivative(x)
 
     def _adjoint(self, x):
-        return self.op.get()._adjoint(x)
+        return self._reduce_to_domain(self.op.get()._adjoint(x))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
 
 
 class AdjointDerivative(Operator):
-    r"""A proxy class wrapping a non-linear operator \(F\). Calling it will evaluate the coposition of the operator's
-    derivative adjoint with its derivative \(F'^\ast\circ F'\). This class should not be instantiated directly, 
-    but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
-    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
-    needed as it is a selfadjoint operator.   
+    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the composition of the operator's
+    derivative adjoint with its derivative :math:`F'^\ast\circ F'`. This class should not be instantiated directly, 
+    but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivative = True`.
+    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implementation is 
+    needed as it is a selfadjoint operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this combination of adjoint and derivative.
     """
 
     def __init__(self, op):
@@ -416,23 +636,38 @@ class AdjointDerivative(Operator):
             # avoid case distinctions below.
             op = _Revocable(op)
         self.op = op
-        """The underlying operator."""
+        r"""The underlying operator."""
         _op = op.get()
         super().__init__(_op.domain, _op.domain, linear=True)
+        # Setting the corresponding constants of op to zero
+        if hasattr(self.op,"full_domain"):
+            self.full_domain = self.op.full_domain
+            self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
 
     def _eval(self, x):
-        return self.op.get()._adjoint_derivative(x)
+        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
 
     def _adjoint(self, x):
-        return self.op.get()._adjoint_derivative(x)
+        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
 
 
 class LinearCombination(Operator):
-    """A linear combination of operators. This class should normally not be instantiated directly,
-    but rather through adding and multipliying `Operator` instances and scalars.
+    r"""A linear combination of operators. This class should normally not be instantiated directly,
+    but rather through adding and multiplying `Operator` instances and scalars.
+    
+    .. code-block::python
+
+        op_composed = a_1 * op_1 + a_2 * op_2 + ... + a_n * op_n
+
+    Parameters
+    ----------
+    *args : tuple
+        Variable number of scalar and operators to be put in a linear combination. Each can be either:
+        - A tuple `(scalar, Operator)` representing a scalar and an operator to be combined linearly.
+        - An `Operator` to be included directly in the linear combination.
     """
 
     def __init__(self, *args):
@@ -486,7 +721,7 @@ class LinearCombination(Operator):
             self._derivs = []
         for coeff, op in zip(self.coeffs, self.ops):
             if differentiate:
-                tup = op.linearize(x,adjoint_deriv=adjoint_deriv)
+                tup = op.linearize(x,adjoint_derivative=adjoint_derivative)
                 z = tup[0]
                 self._derivs.append(tup[1])
                 if adjoint_derivative:
@@ -538,13 +773,18 @@ class LinearCombination(Operator):
 
 
 class Composition(Operator):
-    """A composition of operators. This class should normally not be instantiated directly,
-    but rather through multipliying `Operator` instances.
+    r"""A composition of operators. This class should normally not be instantiated directly,
+    but rather through multiplying `Operator` instances.
+
+    .. code-block::python
+
+        op_composed = op_n * ... * op_2 * op_1
 
     Parameters
     ----------
-    *ops : List(Operators)
-        The operators to be composed in the order of composition.
+    *ops : tuple
+        Variable number of Operator instanced to be composed. Each Operators domain has to 
+        match the next ones codomain. 
     """
 
     def __init__(self, *ops):
@@ -615,16 +855,158 @@ class Composition(Operator):
         return util.make_repr(self, *self.ops)
 
 
-class Pow(Operator):
-    """Power of a linear operator A, mapping a domain into itself, i.e. 
-    A * A * ... * A
+
+class PartOfOperator(Operator):
+    r"""Slcing the output of an operator. Given an operator
+
+    .. math::
+        F\colon X \to (Y_1,\dots,Y_n)
+
+    One can slice the operator to a subset of the direct sum of :math:`(Y_1,\dots,Y_n)` 
+    by defining an index set :math:`I\subset (1,\dots,n)`.
+        
+    Parameters
+    ----------
+    Operator : Operator
+        The operator to be sliced. 
+    index : int, slice, tuple(int)
+        The subset of indices. 
+    """
+    def __init__(self,base_op,index):
+        assert isinstance(base_op.codomain,vecsps.DirectSum)
+        self.base_op=base_op
+        """The base operator being sliced.
+        """
+        n_codim = len(base_op.codomain.summands)
+        if(isinstance(index,int)):
+            assert -n_codim<=index and index<n_codim
+            self.index=index
+        elif(isinstance(index,slice)):
+            assert index.stop is None or -n_codim<=index.stop and index.stop<n_codim
+            assert index.start is None or -n_codim<=index.start and index.start<n_codim
+            index_list=list(range(n_codim)[index])
+            assert len(index_list)>0
+            if(len(index_list)==1):
+                self.index=index_list[0]
+            else:
+                self.index=index_list
+        elif(isinstance(index,tuple)):
+            assert all(isinstance(i,int) for i in index)
+            assert -n_codim<=min(index) and max(index)<n_codim
+            if(len(index)==1):
+                self.index=index[0]
+            else:
+                self.index=index
+        else:
+            raise ValueError(f"Invalid type {type(index)} for index")
+        if(isinstance(self.index,int)):
+            codomain=base_op.codomain.summands[self.index]
+        else:
+            codomain=vecsps.DirectSum(*[base_op.codomain.summands[i] for i in self.index])
+        super().__init__(self.base_op.domain,codomain,linear=self.base_op.linear)
+
+    def _get_codomain_part(self,y):
+        if(isinstance(self.index,int)):
+            return self.base_op.codomain.split(y)[self.index]
+        else:
+            y_parts=self.base_op.codomain.split(y)
+            return self.codomain.join(*[y_parts[i] for i in self.index])
+
+    def _eval(self, x, differentiate=False):
+        if(self.base_op.linear):
+            y=self.base_op._eval(x)
+        else:
+            y=self.base_op._eval(x,differentiate=differentiate)
+        return self._get_codomain_part(y)
+    
+    def _derivative(self, x):
+        y=self.base_op._derivative(x)
+        return self._get_codomain_part(y)
+
+    def _adjoint(self, y):
+        if(isinstance(self.index,int)):
+            y_base_op=[]
+            for i,summand in enumerate(self.base_op.codomain.summands):
+                if(i==self.index):
+                    y_base_op.append(y)
+                else:
+                    y_base_op.append(summand.zeros())
+        else:
+            y_base_op=[summand.zeros() for summand in self.base_op.codomain.summands]
+            for i,y_i in enumerate(self.codomain.split(y)):
+                y_base_op[self.index[i]]+=y_i
+        return self.base_op._adjoint(self.base_op.codomain.join(*y_base_op))
+    
+    def __getitem__(self, val):#TODO add checks for ranges
+        assert isinstance(self.index,tuple)
+        if(isinstance(val,int) or isinstance(val,slice)):
+            return PartOfOperator(self.base_op,self.index[val])
+        elif(isinstance(val,tuple)):
+            return PartOfOperator(self.base_op,tuple(self.index[v] for v in val))
+
+
+class SciPyLinearOperator(sla.LinearOperator):
+    r"""A class wrapping a linear operator :math:`F` into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
+    The domain and codomain are flattened.
 
     Parameters
     ----------
-    op : operator
-        The operator to be taken to a power.
+    op2 : Operator
+        The base operator implemented in `RegPy` used to construct the `SciPy` operator. 
+    """
+    def __init__(self, op2):
+        self.op2 = op2
+        r"""the wrapped operator"""
+        # super().__init__(op2.domain.dtype, (np.prod(op2.codomain.shape),np.prod(op2.domain.shape)))
+        domain_shape=np.prod(op2.domain.shape)
+        codomain_shape=np.prod(op2.codomain.shape)
+        if(op2.domain.is_complex):
+            domain_shape*=2
+        if(op2.codomain.is_complex):
+            codomain_shape*=2
+        super().__init__(np.float64, (codomain_shape,domain_shape))
+
+    
+    def _matvec(self, x):
+        r"""Applies the operator.
+        
+        Parameters
+        ----------
+        x : numpy.ndarray
+            Flattened element from domain of operator.
+        
+        Returns
+        -------
+        numpy.ndarray
+        """
+        op2 = self.op2
+        return op2.codomain.flatten(op2(op2.domain.fromflat(x)))
+    
+    def _rmatvec(self, y):
+        r"""Applies the adjoint operator.
+        
+        Parameters
+        ----------
+        y : numpy.ndarray
+            Flattened element from codomain of operator.
+        
+        Returns
+        -------
+        numpy.ndarray
+        """
+        op2 = self.op2
+        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
+
+class Pow(Operator):
+    r"""Power of a linear operator `A`, mapping a domain into itself, i.e. 
+    `A * A * ... * A`
+
+    Parameters
+    ----------
+    op : Operator
+        The Operoter raised to the power of `exponent`
     exponent :  int
-        The exponent must be a non-negative integer 
+        The power. Is required to be a positive interger.
     """
     def __init__(self, op, exponent):
         assert op.linear
@@ -652,7 +1034,7 @@ class Pow(Operator):
 
 
 class Identity(Operator):
-    """The identity operator on a vector space. 
+    r"""The identity operator on a vector space. 
     By default, a copy is performed to prevent callers from
     accidentally modifying the argument when modifying the return value.
 
@@ -685,9 +1067,154 @@ class Identity(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
+class MatrixMultiplication(Operator):
+    r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
+    are plain one dimensional `regpy.vecsps.VectorSpace` instances by default.
+
+    Parameters
+    ----------
+    matrix : array-like
+        The matrix.
+    inverse : Operator, array-like or None, optional
+        How to implement the inverse operator. If available, this should be given as `Operator`
+        or array. If `inv`\, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`\, a
+        `CholeskyInverse` or `SuperLU` instance will be returned.
+    domain : regpy.vecsps.VectorSpace, optional
+        The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
+        matrix columns is used. Defaults to None.
+    codomain : regpy.vecsps.VectorSpace, optional
+        The underlying vector space. If not given a `regpy.vecsps.VectorSpace` with same number of elements as
+        matrix rows is used. Defaults to None.
+
+    Notes
+    -----
+    The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
+    The adjoint is implemented in the same way by multiplying with the adjoint matrix.
+    As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
+    codomains may also be used.
+    """
+
+    def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
+        assert len(matrix.shape) == 2
+        self.matrix = matrix
+        if dtype == None:
+            dtype = matrix.dtype
+        super().__init__(
+            domain=domain or vecsps.VectorSpace(matrix.shape[1],dtype = dtype),
+            codomain=codomain or vecsps.VectorSpace(matrix.shape[0],dtype = dtype),
+            linear=True
+        )
+        self._inverse = inverse
+
+    def _eval(self, x):
+        return self.matrix @ x
+
+    def _adjoint(self, y):
+        if self.codomain.is_complex:
+            return np.conjugate(np.conjugate(y) @ self.matrix) 
+        else:
+            return y @ self.matrix
+
+    @util.memoized_property
+    def inverse(self):
+        if isinstance(self._inverse, Operator):
+            return self._inverse
+        elif isinstance(self._inverse, np.ndarray):
+            return MatrixMultiplication(self._inverse, inverse=self)
+        elif isinstance(self._inverse, str):
+            if self._inverse == 'inv':
+                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
+            if self._inverse == 'cholesky':
+                return CholeskyInverse(self, matrix=self.matrix)
+            if self._inverse == 'superLU':
+                return SuperLUInverse(self)
+        raise NotImplementedError
+
+    def __repr__(self):
+        return util.make_repr(self, self.matrix)
+
+class CholeskyInverse(Operator):
+    r"""Implements the inverse of a linear, self-adjoint operator via Cholesky decomposition. Since
+    it needs to assemble a full matrix, this should not be used for high-dimensional operators.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator to be inverted.
+    matrix : array-like, optional
+        If a matrix of `op` is already available, it can be passed in to avoid recomputation.
+    """
+    def __init__(self, op, matrix=None):
+        assert op.linear
+        assert op.domain and op.domain == op.codomain
+        domain = op.domain
+        if matrix is None:
+            matrix = np.empty((domain.realsize,) * 2, dtype=float)
+            for j, elm in enumerate(domain.iter_basis()):
+                matrix[j, :] = domain.flatten(op(elm))
+        self.factorization = cho_factor(matrix)
+        """The Cholesky factorization for use with `scipy.linalg.cho_solve`"""
+        super().__init__(
+            domain=domain,
+            codomain=domain,
+            linear=True
+        )
+        self.op = op
+
+    def _eval(self, x):
+        return self.domain.fromflat(
+            cho_solve(self.factorization, self.domain.flatten(x)))
+
+    def _adjoint(self, x):
+        return self._eval(x)
+
+    @property
+    def inverse(self):
+        """Returns the original operator."""
+        return self.op
+
+    def __repr__(self):
+        return util.make_repr(self, self.op)
+
+class SuperLUInverse(Operator):
+    r"""Implements the inverse of a `MatrixMultiplication` Operator given by a `csc_matrix` using `SuperLU`.
+
+    Parameters
+    ----------
+    op : MatrixMultiplication
+        The operator to be inverted.
+    """
+    def __init__(self,op):
+        assert isinstance(op,MatrixMultiplication)
+        assert isinstance(op.matrix, csc_matrix)
+        super().__init__(
+            domain=op.codomain, 
+            codomain = op.domain,
+            linear=True)
+        self.lu = sla.splu(op.matrix)
+
+    def _eval(self,x):
+        if np.issubdtype(self.lu.U.dtype,np.complexfloating):
+            return self.lu.solve(x)
+        else: 
+            if np.isrealobj(x):
+                return self.lu.solve(x)
+            else:
+                return self.lu.solve(x.real) + 1j*self.lu.solve(x.imag) 
+
+    def _adjoint(self,x):
+        return self.lu.solve(x,trans='H')
+
+    @property
+    def inverse(self):
+        """Returns the original operator."""
+        return self.op
+
+    def __repr__(self):
+        return util.make_repr(self, self.op)
 
 class CoordinateProjection(Operator):
-    """A projection operator onto a subset of the domain. The codomain is a one-dimensional
+    r"""A projection operator onto a subset of the domain. The codomain is a one-dimensional
     `regpy.vecsps.VectorSpaceBase` of the same dtype as the domain.
 
     Parameters
@@ -723,9 +1250,36 @@ class CoordinateProjection(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain, self.mask)
 
+class CoordinateMask(Operator):
+    r"""A projection operator onto a subset of the domain. The remaining array elements are set to zero.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        The underlying vector space
+    mask : array-like
+        Boolean mask of the subset onto which to project.
+    """
+    def __init__(self, domain, mask):
+        self.mask = mask
+        super().__init__(
+            domain=domain,
+            codomain=domain,
+            linear=True
+        )
+
+    def _eval(self, x):
+        return np.where(self.mask==False, 0, x)
+
+    def _adjoint(self, x):
+        return np.where(self.mask==False, 0, x)
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain)
+
 
 class PtwMultiplication(Operator):
-    """A multiplication operator by a constant factor where each vector entry is multiplied 
+    r"""A multiplication operator by a constant factor where each vector entry is multiplied 
     by the vector entry of `factor`. 
 
     Parameters
@@ -767,7 +1321,7 @@ class PtwMultiplication(Operator):
 
 
 class OuterShift(Operator):
-    """Shift an operator by a constant offset in the codomain.
+    r"""Shift an operator by a constant offset in the codomain.
 
     Parameters
     ----------
@@ -809,7 +1363,7 @@ class OuterShift(Operator):
 
 
 class InnerShift(Operator):
-    """Shift an operator by a constant offset in the domain.
+    r"""Shift an operator by a constant offset in the domain.
 
     Parameters
     ----------
@@ -827,9 +1381,9 @@ class InnerShift(Operator):
         self.op = op
         self.offset = offset.copy()
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
-            y, self._deriv = self.op.linearize(x-self.offset)
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
+            y, self._deriv = self.op.linearize(x-self.offset, adjoint_derivative=adjoint_derivative)
             return y 
         else:
             return self.op(x - self.offset)
@@ -841,17 +1395,180 @@ class InnerShift(Operator):
         return self._deriv.adjoint(y)
 
 
-class DirectSum(Operator):
-    r"""The direct sum of operators. For
-    \[ T_i \colon X_i \to Y_i \]
-    the direct sum
-    \[ T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) \]
-    is given by \(T(x)_i := T_i(x_i)\). As a matrix, this is the block-diagonal
-    with blocks \((T_i)\).
+class FourierTransform(Operator):
+    """Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
 
     Parameters
     ----------
-    *ops : tuple of Operator
+    domain : regpy.vecsps.UniformGridFcts
+        The underlying vector space
+    centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Defaults to `False`.
+    axes : sequence of ints, optional
+        Axes over which to compute the Fourier transform. If not given all axes are used.
+        Defaults to None.
+    """
+    def __init__(self, domain, centered=False, axes=None):
+        assert isinstance(domain, vecsps.UniformGridFcts)
+        self.is_complex = domain.is_complex
+        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        shape = domain.shape
+        s = shape[-1]
+        if centered or (not domain.is_complex and domain.ndim==1):
+            codomain = vecsps.UniformGridFcts(*frqs, dtype=complex)
+        else:
+            # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
+            codomain = vecsps.GridFcts(*frqs, dtype=complex,use_cell_measure=False)
+        super().__init__(domain, codomain, linear=True)
+        self.centered = centered
+        self.axes = axes
+  
+    def _eval(self, x):
+        if self.centered:
+            x = np.fft.ifftshift(x, axes=self.axes)
+        if self.is_complex:
+            y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+        else:
+            y = np.fft.rfftn(x, axes=self.axes, norm='ortho')
+        if self.centered:
+            return np.fft.fftshift(y, axes=self.axes)
+        else:
+            return y
+
+    def _adjoint(self, y):
+        if self.centered:
+            y = np.fft.ifftshift(y, axes=self.axes)
+        if self.is_complex:
+            x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+        else:
+            x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
+        if self.centered:
+            x = np.fft.fftshift(x, axes=self.axes)
+        if self.domain.is_complex:
+            return x
+        else:
+            return np.real(x)
+        
+    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+        """Compute the grid of frequencies for an FFT on this grid instance.
+
+        Parameters
+        ----------
+        centered : bool, optional
+            Whether the resulting grid will have its zero frequency in the center or not. The
+            advantage is that the resulting grid will have strictly increasing axes, making it
+            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
+            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
+            performance reasons. Default: `False`.
+        axes : tuple of ints, optional
+            Axes for which to compute the frequencies. All other axes will be returned as-is.
+            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
+            axes will be computed. Default: `None`.
+        Returns
+        -------
+        array
+        """
+        if axes is None:
+            axes = range(domain.ndim)
+        axes = set(axes)
+        frqs = []
+        for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
+            if i in axes:
+                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
+                # to be periodic.
+                shalf = s/2+1 if (s//2)*2==s else (s+1)/2
+                if i==domain.ndim-1 and rfft==True:
+                    frqs.append(np.arange(0,shalf) / (s*l))
+                else:
+                    if centered:
+                        frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
+                    else:
+                        frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
+            else:
+                frqs.append(domain.axes[i])
+        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
+        
+
+    @property
+    def inverse(self):
+        return self.adjoint
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain)
+
+class Power(Operator):
+    r"""The operator \(x \mapsto x^n\).
+
+    Parameters
+    ----------
+    power : float
+        The exponent.
+    domain : regpy.vecsps.VectorSpace
+        The underlying vector space
+    """
+
+    def __init__(self, power, domain, integer = False):
+        self.integer = integer
+        if integer:
+            assert(isinstance(power,np.uintc))
+            self._power_bin = "{0:b}".format(power)
+        self.power = power
+        super().__init__(domain, domain)
+
+    def _eval(self, x, differentiate=False):
+        if self.integer:
+            res = np.ones_like(x)
+            if differentiate:
+                self._factor = self.power*np.ones_like(x)
+                if self.power>0:
+                    self._dpow_bin = "{0:b}".format(self.power-1)
+                    if len(self._dpow_bin)< len(self._power_bin):
+                        self._dpow_bin = '0'+self._dpow_bin
+                else:
+                    self._dpow_bin = "{0:b}".format(0)
+            powx = x.copy()
+            for k in reversed(range(len(self._power_bin))):
+                if self._power_bin[k] == '1':
+                    res *= powx
+                if differentiate:
+                    if self._dpow_bin[k] == '1':
+                        self._factor *= powx
+                if k>0:
+                    powx *= powx
+        else:
+            if differentiate:
+                self._factor = self.power * x**(self.power - 1)
+            res = x**self.power
+        return res
+
+    def _derivative(self, x):
+        return self._factor * x
+
+    def _adjoint(self, y):
+        return np.conjugate(self._factor) * y
+
+class DirectSum(Operator):
+    r"""The direct sum of operators. For
+
+    .. math::
+        T_i \colon X_i \to Y_i 
+
+    the direct sum
+
+    .. math::
+        T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) 
+
+    is given by :math:`T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
+    with blocks :math:`(T_i)`.
+
+    Parameters
+    ----------
+    *ops : tuple(Operator)
+        Variable number of Operator instances to be composed to a direct sum.
     flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
@@ -865,7 +1582,7 @@ class DirectSum(Operator):
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
         assert all(isinstance(op, Operator) for op in ops)
         self.ops = []
-        r""" List of all operators \((T_1,\dots,T_n)\)"""
+        r""" List of all operators :math:`(T_1,\dots,T_n)`"""
         for op in ops:
             if flatten and isinstance(op, type(self)):
                 self.ops.extend(op.ops)
@@ -895,18 +1612,28 @@ class DirectSum(Operator):
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
+        if hasattr(self,"full_domain"):
+            assert x in self.full_domain, "{} is not in the full_domain {}".format(x,type(self.full_domain))
+        else:
+            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         if differentiate:
             linearizations = [op.linearize(x_i,adjoint_derivative=adjoint_derivative) for op, x_i in zip(self.ops, x)]
             self._derivs = [l[1] for l in linearizations]
             if adjoint_derivative:
                 self._adjoint_derivs = [l[2] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
+        elif adjoint_derivative:
+            linearizations = [op.linearize(elm,adjoint_derivative=True) for op, elm in zip(self.ops, elms)]
+            self._adjoint_derivs = [l[1] for l in linearizations]
+            return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(x_i) for op, x_i in zip(self.ops, x)))
 
     def _derivative(self, x):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
+        if hasattr(self,"full_domain"):
+            assert x in self.full_domain, "{} is not in full_domain {}".format(x,type(self.full_domain))
+        else:
+            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         return self.codomain.join(
             *(deriv(x_i) for deriv, x_i in zip(self._derivs, x))
         )
@@ -917,12 +1644,20 @@ class DirectSum(Operator):
             ops = self.ops
         else:
             ops = self._derivs
-        return self.domain.join(
-            *(op.adjoint(y_i) for op, y_i in zip(ops, y))
-        )
+        if hasattr(self,"full_domain"):
+            return self.full_domain.join(
+                *(op.adjoint(y_i) for op, y_i in zip(ops, y))
+            )
+        else:
+            return self.domain.join(
+                *(op.adjoint(y_i) for op, y_i in zip(ops, y))
+            )
     
     def _adjoint_derivative(self, x):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
+        if hasattr(self,"full_domain"):
+            assert x in self.full_domain, "{} is not in full_domain {}".format(x,type(self.full_domain))
+        else:
+            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         return self.domain.join(
             *(adjoint_deriv(x_i) for adjoint_deriv, x_i in zip(self._adjoint_derivs, x))
         )
@@ -940,6 +1675,8 @@ class DirectSum(Operator):
         return util.make_repr(self, *self.ops)
 
     def __getitem__(self, item):
+        if item is None:
+            return self
         return self.ops[item]
 
     def __iter__(self):
@@ -948,18 +1685,22 @@ class DirectSum(Operator):
 
 class VectorOfOperators(Operator):
     r"""Vector of operators. For
-    \[
-    T_i \colon X \to Y_i
-    \]
+
+    .. math::
+        T_i \colon X \to Y_i
+
     we define
-    \[
-    T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := T_i(x)\). 
+
+    .. math::
+        T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := T_i(x)`. 
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple(Operator)
+        Variable number of Operator instances to be put together to a Vector. Each of the Operators
+        is required to have the same domain.
     codomain : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -971,7 +1712,7 @@ class VectorOfOperators(Operator):
         assert all([isinstance(op, Operator) for op in ops]), "ops must be a list of `Operator` instances"
         assert ops
         self.ops = ops
-        r"""List of all Operators \((T_1,\dots,T_n)\)"""
+        r"""List of all Operators :math:`(T_1,\dots,T_n)`"""
 
         if domain is None:
             self.domain = self.ops[0].domain
@@ -1040,19 +1781,22 @@ class VectorOfOperators(Operator):
 
 class MatrixOfOperators(Operator):
     r"""Matrix of operators. For
-    \[
-    T_ij \colon X_j \to Y_i
-    \]
+
+    .. math::
+        T_ij \colon X_j \to Y_i
+
     we define
-    \[
-    T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
-    \]
-    by \(T(x)_i := \sum_j T_ij(x_j)\). 
+
+    .. math::
+        T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
+
+    by :math:`T(x)_i := \sum_j T_ij(x_j)`. 
     
     Parameters
     ----------
-    *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
-           zero operators should be given by None's 
+    *ops : tuple(tuple(Operator) 
+        Variable number of tuples of Operator instances to build the matrix. Each tuple has to have 
+        the same length and a zero operators should be given by None.
     domain, codomain : vecsps.VectorSpaceBase or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -1065,7 +1809,7 @@ class MatrixOfOperators(Operator):
         ops_flat = [op for op_col in ops for op in op_col]
         assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
         self.ops = ops
-        r""" Matrix of Operators \((T_ij)\)"""
+        r""" Matrix of Operators :math:`(T_ij)`"""
 
         domains = [None]*len(ops)
         for j in range(len(ops)):
@@ -1165,9 +1909,102 @@ class MatrixOfOperators(Operator):
     def __iter__(self):
         return iter(self.ops)
 
+class Sum(Operator):
+    r"""Maps element in direct sum of vector spaces to their sum.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, True)
+
+    def _eval(self,x):
+        return sum(self.domain.split(x))
+    
+    def _adjoint(self,y):
+        return self.domain.join(*[np.real(y) if summand.dtype==float else y for summand in self.domain.summands])
+    
+class Product(Operator):
+    r"""Maps element in direct sum of vector spaces to their product.
+
+    Parameters
+    ----------
+    domain : vecsps.DirectSum
+        The domain of the operator. Summands have to have the same shape.
+    codomain : vecsps.VectorSpace or None, optional
+        The codomain of the operator. Has to have same shape as a summand of the domain.
+        If set to None the first summand of the domain is chosen instead. Defaults to None.
+    """
+
+    def __init__(self, domain,codomain=None):
+        assert isinstance(domain,vecsps.DirectSum)
+        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
+        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
+        assert codomain is None or domain.summands[0].shape==codomain.shape
+        if(codomain is None):
+            codomain=domain.summands[0]
+        super().__init__(domain, codomain, False)
+
+    def _eval(self,x,differentiate=False):
+        x_split=self.domain.split(x)
+        y=x_split[0].copy()
+        for i in range(1,len(x_split)):
+            y*=x_split[i]
+        if(differentiate):
+            self.deriv_data=[y/x_j for x_j in x_split]
+        return y
+    
+    def _derivative(self, x):
+        x_split=self.domain.split(x)
+        y=self.deriv_data[0]*x_split[0]
+        for i in range(1,len(x_split)):
+            y+=self.deriv_data[i]*x_split[i]
+        return y
+
+    def _adjoint(self,y):
+        y_parts=[np.real(y*np.conj(self.deriv_data[i])) if summand.dtype==float else y*np.conj(self.deriv_data[i]) for i,summand in enumerate(self.domain.summands)]
+        return self.domain.join(*y_parts)
+
+
+class Exponential(Operator):
+    r"""The pointwise exponential operator.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.VectorSpace
+        The underlying vector space.
+    """
+
+    def __init__(self, domain):
+        super().__init__(domain, domain)
+
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
+            self._exponential_factor = np.exp(x)
+            return self._exponential_factor
+        return np.exp(x)
+
+    def _derivative(self, x):
+        return self._exponential_factor * x
+
+    def _adjoint(self, y):
+        return self._exponential_factor.conj() * y
+
 
 class RealPart(Operator):
-    """The pointwise real part operator.
+    r"""The pointwise real part operator.
 
     Parameters
     ----------
@@ -1191,7 +2028,7 @@ class RealPart(Operator):
 
 
 class ImaginaryPart(Operator):
-    """The pointwise imaginary part operator.
+    r"""The pointwise imaginary part operator.
 
     Parameters
     ----------
@@ -1216,7 +2053,7 @@ class ImaginaryPart(Operator):
 
 
 class SquaredModulus(Operator):
-    """The pointwise squared modulus operator.
+    r"""The pointwise squared modulus operator.
 
     Parameters
     ----------
@@ -1232,8 +2069,8 @@ class SquaredModulus(Operator):
             codomain = None
         super().__init__(domain, codomain)
 
-    def _eval(self, x, differentiate=False):
-        if differentiate:
+    def _eval(self, x, differentiate=False, adjoint_derivative=False):
+        if differentiate or adjoint_derivative:
             self._factor = 2 * x
         return x.real**2 + x.imag**2
 
@@ -1245,7 +2082,7 @@ class SquaredModulus(Operator):
 
 
 class Zero(Operator):
-    """The constant zero operator.
+    r"""The constant zero operator.
 
     Parameters
     ----------
@@ -1267,7 +2104,7 @@ class Zero(Operator):
 
 
 class ApproximateHessian(Operator):
-    """An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
+    r"""An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
     using finite differences of it `gradient` if it is implemented for that functional.
 
     Parameters
