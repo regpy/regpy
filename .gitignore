@@ -1,5 +1,5 @@
 *.pyc
-/doc/regpy
+/doc/sphinx/source/autoapi/*
 examples/data/
 examples/PINEM/data
 
