@@ -294,15 +294,15 @@ class DirectSum(HilbertSpace):
         return iter(self.summands)
 
 class TensorProd(HilbertSpace):
-    r"""The Tensor product of an arbirtary number of hilbert spaces, with optional
+    r"""The Tensor product of an arbitrary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
-    `regpy.vecsps.Prod` of the underlying discretisations of the factors.
+    `regpy.vecsps.Prod` of the underlying discretizations of the factors.
 
     Important note! The implementation of the Gram operator makes use of the
     BasisTransform Operator from regpy.operators.bases_transform in the sense, that
     the Gram matrix of the Tensor Product of discretised Hilbert spaces
     would be given as the Kronecker-product of all Gram matrices. Which is
-    exacly given by the BasisTransform operator given that we interpret the
+    exactly given by the BasisTransform operator given that we interpret the
     Gram matrices as basis changes in each discretised Hilbert space.
 
     Therefore, please pay attention that to do that we have to actually evaluate

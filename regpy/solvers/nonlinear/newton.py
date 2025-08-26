@@ -131,17 +131,15 @@ class NewtonCGFrozen(RegSolver):
         if int(self._n / 10) * 10 == self._n:
             _, self.deriv = self.op.linearize(self.x)
         self._x_k = self.op.domain.zeros()
-        #        self._x_k = 1j*np.zeros(np.shape(self.x))
         self.y = self._op_copy(self.x)
         self._residual = self.data - self.y
-        #        _, self.deriv=self.op.linearize(self.x)
         self._s = self._residual - self.deriv(self._x_k)
         self._s2 = self.h_codomain.gram(self._s)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = np.vdot(self._r, self._rtilde).real
-        self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
+        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
+        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
         self._k = 1
         self._n += 1
 
@@ -149,16 +147,16 @@ class NewtonCGFrozen(RegSolver):
         _, self.deriv = self.op.linearize(self.x)
         self._q = self.deriv(self._d)
         self._q2 = self.h_codomain.gram(self._q)
-        self._alpha = self._inner_prod / np.vdot(self._q, self._q2).real
+        self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
         self._s += -self._alpha * self._q
         self._s2 += -self._alpha * self._q2
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
-        self._beta = np.vdot(self._r, self._rtilde).real / self._inner_prod
+        self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
 
     def _next(self):
         while (
-            np.sqrt(np.vdot(self._s2, self._s).real) > self.rho * self._norms0
+            sqrt(self.op.codomain.vdot(self._s2, self._s).real) > self.rho * self._norms0
             and self._k <= self.cgmaxit
         ):
             self._inner_update()
@@ -185,9 +183,9 @@ class NewtonSemiSmoothFrozen(RegSolver):
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    psi_minus : np.number
+    psi_minus : scalar
         lower constraint of the minimization. Must be larger then `psi_plus`
-    psi_plus : np.number
+    psi_plus : scalar
         upper constraint of the minimization. Must be smaller then `psi_minus`
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())

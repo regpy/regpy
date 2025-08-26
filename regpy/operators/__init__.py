@@ -11,6 +11,8 @@ The base class is `Operator`.
 from collections import defaultdict
 from copy import deepcopy
 
+from math import sqrt,inf
+
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix
@@ -337,7 +339,7 @@ class Operator:
             return self._power_method(h_domain,h_codomain)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
-            return np.sqrt(eigsh(SciPyLinearOperator(self.adjoint * h_codomain.gram * self), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
+            return sqrt(eigsh(SciPyLinearOperator(self.adjoint * h_codomain.gram * self), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
         else:
             raise NotImplementedError
 
@@ -352,16 +354,16 @@ class Operator:
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
         """
         x = self.domain.rand()
-        relative_residual = np.inf
+        relative_residual = inf
         for _ in range(max_iter):
             if relative_residual < stopping_rule:
                 break
             ystar = (self.adjoint * h_codomain.gram * self)(x)
             y = h_domain.gram_inv(ystar)
-            lmb = np.sqrt(np.vdot(y, ystar).real)
+            lmb = sqrt(self.domain.vdot(y, ystar).real)
             relative_residual = h_domain.norm(y - lmb * x)
             x = y/lmb
-        return np.sqrt(lmb)
+        return sqrt(lmb)
     
     def set_constant(self,c,index):
         """Assuming the operator you defined has a domain that is composed of multiple
@@ -392,10 +394,12 @@ class Operator:
             raise IndexError("The used index is {} is out of range.".format(index))
         if len(set(range(len(self.full_domain)))-self._constants.keys()-{index}) == 0:
             raise ValueError("By setting the index {} their is no input remaining please choose another index or release some other constant.".format(index))
-        if not np.isscalar(c) and c not in self.full_domain[index]:
-            raise ValueError("The given constant is neither in the {} component of type {}. Was given something of type {}".format(index,type(self.full_domain[index]),type(c)))
-        elif np.isscalar(c):
+        if c in self.full_domain[index]:
+            pass
+        elif isinstance(c,int) or isinstance(c,float) or (isinstance(c,complex) and self.full_domain[index].is_complex):
             c = c*self.full_domain[index].ones()
+        else:
+            raise ValueError("The given constant is not in the {} component of type {}. Was given something of type {}".format(index,type(self.full_domain[index]),type(c)))
         
         self._constants[index] = c
         self.domain = vecsps.DirectSum(*[d_i for i,d_i in enumerate(self.full_domain) if i not in self._constants.keys()])
@@ -679,13 +683,8 @@ class LinearCombination(Operator):
                 coeff, op = 1, arg
             assert isinstance(op, Operator), "Given input {} is not an operator please use either [(coeff,operator), ...] or [operator,...]".format(type(op))
             assert np.isscalar(coeff), "coefficient is not a scalar but of type {}".format(type(coeff))
-            assert (
-                not np.iscomplex(coeff)
-                or not op.codomain
-                or op.codomain.is_complex
-            ), "Complex coefficients can only be used for operators with complex codomains"
-            if isinstance(coeff,np.number):
-                coeff = coeff.item()
+            if isinstance(coeff,complex):
+                assert (op.codomain.is_complex), "Complex coefficients can only be used for operators with complex codomains"
             if isinstance(op, type(self)):
                 for c, o in zip(op.coeffs, op.ops):
                     coeff_for_op[o] += coeff * c
@@ -2388,7 +2387,8 @@ class Power(Operator):
         assert isinstance(domain,vecsps.NumPyVectorSpace)
         self.integer = integer
         if integer:
-            assert(isinstance(power,np.uintc))
+            assert power>=0 and int(power)==power
+            power=int(power)
             self._power_bin = "{0:b}".format(power)
         self.power = power
         super().__init__(domain, domain)

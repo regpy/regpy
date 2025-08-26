@@ -53,7 +53,7 @@ class OperatorNode:
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
         Returns:
-            np.ndarray: element in the domain of the operator
+            array-like: element in the domain of the operator
         """        
         assert all(edge is not None for edge in self.input_edges)
         if(self.N_in==1):
@@ -69,7 +69,7 @@ class OperatorNode:
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
         Returns:
-            np.ndarray: element in the codomain of the operator
+            array-like: element in the codomain of the operator
         """           
         if(self.output_edges==[]):
             return self.op.codomain.zeros()

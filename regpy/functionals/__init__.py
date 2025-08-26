@@ -10,7 +10,7 @@ from regpy import hilbert
 
 class NotInEssentialDomainError(Exception):
     r"""
-    Raised if value of the functional is np.infty at given argument. In this case the subdifferential is empty. 
+    Raised if value of the functional is inf at given argument. In this case the subdifferential is empty. 
     """
     pass
 
@@ -33,7 +33,7 @@ class Functional:
     Functionals can be added by taking `LinearCombination` of them. The `domain` has to be the
     same for each functional. 
 
-    They can also be multiplied by scalars or `np.ndarrays`of `domain.shape`or multiplied by 
+    They can also be multiplied by scalars or vector of their respective `domain`or multiplied by 
     `regpy.operators.Operator`. This leads to a functional that is composed with the operator
     :math:`F\circ O` where :math:`F` is the functional and \(O)\ some operator. Multiplying by a scalar
     results in a composition with the `PtwMultiplication` operator.
@@ -85,7 +85,7 @@ class Functional:
         Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
 
         .. math::
-            F(x+ h) \geq  F(x) + \np.vdot(v,h) for all h
+            F(x+ h) \geq  F(x) + vdot(v,h) for all h
 
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -115,7 +115,7 @@ class Functional:
         r"""Returns a subgradient \(\xi)\ of the functional at `x` characterized by
 
         .. math::
-            F(y) \geq  F(x) + np.vdot(\xi,y-x) for all y  
+            F(y) \geq  F(x) + vdot(\xi,y-x) for all y  
 
         Requires the implementation of either `_subgradient` or `_linearize`.
 
@@ -239,9 +239,9 @@ class Functional:
 
         Parameters
         ----------
-        x : `self.domain`
-            Point at which to compute proximal.
-        tau : `np.number`
+        x : array-like
+            Vector in the respective domain. Point at which to compute proximal.
+        tau : scalar
             Regularization parameter for the proximal. 
 
         Returns
@@ -322,7 +322,7 @@ class Functional:
             return self
         elif isinstance(other, operators.Operator):
             return Composed(self, other)
-        elif np.isscalar(other) or other in self.domain:
+        elif other in self.domain:
             return self * operators.PtwMultiplication(self.domain, other)
         return NotImplemented
 
@@ -480,7 +480,7 @@ class LinearFunctional(Functional):
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
-        return np.linalg.norm(xstar-self.gradient)<=eps*(np.linalg.norm(self.gradient)+eps)
+        return self.domain.norm(xstar-self.gradient)<=eps*(self.domain.norm(self.gradient)+eps)
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -607,7 +607,7 @@ class SquaredNorm(Functional):
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         if self.a==0:
             xi=self.gram(self.b)
-            return np.linalg.norm(xstar-xi)<=eps*(np.linalg.norm(xi)+eps)
+            return self.domain.norm(xstar-xi)<=eps*(self.domain.norm(xi)+eps)
         elif self.a <0:
             return False
         else: 
@@ -698,7 +698,7 @@ class LinearCombination(Functional):
 
     Parameters
     ----------
-    *args : (np.number, regpy.functionals.Functional) or regpy.functionals.Functional
+    *args : (scalar, regpy.functionals.Functional) or regpy.functionals.Functional
         List of coefficients and functionals to be taken as linear combinations.
     """
     def __init__(self, *args):
@@ -709,7 +709,7 @@ class LinearCombination(Functional):
             else:
                 coeff, func = 1, arg
             assert isinstance(func, Functional)
-            assert np.isscalar(coeff) and util.is_real_dtype(coeff) and coeff>=0
+            assert (isinstance(coeff,int) or isinstance(coeff,float)) and coeff>=0
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
                     coeff_for_func[f] += coeff * c
@@ -825,7 +825,7 @@ class LinearCombination(Functional):
         if len(self.funcs) == 1:
             return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps)
         elif self.linear_table.count(False)==0:
-            return np.linalg.norm(xstar-self.grad_sum)<=eps*(np.linalg.norm(self.grad_sum)+eps)
+            return self.domain.norm(xstar-self.grad_sum)<=eps*(self.domain.norm(self.grad_sum)+eps)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return self.funcs[j]._conj_is_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j],eps)
@@ -861,12 +861,12 @@ class VerticalShift(Functional):
     ----------
     func : regpy.functionals.Functional
         Functional to be offset.
-    offset : np.number
-        Offset added to the evaluation of the functional.
+    offset : scalar
+        Reals offset added to the evaluation of the functional.
     """
     def __init__(self, func, offset):
         assert isinstance(func, Functional)
-        assert np.isscalar(offset) and util.is_real_dtype(offset)
+        assert isinstance(offset,int) or isinstance(offset,float)
         super().__init__(func.domain, linear = False, 
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz
@@ -931,7 +931,7 @@ class HorizontalShiftDilation(Functional):
                          convexity_param= F.convexity_param  * dilation**2
                          )
         assert shift is None or shift in self.domain
-        assert np.isscalar(dilation) and util.is_real_dtype(dilation)
+        assert isinstance(dilation,int) or isinstance(dilation,float)
         self.F = F
         self.dilation = dilation
         self.shift = shift
@@ -992,7 +992,7 @@ class Composed(Functional):
         Functional to be composed with. 
     op : `regpy.operators.Operator`
         Operator to be composed with. 
-    op_norm : float [default: np.inf]
+    op_norm : float [default: inf]
         Norm of the operator. Used only to define self.Lipschitz
     op_lower_bound : float
         Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
@@ -1200,7 +1200,7 @@ class AbstractLinearCombination(AbstractFunctional):
 
     Parameters
     ----------
-    *args : (np.number, regpy.functionals.AbstractFunctional) or regpy.functionals.AbstractFunctional
+    *args : (scalar, regpy.functionals.AbstractFunctional) or regpy.functionals.AbstractFunctional
         List of coefficients and functionals to be taken as linear combinations.
     """
     def __init__(self,*args):
@@ -1211,7 +1211,7 @@ class AbstractLinearCombination(AbstractFunctional):
             else:
                 coeff, func = 1, arg
             assert isinstance(func, AbstractFunctional)
-            assert np.isscalar(coeff) and util.is_real_dtype(coeff)
+            assert (isinstance(coeff,int) or isinstance(coeff,float))
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
                     coeff_for_func[f] += coeff * c
@@ -1246,12 +1246,12 @@ class AbstractVerticalShift(AbstractFunctional):
     ----------
     func : regpy.functionals.AbstractFunctional
         Functional to be offset.
-    offset : np.number
+    offset : scalar
         Offset added to the evaluation of the functional.
     """
     def __init__(self, func, offset):
         assert isinstance(func, AbstractFunctional), "func not an AbstractFunctional"
-        assert np.isscalar(offset) and util.is_real_dtype(offset), "offset not a scalar"
+        assert (isinstance(offset,int) or isinstance(offset,float)), "offset not a scalar"
         super().__init__(func.domain)
         self.func = func
         """Functional to be offset.
@@ -1349,7 +1349,7 @@ class FunctionalOnDirectSum(Functional):
         if proximal_par_list is None:
             proximal_par_list = [{}] *self.length
         else:
-            assert len(p_conj_subgradient(self,v, xstar):roximal_par_list) == self.length
+            assert len(proximal_par_list) == self.length
         return self.domain.join(*[f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
     def _conj(self, xstar):
@@ -1379,8 +1379,10 @@ class FunctionalOnDirectSum(Functional):
             return super().__add__(self,other)
         
     def __rmul__(self,other):
-        if np.isscalar(other):
+        if (isinstance(other,int) or isinstance(other,float)):
             return FunctionalOnDirectSum([other*F for F in self.funcs],self.domain)
+        else:
+            raise NotImplementedError(f"Recursive multiplication of other={other} with self={self} is not defined.")
 
 class HilbertNormGeneric(Functional):
     r"""Generic implementation of the HilbertNorm :math:`1/2*\Vert x\Vert^2`. Proximal operator defined on `h_space`.

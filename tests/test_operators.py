@@ -145,17 +145,17 @@ def test_matrix_multiplication():
     ot.test_operator(op)
 
 def test_PtwMultiplication():
-    dom = vecsps.VectorSpace((3,2))
+    dom = vecsps.NumPyVectorSpace((3,2))
     factor = dom.rand()  
     op = PtwMultiplication(dom,factor)
     ot.test_operator(op)
-    dom = vecsps.VectorSpace((3,2),dtype=np.complex128)
+    dom = vecsps.NumPyVectorSpace((3,2),dtype=np.complex128)
     factor = dom.rand()  
     op = PtwMultiplication(dom,factor)
     ot.test_operator(op)
     
 def test_OuterShift():
-    dom=vecsps.VectorSpace((10,5),np.complex128)
+    dom=vecsps.NumPyVectorSpace((10,5),np.complex128)
     offset = dom.rand()
     op_unshifted = Exponential(domain=dom)
     op_shifted = OuterShift(op_unshifted,offset)
@@ -165,7 +165,7 @@ def test_OuterShift():
 
       
 def test_InnerShift():
-    dom=vecsps.VectorSpace((10,5),np.complex128)
+    dom=vecsps.NumPyVectorSpace((10,5),np.complex128)
     offset = dom.rand()
     op_unshifted = Exponential(domain=dom)
     op_shifted = InnerShift(op_unshifted,offset)
@@ -202,35 +202,39 @@ def test_power():
 
 def test_direct_sum():#uses Exponential and PtwMultiplication
     #real
-    dom1=vecsps.UniformGridFcts(2,2)
-    dom2=vecsps.UniformGridFcts(2,3,4)
+    shape1 = (2,2)
+    shape2 = (2,3,4)
+    dom1=vecsps.UniformGridFcts(*shape1)
+    dom2=vecsps.UniformGridFcts(*shape2)
     op1=Exponential(dom1)
     op2=PtwMultiplication(dom2,3)
     op3=PtwMultiplication(dom2,4)
     op=DirectSum(op1,op2)
-    x=np.arange(28)
-    assert np.max(np.abs(op(x)-np.array([1,np.exp(1),np.exp(2),np.exp(3)]+[3*i for i in range(4,28)])))<1e-15
+    x=vecsps.TupleVector([np.arange(4).reshape(shape1),np.arange(4,28).reshape(shape2)])
+    res = vecsps.TupleVector([np.array([1,np.exp(1),np.exp(2),np.exp(3)]).reshape(shape1),np.array([3*i for i in range(4,28)]).reshape(shape2)])
+    assert ((op(x)-res).component_wise(np.abs)<1e-15).all()
     ot.test_operator(op)
     op=DirectSum(op2,op3)
-    x=np.arange(48)
-    assert np.max(np.abs(op(x)-np.array([3*i for i in range(0,24)]+[4*i for i in range(24,48)])))<1e-15
+    x=vecsps.TupleVector([np.arange(24).reshape(shape2),np.arange(24,48).reshape(shape2)])
+    res = vecsps.TupleVector([np.asarray([3*i for i in range(0,24)]).reshape(shape2),np.asarray([4*i for i in range(24,48)]).reshape(shape2)])
+    assert ((op(x)-res).component_wise(np.abs)<1e-15).all()
     ot.test_operator(op)
     #complex
-    dom1=vecsps.UniformGridFcts(2,2,dtype=np.complex128)
-    dom2=vecsps.UniformGridFcts(2,3,4)
+    dom1=vecsps.UniformGridFcts(*shape1,dtype=np.complex128)
+    dom2=vecsps.UniformGridFcts(*shape2)
     dom3=vecsps.UniformGridFcts(2,dtype=np.complex128)
     op1=Exponential(dom1)
     op2=PtwMultiplication(dom2,3)
     op3=Exponential(dom3)
     op=DirectSum(op1,op2)
-    x=np.array([1,0,0,0,0,np.pi,2,-np.pi]+[i for i in range(24)])
-    y=np.array([np.exp(1),0,1,0,-1,0,-np.exp(2),0]+[3*i for i in range(24)])
-    assert np.max(np.abs(op(x)-y))<1e-10
+    x=vecsps.TupleVector([np.asarray([1,0,1j*np.pi,2-1j*np.pi]).reshape(shape1),np.asarray([i for i in range(24)]).reshape(shape2)])
+    res=vecsps.TupleVector([np.asarray([np.exp(1),1,-1,-np.exp(2)]).reshape(shape1),np.asarray([3*i for i in range(24)]).reshape(shape2)])
+    assert ((op(x)-res).component_wise(np.abs)<1e-15).all()
     ot.test_operator(op)
-    x=np.array([1,0,0,0,0,np.pi,2,-np.pi,2,0,3,np.pi])
-    y=np.array([np.exp(1),0,1,0,-1,0,-np.exp(2),0,np.exp(2),0,-np.exp(3),0])
+    x=vecsps.TupleVector([np.asarray([1,0,1j*np.pi,2-1j*np.pi]).reshape(shape1),np.asarray([2,3+1j*np.pi])])
+    res=vecsps.TupleVector([np.asarray([np.exp(1),1,-1,-np.exp(2)]).reshape(shape1),np.asarray([np.exp(2),-np.exp(3)])])
     op=DirectSum(op1,op3)
-    assert np.max(np.abs(op(x)-y))<1e-10
+    assert ((op(x)-res).component_wise(np.abs)<5e-15).all()
     ot.test_operator(op)
 
 # def test_vector_of_operators():#uses Exponential and PtwMultiplication
@@ -259,16 +263,20 @@ def test_direct_sum():#uses Exponential and PtwMultiplication
 
 def test_matrix_of_operators():#uses Exponential and PtwMultiplication
     #real
-    dom=vecsps.UniformGridFcts(2,2)
+    shape = (2,2)
+    dom=vecsps.UniformGridFcts(*shape)
     op1=Exponential(dom)
     op2=PtwMultiplication(dom,2)
     op3=PtwMultiplication(dom,3)
     op4=PtwMultiplication(dom,4)
     ops=[[op1,op2,None],[None,op3,op4]]
     op=MatrixOfOperators(ops)
-    x=np.arange(8)
-    y=np.array([1,np.exp(1),np.exp(2),np.exp(3),12,17,22,27,16,20,24,28])
-    assert np.max(np.abs(op(x)-y))<1e-15
+    x=vecsps.TupleVector([np.arange(4).reshape(shape),
+                          np.arange(4,8).reshape(shape)])
+    y=vecsps.TupleVector([np.array([1,np.exp(1),np.exp(2),np.exp(3)]).reshape(shape),
+                          np.array([12,17,22,27]).reshape(shape),
+                          np.array([16,20,24,28]).reshape(shape)])
+    assert ((op(x)-y).component_wise(np.abs)<1e-15).all()
     ot.test_operator(op)
 
 def test_padding_operator():

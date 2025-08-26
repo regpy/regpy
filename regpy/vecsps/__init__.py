@@ -103,11 +103,11 @@ class TupleVector:
         assert isinstance(other,type(self)) and self.ndim == other.ndim 
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
-    def sum(self):
+    def sum(self,**kwargs):
         z = []
         for v_i in self.v:
             if isinstance(v_i,np.ndarray):
-                s = np.sum(v_i)
+                s = np.sum(v_i,**kwargs)
             else:
                 try:
                     s = sum(v_i)
@@ -132,6 +132,9 @@ class TupleVector:
         for k,v_o in enumerate(other.v):
             v[k] -= v_o
         return TupleVector(v)
+    
+    def __neg__(self):
+        return TupleVector([-v_i for v_i in self])
     
     def __add__(self,other):
         assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
@@ -225,7 +228,6 @@ class TupleVector:
     def component_wise(self,method):
         assert callable(method)
         return TupleVector([method(s_k) for s_k in self])
-
 
 class VectorSpaceBase:
     r"""Discrete space :math:`\mathbb{R}^\text{shape}` or :math:`\mathbb{C}^\text{shape}` (viewed as a real
@@ -989,8 +991,8 @@ class DirectSum(VectorSpaceBase):
         return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
 
     def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
-        assert x in self, "x of type {} is not a vector".format(type(x)) 
-        assert y in self, "y of type {} is not a vector".format(type(y))
+        assert x in self, "x of type {} is not a vector of {}".format(type(x),self) 
+        assert y in self, "y of type {} is not a vector of {}".format(type(y),self)
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
     def logical_and(self,x,y) -> TupleVector:

@@ -47,7 +47,7 @@ class ConvolutionOperator(Composition):
     
     Parameters
     ----------
-    grid : regpy.vecsps.UniformGridFcts of arbitrary dimension d
+    grid : regpy.vecsps.UniformGridFcts
         The space on which the operator is defined. If it real, real-valued fft will be used, 
         otherwise complex fft   
     fourier_multiplier: 
@@ -63,6 +63,8 @@ class ConvolutionOperator(Composition):
     """
 
     def __init__(self, grid, fourier_multiplier, pad_amount=None,first_conv_axis=0):
+        if not isinstance(grid,UniformGridFcts):
+            raise ValueError(f"The given grid has to be a `UniformGirdFcts`, was given {grid} ")
         ndim = grid.ndim
         if pad_amount is None or pad_amount == ((0,0),)*ndim:
             ft = FourierTransform(grid,axes=tuple(range(first_conv_axis,ndim)))

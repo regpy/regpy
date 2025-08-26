@@ -132,21 +132,21 @@ class NgsTV(Functional):
         self._gfu_out.Set(self._gfu - tau*self._gfu_div)
         return self._x_out 
 
-def ngsdivergence(p, fes):
-    r"""Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
-    p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
-    
-    Parameters
-    ----------
-    p : vector field
-        Vector field on a FES 'fes' for which to compute the divergence.
-    fes : ngsolve fes
-        Underlying FES.
+    def ngsdivergence(p, fes):
+        r"""Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
+        p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
+        
+        Parameters
+        ----------
+        p : vector field
+            Vector field on a FES 'fes' for which to compute the divergence.
+        fes : ngsolve fes
+            Underlying FES.
 
-        Returns
-        -------
-        array
-            Values of the divergence of the given vector `p`
+            Returns
+            -------
+            array
+                Values of the divergence of the given vector `p`
         """
         gfu_in = ngs.GridFunction(fes)
         gfu_out = ngs.GridFunction(fes)

@@ -137,6 +137,7 @@ class SemismoothNewton_bilateral(RegSolver):
         """Prepare first iteration step"""
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
+
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -148,8 +149,9 @@ class SemismoothNewton_bilateral(RegSolver):
             )
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        self.active_plus = (self.lam_plus +self.regpar*(self.x-self.psi_plus ))>=0 
-        self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus))>=0 
+        
+        self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
+        self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
         if not (self.active_plus).any() and not (self.active_minus).any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
@@ -361,7 +363,7 @@ class SemismoothNewton_nonneg(RegSolver):
             )
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        self.active= (self.lam-self.regpar*self.x)>=0 
+        self.active= self.op.domain.IfPos(self.lam-self.regpar*self.x) 
         if not self.active.any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
@@ -401,7 +403,8 @@ class SemismoothNewton_nonneg(RegSolver):
         self.y = self.op(self.x)
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
-        bound = self.op.domain.norm(np.maximum(aux,0)-self.x)**2 - 2*self.op.domain.vdot(np.maximum(-aux,0),self.x)
+        aux_pos = self.op.domain.IfPos(aux)
+        bound = self.op.domain.norm(aux[aux_pos]-self.x)**2 - 2*self.op.domain.vdot(-aux[~aux_pos],self.x)
         if sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()

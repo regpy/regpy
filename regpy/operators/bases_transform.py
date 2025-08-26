@@ -21,7 +21,7 @@ class BasisTransform(Operator):
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each D_i has size M_i
     coef_domain : regpy.vecsps.Prod   
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each V_i has size N_i
-    bases : [ np.ndarray, ... ]
+    bases : list(list)
         a list of matrices :math:`[B_1,..., B_n]` where the matrix :math:`B_l` of size :math:`M_l \times N_l` and contains the function values
         of the basis :math:`\{b^l_0, b^l_{M_l-1}\}` of the l-th coordinate:
 

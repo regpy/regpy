@@ -1,4 +1,4 @@
-from math import sqrt
+from math import sqrt,inf
 import logging
 
 from regpy.solvers import RegSolver, TikhonovRegularizationSetting
@@ -54,7 +54,7 @@ class FISTA(RegSolver):
         self.eta = eta
         assert 0<self.eta<1
 
-        if self.data_fid.Lipschitz != np.inf:
+        if self.data_fid.Lipschitz != inf:
             self.y, deriv = self.op.linearize(self.x)
             self.tau = 1./(deriv.norm(setting.h_domain,setting.h_codomain)**2 * self.data_fid.Lipschitz)
             """The step size parameter"""

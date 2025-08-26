@@ -212,10 +212,7 @@ class NgsVectorSpace(VectorSpaceBase):
     
     def ones(self):
         if self.codim == 1:
-            if self.codim == 1:
             self._gfu_fes.Set(1)
-        else:
-            self._gfu_fes.Set(tuple(1 for _ in range(self.codim)))
         else:
             for gfu_i in self._gfu_fes.components:
                 gfu_i.Set(tuple(1 for _ in range(gfu_i.dim)))

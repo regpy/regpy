@@ -31,8 +31,8 @@ def test_linearity(op, tolerance=1e-10):
     x = op.domain.randn()
     y = op.domain.randn()
     r= uniform(-10,10)
-    err_sum=op.domain.norm((op(x)+op(y))-(op(x+y)))
-    err_mult=op.domain.norm(op(r*x)-r*op(x))
+    err_sum=op.codomain.norm((op(x)+op(y))-(op(x+y)))
+    err_mult=op.codomain.norm(op(r*x)-r*op(x))
     if err_sum<tolerance or err_mult<tolerance:
         op.log.info(f'Linearity test passed: err_sum = {err_sum}, err_mult = {err_mult}')
         return True
@@ -169,7 +169,7 @@ def test_adjoint_derivative(op, tolerance=1e-10):
         op.log.info('Adjoint derivative test passed.')
         return True
     else:
-        op.log.warning(f'Adjoint derivative test failed: {np.abs(adjoint_deriv_h-deriv.adjoint(deriv(h)))}')
+        op.log.warning(f'Adjoint derivative test failed: {diff}')
         return False
 
     

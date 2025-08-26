@@ -61,7 +61,7 @@ class Landweber(RegSolver):
         if self.backtracking:
             self._residual = self.y - self.rhs
             self._gy_residual = self.h_codomain.gram(self._residual)
-            self._old_err = np.vdot(self._residual, self._gy_residual).real
+            self._old_err = self.op.codomain.vdot(self._residual, self._gy_residual).real
 
     def _next(self):
         if not self.backtracking:
@@ -73,7 +73,7 @@ class Landweber(RegSolver):
             new_x = self.x - self.stepsize * self.h_domain.gram_inv(self._update)
             self._residual = self.op(new_x) - self.rhs
             self._gy_residual = self.h_codomain.gram(self._residual)
-            new_err = np.vdot(self._residual, self._gy_residual).real
+            new_err = self.op.codomain.vdot(self._residual, self._gy_residual).real
             if new_err < self._old_err:
                 self._old_err = new_err
                 break
