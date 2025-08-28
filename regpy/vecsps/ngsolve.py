@@ -7,11 +7,14 @@ and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` a
 respectively. 
 """
 
-import ngsolve as ngs
-import numpy as np
+__all__ = ['NgsBaseVector','NgsVectorSpace']
+
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
+
+import ngsolve as ngs
+import numpy as np
 from pyngcore.pyngcore import BitArray
 
 from regpy.vecsps import VectorSpaceBase
@@ -26,6 +29,10 @@ class NgsBaseVector:
 
     def copy(self):
         return copy(self)
+    
+    @property
+    def is_complex_dtype(self):
+        return self.vec.is_complex
 
     def __post_init__(self):
         if isinstance(self.vec,ngs.la.BaseVector):
@@ -50,17 +57,21 @@ class NgsBaseVector:
     
     @property
     def real(self):
-        z = self.vec.CreateVector()
-        for i in range(self.size): 
-            z[i] = self.vec[i].real
-        return NgsBaseVector(z)
+        if self.is_complex_dtype:
+            z = ngs.la.BaseVector(size = self.size)
+            for i in range(self.size): 
+                z[i] = self.vec[i][0].real
+            return NgsBaseVector(z)
+        return self.copy()
     
     @property
     def imag(self):
-        z = self.vec.CreateVector()
-        for i in range(self.size): 
-            z[i] = self.vec[i].imag
-        return NgsBaseVector(z)
+        if self.is_complex_dtype:
+            z = ngs.la.BaseVector(size = self.size)
+            for i in range(self.size): 
+                z[i] = self.vec[i][0].imag
+            return NgsBaseVector(z)
+        return NgsBaseVector(self.vec.CreateVector())
 
     def __iadd__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
@@ -114,12 +125,22 @@ class NgsBaseVector:
     
     def __getitem__(self,i):
         if isinstance(i,BitArray):
-            return self.vec
-        else:
+            v = self.vec.CreateVector()
+            v[i] = self.vec
+            return NgsBaseVector(v)
+        elif isinstance(i,int):
             return self.vec[i]
+        else:
+            return NgsBaseVector(self.vec[i])
     
     def __setitem__(self,i,val):
-        self.vec[i] = val
+        if isinstance(val, NgsBaseVector) and self.size == val.size:
+            self.vec[i] = val.vec
+        else:
+            try:
+                self.vec[i] = val
+            except TypeError:
+                raise TypeError(f"Not able to set {val} to NgsBaseVector. It has to be either an NgsBaseVector of same size or Something compatible to set to an ngsolve.la.BaseVector.")
 
     def __iter__(self):
         return self.vec
@@ -245,6 +266,7 @@ class NgsVectorSpace(VectorSpaceBase):
     def poisson(self,x, n = 1):
         assert not self.is_complex
         self._gfu_util.Set(self.to_gf(x))
+        assert np.all(self._gfu_util.vec.FV().NumPy()>=0), f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive."
         self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
         self._gfu_fes.Set(self._gfu_util)
         return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec),make_copy=True)
@@ -315,8 +337,9 @@ class NgsVectorSpace(VectorSpaceBase):
             raise ValueError("The vector {} is not an element of the vector space {}".format(x,self))
         if not self.is_complex: 
             self._gfu_fes.vec.data = x.vec
-            self._gfu_fes.Set(ngs.IfPos(self._gfu_fes,1,0))
-            return BitArray([v_i==0 for v_i in self._gfu_fes.vec])
+            gfu_help = ngs.GridFunction(self.fes)
+            gfu_help.Set(ngs.IfPos(self._gfu_fes,1,0))
+            return BitArray([v_i==0 for v_i in gfu_help.vec])
         else:
             return TypeError("The vector space {} is complex, use IfPos only works for real valued functions.".format(self))
     
