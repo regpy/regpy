@@ -5,6 +5,8 @@ import ngsolve as ngs
 from regpy.hilbert import L2
 from regpy.functionals import Functional
 
+__all__ = ["SignumFilter", "NgsL1", "NgsTV"]
+
 class SignumFilter(ngs.la.BaseMatrix):
     def __init__ (self, space, vec):
         self.super(ngs.la.SymmetricGS, self).__init__()

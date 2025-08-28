@@ -1,12 +1,15 @@
 from collections import defaultdict
-
 from copy import copy
+from math import inf
 
 import numpy as np
-from math import inf
+from scipy.linalg import ishermitian
 
 from regpy import operators, util, vecsps
 from regpy import hilbert
+
+__all__ = ["L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm"]
+
 
 class NotInEssentialDomainError(Exception):
     r"""
@@ -14,11 +17,13 @@ class NotInEssentialDomainError(Exception):
     """
     pass
 
+
 class NotTwiceDifferentiableError(Exception):
     r"""
     Raised if hessian is called at an argument where a functional is not twice differentiable. 
     """
     pass
+
 
 class Functional:
     r"""
@@ -370,6 +375,7 @@ class Functional:
             The adjoint as an `regpy.operators.Operator` instance.
         """
         return Conj(self)
+
 
 class Conj(Functional):
     r"""An proxy class wrapping a functional. Calling it will evaluate the functional's
@@ -1191,9 +1197,6 @@ class AbstractFunctional(AbstractFunctionalBase):
             '{} not implemented on {}'.format(self.name, vecsp)
         )
 
-L1 = AbstractFunctional('L1')
-TV = AbstractFunctional('TV')
-HilbertNorm = AbstractFunctional('HilbertNorm')
 
 class AbstractLinearCombination(AbstractFunctional):
     r"""Linear combination of abstract functionals. 
@@ -1555,7 +1558,7 @@ class LppPower(IntegralFunctionalBase):
         self.q = p/(p-1)
         super().__init__(domain, hilbert.L2(domain),
                          convexity_param = 2 if p==2 else 0,
-                         Lipschitz = 2 if p==2 else np.inf
+                         Lipschitz = 2 if p==2 else inf
                          )
 
     def _f(self,v,**kwargs):
@@ -1617,7 +1620,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
     def _f_conj(self, v_star,**kwargs):
         ind = (np.abs(v_star)>1)
         res = np.zeros_like(v_star)
-        res[ind]=np.inf
+        res[ind]= inf
         return res
     
     def _f_conj_deriv(self, v_star,**kwargs):
@@ -2057,9 +2060,6 @@ def QuadraticLowerBound(domain, lb, x0,a=1.):
     offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
     return a*HorizontalShiftDilation(F,shift=lb)+ a*lin + a*offset
 
-from scipy.linalg import ishermitian
-from numpy.linalg import eigvalsh,eigh
-
 class QuadraticPositiveSemidef(Functional):
     r"""Functional 
 
@@ -2102,7 +2102,7 @@ class QuadraticPositiveSemidef(Functional):
         if(self.has_trace_constraint):
             if(np.abs(np.trace(rho)-self.trace_val)>self.tol):
                 return False
-        evs=eigvalsh(rho)
+        evs=np.linalg.eigvalsh(rho)
         return evs[0]>-self.tol
     
     @staticmethod
@@ -2132,7 +2132,7 @@ class QuadraticPositiveSemidef(Functional):
             return np.inf
 
     def _proximal(self, x, tau):
-        evs,U=eigh(x)
+        evs,U=np.linalg.eigh(x)
         evs/=(1+tau)
         if(self.has_trace_constraint):
             proj_evs=QuadraticPositiveSemidef.closest_point_simplex(evs,self.trace_val)
@@ -2153,7 +2153,7 @@ class QuadraticPositiveSemidef(Functional):
             return NotInEssentialDomainError
         
     def _conj(self,xstar):
-        evs=eigvalsh(xstar)
+        evs=np.linalg.eigvalsh(xstar)
         if(self.has_trace_constraint):
             cps=QuadraticPositiveSemidef.closest_point_simplex(evs,self.trace_val)
             return (np.sum(evs**2)+np.sum((cps-evs)**2))/2
@@ -2297,6 +2297,18 @@ def as_functional(func, vecsp):
 def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
     return HilbertNorm(h_space(vecsp))
 
+L1 = AbstractFunctional('L1')
+Lpp = AbstractFunctional('Lpp')
+TV = AbstractFunctional('TV')
+KL = AbstractFunctional('KL')
+RE = AbstractFunctional("RE")
+Hub = AbstractFunctional("Hub")
+QuadIntv = AbstractFunctional("QuadIntv")
+QuadNonneg = AbstractFunctional("QuadNonneg")
+QuadBil = AbstractFunctional("QuadBil")
+QuadLow = AbstractFunctional("QuadLow")
+QuadPosSemi = AbstractFunctional("QuadPosSemi")
+HilbertNorm = AbstractFunctional('HilbertNorm')
 
 def _register_functionals():
     r"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
@@ -2313,3 +2325,21 @@ def _register_functionals():
 
     TV.register(vecsps.NumPyVectorSpace, TVGeneric)
     TV.register(vecsps.UniformGridFcts, TVUniformGridFcts)
+
+    Lpp.register(vecsps.MeasureSpaceFcts, LppPower)
+ 
+    KL.register(vecsps.MeasureSpaceFcts,KullbackLeibler)
+    
+    RE.register(vecsps.MeasureSpaceFcts,RelativeEntropy)
+
+    Hub.register(vecsps.MeasureSpaceFcts,Huber)
+
+    QuadIntv.register(vecsps.MeasureSpaceFcts,QuadraticIntv)
+    
+    QuadNonneg.register(vecsps.MeasureSpaceFcts,QuadraticNonneg)
+
+    QuadBil.register(vecsps.MeasureSpaceFcts,QuadraticBilateralConstraints)
+    
+    QuadLow.register(vecsps.MeasureSpaceFcts,QuadraticLowerBound)
+    
+    QuadPosSemi.register(vecsps.UniformGridFcts,QuadraticPositiveSemidef)
