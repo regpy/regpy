@@ -391,23 +391,3 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return self._help_x.copy()
 
-    
-# Registering functionals and Hilbert spaces defined in `regpy.hilbert.ngsolve`
-# and `regpy,functionals.ngsolve`. So that the can be used by using the abstract 
-# Hilbert space `AbstractSpace` or abstract Functionals `AbstractFunctional` 
-
-from regpy.hilbert import L2, L2Boundary, Sobolev, SobolevBoundary, Hm0
-from regpy.hilbert.ngsolve import L2FESpace, SobolevFESpace, H10FESpace, L2BoundaryFESpace, SobolevBoundaryFESpace
-
-L2.register(NgsVectorSpace, L2FESpace)
-Sobolev.register(NgsVectorSpace,SobolevFESpace)
-Hm0.register(NgsVectorSpace,H10FESpace)
-L2Boundary.register(NgsVectorSpace, L2BoundaryFESpace)
-SobolevBoundary.register(NgsVectorSpace,SobolevBoundaryFESpace)
-
-
-from regpy.functionals.ngsolve import NgsL1,NgsTV
-from regpy.functionals import L1, TV
-
-L1.register(NgsVectorSpace, NgsL1)
-TV.register(NgsVectorSpace,NgsTV)

@@ -1,6 +1,7 @@
 from collections import defaultdict
 from copy import copy
 from math import inf
+import logging
 
 import numpy as np
 from scipy.linalg import ishermitian
@@ -10,6 +11,9 @@ from regpy import hilbert
 
 __all__ = ["L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm"]
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
 
 class NotInEssentialDomainError(Exception):
     r"""
@@ -2343,3 +2347,14 @@ def _register_functionals():
     QuadLow.register(vecsps.MeasureSpaceFcts,QuadraticLowerBound)
     
     QuadPosSemi.register(vecsps.UniformGridFcts,QuadraticPositiveSemidef)
+
+    # Import of ngsolve functionals if possible to import 
+    try:
+        from .ngsolve import NgsL1,NgsTV
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+
+        L1.register(NgsVectorSpace, NgsL1)
+        TV.register(NgsVectorSpace,NgsTV)
+    except ImportError:
+        logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")
+

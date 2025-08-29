@@ -2,6 +2,7 @@ r"""Concrete and abstract Hilbert spaces on vector spaces.
 """
 
 from copy import copy
+import logging
 
 import numpy as np
 from math import sqrt
@@ -9,6 +10,11 @@ from math import sqrt
 from regpy import util, functionals, operators, vecsps
 from scipy.sparse import csc_matrix
 
+logging.basicConfig(
+    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+)
+
+__all__ = ["L2", "Sobolev","Hm","Hm0","L2Boundary","SobolevBoundary"]
 
 class HilbertSpace:
     # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
@@ -903,3 +909,16 @@ def _register_spaces():
     L2Boundary.register(vecsps.DirectSum, componentwise(L2Boundary))
 
     SobolevBoundary.register(vecsps.DirectSum, componentwise(SobolevBoundary))
+
+    # Import of ngsolve hilbert spaces if possible to import 
+    try:
+        from regpy.hilbert.ngsolve import L2FESpace, SobolevFESpace, H10FESpace, L2BoundaryFESpace, SobolevBoundaryFESpace
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+
+        L2.register(NgsVectorSpace, L2FESpace)
+        Sobolev.register(NgsVectorSpace,SobolevFESpace)
+        Hm0.register(NgsVectorSpace,H10FESpace)
+        L2Boundary.register(NgsVectorSpace, L2BoundaryFESpace)
+        SobolevBoundary.register(NgsVectorSpace,SobolevBoundaryFESpace)
+    except ImportError:
+        logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")
