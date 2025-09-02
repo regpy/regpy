@@ -1,14 +1,9 @@
-import logging
-from regpy.util import classlogger
+from regpy.util import ClassLogger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+__all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
 
 class MissingValueError(Exception):
     pass
-
 
 class StopRule:
     """Abstract base class for stopping rules.
@@ -16,7 +11,7 @@ class StopRule:
     The attributes :attr:`x` and :attr:`y` are set to the current iterate from the solver. The method :meth:`stop` then checks whether the stopping rule should trigger using the private method :meth:`_stop_`. If it does, then the attribute :attr:`triggered` is set to true and the method :meth:`stop` returns `True`. Note that a later call to :meth:`stop` will not evaluate the rule again since the attribute :attr:`triggered` is set to `True`. 
     """
 
-    log = classlogger
+    log = ClassLogger()
 
     def __init__(self):
         self.x = None
@@ -147,7 +142,7 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations, while_type = True,logging_level= logging.INFO):
+    def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
         super().__init__()
         self.max_iterations = max_iterations
         self.iteration = 0
@@ -328,7 +323,7 @@ class Monotonicity(StopRule):
 
 
 class DualityGapStopping(StopRule):
-    def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = logging.INFO):
+    def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = "INFO"):
         from regpy.solvers import RegSolver
         assert isinstance(solver,RegSolver)
         assert hasattr(solver,'gap')
