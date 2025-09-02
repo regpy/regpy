@@ -1,12 +1,8 @@
 from math import sqrt,inf
-import logging
 
-from regpy.solvers import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver, TikhonovRegularizationSetting
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+__all__ = ["FISTA"]
 
 class FISTA(RegSolver):
     r"""
@@ -38,7 +34,7 @@ class FISTA(RegSolver):
     logging_level: [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
+    def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         self.x = self.op.domain.zeros() if init is None else init

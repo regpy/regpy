@@ -1,12 +1,8 @@
 import math as ma
 
-from regpy.solvers import RegSolver, TikhonovRegularizationSetting
-import logging
+from ..general import RegSolver, TikhonovRegularizationSetting
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+__all__ = ["PDHG","DouglasRachford"]
 
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
@@ -55,7 +51,7 @@ class PDHG(RegSolver):
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True,compute_gap =True, logging_level = logging.INFO
+                 compute_y = True,compute_gap =True, logging_level = "INFO"
                  ):
         assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)

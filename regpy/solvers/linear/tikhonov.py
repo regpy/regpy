@@ -1,18 +1,13 @@
-import logging
 from math import sqrt,inf
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
-
-from regpy.solvers import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
-from regpy.functionals import SquaredNorm
-
-from regpy.util import classlogger
+from regpy.functionals.base import SquaredNorm
 
 from regpy.operators import Identity
 from regpy.stoprules import CountIterations
+
+from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+
+__all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov"]
 
 class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
@@ -61,7 +56,6 @@ class TikhonovCG(RegSolver):
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
     """
-    log = classlogger
 
     def __init__(
         self, setting, data=None, regpar=None, xref=None, 
@@ -69,7 +63,7 @@ class TikhonovCG(RegSolver):
         tol=None, reltolx=None, reltoly=None, 
         all_tol_criteria = True,
         krylov_basis=None, preconditioner=None,
-        logging_level = logging.INFO
+        logging_level = "INFO"
         ):
         assert isinstance(setting,RegularizationSetting)
         assert setting.op.linear
@@ -319,7 +313,7 @@ class TikhonovAlphaGrid(RegSolver):
     Further keyword arguments for TikhonovCG can be given. 
     """
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
-                 delta=None,tol_fac=0.5, logging_level= logging.INFO):
+                 delta=None,tol_fac=0.5, logging_level= "INFO"):
         super().__init__(setting)
         self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
@@ -353,7 +347,7 @@ class TikhonovAlphaGrid(RegSolver):
             return self.converge()
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
-        inner_stoprule.log.setLevel(logging.WARNING)
+        inner_stoprule.log.setLevel("WARNING")
         if self.delta is None:
             tikhcg =TikhonovCG(self.setting,data=self.data,regpar=alpha,xref=self.xref,x0=self.xref,
                                reltolx = self.tol_fac / sqrt(alpha),
@@ -387,7 +381,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha)
     """
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
-                 delta=None,tol_fac=0.5, logging_level= logging.INFO):
+                 delta=None,tol_fac=0.5, logging_level= "INFO"):
         super().__init__(setting)
         self.setting = setting
         if isinstance(alphas,tuple) and len(alphas)==2:
@@ -424,7 +418,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         self.alpha_eff = 1./(1./alpha + 1./self.alpha_eff)
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
-        inner_stoprule.log.setLevel(logging.WARNING)
+        inner_stoprule.log.setLevel("WARNING")
         if self.delta is None:
             tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
                                reltolx = self.tol_fac / sqrt(self.alpha_eff),

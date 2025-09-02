@@ -1,12 +1,14 @@
-import logging
 from copy import copy
-import numpy as np
 from math import sqrt,isqrt
 
-from regpy.solvers import RegularizationSetting, RegSolver
-from regpy.solvers.linear.tikhonov import TikhonovCG
+import numpy as np
+
 from regpy.stoprules import CountIterations
 
+from ..general import RegularizationSetting, RegSolver
+from ..linear.tikhonov import TikhonovCG
+
+__all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -44,7 +46,7 @@ class IrgnmCG(RegSolver):
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
-                inner_it_logging_level = logging.WARNING, 
+                inner_it_logging_level = "WARNING", 
                 simplified_op = None
          ):
         super().__init__(setting)
@@ -79,7 +81,7 @@ class IrgnmCG(RegSolver):
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.INFO)
+        stoprule.log.setLevel("INFO")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
@@ -139,7 +141,7 @@ class LevenbergMarquardt(RegSolver):
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
-                inner_it_logging_level = logging.WARNING, 
+                inner_it_logging_level = "WARNING", 
                 simplified_op = None
          ):
         super().__init__(setting)
@@ -174,7 +176,7 @@ class LevenbergMarquardt(RegSolver):
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel("WARNING")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
@@ -309,7 +311,7 @@ class IrgnmCGPrec(RegSolver):
         else:
             stoprule = CountIterations(2**15)
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel("WARNING")
         self.log.info('Running Tikhonov solver.')
         
         if self.need_prec_update:

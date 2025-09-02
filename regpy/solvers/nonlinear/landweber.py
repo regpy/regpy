@@ -1,7 +1,8 @@
-from regpy.solvers import RegSolver
-
-import logging
 from math import sqrt
+
+from ..general import RegSolver
+
+__all__ = ["Landweber"]
 
 class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
@@ -87,7 +88,7 @@ class Landweber(RegSolver):
         self.y, self.deriv = self.op.linearize(self.x)
 
 
-        if self.log.isEnabledFor(logging.INFO):
+        if self.log.isEnabledFor(20): # INFO=20
             if self.backtracking:
                 norm_residual = sqrt(self._old_err)
             else:

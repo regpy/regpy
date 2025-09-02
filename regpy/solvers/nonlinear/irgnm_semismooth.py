@@ -1,8 +1,9 @@
-import logging
-
-from regpy.solvers import RegularizationSetting, RegSolver
-from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import CoordinateMask
+
+from ..general import RegularizationSetting, RegSolver
+from ..linear.tikhonov import TikhonovCG
+
+__all__ = ["IrgnmSemiSmooth"]
 
 class IrgnmSemiSmooth(RegSolver):
     r"""

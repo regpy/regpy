@@ -1,19 +1,15 @@
-from regpy.solvers import RegSolver
-import numpy as np
 from math import sqrt,inf
 
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
-from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
-from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
-from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber, LinearCombination
+from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
+from regpy.functionals.numpy import QuadraticBilateralConstraints, Huber
 from regpy.stoprules import CountIterations
-import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from .tikhonov import TikhonovCG,GeometricSequence
+
+__all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
 class SemismoothNewton_bilateral(RegSolver):
     r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
@@ -62,7 +58,7 @@ class SemismoothNewton_bilateral(RegSolver):
     """
 
     def __init__(self, *args,
-                 cg_pars = None, logging_level = logging.INFO, cg_logging_level = logging.INFO,x0=None,
+                 cg_pars = None, logging_level = "INFO", cg_logging_level = "INFO",x0=None,
                  **kwargs
                  ):
         if len(args)==3:
@@ -318,7 +314,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
     """
     def __init__(self,setting, data, regpar, xref = None,  x0=None, lambda0=None, cg_pars = None, TOL = 0.,
-                 logging_level = logging.INFO, cg_logging_level = logging.INFO):
+                 logging_level = "INFO", cg_logging_level = "INFO"):
         assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
         assert self.op.domain.dtype == float
@@ -446,7 +442,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         absolute tolerance for inner cg iteration is tol_fac_cg/sqrt(alpha)
     """
     def __init__(self,setting, data, alphas, xref=None,max_Newton_iter=50,
-                 delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= logging.INFO):
+                 delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
         super().__init__(setting)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
@@ -481,13 +477,13 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         setting = RegularizationSetting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
         inner_stoprule = CountIterations(max_iterations=self.max_Newton_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
-        inner_stoprule.log.setLevel(logging.WARNING)
+        inner_stoprule.log.setLevel("WARNING")
         if not hasattr(self,'alpha_old'):
             SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,
                                 TOL = self.tol_fac / sqrt(self.alpha),
                                 cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
-                                cg_logging_level = logging.WARNING
+                                cg_logging_level = "WARNING"
                                )    
         else:
             lambda0 = (self.alpha/self.alpha_old)*self.lam
@@ -495,7 +491,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
                                 TOL = self.tol_fac / sqrt(self.alpha),
                                 cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
-                                cg_logging_level = logging.WARNING
+                                cg_logging_level = "WARNING"
                                )
         self.x, self.y = SSNewton.run(inner_stoprule)
         self.lam = SSNewton.lam

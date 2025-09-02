@@ -1,6 +1,6 @@
-import logging
-from regpy.solvers import RegSolver
+from ..general import RegSolver
 
+__all__ = ["CGNE"]
 
 class CGNE(RegSolver):
     r"""
@@ -18,7 +18,7 @@ class CGNE(RegSolver):
     logging_level: default: logggin.INFO
         Controls amount of output
     """
-    def __init__(self, setting, data, x0 =None, logging_level = logging.INFO):
+    def __init__(self, setting, data, x0 =None, logging_level = "INFO"):
         assert setting.op.linear
 
         super().__init__(setting)

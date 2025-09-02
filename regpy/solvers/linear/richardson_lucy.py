@@ -1,4 +1,6 @@
-from regpy.solvers import Solver 
+from ..general import Solver 
+
+__all__ = ["RichardsonLucy"]
 
 class RichardsonLucy(Solver):
     def __init__(self,op,data,x_init=None,sigma=0):

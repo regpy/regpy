@@ -1,12 +1,9 @@
 from math import sqrt
 from copy import deepcopy
-from regpy.solvers import RegSolver, RegularizationSetting
-import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from ..general import RegSolver, RegularizationSetting
+
+__all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen"]
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
@@ -249,8 +246,8 @@ class NewtonSemiSmoothFrozen(RegSolver):
             x0 = self.x,
             psi_minus=self.psi_minus,
             psi_plus=self.psi_plus,
-            logging_level= logging.WARNING,
-            cg_logging_level=logging.WARNING,
+            logging_level= "WARNING",
+            cg_logging_level="WARNING",
             cg_pars = self.cg_pars
         )
         self.lin_NSS.lam_minus = (self.alpha/self.alpha_old)*self.lam_minus

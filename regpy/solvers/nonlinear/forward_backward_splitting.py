@@ -1,11 +1,6 @@
-import logging
+from ..general import RegSolver, TikhonovRegularizationSetting
 
-from regpy.solvers import RegSolver, TikhonovRegularizationSetting
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+__all__ = ["ForwardBackwardSplitting"]
 
 class ForwardBackwardSplitting(RegSolver):
     r"""
@@ -27,7 +22,7 @@ class ForwardBackwardSplitting(RegSolver):
     logging_level: int [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = logging.INFO):
+    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
 
