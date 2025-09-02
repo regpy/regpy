@@ -1,19 +1,24 @@
-from regpy import vecsps
-from regpy.vecsps import DirectSum
-from regpy.operators import Operator
-import multiprocessing as mp 
-from warnings import warn
-from weakref import WeakValueDictionary
-from regpy.util import classlogger
 from enum import Enum
+import multiprocessing as mp 
 import os
 import time
+from warnings import warn
+from weakref import WeakValueDictionary
+
+from regpy.util import ClassLogger
+from regpy.vecsps import VectorSpaceBase
+from regpy.vecsps import DirectSum as DirectSumVS
+
+from .base import Operator
+
+__all__ = [
+    "OperatorAsWorker", "ParallelExecutionManager", "ParallelVectorOfOperators", "DistributedVectorOfOperators"
+]
 
 class ExitCode(Enum):
     SUCCESS=1
     ERROR=2
     TIMEOUT=3
-
 
 class OperatorAsWorker(mp.Process):
     r""" 
@@ -30,7 +35,7 @@ class OperatorAsWorker(mp.Process):
     F : regpy.operators.Operator
         the regpy operator
     """
-    log = classlogger
+    log = ClassLogger()
     def __init__(self, name, conn,F):
         super(OperatorAsWorker, self).__init__()
         self.F = F
@@ -307,8 +312,8 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         assert all(op.domain == self.domain for op in ops)
 
         if codomain is None:
-            codomain = vecsps.DirectSum
-        if isinstance(codomain, vecsps.VectorSpaceBase):
+            codomain = DirectSumVS
+        if isinstance(codomain, VectorSpaceBase):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
@@ -374,10 +379,10 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         assert ops
 
         self.domain = domain
-        assert isinstance(self.domain,vecsps.DirectSum)
+        assert isinstance(self.domain,DirectSumVS)
         if codomain is None:
-            codomain = vecsps.DirectSum
-        if isinstance(codomain, vecsps.VectorSpaceBase):
+            codomain = DirectSumVS
+        if isinstance(codomain, VectorSpaceBase):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
@@ -390,7 +395,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             if len(indices) == 1:
                 assert op.domain == self.domain.summands[indices[0]]
             else:
-                assert isinstance(op.domain,vecsps.DirectSum)
+                assert isinstance(op.domain,DirectSumVS)
                 assert all((d == self.domain.summands[indices[j]] for j,d in enumerate(op.domain.summands)))
         conns = []
         it = 0

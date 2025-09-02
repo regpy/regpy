@@ -1,7 +1,11 @@
 import numpy as np
-from regpy.operators import Operator
-from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
+
+from regpy.vecsps import NumPyVectorSpace,GridFcts,UniformGridFcts, Prod
+
+from .base import Operator
+
+__all__ = ["chebyshev_basis","legendre_basis","bspline_basis"]
 
 class BasisTransform(Operator):
     r"""

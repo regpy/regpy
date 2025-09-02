@@ -1,7 +1,11 @@
 import numpy as np
 
-from regpy.operators import FourierTransform, PtwMultiplication, Operator, Composition
 from regpy.vecsps import UniformGridFcts
+
+from .base import PtwMultiplication, Operator, Composition
+from .numpy import FourierTransform
+
+__all__ = ["PaddingOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FresnelPropagator"]
 
 class PaddingOperator(Operator):
     r"""Operator that implements zero-padding for numpy arrays.

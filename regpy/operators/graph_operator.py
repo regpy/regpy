@@ -1,7 +1,8 @@
-from regpy.operators import Operator,Identity
 from regpy import vecsps
 
+from .base import Operator,Identity
 
+__all__ = ["OperatorNode","Edge","OperatorGraph"]
 
 class OperatorNode:
     """Object that represents a node in a Graph of operators and manages the input and output from the edges to the operator.

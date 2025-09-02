@@ -5,8 +5,11 @@ import types
 import ngsolve as ngs
 import numpy as np
 
-from regpy.operators import Operator
 from regpy.vecsps.ngsolve import NgsVectorSpace,NgsBaseVector
+
+from .base import Operator
+
+__all__ = ["NGSolveOperator", "SecondOrderEllipticCoefficientPDE"]
 
 class NGSolveOperator(Operator):
     r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
