@@ -3,7 +3,9 @@
 import ngsolve as ngs
 
 from regpy.hilbert import L2
-from regpy.functionals import Functional
+from regpy.vecsps.ngsolve import NgsVectorSpace
+
+from .base import Functional
 
 __all__ = ["SignumFilter", "NgsL1", "NgsTV"]
 
@@ -42,8 +44,6 @@ class NgsL1(Functional):
         The underlying `ngsolve` space. 
     """
     def __init__(self, domain):
-        #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsVectorSpace
         assert isinstance(domain, NgsVectorSpace)
         self._gfu = ngs.GridFunction(domain.fes)
         self._x_help = domain.zeros()
@@ -91,8 +91,6 @@ class NgsTV(Functional):
     """
 
     def __init__(self, domain, h_domain=L2):
-        #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsVectorSpace
         assert isinstance(domain, NgsVectorSpace)
         assert domain.codim == 1, "TV is not implemented for vector valued spaces." 
         super().__init__(domain,h_domain=h_domain)
