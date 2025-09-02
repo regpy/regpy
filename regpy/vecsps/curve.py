@@ -2,6 +2,8 @@ import numpy as np
 
 from regpy.vecsps import UniformGridFcts
 
+__all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
+
 class GenCurve:
     r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
     without self-crossing parametrization by function :math:`z(t)`\, 

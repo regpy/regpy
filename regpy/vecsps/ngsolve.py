@@ -17,8 +17,9 @@ import ngsolve as ngs
 import numpy as np
 from pyngcore.pyngcore import BitArray
 
-from regpy.vecsps import VectorSpaceBase
-from regpy.util import is_complex_dtype, classlogger
+from regpy.util import is_complex_dtype
+
+from .base import VectorSpaceBase
 
 @dataclass 
 class NgsBaseVector:
@@ -189,8 +190,6 @@ class NgsVectorSpace(VectorSpaceBase):
     bdr : 
         Boundary of the NGSolve vector space.
     """
-
-    log = classlogger
 
     def __init__(self, fes, bdr=None):
         assert isinstance(fes, ngs.FESpace)
