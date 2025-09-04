@@ -99,6 +99,9 @@ class NgsBaseVector:
     def __rsub__(self,other):
         return (-1*self) + other
     
+    def __neg__(self):
+        return -1*self
+    
     def __imul__(self,other):
         assert isinstance(other,float) or isinstance(other,int)
         self.vec.data *= other
@@ -110,10 +113,15 @@ class NgsBaseVector:
         return self
     
     def __mul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
-        v = self.vec.CreateVector()
-        v.data = other * self.vec
-        return NgsBaseVector(v)
+        from regpy.operators.base import Operator,PtwMultiplication
+        if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
+            v = self.vec.CreateVector()
+            v.data = other * self.vec
+            return NgsBaseVector(v)
+        elif isinstance(other,Operator):
+            return PtwMultiplication(other.codomain, self) * other
+        else:
+            raise NotImplementedError(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator.")
         
     def __rmul__(self,other):
         return self * other
@@ -224,6 +232,7 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_util = ngs.GridFunction(self._fes_util)
         self._gfu_fes = ngs.GridFunction(self.fes)
         self._help_x = NgsBaseVector(self._gfu_fes.vec)
+        self._no_pickle = {*self._no_pickle,"fes"}
 
     def zeros(self):
         h = self._gfu_fes.vec.CreateVector()

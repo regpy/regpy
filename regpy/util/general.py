@@ -43,7 +43,6 @@ def memoized_property(prop):
 
     return mprop
 
-
 def set_defaults(params, **defaults):
     if params is not None:
         defaults.update(params)

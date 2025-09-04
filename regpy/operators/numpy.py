@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, csc_array
 import scipy.sparse.linalg as sla
 
 from regpy import util
@@ -134,11 +134,12 @@ class SuperLUInverse(Operator):
     """
     def __init__(self,op):
         assert isinstance(op,MatrixMultiplication)
-        assert isinstance(op.matrix, csc_matrix)
+        assert isinstance(op.matrix, csc_matrix) or isinstance(op.matrix, csc_array)
         super().__init__(
             domain=op.codomain, 
             codomain = op.domain,
             linear=True)
+        self.op = op
         self.lu = sla.splu(op.matrix)
 
     def _eval(self,x):

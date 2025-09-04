@@ -150,7 +150,7 @@ class Operator:
         r"""Boolean indicating whether the operator is linear."""
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
-        self._consts = {'domain', 'codomain'}
+        self._consts = {'domain', 'codomain','lu'}
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -382,6 +382,7 @@ class Operator:
         index : int
             The index to be set as a constant. The index is with respect to the full domain.
         """
+        self.__revoke()
         if not hasattr(self, "full_domain"):
             if not isinstance(self.domain,vecsps.DirectSum):
                 raise TypeError("Cannot set a constant when domain is {}, require the domain to be a DirectSum".format(type(self.domain)))
@@ -404,6 +405,8 @@ class Operator:
         self.domain = vecsps.DirectSum(*[d_i for i,d_i in enumerate(self.full_domain) if i not in self._constants.keys()])
         if len(self.domain) == 1:
             self.domain = self.domain[0]
+
+        self.adjoint.codomain = self.domain
         
         if not self.linear:
             self.linear = util.operator_tests.test_linearity(self)
@@ -415,6 +418,7 @@ class Operator:
         self._constants = {}
         if hasattr(self, "full_domain"):
             self.domain = self.full_domain
+            self.adjoint.codomain = self.full_domain
         else:
             raise RuntimeError("Cannot reset constants, no full domain set.")
         self.linear = util.operator_tests.test_linearity(self)
@@ -446,17 +450,19 @@ class Operator:
         """
         assert x in self.domain, "Somehow the passed vector does not belong to the reduced domain."
         if hasattr(self, "full_domain") and len(self._constants)>0:
-            x_full_split = list(self.full_domain.split(self.full_domain.zeros()))
+            x_full_split = self.full_domain.zeros()
             if isinstance(self.domain,vecsps.DirectSum):
-                x_split = list(self.domain.split(x))
+                x_split = x
             else:
                 x_split = [x]
+            m = 0
             for i in range(len(self.full_domain)):
                 if i in self._constants.keys():
                     x_full_split[i] = self._constants[i]
                 else:
-                    x_full_split[i] = x_split.pop(0)
-            return self.full_domain.join(*x_full_split)
+                    x_full_split[i] = x_split[m]
+                    m += 1
+            return x_full_split
         else:
             return x
      
@@ -508,7 +514,8 @@ class Operator:
         else:
             return NotImplemented
     
-
+    def __imul__(self,other):
+        return self*other
 
     def __add__(self, other):
         if np.isscalar(other) and other == 0:
@@ -522,12 +529,18 @@ class Operator:
 
     def __radd__(self, other):
         return self + other
+    
+    def __iadd__(self, other):
+        return self + other
 
     def __sub__(self, other):
         return self + (-other)
 
     def __rsub__(self, other):
         return (-self) + other
+    
+    def __isub__(self,other):
+        return self - other
 
     def __neg__(self):
         return (-1) * self
@@ -559,15 +572,16 @@ class Adjoint(Operator):
         assert op.linear
         self.op = op
         r"""The underlying operator."""
-        self._constants = self.op._constants
-        """The constant inputs of the op need to be set in adjoint evaluation
-        """
-        if hasattr(self.op,"full_domain"):
-            self.full_domain = op.full_domain
         super().__init__(op.codomain, op.domain, linear=True)
+        if hasattr(self.op,"full_domain"):
+            self._constants = {}
+            """The constant inputs of the op need to be set in adjoint evaluation
+            """
+            self.full_domain = op.codomain
+        
 
     def _eval(self, x):
-        return self._reduce_to_domain(self.op._adjoint(x))
+        return self.op._reduce_to_domain(self.op._adjoint(x))
 
     def _adjoint(self, x):
         return self.op._eval(self._insert_constants(x))
@@ -955,9 +969,9 @@ class Pow(Operator):
         The power. Is required to be a positive interger.
     """
     def __init__(self, op, exponent):
-        assert op.linear
-        assert op.domain == op.codomain
-        assert type(exponent)==int and exponent>=0
+        assert op.linear, "The operator has to be linear."
+        assert op.domain == op.codomain, "Domain and codomain have to match."
+        assert type(exponent)==int and exponent>=0, "The exponent has to be of int type"
         super().__init__(op.domain,op.domain,linear=True)
         self.op = op
         self.exponent = exponent
@@ -1135,7 +1149,9 @@ class OuterShift(Operator):
         The offset by which to shift. 
     """
     def __init__(self, op, offset):
-        assert offset in op.codomain
+        assert isinstance(op,Operator)
+        assert offset in op.codomain or np.isscalar(offset)
+        offset = op.codomain.ones()*offset if np.isscalar(offset) else offset
         super().__init__(op.domain, op.codomain)
         if isinstance(op, type(self)):
             offset = offset + op.offset
@@ -1177,7 +1193,8 @@ class InnerShift(Operator):
         The offset by which to shift. 
     """
     def __init__(self, op, offset):
-        assert offset in op.domain
+        assert offset in op.domain or np.isscalar(offset)
+        offset = op.domain.ones()*offset if np.isscalar(offset) else offset
         super().__init__(op.domain, op.codomain)
         if isinstance(op, type(self)):
             offset = offset + op.offset
@@ -1187,7 +1204,11 @@ class InnerShift(Operator):
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
         if differentiate or adjoint_derivative:
-            y, self._deriv = self.op.linearize(x-self.offset, adjoint_derivative=adjoint_derivative)
+            tup = self.op.linearize(x-self.offset, adjoint_derivative=adjoint_derivative)
+            y = tup[0]
+            self._deriv = tup[1]
+            if adjoint_derivative:
+                self._adjoint_deriv = tup[2]
             return y 
         else:
             return self.op(x - self.offset)
@@ -1197,6 +1218,9 @@ class InnerShift(Operator):
 
     def _adjoint(self, y):
         return self._deriv.adjoint(y)
+    
+    def _adjoint_derivative(self, x):
+        return self._adjoint_deriv(x)
 
 class DirectSum(Operator):
     r"""The direct sum of operators. For
@@ -1235,28 +1259,28 @@ class DirectSum(Operator):
                 self.ops.extend(op.ops)
             else:
                 self.ops.append(op)
-
+        
         if domain is None:
-            domain = vecsps.DirectSum(*[op.domain for op in ops])
-        elif isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,ops)]):
+            domain = vecsps.DirectSum(*[op.domain for op in self.ops])
+        elif isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,self.ops)]):
             pass
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
-            assert isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,ops)]), "Domain constructur failed to construct correct domain."
+            assert isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,self.ops)]), "Domain constructur failed to construct correct domain."
         else:
             raise TypeError('domain={} is neither a VectorSpaceBase nor callable'.format(domain))
-
+        
         if codomain is None:
-            codomain = vecsps.DirectSum(*[op.codomain for op in ops])
-        elif isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,ops)]):
+            codomain = vecsps.DirectSum(*[op.codomain for op in self.ops])
+        elif isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,self.ops)]):
             pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
-            assert isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,ops)]), "Codomain constructur failed to construct correct codomain."
+            assert isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,self.ops)]), "Codomain constructur failed to construct correct codomain."
         else:
             raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
         
-        super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
+        super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in self.ops))
 
     def _eval(self, x, differentiate=False, adjoint_derivative=False):
         if hasattr(self,"full_domain"):
@@ -1286,7 +1310,7 @@ class DirectSum(Operator):
         )
 
     def _adjoint(self, y):
-        assert y in self.codomain, "{} is not in codomain {}".format(y,type(self.codomain))
+        assert y in self.codomain, f"{y} is not in codomain {type(self.codomain)} of shape {self.codomain.shape}"
         if self.linear:
             ops = self.ops
         else:
@@ -1771,12 +1795,8 @@ class SciPyLinearOperator(LinearOperator):
     def __init__(self, op2):
         self.op2 = op2
         r"""the wrapped operator"""
-        domain_shape=np.prod(op2.domain.shape)
-        codomain_shape=np.prod(op2.codomain.shape)
-        if(op2.domain.is_complex):
-            domain_shape*=2
-        if(op2.codomain.is_complex):
-            codomain_shape*=2
+        domain_shape=op2.domain.realsize
+        codomain_shape=op2.codomain.realsize
         super().__init__(np.float64, (codomain_shape,domain_shape))
 
     

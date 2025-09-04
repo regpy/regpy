@@ -120,7 +120,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     def masked_space(self, mask):
         mask = np.broadcast_to(mask, self.shape)
         assert mask.dtype == bool
-        res = NumPyVectorSpace(np.sum(mask), dtype=self.dtype)
+        res = NumPyVectorSpace(np.sum(mask).item(), dtype=self.dtype)
         res.mask = mask
         return res
     
@@ -161,6 +161,23 @@ class NumPyVectorSpace(VectorSpaceBase):
                 yield elm
             elm[idx] = 0
 
+    def __eq__(self,other):
+        if hasattr(self,"mask") and hasattr(other,"mask"):
+            if (self.mask == other.mask).all():
+                return super().__eq__(other)
+            else:
+                False
+        elif hasattr(self,"mask") ^ hasattr(other,"mask"):
+            return False
+        else:
+            return super().__eq__(other)
+
+    def __repr__(self):
+        if hasattr(self,"mask"):
+            return util.make_repr(self,self.shape,self.is_complex,self.mask)
+        else: 
+            return util.make_repr(self,self.shape,self.is_complex)
+
     def __mul__(self, other):
         if isinstance(other, NumPyVectorSpace):
             return Prod(self, other)
@@ -193,7 +210,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     def __init__(self,measure=None,shape=None,dtype=float):
         assert measure is not None or shape is not None
         if(isinstance(measure, np.ndarray)):
-            assert np.issubdtype(measure.dtype, np.floating)
+            assert np.issubdtype(measure.dtype, np.floating) or np.issubdtype(measure.dtype, np.integer)
             assert np.min(measure)>=0
             shape = measure.shape
         elif(np.isscalar(measure)):

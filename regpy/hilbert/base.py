@@ -1,11 +1,11 @@
-from copy import copy
+from copy import copy,deepcopy
 from math import sqrt
 import logging
 
 import numpy as np
 
 from regpy import util, vecsps
-from regpy.operators import CholeskyInverse
+from regpy.operators import CholeskyInverse,PtwMultiplication
 from regpy.operators import DirectSum as DirectSumOp
 from regpy.operators.bases_transform import BasisTransform
 
@@ -42,6 +42,19 @@ class HilbertSpace:
         assert isinstance(vecsp, vecsps.VectorSpaceBase)
         self.vecsp = vecsp
         """The underlying vector space."""
+        self._no_pickle = {}
+
+    def __deepcopy__(self, memo):
+        cls = type(self)
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            print(k)
+            if k in self._no_pickle:
+                setattr(result, k, v)
+            else:
+                setattr(result, k, deepcopy(v, memo))
+        return result
 
     @property
     def gram(self):
@@ -126,7 +139,7 @@ class HilbertSpace:
             return NotImplemented
 
     def __rmul__(self, other):
-        if isinstance(other,float):
+        if isinstance(other,float) or isinstance(other,int):
             return DirectSum((other, self), flatten=True)
         else:
             return NotImplemented
@@ -203,7 +216,7 @@ class HilbertPullBack(HilbertSpace):
             self.inverse = None
         elif inverse == 'conjugate':
             self.log.info(
-                'Note: Using using T* G^{-1} T as inverse of T* G T. This is probably not correct.')
+                'Note: Using T* G^{-1} T as inverse of T* G T. This is probably not correct.')
             self.inverse = op.adjoint * space.gram_inv * op
         elif inverse == 'cholesky':
             self.inverse = CholeskyInverse(self.gram)

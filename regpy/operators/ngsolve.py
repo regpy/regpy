@@ -169,7 +169,9 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         self.c_u += self._bf(self.gfu_h,self.gfu_eval,self.v)
 
         self.lf_adj = ngs.LinearForm(self.domain.fes)
-        self.lf_adj += -1*self._bf(self.v_a,self.gfu_eval,self.gfu_adj_help)        
+        self.lf_adj += -1*self._bf(self.v_a,self.gfu_eval,self.gfu_adj_help)
+
+        self._consts = {*self._consts, "u_a","v_a","u","v", "bf_mat", "bf_mat_inv","lf","lf_adj","c_u"}
 
     def _eval(self, 
             a : NgsBaseVector, 

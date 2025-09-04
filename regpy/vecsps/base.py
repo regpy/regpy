@@ -2,6 +2,7 @@ from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
 from typing import List
+import types
 
 import numpy as np
 
@@ -143,8 +144,13 @@ class TupleVector:
         return TupleVector(v)
     
     def __mul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
-        return TupleVector([other * s_k for s_k in self])
+        from regpy.operators.base import Operator,PtwMultiplication
+        if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
+            return TupleVector([other * s_k for s_k in self])
+        elif isinstance(other,Operator):
+            return PtwMultiplication(other.codomain, self) * other
+        else:
+            raise NotImplementedError(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator.")
         
     def __rmul__(self,other):
         return self * other
@@ -253,6 +259,19 @@ class VectorSpaceBase:
         self.is_complex = complex
         """Type of the vectors if different"""
         self.type = type 
+        """A dictionary containing modules kept extra in the copy"""        
+        self._no_pickle = {'type', 'vec_type'}
+
+    def __deepcopy__(self, memo):
+        cls = type(self)
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if k in self._no_pickle:
+                setattr(result, k, v)
+            else:
+                setattr(result, k, deepcopy(v, memo))
+        return result
 
     def zeros(self):
         """Return the zero vector of the space.
@@ -395,7 +414,7 @@ class VectorSpaceBase:
         return Identity(self)
 
     def __contains__(self, x):
-        return isinstance(x,self.vec_type) and x.shape == self.shape
+        return isinstance(x,self.vec_type) and all(xis == si for xis,si in zip(x.shape, self.shape))
 
     def flatten(self, x):
         r"""Transform the vector `x`, an element of the vector space, into a flattened vector. Inverse
@@ -514,6 +533,9 @@ class VectorSpaceBase:
         for i in range(power-1):
             domain = DirectSum(domain, self, flatten=True)
         return domain
+    
+    def __repr__(self):
+        return util.make_repr(self,self.shape,self.is_complex)
 
 
 class DirectSum(VectorSpaceBase):
@@ -553,15 +575,16 @@ class DirectSum(VectorSpaceBase):
         else:
             self.summands = summands
         self.n_components = len(summands)
-        super().__init__(vec_type=TupleVector,shape=(s.shape for s in self.summands),complex=any((s.is_complex for s in self.summands)))
+        shape = tuple(s.shape for s in self.summands)
+        super().__init__(vec_type=TupleVector,shape=shape,complex=any((s.is_complex for s in self.summands)))
 
     @property
     def size(self) -> int:
         return sum([s.size for s in self.summands]) 
     
     @property
-    def real_size(self) -> int:
-        return sum([s.real_size for s in self.summands]) 
+    def realsize(self) -> int:
+        return sum([s.realsize for s in self.summands]) 
 
     def zeros(self) -> TupleVector:
         return TupleVector([s.zeros() for s in self.summands])
@@ -606,7 +629,7 @@ class DirectSum(VectorSpaceBase):
         return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
     
     def fromflat(self, x : np.ndarray) -> TupleVector:
-        if x.ndim == 1 and np.isreal(x) and x.size == self.real_size:
+        if x.ndim == 1 and np.isreal(x).all() and x.size == self.realsize:
             ret = []
             ind = 0
             for s in self.summands:

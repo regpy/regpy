@@ -6,6 +6,8 @@ from regpy.operators import PtwMultiplication,Pow,MatrixMultiplication,FourierTr
 
 from .base import HilbertSpace
 
+__all__ = ["L2MeasureSpaceFcts","L2UniformGridFcts","SobolevUniformGridFcts","HmDomain"]
+
 class L2MeasureSpaceFcts(HilbertSpace):
     r"""`L2` implementation on a `regpy.vecsps.MeasureSpaceFcts`.
     
@@ -173,8 +175,8 @@ class HmDomain(HilbertSpace):
         """
         # impose exterior Neumann boundary conditions
         mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        vecsp = vecsps.NumPyVectorSpace((np.count_nonzero(mask==1),),dtype= self.dtype)
-        super().__init__(vecsp)
+        vecsp = vecsps.NumPyVectorSpace(tuple(s-2 for s in mask.shape),dtype= self.dtype)
+        super().__init__(vecsp.masked_space(mask= mask[*(slice(1,-1,1) for _ in range(len(mask.shape)))] != 0))
         self.G = np.zeros(mask.shape,dtype=int)
         interior_ind = mask==1
         self.G[interior_ind] = 1+np.arange(np.count_nonzero(interior_ind))

@@ -1,5 +1,6 @@
 import numpy as np
 
+from regpy import util
 from regpy.vecsps import UniformGridFcts
 
 from .base import PtwMultiplication, Operator, Composition
@@ -101,6 +102,10 @@ class ConvolutionOperator(Composition):
     def fourier_multiplier(self):
         """Fourier transform of the convolution kernel"""
         return self._otf
+    
+    def __repr__(self):
+        return util.make_repr(self, self._otf)
+
 
 class GaussianBlur(ConvolutionOperator):
     r"""Convolution with the shifted Gaussian kernel .math:`exp(-((x-shift)/kernel_width)^2)`.
@@ -168,9 +173,12 @@ class FresnelPropagator(ConvolutionOperator):
 
     def __init__(self,grid, fresnel_number, pad_amount=None,first_conv_axis=0):
         assert grid.is_complex
+        self.fresnel_number = fresnel_number
         super().__init__(grid,
                         lambda *x : np.exp((-1j * np.pi / fresnel_number) * sum(y**2 for y in x)),
                         pad_amount=pad_amount,
                         first_conv_axis=first_conv_axis
                         )
  
+    def __repr__(self):
+        return util.make_repr(self, self.fresnel_number)

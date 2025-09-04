@@ -1419,7 +1419,10 @@ def as_functional(func, vecsp):
         if isinstance(func, hilbert.HilbertSpace):
             func = SquaredNorm(func)
     assert isinstance(func,Functional)
-    assert func.domain == vecsp or (isinstance(func,Composed) and func.func.domain == vecsp), "Given Vector space and the one of the functional do not match."
+    if func.domain != vecsp:
+        raise ValueError(f"Given Vector space {vecsp} and the domain of the functional {func.domain} do not match.")
+    elif isinstance(func,Composed) and func.func.domain != vecsp:
+        raise ValueError(f"Given Vector space {vecsp} and the domain of the composed functional {func.func.domain} do not match.")
     return func
 
 

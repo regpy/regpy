@@ -54,11 +54,10 @@ class NgsL1(Functional):
             self._fes_util = ngs.L2(domain.fes.mesh, order=0)
         self._gfu_util = ngs.GridFunction(self._fes_util)
         super().__init__(domain)
+        domain.to_gf
 
     def _eval(self, x):
-        self._gfu.vec.data = x
-        coeff = ngs.CoefficientFunction(self._gfu)
-        return ngs.Integrate( ngs.Norm(coeff), self.domain.fes.mesh )
+        return ngs.Integrate( ngs.Norm(self.domain.to_gf(x)), self.domain.fes.mesh )
 
     def _subgradient(self, x):
         self._gfu.vec.data = x.vec
@@ -70,9 +69,9 @@ class NgsL1(Functional):
 
     def _proximal(self, x, tau): 
         self._gfu.vec.data = x.vec
-        sign_x = ngs.IfPos(self._gfu)
+        sign_x = ngs.IfPos(self._gfu,1,0)
         t = sign_x*self._gfu-0.25
-        self._gfu_help = ngs.IfPos(t,1,0)*t*sign_x
+        self._gfu_help.Interpolate(ngs.IfPos(t,1,0)*t*sign_x)
         return self._x_help
 
 
@@ -132,7 +131,7 @@ class NgsTV(Functional):
         self._gfu_out.Set(self._gfu - tau*self._gfu_div)
         return self._x_out 
 
-    def ngsdivergence(p, fes):
+    def ngsdivergence(self, p, fes):
         r"""Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
         p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
         
