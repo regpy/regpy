@@ -1,14 +1,15 @@
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-
-from examples.xray_phase_contrast.xray_phase_contrast_operator import get_xray_phase_contrast
-from regpy.hilbert import L2
-from regpy.vecsps import UniformGridFcts
-from regpy.solvers import RegularizationSetting
-import regpy.stoprules as rules
+import logging
 
 import numpy as np
 from scipy.datasets import ascent
-import logging
+
+from regpy.vecsps import UniformGridFcts
+from regpy.hilbert import L2
+from regpy.solvers import RegularizationSetting
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+import regpy.stoprules as rules
+
+from .OperatorsFromExamples.xray_phase_contrast_operatos import get_xray_phase_contrast
 
 def test_xray_phase_contrast():
     logging.basicConfig(

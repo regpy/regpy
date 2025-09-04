@@ -4,12 +4,14 @@ from scipy.io import loadmat
 
 import regpy.stoprules as rules
 
-from examples.mri.mri import parallel_mri, sobolev_smoother, estimate_sampling_pattern
 from regpy.operators import PtwMultiplication
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
+
+from .OperatorsFromExamples.mri import parallel_mri, sobolev_smoother, estimate_sampling_pattern
+
 
 def test_mri():
     logging.basicConfig(

@@ -1,0 +1,1 @@
+../../../examples/obstacle/dirichlet_op.py

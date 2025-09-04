@@ -1,15 +1,16 @@
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-
-from regpy.operators import CoordinateProjection
-from examples.pinem.operators import get_wave_field_reco
-from regpy.hilbert import L2, HmDomain
-from regpy.vecsps import UniformGridFcts
-from regpy.solvers import RegularizationSetting
-import regpy.stoprules as rules
-
 import numpy as np
 from scipy.datasets import ascent
 import logging
+
+from regpy.vecsps import UniformGridFcts
+from regpy.operators import CoordinateProjection
+from regpy.hilbert import L2, HmDomain
+from regpy.solvers import RegularizationSetting
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+import regpy.stoprules as rules
+
+from .OperatorsFromExamples.PinemOperators import get_wave_field_reco
+
 
 def test_wave_field_inversion():
     logging.basicConfig(

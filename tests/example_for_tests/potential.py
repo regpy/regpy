@@ -8,7 +8,9 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
-from examples.potential.potential import Potential
+
+
+from .OperatorsFromExamples.potential import Potential
 
 
 
