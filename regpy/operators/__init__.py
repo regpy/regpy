@@ -544,6 +544,11 @@ class Adjoint(Operator):
     r"""An proxy class wrapping a linear operator. Calling it will evaluate the operator's
     adjoint. This class should not be instantiated directly, but rather through the
     `Operator.adjoint` property of a linear operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this adjoint.
     """
 
     def __init__(self, op):
@@ -579,6 +584,11 @@ class Derivative(Operator):
     r"""An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
     `Operator.linearize` method of a non-linear operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this derivative.
     """
 
     def __init__(self, op):
@@ -607,11 +617,16 @@ class Derivative(Operator):
 
 
 class AdjointDerivative(Operator):
-    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the coposition of the operator's
+    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the composition of the operator's
     derivative adjoint with its derivative :math:`F'^\ast\circ F'`. This class should not be instantiated directly, 
-    but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivitave = True`.
-    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implimentation is 
-    needed as it is a selfadjoint operator.   
+    but rather through the `Operator.linearize` method of a non-linear operator with the flag `adjoint_derivative = True`.
+    The `_eval` and `_adjoint` require the implementation of `_adjoint_derivative` note that only one implementation is 
+    needed as it is a selfadjoint operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this combination of adjoint and derivative.
     """
 
     def __init__(self, op):
@@ -641,6 +656,17 @@ class AdjointDerivative(Operator):
 class LinearCombination(Operator):
     r"""A linear combination of operators. This class should normally not be instantiated directly,
     but rather through adding and multiplying `Operator` instances and scalars.
+    
+    .. code-block::python
+
+        op_composed = a_1 * op_1 + a_2 * op_2 + ... + a_n * op_n
+
+    Parameters
+    ----------
+    *args : tuple
+        Variable number of scalar and operators to be put in a linear combination. Each can be either:
+        - A tuple `(scalar, Operator)` representing a scalar and an operator to be combined linearly.
+        - An `Operator` to be included directly in the linear combination.
     """
 
     def __init__(self, *args):
@@ -745,6 +771,16 @@ class LinearCombination(Operator):
 class Composition(Operator):
     r"""A composition of operators. This class should normally not be instantiated directly,
     but rather through multiplying `Operator` instances.
+
+    .. code-block::python
+
+        op_composed = op_n * ... * op_2 * op_1
+
+    Parameters
+    ----------
+    *ops : tuple
+        Variable number of Operator instanced to be composed. Each Operators domain has to 
+        match the next ones codomain. 
     """
 
     def __init__(self, *ops):
@@ -816,18 +852,34 @@ class Composition(Operator):
 
 
 class PartOfOperator(Operator):
+    r"""Slcing the output of an operator. Given an operator
 
+    .. math::
+        F\colon X \to (Y_1,\dots,Y_n)
+
+    One can slice the operator to a subset of the direct sum of :math:`(Y_1,\dots,Y_n)` 
+    by defining an index set :math:`I\subset (1,\dots,n)`.
+        
+    Parameters
+    ----------
+    Operator : Operator
+        The operator to be sliced. 
+    index : int, slice, tuple(int)
+        The subset of indices. 
+    """
     def __init__(self,base_op,index):
         assert isinstance(base_op.codomain,vecsps.DirectSum)
         self.base_op=base_op
-        self.n_codim = len(base_op.codomain.summands)
+        """The base operator being sliced.
+        """
+        n_codim = len(base_op.codomain.summands)
         if(isinstance(index,int)):
-            assert -self.n_codim<=index and index<self.n_codim
+            assert -n_codim<=index and index<n_codim
             self.index=index
         elif(isinstance(index,slice)):
-            assert index.stop is None or -self.n_codim<=index.stop and index.stop<self.n_codim
-            assert index.start is None or -self.n_codim<=index.start and index.start<self.n_codim
-            index_list=list(range(self.n_codim)[index])
+            assert index.stop is None or -n_codim<=index.stop and index.stop<n_codim
+            assert index.start is None or -n_codim<=index.start and index.start<n_codim
+            index_list=list(range(n_codim)[index])
             assert len(index_list)>0
             if(len(index_list)==1):
                 self.index=index_list[0]
@@ -835,7 +887,7 @@ class PartOfOperator(Operator):
                 self.index=index_list
         elif(isinstance(index,tuple)):
             assert all(isinstance(i,int) for i in index)
-            assert -self.n_codim<=min(index) and max(index)<self.n_codim
+            assert -n_codim<=min(index) and max(index)<n_codim
             if(len(index)==1):
                 self.index=index[0]
             else:
@@ -891,6 +943,11 @@ class PartOfOperator(Operator):
 class SciPyLinearOperator(sla.LinearOperator):
     r"""A class wrapping a linear operator :math:`F` into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
     The domain and codomain are flattened.
+
+    Parameters
+    ----------
+    op2 : Operator
+        The base operator implemented in `RegPy` used to construct the `SciPy` operator. 
     """
     def __init__(self, op2):
         self.op2 = op2
@@ -936,13 +993,15 @@ class SciPyLinearOperator(sla.LinearOperator):
         return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
 
 class Pow(Operator):
-    r"""Power of a linear operator A, mapping a domain into itself, i.e. 
-       A * A * ... * A
+    r"""Power of a linear operator `A`, mapping a domain into itself, i.e. 
+    `A * A * ... * A`
 
-       Parameters
-       ----------
-       op : operator
-       exponent :  non-negative integer
+    Parameters
+    ----------
+    op : Operator
+        The Operoter raised to the power of `exponent`
+    exponent :  int
+        The power. Is required to be a positive interger.
     """
 
     def __init__(self, op, exponent):
@@ -1113,12 +1172,12 @@ class CholeskyInverse(Operator):
         return util.make_repr(self, self.op)
 
 class SuperLUInverse(Operator):
-    r"""Implements the inverse of a MatrixMultiplication Operator given by a csc_matrix using SuperLU.
+    r"""Implements the inverse of a `MatrixMultiplication` Operator given by a `csc_matrix` using `SuperLU`.
 
     Parameters
     ----------
-        op : MatrixMultiplication
-            The operator to be inverted.   
+    op : MatrixMultiplication
+        The operator to be inverted.
     """
     def __init__(self,op):
         assert isinstance(op,MatrixMultiplication)
@@ -1276,7 +1335,7 @@ class OuterShift(Operator):
             if not adjoint_derivative:
                 return y + self.offset
             else:
-                self._adjoint_derivative = tup[2]
+                self._adjoint_deriv = tup[2]
                 return y+self._adjoint(self.offset)
         else:
             return self.op(x) + self.offset
@@ -1289,9 +1348,6 @@ class OuterShift(Operator):
     
     def _adjoint_derivative(self, x):
         return self._adjoint_deriv(x)
-
-    def _adjoint_derivative(self,x):
-        return self._adjoint_derivative(x)
 
 
 class InnerShift(Operator):
@@ -1500,7 +1556,8 @@ class DirectSum(Operator):
 
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple(Operator)
+        Variable number of Operator instances to be composed to a direct sum.
     flatten : bool, optional
         If True, summands that are themselves direct sums will be merged with
         this one. Default: False.
@@ -1629,7 +1686,9 @@ class VectorOfOperators(Operator):
     
     Parameters
     ----------
-    *ops : tuple of Operator
+    *ops : tuple(Operator)
+        Variable number of Operator instances to be put together to a Vector. Each of the Operators
+        is required to have the same domain.
     codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
@@ -1718,8 +1777,9 @@ class MatrixOfOperators(Operator):
     
     Parameters
     ----------
-    *ops : list of list of operators [[T_00, T_10, ...], [T_01, T_11, ...], ...]
-           zero operators should be given by None's 
+    *ops : tuple(tuple(Operator) 
+        Variable number of tuples of Operator instances to build the matrix. Each tuple has to have 
+        the same length and a zero operators should be given by None.
     domain, codomain : vecsps.VectorSpace or callable, optional
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
