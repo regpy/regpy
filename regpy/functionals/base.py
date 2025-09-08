@@ -134,6 +134,7 @@ class AbstractFunctional(AbstractFunctionalBase):
         """
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
+            self.__doc__ += "-"*125 + f"\n--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---\n {impl.__doc__}\n" + "-"*125
         else:
             def decorator(i):
                 self.register(vecsp_type, i)
@@ -1287,7 +1288,7 @@ class Composed(Functional):
 
     def _proximal(self, x, tau, cg_params={}):
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver
-        if isinstance(self.func,SquaredNorm) and self.func.a == 1 and self.func.b == 0 and self.func.c == 0 and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
+        if isinstance(self.func,SquaredNorm) and self.func.a == 1 and (self.func.b == 0).all() and self.func.c == 0 and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
             from regpy.solvers.linear.tikhonov import TikhonovCG
             from regpy.solvers import RegularizationSetting
             f, _ = TikhonovCG(

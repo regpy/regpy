@@ -524,6 +524,7 @@ class AbstractSpace(AbstractSpaceBase):
     def register(self, vecsp_type, impl=None):
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
+            self.__doc__ += "-"*125 + f"\n--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---\n {impl.__doc__}\n" + "-"*125
         else:
             def decorator(i):
                 self.register(vecsp_type, i)
