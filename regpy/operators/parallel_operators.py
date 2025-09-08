@@ -2,6 +2,7 @@ from enum import Enum
 import multiprocessing as mp 
 import os
 import time
+import logging
 from warnings import warn
 from weakref import WeakValueDictionary
 
@@ -117,7 +118,7 @@ def check_running(conns,conn_m):
             if(conn.poll()):
                 conn.recv()
             conn.send(['break'])
-        print("Closed remaining background processes.")
+        logging.log(logging.INFO,"Closed remaining background processes.")
 
 
 class ParallelInterface:

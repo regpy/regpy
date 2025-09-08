@@ -240,6 +240,6 @@ class HmDomain(HilbertSpace):
     @util.memoized_property
     def gram(self):
         return Pow(
-            MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',dtype = self.dtype),
+            MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.vecsp,codomain=self.vecsp,dtype = self.dtype),
             self.index
             )

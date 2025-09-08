@@ -49,7 +49,6 @@ class HilbertSpace:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
-            print(k)
             if k in self._no_pickle:
                 setattr(result, k, v)
             else:
@@ -454,6 +453,12 @@ class AbstractSpaceBase:
     """
 
     def __add__(self, other):
+        if callable(other):
+            return AbstractSum(self, other, flatten=True)
+        else:
+            return NotImplemented
+    
+    def __iadd__(self,other):
         if callable(other):
             return AbstractSum(self, other, flatten=True)
         else:

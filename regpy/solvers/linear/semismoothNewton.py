@@ -400,7 +400,7 @@ class SemismoothNewton_nonneg(RegSolver):
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
         aux_pos = self.op.domain.IfPos(aux)
-        bound = self.op.domain.norm(aux[aux_pos]-self.x)**2 - 2*self.op.domain.vdot(-aux[~aux_pos],self.x)
+        bound = self.op.domain.norm(aux[aux_pos]-self.x[aux_pos])**2 - 2*self.op.domain.vdot(-aux[~aux_pos],self.x[~aux_pos])
         if sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()

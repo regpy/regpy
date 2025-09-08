@@ -1,7 +1,11 @@
 from math import sqrt
 from copy import deepcopy
 
+from regpy.stoprules import CountIterations
+
 from ..general import RegSolver, RegularizationSetting
+from ..linear import SemismoothNewton_bilateral
+from ..linear.tikhonov import GeometricSequence
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen"]
 
@@ -163,9 +167,7 @@ class NewtonCGFrozen(RegSolver):
         self.x += self._x_k
         self._outer_update()
 
-from regpy.solvers.linear.semismoothNewton import SemismoothNewton_bilateral
-from regpy.solvers.linear.tikhonov import GeometricSequence, TikhonovCG
-from regpy.stoprules import CountIterations
+
 class NewtonSemiSmoothFrozen(RegSolver):
     r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
     only updates the parts needed to be updated. 

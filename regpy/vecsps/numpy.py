@@ -174,7 +174,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
     def __repr__(self):
         if hasattr(self,"mask"):
-            return util.make_repr(self,self.shape,self.is_complex,self.mask)
+            return util.make_repr(self,self.shape,self.is_complex,f"mask =\n {self.mask}")
         else: 
             return util.make_repr(self,self.shape,self.is_complex)
 

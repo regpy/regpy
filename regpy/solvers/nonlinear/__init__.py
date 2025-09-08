@@ -24,6 +24,7 @@ from .forward_backward_splitting import *
 from .irgnm_semismooth import *
 from .irgnm import *
 from .landweber import *
+from .newton import *
 
 __all__ = []
 
@@ -37,4 +38,6 @@ __all__ += mod_all
 from .irgnm import __all__ as mod_all
 __all__ += mod_all
 from .landweber import __all__ as mod_all
+__all__ += mod_all
+from .newton import __all__ as mod_all
 __all__ += mod_all

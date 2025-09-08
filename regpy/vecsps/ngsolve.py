@@ -394,7 +394,11 @@ class NgsVectorSpace(VectorSpaceBase):
     
     def from_ngs(self, ngs_elem, definedon : ngs.comp.Region|None = None):
         if isinstance(ngs_elem,ngs.comp.GridFunction):
-            return NgsBaseVector(ngs_elem.vec,make_copy=True)
+            if ngs_elem.space != self.fes:
+                self._gfu_fes.Interpolate(ngs_elem)
+                return self._help_x.copy()
+            else:
+                return NgsBaseVector(ngs_elem.vec,make_copy=True)
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return self._help_x.copy()

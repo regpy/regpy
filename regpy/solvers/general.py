@@ -381,10 +381,16 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         super().__init__(op,penalty=penalty, data_fid= data_fid)
 
         if not penalty_shift is None:
+            self.penalty_shift = penalty_shift
             self.penalty = self.penalty.shift(penalty_shift)
-
+        else:
+            self.penalty_shift = None
+        
         if not data_fid_shift is None:
+            self.data_fid_shift = data_fid_shift
             self.data_fid = self.data_fid.shift(data_fid_shift)
+        else:
+            self.data_fid_shift = None
 
         assert isinstance(regpar,(float,int)) and regpar>=0
         self.regpar = float(regpar)
@@ -494,7 +500,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         dpen = 1./alpha * self.data_fid.conj(-alpha*p)
         ares = ma.fabs(dat)+ma.fabs(pen)+ma.fabs(ddat)+ma.fabs(dpen) 
         if not ma.isfinite(ares):
-            self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e},'.format(pen,dat,dpen,ddat))
+            self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e}'.format(pen,dat,dpen,ddat))
             return ma.inf
         res = dat+pen+ddat+dpen
         if ares/res>1e10:

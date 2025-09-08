@@ -1259,21 +1259,26 @@ class DirectSum(Operator):
                 self.ops.extend(op.ops)
             else:
                 self.ops.append(op)
-        
-        if domain is None:
+        if isinstance(domain,vecsps.DirectSum):
+            if any([d != op.domain for d,op in zip(domain.summands,self.ops)]):
+                raise ValueError(f"Was given a DirectSum {domain} whos components do not match with the domain of the operators. \n The csummands of the given domaina are {domain.summands} \n The domain of the operator are {[op.domain for op in self.ops]}")
+            else:
+                pass
+        elif domain is None:
             domain = vecsps.DirectSum(*[op.domain for op in self.ops])
-        elif isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,self.ops)]):
-            pass
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
             assert isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,self.ops)]), "Domain constructur failed to construct correct domain."
         else:
             raise TypeError('domain={} is neither a VectorSpaceBase nor callable'.format(domain))
         
-        if codomain is None:
+        if isinstance(codomain,vecsps.DirectSum):
+            if any([d != op.codomain for d,op in zip(codomain.summands,self.ops)]):
+                raise ValueError(f"Was given a DirectSum {codomain} whos components do not match with the domain of the operators. \n The csummands of the given domaina are {codomain.summands} \n The domain of the operator are {[op.codomain for op in self.ops]}")
+            else:
+                pass
+        elif codomain is None:
             codomain = vecsps.DirectSum(*[op.codomain for op in self.ops])
-        elif isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,self.ops)]):
-            pass
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
             assert isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,self.ops)]), "Codomain constructur failed to construct correct codomain."
@@ -1439,8 +1444,8 @@ class VectorOfOperators(Operator):
             result += adjoint_deriv(x)
         return result
 
-    @util.memoized_property
     def __repr__(self):
+        vec_repr = "[" +", ".join([repr(op) for op in self.ops])+"]"
         return util.make_repr(self, *self.ops)
 
     def __getitem__(self, item):
@@ -1570,9 +1575,9 @@ class MatrixOfOperators(Operator):
                     res_j += Tprime_ij.adjoint(y_i)
         return res
 
-    @util.memoized_property
     def __repr__(self):
-        return util.make_repr(self, *self.ops)
+        mat_repr = "[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+        return util.make_repr(self, mat_repr)
 
     def __getitem__(self, item):
         return self.ops[item]

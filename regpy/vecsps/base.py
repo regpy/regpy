@@ -167,7 +167,7 @@ class TupleVector:
             return self.v[key]
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim):
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
-        elif (isinstance(key,list) or isinstance(key,tuple)) and len(key) == self.ndim: 
+        elif isinstance(key,(list,tuple)) and len(key) == self.ndim: 
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
         else:
             raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))

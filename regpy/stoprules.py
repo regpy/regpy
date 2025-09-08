@@ -324,7 +324,7 @@ class Monotonicity(StopRule):
 
 class DualityGapStopping(StopRule):
     def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = "INFO"):
-        from regpy.solvers import RegSolver
+        from regpy.solvers.general import RegSolver
         assert isinstance(solver,RegSolver)
         assert hasattr(solver,'gap')
         super().__init__()

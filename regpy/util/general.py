@@ -111,9 +111,15 @@ def linspace_circle(num, *, start=0, stop=None, endpoint=False):
 
 
 def make_repr(self, *args, **kwargs):
-    arglist = []
-    for arg in args:
-        arglist.append(repr(arg))
-    for k, v in sorted(kwargs.items()):
-        arglist.append("{}={}".format(repr(k), repr(v)))
-    return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
+    try:
+        arglist = []
+        for arg in args:
+            if isinstance(arg, str):
+                arglist.append(arg)
+            else:
+                arglist.append(repr(arg))
+        for k, v in sorted(kwargs.items()):
+            arglist.append("{}={}".format(repr(k), repr(v)))
+        return '{}({})'.format(type(self).__qualname__, ', '.join(arglist))
+    except Exception as e:
+        return f'ERROR in make_repr of {type(self).__qualname__}: {e}'
