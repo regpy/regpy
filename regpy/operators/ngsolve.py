@@ -189,7 +189,6 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         #     self.bf_mat_inv.Update()
         self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
         self.gfu_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.gfu_eval.vec)
-        # print(self.gfu_eval.vec)
         return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
     
     def _derivative(self, 
