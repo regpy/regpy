@@ -1,6 +1,8 @@
 import math as ma
 
-from ..general import RegSolver, TikhonovRegularizationSetting
+from regpy.functionals import SquaredNorm
+
+from ..general import RegSolver, TikhonovRegularizationSetting, RegularizationSetting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -163,8 +165,20 @@ class DouglasRachford(RegSolver):
     """
     def __init__(self,  setting, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__(setting)
-        assert init_h in self.op.domain
+        if init_h not in self.op.domain:
+            raise ValueError('init_h must be in the domain of the operator!')
         self.h = init_h
+        if isinstance(setting, TikhonovRegularizationSetting) and setting.op.domain != setting.op.codomain:
+            if setting.data_fid_shift is None:
+                raise ValueError('For TikhonovRegularizationSetting the data_fid_shift must be given!')
+            if not isinstance(self.data_fid,SquaredNorm):
+                raise ValueError('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!')
+            self.log.info('Using TikhonovRegularizationSetting. The data fidelity term is reshifted and composed with the .')
+            self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
+        elif isinstance(setting, RegularizationSetting) and setting.op.domain != setting.op.codomain:
+            raise ValueError('For RegularizationSetting the operator must be mapping from a space to itself!')
+        else:
+            self.data_fid_adjusted = self.data_fid
 
         self.tau = tau
         self.regpar = regpar
@@ -175,6 +189,6 @@ class DouglasRachford(RegSolver):
         self.y = self.op(self.x)
 
     def _next(self):
-        self.h += self.data_fid.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
+        self.h += self.data_fid_adjusted.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
         self.x = self.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
         self.y = self.op(self.x)
