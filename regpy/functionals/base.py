@@ -35,6 +35,8 @@ class AbstractFunctionalBase:
     to pick the proper concrete implementation for a given vector space.
     """
 
+    log = util.ClassLogger()
+
     def __mul__(self, other):
         if isscalar(other) and other == 1:
             return self
@@ -300,6 +302,9 @@ class Functional:
         Lipschitz continuity constant of the gradient.  
         math.inf the gradient is not Lipschitz continuous.
     """
+
+    log = util.ClassLogger()
+
     def __init__(self, domain, h_domain=None, 
                  linear = False,
                  convexity_param=0.,
@@ -806,7 +811,11 @@ class SquaredNorm(Functional):
                         )
         assert isinstance(a,(float,int))
         self.gram = self.h_domain.gram
-        self.gram_inv = self.h_domain.gram_inv
+        try:
+            self.gram_inv = self.h_domain.gram_inv
+        except NotImplementedError:
+            self.gram_inv = None
+            self.log.warning("The inverse of the gram operator is not implemented. This will lead to errors in the conjugate functionals.")
         self.a=float(a)
         if shift is None:
             assert b is None or b in self.domain
@@ -834,6 +843,8 @@ class SquaredNorm(Functional):
     def _conj(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
+            if self.gram_inv is None:
+                raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate functional.")
             return (self.h_domain.vecsp.vdot(xstar-bstar, self.gram_inv(xstar-bstar))).real / (2.*self.a) - self.c
         elif self.a==0:
             eps = 1e-10
@@ -844,6 +855,8 @@ class SquaredNorm(Functional):
     def _conj_subgradient(self, xstar):
         bstar = self.gram(self.b)
         if self.a>0:
+            if self.gram_inv is None:
+                raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate subgradient functional.")
             return (1./self.a) * self.gram_inv(xstar-bstar)
         elif self.a==0:
             return self.domain.zeros()
@@ -861,6 +874,8 @@ class SquaredNorm(Functional):
     
     def _conj_hessian(self, xstar):
         if self.a>0:
+            if self.gram_inv is None:
+                raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate hessian functional.")
             return (1./self.a) * self.gram_inv
         else:
             return NotTwiceDifferentiableError
@@ -892,6 +907,8 @@ class SquaredNorm(Functional):
                                c = self.c+other.c 
                                )
         elif isinstance(other,LinearFunctional):
+            if self.gram_inv is None:
+                raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
             return SquaredNorm(self.h_domain,
                                a = self.a,
                                b = self.b+self.gram_inv(other.gradient),
@@ -912,6 +929,8 @@ class SquaredNorm(Functional):
             self.c += other.c
             return self
         elif isinstance(other,LinearFunctional):
+            if self.gram_inv is None:
+                raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
             self.b += self.gram_inv(other.gradient),
             return self
         elif isscalar(other):

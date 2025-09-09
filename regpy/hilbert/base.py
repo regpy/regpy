@@ -452,6 +452,8 @@ class AbstractSpaceBase:
     interesing stuff is in `AbstractSpace`.
     """
 
+    log = util.ClassLogger()
+
     def __add__(self, other):
         if callable(other):
             return AbstractSum(self, other, flatten=True)
