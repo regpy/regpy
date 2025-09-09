@@ -137,7 +137,7 @@ class Operator:
 
     log = util.ClassLogger()
 
-    def __init__(self, domain=None, codomain=None, linear=False):
+    def __init__(self, domain=None, codomain=None, linear=False, inverse=None):
         assert not domain or isinstance(domain, vecsps.VectorSpaceBase)
         assert not codomain or isinstance(codomain, vecsps.VectorSpaceBase)
         self.domain = domain
@@ -151,6 +151,10 @@ class Operator:
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain','lu'}
+        r"""properties that are handled differently when copying the operator."""
+        if inverse is not None and not isinstance(inverse, Operator):
+            raise TypeError("The inverse has to be an Operator instance or None.")
+        self._inverse = inverse
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -278,7 +282,19 @@ class Operator:
         just raise a `NotImplementedError`, but subclasses may override this if possible and useful.
         To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
         useful."""
-        raise NotImplementedError
+        if self._inverse is None:
+            raise NotImplementedError("The inverse of the operator {} is not known.".format(self))
+        return self._inverse
+    
+    @inverse.setter
+    def inverse(self, inv):
+        if inv is None:
+            self._inverse = None
+            self.log.info("Setting the inverse of the operator {} to None".format(self))
+        elif not isinstance(inv, Operator):
+            raise TypeError("The inverse has to be an Operator instance.")
+        self.log.info("Setting the inverse of the operator {} to {} overwriting the old {}.".format(self,inv,self._inverse))
+        self._inverse = inv
 
     def as_linear_operator(self):
         r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
@@ -578,7 +594,6 @@ class Adjoint(Operator):
             """The constant inputs of the op need to be set in adjoint evaluation
             """
             self.full_domain = op.codomain
-        
 
     def _eval(self, x):
         return self.op._reduce_to_domain(self.op._adjoint(x))
@@ -586,13 +601,18 @@ class Adjoint(Operator):
     def _adjoint(self, x):
         return self.op._eval(self._insert_constants(x))
 
-    @property
+    @util.memoized_property
     def adjoint(self):
         return self.op
 
-    @property
+    @Operator.inverse.getter
     def inverse(self):
-        return self.op.inverse.adjoint
+        if self._inverse is not None:
+            return self._inverse
+        try:
+            return self.op.inverse.adjoint
+        except NotImplementedError:
+            raise NotImplementedError("The inverse of the adjoint operator {} is not known.".format(self))
 
     def __repr__(self):
         return util.make_repr(self, self.op)
@@ -765,10 +785,12 @@ class LinearCombination(Operator):
             y += abs(coeff)**2 * adjoint_deriv(x)
         return y
 
-    @property
+    @Operator.inverse.getter
     def inverse(self):
+        if self._inverse is not None:
+            return self._inverse
         if len(self.ops) > 1:
-            raise NotImplementedError
+            raise NotImplementedError(f"The inverse of the linear combination {self} is not defined for operators with.")
         return (1 / self.coeffs[0]) * self.ops[0].inverse
 
     def __repr__(self):
@@ -859,9 +881,14 @@ class Composition(Operator):
             y = deriv.adjoint(y)
         return y
 
-    @util.memoized_property
+    @Operator.inverse.getter
     def inverse(self):
-        return Composition(*(op.inverse for op in self.ops[::-1]))
+        if self._inverse is not None:
+            return self._inverse
+        try:
+            return Composition(*(op.inverse for op in self.ops[::-1]))
+        except NotImplementedError:
+            raise NotImplementedError("The inverse of the composition {} is not known since one of the operators has not a well defined inverse.".format(self))
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
@@ -988,9 +1015,14 @@ class Pow(Operator):
             res = self.op.adjoint(res)
         return res
     
-    @property
+    @Operator.inverse.getter
     def inverse(self):
-        return Pow(self.op.inverse,self.exponent)
+        if self._inverse is not None:
+            return self._inverse
+        try:
+            return Pow(self.op.inverse,self.exponent)
+        except NotImplementedError:
+            raise NotImplementedError("The inverse of the power {} is not known since the operator has not a well defined inverse.".format(self))
 
 
 class Identity(Operator):
@@ -1020,7 +1052,7 @@ class Identity(Operator):
         else:
             return x
 
-    @property
+    @Operator.inverse.getter
     def inverse(self):
         return self
 
@@ -1126,8 +1158,10 @@ class PtwMultiplication(Operator):
         else:
             return self.factor * x
 
-    @util.memoized_property
+    @Operator.inverse.getter
     def inverse(self):
+        if self._inverse is not None:
+            return self._inverse
         sav = np.seterr(divide='raise')
         try:
             return PtwMultiplication(self.domain, 1 / self.factor)
@@ -1338,14 +1372,19 @@ class DirectSum(Operator):
             *(adjoint_deriv(x_i) for adjoint_deriv, x_i in zip(self._adjoint_derivs, x))
         )
 
-    @util.memoized_property
+    @Operator.inverse.getter
     def inverse(self):
         """The component-wise inverse as a `DirectSum`, if all of them exist."""
-        return DirectSum(
-            *(op.inverse for op in self.ops),
-            domain=self.codomain,
-            codomain=self.domain
-        )
+        if self._inverse is not None:
+            return self._inverse
+        try:
+            return DirectSum(
+                *(op.inverse for op in self.ops),
+                domain=self.codomain,
+                codomain=self.domain
+            )
+        except NotImplementedError:
+            raise NotImplementedError("The inverse of the direct sum {} is not known since one of the operators has not a well defined inverse.".format(self))
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
