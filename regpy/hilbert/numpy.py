@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse import csc_matrix
 
 from regpy import util, vecsps
-from regpy.operators import PtwMultiplication,Pow,MatrixMultiplication,FourierTransform
+from regpy.operators import PtwMultiplication,Pow,MatrixMultiplication,FourierTransform,CoordinateProjection
 
 from .base import HilbertSpace
 
@@ -109,11 +109,11 @@ class HmDomain(HilbertSpace):
 
     Parameters
     ----------
-    grid : UniformGridFcts
+    vecsp : UniformGridFcts
         Underlying grid functions.
     mask : array-type
         Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
-        values `{-1,0,1}` or is a boolean. Shape has to match the shape of `grid`.
+        values `{-1,0,1}` or is a boolean. Shape has to match the shape of `vecsp`.
     h : tuple or None or string, optional
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
         "normalized". (Defaults: "normalized)
@@ -130,7 +130,7 @@ class HmDomain(HilbertSpace):
     """
 
     def __init__(self,
-                grid, 
+                vecsp, 
                 mask = None,
                 h='normalized',
                 index=1,
@@ -138,23 +138,29 @@ class HmDomain(HilbertSpace):
                 ext_bd_cond = 'Neum',
                 alpha = 1,
                 dtype = float):
-        assert isinstance(grid,vecsps.UniformGridFcts)
+        if not isinstance(vecsp,vecsps.UniformGridFcts):
+            raise ValueError("The underlying vecsp has to be of type UniformGridFcts")
         if mask is None:
-            mask = grid.ones() == 1
-        else:
-            assert grid.shape == mask.shape
-        assert type(index)== int and index>=0
+            mask = vecsp.ones() == 1
+        elif vecsp.shape != mask.shape:
+            raise ValueError("mask has to have the same shape as the vector space")
+        if not isinstance(index,int) or index<0:
+            raise ValueError("index has to be a non-negative integer")
+        
+        super().__init__(vecsp)
+
+
         self.ndim = mask.ndim
         """Dimension of vector space
         """
         if type(h) == tuple:
             self.h_val = h
-        elif grid is None:
+        elif vecsp is None:
             self.h_val=1./np.max(mask.shape)*np.ones((self.ndim,))
         elif h=='physical':
-            self.h_val = grid.extents/(np.array(grid.shape)-1)
+            self.h_val = vecsp.extents/(np.array(vecsp.shape)-1)
         elif h=='normalized':
-            self.h_val = (2.*np.pi/np.max(grid.extents))* (grid.extents/(np.array(grid.shape)-1))
+            self.h_val = (2.*np.pi/np.max(vecsp.extents))* (vecsp.extents/(np.array(vecsp.shape)-1))
         else:
             raise NotImplemented
 
@@ -164,28 +170,31 @@ class HmDomain(HilbertSpace):
         self.alpha = alpha
         """Regularizer for Gram matrix.
         """
-        self.grid = grid
-        """Underlying gird.
-        """
         self.mask = (mask==1)
         """Mask to determine the subspace D.
         """
-        self.dtype = grid.dtype if grid else dtype
+        self.dtype = vecsp.dtype if vecsp else dtype
         """Type of the underlying grid. 
         """
-        # impose exterior Neumann boundary conditions
-        mask = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        vecsp = vecsps.NumPyVectorSpace(tuple(s-2 for s in mask.shape),dtype= self.dtype)
-        super().__init__(vecsp.masked_space(mask= mask[*(slice(1,-1,1) for _ in range(len(mask.shape)))] != 0))
-        self.G = np.zeros(mask.shape,dtype=int)
-        interior_ind = mask==1
+
+        self.proj = CoordinateProjection(
+                self.vecsp,
+                self.mask
+            )
+
+        mask_padded = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
+        
+        self.G = np.zeros(mask_padded.shape,dtype=int)
+        interior_ind = mask_padded==1
         self.G[interior_ind] = 1+np.arange(np.count_nonzero(interior_ind))
-        self.G[mask==-1] = -1
+        self.G[mask_padded==-1] = -1
 
         if weight is None:
             self.weight = None
-        else:
+        elif weight.shape == mask.shape:
             self.weight = np.pad(weight,1,'edge')
+        else:
+            raise ValueError("weight has to have the same shape as the vector space or be None")
 
     def I_minus_Delta(self):
         r"""
@@ -239,7 +248,10 @@ class HmDomain(HilbertSpace):
 
     @util.memoized_property
     def gram(self):
-        return Pow(
-            MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.vecsp,codomain=self.vecsp,dtype = self.dtype),
+        mat = Pow(
+            MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),
             self.index
             )
+        gram = self.proj.adjoint * mat * self.proj
+        gram.inverse = self.proj.adjoint * mat.inverse * self.proj
+        return gram
