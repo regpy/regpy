@@ -302,15 +302,18 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         Default: vecsps.DirectSum.
     """
 
-    def __init__(self, *ops,  domain=None, codomain=None):
-        assert all([isinstance(op, Operator) for op in ops])
-        assert ops
+    def __init__(self, ops,  domain=None, codomain=None):
+        if not isinstance(ops,(list,tuple)) or len(ops) == 0:
+            raise ValueError('At least one operator must be given.')
+        if any([not isinstance(op, Operator) for op in ops]):
+            raise TypeError('All arguments must be instances of regpy.operators.Operator. The given arguments are of types: {}'.format([type(op) for op in ops]))
 
         if domain is None:
             self.domain = ops[0].domain
         else:
             self.domain = domain
-        assert all(op.domain == self.domain for op in ops)
+        if any(op.domain != self.domain for op in ops):
+            raise ValueError('All operators must have the same domain.')
 
         if codomain is None:
             codomain = DirectSumVS
@@ -320,7 +323,8 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
             codomain = codomain(*(op.codomain for op in ops))
         else:
             raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
-        assert all(op.codomain == c for op, c in zip(ops, codomain))
+        if any(op.codomain != c for op, c in zip(ops, codomain)):
+            raise ValueError('All operators must have the same codomain as the corresponding summand of the codomain.')
 
         conns = []
         it = 0
