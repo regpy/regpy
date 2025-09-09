@@ -30,21 +30,15 @@ def test_mediumscattering():
     r = np.linalg.norm(scattering.domain.coords, axis=0)
     contrast[r < radius] = np.exp(-1/(radius - r[r < radius]**2))
 
-    projection = CoordinateProjection(
-        scattering.domain,
-        scattering.support
-    )
-    embedding = projection.adjoint
+    op = scattering
 
-    op = scattering * embedding
-
-    exact_solution = projection(contrast)
+    exact_solution = contrast
     exact_data = op(exact_solution)
     noise = 0.001 * op.codomain.randn()
     data = exact_data + noise
     init = op.domain.zeros()
 
-    myh_domain = Hm(scattering.domain,mask = scattering.support,dtype=complex,index=2)
+    myh_domain = Hm(mask = scattering.support,dtype=complex,index=2)
     setting = RegularizationSetting(
         op=op,
         # Define Sobolev norm on support via embedding
@@ -72,10 +66,7 @@ def test_mediumscattering():
         )
     )
 
-
-
-    for reco, reco_data in solver.until(stoprule):
-        solution = embedding(reco)
+    _, _ =  solver.run(stoprule)
 
     assert stoprule.rules[1].triggered
 
