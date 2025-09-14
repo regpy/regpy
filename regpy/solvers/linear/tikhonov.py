@@ -2,7 +2,7 @@ from math import sqrt,inf
 
 from regpy.functionals.base import SquaredNorm
 
-from regpy.operators import Identity
+from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
@@ -418,3 +418,234 @@ class NonstationaryIteratedTikhonov(RegSolver):
                                )
         self.x, self.y = tikhcg.run(inner_stoprule)
         self.log.info('alpha_eff = {}, inner CG its = {}'.format(self.alpha_eff,inner_stoprule.iteration))
+
+class TikhonovCGOnlyDomain(RegSolver):
+    r"""The Tikhonov method for linear inverse problems. Minimizes
+    
+    .. math::
+        \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2
+
+    using a conjugate gradient method. 
+    The method here is a modification of TikhonovCG, where we use the strategy to only use :math:`T^\ast T` to prevent 
+    ever computing an object in the codomain. Thus the linear operator `T` has to implement `_adjoint_eval` so that we
+    can use this app. Note that the evaluation of :math:`T^\ast T x` is done by `setting.op._adjoint_eval()` and it has
+    to incorporate the Gram matrix in the codomain! that is we assume that :math:`T^\ast T x = T^T G_Y T x` with the 
+    Gram matrix :math:`G_Y` in the codomain. However, the Gram matrix in the domain is not part of this application and
+    is taken from the penalty functional.
+
+    To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
+    used, which can be implemented by updating a scalar parameter in each iteration. 
+    For details on the use of the embedded MR method, as proposed by H. Egger in 
+    "Numerical realization of Tikhonov regularization: appropriate norms, implementable stopping criteria, and optimal algorithms" 
+    in Oberwolfach Reports 9/4, page 3009-3010, 2013;
+    see also the Master thesis by Andrea Dietrich 
+    "Analytische und numerische Untersuchung eines Abbruchkriteriums für das CG-Verfahren zur Minimierung 
+    von Tikhonov Funktionalen", Univ. Göttingen, 2017 
+
+    Parameters
+    ----------
+    setting : regpy.solvers.RegularizationSetting
+        The setting of the forward problem.
+    backprop_data : setting.op.domain [default: None]
+        The back propagated measured data given by :math:`T^\ast g^\delta`. Note that you have to incorporate the 
+        appropriate Gram matrix of the codomain in this back propagation!
+    regpar : float [default:None]
+        The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
+    xref: setting.op.domain [default: None]
+        Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
+    x0: setting.op.domain  [default: None]
+        Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
+    tol : float, default: None
+        The absoluted tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
+        in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
+        If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
+        which is noiselevel/2*sqrt(regpar)
+    reltolx: float, default: 10/sqrt(regpar)
+        Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
+        The motivation for the default value is similar to that given for tol, assuming a resonable 
+        signal-to-noise ratio for the Tikhonov minimizer. 
+    all_tol_criteria: bool (default: True)
+        If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
+        If False, the iteration is stopped if one criterion is satisfied.
+    krylov_basis : list or None
+        Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
+    preconditioner : setting.op.domain -> setting.op.domain, default: Identity
+        A preconditioner for the CG method. The preconditioner should be an approximation of the inverse of the operator in the normal equation.
+        If None, the identity is used as preconditioner.
+    logging_level : str, default: "INFO"
+        The logging level of this class. Possible values are "DEBUG", "INFO", "WARNING", "ERROR", and "CRITICAL".    
+    """
+
+    def __init__(
+        self, setting, backprop_data, regpar=None, xref=None, 
+        x0 =None, 
+        tol=None, reltolx=None, reltoly=None, 
+        all_tol_criteria = True,
+        krylov_basis=None, 
+        preconditioner=None,
+        logging_level = "INFO"
+        ):
+        try:
+            self.log.setLevel(logging_level)        
+        except Exception as e:
+            self.log.setLevel("INFO")
+            self.log.warning(f"Could not set logging level to {logging_level}, using INFO. Error: {e}")
+
+        if not isinstance(setting,RegularizationSetting):
+            raise TypeError("setting must be an instance of RegularizationSetting or subclass.")
+        if not setting.op.linear:
+            raise ValueError("The operator setting.op must be linear.")
+        
+        super().__init__(setting)
+
+        if backprop_data not in setting.op.domain:
+            raise TypeError("The back propagated data backprop_data must be an element of setting.op.domain")
+        self.backprop_data = backprop_data
+        """The back propagated data :math:`T^\ast g^\delta`."""
+
+        if regpar is None:
+            if not isinstance(setting, TikhonovRegularizationSetting):
+                raise ValueError("If regpar is None, setting must be an instance of TikhonovRegularizationSetting")
+            self.regpar = setting.regpar
+        elif isinstance(regpar, (int, float)) and regpar > 0:
+            self.regpar = regpar
+        else:
+            raise ValueError("regpar must be a positive float or None")
+        
+        if x0 is not None:
+            if x0 in setting.op.domain:
+                self.x = x0.copy()
+                """The current iterate."""
+                self.x0 = x0
+                """The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
+            else:
+                raise ValueError("The starting value x0 must be an element of setting.op.domain")
+        else:
+            self.x = self.op.domain.zeros()
+            self.x0 = self.op.domain.zeros()
+
+        self.y = None
+        """The image of the current iterate under the operator. Is always None, since we never compute it."""
+
+        self.TastT = self.op.adjoint_eval
+        r"""The operator T^* T."""
+
+        self.TastT_x0 = self.TastT(self.x0)
+        r""" The application of T^* T to the zero-th CG iterate value x0."""
+
+        if preconditioner is None:
+            self.preconditioner = self.h_domain.vecsp.identity
+            self.penalty = self.h_domain.vecsp.identity
+        elif isinstance(preconditioner, Operator) and preconditioner.domain == self.h_domain.vecsp and preconditioner.codomain == self.h_domain.vecsp: 
+            self.preconditioner = preconditioner
+            self.penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
+        else:
+            raise TypeError("preconditioner must be an Operator from setting.h_domain.vecsp to setting.h_domain.vecsp")
+
+        self.g_res = self.preconditioner( self.backprop_data - self.TastT_x0)
+        r"""The gram matrix applied to the residual of the normal equation. 
+        g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
+        """
+        if xref is not None:
+            self.g_res += self.regpar *self.preconditioner( self.h_domain.gram(xref-self.x) )
+        elif x0 is not None:
+            self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
+
+        res = self.h_domain.gram_inv(self.g_res)
+        """The residual of the normal equation."""
+        self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
+        """The squared norm of the residual."""
+        self.dir = res
+        """The direction of descent."""
+        self.g_dir = self.g_res.copy()
+        """The Gram matrix applied to the direction of descent."""
+        self.kappa = 1
+        """ratio of the squared norms of the residuals of the CG method and the MR-method.
+        Used for error estimation."""
+
+        self.krylov_basis=krylov_basis
+        if self.krylov_basis is not None: 
+            self.iteration_number=0
+            self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
+        """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
+
+        self.tol = tol
+        """The absolute tolerance in the domain."""
+        self.reltolx = reltolx
+        """The relative tolerance in the domain."""
+
+        if tol is None  and reltolx is None:
+            self.reltolx = 10./sqrt(regpar)
+
+        if self.reltolx is not None:
+            self.sq_norm_x = 0
+
+        self.all_tol_criteria = all_tol_criteria
+        if self.all_tol_criteria:
+            self.isconverged = {'tol': self.tol is None, 'reltolx': self.reltolx is None}
+        else:
+            self.isconverged = {'tol': self.tol is not None, 'reltolx': self.reltolx is not None}
+
+
+    def _next(self):
+        TastGTdir = self.TastT(self.preconditioner(self.dir))
+        alpha_pre = (self.op.domain.vdot(TastGTdir, self.dir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)).real
+        if alpha_pre == 0:
+            raise ZeroDivisionError(f"The update scaling failed in iteration {self.iteration_step_nr}! Would lead to division by zero.")
+        stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+
+        self.x += stepsize * self.dir
+        if self.reltolx is not None:
+            if self.x0 is None:
+                self.sq_norm_x = self.h_domain.inner(self.x,self.x)
+            else:
+                self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
+
+        self.g_res -= stepsize * (self.preconditioner( TastGTdir )+ self.regpar * self.penalty (self.g_dir) )
+        res = self.h_domain.gram_inv(self.g_res)
+
+        sq_norm_res_old = self.sq_norm_res
+        self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
+        beta = self.sq_norm_res / sq_norm_res_old
+
+        if self.krylov_basis is not None:
+            self.iteration_number+=1
+            if self.iteration_number < self.krylov_basis.shape[0]:
+                self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
+
+        self.kappa = 1 + beta * self.kappa
+
+        if self.krylov_basis is None or self.iteration_number > self.krylov_basis.shape[0]:
+            """If Krylov subspace basis is computed, then stop the iteration only if the number of iterations exceeds the order of the Krylov space"""
+            
+            tol_report = 'it.{} kappa={} err/Tol '.format(self.iteration_step_nr,self.kappa)
+            if self.reltolx is not None:
+                valx = sqrt(self.sq_norm_res / self.sq_norm_x / self.kappa) / self.regpar
+                tol_report = tol_report+'rel X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
+                if valx < self.reltolx / (1 + self.reltolx):
+                    self.isconverged['reltolx'] = True
+                else:
+                    self.isconverged['reltolx'] = False
+
+            if self.tol is not None:
+                val = sqrt(self.sq_norm_res / self.kappa)/ self.regpar  
+                tol_report = tol_report+"abs X: {:1.1e}/{:1.1e}".format(val,self.tol)
+                if val < self.tol:
+                   self.isconverged['tol'] = True
+                else:
+                    self.isconverged['tol'] = False
+
+            if self.all_tol_criteria:
+                converged = self.isconverged['tol'] and self.isconverged['reltolx']
+            else:
+                converged = self.isconverged['tol'] or self.isconverged['reltolx']
+            if converged:
+                self.log.info(tol_report)
+                return self.converge()
+            else:
+                self.log.debug(tol_report)
+
+        self.dir *= beta
+        self.dir += res
+        self.g_dir *= beta
+        self.g_dir += self.g_res
