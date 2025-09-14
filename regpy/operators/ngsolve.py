@@ -56,7 +56,9 @@ class NGSolveOperator(Operator):
             bf : ngs.comp.BilinearForm, 
             lf : ngs.comp.LinearForm, 
             gf : ngs.comp.GridFunction, 
-            prec : ngs.comp.Preconditioner) -> None:
+            pre = None,
+            solver = None,
+            **kwargs) -> None:
         r"""Solves the problem 
         \begin{align*}
         b(u,v) = f(v) \;\forall v\; test\; functions,\\
@@ -73,10 +75,14 @@ class NGSolveOperator(Operator):
         gf : ngs.GridFunction
             The grid functions on which to solve the solution will be put into these and they have to satisfy 
             the boundary condition that you want.
-        prec : ngs.Preconditioner
+        prec : BaseMatirx or class or Sting, default None
             preconditioner to be used with ngsolve.
+        solver : class or None
+            A solver instance that is passed to the ngs.sovlers.BVP
+        kwargs : dict
+            Dictionary of possible arguments that can be passed to the ngs.solvers.BVP
         """
-        gf.vec.data += bf.mat.Inverse(freedofs=self.codomain.fes.FreeDofs()) * (lf.vec - bf.mat * gf.vec)
+        ngs.solvers.BVP(bf, lf, gf, pre = pre, solver = solver, **kwargs)
 
         
 class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
