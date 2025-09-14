@@ -161,8 +161,6 @@ class TikhonovCG(RegSolver):
 
 
     def _next(self):
-        self.log.debug("g_res = {}".format(self.g_res))
-        self.log.debug("g_dir = {}".format(self.g_dir))
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
         alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)).real
@@ -184,19 +182,13 @@ class TikhonovCG(RegSolver):
                 self.norm_y = self.op.codomain.vdot(self.g_y, self.y).real
             else: 
                 self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
-        self.log.debug("g_dir = {}".format(self.g_dir))
-        self.log.debug("g_dir compute = {}".format(self.regpar * self.penalty (self.g_dir)))
 
         self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
         res = self.h_domain.gram_inv(self.g_res)
-        self.log.debug("g_dir = {}".format(self.g_dir))
 
         sq_norm_res_old = self.sq_norm_res
-        self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
-        self.log.debug("self.sq_norm_res = {}".format(self.sq_norm_res))
         beta = self.sq_norm_res / sq_norm_res_old
-        self.log.debug("g_dir = {}".format(self.g_dir))
 
         if self.krylov_basis is not None:
             self.iteration_number+=1
@@ -245,13 +237,8 @@ class TikhonovCG(RegSolver):
 
         self.dir *= beta
         self.dir += res
-        self.log.debug("g_dir = {}".format(self.g_dir))
         self.g_dir *= beta
-        self.log.debug("beta = {}".format(beta))
-        self.log.debug("g_dir = {}".format(self.g_dir))
         self.g_dir += self.g_res
-        self.log.debug("g_res = {}".format(self.g_res))
-        self.log.debug("g_dir = {}".format(self.g_dir))
 
 
 class GeometricSequence:
