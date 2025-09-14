@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix, csc_array
+import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy import util
@@ -38,15 +39,32 @@ class MatrixMultiplication(Operator):
     """
 
     def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
-        assert len(matrix.shape) == 2
-        assert domain is None or isinstance(domain,NumPyVectorSpace), "Domain either none or NumPyVectorSpace given was {}".format(type(domain))
-        assert codomain is None or isinstance(codomain,NumPyVectorSpace), "Codomain either none or NumPyVectorSpace given was {}".format(type(codomain))
-        self.matrix = matrix
+        if not isinstance(matrix,(np.ndarray,CSC.csc_matrix,CSC.csc_array)):
+            try:
+                self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
+                matrix = np.asarray(matrix)
+            except Exception as e:
+                raise TypeError("Matrix could not be converted to numpy array.") from e
+        if len(matrix.shape) != 2:
+            raise ValueError(f"Matrix has to be two-dimensional. Was given a matrix {matrix} of shape {matrix.shape} of type {type(matrix)}")
+        
         if dtype == None:
             dtype = matrix.dtype
+
+        if domain is None:
+            domain = NumPyVectorSpace(matrix.shape[1],dtype = dtype)
+        elif not isinstance(domain,NumPyVectorSpace):
+            raise TypeError("Domain either None or NumPyVectorSpace given was {}".format(type(domain)))
+        if codomain is None:
+            codomain = NumPyVectorSpace(matrix.shape[0],dtype = dtype)
+        elif not isinstance(codomain,NumPyVectorSpace):
+            raise TypeError("Codomain either none or NumPyVectorSpace given was {}".format(type(codomain)))
+        
+        self.matrix = matrix
+        
         super().__init__(
-            domain=domain or NumPyVectorSpace(matrix.shape[1],dtype = dtype),
-            codomain=codomain or NumPyVectorSpace(matrix.shape[0],dtype = dtype),
+            domain=domain,
+            codomain=codomain,
             linear=True
         )
         self._inverse = inverse
@@ -59,6 +77,12 @@ class MatrixMultiplication(Operator):
             return np.conjugate(np.conjugate(y) @ self.matrix) 
         else:
             return y @ self.matrix
+        
+    def _adjoint_eval(self, x):
+        if hasattr(self,'_MTM'):
+            return self._MTM @ x
+        self._MTM = self.matrix.conj().T @ self.matrix
+        return self._MTM @ x
 
     @util.memoized_property
     def inverse(self):
