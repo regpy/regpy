@@ -276,21 +276,21 @@ class VectorSpaceBase:
     def zeros(self):
         """Return the zero vector of the space.
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.zeros(shape = self.shape)
     
     def ones(self):
         """Return the zero vector of the space.
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.ones(shape = self.shape)
 
     def empty(self):
         """Return an uninitalized element of the space.
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.empty(shape = self.shape)
 
@@ -307,7 +307,7 @@ class VectorSpaceBase:
             array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
             this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.rand(shape = self.shape,random_generator=rand)
     
@@ -319,7 +319,7 @@ class VectorSpaceBase:
         x : self.vec_type
             The distribution to be used.
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         assert x in self
         return self.type.poisson(x)
@@ -340,35 +340,35 @@ class VectorSpaceBase:
         float or complex
             The dot product of x and y
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.vdot(x,y)
 
     def logical_and(self,x,y):
         """Logical and of two boolean vectors
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.logical_and(x,y) 
 
     def logical_or(self,x,y):
         """Logical or of two boolean vectors
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.logical_or(x,y) 
     
     def logical_not(self,x):
         """Logical not of a boolean vectors
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.logical_not(x) 
     
     def logical_xor(self,x,y):
         """Logical xor of two boolean vectors
         """
-        if type is None:
+        if self.type is None:
             raise NotImplementedError
         return self.type.logical_xor(x,y) 
 
