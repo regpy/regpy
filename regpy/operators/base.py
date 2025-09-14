@@ -235,6 +235,71 @@ class Operator:
                 deriv = Derivative(self.__get_handle()) 
                 adjoint_deriv = AdjointDerivative(self.__get_handle())
                 return Fstar_y, deriv, adjoint_deriv
+            
+    def _deriv_precompute(self, x):
+        r"""Precompute any data needed for evaluating the derivative at `x`. This is called by
+        `linearize` as well as derivative, and should not be called directly.
+
+        Parameters
+        ----------
+        x : array-like
+            The point around which to linearize.
+        """
+        pass
+
+    @property
+    def derivative(self,x):
+        r"""Returns the derivative at some point. The operator it self is not evaluated 
+        preventing the computation of objects in the codomain.
+
+        Parameters
+        ----------
+        x : array-like
+            The point around which to linearize.
+
+        Returns
+        -------
+        Derivative
+            The derivative as an `Operator` instance.
+        """
+        if x not in self.domain:
+            raise ValueError("x of type {} is not in domain {}".format(type(x),self.domain))
+
+        self._deriv_precompute(self._insert_constants(x))
+        return Derivative(self.__get_handle())
+    
+    def _adj_deriv_precompute(self, x):
+        r"""Precompute any data needed for evaluating the adjoint derivative at `x`. This is called by
+        `linearize` as well as `adjoint_derivative`, and should not be called directly. 
+
+        By default this calls `_deriv_precompute`, since usually the same data is needed.
+
+        Parameters
+        ----------
+        x : array-like
+            The point around which to linearize.
+        """
+        self._deriv_precompute(x)
+    
+    @property
+    def adjoint_derivative(self,x):
+        """Returns the composition of the adjoint with the derivative at some point. The operator it self is not evaluated.
+
+        Parameters
+        ----------
+        x : array-like
+            The point around which to linearize.
+
+        Returns
+        -------
+        AdjointDerivative
+            The the composition of adjoint derivative and derivative as an `Operator` instance.
+        """
+        if x not in self.domain:
+            raise ValueError("x of type {} is not in domain {}".format(type(x),self.domain))
+
+        self._adjoint_deriv_precompute(self._insert_constants(x))
+        return AdjointDerivative(self.__get_handle())
     
     @util.memoized_property
     def adjoint(self):
@@ -246,7 +311,24 @@ class Operator:
         Adjoint
             The adjoint as an `Operator` instance.
         """
+        if not self.linear:
+            raise RuntimeError('Operator is not linear.')
         return Adjoint(self)
+    
+    @util.memoized_property
+    def adjoint_eval(self):
+        r"""This is only available for linear operators, it is the composition of adjoint and 
+        eval as a `regpy.operators.AdjointEval` instance. Will only be computed on
+         demand and saved for subsequent invocations.
+
+        Returns
+        -------
+        Adjoint
+            The adjoint as an `Operator` instance.
+        """
+        if not self.linear:
+            raise RuntimeError('Operator is not linear.')
+        return AdjointEval(self)
 
     def __revoke(self):
         try:
@@ -269,6 +351,12 @@ class Operator:
 
     def _adjoint(self, y):
         raise NotImplementedError
+    
+    def _adjoint_eval(self, x):
+        if self.linear:
+            return self._adjoint(self._eval(x))
+        else:
+            raise RuntimeError('Operator is not linear cannot evaluate the adjoint_eval please use an adjoint_derivate method and linearize with adjoint_derivative = True.')
 
     def _adjoint_derivative(self, x):
         if self.linear:
@@ -649,9 +737,48 @@ class Derivative(Operator):
 
     def _adjoint(self, x):
         return self._reduce_to_domain(self.op.get()._adjoint(x))
+    
+    def _adjoint_eval(self, x):
+        return self._reduce_to_domain(self.op.get()._adjoint_derivative(x))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
+
+
+class AdjointEval(Operator):
+    r"""A proxy class wrapping a linear operator :math:`F`. Calling it will evaluate the
+     composition of the operator's adjoint with its evaluation :math:`F^\ast\circ F`. This
+     class should not be instantiated directly, but rather through the `Operator.
+     adjoint_eval` method of a linear operator.
+    The `_eval` and `_adjoint` require the implementation of `_adjoint_eval` note that only 
+    one implementation is needed as it is a selfadjoint operator.
+
+    Parameters
+    ----------
+    op : Operator
+        The base operator giving rise to this combination of adjoint and derivative.
+    """
+
+    def __init__(self, op):
+        if not isinstance(op, Operator):
+            raise TypeError("The input has to be an Operator instance.")
+        if not op.linear:
+            raise RuntimeError('Operator is not linear cannot create AdjointEval.')
+        self.op = op
+        super().__init__(op.domain, op.domain, linear=True)
+        # Setting the corresponding constants of op to zero
+        if hasattr(self.op,"full_domain"):
+            self.full_domain = self.op.full_domain
+            self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
+
+    def _eval(self, x):
+        return self._reduce_to_domain(self.op._adjoint_eval(self._insert_constants(x)))
+
+    def _adjoint(self, x):
+        return self._reduce_to_domain(self.op._adjoint_eval(self._insert_constants(x)))
+
+    def __repr__(self):
+        return util.make_repr(self, self.op)
 
 
 class AdjointDerivative(Operator):
@@ -763,6 +890,14 @@ class LinearCombination(Operator):
             y += coeff * z
         return y
 
+    def _deriv_precompute(self, x):
+        for op in self.ops:
+            op._deriv_precompute(x)
+
+    def _adj_deriv_precompute(self, x):
+        for op in self.ops:
+            op._adj_deriv_precompute(x)
+
     def _derivative(self, x):
         y = self.codomain.zeros()
         for coeff, deriv in zip(self.coeffs, self._derivs):
@@ -778,6 +913,17 @@ class LinearCombination(Operator):
         for coeff, op in zip(self.coeffs, ops):
             x += coeff.conjugate() * op.adjoint(y)
         return x
+    
+    def _adjoint_eval(self, x):
+        if self.linear:
+            if not hasattr(self,"_adjoint_evals"):
+                self._adjoint_evals = [op.adjoint_eval for op in self.ops]
+            y = self.domain.zeros()
+            for coeff, adjoint_eval in zip(self.coeffs, self._adjoint_evals):
+                y += abs(coeff)**2 * adjoint_eval(x)
+            return y
+        else:
+            raise RuntimeError(f"Tying to compute an adjoint_eval of a non-linear LinearCombination is not allowed")
     
     def _adjoint_derivative(self, x):
         y = self.domain.zeros()
@@ -822,10 +968,13 @@ class Composition(Operator):
     """
 
     def __init__(self, *ops):
-        for f, g in zip(ops, ops[1:]):
-            assert isinstance(f,Operator), "{} is not an Operator".format(type(f))
-            assert not f.domain or not g.codomain or f.domain == g.codomain, "The domain of {} and codomain of {} do not match up".format(type(f),type(g))
-        assert isinstance(g,Operator), "{} is not an Operator".format(type(g))  
+        if not isinstance(ops[0],Operator):
+            raise ValueError("The first entry of operators is not an Operator but a {}.".format(type(f)))
+        for i,(f, g) in enumerate(zip(ops, ops[1:])):
+            if not isinstance(g,Operator):
+                raise ValueError( "The {}-th  entry of operators is not an Operator but a {} ".format(i+2,type(g)))  
+            if f.domain != g.codomain:
+                raise ValueError("The domain of {} and codomain of {} do not match up. \n Domain is \n {} \n Codomain is \n {}".format(f,g, f.domain,g.codomain))
         self.ops = []
         """The list of composed operators."""
         for op in ops:
