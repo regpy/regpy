@@ -73,11 +73,11 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize None.")
         elif len(tup) !=2:
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize not exactly 2 results.")
-        tup = call_safe(op,"linearize",errors, dom.rand(), adjoint_derivative = True)
+        tup = call_safe(op,"linearize",errors, dom.rand(), return_adjoint_eval = True)
         if tup is None:
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize None.")
-        elif len(tup) !=3:
-            errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize with adjoint_derivative = True not exactly 3 results.")
+        elif len(tup) !=2:
+            errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize with return_adjoint_eval = True not exactly 2 results.")
         if op.linear:
             _ = call_safe(op,"as_linear_operator",errors)
             if isinstance(op,op_base.Zero):

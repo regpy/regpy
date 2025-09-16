@@ -181,8 +181,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
 
     def _eval(self, 
             a : NgsBaseVector, 
-            differentiate : bool = False, 
-            adjoint_derivative : bool = False) -> NgsBaseVector:
+            differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
         self.gfu_a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
         # self.gfu_a.vec.data = a.vec + self.a_bdr
@@ -514,8 +513,7 @@ class Coefficient(NGSolveOperator):
 
     def _eval(self, 
         diff : NgsBaseVector, 
-        differentiate : bool = False, 
-        adjoint_derivative : bool = False) -> NgsBaseVector:
+        differentiate : bool = False) -> NgsBaseVector:
         # Assemble Bilinearform
         self.gfu_bf.vec.data = diff.vec
         self.a.Assemble()
@@ -713,7 +711,7 @@ class EIT(NGSolveOperator):
     #Hence: int_Omega [s grad u grad v + alpha u v] = int_dOmega [g trace(v)]
     #Left term: Bilinearform self.a
     #Righ term: Linearform self.b
-    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
+    def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()
@@ -855,7 +853,7 @@ class ReactionNeumann(NGSolveOperator):
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
 
-    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
+    def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()

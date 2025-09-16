@@ -162,8 +162,8 @@ def test_adjoint_derivative(op, tolerance=1e-10):
     """
     x = op.domain.randn()
     h = op.domain.randn()
-    _,deriv,adjoint_derivative = op.linearize(x, adjoint_derivative=True)
-    adjoint_deriv_h = adjoint_derivative(h)
+    _,deriv = op.linearize(x, return_adjoint_eval=True)
+    adjoint_deriv_h = deriv.adjoint_eval(h)
     diff = adjoint_deriv_h-deriv.adjoint(deriv(h))
     if (diff < tolerance).all() and (diff > -tolerance).all():
         op.log.info('Adjoint derivative test passed.')
