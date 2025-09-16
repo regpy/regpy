@@ -216,23 +216,18 @@ class Operator:
             else:
                 return self.adjoint(self(x)), self
         else:            
+            assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
+            self.__revoke()
             if not return_adjoint_eval:
-                assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
-                self.__revoke()
                 y = self._eval(self._insert_constants(x), differentiate=True)
-                assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
+                if self.codomain and not y in self.codomain:
+                    raise RuntimeError("y of type {} is not in codomain {}".format(type(x),self.domain))
                 deriv = Derivative(self.__get_handle())
                 return y, deriv
             else:
-                assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
-                self.__revoke()
-                try:
-                    Fstar_y = self._eval(self._insert_constants(x), differentiate=True, return_adjoint_eval=True)
-                except TypeError:
-                    self.log.warning(f"Tried to evaluate with flag return_adjoint_eval raised TypeError. Computing objects in codomain")
-                    y = self._eval(self._insert_constants(x), differentiate=True)
-                    assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(x),self.domain)
-                    Fstar_y = self._adjoint(y)
+                Fstar_y = self._adjoint_eval(self._insert_constants(x))
+                if self.domain and not Fstar_y in self.domain: 
+                    raise RuntimeError("Fstar_y of type {} is not in domain {}".format(type(x),self.domain))
                 deriv = Derivative(self.__get_handle()) 
                 return Fstar_y, deriv
 
@@ -288,13 +283,14 @@ class Operator:
         raise NotImplementedError
     
     def _adjoint_data(self, data):
-        raise NotImplementedError
+        return self._adjoint(data)
     
     def _adjoint_eval(self, x):
         if self.linear:
             return self._adjoint(self._eval(x))
         else:
-            raise RuntimeError('Operator is not linear cannot evaluate the adjoint_eval please use an adjoint_derivate method and linearize with return_adjoint_eval = True.')
+            y,deriv = self.linearize(x)
+            return deriv.adjoint(y)
 
     def _adjoint_derivative(self, x):
         if self.linear:
@@ -340,7 +336,7 @@ class Operator:
         else:
             raise RuntimeError('Operator is not linear.')
         
-    def norm(self,h_domain=None,h_codomain=None,method=None):
+    def norm(self,h_domain=None,h_codomain=None,method=None,use_adjoint_derivative=False):
         r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
         By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
@@ -374,17 +370,24 @@ class Operator:
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
         else:
-            assert h_codomain.vecsp==self.codomain
+            if use_adjoint_derivative:
+                raise Warning('value of h_codomain will be ignored!')
+            else:
+                assert h_codomain.vecsp==self.codomain
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
-            return self._power_method(h_domain,h_codomain)
+            return self._power_method(h_domain,h_codomain,use_adjoint_derivative=use_adjoint_derivative)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
-            return sqrt(eigsh(SciPyLinearOperator(self.adjoint * h_codomain.gram * self), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
+            if use_adjoint_derivative:
+                op = self.adjoint_eval
+            else:
+                op = self.adjoint * h_codomain.gram * self
+            return sqrt(eigsh(SciPyLinearOperator(op), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
         else:
             raise NotImplementedError
 
-    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12):
+    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12,use_adjoint_derivative = False):
         r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
 
         Parameters
@@ -396,10 +399,14 @@ class Operator:
         """
         x = self.domain.rand()
         relative_residual = inf
+        if use_adjoint_derivative:
+            op = self.adjoint_eval
+        else:
+            op = self.adjoint * h_codomain.gram * self
         for _ in range(max_iter):
             if relative_residual < stopping_rule:
                 break
-            ystar = (self.adjoint * h_codomain.gram * self)(x)
+            ystar = op(x)
             y = h_domain.gram_inv(ystar)
             lmb = sqrt(self.domain.vdot(y, ystar).real)
             relative_residual = h_domain.norm(y - lmb * x)
@@ -931,18 +938,21 @@ class Composition(Operator):
 
     def _eval(self, x, differentiate=False, return_adjoint_eval = False):
         y = x
-        if differentiate:
-            self._derivs = []
-            for op in self.ops[:0:-1]:
-                y, deriv = op.linearize(y)
-                self._derivs.insert(0,deriv)
-            tup = self.ops[0].linearize(y,return_adjoint_eval=return_adjoint_eval)
-            y = tup[0]
-            self._derivs.insert(0,tup[1])
+        if return_adjoint_eval:
+            return self._adjoint_eval(x)
         else:
-            for op in self.ops[::-1]:
-                y = op(y)
-        return y
+            if differentiate:
+                self._derivs = []
+                for op in self.ops[:0:-1]:
+                    y, deriv = op.linearize(y)
+                    self._derivs.insert(0,deriv)
+                tup = self.ops[0].linearize(y)
+                y = tup[0]
+                self._derivs.insert(0,tup[1])
+            else:
+                for op in self.ops[::-1]:
+                    y = op(y)
+            return y
 
     def _derivative(self, x):
         y = x
@@ -962,10 +972,15 @@ class Composition(Operator):
     
     def _adjoint_eval(self, x):
         y = x
+        self._derivs = []
         for op in self.ops[:0:-1]:
-            y = op(y)
-        y = self.ops[0].adjoint_eval(y)
-        for op in self.ops[1:]:
+            y, deriv = op.linearize(y)
+            self._derivs.insert(0,deriv)
+        tup = self.ops[0].linearize(y,return_adjoint_eval=True)
+        y = tup[0]
+        self._derivs.insert(0,tup[1])
+
+        for op in self._derivs[1:]:
             y = op.adjoint(y)
         return y
     
