@@ -88,7 +88,8 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.t_old = self.t
 
-        data_fid_of_h = self.data_fid(image_of_h)
+        if self.backtracking:
+            data_fid_of_h = self.data_fid(image_of_h)
         grad = self.h_domain.gram_inv(deriv.adjoint(self.data_fid.subgradient(image_of_h)))
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         while self.backtracking:
