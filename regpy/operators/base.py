@@ -385,7 +385,7 @@ class Operator:
                 assert h_codomain.vecsp==self.codomain
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
-            return self._power_method(h_domain,h_codomain,use_adjoint_derivative=without_codomain_vectors)
+            return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
             if without_codomain_vectors:
