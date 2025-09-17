@@ -214,7 +214,7 @@ class Operator:
             if not return_adjoint_eval:
                 return self(x), self
             else:
-                return self.adjoint(self(x)), self
+                return self.adjoint_eval(x), self
         else:            
             assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
             self.__revoke()
@@ -282,7 +282,7 @@ class Operator:
     def _adjoint(self, y):
         raise NotImplementedError
     
-    def _adjoint_data(self, data):
+    def adjoint_data(self, data):
         return self._adjoint(data)
     
     def _adjoint_eval(self, x):
@@ -683,8 +683,8 @@ class Derivative(Operator):
     def _adjoint(self, x):
         return self._reduce_to_domain(self.op.get()._adjoint(x))
     
-    def _adjoint_data(self, x):
-        return self._reduce_to_domain(self.op.get()._adjoint_data(x))
+    def adjoint_data(self, x):
+        return self._reduce_to_domain(self.op.get().adjoint_data(x))
     
     def _adjoint_eval(self, x):
         return self._reduce_to_domain(self.op.get()._adjoint_derivative(x))
@@ -725,8 +725,8 @@ class AdjointEval(Operator):
     def _adjoint(self, x):
         return self._reduce_to_domain(self.op._adjoint_eval(self._insert_constants(x)))
     
-    def _adjoint_data(self, x):
-        return self._reduce_to_domain(self.op._adjoint_data(x))
+    def adjoint_data(self, x):
+        return self._reduce_to_domain(self.op.adjoint_data(x))
 
     def __repr__(self):
         return util.make_repr(self, self.op)
@@ -765,8 +765,8 @@ class AdjointDerivative(Operator):
     def _adjoint(self, x):
         return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
     
-    def _adjoint_data(self, x):
-        return self._reduce_to_domain(self.op.get()._adjoint_data(x))
+    def adjoint_data(self, x):
+        return self._reduce_to_domain(self.op.get().adjoint_data(x))
 
     def __repr__(self):
         return util.make_repr(self, self.op.get())
