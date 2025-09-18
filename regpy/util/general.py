@@ -3,6 +3,17 @@ from logging import getLogger
 
 import numpy as np
 
+class Errors:
+    @staticmethod
+    def not_in_space(vec: any, vecsp: any, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
+        return f"""-------------------------------------------------------
+        The given {vec_name} does not belong to the {space_name}:
+        {add_info}
+            vec = {vec}
+            vecsp = {vecsp}
+        -------------------------------------------------------"""
+
+
 class ClassLogger:
     """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
     fully qualified name. Subclasses should use it instead of `print` for any kind of status
@@ -28,20 +39,27 @@ class ClassLogger:
         # Allow replacing the class logger
         type(instance)._log = value
 
-def memoized_property(prop):
-    attr = '__memoized_' + prop.__qualname__
+class memoized_property:
+    def __init__(self, func):
+        wraps(func)(self)
+        self.func = func
+        self.attr = '__memoized_' + func.__qualname__
 
-    @property
-    @wraps(prop)
-    def mprop(self):
-        try:
-            return getattr(self, attr)
-        except AttributeError:
-            pass
-        setattr(self, attr, prop(self))
-        return getattr(self, attr)
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        if not hasattr(obj, self.attr):
+            setattr(obj, self.attr, self.func(obj))
+        return getattr(obj, self.attr)
 
-    return mprop
+    def __set__(self, obj, value):
+        # allow manual override if you want
+        setattr(obj, self.attr, value)
+
+    def __delete__(self, obj):
+        # allow `del obj.prop` as the reset syntax
+        if hasattr(obj, self.attr):
+            delattr(obj, self.attr)
 
 def set_defaults(params, **defaults):
     if params is not None:
