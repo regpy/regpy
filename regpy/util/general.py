@@ -3,6 +3,17 @@ from logging import getLogger
 
 import numpy as np
 
+class Errors:
+    @staticmethod
+    def not_in_space(vec: any, vecsp: any, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
+        return f"""-------------------------------------------------------
+        The given {vec_name} does not belong to the {space_name}:
+        {add_info}
+            vec = {vec}
+            vecsp = {vecsp}
+        -------------------------------------------------------"""
+
+
 class ClassLogger:
     """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
     fully qualified name. Subclasses should use it instead of `print` for any kind of status
