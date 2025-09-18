@@ -212,13 +212,14 @@ class Operator:
                array is :math:`F'[x]^\ast F(x)`, Derivative is as above. The adjoint derivative
                AdjointDerivative that is an efficient implementation of the composition Derivative.adjoint * Derivative is accessible by Derivative.adjoint_eval
         """
+        if not x in self.domain:
+            raise ValueError(util.Errors.not_in_space(x,self.domain,"vector for evaluation","domain"))
         if self.linear:
             if not return_adjoint_eval:
                 return self(x), self
             else:
                 return self.adjoint_eval(x), self
-        else:            
-            assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
+        else:
             self.__revoke()
             if not return_adjoint_eval:
                 y = self._eval(self._insert_constants(x), differentiate=True)
@@ -296,7 +297,7 @@ class Operator:
     
     def _adjoint_eval(self, x):
         if self.linear:
-            return self._adjoint(self._eval(x))
+            return self.adjoint(self(x))
         else:
             y,deriv = self.linearize(x)
             return deriv.adjoint(y)
@@ -512,7 +513,8 @@ class Operator:
             The vector in the full domain with the constants put into the places 
             to be kept constant. If no constants are set return x. 
         """
-        assert x in self.domain, "Somehow the passed vector does not belong to the reduced domain."
+        if x not in self.domain:
+            raise RuntimeError(util.Errors.not_in_space(x,self.domain,add_info="Trying to insert constants failed."))
         if hasattr(self, "full_domain") and len(self._constants)>0:
             x_full_split = self.full_domain.zeros()
             if isinstance(self.domain,vecsps.DirectSum):
@@ -986,14 +988,22 @@ class Composition(Operator):
         return x
     
     def _adjoint_eval(self, x):
-        y = x
+        y = x.copy()
+        if self.linear:
+            self.log.info(f"{self.ops}, reduced {self.ops[:0:-1]}")
+            for op in self.ops[:0:-1]:
+                self.log.info(f"domain = {op.domain}, codomain = {op.codomain}")
+                y = op(y)
+            y = self.ops[0].adjoint_eval(y)
+            for op in self.ops[1:]:
+                y = op.adjoint(y)
+            return y
         self._derivs = []
         for op in self.ops[:0:-1]:
             y, deriv = op.linearize(y)
             self._derivs.insert(0,deriv)
-        tup = self.ops[0].linearize(y,return_adjoint_eval=True)
-        y = tup[0]
-        self._derivs.insert(0,tup[1])
+        y, deriv = self.ops[0].linearize(y,return_adjoint_eval=True)
+        self._derivs.insert(0,deriv)
 
         for op in self._derivs[1:]:
             y = op.adjoint(y)
@@ -1592,7 +1602,6 @@ class VectorOfOperators(Operator):
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     def _eval(self, x, differentiate=False, return_adjoint_eval=False):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         if differentiate:
             linearizations = [op.linearize(x,return_adjoint_eval=return_adjoint_eval) for op in self.ops]
             self._derivs = [l[1] for l in linearizations]
@@ -1601,7 +1610,6 @@ class VectorOfOperators(Operator):
             return self.codomain.join(*(op(x) for op in self.ops))
 
     def _derivative(self, x):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         return self.codomain.join(
             *(deriv(x) for deriv in self._derivs)
         )
@@ -1618,7 +1626,6 @@ class VectorOfOperators(Operator):
         return result
     
     def _adjoint_derivative(self, x):
-        assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         result = self.domain.zeros() 
         for deriv in self._derivs:
             result += deriv.adjoint_eval(x)
