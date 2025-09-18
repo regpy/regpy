@@ -178,13 +178,15 @@ class Operator:
         return set(self.__dict__)
 
     def __call__(self, x):
-        assert not self.domain or x in self.domain, "x of type {} is not in domain {}".format(type(x),self.domain)
+        if x not in self.domain:
+            raise ValueError(f">\t Evaluation not possible!\n>\t The given vector\n>\t x={x}\n>\t is not in the domain\n>\t domain = {self.domain}.")
         if self.linear:
             y = self._eval(self._insert_constants(x))
         else:
             self.__revoke()
             y = self._eval(self._insert_constants(x), differentiate=False)
-        assert not self.codomain or y in self.codomain, "y of type {} is not in codomain {}".format(type(y),self.domain)
+        if y not in self.codomain:
+            raise RuntimeError(f">\t Evaluation went wrong!\n Please analyse your evaluation method _eval it does not return a proper\n>\t element in the codomain.>\t The result was \n>\t y={y}\n>\t and is not in the codomain\n>\t codomain = {self.codomain}.")
         return y
 
     def linearize(self, x, return_adjoint_eval = False):
@@ -455,7 +457,8 @@ class Operator:
         if len(self.domain) == 1:
             self.domain = self.domain[0]
 
-        self.adjoint.codomain = self.domain
+        del self.adjoint
+        del self.adjoint_eval
         
         if not self.linear:
             self.linear = util.operator_tests.test_linearity(self)
@@ -467,7 +470,8 @@ class Operator:
         self._constants = {}
         if hasattr(self, "full_domain"):
             self.domain = self.full_domain
-            self.adjoint.codomain = self.full_domain
+            del self.adjoint
+            del self.adjoint_eval
         else:
             raise RuntimeError("Cannot reset constants, no full domain set.")
         self.linear = util.operator_tests.test_linearity(self)
@@ -720,10 +724,10 @@ class AdjointEval(Operator):
             self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
 
     def _eval(self, x):
-        return self._reduce_to_domain(self.op._adjoint_eval(self._insert_constants(x)))
+        return self._reduce_to_domain(self.op._adjoint_eval(x))
 
     def _adjoint(self, x):
-        return self._reduce_to_domain(self.op._adjoint_eval(self._insert_constants(x)))
+        return self._reduce_to_domain(self.op._adjoint_eval(x))
     
     def adjoint_data(self, x):
         return self._reduce_to_domain(self.op.adjoint_data(x))
@@ -1447,10 +1451,6 @@ class DirectSum(Operator):
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in self.ops))
 
     def _eval(self, x, differentiate=False, return_adjoint_eval=False):
-        if hasattr(self,"full_domain"):
-            assert x in self.full_domain, "{} is not in the full_domain {}".format(x,type(self.full_domain))
-        else:
-            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         if differentiate:
             linearizations = [op.linearize(x_i,return_adjoint_eval=return_adjoint_eval) for op, x_i in zip(self.ops, x)]
             self._derivs = [l[1] for l in linearizations]
@@ -1460,19 +1460,28 @@ class DirectSum(Operator):
             self._adjoint_derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
-            return self.codomain.join(*(op(x_i) for op, x_i in zip(self.ops, x)))
+            return self.codomain.join(*(op(x_i) for op, x_i in zip(self.ops, x)))  
+
+    def _adjoint_eval(self, x):
+        if self.linear:
+            if hasattr(self,"full_domain"):
+                return self.full_domain.join(*(op.adjoint_eval(x_i) for op, x_i in zip(self.ops, x)))
+            else:
+                return self.domain.join(*(op.adjoint_eval(x_i) for op, x_i in zip(self.ops, x)))
+        else:
+            linearizations = [op.linearize(x_i,return_adjoint_eval=True) for op, x_i in zip(self.ops, x)]
+            self._derivs = [l[1] for l in linearizations]
+            if hasattr(self,"full_domain"):
+                return self.full_domain.join(*(l[0] for l in linearizations))
+            else:
+                return self.domain.join(*(l[0] for l in linearizations))
 
     def _derivative(self, x):
-        if hasattr(self,"full_domain"):
-            assert x in self.full_domain, "{} is not in full_domain {}".format(x,type(self.full_domain))
-        else:
-            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         return self.codomain.join(
             *(deriv(x_i) for deriv, x_i in zip(self._derivs, x))
         )
 
     def _adjoint(self, y):
-        assert y in self.codomain, f"{y} is not in codomain {type(self.codomain)} of shape {self.codomain.shape}"
         if self.linear:
             ops = self.ops
         else:
@@ -1487,10 +1496,6 @@ class DirectSum(Operator):
             )
     
     def _adjoint_derivative(self, x):
-        if hasattr(self,"full_domain"):
-            assert x in self.full_domain, "{} is not in full_domain {}".format(x,type(self.full_domain))
-        else:
-            assert x in self.domain, "{} is not in domain {}".format(x,type(self.domain))
         return self.domain.join(
             *(deriv.adjoint_eval(x_i) for deriv, x_i in zip(self._derivs, x))
         )
