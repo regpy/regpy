@@ -283,9 +283,16 @@ class Operator:
 
     def _adjoint(self, y):
         raise NotImplementedError
-    
+
+    def _adjoint_data(self, data):
+        raise NotImplementedError
+        
     def adjoint_data(self, data):
-        return self._adjoint(data)
+        try:
+            res = self._adjoint_data(data)
+        except NotImplementedError:
+            res = self._adjoint(data)
+        return res
     
     def _adjoint_eval(self, x):
         if self.linear:
@@ -338,7 +345,7 @@ class Operator:
         else:
             raise RuntimeError('Operator is not linear.')
         
-    def norm(self,h_domain=None,h_codomain=None,method=None,use_adjoint_derivative=False):
+    def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
         r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
         By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
         # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
@@ -351,6 +358,10 @@ class Operator:
         method: string [default: None]
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
               if this is not set. Alternative: "power" for power method
+        without_codomain_vectors: bool [default: False]
+            If true, the method avoids any use of vectors in the image space of the operator by using 
+            adjoint_derivative. (Useful if the latter method in more efficient than the composition of
+            adjoint and derivative or if vectors in the image space are too large to be stored.)
         Returns
         -------
         scalar
@@ -372,16 +383,14 @@ class Operator:
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
         else:
-            if use_adjoint_derivative:
-                raise Warning('value of h_codomain will be ignored!')
-            else:
+            if not without_codomain_vectors:
                 assert h_codomain.vecsp==self.codomain
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
-            return self._power_method(h_domain,h_codomain,use_adjoint_derivative=use_adjoint_derivative)
+            return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
-            if use_adjoint_derivative:
+            if without_codomain_vectors:
                 op = self.adjoint_eval
             else:
                 op = self.adjoint * h_codomain.gram * self
@@ -389,7 +398,7 @@ class Operator:
         else:
             raise NotImplementedError
 
-    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12,use_adjoint_derivative = False):
+    def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12,without_codomain_vectors = False):
         r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
 
         Parameters
@@ -398,10 +407,12 @@ class Operator:
         h_codomain: Hilbert space on the codomain.
         max_iter: int maximum number of iterations
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
+        without_codomain_vectors: bool [default: False]
+            see method norm        
         """
         x = self.domain.rand()
         relative_residual = inf
-        if use_adjoint_derivative:
+        if without_codomain_vectors:
             op = self.adjoint_eval
         else:
             op = self.adjoint * h_codomain.gram * self
@@ -989,8 +1000,12 @@ class Composition(Operator):
         return y
     
     def _adjoint_data(self, data):
-        back = self.ops[0]._adjoint_data(data)
-        for op in self.ops[1:]:
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        back = ops[0].adjoint_data(data)
+        for op in ops[1:]:
             back = op.adjoint(back)
         return back
     
