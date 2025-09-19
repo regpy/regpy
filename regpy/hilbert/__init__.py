@@ -9,7 +9,10 @@ from regpy.operators import Operator
 
 from .base import *
 from .numpy import *
-from .ngsolve import *
+try:
+    from .ngsolve import *
+except:
+    logging.warning("NG")
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
