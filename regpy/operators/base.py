@@ -875,27 +875,10 @@ class LinearCombination(Operator):
             x += coeff.conjugate() * op.adjoint(y)
         return x
     
-    def _adjoint_eval(self, x):
-        if self.linear:
-            if not hasattr(self,"_adjoint_evals"):
-                self._adjoint_evals = [op.adjoint_eval for op in self.ops]
-            y = self.domain.zeros()
-            for coeff, adjoint_eval in zip(self.coeffs, self._adjoint_evals):
-                y += abs(coeff)**2 * adjoint_eval(x)
-            return y
-        else:
-            raise RuntimeError(f"Tying to compute an adjoint_eval of a non-linear LinearCombination is not allowed")
-    
-    def _adjoint_derivative(self, x):
-        y = self.domain.zeros()
-        for coeff, adjoint_deriv in zip(self.coeffs, self._adjoint_derivs):
-            y += abs(coeff)**2 * adjoint_deriv(x)
-        return y
-    
     def _adjoint_data(self, x):
         y = self.domain.zeros()
         for coeff, op in zip(self.coeffs, self.ops):
-            y += abs(coeff)**2 * op._adjoint_data(x)
+            y += coeff.conj() * op._adjoint_data(x)
         return y
 
     @Operator.inverse.getter
