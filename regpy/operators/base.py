@@ -1032,7 +1032,7 @@ class LinearCombination(Operator):
     def _adjoint_data(self, x):
         y = self.domain.zeros()
         for coeff, op in zip(self.coeffs, self.ops):
-            y += abs(coeff)**2 * op._adjoint_data(x)
+            y += coeff.conj() * op._adjoint_data(x)
         return y
 
     @Operator.inverse.getter
