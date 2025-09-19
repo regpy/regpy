@@ -7,7 +7,7 @@ class Errors:
 
     @staticmethod
     def _compose_message(title : str, content : str):
-        return """-------------------------------------------------------
+        return f"""-------------------------------------------------------
             RegPy Error - {title}
         {content}
         -------------------------------------------------------"""

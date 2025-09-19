@@ -1973,11 +1973,11 @@ class VectorOfOperators(Operator):
     
     def _adjoint_eval(self, x):
         if self.linear:
-            return self.domain.join(*(op.adjoint_eval(x) for op in self.ops))
+            return sum(op.adjoint_eval(x) for op in self.ops)
         else:
             linearizations = [op.linearize(x,return_adjoint_eval=True) for op in self.ops]
             self._derivs = [l[1] for l in linearizations]
-            return self.domain.join(*(l[0] for l in linearizations))
+            return sum(l[0] for l in linearizations)
 
     def _derivative(self, x):
         return self.codomain.join(
@@ -2037,6 +2037,8 @@ class MatrixOfOperators(Operator):
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
+        self.ops = ops
+        r""" Matrix of Operators :math:`(T_ij)`"""
         if all((not isinstance(op_col,list) or len(op_col) != len(ops[0]) for op_col in ops)):
             raise ValueError(util.Errors.not_instance(
                 ops,
@@ -2044,13 +2046,11 @@ class MatrixOfOperators(Operator):
                 add_info=f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator, ...],[Operator, ...], ...]. Moreover \n the internal lists have to be of identical lengths. "
             ))
         ops_flat = [op for op_col in ops for op in op_col]
-        if any((not isinstance(op, Operator) or op!=None for op in ops_flat)):
+        if any((not isinstance(op, Operator) and op!=None for op in ops_flat)):
             raise ValueError(util.Errors._compose_message(
                     "NOT CORRECT TYPE",
                 f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator/None, ...],[Operator/None, ...], ...].\n The given lists Contains other objects than Operators or None: \n " +"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
             ))
-        self.ops = ops
-        r""" Matrix of Operators :math:`(T_ij)`"""
 
         domains = [None]*len(ops)
         for j in range(len(ops)):
