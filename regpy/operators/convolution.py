@@ -25,11 +25,14 @@ class PaddingOperator(Operator):
     """
 
     def __init__(self,grid, pad_amount = None):
-        assert isinstance(grid, UniformGridFcts)
+        if not isinstance(grid, UniformGridFcts):
+            raise TypeError(f"First argument has to be of type UniformGridFcts. Was given {grid}")
         s = grid.shape
         self.ndim = grid.ndim
         if pad_amount is None:
             pad_amount = ((0,0),)*self.ndim
+        elif isinstance(pad_amount,int):
+            pad_amount = ((pad_amount,pad_amount),)*self.ndim
         self.pad_amount = pad_amount
         padded_grid = UniformGridFcts(
             *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,pad_amount,grid.spacing,grid.axes)],
