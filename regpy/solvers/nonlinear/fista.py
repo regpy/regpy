@@ -1,4 +1,5 @@
 from math import sqrt,inf
+import numpy as np
 
 from ..general import RegSolver, TikhonovRegularizationSetting
 
@@ -113,4 +114,7 @@ class FISTA(RegSolver):
             self.tau *= self.eta
             self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
 
-        self.y = self.op(self.x)
+        if self.without_codomain_vectors:
+            self.y = np.broadcast_to(np.zeros(()), self.op.codomain.shape)
+        else:
+            self.y = self.op(self.x)
