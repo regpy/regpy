@@ -9,7 +9,6 @@ from regpy.operators import Operator
 
 from .base import *
 from .numpy import *
-from .ngsolve import *
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'

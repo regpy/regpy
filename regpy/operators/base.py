@@ -33,7 +33,8 @@ class _Revocable:
         try:
             return self.__val
         except AttributeError:
-            raise RuntimeError('Attempted to use revoked reference') from None
+            raise RuntimeError(util.Errors._compose_message("REVOKED",
+                'Attempted to use revoked reference')) from None
 
     def revoke(self):
         val = self.get()
@@ -138,8 +139,10 @@ class Operator:
     log = util.ClassLogger()
 
     def __init__(self, domain=None, codomain=None, linear=False, inverse=None):
-        assert not domain or isinstance(domain, vecsps.VectorSpaceBase)
-        assert not codomain or isinstance(codomain, vecsps.VectorSpaceBase)
+        if not isinstance(domain,vecsps.VectorSpaceBase):
+            raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of VectorSpaceBases."))
+        if not isinstance(codomain,vecsps.VectorSpaceBase):
+            raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of VectorSpaceBases."))
         self.domain = domain
         r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
@@ -153,7 +156,7 @@ class Operator:
         self._consts = {'domain', 'codomain','lu'}
         r"""properties that are handled differently when copying the operator."""
         if inverse is not None and not isinstance(inverse, Operator):
-            raise TypeError("The inverse has to be an Operator instance or None.")
+            raise TypeError(util.Errors._compose_message("INVERSE NOT EXISTENT","The inverse has to be an Operator instance or None."))
         self._inverse = inverse
 
     def __deepcopy__(self, memo):
@@ -179,14 +182,22 @@ class Operator:
 
     def __call__(self, x):
         if x not in self.domain:
-            raise ValueError(f">\t Evaluation not possible!\n>\t The given vector\n>\t x={x}\n>\t is not in the domain\n>\t domain = {self.domain}.")
+            raise ValueError(util.Errors.not_in_vecsp(
+                x,
+                self.domain,
+                add_info=f">\t Evaluation of {self} not possible!"
+                ))
         if self.linear:
             y = self._eval(self._insert_constants(x))
         else:
             self.__revoke()
             y = self._eval(self._insert_constants(x), differentiate=False)
         if y not in self.codomain:
-            raise RuntimeError(f">\t Evaluation went wrong!\n Please analyse your evaluation method _eval it does not return a proper\n>\t element in the codomain.>\t The result was \n>\t y={y}\n>\t and is not in the codomain\n>\t codomain = {self.codomain}.")
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                y,
+                self.codomain,
+                add_info=f">\t Evaluation went wrong!\n Please analyse your evaluation method _eval it does not return a proper\n>\t element in the codomain."
+                ))
         return y
 
     def linearize(self, x, return_adjoint_eval = False):
@@ -213,7 +224,7 @@ class Operator:
                AdjointDerivative that is an efficient implementation of the composition Derivative.adjoint * Derivative is accessible by Derivative.adjoint_eval
         """
         if not x in self.domain:
-            raise ValueError(util.Errors.not_in_space(x,self.domain,"vector for evaluation","domain"))
+            raise ValueError(util.Errors.not_in_vecsp(x,self.domain,"vector for evaluation","domain"))
         if self.linear:
             if not return_adjoint_eval:
                 return self(x), self
@@ -223,14 +234,20 @@ class Operator:
             self.__revoke()
             if not return_adjoint_eval:
                 y = self._eval(self._insert_constants(x), differentiate=True)
-                if self.codomain and not y in self.codomain:
-                    raise RuntimeError("y of type {} is not in codomain {}".format(type(x),self.domain))
+                if y not in self.codomain:
+                    raise RuntimeError(util.Errors.not_in_vecsp(
+                        y,
+                        self.codomain
+                        ))
                 deriv = Derivative(self.__get_handle())
                 return y, deriv
             else:
                 Fstar_y = self._adjoint_eval(self._insert_constants(x))
-                if self.domain and not Fstar_y in self.domain: 
-                    raise RuntimeError("Fstar_y of type {} is not in domain {}".format(type(x),self.domain))
+                if Fstar_y not in self.domain: 
+                    raise RuntimeError(util.Errors.not_in_vecsp(
+                        Fstar_y,
+                        self.domain
+                    ))
                 deriv = Derivative(self.__get_handle()) 
                 return Fstar_y, deriv
 
@@ -245,7 +262,10 @@ class Operator:
             The adjoint as an `Operator` instance.
         """
         if not self.linear:
-            raise RuntimeError('Operator is not linear.')
+            raise RuntimeError(util.Errors.not_linear_op(
+                self,
+                "To construct an adjoint the Operator has to be linear!"
+                ))
         return Adjoint(self)
     
     @util.memoized_property
@@ -260,7 +280,10 @@ class Operator:
             The adjoint as an `Operator` instance.
         """
         if not self.linear:
-            raise RuntimeError('Operator is not linear.')
+            raise RuntimeError(util.Errors.not_linear_op(
+                self,
+                "To construct an adjoint the Operator has to be linear!"
+                ))
         return AdjointEval(self)
 
     def __revoke(self):
@@ -276,17 +299,29 @@ class Operator:
             self.__handle = _Revocable(self)
             return self.__handle
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval = False):
-        raise NotImplementedError
+    def _eval(self, x, differentiate=False):
+        raise NotImplementedError(util.Errors._compose_message(
+            "NOT DEFINED METHOD",
+            "By default the method _eval is not implemented for an Operator!\n You as a user has to define it!"
+        ))
 
     def _derivative(self, x):
-        raise NotImplementedError
+        raise NotImplementedError(util.Errors._compose_message(
+            "NOT DEFINED METHOD",
+            "By default the method _derivative is not implemented for an Operator!\n You as a user has to define it!"
+        ))
 
     def _adjoint(self, y):
-        raise NotImplementedError
+        raise NotImplementedError(util.Errors._compose_message(
+            "NOT DEFINED METHOD",
+            "By default the method _adjoint is not implemented for an Operator!\n You as a user has to define it!"
+        ))
 
     def _adjoint_data(self, data):
-        raise NotImplementedError
+        raise NotImplementedError(util.Errors._compose_message(
+            "NOT DEFINED METHOD",
+            "By default the method _adjoint_data is not implemented for an Operator!\n You as a user has to define it!"
+        ))
         
     def adjoint_data(self, data):
         try:
@@ -315,7 +350,9 @@ class Operator:
         To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
         useful."""
         if self._inverse is None:
-            raise NotImplementedError("The inverse of the operator {} is not known.".format(self))
+            raise NotImplementedError(util.Errors._compose_message(
+                "NOT EXISTENT INVERSE",
+                "The inverse of the operator {} is not known.".format(self)))
         return self._inverse
     
     @inverse.setter
@@ -324,7 +361,11 @@ class Operator:
             self._inverse = None
             self.log.info("Setting the inverse of the operator {} to None".format(self))
         elif not isinstance(inv, Operator):
-            raise TypeError("The inverse has to be an Operator instance.")
+            raise TypeError(util.Errors.not_instance(
+                inv,
+                Operator,
+                "The inverse has to be an Operator instance."
+                ))
         self.log.info("Setting the inverse of the operator {} to {} overwriting the old {}.".format(self,inv,self._inverse))
         self._inverse = inv
 
@@ -344,7 +385,10 @@ class Operator:
         if self.linear:
             return SciPyLinearOperator(self)
         else:
-            raise RuntimeError('Operator is not linear.')
+            raise RuntimeError(util.Errors.not_linear_op(
+                self,
+                "To construct an linear SciPy operator the Operator has to be linear!"
+                ))
         
     def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
         r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
@@ -371,21 +415,29 @@ class Operator:
         Raises
         ------
         NotImplementedError
-            If the operator is nonlinear or the method is not implemented.
+            If the operator is non-linear or the method is not implemented.
         """
 
         if(not self.linear):
-            raise NotImplementedError
+            raise NotImplementedError(util.Errors.not_linear_op(
+                self,
+                f"To compute the norm of the Operator {self} it has to be linear!"
+                ))
         from regpy.hilbert import L2
         if(h_domain is None):
             h_domain=L2(self.domain)
-        else:
-            assert h_domain.vecsp==self.domain
+        elif h_domain.vecsp != self.domain:
+            raise ValueError(util.Errors.not_equal(
+                h_domain.vecsp,
+                self.domain,
+                add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
-        else:
-            if not without_codomain_vectors:
-                assert h_codomain.vecsp==self.codomain
+        elif not without_codomain_vectors and h_codomain.vecsp != self.codomain:
+            raise ValueError(util.Errors.not_equal(
+                h_domain.vecsp,
+                self.domain,
+                add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on codomain."))
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
             return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
@@ -397,7 +449,10 @@ class Operator:
                 op = self.adjoint * h_codomain.gram * self
             return sqrt(eigsh(SciPyLinearOperator(op), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
         else:
-            raise NotImplementedError
+            raise NotImplementedError(util.Errors._compose_message(
+                "NOT DEFINED METHOD",
+                f"The method {method} is unknown to compute the norm of an Operator {self}!"
+            ))
 
     def _power_method(self,h_domain,h_codomain,max_iter=int(1e2),stopping_rule=1e-12,without_codomain_vectors = False):
         r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
@@ -435,7 +490,7 @@ class Operator:
         This method changes the domain to either a direct sum of the remaining
         components or just the remaining component.
 
-        Moreover, it asserts if the remaining operator is linear using the utility method
+        Moreover, it validates if the remaining operator is linear using the utility method
         and changes the linearity flag.
 
         Parameters
@@ -448,21 +503,43 @@ class Operator:
         self.__revoke()
         if not hasattr(self, "full_domain"):
             if not isinstance(self.domain,vecsps.DirectSum):
-                raise TypeError("Cannot set a constant when domain is {}, require the domain to be a DirectSum".format(type(self.domain)))
+                raise TypeError(util.Errors.not_instance(
+                    self.domain,
+                    vecsps.DirectSum,
+                    f"Setting constants for an Operator is only allowed if that Operator \n has a domain that is a DirectSum."
+                    ))
             self.full_domain = deepcopy(self.domain)
         
         if not isinstance(index,int):
-            raise TypeError("The index has to be an integer, was given {}".format(type(index)))
+            raise TypeError(util.Errors.indexation(
+                index,
+                self,
+                "The index has to be an integer!"
+            ))
         if index<0 or index>=len(self.full_domain):
-            raise IndexError("The used index is {} is out of range.".format(index))
+            raise IndexError(util.Errors.indexation(
+                index,
+                self,
+                f"The used index is out of range 0, ..., {len(self.full_domain)}."
+                ))
         if len(set(range(len(self.full_domain)))-self._constants.keys()-{index}) == 0:
-            raise ValueError("By setting the index {} their is no input remaining please choose another index or release some other constant.".format(index))
+            raise ValueError(util.Errors.indexation(
+                index,
+                self,
+                "By setting the index there is no input remaining please choose another index or release some other constant."
+                ))
         if c in self.full_domain[index]:
             pass
         elif isinstance(c,int) or isinstance(c,float) or (isinstance(c,complex) and self.full_domain[index].is_complex):
             c = c*self.full_domain[index].ones()
         else:
-            raise ValueError("The given constant is not in the {} component of type {}. Was given something of type {}".format(index,type(self.full_domain[index]),type(c)))
+            raise ValueError(util.Errors.not_in_vecsp(
+                c,
+                self.full_domain[index],
+                vec_name="constant",
+                space_name="full domain",
+                add_info= f"The given constant is not in the component of the full domain of index={index}"
+                ))
         
         self._constants[index] = c
         self.domain = vecsps.DirectSum(*[d_i for i,d_i in enumerate(self.full_domain) if i not in self._constants.keys()])
@@ -479,14 +556,22 @@ class Operator:
         """Resets the constants set by `set_constant` to an empty dictionary. This will
         also reset the domain to the full domain.
         """
-        self._constants = {}
         if hasattr(self, "full_domain"):
-            self.domain = self.full_domain
-            del self.adjoint
-            del self.adjoint_eval
+            try:
+                del self.adjoint
+                del self.adjoint_eval
+                self._constants = {}
+                self.domain = self.full_domain
+            except Exception as e:
+                raise RuntimeError(util.Errors._compose_message(
+                    "ERROR WHILE RESETTING OPERATOR CONSTANTS",
+                    f"Something went wrong while resetting. \n Cannot reset constants!\n got an exception: {e}"))
+            self.linear = util.operator_tests.test_linearity(self)
+        elif len(self._constants)!=0:
+            raise RuntimeError(util.Errors._compose_message(
+                    "ERROR WHILE RESETTING OPERATOR CONSTANTS",f"Something went wrong while resetting. \n Their exists constants {self._constants} but no full_domain"))
         else:
-            raise RuntimeError("Cannot reset constants, no full domain set.")
-        self.linear = util.operator_tests.test_linearity(self)
+            self.log.warning(f"Resetting constants while non are specified might not be necessary!")
 
     def get_constants(self):
         """Returns the constants set by `set_constant` as a dictionary. The keys are the indices
@@ -514,7 +599,7 @@ class Operator:
             to be kept constant. If no constants are set return x. 
         """
         if x not in self.domain:
-            raise RuntimeError(util.Errors.not_in_space(x,self.domain,add_info="Trying to insert constants failed."))
+            raise RuntimeError(util.Errors.not_in_vecsp(x,self.domain,add_info="Trying to insert constants failed."))
         if hasattr(self, "full_domain") and len(self._constants)>0:
             x_full_split = self.full_domain.zeros()
             if isinstance(self.domain,vecsps.DirectSum):
@@ -548,7 +633,13 @@ class Operator:
             to be kept constant removed. If no constants are set return x. 
         """
         if hasattr(self, "full_domain") and len(self._constants)>0:
-            assert y in self.full_domain, "Expected the vector to be in the full codomain of the Adjoint."
+            if y not in self.full_domain:
+                raise RuntimeError(util.Errors.not_in_vecsp(
+                    y,
+                    self.full_domain,
+                    space_name= "full domain",
+                    add_info= f"The vector supposed to be reduced to the domain is not in the full domain."
+                ))
             y_full_split = self.full_domain.split(y)
             if isinstance(self.domain,vecsps.DirectSum):
                 return self.domain.join(*[y_full_split[i] for i in set(range(len(self.full_domain)))-self._constants.keys()])
@@ -635,7 +726,16 @@ class Adjoint(Operator):
     """
 
     def __init__(self, op):
-        assert op.linear
+        if not isinstance(op,Operator):
+            raise ValueError(util.Errors.not_instance(
+                op,
+                Operator,
+                "The Adjoint can only be constructed for a regpy Operator!"
+            ))
+        if not op.linear:
+            raise ValueError(util.Errors.not_linear_op(
+                op,
+                f"An adjoint operator can only be constructed from a linear operator.\n Please use linearize to get the derivative and use its adjoint!"))
         self.op = op
         r"""The underlying operator."""
         super().__init__(op.codomain, op.domain, linear=True)
@@ -662,7 +762,9 @@ class Adjoint(Operator):
         try:
             return self.op.inverse.adjoint
         except NotImplementedError:
-            raise NotImplementedError("The inverse of the adjoint operator {} is not known.".format(self))
+            raise NotImplementedError(util.Errors._compose_message(
+                    "INVERSE NOT DEFINED",
+                    "The inverse of the adjoint of operator {} is not known.".format(self.op)))
 
     def __repr__(self):
         return util.make_repr(self, self.op)
@@ -726,9 +828,16 @@ class AdjointEval(Operator):
 
     def __init__(self, op):
         if not isinstance(op, Operator):
-            raise TypeError("The input has to be an Operator instance.")
+            raise TypeError(util.Errors.not_instance(
+                op,
+                Operator,
+                add_info="The input has to be an Operator instance."
+            ))
         if not op.linear:
-            raise RuntimeError('Operator is not linear cannot create AdjointEval.')
+            raise RuntimeError(util.Errors.not_linear_op(
+                op,
+                add_info='Operator is not linear cannot create AdjointEval.'
+            ))
         self.op = op
         super().__init__(op.domain, op.domain, linear=True)
         # Setting the corresponding constants of op to zero
@@ -812,10 +921,23 @@ class LinearCombination(Operator):
                 coeff, op = arg
             else:
                 coeff, op = 1, arg
-            assert isinstance(op, Operator), "Given input {} is not an operator please use either [(coeff,operator), ...] or [operator,...]".format(type(op))
-            assert np.isscalar(coeff), "coefficient is not a scalar but of type {}".format(type(coeff))
+            if not isinstance(op,Operator):
+                raise ValueError(util.Errors.not_instance(
+                    op,
+                    Operator,
+                    "The LinearCombination can only be constructed for inputs given by \n w[(coeff,Operator), ...] or [Operator,...]. "
+                ))
+            if not np.isscalar(coeff):
+                raise ValueError(util.Errors.not_instance(
+                    coeff,
+                    np.ScalarType,
+                    "The coefficients in [(coeff,Operator), ...] to construct a LinearCombination \n have to be scalars! "
+                ))
+
             if isinstance(coeff,complex):
-                assert (op.codomain.is_complex), "Complex coefficients can only be used for operators with complex codomains"
+                if not op.codomain.is_complex:
+                    self.log.warning("Given a complex coefficient for an operator with non complex domain. Casting the coefficient to real!")
+                    coeff = coeff.real
             if isinstance(op, type(self)):
                 for c, o in zip(op.coeffs, op.ops):
                     coeff_for_op[o] += coeff * c
@@ -830,28 +952,40 @@ class LinearCombination(Operator):
             self.ops.append(op)
 
         domains = [op.domain for op in self.ops if op.domain]
-        if domains:
-            domain = domains[0]
-            assert all(d == domain for d in domains), "All domains have to be the same"
-        else:
-            domain = None
+        if len(domains) == 0:
+            raise RuntimeError(util.Errors._compose_message(
+                    "",
+                    "While constructing a Linear combination the domains list remained empty!"))
+        domain = domains[0]
+        if any(d != domain for d in domains):
+            raise ValueError(util.Errors.not_equal(
+                domain,
+                domains,
+                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n"
+                                                +"\n".join([f"{op} with domain {op.domain}" for op in self.ops])))
 
         codomains = [op.codomain for op in self.ops if op.codomain]
-        if codomains:
-            codomain = codomains[0]
-            assert all(c == codomain for c in codomains), "All codomains have to be the same"
-        else:
-            codomain = None
+        if len(codomains) == 0:
+            raise RuntimeError(util.Errors._compose_message(
+                    "",
+                    "While constructing a Linear combination the codomains list remained empty!"))
+        codomain = codomains[0]
+        if any(cd != codomain for cd in codomains):
+            raise ValueError(util.Errors.not_equal(
+                codomain,
+                codomains,
+                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n"
+                                                +"\n".join([f"{op} with domain {op.codomain}" for op in self.ops])))
 
         super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
+    def _eval(self, x, differentiate=False):
         y = self.codomain.zeros()
         if differentiate:
             self._derivs = []
         for coeff, op in zip(self.coeffs, self.ops):
             if differentiate:
-                tup = op.linearize(x,return_adjoint_eval=return_adjoint_eval)
+                tup = op.linearize(x)
                 z = tup[0]
                 self._derivs.append(tup[1])
             else:
@@ -875,6 +1009,26 @@ class LinearCombination(Operator):
             x += coeff.conjugate() * op.adjoint(y)
         return x
     
+    def _adjoint_eval(self, x):
+        if self.linear:
+            y = self.domain.zeros()
+            for coeff, op in zip(self.coeffs, self.ops):
+                y += abs(coeff)**2 * op.adjoint_eval(x)
+            return y
+        else:
+            self._derivs = []
+            for coeff, op in zip(self.coeffs, self.ops):
+                z, deriv = op.linearize(x,return_adjoint_eval=True)
+                self._derivs.append(deriv)
+                y += abs(coeff)**2 * z
+            return y
+    
+    def _adjoint_derivative(self, x):
+        y = self.domain.zeros()
+        for coeff, adjoint_deriv in zip(self.coeffs, self._adjoint_derivs):
+            y += abs(coeff)**2 * adjoint_deriv(x)
+        return y
+    
     def _adjoint_data(self, x):
         y = self.domain.zeros()
         for coeff, op in zip(self.coeffs, self.ops):
@@ -886,7 +1040,10 @@ class LinearCombination(Operator):
         if self._inverse is not None:
             return self._inverse
         if len(self.ops) > 1:
-            raise NotImplementedError(f"The inverse of the linear combination {self} is not defined for operators with.")
+            raise NotImplementedError(util.Errors._compose_message(
+                    "INVERSE NOT DEFINED",
+                f"The inverse of the linear combination {self} is not defined.\n Since it was not explicitly defined and automatically computing it with more \n then one operator is ambiguous.\n You may specify an explicit inverse by setting self.inverse for this operator."
+                ))
         return (1 / self.coeffs[0]) * self.ops[0].inverse
 
     def __repr__(self):
@@ -919,12 +1076,24 @@ class Composition(Operator):
 
     def __init__(self, *ops):
         if not isinstance(ops[0],Operator):
-            raise ValueError("The first entry of operators is not an Operator but a {}.".format(type(f)))
+            raise ValueError(util.Errors.not_instance(
+                ops[0],
+                Operator,
+                add_info="The first argument of the list of operators is not an Operator."
+                ))
         for i,(f, g) in enumerate(zip(ops, ops[1:])):
             if not isinstance(g,Operator):
-                raise ValueError( "The {}-th  entry of operators is not an Operator but a {} ".format(i+2,type(g)))  
+                raise ValueError(util.Errors.not_instance(
+                    g,
+                    Operator,
+                    add_info=f"The {i+2}-th entry of operators is not an Operator."
+                    ))  
             if f.domain != g.codomain:
-                raise ValueError("The domain of {} and codomain of {} do not match up. \n Domain is \n {} \n Codomain is \n {}".format(f,g, f.domain,g.codomain))
+                raise ValueError(util.Errors.not_equal(
+                    f,
+                    g,
+                    add_info=f"The domain of the {i+1}-th and codomain of {i+2}-th entry do not match up.\n"
+                    ))
         self.ops = []
         """The list of composed operators."""
         for op in ops:
@@ -936,23 +1105,20 @@ class Composition(Operator):
             self.ops[-1].domain, self.ops[0].codomain,
             linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval = False):
+    def _eval(self, x, differentiate=False):
         y = x
-        if return_adjoint_eval:
-            return self._adjoint_eval(x)
+        if differentiate:
+            self._derivs = []
+            for op in self.ops[:0:-1]:
+                y, deriv = op.linearize(y)
+                self._derivs.insert(0,deriv)
+            tup = self.ops[0].linearize(y)
+            y = tup[0]
+            self._derivs.insert(0,tup[1])
         else:
-            if differentiate:
-                self._derivs = []
-                for op in self.ops[:0:-1]:
-                    y, deriv = op.linearize(y)
-                    self._derivs.insert(0,deriv)
-                tup = self.ops[0].linearize(y)
-                y = tup[0]
-                self._derivs.insert(0,tup[1])
-            else:
-                for op in self.ops[::-1]:
-                    y = op(y)
-            return y
+            for op in self.ops[::-1]:
+                y = op(y)
+        return y
 
     def _derivative(self, x):
         y = x
@@ -1018,11 +1184,13 @@ class Composition(Operator):
         try:
             return Composition(*(op.inverse for op in self.ops[::-1]))
         except NotImplementedError:
-            raise NotImplementedError("The inverse of the composition {} is not known since one of the operators has not a well defined inverse.".format(self))
+            raise NotImplementedError(util.Errors._compose_message(
+                    "INVERSE NOT DEFINED",
+                f"The inverse of the composition {self} is not well-defined since one or more of the operators does not have an inverse."
+                ))
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
-
 
 
 class PartOfOperator(Operator):
@@ -1042,32 +1210,56 @@ class PartOfOperator(Operator):
         The subset of indices. 
     """
     def __init__(self,base_op,index):
-        assert isinstance(base_op.codomain,vecsps.DirectSum)
+        if not isinstance(base_op.codomain,vecsps.DirectSum):
+            raise ValueError(util.Errors.not_instance(
+                base_op,
+                vecsps.DirectSum,
+                f"To construct a PartOfOperator the codomain has to be a DirectSum!"))
         self.base_op=base_op
         """The base operator being sliced.
         """
         n_codim = len(base_op.codomain.summands)
         if(isinstance(index,int)):
-            assert -n_codim<=index and index<n_codim
+            if index<-n_codim or n_codim<=index:
+                raise IndexError(util.Errors.indexation(
+                    index,
+                    self,
+                    f"The given integer index is out of the range of {-n_codim},...,{n_codim}."))
             self.index=index
         elif(isinstance(index,slice)):
-            assert index.stop is None or -n_codim<=index.stop and index.stop<n_codim
-            assert index.start is None or -n_codim<=index.start and index.start<n_codim
+            if index.stop is not None and (index.stop<-n_codim or n_codim<=index.stop):
+                raise IndexError(util.Errors.indexation(
+                    index,
+                    self,
+                    f"The given index slice stops out of the range of {-n_codim},...,{n_codim}."))
+            if index.start is not None and (index.start<-n_codim or n_codim<=index.start):
+                raise IndexError(util.Errors.indexation(
+                    index,
+                    self,
+                    f"The given index slice starts out of the range of {-n_codim},...,{n_codim}."))
             index_list=list(range(n_codim)[index])
-            assert len(index_list)>0
+            if len(index_list) == 0:
+                raise IndexError(util.Errors.indexation(
+                    index,
+                    self,
+                    f"The given index slice generated an empty index list."
+                ))
             if(len(index_list)==1):
                 self.index=index_list[0]
             else:
-                self.index=index_list
-        elif(isinstance(index,tuple)):
-            assert all(isinstance(i,int) for i in index)
-            assert -n_codim<=min(index) and max(index)<n_codim
+                self.index=tuple(index_list)
+        elif(isinstance(index,(tuple,list))):
+            if any(not isinstance(i,int) for i in index) or min(index)<-n_codim or n_codim<=max(index):
+                raise IndexError(util.Errors.indexation(
+                    index,
+                    self,
+                    f"The given tuple/list of indeces has to be a list of integers \n in the range of {-n_codim},...,{n_codim}."))
             if(len(index)==1):
                 self.index=index[0]
             else:
-                self.index=index
+                self.index=tuple(index)
         else:
-            raise ValueError(f"Invalid type {type(index)} for index")
+            raise ValueError(util.Errors.indexation(f"Invalid type {type(index)} for index in PartOfOperator"))
         if(isinstance(self.index,int)):
             codomain=base_op.codomain.summands[self.index]
         else:
@@ -1102,8 +1294,13 @@ class PartOfOperator(Operator):
                 y_base_op[self.index[i]]+=y_i
         return self.base_op._adjoint(y_base_op)
     
-    def __getitem__(self, val):#TODO add checks for ranges
-        assert isinstance(self.index,tuple)
+    def __getitem__(self, val):
+        if not isinstance(self.index,tuple):
+            raise IndexError(util.Errors.indexation(
+                val,
+                self,
+                "Cannot index a PartOfOperator Further then to a signle element!"
+            ))
         if(isinstance(val,int) or isinstance(val,slice)):
             return PartOfOperator(self.base_op,self.index[val])
         elif(isinstance(val,tuple)):
@@ -1122,9 +1319,23 @@ class Pow(Operator):
         The power. Is required to be a positive interger.
     """
     def __init__(self, op, exponent):
-        assert op.linear, "The operator has to be linear."
-        assert op.domain == op.codomain, "Domain and codomain have to match."
-        assert type(exponent)==int and exponent>=0, "The exponent has to be of int type"
+        if not op.linear:
+            raise ValueError(util.Errors.not_linear_op(
+                op,
+                "To construct an power of an operator the operator has to be linear."
+            ))
+        if op.domain != op.codomain:
+            raise ValueError(util.Errors.not_equal(
+                op.domain,
+                op.codomain,
+                add_info=f"The domain and codomain of the operator {op} have to match to construct a power of it."
+            ))
+        if not isinstance(exponent,int) or exponent<0:
+            raise ValueError(util.Errors.not_instance(
+                exponent,
+                int,
+                f"The exponent of a power of an operator has to be a non-negative integer."
+            ))
         super().__init__(op.domain,op.domain,linear=True)
         self.op = op
         self.exponent = exponent
@@ -1148,7 +1359,10 @@ class Pow(Operator):
         try:
             return Pow(self.op.inverse,self.exponent)
         except NotImplementedError:
-            raise NotImplementedError("The inverse of the power {} is not known since the operator has not a well defined inverse.".format(self))
+            raise NotImplementedError(util.Errors._compose_message(
+                    "INVERSE NOT DEFINED",
+                f"The inverse of the power of the operator {self.op} is not defined since the operator has not a well defined inverse."
+                ))
 
 
 class Identity(Operator):
@@ -1204,12 +1418,29 @@ class CoordinateProjection(Operator):
     """
     def __init__(self, domain, mask):
         if isinstance(domain,vecsps.NumPyVectorSpace):
-            mask = np.broadcast_to(mask, domain.shape)
-            assert mask.dtype == bool
+            try:
+                mask = np.broadcast_to(mask, domain.shape)
+            except:
+                raise ValueError(util.Errors._compose_message(
+                    "BROADCAST ERROR",
+                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. \n \t mask = {mask}"
+                ))
+            if mask.dtype != bool:
+                raise TypeError(util.Errors.not_instance(
+                    mask,
+                    bool,
+                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
+                ))
         else:
-            x = domain.rand()
-            _ = x[mask]
-            x[mask] = domain.ones()[mask]
+            try:
+                x = domain.rand()
+                _ = x[mask]
+                x[mask] = domain.ones()[mask]
+            except:
+                raise ValueError(util.Errors._compose_message(
+                    "MASKING ERROR",
+                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. \n \t mask = {mask}"
+                ))
         self.mask = mask
         super().__init__(
             domain=domain,
@@ -1244,6 +1475,30 @@ class CoordinateMask(Operator):
         Boolean mask of the subset onto which to project.
     """
     def __init__(self, domain, mask):
+        if isinstance(domain,vecsps.NumPyVectorSpace):
+            try:
+                mask = np.broadcast_to(mask, domain.shape)
+            except:
+                raise ValueError(util.Errors._compose_message(
+                    "BROADCAST ERROR",
+                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. \n \t mask = {mask}"
+                ))
+            if mask.dtype != bool:
+                raise TypeError(util.Errors.not_instance(
+                    mask,
+                    bool,
+                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
+                ))
+        else:
+            try:
+                x = domain.rand()
+                _ = x[mask]
+                x[mask] = domain.ones()[mask]
+            except:
+                raise ValueError(util.Errors._compose_message(
+                    "MASKING ERROR",
+                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. \n \t mask = {mask}"
+                ))
         self.mask = mask
         super().__init__(
             domain=domain,
@@ -1284,10 +1539,30 @@ class PtwMultiplication(Operator):
     def __init__(self, domain, factor):
         # Check that factor can broadcast against domain elements without
         # increasing their size.
+        if not isinstance(domain,vecsps.VectorSpaceBase):
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase,
+                add_info="The domain for a PtwMultiplication has to be a VectorSpaceBases instance."
+            ))
         if isinstance(domain,vecsps.NumPyVectorSpace):
-            factor = np.broadcast_to(factor, domain.shape)
-        if domain:
-            assert np.isscalar(factor) or factor in domain
+            try:
+                factor = np.broadcast_to(factor, domain.shape)
+            except:
+                raise ValueError(util.Errors._compose_message(
+                    "BROADCAST ERROR",
+                    f"The factor for a PtwMultiplication for NumPyVectorSpace instances \n has to be broadcastable to the shape of the domain {domain.shape}. \n \t factor = {factor}"
+                ))
+        elif np.isscalar(factor):
+            factor = factor*domain.ones()
+        elif factor not in domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                factor,
+                domain,
+                vec_name="factor",
+                space_name="domain",
+                add_info="For a PtwMultiplication the factor has to be in the domain."
+            ))
         self.factor = factor
         super().__init__(domain, domain, linear=True)
 
@@ -1325,9 +1600,23 @@ class OuterShift(Operator):
         The offset by which to shift. 
     """
     def __init__(self, op, offset):
-        assert isinstance(op,Operator)
-        assert offset in op.codomain or np.isscalar(offset)
-        offset = op.codomain.ones()*offset if np.isscalar(offset) else offset
+        if not isinstance(op,Operator):
+            raise ValueError(util.Errors.not_instance(
+                op,
+                Operator,
+                add_info="Construction of an OuterShift is only possible for an Operator instance."
+            ))
+        if np.isscalar(offset):
+            offset = op.codomain.ones()*offset
+        elif offset not in op.codomain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                offset,
+                op.codomain,
+                vec_name="offset",
+                space_name="codomain",
+                add_info="Construction of a OuterShift failed!"
+            ))
+        offset = offset
         super().__init__(op.domain, op.codomain)
         if isinstance(op, type(self)):
             offset = offset + op.offset
@@ -1335,17 +1624,18 @@ class OuterShift(Operator):
         self.op = op
         self.offset = offset.copy()
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
+    def _eval(self, x, differentiate=False):
         if differentiate:
-            tup = self.op.linearize(x, return_adjoint_eval= return_adjoint_eval)
+            tup = self.op.linearize(x)
             y = tup[0]
             self._deriv = tup[1]
-            if not return_adjoint_eval:
-                return y + self.offset
-            else:
-                return y+self._adjoint(self.offset)
+            return y + self.offset
         else:
             return self.op(x) + self.offset
+
+    def _adjoint_eval(self, x):
+        y, self._deriv = self.op.linearize(x, return_adjoint_eval= True)
+        return y+self._adjoint(self.offset)
 
     def _derivative(self, x):
         return self._deriv(x)
@@ -1368,8 +1658,23 @@ class InnerShift(Operator):
         The offset by which to shift. 
     """
     def __init__(self, op, offset):
-        assert offset in op.domain or np.isscalar(offset)
-        offset = op.domain.ones()*offset if np.isscalar(offset) else offset
+        if not isinstance(op,Operator):
+            raise ValueError(util.Errors.not_instance(
+                op,
+                Operator,
+                add_info="Construction of an InnerShift is only possible for an Operator instance."
+            ))
+        if np.isscalar(offset):
+            offset = op.domain.ones()*offset
+        elif offset not in op.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                offset,
+                op.domain,
+                vec_name="offset",
+                space_name="domain",
+                add_info="Construction of a InnerShift failed!"
+            ))
+        offset = offset
         super().__init__(op.domain, op.codomain)
         if isinstance(op, type(self)):
             offset = offset + op.offset
@@ -1377,13 +1682,17 @@ class InnerShift(Operator):
         self.op = op
         self.offset = offset.copy()
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
-        if differentiate or return_adjoint_eval:
-            y, self._deriv = self.op.linearize(x-self.offset, return_adjoint_eval=return_adjoint_eval)
+    def _eval(self, x, differentiate=False):
+        if differentiate:
+            y, self._deriv = self.op.linearize(x-self.offset)
             return y 
         else:
             return self.op(x - self.offset)
-
+        
+    def _adjoint_eval(self, x):
+        y, self._deriv = self.op.linearize(x-self.offset, return_adjoint_eval=True)
+        return y 
+    
     def _derivative(self, h):
         return self._deriv(h)
 
@@ -1422,7 +1731,12 @@ class DirectSum(Operator):
     """
 
     def __init__(self, *ops, flatten=False, domain=None, codomain=None):
-        assert all(isinstance(op, Operator) for op in ops)
+        if any(not isinstance(op,Operator) for op in ops):
+            raise ValueError(util.Errors.not_instance(
+                ops,
+                tuple(Operator),
+                add_info=f"Construction of a direct sum requires the variable number of arguments given to be Operator instances."
+            ))
         self.ops = []
         r""" List of all operators :math:`(T_1,\dots,T_n)`"""
         for op in ops:
@@ -1432,40 +1746,73 @@ class DirectSum(Operator):
                 self.ops.append(op)
         if isinstance(domain,vecsps.DirectSum):
             if any([d != op.domain for d,op in zip(domain.summands,self.ops)]):
-                raise ValueError(f"Was given a DirectSum {domain} whos components do not match with the domain of the operators. \n The csummands of the given domaina are {domain.summands} \n The domain of the operator are {[op.domain for op in self.ops]}")
+                raise ValueError(util.Errors.not_equal(
+                    domain,
+                    [op.domain for op in self.ops],
+                    add_info=f"Was given a DirectSum whos components do not match with the domain of the operators."
+                    ))
             else:
                 pass
         elif domain is None:
             domain = vecsps.DirectSum(*[op.domain for op in self.ops])
         elif callable(domain):
             domain = domain(*(op.domain for op in self.ops))
-            assert isinstance(domain,vecsps.DirectSum) and all([d == op.domain for d,op in zip(domain.summands,self.ops)]), "Domain constructur failed to construct correct domain."
+            if not isinstance(domain,vecsps.DirectSum):
+                raise ValueError(util.Errors.not_a_vecsp(
+                    domain,
+                    vecsps.DirectSum,
+                    add_info=f"The given callabel to construct the domain for a DirectSum Operator did not produce a DirectSum vector space."
+                ))
+            if any([d != op.domain for d,op in zip(domain.summands,self.ops)]):
+                raise TypeError(util.Errors.not_equal(
+                    domain,
+                    [op.domain for op in self.ops],
+                    add_info=f"The callable to construct the domain for  a DirectSum Operator created a DirectSum vectorspace \n whos components do not match with the domain of the operators. \n "
+                    ))
         else:
-            raise TypeError('domain={} is neither a VectorSpaceBase nor callable'.format(domain))
+            raise TypeError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.DirectSum,
+                add_info='domain={} is neither a VectorSpaceBase nor callable'.format(domain)
+                ))
         
         if isinstance(codomain,vecsps.DirectSum):
             if any([d != op.codomain for d,op in zip(codomain.summands,self.ops)]):
-                raise ValueError(f"Was given a DirectSum {codomain} whos components do not match with the domain of the operators. \n The csummands of the given domaina are {codomain.summands} \n The domain of the operator are {[op.codomain for op in self.ops]}")
+                raise ValueError(util.Errors.not_equal(
+                    codomain,
+                    [op.codomain for op in self.ops],
+                    add_info=f"Was given a DirectSum whos components do not match with the domain of the operators. \n"
+                    ))
             else:
                 pass
         elif codomain is None:
             codomain = vecsps.DirectSum(*[op.codomain for op in self.ops])
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
-            assert isinstance(codomain,vecsps.DirectSum) and all([cd == op.codomain for cd,op in zip(codomain.summands,self.ops)]), "Codomain constructur failed to construct correct codomain."
+            if not isinstance(domain,vecsps.DirectSum):
+                raise ValueError(util.Errors.not_a_vecsp(
+                    codomain,
+                    vecsps.DirectSum,
+                    add_info=f"The given callabel to construct the codomain for a DirectSum Operator did not produce a DirectSum vector space."
+                ))
+            if any([d != op.codomain for d,op in zip(codomain.summands,self.ops)]):
+                raise TypeError(util.Errors.not_equal(
+                    codomain,
+                    [op.codomain for op in self.ops],
+                    add_info=f"The callable to construct the codomain for  a DirectSum Operator created a DirectSum vectorspace \n whos components do not match with the codomain of the operators. \n "
+                    ))
         else:
-            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
-        
+            raise TypeError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.DirectSum,
+                add_info='codomain={} is neither a VectorSpaceBase nor callable'.format(codomain)
+                ))
         super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in self.ops))
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
+    def _eval(self, x, differentiate=False):
         if differentiate:
-            linearizations = [op.linearize(x_i,return_adjoint_eval=return_adjoint_eval) for op, x_i in zip(self.ops, x)]
+            linearizations = [op.linearize(x_i) for op, x_i in zip(self.ops, x)]
             self._derivs = [l[1] for l in linearizations]
-            return self.codomain.join(*(l[0] for l in linearizations))
-        elif return_adjoint_eval:
-            linearizations = [op.linearize(elm,return_adjoint_eval=True) for op, elm in zip(self.ops, x)]
-            self._adjoint_derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(x_i) for op, x_i in zip(self.ops, x)))  
@@ -1520,7 +1867,10 @@ class DirectSum(Operator):
                 codomain=self.domain
             )
         except NotImplementedError:
-            raise NotImplementedError("The inverse of the direct sum {} is not known since one of the operators has not a well defined inverse.".format(self))
+            raise NotImplementedError(util.Errors._compose_message(
+                    "INVERSE NOT DEFINED",
+                    "The inverse of the DirectSum {} is not known \n since one of the operators has not a well defined inverse.".format(self)
+                ))
 
     def __repr__(self):
         return util.make_repr(self, *self.ops)
@@ -1560,8 +1910,17 @@ class VectorOfOperators(Operator):
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
-        assert all([isinstance(op, Operator) for op in ops]), "ops must be a list of `Operator` instances"
-        assert ops
+        if len(ops) == 0:
+            raise ValueError(util.Errors._compose_message(
+                    "",
+                "The list of Operators for a VectorOfOperators cannot be empty!"
+            ))
+        if any(not isinstance(op,Operator) for op in ops):
+            raise ValueError(util.Errors.not_instance(
+                ops,
+                tuple(Operator),
+                add_info="Construction of a VectorOfOperators requires the a list/tuple of Operator instances."
+            ))
         self.ops = ops
         r"""List of all Operators :math:`(T_1,\dots,T_n)`"""
 
@@ -1569,7 +1928,13 @@ class VectorOfOperators(Operator):
             self.domain = self.ops[0].domain
         else:
             self.domain = domain
-        assert all(op.domain == self.domain for op in self.ops), "All operators in `ops` must have same domain {}".format(type(self.domain))
+        if any(op.domain != self.domain for op in self.ops):
+            raise TypeError(util.Errors.not_equal(
+                self.domain,
+                [op.domain for op in self.ops],
+                second_type="list of all domains",
+                add_info="The Operators in the VectorOfOperators have to have identical domains!"
+            ))
 
         if codomain is None:
             codomain = vecsps.DirectSum(*tuple([op.codomain for op in ops]))
@@ -1578,19 +1943,41 @@ class VectorOfOperators(Operator):
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in self.ops))
         else:
-            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
-        assert isinstance(codomain,vecsps.DirectSum), "Codomain must be a `DirectSum`"
-        assert all(op.codomain == c for op, c in zip(ops, codomain)), "Codomains of Operators do not match constructed codomain"
-
+            raise TypeError(util.Errors.not_instance(
+                codomain,
+                vecsps.VectorSpaceBase,
+                'codomain for VectorOfOperators is neither a VectorSpaceBase nor callable'
+            ))
+        if not isinstance(codomain,vecsps.DirectSum):
+            raise TypeError(util.Errors.not_a_vecsp(
+                codomain,
+                vecsps.DirectSum,
+                add_info="The codomain of a VectorOfOperators must be a DiectSum"
+            ))
+        if any(op.codomain != c for op,c in zip(ops,codomain)):
+            raise TypeError(util.Errors.not_equal(
+                codomain,
+                [op.codomain for op in ops],
+                second_type="List(Codomains)",
+                add_info="The codomains components given or constructed does match \nwith the codomains of the individual operators of the VecotrOfOperators."
+            ))
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
+    def _eval(self, x, differentiate=False):
         if differentiate:
-            linearizations = [op.linearize(x,return_adjoint_eval=return_adjoint_eval) for op in self.ops]
+            linearizations = [op.linearize(x) for op in self.ops]
             self._derivs = [l[1] for l in linearizations]
             return self.codomain.join(*(l[0] for l in linearizations))
         else:
             return self.codomain.join(*(op(x) for op in self.ops))
+    
+    def _adjoint_eval(self, x):
+        if self.linear:
+            return sum(op.adjoint_eval(x) for op in self.ops)
+        else:
+            linearizations = [op.linearize(x,return_adjoint_eval=True) for op in self.ops]
+            self._derivs = [l[1] for l in linearizations]
+            return sum(l[0] for l in linearizations)
 
     def _derivative(self, x):
         return self.codomain.join(
@@ -1598,7 +1985,6 @@ class VectorOfOperators(Operator):
         )
 
     def _adjoint(self, y):
-        assert y in self.codomain, "{} is not in codomain {}".format(y,type(self.codomain))
         if self.linear:
             ops = self.ops
         else:
@@ -1616,7 +2002,7 @@ class VectorOfOperators(Operator):
 
     def __repr__(self):
         vec_repr = "[" +", ".join([repr(op) for op in self.ops])+"]"
-        return util.make_repr(self, *self.ops)
+        return util.make_repr(self, vec_repr)
 
     def __getitem__(self, item):
         return self.ops[item]
@@ -1640,7 +2026,7 @@ class MatrixOfOperators(Operator):
     
     Parameters
     ----------
-    *ops : tuple(tuple(Operator) 
+    *ops : tuple(tuple(Operator)) or list(list(Operator)) 
         Variable number of tuples of Operator instances to build the matrix. Each tuple has to have 
         the same length and a zero operators should be given by None.
     domain, codomain : vecsps.VectorSpaceBase or callable, optional
@@ -1651,40 +2037,78 @@ class MatrixOfOperators(Operator):
     """
 
     def __init__(self, ops,  domain=None, codomain=None):
-        assert all((isinstance(op_col,list) and len(op_col) == len(ops[0]) for op_col in ops))
-        ops_flat = [op for op_col in ops for op in op_col]
-        assert all((isinstance(op, Operator) or op==None) for op in ops_flat)
         self.ops = ops
         r""" Matrix of Operators :math:`(T_ij)`"""
+        if all((not isinstance(op_col,list) or len(op_col) != len(ops[0]) for op_col in ops)):
+            raise ValueError(util.Errors.not_instance(
+                ops,
+                list(Operator),
+                add_info=f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator, ...],[Operator, ...], ...]. Moreover \n the internal lists have to be of identical lengths. "
+            ))
+        ops_flat = [op for op_col in ops for op in op_col]
+        if any((not isinstance(op, Operator) and op!=None for op in ops_flat)):
+            raise ValueError(util.Errors._compose_message(
+                    "NOT CORRECT TYPE",
+                f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator/None, ...],[Operator/None, ...], ...].\n The given lists Contains other objects than Operators or None: \n " +"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+            ))
 
         domains = [None]*len(ops)
         for j in range(len(ops)):
             for i in range(len(ops[0])):
                 if ops[j][i]:
                     if domains[j]:
-                        assert domains[j] == ops[j][i].domain
+                        if domains[j] != ops[j][i].domain:
+                            raise ValueError(util.Errors.not_equal(
+                                ops[j][i].domain,
+                                domains[j],
+                                add_info="The domains of one column in the MatrixOfOperators have to be identical!"
+                            ))
                     else:    
                         domains[j] = ops[j][i].domain
-        assert None not in domains
+        if None in domains:
+            raise ValueError(util.Errors._compose_message(
+                    "EMPTY DOMAIN",
+                f"At least one column of the MatrixOfOperators is empty and contains no domain. Since the domains:\n\t\t {domains} \n has an not specified entry. When construction from given operots:\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+            ))
 
         if domain is None:
-            domain = vecsps.DirectSum
-        if isinstance(domain, vecsps.VectorSpaceBase):
+            domain = vecsps.DirectSum(*tuple(domains))
+        elif isinstance(domain, vecsps.DirectSum):
             pass
         elif callable(domain):
             domain = domain(*tuple(domains))
+            if not isinstance(domain,vecsps.DirectSum):
+                raise TypeError(util.Errors.not_a_vecsp(
+                    domain,
+                    vecsps.DirectSum,
+                    add_info="The domain of a MatrixOfOperators constructed from a callable is not a DiectSum"
+                ))
         else:
-            raise TypeError('domain={} is neither a VectorSpaceBase nor callable'.format(domain))
+            raise TypeError(util.Errors.not_instance(
+                domain,
+                vecsps.DirectSum,
+                add_info='domain is neither a DirectSum nor callable'
+                ))
+
 
         codomains = [None]*len(ops[0])
         for i in range(len(ops[0])):
             for j in range(len(ops)):
                 if ops[j][i]:
                     if codomains[i]:
-                        assert codomains[i] == ops[j][i].codomain
+                        if codomains[i] != ops[j][i].codomain:
+                            raise ValueError(util.Errors.not_equal(
+                                ops[j][i].codomain,
+                                codomains[i],
+                                add_info="The codomains of one row in the MatrixOfOperators have to be identical!"
+                            ))
                     else:
                         codomains[i] = ops[j][i].codomain
-        assert None not in codomains
+        if None in codomains:
+            raise ValueError(util.Errors._compose_message(
+                    "EMPTY CODOMAIN",
+                f"At least one row of the MatrixOfOperators is empty and contains no codomain. Since the codomains:\n\t\t {codomains} \n has an not specified entry. When construction from given operots:\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+            ))
 
         if codomain is None:
             codomain = vecsps.DirectSum
@@ -1692,12 +2116,20 @@ class MatrixOfOperators(Operator):
             pass
         elif callable(codomain):
             codomain = codomain(*tuple(codomains))
+            if not isinstance(domain,vecsps.DirectSum):
+                raise TypeError(util.Errors.not_a_vecsp(
+                    domain,
+                    vecsps.DirectSum,
+                    add_info="The construction from a callable is not a DiectSum"
+                ))
         else:
-            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(domain))
+            raise TypeError(util.Errors.not_instance(
+                codomain,
+                vecsps.DirectSum,
+                'codomain is neither a DirectSum nor callable'
+                ))
         
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
-        assert isinstance(self.domain,vecsps.DirectSum)
-        assert isinstance(self.codomain,vecsps.DirectSum)
 
     def _eval(self, x, differentiate=False):
         res = self.codomain.zeros()
@@ -1768,13 +2200,29 @@ class Sum(Operator):
     """
 
     def __init__(self, domain,codomain=None):
-        assert isinstance(domain,vecsps.DirectSum)
-        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
-        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
-        assert codomain is None or domain.summands[0].shape==codomain.shape
-        if(codomain is None):
-            codomain=domain.summands[0]
+        if not isinstance(domain,vecsps.DirectSum):
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.DirectSum,
+                add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
+            ))
+        if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
+            raise ValueError(util.Errors.not_equal(
+                domain,
+                domain.summands[0],
+                first_type="DirectSum containing identical domains.",
+                second_type="the first domain",
+                add_info="The domain has to be a DirectSum of identical domains."
+            ))
+        if codomain is None:
+            codomain=domain.summands[0]    
         super().__init__(domain, codomain, True)
+        if self.domain.summands[0] != codomain:
+            raise ValueError(util.Errors.not_equal(
+                self.domain.summands[0],
+                self.codomain,
+                add_info="The codomain has to be indentiocal to the summands of the domain."
+            ))
 
     def _eval(self,x):
         return sum(self.domain.split(x))
@@ -1795,13 +2243,29 @@ class Product(Operator):
     """
 
     def __init__(self, domain,codomain=None):
-        assert isinstance(domain,vecsps.DirectSum)
-        assert isinstance(codomain,vecsps.VectorSpace) or codomain is None
-        assert all(domain.summands[0].shape==summand.shape for summand in domain.summands)
-        assert codomain is None or domain.summands[0].shape==codomain.shape
-        if(codomain is None):
-            codomain=domain.summands[0]
-        super().__init__(domain, codomain, False)
+        if not isinstance(domain,vecsps.DirectSum):
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.DirectSum,
+                add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
+            ))
+        if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
+            raise ValueError(util.Errors.not_equal(
+                domain,
+                domain.summands[0],
+                first_type="DirectSum containing identical domains.",
+                second_type="the first domain",
+                add_info="The domain has to be a DirectSum of identical domains."
+            ))
+        if codomain is None:
+            codomain=domain.summands[0]    
+        super().__init__(domain, codomain, True)
+        if self.domain.summands[0] != codomain:
+            raise ValueError(util.Errors.not_equal(
+                self.domain.summands[0],
+                self.codomain,
+                add_info="The codomain has to be indentiocal to the summands of the domain."
+            ))
 
     def _eval(self,x,differentiate=False):
         x_split=self.domain.split(x)
@@ -1835,10 +2299,12 @@ class RealPart(Operator):
     """
 
     def __init__(self, domain):
-        if domain:
-            codomain = domain.real_space()
-        else:
-            codomain = None
+        if not isinstance(domain,vecsps.VectorSpaceBase):
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase
+            ))
+        codomain = domain.real_space()
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
@@ -1859,11 +2325,13 @@ class ImaginaryPart(Operator):
     """
 
     def __init__(self, domain):
-        if domain:
-            assert domain.is_complex
-            codomain = domain.real_space()
-        else:
-            codomain = None
+        if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase,
+                add_info="To consider a ImaginaryPart operator the domain is required to be complex!"
+            ))
+        codomain = domain.real_space()
         super().__init__(domain, codomain, linear=True)
 
     def _eval(self, x):
@@ -1884,14 +2352,16 @@ class SquaredModulus(Operator):
     """
 
     def __init__(self, domain):
-        if domain:
-            codomain = domain.real_space()
-        else:
-            codomain = None
+        if not isinstance(domain,vecsps.VectorSpaceBase):
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase
+            ))
+        codomain = domain.real_space()
         super().__init__(domain, codomain)
 
-    def _eval(self, x, differentiate=False, return_adjoint_eval=False):
-        if differentiate or return_adjoint_eval:
+    def _eval(self, x, differentiate=False):
+        if differentiate:
             self._factor = 2 * x
         return x.real**2 + x.imag**2
 
@@ -1939,8 +2409,16 @@ class ApproximateHessian(Operator):
     """
     def __init__(self, func, x, stepsize=1e-8):
         from regpy.functionals import Functional
-        assert isinstance(func, Functional)
-        assert hasattr(func,"gradient")
+        if not isinstance(func,Functional):
+            raise ValueError(util.Errors.not_instance(
+                func,
+                Functional,
+            ))
+        if not hasattr(func,"gradient"):
+            raise ValueError(util.Errors._compose_message(
+                    "MISSING ATTRIBUTE",
+                f"The given functional {func} does not have a defined gradient.\n Making it impossible to approximate a Hessian operator."
+            ))
         self.gradx = func.gradient(x)
         """The gradient at `x`"""
         self.func = func
@@ -1968,6 +2446,11 @@ class SciPyLinearOperator(LinearOperator):
         The operator to be put into a scipy.linalg.LinearOperator. 
     """
     def __init__(self, op2):
+        if not isinstance(op2,Operator):
+            raise ValueError(util.Errors.not_instance(
+                op2,
+                Operator
+            ))
         self.op2 = op2
         r"""the wrapped operator"""
         domain_shape=op2.domain.realsize
