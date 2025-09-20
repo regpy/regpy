@@ -3,6 +3,7 @@ from copy import copy
 from math import inf
 import logging
 
+import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps
@@ -819,7 +820,7 @@ class SquaredNorm(Functional):
         self.a=float(a)
         if shift is None:
             assert b is None or b in self.domain
-            self.b = self.domain.zeros() if b is None else b
+            self.b = np.broadcast_to(np.zeros(()),self.domain.shape) if b is None else b
             assert isinstance(c,(float,int))
             self.c = float(c)
         else:
