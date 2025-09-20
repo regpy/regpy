@@ -1008,27 +1008,7 @@ class LinearCombination(Operator):
         for coeff, op in zip(self.coeffs, ops):
             x += coeff.conjugate() * op.adjoint(y)
         return x
-    
-    def _adjoint_eval(self, x):
-        if self.linear:
-            y = self.domain.zeros()
-            for coeff, op in zip(self.coeffs, self.ops):
-                y += abs(coeff)**2 * op.adjoint_eval(x)
-            return y
-        else:
-            self._derivs = []
-            for coeff, op in zip(self.coeffs, self.ops):
-                z, deriv = op.linearize(x,return_adjoint_eval=True)
-                self._derivs.append(deriv)
-                y += abs(coeff)**2 * z
-            return y
-    
-    def _adjoint_derivative(self, x):
-        y = self.domain.zeros()
-        for coeff, adjoint_deriv in zip(self.coeffs, self._adjoint_derivs):
-            y += abs(coeff)**2 * adjoint_deriv(x)
-        return y
-    
+       
     def _adjoint_data(self, x):
         y = self.domain.zeros()
         for coeff, op in zip(self.coeffs, self.ops):
