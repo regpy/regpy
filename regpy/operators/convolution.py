@@ -6,7 +6,7 @@ from regpy.vecsps import UniformGridFcts
 from .base import PtwMultiplication, Operator, Composition
 from .numpy import FourierTransform
 
-__all__ = ["PaddingOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FresnelPropagator"]
+__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FresnelPropagator"]
 
 class PaddingOperator(Operator):
     r"""Operator that implements zero-padding for numpy arrays.
@@ -15,9 +15,10 @@ class PaddingOperator(Operator):
     ----------
     grid : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined.
-    pad_amount: n-tuple of pairs of non-negative integer determining the amount of padding
+    pad_amount: integer or n-tuple (n=grid.ndim) of pairs of non-negative integer determining the amount of padding
         where n is the dimension of grid. E.g., for n=2,  
         pad_amont = ((pad_top,pad_bottom),(pad_left,pad_right))
+        If pad_amount is an integer, this value is used for the amount of padding in each direction
 
     Notes
     -----
@@ -46,6 +47,32 @@ class PaddingOperator(Operator):
     def _adjoint(self,y):
         ind = tuple(slice(pad[0],None if pad[1]==0 else -pad[1]) for pad in self.pad_amount)
         return y[ind]
+
+def TruncationOperator(grid, truncation_amount):
+    r"""Operator that implements truncation of numpy arrays.
+
+    Parameters
+    ----------
+    grid : regpy.vecsps.UniformGridFcts
+        The domain on which the operator is defined.
+    truncation_amount: integer or n-tuple (n=grid.ndim) of pairs of non-negative integer determining the amount of padding
+        where n is the dimension of grid.
+        If truncation_amount is an integer, this value is used for the amount of truncation in each direction
+
+    Notes
+    -----
+    Returns the adjoint of a PaddingOperator
+    """
+    if isinstance(truncation_amount,int):
+            truncation_amount = ((truncation_amount,truncation_amount),)*grid.ndim
+    for trunc,N in zip(truncation_amount,grid.shape):
+        assert trunc[0]+trunc[1]<N
+    truncated_grid = UniformGridFcts(
+            *[np.arange(N-trunc[0]-trunc[1])*spc + ax[0] + trunc[0]*spc for (N,trunc,spc,ax) in zip(grid.shape,truncation_amount,grid.spacing,grid.axes)],
+            dtype = grid. dtype
+            )
+    pad_op = PaddingOperator(truncated_grid,truncation_amount)
+    return pad_op.adjoint
     
 class ConvolutionOperator(Composition):
     r"""Periodic convolution operator on UniformGridFcts
@@ -63,14 +90,20 @@ class ConvolutionOperator(Composition):
           (If grid is real, the size of the last dimension is about half of that of grid)         
         - of a function taking d real values and returning a real or complex number
            In this case, the function is evaluated on a grid that is reciprocal to the input grid           
-    pad_amount: d-tuple of pairs of integers 
+    pad_amount: [optional, default:None] None or integer or d-tuple of pairs of integers 
         To model non-periodic convolutions, zero padding is often needed to avoid aliasing artifacts
         by periodization. Each pair of integers specifies the number of pixels to be added in each dimension. 
+        If an integer is given, this is used as pad amount in each direction. If None, no padding is performed.
+        If Fourier_truncation_amount is None, the convolution restricted to the original domain is return, otherwise
+        the convolution on the padded domain is returned
+    Fourier_truncation_amount: [optional, default:None] None or integer or d-tuple of integers 
+        Specifies a truncation of the Fourier domain, leading to a subsampling of the padded spatial domain.
+        If 0, the convolution on the full padded domain is returned. 
     first_conv_axis: integer, default:0
         If first_conv_axis>0, then convolution is only performed along the last (grid.ndim-first_conv_axis) axes.
     """
 
-    def __init__(self, grid, fourier_multiplier, pad_amount=None,first_conv_axis=0):
+    def __init__(self, grid, fourier_multiplier, pad_amount=None,Fourier_truncation_amount=None,first_conv_axis=0):
         if not isinstance(grid,UniformGridFcts):
             raise ValueError(f"The given grid has to be a `UniformGirdFcts`, was given {grid} ")
         ndim = grid.ndim
@@ -84,7 +117,7 @@ class ConvolutionOperator(Composition):
             multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
 
             super().__init__(ft.adjoint, multiplier, ft)
-        else:
+        elif Fourier_truncation_amount is None: 
             pad_op = PaddingOperator(grid,pad_amount)
             ft = FourierTransform(pad_op.codomain,axes=tuple(range(first_conv_axis,ndim)))
             self._frqs = ft.codomain.coords
@@ -95,6 +128,19 @@ class ConvolutionOperator(Composition):
             multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
         
             super().__init__(pad_op.adjoint, ft.adjoint, multiplier, ft, pad_op)
+        else:
+            pad_op = PaddingOperator(grid,pad_amount) 
+            ft = FourierTransform(pad_op.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
+            trunc_op = TruncationOperator(ft.codomain,Fourier_truncation_amount)
+            self._frqs = trunc_op.codomain.coords
+            if callable(fourier_multiplier):
+                self._otf = fourier_multiplier(*self._frqs)
+            else:
+                self._otf = fourier_multiplier
+            multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape))            
+            inv_ft = FourierTransform(trunc_op.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
+
+            super().__init__(inv_ft,multiplier,trunc_op,ft,pad_op)
 
     @property
     def freqs(self):
@@ -115,31 +161,31 @@ class GaussianBlur(ConvolutionOperator):
     For :math:`shift=0` it also represents the forward operator for the backward heat equation if 
     :math:`kernel_width= 2\sqrt{t}`.
     """
-    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,first_conv_axis=0):
+    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,Fourier_truncation_amount=None,first_conv_axis=0):
         if shift==None:
             super().__init__(grid,
                              lambda *x : np.exp(-(np.pi*kernel_width)**2 * sum(y**2 for y in x)),
-                             pad_amount=pad_amount,
+                             pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount,
                              first_conv_axis=first_conv_axis
                              )
         else:
             super().__init__(grid,
                              lambda *x : np.exp(sum(-(np.pi*kernel_width)**2*y**2 + 2*np.pi*1j*sh*y
                                                          for y,sh in zip(x,shift))),
-                             pad_amount=pad_amount,
+                             pad_amount=pad_amount, Fourier_truncation_amount=Fourier_truncation_amount,
                              first_conv_axis=first_conv_axis
                             )
             
 class ExponentialConvolution(ConvolutionOperator):
     r"""Convolution with an exponential function :math:`exp(-|x|_1/a)`.
     """
-    def __init__(self,grid,a,pad_amount= None,first_conv_axis=0):
+    def __init__(self,grid,a,pad_amount= None,Fourier_truncation_amount=None,first_conv_axis=0):
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
-                        pad_amount=pad_amount,
+                        pad_amount=pad_amount, Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
-            
+
 class FresnelPropagator(ConvolutionOperator):
     r"""Operator that implements Fresnel-propagation of arrays of arbitrary dimension. 
     In 2D this models near-field diffraction in the regime of the free-space paraxial 
@@ -153,7 +199,10 @@ class FresnelPropagator(ConvolutionOperator):
         Fresnel number of the imaging setup, defined with respect to the lengthscale
         that corresponds to length 1 in domain.coords. Governs the strength of the
         diffractive effects modeled by the Fresnel-propagator
-    pad_amount = ((pad_top,pad_bottom),(pad_left,pad_right)): amount of padding to avoid aliasing artifacts
+    pad_amount : [optional: Default None]: None or integer or tuple of pairs of integers]
+        amount of padding to avoid aliasing artifacts, see ConvolutionOperator for details
+    Fourier_domain_truncation: [optional: Default None]: None or integer or tuple of pairs of integers]
+        amount of truncation of Fourier domain, see ConvolutionOperator for details
 
     Notes
     -----
@@ -174,12 +223,13 @@ class FresnelPropagator(ConvolutionOperator):
     with wavelength  :math:`lambda` and propagation distance :math:`d`.
     """
 
-    def __init__(self,grid, fresnel_number, pad_amount=None,first_conv_axis=0):
+    def __init__(self,grid, fresnel_number, pad_amount=None,Fourier_truncation_amount=None, first_conv_axis=0):
         assert grid.is_complex
         self.fresnel_number = fresnel_number
         super().__init__(grid,
                         lambda *x : np.exp((-1j * np.pi / fresnel_number) * sum(y**2 for y in x)),
                         pad_amount=pad_amount,
+                        Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
  
