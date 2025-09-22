@@ -820,7 +820,10 @@ class SquaredNorm(Functional):
         self.a=float(a)
         if shift is None:
             assert b is None or b in self.domain
-            self.b = np.broadcast_to(np.zeros(()),self.domain.shape) if b is None else b
+            if isinstance(self.domain,vecsps.NumPyVectorSpace):
+                self.b = np.broadcast_to(np.zeros(()),self.domain.shape) if b is None else b
+            else:
+                self.b = self.domain.zeros() if b is None else b
             assert isinstance(c,(float,int))
             self.c = float(c)
         else:
