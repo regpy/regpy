@@ -160,7 +160,8 @@ class ConvolutionOperator(Composition):
                 self._otf = fourier_multiplier(*self._frqs)
             else:
                 self._otf = fourier_multiplier
-            multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape))
+            fac = np.sqrt(np.prod(trunc_op.codomain.shape)/np.prod(trunc_op.domain.shape))
+            multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(fac*self._otf,trunc_op.codomain.shape))
             frqs = FourierTransform.frequencies(trunc_op.codomain,centered=True, axes=tuple(range(first_conv_axis,ndim)))
             cd = UniformGridFcts(*frqs, dtype=complex)
             ft2 = FourierTransform(cd,axes=tuple(range(first_conv_axis,ndim)),centered=True)
