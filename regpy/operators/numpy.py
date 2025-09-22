@@ -1,6 +1,8 @@
 import numpy as np
+
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix, csc_array
+import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
@@ -39,7 +41,7 @@ class MatrixMultiplication(Operator):
     """
 
     def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
-        if not isinstance(matrix,(np.ndarray,CSC.csc_matrix,CSC.csc_array)):
+        if not isinstance(matrix,(np.ndarray,csc_matrix,csc_array)):
             try:
                 self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
                 matrix = np.asarray(matrix)
@@ -295,7 +297,7 @@ class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, UniformGridFcts)
         self.is_complex = domain.is_complex
-        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
         shape = domain.shape
         s = shape[-1]
         if centered or (not domain.is_complex and domain.ndim==1):
@@ -309,37 +311,38 @@ class FourierTransform(Operator):
   
     def _eval(self, x):
         if self.centered:
-            x = np.fft.ifftshift(x, axes=self.axes)
+            x = spfft.ifftshift(x, axes=self.axes)
         if self.is_complex:
-            y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+            y = spfft.fftn(x, axes=self.axes, norm='ortho')
         else:
-            y = np.fft.rfftn(x, axes=self.axes, norm='ortho')
+            y = spfft.rfftn(x, axes=self.axes, norm='ortho') # type: ignore
         if self.centered:
-            return np.fft.fftshift(y, axes=self.axes)
+            return spfft.fftshift(y, axes=self.axes)
         else:
             return y
 
     def _adjoint(self, y):
         if self.centered:
-            y = np.fft.ifftshift(y, axes=self.axes)
+            y = spfft.ifftshift(y, axes=self.axes)
         if self.is_complex:
-            x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+            x = spfft.ifftn(y, axes=self.axes, norm='ortho')
         else:
-            x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
+            x = spfft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
         if self.centered:
-            x = np.fft.fftshift(x, axes=self.axes)
+            x = spfft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:
             return x
         else:
-            return np.real(x)
+            return x.real
         
     def _adjoint_eval(self, x):
         if self.domain.is_complex:
             return x
         else:
-            return np.real(x)
+            return x.real
         
-    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+    @staticmethod
+    def frequencies(domain,centered=False, axes=None, rfft=False):
         """Compute the grid of frequencies for an FFT on this grid instance.
 
         Parameters

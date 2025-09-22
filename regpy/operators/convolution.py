@@ -45,7 +45,7 @@ class PaddingOperator(Operator):
     def _eval(self,x,differentiate=False):    
         return np.pad(x,self.pad_amount,'constant',constant_values=self.pad_value)
     
-    def _derivative(self,x,differentiate=False):    
+    def _derivative(self,x):    
         return np.pad(x,self.pad_amount,'constant')
 
     def _adjoint(self,y):
@@ -144,11 +144,12 @@ class ConvolutionOperator(Composition):
                 self._otf = fourier_multiplier(*self._frqs)
             else:
                 self._otf = fourier_multiplier
-            multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape))   
-            # inv_ft_aux is used only to construct codomain         
-            inv_ft_aux = FourierTransform(multiplier.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
-            ft2 = FourierTransform(inv_ft_aux.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
-
+            multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape))
+            frqs = FourierTransform.frequencies(trunc_op.codomain,centered=True, axes=tuple(range(first_conv_axis,ndim)))
+            cd = UniformGridFcts(*frqs, dtype=complex)
+            ft2 = FourierTransform(cd,axes=tuple(range(first_conv_axis,ndim)),centered=True)
+            if ft2.codomain != multiplier.codomain:
+                self.log.error(f"The codomain of the multiplier and the codomain of the Fourier Transform do not match! \n Please have a closer look!")
             super().__init__(ft2.adjoint,multiplier,trunc_op,ft,pad_op)
 
     @property
