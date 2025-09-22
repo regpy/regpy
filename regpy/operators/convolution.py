@@ -25,7 +25,7 @@ class PaddingOperator(Operator):
     A wrapper of the np.pad function
     """
 
-    def __init__(self,grid, pad_amount = None):
+    def __init__(self,grid, pad_amount = None, pad_value =0.):
         if not isinstance(grid, UniformGridFcts):
             raise TypeError(f"First argument has to be of type UniformGridFcts. Was given {grid}")
         s = grid.shape
@@ -39,11 +39,15 @@ class PaddingOperator(Operator):
             *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,pad_amount,grid.spacing,grid.axes)],
             dtype = grid. dtype
             )
-        super().__init__(domain=grid,codomain=padded_grid,linear =True)
+        self.pad_value = pad_value
+        super().__init__(domain=grid,codomain=padded_grid,linear = (pad_value ==0))
 
-    def _eval(self,x):    
-        return np.pad(x,self.pad_amount,'constant')
+    def _eval(self,x,differentiate=False):    
+        return np.pad(x,self.pad_amount,'constant',constant_values=self.pad_value)
     
+    def _derivative(self,x,differentiate=False):    
+        return np.pad(x,self.pad_amount,'constant')
+
     def _adjoint(self,y):
         ind = tuple(slice(pad[0],None if pad[1]==0 else -pad[1]) for pad in self.pad_amount)
         return y[ind]
@@ -63,6 +67,8 @@ def TruncationOperator(grid, truncation_amount):
     -----
     Returns the adjoint of a PaddingOperator
     """
+    if not isinstance(grid, UniformGridFcts):
+        raise TypeError(f'grid must be a UniformGridFcts. Got {grid}')
     if isinstance(truncation_amount,int):
             truncation_amount = ((truncation_amount,truncation_amount),)*grid.ndim
     for trunc,N in zip(truncation_amount,grid.shape):
@@ -103,7 +109,7 @@ class ConvolutionOperator(Composition):
         If first_conv_axis>0, then convolution is only performed along the last (grid.ndim-first_conv_axis) axes.
     """
 
-    def __init__(self, grid, fourier_multiplier, pad_amount=None,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self, grid, fourier_multiplier, pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
         if not isinstance(grid,UniformGridFcts):
             raise ValueError(f"The given grid has to be a `UniformGirdFcts`, was given {grid} ")
         ndim = grid.ndim
@@ -118,7 +124,7 @@ class ConvolutionOperator(Composition):
 
             super().__init__(ft.adjoint, multiplier, ft)
         elif Fourier_truncation_amount is None: 
-            pad_op = PaddingOperator(grid,pad_amount)
+            pad_op = PaddingOperator(grid,pad_amount,pad_value=pad_value)
             ft = FourierTransform(pad_op.codomain,axes=tuple(range(first_conv_axis,ndim)))
             self._frqs = ft.codomain.coords
             if callable(fourier_multiplier):
@@ -126,10 +132,11 @@ class ConvolutionOperator(Composition):
             else:
                 self._otf = fourier_multiplier
             multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
-        
-            super().__init__(pad_op.adjoint, ft.adjoint, multiplier, ft, pad_op)
+            trunc_op = TruncationOperator(ft.domain, pad_amount)
+
+            super().__init__(trunc_op, ft.adjoint, multiplier, ft, pad_op)
         else:
-            pad_op = PaddingOperator(grid,pad_amount) 
+            pad_op = PaddingOperator(grid,pad_amount,pad_value=pad_value) 
             ft = FourierTransform(pad_op.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
             trunc_op = TruncationOperator(ft.codomain,Fourier_truncation_amount)
             self._frqs = trunc_op.codomain.coords
@@ -139,8 +146,14 @@ class ConvolutionOperator(Composition):
                 self._otf = fourier_multiplier
             multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape))   
             # inv_ft_aux is used only to construct codomain         
-            inv_ft_aux = FourierTransform(trunc_op.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
+            inv_ft_aux = FourierTransform(multiplier.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
             ft2 = FourierTransform(inv_ft_aux.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
+            if not ft2.codomain == multiplier.codomain:
+                if ft2.codomain.shape == multiplier.codomain.shape and ft2.codomain.dtype == multiplier.codomain.dtype:                      
+                    print("Warning:codomains are claimed not to agree. I am fixing this manually!",ft2.codomain,multiplier.codomain)
+                    ft2.codomain = multiplier.codomain
+                else:
+                    raise RuntimeError("codomains do not agree")
 
             super().__init__(ft2.adjoint,multiplier,trunc_op,ft,pad_op)
 
@@ -163,28 +176,28 @@ class GaussianBlur(ConvolutionOperator):
     For :math:`shift=0` it also represents the forward operator for the backward heat equation if 
     :math:`kernel_width= 2\sqrt{t}`.
     """
-    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
         if shift==None:
             super().__init__(grid,
                              lambda *x : np.exp(-(np.pi*kernel_width)**2 * sum(y**2 for y in x)),
-                             pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount,
+                             pad_amount=pad_amount,pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                              first_conv_axis=first_conv_axis
                              )
         else:
             super().__init__(grid,
                              lambda *x : np.exp(sum(-(np.pi*kernel_width)**2*y**2 + 2*np.pi*1j*sh*y
                                                          for y,sh in zip(x,shift))),
-                             pad_amount=pad_amount, Fourier_truncation_amount=Fourier_truncation_amount,
+                             pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                              first_conv_axis=first_conv_axis
                             )
             
 class ExponentialConvolution(ConvolutionOperator):
     r"""Convolution with an exponential function :math:`exp(-|x|_1/a)`.
     """
-    def __init__(self,grid,a,pad_amount= None,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self,grid,a,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
-                        pad_amount=pad_amount, Fourier_truncation_amount=Fourier_truncation_amount,
+                        pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
 
@@ -225,12 +238,12 @@ class FresnelPropagator(ConvolutionOperator):
     with wavelength  :math:`lambda` and propagation distance :math:`d`.
     """
 
-    def __init__(self,grid, fresnel_number, pad_amount=None,Fourier_truncation_amount=None, first_conv_axis=0):
+    def __init__(self,grid, fresnel_number, pad_amount=None,pad_value=0.,Fourier_truncation_amount=None, first_conv_axis=0):
         assert grid.is_complex
         self.fresnel_number = fresnel_number
         super().__init__(grid,
                         lambda *x : np.exp((-1j * np.pi / fresnel_number) * sum(y**2 for y in x)),
-                        pad_amount=pad_amount,
+                        pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
