@@ -208,10 +208,12 @@ class Operator:
         x : array-like
             The point around which to linearize.
 
-        adjoint_deriv : boolean (Default: False)
-            Flag to determine if AdjointDerivative should be returned as additional output argument. 
-            This can be used if AdjointDerivative has an a more efficient implementation than by composition 
-            or if the image space of the operator is too large to store vectors in this space. 
+        return_adjoint_eval : boolean (Default: False)
+            Flag to determine if the adjoint of the evaluation should be returned. That is the 
+            first output will be :math:`F'[x]^\ast F(x)` rather then F(x). In particular, if the image 
+            space of the operator is too large to store vectors in this space the operator can have 
+            an :meth:`_adjoint_eval` that has an efficient implementation for that and 
+            additionally a :meth:`_adjoint_derivative` that efficiently implements :math:`F'[x]^\ast F'[x]` .
 
         Returns
         -------
@@ -221,7 +223,8 @@ class Operator:
         if return_adjoint_eval ==True: 
            array, Derivative
                array is :math:`F'[x]^\ast F(x)`, Derivative is as above. The adjoint derivative
-               AdjointDerivative that is an efficient implementation of the composition Derivative.adjoint * Derivative is accessible by Derivative.adjoint_eval
+               that is an efficient implementation of the composition Derivative.adjoint * 
+               Derivative is accessible by Derivative.adjoint_eval given an AdjointEval instance.
         """
         if not x in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,"vector for evaluation","domain"))
@@ -856,46 +859,6 @@ class AdjointEval(Operator):
 
     def __repr__(self):
         return util.make_repr(self, self.op)
-
-
-class AdjointDerivative(Operator):
-    r"""A proxy class wrapping a non-linear operator :math:`F`. Calling it will evaluate the composition of the operator's
-    derivative adjoint with its derivative :math:`F'^\ast\circ F'`. This class should not be instantiated directly, 
-    but rather through the `Operator.linearize` method of a non-linear operator with the flag `return_adjoint_eval = True`.
-    The `_eval` and `_adjoint` require the implementation of `return_adjoint_eval` note that only one implementation is 
-    needed as it is a selfadjoint operator.
-
-    Parameters
-    ----------
-    op : Operator
-        The base operator giving rise to this combination of adjoint and derivative.
-    """
-
-    def __init__(self, op):
-        if not isinstance(op, _Revocable):
-            # Wrap plain operators in a _Revocable that will never be revoked to
-            # avoid case distinctions below.
-            op = _Revocable(op)
-        self.op = op
-        r"""The underlying operator."""
-        _op = op.get()
-        super().__init__(_op.domain, _op.domain, linear=True)
-        # Setting the corresponding constants of op to zero
-        if hasattr(self.op,"full_domain"):
-            self.full_domain = self.op.full_domain
-            self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
-
-    def _eval(self, x):
-        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
-
-    def _adjoint(self, x):
-        return self._reduce_to_domain(self.op.get()._adjoint_derivative(self._insert_constants(x)))
-    
-    def adjoint_data(self, x):
-        return self._reduce_to_domain(self.op.get().adjoint_data(x))
-
-    def __repr__(self):
-        return util.make_repr(self, self.op.get())
 
 
 class LinearCombination(Operator):
