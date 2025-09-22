@@ -297,7 +297,7 @@ class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, UniformGridFcts)
         self.is_complex = domain.is_complex
-        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
         shape = domain.shape
         s = shape[-1]
         if centered or (not domain.is_complex and domain.ndim==1):
@@ -341,7 +341,8 @@ class FourierTransform(Operator):
         else:
             return x.real
         
-    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+    @staticmethod
+    def frequencies(domain,centered=False, axes=None, rfft=False):
         """Compute the grid of frequencies for an FFT on this grid instance.
 
         Parameters
