@@ -138,6 +138,13 @@ class CholeskyInverse(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+    
+    def _adjoint_eval(self, x):
+        return self.domain.fromflat(
+            cho_solve(self.factorization,cho_solve(
+                self.factorization, self.domain.flatten(x))
+                )
+            )
 
     @property
     def inverse(self):
@@ -321,6 +328,12 @@ class FourierTransform(Operator):
             x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
         if self.centered:
             x = np.fft.fftshift(x, axes=self.axes)
+        if self.domain.is_complex:
+            return x
+        else:
+            return np.real(x)
+        
+    def _adjoint_eval(self, x):
         if self.domain.is_complex:
             return x
         else:

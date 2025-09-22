@@ -1,3 +1,5 @@
+from math import isnan
+
 import ngsolve as ngs
 from netgen.geom2d import unit_square
 
@@ -14,7 +16,10 @@ def test_NgsVectorSpace():
     # test basic methods
     one = domain.ones()
     zero = domain.zeros()
-    assert domain.norm(one-zero)-domain.norm(one)<1e-14
+    diff = domain.norm(one-zero)-domain.norm(one)
+    while isnan(diff):
+        diff = domain.norm(one-zero)-domain.norm(one)    
+    assert diff<1e-14
     _ = domain.rand()
     _ = domain.randn()
     _ = domain.poisson(domain.from_ngs(ngs.x*ngs.y**2))
