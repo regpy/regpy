@@ -6,7 +6,7 @@ from regpy.vecsps import UniformGridFcts
 from .base import PtwMultiplication, Operator, Composition
 from .numpy import FourierTransform
 
-__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FresnelPropagator"]
+__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator"]
 
 class PaddingOperator(Operator):
     r"""Operator that implements zero-padding for numpy arrays.
@@ -31,12 +31,21 @@ class PaddingOperator(Operator):
         s = grid.shape
         self.ndim = grid.ndim
         if pad_amount is None:
-            pad_amount = ((0,0),)*self.ndim
+            self.pad_amount = ((0,0),)*self.ndim
         elif isinstance(pad_amount,int):
-            pad_amount = ((pad_amount,pad_amount),)*self.ndim
-        self.pad_amount = pad_amount
+            self.pad_amount = ((pad_amount,pad_amount),)*self.ndim
+            if not pad_amount>=0:
+                raise ValueError("pad_amount must be non-negative.")
+        elif isinstance(pad_amount, np.ndarray):
+            if not pad_amount.shape == (self.ndim,) or not pad_amount.dtype==int:
+                raise ValueError(f"shape of pad_amount must be (grid.ndim,) array of ints. Got {pad_amount.shape}, {pad_amount.dtype}")
+            if not np.all(pad_amount>=0):
+                raise ValueError("pad_amount must be non-negative.")
+            self.pad_amount = tuple((val,val) for val in pad_amount)
+        else:
+            raise TypeError(f"pad_amount must be None or int or np.array of ints. Got {pad_amount}")
         padded_grid = UniformGridFcts(
-            *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,pad_amount,grid.spacing,grid.axes)],
+            *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,self.pad_amount,grid.spacing,grid.axes)],
             dtype = grid. dtype
             )
         self.pad_value = pad_value
@@ -59,7 +68,7 @@ def TruncationOperator(grid, truncation_amount):
     ----------
     grid : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined.
-    truncation_amount: integer or n-tuple (n=grid.ndim) of pairs of non-negative integer determining the amount of padding
+    truncation_amount: integer or (n,) np.array of non-negative integer determining the amount of truncation
         where n is the dimension of grid.
         If truncation_amount is an integer, this value is used for the amount of truncation in each direction
 
@@ -70,11 +79,18 @@ def TruncationOperator(grid, truncation_amount):
     if not isinstance(grid, UniformGridFcts):
         raise TypeError(f'grid must be a UniformGridFcts. Got {grid}')
     if isinstance(truncation_amount,int):
-            truncation_amount = ((truncation_amount,truncation_amount),)*grid.ndim
-    for trunc,N in zip(truncation_amount,grid.shape):
-        assert trunc[0]+trunc[1]<N
+            truncation_amount = truncation_amount * np.ones((grid.ndim,),dtype =int)
+    elif isinstance(truncation_amount, np.parray):
+        if not truncation_amount.shape == (grid.ndim,) or not truncation_amount.dtype==int:
+            raise ValueError(f"shape of truncation_amount must be (grid.ndim,) array of ints. Got {truncation_amount.shape}, {truncation_amount.dtype}")
+    else:
+        raise TypeError(f"truncation_amount must be int or np.array of ints. Got {pad_amount}")
+    if not np.all(np.array(grid.shape)>2*truncation_amount):
+        raise ValueError(f'Condition grid.shape>2*truncation_amount violated: {grid.shape}, {truncation_amount}')
+    if not np.all(truncation_amount>=0):
+        raise ValueError(f'Condition truncation_amount>=0 violated: Got {truncation_amount}')
     truncated_grid = UniformGridFcts(
-            *[np.arange(N-trunc[0]-trunc[1])*spc + ax[0] + trunc[0]*spc for (N,trunc,spc,ax) in zip(grid.shape,truncation_amount,grid.spacing,grid.axes)],
+            *[np.arange(N-2*trunc)*spc + ax[0] + trunc*spc for (N,trunc,spc,ax) in zip(grid.shape,truncation_amount,grid.spacing,grid.axes)],
             dtype = grid. dtype
             )
     pad_op = PaddingOperator(truncated_grid,truncation_amount)
@@ -96,7 +112,7 @@ class ConvolutionOperator(Composition):
           (If grid is real, the size of the last dimension is about half of that of grid)         
         - of a function taking d real values and returning a real or complex number
            In this case, the function is evaluated on a grid that is reciprocal to the input grid           
-    pad_amount: [optional, default:None] None or integer or d-tuple of pairs of integers 
+    pad_amount: [optional, default:None] None or integer or (d,) np.array of integers 
         To model non-periodic convolutions, zero padding is often needed to avoid aliasing artifacts
         by periodization. Each pair of integers specifies the number of pixels to be added in each dimension. 
         If an integer is given, this is used as pad amount in each direction. If None, no padding is performed.
@@ -113,7 +129,7 @@ class ConvolutionOperator(Composition):
         if not isinstance(grid,UniformGridFcts):
             raise ValueError(f"The given grid has to be a `UniformGirdFcts`, was given {grid} ")
         ndim = grid.ndim
-        if pad_amount is None or pad_amount == ((0,0),)*ndim:
+        if pad_amount is None or np.all(pad_amount ==0):
             ft = FourierTransform(grid,axes=tuple(range(first_conv_axis,ndim)))
             self._frqs = ft.codomain.coords
             if callable(fourier_multiplier):
@@ -195,10 +211,10 @@ class ExponentialConvolution(ConvolutionOperator):
                         pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
-class FourierInterpolationOperator(ConvoluationOperator):
+class FourierInterpolationOperator(ConvolutionOperator):
     r"""Interpolation operator implemented Fourier multiplier with the constant 1 function, 
     using Fourier_truncation_amount to change the grid in the spatial domain."""
-    def __init__(self,grid,a,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self,grid,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
         super().__init__(grid,np.ones(grid.shape),
                         pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
@@ -218,7 +234,7 @@ class FresnelPropagator(ConvolutionOperator):
         Fresnel number of the imaging setup, defined with respect to the lengthscale
         that corresponds to length 1 in domain.coords. Governs the strength of the
         diffractive effects modeled by the Fresnel-propagator
-    pad_amount : [optional: Default None]: None or integer or tuple of pairs of integers]
+    pad_amount : [optional: Default None]: None or integer or (dim,) np.array of integers]
         amount of padding to avoid aliasing artifacts, see ConvolutionOperator for details
     Fourier_domain_truncation: [optional: Default None]: None or integer or tuple of pairs of integers]
         amount of truncation of Fourier domain, see ConvolutionOperator for details
