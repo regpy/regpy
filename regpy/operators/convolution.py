@@ -148,12 +148,6 @@ class ConvolutionOperator(Composition):
             # inv_ft_aux is used only to construct codomain         
             inv_ft_aux = FourierTransform(multiplier.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
             ft2 = FourierTransform(inv_ft_aux.codomain,axes=tuple(range(first_conv_axis,ndim)),centered=True)
-            if not ft2.codomain == multiplier.codomain:
-                if ft2.codomain.shape == multiplier.codomain.shape and ft2.codomain.dtype == multiplier.codomain.dtype:                      
-                    print("Warning:codomains are claimed not to agree. I am fixing this manually!",ft2.codomain,multiplier.codomain)
-                    ft2.codomain = multiplier.codomain
-                else:
-                    raise RuntimeError("codomains do not agree")
 
             super().__init__(ft2.adjoint,multiplier,trunc_op,ft,pad_op)
 
@@ -200,6 +194,15 @@ class ExponentialConvolution(ConvolutionOperator):
                         pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
+class FourierInterpolationOperator(ConvoluationOperator):
+    r"""Interpolation operator implemented Fourier multiplier with the constant 1 function, 
+    using Fourier_truncation_amount to change the grid in the spatial domain."""
+    def __init__(self,grid,a,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
+        super().__init__(grid,np.ones(grid.shape),
+                        pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
+                        first_conv_axis=first_conv_axis
+                        )
+
 
 class FresnelPropagator(ConvolutionOperator):
     r"""Operator that implements Fresnel-propagation of arrays of arbitrary dimension. 
