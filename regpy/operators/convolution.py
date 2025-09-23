@@ -212,6 +212,7 @@ class ExponentialConvolution(ConvolutionOperator):
                         pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
                         first_conv_axis=first_conv_axis
                         )
+        
 class FourierInterpolationOperator(ConvolutionOperator):
     r"""Interpolation operator implemented Fourier multiplier with the constant 1 function, 
     using Fourier_truncation_amount to change the grid in the spatial domain."""
@@ -271,3 +272,70 @@ class FresnelPropagator(ConvolutionOperator):
  
     def __repr__(self):
         return util.make_repr(self, self.fresnel_number)
+
+from scipy.special import hankel1, jv as besselj
+class PeriodicHelmholtzVolumePotential(ConvolutionOperator):
+    """Implements the convolution with a periodized version of the fundamental solution to the Helmholtz equation. 
+    The fundamental solution is multiplied by the characteristic function of a maximal circle (2D) or ball (3D) in the 
+    periodicity cell (which is assumed to be quadratic or cubic, respectively). 
+    For sources for which the diameter of the support is smaller than half of the length of the periodicity interval, 
+    the values of the potential coincide with the convolution of the fundamental solution in free space. 
+    Analytic expressions for the Fourier coefficients of the convolution kernel were computed in 
+    Vainikko, Gennadi M. "Fast Solvers of the Lippmann-Schwinger equation" 2000 
+    Gilbert, R. P. / Kajiwara, J. / Xu, Y. S. (Eds.) Direct and Inverse Problems of Mathematical Physics Kluwer Acad. Publ.: Dordrecht
+    """
+    def __init__(self,grid, kappa, first_conv_axis=0):
+        assert grid.is_complex
+        if not (grid.ndim ==2 or grid.ndim==3):
+            raise ValueError('PeriodicHelmholtzVolumePotential only implemented for dimensions 2 and 3.')
+        self.kappa = kappa      
+        self.N = grid.shape[0]
+        if grid.ndim==2:
+            assert grid.shape == (self.N,self.N)
+            compute_kernel = self._compute_kernel_2d
+        else:
+            assert grid.shape == (self.N,)*3
+            compute_kernel = self._compute_kernel_3d   
+        assert self.N%2 == 0
+        if not np.all(grid.extents == grid.extents[0]):
+            raise ValueError('grid must be quadratic.')
+        self.a = self.N * grid.spacing[0]/2.  # half of the periodicity length of the grid
+
+        super().__init__(grid,
+                        compute_kernel(self.kappa * self.a, grid.shape),
+                        first_conv_axis=first_conv_axis
+                        )
+ 
+    @staticmethod
+    def _compute_kernel_2d(R, shape):
+        J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
+        piabsJ = np.pi * np.linalg.norm(J, axis=0)
+        Jzero = tuple(s//2 for s in shape)
+
+        K_hat =  R**2 / (piabsJ**2 - R**2) * (
+            1 + 1j*np.pi/2 * (
+                piabsJ * besselj(1, piabsJ) * hankel1(0, R) -
+                R * besselj(0, piabsJ) * hankel1(1, R)
+            )
+        )
+        K_hat[Jzero] = -1/(2*R) + 1j*np.pi/4 * hankel1(1, R)
+        K_hat[piabsJ == R] = 1j*np.pi*R/8 * (
+            besselj(0, R) * hankel1(0, R) + besselj(1, R) * hankel1(1, R)
+        )
+        return 2 * R * np.fft.fftshift(K_hat)
+
+    @staticmethod
+    def _compute_kernel_3d(R, shape):
+        J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
+        piabsJ = np.pi * np.linalg.norm(J, axis=0)
+        Jzero = tuple(s//2 for s in shape)
+
+        K_hat =  R**2 / (piabsJ**2 - R**2) * (
+            1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sin(piabsJ) / piabsJ)
+        )
+        K_hat[Jzero] = -(1 - np.exp(1j*R) * (1 - 1j*R))
+        K_hat[piabsJ == R] = -1j/4 * (2*R)**(-1/2) * (1 - np.exp(1j*R) * np.sin(R) / R)
+        return (2*R)**(3/2) * np.fftshift(K_hat)
+
+    def __repr__(self):
+        return util.make_repr(self, self.kappa, self.a, self.N)
