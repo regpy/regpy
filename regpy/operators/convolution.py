@@ -305,7 +305,8 @@ class PeriodicHelmholtzVolumePotential(ConvolutionOperator):
                         compute_kernel(self.kappa * self.a, grid.shape),
                         first_conv_axis=first_conv_axis
                         )
- 
+
+    # noinspection PyPep8Naming 
     @staticmethod
     def _compute_kernel_2d(R, shape):
         J = np.mgrid[[slice(-(s//2), (s+1)//2) for s in shape]]
