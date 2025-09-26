@@ -3,7 +3,7 @@ import numpy as np
 from regpy import util
 from regpy.vecsps import UniformGridFcts
 
-from .base import PtwMultiplication, Operator, Composition
+from .base import PtwMultiplication, Operator, Composition, LinearCombination,OuterShift
 from .numpy import FourierTransform
 
 __all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator"]
@@ -84,7 +84,7 @@ def TruncationOperator(grid, truncation_amount):
         if not truncation_amount.shape == (grid.ndim,) or not truncation_amount.dtype==int:
             raise ValueError(f"shape of truncation_amount must be (grid.ndim,) array of ints. Got {truncation_amount.shape}, {truncation_amount.dtype}")
     else:
-        raise TypeError(f"truncation_amount must be int or np.array of ints. Got {pad_amount}")
+        raise TypeError(f"truncation_amount must be int or np.array of ints. Got {truncation_amount}")
     if not np.all(np.array(grid.shape)>2*truncation_amount):
         raise ValueError(f'Condition grid.shape>2*truncation_amount violated: {grid.shape}, {truncation_amount}')
     if not np.all(truncation_amount>=0):
@@ -97,35 +97,74 @@ def TruncationOperator(grid, truncation_amount):
     return pad_op.adjoint
     
 class ConvolutionOperator(Composition):
-    r"""Periodic convolution operator on UniformGridFcts
+    r"""Periodic convolution operator on a periodic UniformGridFcts space. 
 
-    If the UniformGridFcts is a real vector space, the convolution kernel must be real-valued 
-    or equivalently its Fourier transform, the Fourier multiplier must be symmetric w.r.t. the origin. 
+    .. math::
+        (Kf)(x) = \int_D k(x-y)f(y) dy
+    
+    Here D is the domain of the grid, and k and f are assumed to be periodic functions with periodicity cell D. 
+    The implementation is based on the Fourier convolution formula 
+
+    .. math::
+        Kf = F^*(F(k)* F(f))
+
+    with the Fourier transform f. 
+    If grid is a real vector space, the convolution kernel k must be real-valued --  
+    or equivalently, :math:`F(f)` must be symmetric w.r.t. the origin. 
     
     Parameters
     ----------
     grid : regpy.vecsps.UniformGridFcts
         The space on which the operator is defined. If it real, real-valued fft will be used, 
         otherwise complex fft   
-    fourier_multiplier: 
+    fourier_multiplier: (:math:`F(k)`) 
         - Either a d-dimensional numpy array, the Fourier transform of the convolution kernel 
           (If grid is real, the size of the last dimension is about half of that of grid)         
         - of a function taking d real values and returning a real or complex number
            In this case, the function is evaluated on a grid that is reciprocal to the input grid           
     pad_amount: [optional, default:None] None or integer or (d,) np.array of integers 
-        To model non-periodic convolutions, zero padding is often needed to avoid aliasing artifacts
-        by periodization. Each pair of integers specifies the number of pixels to be added in each dimension. 
+        Zero-padding should be used if periodic convolution operators are employed to approximate convolution operators on R^d.
+        If pad_amount is too small or 0, aliasing artifacts can appear due to periodization. 
+        Each integer specifies the number of pixels to be added on both sides in the corresponding dimension. 
         If an integer is given, this is used as pad amount in each direction. If None, no padding is performed.
-        If Fourier_truncation_amount is None, the convolution restricted to the original domain is return, otherwise
+        If Fourier_truncation_amount is None, the convolution restricted to the original domain is returned, otherwise
         the convolution on the padded domain is returned
+    pad_value: [optional, default:0]
+        The values inserted in the padded domain. If not 0, the convolution operator is not linear, but only affinely linear.
     Fourier_truncation_amount: [optional, default:None] None or integer or d-tuple of integers 
         Specifies a truncation of the Fourier domain, leading to a subsampling of the padded spatial domain.
-        If 0, the convolution on the full padded domain is returned. 
+        In particular, if Fourier_truncation_amount=0, the convolution on the full padded domain is returned. 
     first_conv_axis: integer, default:0
         If first_conv_axis>0, then convolution is only performed along the last (grid.ndim-first_conv_axis) axes.
+
+    Methods: 
+    functional_calculus: 
+        Input: A scalar function :math:`phi`.
+        Output: The functional calculus of the convolution operator at :math:`phi`, :math:`f\mapsto F^*(F(\vaphi(k))F(f))`
+    composition:
+        Input: Another convolution operator L with kenel l
+        Output: The composition K L, a convolution operator with Fourier multiplier :math:`F(k)*F(l)`
+        Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implmented in Composition), 
+        but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
+    inverse:
+        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)'
+        Note:  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
+        but an approximation of the inverse of the underlying convolution operators in R^d. 
+    Linear combinations: 
+    ::math::
+
+        \alpha * K + \beta * L
+
+    with scalars :math:`\alpha,\beta` yield convolution operators (implemented by only two Fourier transforms)
     """
 
-    def __init__(self, grid, fourier_multiplier, pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self, grid, fourier_multiplier, pad_amount=None,pad_value=0.,
+                 Fourier_truncation_amount=None,first_conv_axis=0):
+        self.grid = grid
+        self.kwargs = {'pad_amount' : pad_amount,
+                       'pad_value' : pad_value,
+                       'Fourier_truncation_amount' : Fourier_truncation_amount,
+                       'first_conv_axis' : first_conv_axis}
         if not isinstance(grid,UniformGridFcts):
             raise ValueError(f"The given grid has to be a `UniformGirdFcts`, was given {grid} ")
         ndim = grid.ndim
@@ -178,55 +217,125 @@ class ConvolutionOperator(Composition):
     def fourier_multiplier(self):
         """Fourier transform of the convolution kernel"""
         return self._otf
-    
+
+    def functional_calculus(self,f):
+        assert callable(f)
+        return ConvolutionOperator(self.grid,f(self.fourier_multiplier),**self.kwargs)
+
+    def composition(self,L):
+        if not isinstance(L,ConvolutionOperator):
+            raise TypeError(f'Argument must be a convolution operator. Got {L}')
+        if not self.grid == L.grid:
+            raise ValueError(f'Compositions only possible on same grid. Got {self.grid}, {L.grid}')
+        if not self.kwargs == L.kwargs:
+            raise ValueError(f'Keyword arguments must agree. Own: {self.kwargs} Got {L.kwargs}')    
+        return ConvolutionOperator(self.grid, self._otf*L._otf)
+
+    def inverse(self):
+        return ConvolutionOperator(self.grid, 1/self._otf)
+
+
+    def __rmul__(self, other):
+        if np.isscalar(other):
+            if other == 1:
+                return self
+            else:
+                return ConvolutionOperator(self.grid,
+                                           other*self._otf,
+                                           **self.kwargs
+                                           )         
+        elif other in self.codomain:
+            return PtwMultiplication(self.codomain, other) * self
+        elif isinstance(other, Operator):
+            return Composition(other, self) 
+        else:
+            return NotImplemented
+
+    def __add__(self, other):
+        if np.isscalar(other) and other == 0:
+            return self
+        elif isinstance(other, ConvolutionOperator):
+            assert self.grid == other.grid
+            assert self.kwargs ==  other.kwargs
+            return ConvolutionOperator(self.grid,self._otf + other._otf,**self.kwargs)
+        elif isinstance(other, Operator):
+            return LinearCombination(self, other)
+        elif np.isscalar(other) or other in self.codomain:
+            return OuterShift(self, other)
+        else:
+            return NotImplemented
+
     def __repr__(self):
         return util.make_repr(self, self._otf)
 
 
-class GaussianBlur(ConvolutionOperator):
-    r"""Convolution with the shifted Gaussian kernel .math:`exp(-((x-shift)/kernel_width)^2)`.
-    For :math:`shift=0` it also represents the forward operator for the backward heat equation if 
-    :math:`kernel_width= 2\sqrt{t}`.
+class Laplacian(ConvolutionOperator):
+    """Laplace operator with periodic boundary conditions, implemented as convolution operator. 
+    The second derivatives are computed with respect to the coordinates of the given grid. 
+
+    Parameters:
+    grid: UniformGridFcts
+    pad_amount, pad_value, Fourier_truncation_amount, and first_conv_axis as in ConvolutionOperator
     """
-    def __init__(self,grid,kernel_width,shift=None,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
-        if shift==None:
-            super().__init__(grid,
-                             lambda *x : np.exp(-(np.pi*kernel_width)**2 * sum(y**2 for y in x)),
-                             pad_amount=pad_amount,pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
-                             first_conv_axis=first_conv_axis
-                             )
-        else:
-            super().__init__(grid,
-                             lambda *x : np.exp(sum(-(np.pi*kernel_width)**2*y**2 + 2*np.pi*1j*sh*y
-                                                         for y,sh in zip(x,shift))),
-                             pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
-                             first_conv_axis=first_conv_axis
-                            )
-            
+    def __init__(self,grid, **kwargs):
+        super().__init__(grid,
+                        lambda *x : -sum((2*np.pi*y)**2 for y in x),
+                        **kwargs
+                        )  
+
+class PeriodicShift(ConvolutionOperator):
+    """Periodic shift operator on a given uniform grid, implemented as convolution operator. 
+    Parameters:
+    grid: UniformGridFcts 
+    shift: array or tuple of length grid.ndim
+       Amount by which grid functions are shifted (in units of grid)
+    pad_amount, pad_value, Fourier_truncation_amount, and first_conv_axis as in ConvolutionOperator
+    """
+    def __init__(self,grid, shift,**kwargs):
+        super().__init__(grid,
+                        lambda *x : np.exp(sum(2j*np.pi*sh*y for y,sh in zip(x,shift))),
+                        **kwargs
+                        )  
+
+def GaussianBlur(grid,sigma=1.,**kwargs):
+    """Convolution with a Gaussian kernel
+    Parameters: 
+        grid: UniformGridFcts 
+        sigma: scalar, default:1 
+           width of the Gaussian kernel
+        pad_amount, pad_value, Fourier_truncation_amount, and first_conv_axis as in ConvolutionOperator
+    """
+    assert np.isscalar(sigma)
+    Lap = Laplacian(grid,**kwargs)
+    return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))
+
+                                   
 class ExponentialConvolution(ConvolutionOperator):
     r"""Convolution with an exponential function :math:`exp(-|x|_1/a)`.
     """
-    def __init__(self,grid,a,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
+    def __init__(self,grid,a,**kwargs):
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
-                        pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
-                        first_conv_axis=first_conv_axis
+                        **kwargs
                         )
         
 class FourierInterpolationOperator(ConvolutionOperator):
-    r"""Interpolation operator implemented Fourier multiplier with the constant 1 function, 
-    using Fourier_truncation_amount to change the grid in the spatial domain."""
-    def __init__(self,grid,pad_amount= None,pad_value=0.,Fourier_truncation_amount=None,first_conv_axis=0):
-        super().__init__(grid,np.ones(grid.shape),
-                        pad_amount=pad_amount, pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,
-                        first_conv_axis=first_conv_axis
-                        )
+    r"""Interpolation operator implemented as Fourier multiplier with the constant 1 function, 
+    using Fourier_truncation_amount to change the grid in the spatial domain.
+    """
+    def __init__(self,grid,**kwargs):
+        super().__init__(grid,np.ones(grid.shape),**kwargs)
 
+def FresnelPropagator(grid,fresnel_number, **kwargs):
+    r"""Time evolution operator over the unit a interval for the Schrödinger equation
+    
+    .. math::
+    \frac{\partial u}{\partial t} = \frac{i}{4\pi F} \Delta u
+    
+    i.e.  :math:`u(t=0,\cdot)\mapsto u(t=1,\cdot)`.
 
-class FresnelPropagator(ConvolutionOperator):
-    r"""Operator that implements Fresnel-propagation of arrays of arbitrary dimension. 
-    In 2D this models near-field diffraction in the regime of the free-space paraxial 
-    Helmholtz equation.
+    This operator coincides with Fresnel-propagation, and in particular, in 2D this models near-field 
+    diffraction in the regime of the free-space paraxial Helmholtz equation.
 
     Parameters
     ----------
@@ -243,7 +352,8 @@ class FresnelPropagator(ConvolutionOperator):
 
     Notes
     -----
-    The Fresnel-propagator :math:`D_F` is a unitary Fourier-multiplier defined by
+    This operator approximates the free-space Fresnel-propagator :math:`D_F`, which is the unitary 
+    Fourier-multiplier defined by
 
     .. math::
         D_F(f) = FT^{-1}(m_F \cdot FT(f))
@@ -259,27 +369,19 @@ class FresnelPropagator(ConvolutionOperator):
     In this case, the Fresnel number is :math:`F = 1 / (\lambda d)`  
     with wavelength  :math:`lambda` and propagation distance :math:`d`.
     """
-
-    def __init__(self,grid, fresnel_number, pad_amount=None,pad_value=0.,Fourier_truncation_amount=None, first_conv_axis=0):
-        assert grid.is_complex
-        self.fresnel_number = fresnel_number
-        super().__init__(grid,
-                        lambda *x : np.exp((-1j * np.pi / fresnel_number) * sum(y**2 for y in x)),
-                        pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,
-                        first_conv_axis=first_conv_axis
-                        )
- 
-    def __repr__(self):
-        return util.make_repr(self, self.fresnel_number)
+    assert grid.is_complex
+    Lap = Laplacian(grid,**kwargs)
+    return Lap.functional_calculus(lambda t: np.exp(1j / (4*np.pi* fresnel_number) * t))
 
 from scipy.special import hankel1, jv as besselj
-class PeriodicHelmholtzVolumePotential(ConvolutionOperator):
-    """Implements the convolution with a periodized version of the fundamental solution to the Helmholtz equation. 
+class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
+    """Implements the convolution with a periodized version of the outgoing fundamental solution to the Helmholtz equation. 
     The fundamental solution is multiplied by the characteristic function of a maximal circle (2D) or ball (3D) in the 
     periodicity cell (which is assumed to be quadratic or cubic, respectively). 
     For sources for which the diameter of the support is smaller than half of the length of the periodicity interval, 
     the values of the potential coincide with the convolution of the fundamental solution in free space. 
+    (Note that this is in sharp contrast to the behavior of the periodic Helmholtz volume potential 
+    Laplace.functional_calculus(lambda t:1/(t+kappa**2))!)
     Analytic expressions for the Fourier coefficients of the convolution kernel were computed in 
     Vainikko, Gennadi M. "Fast Solvers of the Lippmann-Schwinger equation" 2000 
     Gilbert, R. P. / Kajiwara, J. / Xu, Y. S. (Eds.) Direct and Inverse Problems of Mathematical Physics Kluwer Acad. Publ.: Dordrecht
