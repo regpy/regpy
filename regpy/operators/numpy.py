@@ -297,6 +297,8 @@ class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, UniformGridFcts)
         self.is_complex = domain.is_complex
+        if axes is None:
+            axes = tuple(np.arange(domain.ndim))
         frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
         shape = domain.shape
         s = shape[-1]
@@ -362,15 +364,14 @@ class FourierTransform(Operator):
         array
         """
         if axes is None:
-            axes = range(domain.ndim)
-        axes = set(axes)
+            axes = np.arange(domain.ndim)
         frqs = []
         for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
             if i in axes:
                 # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
                 # to be periodic.
                 shalf = s/2+1 if (s//2)*2==s else (s+1)/2
-                if i==domain.ndim-1 and rfft==True:
+                if i==axes[-1] and rfft==True:
                     frqs.append(np.arange(0,shalf) / (s*l))
                 else:
                     if centered:
