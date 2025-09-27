@@ -15,9 +15,9 @@ class PaddingOperator(Operator):
     ----------
     grid : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined.
-    pad_amount: integer or n-tuple (n=grid.ndim) of pairs of non-negative integer determining the amount of padding
+    pad_amount: integer or sequence n non-negative integers determining the amount of padding
         where n is the dimension of grid. E.g., for n=2,  
-        pad_amont = ((pad_top,pad_bottom),(pad_left,pad_right))
+        pad_amount = [pad_bottom_top, pad_right_left]
         If pad_amount is an integer, this value is used for the amount of padding in each direction
 
     Notes
@@ -36,14 +36,16 @@ class PaddingOperator(Operator):
             self.pad_amount = ((pad_amount,pad_amount),)*self.ndim
             if not pad_amount>=0:
                 raise ValueError("pad_amount must be non-negative.")
-        elif isinstance(pad_amount, np.ndarray):
+        else: 
+            try:
+                pad_amount = np.array(pad_amount)
+            except:
+                raise TypeError(f'pad_amount must be None, int, or convertible to a numpy array. Got {pad_amount}')
             if not pad_amount.shape == (self.ndim,) or not pad_amount.dtype==int:
                 raise ValueError(f"shape of pad_amount must be (grid.ndim,) array of ints. Got {pad_amount.shape}, {pad_amount.dtype}")
             if not np.all(pad_amount>=0):
                 raise ValueError("pad_amount must be non-negative.")
             self.pad_amount = tuple((val,val) for val in pad_amount)
-        else:
-            raise TypeError(f"pad_amount must be None or int or np.array of ints. Got {pad_amount}")
         padded_grid = UniformGridFcts(
             *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,self.pad_amount,grid.spacing,grid.axes)],
             dtype = grid. dtype
@@ -146,7 +148,7 @@ class ConvolutionOperator(Composition):
         Output: The composition K L, a convolution operator with Fourier multiplier :math:`F(k)*F(l)`
         Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implmented in Composition), 
         but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
-    inverse:
+    conv_inverse:
         Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)'
         Note:  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
         but an approximation of the inverse of the underlying convolution operators in R^d. 
@@ -173,10 +175,15 @@ class ConvolutionOperator(Composition):
             raise TypeError('fourier_mupltiplier must be callable or a numpy array')
         if not pad_amount is None:
             if isinstance(pad_amount,int):
-                self.pad_amount = [(pad_amount if i in self.convolution_axes else 0) for i in np.arange(grid.ndim)]
+                self.pad_amount =np.array([(pad_amount if i in self.convolution_axes else 0) for i in np.arange(grid.ndim)])
             else:
+                try:
+                    pad_amount = np.array(pad_amount)
+                except:
+                    raise TypeError('pad_amount must be None, integer or convertible to a numpy array.') 
+                print(type(pad_amount),type(self.stackaxes))
                 if not np.all(pad_amount[self.stackaxes]==0):
-                    raise ValueError(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}')
+                    raise ValueError(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are self.stackaxes')
                 else:
                     self.pad_amount = pad_amount
         if not Fourier_truncation_amount is None:
@@ -260,7 +267,7 @@ class ConvolutionOperator(Composition):
             raise ValueError(f'Keyword arguments must agree. Own: {self.kwargs} Got {L.kwargs}')    
         return ConvolutionOperator(self.grid, self._otf*L._otf)
 
-    def inverse(self):
+    def conv_inverse(self):
         return ConvolutionOperator(self.grid, 1/self._otf)
 
     def _parameters_equal(self,p,q):
