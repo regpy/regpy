@@ -2,10 +2,12 @@ from math import inf
 
 import numpy as np
 from scipy.linalg import ishermitian
+from scipy.special import lambertw
 
 from regpy.operators import PtwMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
+import logging
 
 from .base import Functional, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError
 
@@ -44,13 +46,28 @@ class IntegralFunctionalBase(Functional):
         Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
     h_domain : `regpy.hilbert.HilbertSpace` [default: None]
         Hilbert space defined on `domain`. Proximal operator is computed  wrt to that. Default: `L2(domain)`
+    dom_l,dom_u : float or np.ndarray (default: -np.inf and np.inf, rsp.)
+        lower and upper bound on the essential domain of f (the interval on on which f is finite)
+        If dom_l or dom_u are finite, f should be finite at these points (possibly very large if f tends to infinity there) 
+        If the domain depends on the point x and/or arguments in **kwargs, this should be a numpy array.
+    conj_dom_l,conj_dom_u : float or np.ndarray (default: -np.inf and np.inf, rsp.)
+        lower and upper bound on the essential domain of the conjugate of f (the interval on on which f^* is finite)    
     """
 
-    def __init__(self,domain,h_domain = None,**kwargs):
+    def __init__(self,domain,h_domain = None,
+                 dom_l=-np.inf, dom_u=np.inf, 
+                 conj_dom_l=-np.inf,conj_dom_u=np.inf,
+                 **kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
         assert domain == h_domain.vecsp
+        self.dom_l = dom_l
+        self.dom_u = dom_u
+        self.conj_dom_l = conj_dom_l
+        self.conj_dom_u = conj_dom_u
         self.kwargs = kwargs
-        super().__init__(domain,**kwargs)
+        if 'logging_level' in kwargs.keys():
+            self.log.setLevel(kwargs['logging_level'])
+        super().__init__(domain)
         self.h_domain = L2(domain) if h_domain is None else h_domain
         """ Hilbert space on `domain` wrt to which is the prox computed."""
 
@@ -87,9 +104,17 @@ class IntegralFunctionalBase(Functional):
     def _f_second_deriv(self,v,**kwargs):
         raise NotImplementedError
 
-    def _f_prox(self,v,tau,**kwargs):
-        """TODO: write default implementation by Newton's method"""
-        raise NotImplementedError
+    def _f_prox(self,v,tau,tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+        if self.__class__.__dict__.get("_f_deriv") is not None:
+            vclip = np.minimum(v,self.dom_u)
+            vclip = np.maximum(vclip,self.dom_l)
+            f_second_deriv = self._f_second_deriv if self._f_second_deriv is not None else None
+            return self._numerical_prox(v,tau,self._f_deriv,f_second_deriv,self.dom_l, self.dom_u, 
+                                        tol=tol,maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
+                                        **kwargs
+                                        )
+        else:
+            NotImplementedError('Need first derivative for numerical prox operator')
     
     def _f_conj(self,vstar,**kwargs):
         raise NotImplementedError
@@ -100,9 +125,219 @@ class IntegralFunctionalBase(Functional):
     def _f_conj_second_deriv(self,vstar,**kwargs):
         raise NotImplementedError
 
-    def _f_conj_prox(self,vstar,tau,**kwargs):
-        raise NotImplementedError
+    def _f_conj_prox(self,vstar,tau,tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+        if self.__class__.__dict__.get("_f_conj_deriv") is not None:
+            print('check existence of _conj_prox',self.__class__.__dict__.get("_f_conj_prox") is not None)
+            vclip = np.minimum(vstar/self.domain.measure,self.conj_dom_u)
+            vclip = np.maximum(vclip,self.conj_dom_l)
+            #self._f_conj_deriv(vclip,**kwargs)
+            #self._f_conj_second_deriv(vclip,**kwargs)
+            f_conj_second_deriv = self._f_conj_second_deriv if self._f_conj_second_deriv is not None else None
+            return self._numerical_prox(vstar,tau,
+                                        self._f_conj_deriv,f_conj_second_deriv,self.conj_dom_l, self.conj_dom_u, 
+                                        tol=tol,maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
+                                        **kwargs
+                                        )
+        else:
+        #except NotImplementedError:
+            NotImplementedError('Need first derivative of conjugate functional for numerical conjugate prox operator')
+
+    def _numerical_prox(self, y, tau, 
+                        fp, fpp, dom_l, dom_u, 
+                        start=None,ub=None, lb=None,
+                        tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+        """
+        Vectorized proximal operator of a smooth convex scalar function
+        using Newton's method with automatic fallback to bisection.
+
+        Parameters
+        ----------
+        y : ndarray
+            Input array.
+        tau : float
+            Prox parameter (>0).
+        f, fp, fpp : callables
+            f, f', f'' (accept numpy arrays).
+        dom_l, dom_u : floats
+            Domain bounds (can be -np.inf, np.inf).
+        start: np.ndarray or None
+            starting point
+        lb,ub: np.ndarray or None
+            guesses for lower and upper bounds on solution (must not be valid!)
+        tol : float
+            Root-finding tolerance for Newton/bisection.
+        maxiter : int
+            Max Newton iterations before falling back.
+        **kwargs:
+            Passed to f,fp and fpp
+
+        Returns
+        -------
+        prox : ndarray
+            Proximal points, same shape as y.
+        """
+
+        
+        assert isinstance(y,np.ndarray)
+        if np.isscalar(dom_u):
+            dom_u = np.full_like(y,dom_u)
+        if np.isscalar(dom_l):
+            dom_l = np.full_like(y,dom_l)    
+        if not np.all(dom_l<=dom_u):
+            raise ValueError('Upper/lower bounds of essential domain invalid.')
+  
+
+        #initial guess
+        x = start if not (start is None) else y
+        x = np.maximum(dom_l,x)
+        x = np.minimum(x,dom_u)
+
+
+        r = fp(x,**kwargs) + (x - y)/tau
+        converged = (dom_u-dom_l<tol) # width of essential domain <tol
+        converged = converged | (r==0) # optimality condition satisfied 
+        converged = converged | ((x==dom_l) & (r>=0)) # optimality condition at left boundary satisfied
+        converged = converged | ((x==dom_u) & (r<=0)) # optimality condition at right boundary satiesfied
+
+        self.log.debug(f'initially {np.sum(converged)} converged.')
+        # obtain valid and finite upper and lower bounds
+        ub = x.copy()
+        x_too_small = (r<0) & (~converged)       
+        if np.any(x_too_small):
+            xs = x[x_too_small]
+            rs = r[x_too_small]
+            ds = dom_u[x_too_small]
+            up = np.minimum(tau*np.ones_like(rs),-tau*rs)
+            up2 = np.minimum(xs+up,ds)
+            ub[x_too_small] = up2
+#            ub[x_too_small] = np.minimum(x[x_too_small] 
+#                                      + np.minimum(np.ones_like(r[x_too_small]), - tau*r[x_too_small]),
+#                                        dom_u[x_too_small]),
+                                    
+        lb = x.copy()
+        x_too_large = (r>0) & (~converged)
+        if np.any(x_too_large):
+           lb[x_too_large] = np.maximum(x[x_too_large]
+                                     - np.minimum(tau*np.ones_like(r[x_too_large]), tau*r[x_too_large]),
+                                        dom_l[x_too_large])
+        """
+        if lb is None:
+            lb = np.minimum(x,dom_u)-1.
+        lb[lb==-np.inf]=x[lb==-np.inf]-1.
+        lb = np.maximum(lb,dom_l)
+        print(f'lb corrected: {lb}')
+        if ub is None:
+            ub = np.maximum(x,dom_l)+1.
+        ub[ub==np.inf]=x[ub==np.inf]+1.
+        ub = np.minimum(ub,dom_u)
+        print(f'ub corrected: {ub}')
+        """
+
+        #self.log.debug(f'before correction: r: {r}\n ub: {ub}\n lb: {lb}\n diff: {ub-lb}')
+        if not np.all(lb<=ub):
+            ind = lb>ub
+            raise RuntimeError(f'lb<=ub violated for input values {y[lb>ub]}. lb: {lb[lb>ub]}, ub: {ub[lb>ub]} ')
+        # decrease lb where necessary to make it a valid lower bound
+        for it in range(maxBoundsIter):
+            v = fp(lb,**kwargs) + (lb- y)/tau            
+            ind = (v>0) & ~converged
+            if it==0 and not np.all(ub[ind]-lb[ind]>tol):
+                ii = ind & (ub-lb<=tol)
+                lb[ii] = np.maximum(lb[ii]-tol,dom_l[ii])
+                self.log.debug(f'adding {np.sum(ii & (lb==dom_l))} indices as converged.')
+                converged = converged | (ii & (lb==dom_l))
+            self.log.debug(f'lower bound it {it}: {np.sum(ind)} indices invalid.')
+            if np.sum(ind)==0:
+                break
+            else:
+                lb[ind] = np.maximum(dom_l[ind],2*lb[ind]-ub[ind])
+        if not np.sum(ind)==0:
+            raise RuntimeError("Could not determine lower bound. Increase maxBoundsIter!") 
+        r = fp(lb,**kwargs) + (lb - y)/tau 
+        converged = converged | ((lb==dom_l) & (r>=0))
+        if not np.all((r<=0) | converged):
+            raise RuntimeError(f'lower bound not satisfied for indices {np.where((r>0) & ~converged)}')
+
+        # increase ub where necessary to make it a valid upper bound
+        for it in range(maxBoundsIter):
+            v = fp(ub,**kwargs) + (ub- y)/tau            
+            ind = (v<0) & ~converged
+            self.log.debug(f'upper bound it {it}: {np.sum(ind)} indices invalid')
+            if it==0 and not np.all(ub[ind]-lb[ind]>tol):
+                ii = ind & (ub-lb<=tol)
+                ub[ii] = np.minimum(dom_u[ii],lb[ii]+tol)
+                self.log.debug(f'adding {np.sum(ii & (ub==dom_u))} indices as converged.')
+                converged = converged | (ii & (ub==dom_u))
+            if np.sum(ind)==0:
+                break
+            else:
+                ub[ind] = np.minimum(dom_u[ind], 2*ub[ind]-lb[ind])
+        if not np.sum(ind)==0:
+            raise RuntimeError("Could not determine upper bound. Increase maxBoundsIter!")
+        r = fp(ub,**kwargs) + (ub - y)/tau 
+        converged = converged | ((ub==dom_u) & (r<=0))
+        if not np.all((r>=0) | converged): 
+            raise RuntimeError(f'upper bound not satisfied for indices {np.where((r<0) & ~converged)}')
+        assert np.all(lb>=dom_l)
+        assert np.all(ub<=dom_u)
+
+        self.log.debug(f'lb: {lb}\n diff: {ub-lb}')
+
+        # --- Newton phase ---
+        if fpp is not None:
+            iter=0
+            for iter in range(maxNewtonIter):
+                d = fpp(x,**kwargs) + 1.0/tau
+                step = r / d
+
+                xnew = x - step
+                xnew = np.maximum(xnew, lb)
+                xnew = np.minimum(xnew, ub)
+        
+                summand1 = fp(x,**kwargs)
+                summand2 = (x - y)/tau
+                r = summand1 + summand2
+                lb[r<=0] = x[r<=0]
+                lb[r>0]  = np.maximum(lb[r>0],x[r>0] - tau*r[r>0])
+                ub[r>=0] = x[r>=0]
+                ub[r<0]  = np.minimum(ub[r<0],x[r<0] - tau*r[r<0])
+                # Check convergence
+                #conv = np.abs(r) < tol
+                conv = np.abs(ub-lb) < tol
+                converged = converged | conv
+                x = np.where(conv, x, xnew)
+                self.log.debug(f'Newton it {iter}: {np.sum(converged==True)} out of {len(x)} converged.')
     
+                if np.all(converged):
+                    return x
+                if np.allclose(summand1,-summand2,rtol=1e-14):
+                    self.log.info('Required tolerance cannot be guaranteed since prox of scalar function is too ill-conditioned.')
+                    break
+
+            self.log.debug(f'diff ub-lb after Newton: {ub-lb}')
+
+        # --- Fallback to bisection for non-converged entries ---
+        mask = ~converged
+        if np.any(mask):
+            yi = y[mask]
+            lb = lb[mask]
+            ub = ub[mask]
+
+            for iter in range(maxBisecIter):  # max bisection iters
+                Mi = 0.5*(lb+ub)
+                fM = fp(Mi,mask=mask,**kwargs) + (Mi - yi)/tau
+                right = fM > 0
+                ub = np.where(right, Mi, ub)
+                lb = np.where(~right, Mi, lb)
+                self.log.debug(f'bisection it. {iter}: {np.sum(ub-lb>tol)} not converged')
+                if np.all((ub-lb) < tol):
+                    break
+            x[mask] = 0.5*(lb+ub)
+            if np.max(ub-lb)>tol:
+                raise RuntimeError('Could not satisfy tolerance criterium in bisection algorithm.')
+
+        return x
+
 class LppPower(IntegralFunctionalBase):
     r"""
     Implements the \(p)\-power of the \(L^p)\ norm on some domain in `MeasureSpaceFcts`
@@ -116,13 +351,14 @@ class LppPower(IntegralFunctionalBase):
         exponent
     """
 
-    def __init__(self, domain, p=2):
+    def __init__(self, domain, p=2,**kwargs):
         assert np.isscalar(p) and p >1
         self.p = p
         self.q = p/(p-1)
         super().__init__(domain, L2(domain),
                          convexity_param = 2 if p==2 else 0,
-                         Lipschitz = 2 if p==2 else inf
+                         Lipschitz = 2 if p==2 else inf,
+                         **kwargs
                          )
 
     def _f(self,v,**kwargs):
@@ -138,7 +374,11 @@ class LppPower(IntegralFunctionalBase):
         if self.p==2:
             return v/(1+tau)
         else:
-            raise NotImplementedError('LppPower')
+            return self._numerical_prox(v,tau,
+                                self._f_deriv,self._f_second_deriv,self.dom_l, self.dom_u, 
+                                tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
+                                **kwargs
+                                )
     
     def _f_conj(self, vstar,**kwargs):
         return np.abs(vstar)**self.q/self.q
@@ -153,7 +393,11 @@ class LppPower(IntegralFunctionalBase):
         if self.p==2:
             return v_star/(1+tau)
         else:
-            raise NotImplementedError('prox of conjugate of LppPower')
+            return self._numerical_prox(v_star,tau,
+                                self._f_conj_deriv,self._f_conj_second_deriv,self.conj_dom_l, self.conj_dom_u, 
+                                tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
+                                **kwargs
+                                )
 
 class L1MeasureSpace(IntegralFunctionalBase):
     r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.
@@ -163,8 +407,8 @@ class L1MeasureSpace(IntegralFunctionalBase):
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the generic L1.
     """
-    def __init__(self, domain):
-        super().__init__(domain,L2(domain))
+    def __init__(self, domain,**kwargs):
+        super().__init__(domain,L2(domain),**kwargs)
 
     def _f(self, v,**kwargs):
         return np.abs(v)
@@ -231,55 +475,149 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     def __init__(self, domain,**kwargs):
         if 'w' not in kwargs.keys():
-            raise NotImplemented("The Kulback Leibler divergence requires to define a keyword arguent w for its first component.")
-        w=kwargs['w']
-        assert w in domain
-        assert np.min(w)>=0
-        super().__init__(domain,L2(domain))
-        self.kwargs = kwargs
+            raise ValueError("The Kulback Leibler divergence requires to define a keyword arguent w for its first component.")
+        w=kwargs.pop('w')
+        if not w in domain:
+            raise ValueError('w not in domain.')
+        if np.min(w)<0:
+            raise ValueError('w must be non-negative.')
+        super().__init__(domain,L2(domain), dom_l=1e-20*w,
+                         conj_dom_u=domain.ones()-1e-14*w,
+                         **kwargs
+                         )
+        self.w = w
+
+#   def _get_w(self,**kwargs):
+#        w= kwargs['w']
+#        if 'mask' in kwargs.keys():
+#            w=w[kwargs['mask']]
+#        return w
 
     def _f(self, u,**kwargs):
-        w= kwargs['w']
-        ind_inf=(u<0)|((u==0)&(w>0))
-        ind_else=~(ind_inf|(w==0))
-        res=np.copy(u)
-        res[ind_inf]=np.inf
-        res[ind_else]=u[ind_else]-w[ind_else] - w[ind_else] * np.log(u[ind_else]/w[ind_else])
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
+        res=self.domain.zeros()
+        # memory efficient implementation of 
+        # res[ind_else]=u[ind_else]-self.w[ind_else] - self.w[ind_else] * np.log(u[ind_else]/self.w[ind_else])
+        np.divide(u,self.w, out=res)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            np.log(res,out=res)
+        res *= self.w
+        res *= -1
+        res += u
+        res -= self.w
+        # end
+        res[(u<0)|((u==0)&(self.w>0))]= np.inf
         return res    
    
     def _f_deriv(self, u,**kwargs):
-        w=kwargs['w']
-        assert np.min(u)>=0
-        assert np.all(np.logical_or(np.logical_not(u==0),w==0))
-        res = np.ones_like(u)-w/u
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
+        if np.min(u)<0:
+            raise ValueError('argument must be non-negative')
+        if not np.all(np.logical_or(np.logical_not(u==0),wm==0)):
+            raise ValueError('argument cannot be 0 at positions where w is not 0')
+        # memory efficient implementation of 
+        # res = np.ones_like(u)-wm/u
+        res = np.divide(wm,u)
+        res *= -1.
+        res += 1.
+        # end
         res[u==0] = 1
         return res
 
     def _f_second_deriv(self, u, **kwargs):
-        w=kwargs['w']
-        assert np.min(u)>0
-        return w/u**2
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w   
+        if np.min(u)<0:
+            raise ValueError('argument must be positive')
+        # memory efficient computation of 
+        # res = wm/u**2
+        res = np.divide(wm,u)
+        res /= u
+        # end
+        return res
+
 
     def _f_conj(self, u_star,**kwargs):
-        w=kwargs['w']
-        if np.any(u_star)>1:
-            return np.inf 
-        elif np.any(np.logical_and(u_star == 1,np.logical_not(w==0))):
-            return np.inf 
-        else:
-            return -w*np.log(1-u_star)
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
+        # memory efficient computation of
+        # res = -wm*np.log(1-u_star)
+        res = np.subtract(1.,u_star)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            np.log(res,out=res)
+        res *= wm
+        res *= -1
+        # end
+        res[(u_star>1) | ((u_star == 1) & (wm>0))] = np.inf
+        return res
 
     def _f_conj_deriv(self, u_star,**kwargs):
-        w=kwargs['w']        
-        assert np.max(u_star)<=1
-        assert np.all(np.logical_or(np.logical_not(u_star==1),w==0))
-        return w/(1-u_star)
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w    
+        if np.max(u_star)>1:
+            raise ValueError('argument must be <=1')
+        if not np.all(np.logical_or(np.logical_not(u_star==1),wm==0)):
+            raise ValueError('argument cannot be 1 at positions where w is not 0.')
+        # memory efficient implementation of
+        # toret = wm/(1-u_star)
+        toret = np.subtract(1.,u_star)
+        np.divide(wm,toret,out = toret)
+        # end
+        toret[u_star==1] = 0
+        return toret 
     
     def _f_conj_second_deriv(self, u_star,**kwargs):
-        w=kwargs['w']
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
         assert np.max(u_star)<=1
-        assert np.all(np.logical_or(np.logical_not(u_star==1),w==0))
-        return w/(1-u_star)**2
+        assert np.all(np.logical_or(np.logical_not(u_star==1),wm==0))
+        # memory efficient implementation of 
+        # toret = wm/(1-u_star)**2
+        toret = np.subtract(1.,u_star)
+        toret *= toret
+        np.divide(wm,toret,out = toret)        
+        # end
+        return toret
+
+    def _f_prox(self, v, tau, **kwargs):
+        # memory efficient implementation of 
+        # toret = -0.5*(tau-v) + np.sqrt(0.25*(tau-v)**2+tau*self.w)
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.zeros()
+        toret = np.subtract(tau,v)
+        toret *= toret
+        toret *= 0.25
+        np.multiply(tau,self.w,out=self.aux)
+        toret += self.aux
+        toret = np.sqrt(toret,out=toret)
+        np.subtract(tau,v,out=self.aux)
+        self.aux *= -0.5
+        toret += self.aux
+        # end
+        return toret
+
+    def _f_conj_prox(self, vstar, tau, **kwargs):
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.zeros()
+        # memory efficient implementation of 
+        # toret = 0.5*(1.+vstar) - np.sqrt(0.25*(1.+vstar)**2 + tau*self.w-vstar)
+        toret = np.add(1.,vstar)
+        toret *= toret
+        toret *= 0.25
+        np.multiply(tau,self.w,out=self.aux)
+        self.aux -= vstar
+        toret += self.aux
+        np.sqrt(toret,out=toret)
+        toret *= -1
+        np.add(1.,vstar,out=self.aux)
+        self.aux *= 0.5
+        toret += self.aux
+        # end
+        return toret
+
 
 class RelativeEntropy(IntegralFunctionalBase):
     r"""Kullback-Leiber divergence define by
@@ -292,47 +630,104 @@ class RelativeEntropy(IntegralFunctionalBase):
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Kullback-Leibler divergence
-    w: domain [optional, no default value]
-        reference value.
-        Formally optional, but required for proper functioning. 
+    w: domain [optional, default: contant 1]
+        reference value
     """
 
     def  __init__(self, domain,**kwargs):
-        super().__init__(domain,L2(domain))
-        w = kwargs['w']
+        if 'w' in kwargs.keys():
+            w= kwargs['w']
+            w = kwargs.pop('w')
+        else:
+            w = domain.ones()
         assert w in domain
         assert np.min(w)>0
-        self.kwargs = kwargs
+        super().__init__(domain,L2(domain),dom_l = 1e-14*w,**kwargs)
+        self.w= w
+
+
+#    def _get_w(self,**kwargs):
+#        if 'w' in kwargs.keys():
+#            w= kwargs['w']
+#        else:
+#            w = self.h_domain.vecsp.ones()
+#        if 'mask' in kwargs.keys():
+#            return w[kwargs['mask']]
+#        else:
+#            return w
 
     def _f(self, u,**kwargs):
-        w=kwargs['w']        
-        ind_upos=(u>0)
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of RelativeEntropy must be fixed in constructor.')
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
         res=np.zeros_like(u)
+        # memory efficient implementation of 
+        # res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/wm[ind_upos])
+        np.divide(u,wm, out= res)
+        with np.errstate(invalid='ignore', divide='ignore'):    
+            np.log(res,out=res)
+        res *= u
+        # end
         res[u<0] = np.inf
-        res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/w[ind_upos])
+        res[u==0] = 0.
         return res    
    
     def _f_deriv(self, u,**kwargs):
-        w=kwargs['w']        
-        assert np.min(u)>0
-        res = np.ones_like(u)+np.log(u/w)
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of RelativeEntropy must be fixed in constructor.')        
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
+        dom_l = self.dom_l[kwargs['mask']] if 'mask' in kwargs.keys() else self.dom_l
+        if not np.all(u-dom_l>=0):
+            raise ValueError('Argument of _f_deriv not in essential domain.')
+        # memory efficient implementation of 
+        # res = np.ones_like(u)+np.log(u/wm)
+        res = np.divide(u,wm)
+        np.log(res,out=res)
+        res += 1.
+        # end
         return res
 
-    def _f_second_deriv(self, u, **kwargs):
-        assert np.min(u)>0
+    def _f_second_deriv(self, u, **kwargs):     
+        dom_l = self.dom_l[kwargs['mask']] if 'mask' in kwargs.keys() else self.dom_l
+        if not np.all(u-dom_l>=0):
+            raise ValueError('Argument of _f_second_deriv not in essential domain.')
         return 1/u
 
+    def _f_prox(self, v, tau, **kwargs):
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of RelativeEntropy must be fixed in constructor.')
+        # memory efficient implementation of 
+        # toret = (1/tau)*self.w*np.exp(v/tau-1.)
+        toret = np.divide(v,tau)
+        toret -= 1.
+        np.exp(toret,out=toret)
+        toret *= self.w
+        toret /= tau
+        #end
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.complex_space().zeros()        
+        self.aux =  lambertw(toret)
+        toret = self.aux.real
+        toret *= tau
+        return toret
+
     def _f_conj(self, u_star,**kwargs):
-        w=kwargs['w']
-        return w*(np.exp(u_star-1))
+        if 'w' in kwargs.keys():
+            raise ValueError('second parameter w of RelativeEntropy must be fixed in constructor.')        
+        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
+        # memory efficient implementation of 
+        # toret =  wm*(np.exp(u_star-1))
+        toret = np.subtract(u_star,1.)
+        np.exp(toret,out=toret)
+        toret *= wm
+        # end
+        return toret
 
     def _f_conj_deriv(self, u_star,**kwargs):
-        w=kwargs['w']
-        return w*np.exp(u_star-1)
+        return self._f_conj(u_star,**kwargs)
     
     def _f_conj_second_deriv(self, u_star,**kwargs):
-        w=kwargs['w']
-        return w*np.exp(u_star-1)
+        return self._f_conj(u_star,**kwargs)
 
 class Huber(IntegralFunctionalBase):
     r"""Huber functional 
@@ -355,12 +750,12 @@ class Huber(IntegralFunctionalBase):
         Only used for conjugate functional. See description of `QuadraticIntv`
     """
 
-    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=0.):
+    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=0.,**kwargs):
         if as_primal:
-            super().__init__(domain,L2(domain),Lipschitz=1)
+            super().__init__(domain,L2(domain),Lipschitz=1,**kwargs)
             self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
         else:
-            super().__init__(domain,L2(domain,weights=1./domain.measure**2), Lipschitz=1)        
+            super().__init__(domain,L2(domain,weights=1./domain.measure**2), Lipschitz=1, **kwargs)
             
         assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
@@ -370,27 +765,28 @@ class Huber(IntegralFunctionalBase):
             self.sigma = np.real(sigma) 
 
     def _f(self, u,**kwargs):
-        return np.where(np.abs(u)<=self.sigma,0.5*np.abs(u)**2,self.sigma*np.abs(u)-0.5*self.sigma**2)
+        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
+        return np.where(np.abs(u)<=sigma,0.5*np.abs(u)**2,sigma*np.abs(u)-0.5*sigma**2)
 
-           
     def _f_deriv(self, u,**kwargs):
-        return np.where(np.abs(u)<=self.sigma,u,self.sigma*u/np.abs(u))
-
+        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
+        return np.where(np.abs(u)<=sigma,u,sigma*u/np.abs(u))
 
     def _f_second_deriv(self, u, **kwargs):
-        return (np.abs(u)<=self.sigma).astype(float)
+        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
+        return (np.abs(u)<=sigma).astype(float)
 
     def _f_conj(self, ustar,**kwargs):
-        return self.conjugate._f(ustar)    
+        return self.conjugate._f(ustar,**kwargs)    
    
     def _f_conj_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_deriv(ustar)
+        return self.conjugate._f_deriv(ustar,**kwargs)
 
     def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_second_deriv(ustar)
+        return self.conjugate._f_second_deriv(ustar,**kwargs)
 
     def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.conjugate._f_prox(ustar,tau)
+        return self.conjugate._f_prox(ustar,tau,**kwargs)
 
 
 class QuadraticIntv(IntegralFunctionalBase):
@@ -415,12 +811,12 @@ class QuadraticIntv(IntegralFunctionalBase):
         or NotInEssentialDomain exceptions in the presence of rounding errors
     """
 
-    def  __init__(self, domain,as_primal=True,sigma=1.,eps=0.):
+    def  __init__(self, domain,as_primal=True,sigma=1.,eps=0.,**kwargs):
         if as_primal:
-            super().__init__(domain,L2(domain),convexity_param=1)
+            super().__init__(domain,L2(domain),convexity_param=1,dom_l=-sigma*(1.+eps),dom_u=sigma*(1.+eps),**kwargs)
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
         else:
-            super().__init__(domain,L2(domain,weights=1./domain.measure**2), convexity_param=1)
+            super().__init__(domain,L2(domain,weights=1./domain.measure**2), convexity_param=1,**kwargs)
         assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
         if isinstance(sigma, (float,int)):
@@ -450,16 +846,16 @@ class QuadraticIntv(IntegralFunctionalBase):
             return np.ones_like(u)
 
     def _f_conj(self, ustar,**kwargs):
-        return self.conjugate._f(ustar)    
+        return self.conjugate._f(ustar,**kwargs)    
    
     def _f_conj_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_deriv(ustar)
+        return self.conjugate._f_deriv(ustar,**kwargs)
 
     def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_second_deriv(ustar)
+        return self.conjugate._f_second_deriv(ustar,**kwargs)
 
     def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.conjugate._f_prox(ustar,tau)
+        return self.conjugate._f_prox(ustar,tau,**kwargs)
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
@@ -488,8 +884,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     """
 
-    def  __init__(self, domain):
-        super().__init__(domain,L2(domain),convexity_param = 1.)
+    def  __init__(self, domain,**kwargs):
+        super().__init__(domain,L2(domain),convexity_param = 1.,dom_l=0.,**kwargs)
 
     def _f(self, u,**kwargs):
         res =  u*u/2
@@ -559,7 +955,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
 
-    def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,eps=0.):
+    def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,eps=0.,**kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
         if isinstance(lb,(float,int)):
             lb = lb*domain.ones()
@@ -580,16 +976,18 @@ class QuadraticBilateralConstraints(LinearCombination):
         assert isinstance(alpha,(float,int))
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        F = QuadraticIntv(domain,sigma=(ub-lb)/2.,eps=eps)
+        F = QuadraticIntv(domain,sigma=(ub-lb)/2.,eps=eps,**kwargs)
         center = (ub+lb)/2
         lin = LinearFunctional(center-x0,
                             domain=domain,
-                            gradient_in_dual_space=False
+                            gradient_in_dual_space=False,
+                            **kwargs
                             )
         offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
         # return  alpha*HorizontalShiftDilation(F,shift=center) + alpha*lin + alpha*offset
         super().__init__((alpha,HorizontalShiftDilation(F,shift=center)+offset),
-                          (alpha,lin)
+                          (alpha,lin),
+                          **kwargs
                           )
 
 def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
@@ -647,7 +1045,7 @@ class QuadraticPositiveSemidef(Functional):
 
     """
 
-    def  __init__(self, domain,trace_val=None,tol=1e-15):
+    def  __init__(self, domain,trace_val=None,tol=1e-15,**kwargs):
         assert isinstance(domain,UniformGridFcts)
         assert domain.ndim==2
         assert domain.shape[0]==domain.shape[1]
@@ -660,7 +1058,7 @@ class QuadraticPositiveSemidef(Functional):
             self.trace_val=trace_val
         else:
             self.has_trace_constraint=False
-        super().__init__(domain,L2(domain),Lipschitz=1,convexity_param=1)
+        super().__init__(domain,L2(domain),Lipschitz=1,convexity_param=1,**kwargs)
 
     def is_in_essential_domain(self,rho):
         if(not ishermitian(rho,atol=self.tol)):
@@ -697,7 +1095,7 @@ class QuadraticPositiveSemidef(Functional):
         else:
             return np.inf
 
-    def _proximal(self, x, tau):
+    def _f_prox(self, x, tau):
         evs,U=np.linalg.eigh(x)
         evs/=(1+tau)
         if(self.has_trace_constraint):
