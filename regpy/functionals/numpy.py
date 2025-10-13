@@ -362,13 +362,31 @@ class LppPower(IntegralFunctionalBase):
                          )
 
     def _f(self,v,**kwargs):
-        return np.abs(v)**self.p/self.p
+        # member efficient implementation of 
+        # res = np.abs(v)**self.p/self.p
+        res = np.abs(v)
+        np.power(res,self.p,out=res)
+        res /=self.p
+        return res
     
     def _f_deriv(self, v,**kwargs):
-        return np.abs(v)**(self.p-1)*np.sign(v)
+        # member efficient implementation of  
+        # res = np.abs(v)**(self.p-1)*np.sign(v) 
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.zeros()
+        res = np.abs(v)
+        np.power(res,self.p-1,out=res) 
+        self.aux = np.sign(v)
+        res *= self.aux
+        return res
     
     def _f_second_deriv(self, v,**kwargs):
-        return (self.p-1)*np.abs(v)**(self.p-2)
+        # member efficient implementation of  
+        # res = (self.p-1)*np.abs(v)**(self.p-2)
+        res = np.abs(v)
+        np.power(res,self.p-2,out=res)        
+        res *= (self.p-1)
+        return res
     
     def _f_prox(self,v,tau,**kwargs):
         if self.p==2:
@@ -381,13 +399,31 @@ class LppPower(IntegralFunctionalBase):
                                 )
     
     def _f_conj(self, vstar,**kwargs):
-        return np.abs(vstar)**self.q/self.q
+        # member efficient implementation of
+        # res = np.abs(vstar)**self.q/self.q
+        res = np.abs(vstar)
+        np.power(res,self.q,out=res)     
+        res /= self.q
+        return res 
 
     def _f_conj_deriv(self, vstar,**kwargs):
-        return np.abs(vstar)**(self.q-1)*np.sign(vstar)
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.zeros()        
+        # member efficient implementation of 
+        # res = np.abs(vstar)**(self.q-1)*np.sign(vstar) 
+        res = np.abs(vstar)
+        np.power(res,self.q-1,out=res)     
+        self.aux = np.sign(vstar)
+        res *= self.aux       
+        return res
     
     def _f_conj_second_deriv(self, vstar,**kwargs):
-        return (self.q-1)*np.abs(vstar)**(self.q-2)
+        # member efficient implementation of 
+        # res = (self.q-1)*np.abs(vstar)**(self.q-2)   
+        res = np.abs(vstar)
+        np.power(res,self.q-2,out=res)     
+        res *= (self.q-1)
+        return res
     
     def _f_conj_prox(self,v_star,tau,**kwargs):
         if self.p==2:
@@ -423,11 +459,21 @@ class L1MeasureSpace(IntegralFunctionalBase):
             return np.zeros_like(v)
 
     def _f_prox(self, v,tau,**kwargs):
-        return np.maximum(0, np.abs(v)-tau)*np.sign(v)
+        if not hasattr(self, 'aux'):
+            self.aux = self.domain.zeros()    
+        # res = np.maximum(0, np.abs(v)-tau)*np.sign(v)        
+        res = np.abs(v)
+        res -= tau
+        np.maximum(0,res,out=res)
+        res *= np.sign(v)
+        self.aux = np.sign(v)
+        res *= self.aux
+        return res
 
     def _f_conj(self, v_star,**kwargs):
-        ind = (np.abs(v_star)>1)
-        res = np.zeros_like(v_star)
+        res = np.abs(v_star)    
+        ind = (res>1)
+        res *= 0.
         res[ind]= inf
         return res
     
@@ -444,7 +490,11 @@ class L1MeasureSpace(IntegralFunctionalBase):
             return self.domain.zeros()
 
     def _f_conj_prox(self,vstar,tau,**kwargs):
-        return vstar/np.maximum(np.abs(vstar),1)
+        # res  = vstar/np.maximum(np.abs(vstar),1)
+        res = np.abs(vstar)
+        res = np.maximum(res,1.,out=res)
+        np.divide(vstar,res, out =res)
+        return res
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         zeroind = (x==0)
@@ -762,15 +812,33 @@ class Huber(IntegralFunctionalBase):
         if isinstance(sigma, (float,int)) :
             self.sigma = np.real(sigma * domain.ones())
         else:
-            self.sigma = np.real(sigma) 
+            self.sigma = np.real(sigma)
+        self.abs_u = self.domain.zeros() 
+        self.small = np.zeros(self.domain.shape,dtype=bool)
 
     def _f(self, u,**kwargs):
         sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
-        return np.where(np.abs(u)<=sigma,0.5*np.abs(u)**2,sigma*np.abs(u)-0.5*sigma**2)
+        # res = np.where(np.abs(u)<=sigma,0.5*np.abs(u)**2,sigma*np.abs(u)-0.5*sigma**2)
+        self.abs_u = np.abs(u)
+        self.small = (self.abs_u<=sigma)
+        res = np.multiply(self.abs_u,2.)
+        res -= sigma
+        res *= sigma
+        res *= 0.5
+        self.abs_u *=self.abs_u
+        self.abs_u *= 0.5
+        res[self.small] = self.abs_u[self.small]
+        return res 
 
     def _f_deriv(self, u,**kwargs):
         sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
-        return np.where(np.abs(u)<=sigma,u,sigma*u/np.abs(u))
+        # res = np.where(np.abs(u)<=sigma,u,sigma*u/np.abs(u))
+        self.abs_u = np.abs(u)
+        self.small = (self.abs_u<=sigma)
+        res = sigma*u
+        res /= self.abs_u
+        res[self.small] = u[self.small]
+        return res
 
     def _f_second_deriv(self, u, **kwargs):
         sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
@@ -824,23 +892,33 @@ class QuadraticIntv(IntegralFunctionalBase):
         else:
             self.sigma = sigma 
         self.sigmaeps = self.sigma*(1+eps) if eps>0 else self.sigma
+        self.aux = domain.zeros()
 
     def _f(self, u,**kwargs):
-        res =  0.5*np.abs(u)**2
-        res[np.abs(u)>self.sigmaeps] = np.inf
-        return res    
+        # res =  0.5*np.abs(u)**2
+        self.aux = np.abs(u)
+        res = self.aux**2
+        res *= 0.5 
+        res[self.aux>self.sigmaeps] = np.inf        
+        return res  
    
     def _f_deriv(self, u,**kwargs):
-        if np.max(np.abs(u)/self.sigmaeps)>1.:
+        self.aux = np.abs(u)
+        self.aux /= self.sigmaeps
+        if np.max(self.aux)>1.:
             raise NotInEssentialDomainError('QuadraticIntv')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
         res = u/(1+tau)
-        return res/np.maximum(np.abs(res)/self.sigma,1)
+        self.aux = np.abs(res)
+        self.aux /= self.sigma
+        return res/np.maximum(self.aux,1)
 
     def _f_second_deriv(self, u,**kwargs):
-        if np.max(np.abs(u)/self.sigmaeps)>=1.:
+        self.aux = np.abs(u)
+        self.aux /= self.sigmaeps
+        if np.max(self.aux)>=1.:
             raise NotTwiceDifferentiableError('QuadraticIntv')
         else:
             return np.ones_like(u)
@@ -859,13 +937,15 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def is_subgradient(self, vstar, x, eps=1e-10):
         grad = self.subgradient(x)
-        if(not np.all(np.abs(x)<=self.sigma)):
+        self.aux = np.abs(x)
+        if(not np.all(self.aux<=self.sigma)):
             return False
         if(not np.all(vstar[self.sigma==x]>=self.sigma)):
             return False
         if(not np.all(vstar[-self.sigma==x]<=-self.sigma)):
             return False
-        if(np.linalg.norm(grad[np.abs(x)<self.sigma]-vstar[np.abs(x)<self.sigma]) <= eps*np.linalg.norm(grad[np.abs(x)<self.sigma])):
+        ind = (self.aux<self.sigma)
+        if(np.linalg.norm(grad[ind]-vstar[ind]) <= eps*np.linalg.norm(grad[ind])):
             return True
         return False
 
@@ -888,7 +968,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
         super().__init__(domain,L2(domain),convexity_param = 1.,dom_l=0.,**kwargs)
 
     def _f(self, u,**kwargs):
-        res =  u*u/2
+        res =  u*u
+        res *= 0.5
         res[u<0] = np.inf
         return res    
 
@@ -898,7 +979,9 @@ class QuadraticNonneg(IntegralFunctionalBase):
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
-        return np.maximum(u/(1+tau),0)
+        res = u/(1+tau)
+        np.maximum(res,0,out=res)
+        return res
 
     def _f_second_deriv(self, u,**kwargs):
         if np.min(u)<0:
@@ -907,7 +990,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
             return np.ones_like(u)
 
     def _f_conj(self, ustar,**kwargs):
-        res = ustar*ustar/2
+        res = ustar*ustar
+        res *= 0.5
         res[ustar<0] = 0
         return res
 
@@ -925,10 +1009,9 @@ class QuadraticNonneg(IntegralFunctionalBase):
         return res
     
     def is_subgradient(self, vstar, x, eps=1e-10):
-        return np.max(vstar[x<0])<=0 and np.linalg.norm(x[x>=0]-vstar[x>=0]) <= eps*np.linalg.norm(x[x>=0])
-
-
-
+        xnonneg = (x>=0)
+        return np.max(vstar[~xnonneg])<=0 and np.linalg.norm(x[xnonneg]-vstar[xnonneg]) <= eps*np.linalg.norm(x[xnonneg])
+    
 
 class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
