@@ -441,8 +441,8 @@ class Operator:
                 h_domain.vecsp,
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on codomain."))
-        method=getattr(self,'default_norm_method','lanczos') if method is None else method
-        if method == "power":
+        method=getattr(self,'default_norm_method','power') if method is None else method
+        if method == "lanczos":
             return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
@@ -450,7 +450,10 @@ class Operator:
                 op = self.adjoint_eval
             else:
                 op = self.adjoint * h_codomain.gram * self
-            return sqrt(eigsh(SciPyLinearOperator(op), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
+            # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
+            return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
+                              Minv=SciPyLinearOperator(h_domain.gram_inv),
+                              tol=0.01)[0][0]-1.)
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
