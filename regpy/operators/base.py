@@ -441,8 +441,8 @@ class Operator:
                 h_domain.vecsp,
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on codomain."))
-        method=getattr(self,'default_norm_method','power') if method is None else method
-        if method == "lanczos":
+        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+        if method == "power":
             return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
