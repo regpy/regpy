@@ -8,8 +8,9 @@ from regpy.operators import PtwMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
 import logging
+from copy import deepcopy
 
-from .base import Functional, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError
 
 __all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
@@ -44,34 +45,41 @@ class IntegralFunctionalBase(Functional):
     ----------
     domain : `regpy.vecsps.MeasureSpaceFcts`
         Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
-    h_domain : `regpy.hilbert.HilbertSpace` [default: None]
-        Hilbert space defined on `domain`. Proximal operator is computed  wrt to that. Default: `L2(domain)`
     dom_l,dom_u : float or np.ndarray (default: -np.inf and np.inf, rsp.)
         lower and upper bound on the essential domain of f (the interval on on which f is finite)
         If dom_l or dom_u are finite, f should be finite at these points (possibly very large if f tends to infinity there) 
         If the domain depends on the point x and/or arguments in **kwargs, this should be a numpy array.
     conj_dom_l,conj_dom_u : float or np.ndarray (default: -np.inf and np.inf, rsp.)
         lower and upper bound on the essential domain of the conjugate of f (the interval on on which f^* is finite)    
+        (as vector in primal space)
     """
 
-    def __init__(self,domain,h_domain = None,
+    def __init__(self,domain,
                  dom_l=-np.inf, dom_u=np.inf, 
                  conj_dom_l=-np.inf,conj_dom_u=np.inf,
                  **kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
-        assert domain == h_domain.vecsp
-        self.dom_l = dom_l
-        self.dom_u = dom_u
-        self.conj_dom_l = conj_dom_l
-        self.conj_dom_u = conj_dom_u
+        self.h_domain = L2(domain)
+        if np.isscalar(conj_dom_l) and isinstance(domain,UniformGridFcts):
+            conj_dom_l = np.broadcast_to(conj_dom_l*domain.measure,domain.shape)
+        else:
+            conj_dom_l = self.h_domain.gram(np.broadcast_to(conj_dom_l,domain.shape))
+        if np.isscalar(conj_dom_u) and isinstance(domain,UniformGridFcts):
+            conj_dom_u = np.broadcast_to(conj_dom_u*domain.measure,domain.shape)
+        else:
+            conj_dom_u = self.h_domain.gram(np.broadcast_to(conj_dom_u,domain.shape))
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
         Lipschitz = kwargs['Lipschitz'] if 'Lipschitz' in kwargs.keys() else inf
         convexity_param = kwargs['convexity_param'] if 'convexity_param' in kwargs.keys() else 0
-        super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param)
-        self.h_domain = L2(domain) if h_domain is None else h_domain
-        """ Hilbert space on `domain` wrt to which is the prox computed."""
+        super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
+                         separable=True,
+                         dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape), 
+                         dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape),
+                         conj_dom_l = conj_dom_l, 
+                         conj_dom_u = conj_dom_u
+                         )
 
     def _eval(self, v):
         return np.sum(self._f(v,**self.kwargs)*self.domain.measure)
@@ -130,13 +138,16 @@ class IntegralFunctionalBase(Functional):
     def _f_conj_prox(self,vstar,tau,tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
         if self.__class__.__dict__.get("_f_conj_deriv") is not None:
             print('check existence of _conj_prox',self.__class__.__dict__.get("_f_conj_prox") is not None)
-            vclip = np.minimum(vstar/self.domain.measure,self.conj_dom_u)
+            vclip = np.minimum(vstar,self.conj_dom_u)
             vclip = np.maximum(vclip,self.conj_dom_l)
+            vclip /= self.domain.measure
             #self._f_conj_deriv(vclip,**kwargs)
             #self._f_conj_second_deriv(vclip,**kwargs)
             f_conj_second_deriv = self._f_conj_second_deriv if self._f_conj_second_deriv is not None else None
             return self._numerical_prox(vstar,tau,
-                                        self._f_conj_deriv,f_conj_second_deriv,self.conj_dom_l, self.conj_dom_u, 
+                                        self._f_conj_deriv,f_conj_second_deriv,
+                                        self.conj_dom_l/self.domain.measure, 
+                                        self.conj_dom_u/self.domain.measure, 
                                         tol=tol,maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
                                         **kwargs
                                         )
@@ -340,6 +351,14 @@ class IntegralFunctionalBase(Functional):
 
         return x
 
+class Conj_IntegralFunctional(IntegralFunctionalBase,Conj):
+
+    def __init__(self, func):
+        if not isinstance(func, IntegralFunctionalBase):
+            raise TypeError(f'Argument of constructor must be of type IntegralFunctionalBase. Got {func}')
+        Conj.__init__(func)
+        
+
 class LppPower(IntegralFunctionalBase):
     r"""
     Implements the \(p)\-power of the \(L^p)\ norm on some domain in `MeasureSpaceFcts`
@@ -357,7 +376,7 @@ class LppPower(IntegralFunctionalBase):
         assert np.isscalar(p) and p >1
         self.p = p
         self.q = p/(p-1)
-        super().__init__(domain, L2(domain),
+        super().__init__(domain, 
                          convexity_param = 2 if p==2 else 0,
                          Lipschitz = 2 if p==2 else inf,
                          **kwargs
@@ -432,7 +451,9 @@ class LppPower(IntegralFunctionalBase):
             return v_star/(1+tau)
         else:
             return self._numerical_prox(v_star,tau,
-                                self._f_conj_deriv,self._f_conj_second_deriv,self.conj_dom_l, self.conj_dom_u, 
+                                self._f_conj_deriv,self._f_conj_second_deriv,
+                                np.broadcast_to(-inf,self.domain.shape), 
+                                np.broadcast_to(inf,self.domain.shape), 
                                 tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
                                 **kwargs
                                 )
@@ -446,7 +467,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
         Domain on which to define the generic L1.
     """
     def __init__(self, domain,**kwargs):
-        super().__init__(domain,L2(domain),**kwargs)
+        super().__init__(domain,**kwargs)
 
     def _f(self, v,**kwargs):
         return np.abs(v)
@@ -533,7 +554,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             raise ValueError('w not in domain.')
         if np.min(w)<0:
             raise ValueError('w must be non-negative.')
-        super().__init__(domain,L2(domain), dom_l=1e-14*w,
+        super().__init__(domain,dom_l=1e-14*w,
                          conj_dom_u=domain.ones()-1e-14*w,
                          **kwargs
                          )
@@ -694,7 +715,7 @@ class RelativeEntropy(IntegralFunctionalBase):
             w = domain.ones()
         assert w in domain
         assert np.min(w)>0
-        super().__init__(domain,L2(domain),dom_l = 1e-14*w,**kwargs)
+        super().__init__(domain,dom_l = 1e-14*w,**kwargs)
         self.w= w
 
 
@@ -819,12 +840,14 @@ class Huber(IntegralFunctionalBase):
         if np.min(sigma)<=0:
             raise ValueError(f'sigma must be positive. min(sigma)={np.min(sigma)}')
         if as_primal:
-            super().__init__(domain,L2(domain),Lipschitz=1,
+            super().__init__(domain,Lipschitz=1,
                              conj_dom_l=-self.sigma, conj_dom_u = self.sigma,
                              **kwargs)
             self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
         else:
-            super().__init__(domain,L2(domain,weights=1./domain.measure**2), Lipschitz=1, **kwargs)
+            dual_domain = deepcopy(domain)
+            dual_domain.measure = 1./domain.measure
+            super().__init__(dual_domain, Lipschitz=1, **kwargs)
         # auxiliary vectors
         self._abs_u = self.domain.zeros() 
         self._small = np.zeros(self.domain.shape,dtype=bool)
@@ -903,10 +926,12 @@ class QuadraticIntv(IntegralFunctionalBase):
             self.sigma = sigma 
             self.sigmaeps = self.sigma*(1+eps) if eps>0 else self.sigma            
         if as_primal:
-            super().__init__(domain,L2(domain),convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,**kwargs)
+            super().__init__(domain,convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,**kwargs)
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
         else:
-            super().__init__(domain,L2(domain,weights=1./domain.measure**2), convexity_param=1,**kwargs)
+            dual_domain = deepcopy(domain)
+            dual_domain.measure = 1./domain.measure
+            super().__init__(dual_domain, convexity_param=1,**kwargs)
         self._aux = domain.zeros()
 
     def _f(self, u,**kwargs):
@@ -980,7 +1005,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
     """
 
     def  __init__(self, domain,**kwargs):
-        super().__init__(domain,L2(domain),convexity_param = 1.,dom_l=0.,**kwargs)
+        super().__init__(domain,convexity_param = 1.,dom_l=0.,**kwargs)
 
     def _f(self, u,**kwargs):
         res =  u*u
@@ -1156,7 +1181,7 @@ class QuadraticPositiveSemidef(Functional):
             self.trace_val=trace_val
         else:
             self.has_trace_constraint=False
-        super().__init__(domain,L2(domain),Lipschitz=1,convexity_param=1,**kwargs)
+        super().__init__(domain,Lipschitz=1,convexity_param=1,**kwargs)
 
     def is_in_essential_domain(self,rho):
         if(not ishermitian(rho,atol=self.tol)):

@@ -15,16 +15,10 @@ def sample_essential_domain(func):
     Result:
     An element of func.domain
     """
-    if not (isinstance(func,IntegralFunctionalBase) or (isinstance(func,Conj) and isinstance(func.func,IntegralFunctionalBase))):
-        raise TypeError("instance of IntegralFunctionalBase or Conj of that class required.")
-    if isinstance(func,Conj):
-        dom_l = np.max(func.func.conj_dom_l)
-        dom_u = np.min(func.func.conj_dom_u)
-        assert dom_l<=dom_u
-    else:
-        dom_l = np.max(func.dom_l)
-        dom_u = np.min(func.dom_u)
-        assert dom_l<=dom_u
+    assert func.separable
+    dom_l = np.max(func.dom_l)
+    dom_u = np.min(func.dom_u)
+    assert dom_l<=dom_u
     numel = np.prod(func.domain.shape)
     if dom_l>-np.inf:
         if dom_u<np.inf:
@@ -36,10 +30,7 @@ def sample_essential_domain(func):
             u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
         else:
             u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-    if isinstance(func,Conj):
-        return np.reshape(u,func.domain.shape)*func.domain.measure
-    else:
-        return np.reshape(u,func.domain.shape)
+    return np.reshape(u,func.domain.shape)
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     r"""Numerically test the validity of Moreau's identity for a given functional
