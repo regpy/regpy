@@ -1,12 +1,53 @@
+from regpy.functionals import IntegralFunctionalBase
+from regpy.functionals.base import Conj
 from random import uniform
+import numpy as np
+
+def sample_essential_domain(func):
+    r""" Returns a grid function in the essential domain of an IntegralFunctional. 
+    The values of this grid function are chosen to roughly span the essential domain of the function defining the 
+    integral functional.
+
+    Parameters:    
+    func : regpy.functionals.IntegralFunctionalBase
+        The functional.
+    
+    Result:
+    An element of func.domain
+    """
+    if not (isinstance(func,IntegralFunctionalBase) or (isinstance(func,Conj) and isinstance(func.func,IntegralFunctionalBase))):
+        raise TypeError("instance of IntegralFunctionalBase or Conj of that class required.")
+    if isinstance(func,Conj):
+        dom_l = np.max(func.func.conj_dom_l)
+        dom_u = np.min(func.func.conj_dom_u)
+        assert dom_l<=dom_u
+    else:
+        dom_l = np.max(func.dom_l)
+        dom_u = np.min(func.dom_u)
+        assert dom_l<=dom_u
+    numel = np.prod(func.domain.shape)
+    if dom_l>-np.inf:
+        if dom_u<np.inf:
+            u = np.linspace(dom_l,dom_u,numel)
+        else: 
+            u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+    else:
+        if dom_u==np.inf:
+            u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
+        else:
+            u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+    if isinstance(func,Conj):
+        return np.reshape(u,func.domain.shape)*func.domain.measure
+    else:
+        return np.reshape(u,func.domain.shape)
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
-    r"""Numerically test validity of moreaus identity for a given functional
+    r"""Numerically test the validity of Moreau's identity for a given functional
 
     Checks if:
 
     .. math::
-        u=prox_{\tau F}(u)+\tau prox_{\frac{1}{\tau}F(\frac{u}{\tau}).
+        u=prox_{\tau F}(u)+\tau prox_{\frac{1}{\tau}F^*}(\frac{u}{\tau}).
 
     Parameters
     ----------
@@ -25,7 +66,10 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        u=func.domain.randn()
+        if isinstance(func,IntegralFunctionalBase):
+            u=sample_essential_domain(func)
+        else:
+            u=func.domain.randn()
     prox = func.proximal(u,tau)
     gram = func.h_domain.gram
     proxstar = func.conj.proximal(gram(u/tau),1/tau)
@@ -59,7 +103,10 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        u=func.domain.randn()
+        if isinstance(func,IntegralFunctionalBase):
+            u=sample_essential_domain(func)
+        else:
+            u=func.domain.randn()
     if(v is None):
         v=func.domain.randn()
         v*=v_length/func.domain.norm(v)
@@ -77,14 +124,14 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
 #     assert func.conj_is_subgradient(u,grad_u,eps=eps)
 
 def test_young_equality(func,u=None,tolerance=1e-10):
-    r"""Numerically test validity of young equality for a given functional
+    r"""Numerically test validity of Young's equality for a given functional
 
     Checks if:
 
     .. math::
         F(u)+F^\ast(u^\ast)=\langle u^\ast,u \rangle.
     
-    where :math:`u^\ast` is in the subradient of :math:`F` at :math:`u`.
+    where :math:`u^\ast` is in the subgradient of :math:`F` at :math:`u`.
 
     Parameters
     ----------
@@ -101,10 +148,16 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        u=func.domain.randn()
+        if isinstance(func,IntegralFunctionalBase):
+            u=sample_essential_domain(func)
+        else:
+            u=func.domain.randn()
     grad_u=func.subgradient(u)
-    err=abs((func.domain.vdot(u,grad_u)).real-func(u)-func.conj(grad_u))
-    assert err<tolerance,f'err={err}'
+    t1 = (func.domain.vdot(u,grad_u)).real
+    t2 = func(u)
+    t3 = func.conj(grad_u)
+    err=abs(t1-t2-t3)/np.max(np.abs([1e-14,t1,t2,t3]))
+    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(u)={t3}, <u,grad_u>={t3}'
 
 def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_conj_N=5,print_results=False,tolerance=1e-10):
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
@@ -116,7 +169,9 @@ def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_
     func : regpy.functionals.Functional
         The functional.
     u_s : list of any, optional
-        List of elements in essential domain of func. If None it they chosen at random. Defaults to None.
+        List of elements in essential domain of func. 
+        If None, one sample is chosen by sample_essential_domain. 
+        Defaults to None.
     sample_N : int, optional
         If u_s i None this is the number of randomly generated elements in u_s. Defaults to 5.
     test_conj : bool, optional
@@ -136,8 +191,11 @@ def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_
     AssertionError
         If the test fails.
     """
-    if(u_s is None):
-        u_s=[func.domain.randn() for _ in range(sample_N)]
+    if (u_s is None):
+        if isinstance(func,IntegralFunctionalBase) or (isinstance(func,Conj) and isinstance(func.func,IntegralFunctionalBase)):
+            u_s= [sample_essential_domain(func)]
+        else:
+            u_s = [func.domain.randn() for _ in range(sample_N)]
     if(print_results):
         print(type(func))
     for u in u_s:
@@ -159,5 +217,4 @@ def test_functional(func,u_s=None,sample_N=5,test_conj=True,u_stars=None,sample_
                 print('Young equality could not be checked because of missing implementation')
     if(test_conj):
         test_functional(func.conj,u_s=u_stars,sample_N=sample_conj_N,test_conj=False,print_results=print_results,tolerance=tolerance)
-
-        
+                
