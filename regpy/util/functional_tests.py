@@ -132,9 +132,9 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     #print('Lipschitz:', func.Lipschitz,np.max(fpp))
     #print('convexity:', func.convexity_param,np.min(fpp))
     assert func.Lipschitz>=np.max(fpp)
-    if np.max(func.dom_u)<np.infty or np.min(func.dom_l)>-np.infty:
-        assert func.Lipschitz==np.infty, "Lipschitz constant finite, but essential domain is constrained."
-    if func.Lipschitz<np.infty:
+    if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf:
+        assert func.Lipschitz==,np.inf "Lipschitz constant finite, but essential domain is constrained."
+    if func.Lipschitz<np.inf:
         assert func.Lipschitz<=safety*np.max(fpp), f"Lipschitz constant {func.Lipschitz/np.max(fpp)} times larger than estimate based on second derivative. Safety ={safety}."
     assert func.convexity_param<=np.min(fpp)
     if func.convexity_param>0:
