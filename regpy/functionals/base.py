@@ -455,7 +455,10 @@ class Functional:
         try:
             grad = self._conj_subgradient(xstar)
         except NotImplementedError:
-            _, grad = self._conj_linearize(xstar)
+            try:
+                _, grad = self._conj_linearize(xstar)
+            except (NotInEssentialDomainError, NotImplementedError) as e:
+                raise e
         assert grad in self.domain
         return grad
 

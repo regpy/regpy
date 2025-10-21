@@ -103,7 +103,9 @@ class IntegralFunctionalBase(Functional):
         return self._f_conj_deriv(vstar/self.domain.measure,**self.kwargs)
     
     def _conj_hessian(self, vstar):
-        return PtwMultiplication(self.domain,self._f_conj_second_deriv(vstar/self.domain.measure,**self.kwargs))
+        return PtwMultiplication(self.domain,
+                                 self._f_conj_second_deriv(vstar/self.domain.measure,**self.kwargs)/self.domain.measure
+                                 )
 
     def _f(self,v,**kwargs):
         raise NotImplementedError
@@ -466,8 +468,9 @@ class L1MeasureSpace(IntegralFunctionalBase):
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the generic L1.
     """
-    def __init__(self, domain,**kwargs):
-        super().__init__(domain,**kwargs)
+    def __init__(self, domain,eps=1e-10,**kwargs):
+        self.eps=eps
+        super().__init__(domain,conj_dom_u=1.,conj_dom_l=-1.,**kwargs)
 
     def _f(self, v,**kwargs):
         return np.abs(v)
@@ -501,14 +504,14 @@ class L1MeasureSpace(IntegralFunctionalBase):
         return res
     
     def _f_conj_deriv(self, v_star,**kwargs):
-        if np.max(np.abs(v_star))>1:
-            raise NotInEssentialDomainError()
+        if np.max(np.abs(v_star))>1+self.eps:
+            raise NotInEssentialDomainError(f"Argument too large by factor {np.abs(v_star)}.")
         else:
             return np.zeros_like(v_star)
 
     def _f_conj_second_deriv(self, v_star,**kwargs):
-        if np.max(np.abs(v_star))>=1:
-            raise NotTwiceDifferentiableError('L1')
+        if np.max(np.abs(v_star))>=1+self.eps:
+            raise NotInEssentialDomainError(f"Argument too large by factor {np.abs(v_star)}.")
         else:
             return self.domain.zeros()
 
@@ -831,7 +834,7 @@ class Huber(IntegralFunctionalBase):
         Only used for conjugate functional. See description of `QuadraticIntv`
     """
 
-    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=0.,**kwargs):
+    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=1e-10,**kwargs):
         assert isinstance(sigma, (float,int)) or sigma in domain
         if isinstance(sigma, (float,int)) :
             self.sigma = np.broadcast_to(np.real(sigma),domain.shape)
@@ -916,9 +919,10 @@ class QuadraticIntv(IntegralFunctionalBase):
         or NotInEssentialDomain exceptions in the presence of rounding errors
     """
 
-    def  __init__(self, domain,as_primal=True,sigma=1.,eps=0.,**kwargs):
+    def  __init__(self, domain,as_primal=True,sigma=1.,eps=1e-10,**kwargs):
         assert isinstance(sigma, (float,int)) or sigma in domain 
         assert np.min(sigma)>0
+        self.eps=eps
         if isinstance(sigma, (float,int)):
             self.sigma = np.broadcast_to(np.real(sigma), domain.shape)
             self.sigmaeps = np.broadcast_to(sigma*(1+eps), domain.shape)           
@@ -945,8 +949,8 @@ class QuadraticIntv(IntegralFunctionalBase):
     def _f_deriv(self, u,**kwargs):
         self._aux = np.abs(u)
         self._aux /= self.sigmaeps
-        if np.max(self._aux)>1.:
-            raise NotInEssentialDomainError(f'QuadraticIntv. Argument too large by factor {np.max(self._aux)}')
+        if np.max(self._aux)>1.+self.eps:
+            raise NotInEssentialDomainError(f'QuadraticIntv. Argument too large by factor 1+{np.max(self._aux)-1:e}. eps={self.eps:e}.')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
@@ -958,8 +962,8 @@ class QuadraticIntv(IntegralFunctionalBase):
     def _f_second_deriv(self, u,**kwargs):
         self._aux = np.abs(u)
         self._aux /= self.sigmaeps
-        if np.max(self._aux)>=1.:
-            raise NotTwiceDifferentiableError('QuadraticIntv')
+        if np.max(self._aux)>=1.+self.eps:
+            raise ValueError(f'Argument not in essential domain. Too large by a factor of 1+{np.max(self._aux)-1:e}. eps={self.eps:e}')
         else:
             return np.ones_like(u)
 
@@ -1078,7 +1082,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
 
-    def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,eps=0.,**kwargs):
+    def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,**kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
         if isinstance(lb,(float,int)):
             lb = lb*domain.ones()
@@ -1099,7 +1103,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         assert isinstance(alpha,(float,int))
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        F = QuadraticIntv(domain,sigma=(ub-lb)/2.,eps=eps,**kwargs)
+        F = QuadraticIntv(domain,sigma=(ub-lb)/2.,**kwargs)
         center = (ub+lb)/2
         lin = LinearFunctional(center-x0,
                             domain=domain,
