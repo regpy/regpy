@@ -57,7 +57,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        if isinstance(func,IntegralFunctionalBase):
+        if func.separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -94,7 +94,7 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        if isinstance(func,IntegralFunctionalBase):
+        if func.separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
