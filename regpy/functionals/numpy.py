@@ -80,32 +80,69 @@ class IntegralFunctionalBase(Functional):
                          conj_dom_l = conj_dom_l, 
                          conj_dom_u = conj_dom_u
                          )
+        self.everywhere_finite = (np.all(dom_l==-np.inf) and np.all(dom_u==np.inf))
+        self.conj_everywhere_finite = (np.all(conj_dom_l==-np.inf) and np.all(conj_dom_u==np.inf))
+        self._buf = self.domain.zeros()
+
+    def _assert_essential_domain(self,v,eps=1e-10,msg=None):
+        self._buf = v-self.dom_u
+        assert np.all(self._buf<=eps), msg+f" argument too large in {self}. diff:{np.max(self._buf)}, eps={eps}"
+        self._buf = self.dom_l-v
+        assert np.all(self._buf<=eps), msg+f" argument too small in {self}. diff:{np.max(self._buf)}, eps={eps}"
+
+    def _assert_conj_essential_domain(self,vstar,eps=1e-10,msg=None):
+        self._buf = vstar-self.conj_dom_u
+        assert np.all(self._buf<=eps), msg+f" argument too large in {self}. diff:{np.max(self._buf)}, eps={eps}"
+        self._buf = self.conj_dom_l-vstar
+        assert np.all(self._buf<=eps), msg+f" argument too small in {self}. diff:{np.max(self._buf)}, eps={eps}"
 
     def _eval(self, v):
-        return np.sum(self._f(v,**self.kwargs)*self.domain.measure)
+        self._buf = self._f(v,**self.kwargs)
+        self._buf *= self.domain.measure
+        return np.sum(self._buf)
 
     def _conj(self,vstar):
-        return np.sum(self._f_conj(vstar/self.domain.measure,**self.kwargs)*self.domain.measure)
+        self._buf = vstar/self.domain.measure
+        self._buf = self._f_conj(self._buf,**self.kwargs)
+        self._buf *= self.domain.measure
+        return np.sum(self._buf)
 
     def _subgradient(self, v):
-        return self._f_deriv(v,**self.kwargs)*self.domain.measure
+        if not self.everywhere_finite:
+            self._assert_essential_domain(v,msg='_subgradient')
+        self._buf = self._f_deriv(v,**self.kwargs)
+        self._buf *= self.domain.measure
+        return self._buf
 
+    def _conj_subgradient(self, vstar):
+        if not self.conj_everywhere_finite:
+            self._assert_conj_essential_domain(vstar,msg='_conj_subgradient')
+        self._buf = vstar/self.domain.measure
+        return self._f_conj_deriv(self._buf,**self.kwargs)
+    
     def _hessian(self, v):
-        return PtwMultiplication(self.domain,self._f_second_deriv(v,**self.kwargs)*self.domain.measure)
+        if not self.everywhere_finite:
+            self._assert_essential_domain(v,msg='_hessian')
+        self._buf = self._f_second_deriv(v,**self.kwargs)
+        self._buf *= self.domain.measure
+        return PtwMultiplication(self.domain,self._buf)
 
+    def _conj_hessian(self, vstar):
+        if not self.conj_everywhere_finite:
+            self._assert_conj_essential_domain(vstar,msg='_conj_hessian')
+        self._buf = vstar/self.domain.measure
+        self._buf = self._f_conj_second_deriv(self._buf,**self.kwargs)
+        self._buf /= self.domain.measure
+        return PtwMultiplication(self.domain, self._buf)
+    
     def _proximal(self, v, tau):
         return self._f_prox(v,tau,**self.kwargs)
     
     def _conj_proximal(self, vstar, tau):
-        return self._f_conj_prox(vstar/self.domain.measure,tau,**self.kwargs)*self.domain.measure
-    
-    def _conj_subgradient(self, vstar):
-        return self._f_conj_deriv(vstar/self.domain.measure,**self.kwargs)
-    
-    def _conj_hessian(self, vstar):
-        return PtwMultiplication(self.domain,
-                                 self._f_conj_second_deriv(vstar/self.domain.measure,**self.kwargs)/self.domain.measure
-                                 )
+        self._buf = vstar/self.domain.measure
+        self._buf = self._f_conj_prox(self._buf,tau,**self.kwargs)
+        self._buf *= self.domain.measure
+        return self._buf
 
     def _f(self,v,**kwargs):
         raise NotImplementedError
@@ -491,7 +528,6 @@ class L1MeasureSpace(IntegralFunctionalBase):
         res = np.abs(v)
         res -= tau
         np.maximum(0,res,out=res)
-        res *= np.sign(v)
         self._aux = np.sign(v)
         res *= self._aux
         return res
@@ -517,9 +553,11 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
     def _f_conj_prox(self,vstar,tau,**kwargs):
         # res  = vstar/np.maximum(np.abs(vstar),1)
-        res = np.abs(vstar)
-        res = np.maximum(res,1.,out=res)
-        np.divide(vstar,res, out =res)
+        #res = np.abs(vstar)
+        #res = np.maximum(res,1.,out=res)
+        #np.divide(vstar,res, out =res)
+        res = np.minimum(vstar,1.)
+        np.maximum(res,-1.,out=res)
         return res
 
     def is_subgradient(self, vstar, x, eps=1e-10):

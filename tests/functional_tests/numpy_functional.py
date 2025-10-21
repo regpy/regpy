@@ -18,9 +18,9 @@ def test_L1():
     x = dom.ones()
     func = L1(dom)
     assert (func(x) == 21.0)
-    ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)],
-                       u_stars=[func.domain.rand() for _ in range(5)],
-                       test_second_deriv=False)
+    ft.test_functional(func) #u_s=[func.domain.rand() for _ in range(5)],
+                       #u_stars=[func.domain.rand() for _ in range(5)],
+                       #test_second_deriv=False)
 
 # def test_TV():
 #     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
@@ -74,12 +74,12 @@ def test_quadnonneg():
 def test_quadbil():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
     func = QuadBil(dom,lb = dom.zeros(), ub = dom.ones())
-    ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)])
+    ft.test_functional(func)
 
 def test_quadlow():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
     func = QuadLow(dom)
-    ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)])
+    ft.test_functional(func)
 
 def test_quadratic_positive_semidef():
     N=5
