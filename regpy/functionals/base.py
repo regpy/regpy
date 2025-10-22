@@ -1242,10 +1242,12 @@ class HorizontalShiftDilation(Functional):
         The functional to be shifted and dilated.
     dilation: float [default: 1]
         Dilation factor.
-    shift: self.domain [default: None]
-        Shift vector. 0 in the default case.
+    shift: self.domain or scalar or None [default: None]
+        Shift vector. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
     """
     def __init__(self, F, dilation =1., shift = None):
+        if np.isscalar(shift):
+            shift = np.broadcast_to(shift,F.domain.shape)
         assert shift is None or shift in F.domain
         assert isinstance(dilation,int) or isinstance(dilation,float)        
         if F.separable:

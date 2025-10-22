@@ -3,7 +3,7 @@ from regpy.functionals.base import Conj, NotTwiceDifferentiableError
 from random import uniform
 import numpy as np
 
-def sample_essential_domain(func):
+def sample_essential_domain(func,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
     The values of this grid function are chosen to roughly span the essential domain of the function defining the 
     integral functional.
@@ -11,9 +11,12 @@ def sample_essential_domain(func):
     Parameters:    
     func : regpy.functionals.IntegralFunctionalBase
         The functional.
-    
+    eps_perturbation: float or None [default: None]
+        If not None, an additional vector h is returned  
+        
     Result:
-    An element of func.domain
+    An element u of func.domain
+    If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
     assert func.separable
     dom_l = np.max(func.dom_l)
@@ -23,14 +26,28 @@ def sample_essential_domain(func):
     if dom_l>-np.inf:
         if dom_u<np.inf:
             u = np.linspace(dom_l,dom_u,numel)
+            if eps_perturbation is not None:
+                h = np.sign(0.5*dom_l+0.5*dom_u-u)
+                fac = 2 * eps_perturbation / np.min(dom_u-dom_l)
+                if fac >= 1.:
+                    h /= fac
         else: 
             u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-    else:
+            if eps_perturbation is not None:
+                h = np.ones_like(u)
+    else: # dom_l == np.inf
         if dom_u==np.inf:
             u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
+            if eps_perturbation is not None:
+                h = np.ones_like(u)            
         else:
             u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-    return np.reshape(u,func.domain.shape)
+            if eps_perturbation is not None:
+                h = - np.ones_like(u)            
+    if eps_perturbation is None:
+        return np.reshape(u,func.domain.shape)
+    else:
+        return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     r"""Numerically test the validity of Moreau's identity for a given functional
@@ -67,7 +84,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
     assert err<tolerance,f'err={err}'
 
-def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
+def test_subgradient(func,u=None,v_length=1e-5,tolerance=1e-10,eps=1e-8):
     r"""Numerically test validity of subgradient for a given functional
 
     Checks if:
@@ -93,20 +110,23 @@ def test_subgradient(func,u=None,v=None,v_length=1e-5,tolerance=1e-10):
     AssertionError
         If the test fails.
     """
-    if(u is None):
+    if (not u is None) or (not func.separable):
+            h=func.domain.randn()
+            h*=v_length/func.domain.norm(h)
+            h-=u
+    if u is None:
         if func.separable:
-            u=sample_essential_domain(func)
+            u,h=sample_essential_domain(func,eps_perturbation=eps)
         else:
             u=func.domain.randn()
-    if(v is None):
-        v=func.domain.randn()
-        v*=v_length/func.domain.norm(v)
     grad_u=func.subgradient(u)
-    err=func(u)-func(v)+(func.domain.vdot(grad_u,v-u)).real
+    err=func(u)-func(u+h)+(func.domain.vdot(grad_u,h)).real
     assert err<tolerance,f'err={err}'
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
-    if u is None :
+
+
+    """     if u is None :
         if func.separable:
             u=sample_essential_domain(func)
         else:
@@ -117,7 +137,14 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
             h[u+eps*h>=func.dom_u] *= -1.
             h[u+eps*h<=func.dom_l] *= -1.
             h[u+eps*h>=func.dom_u] = 0.
-            h[u+eps*h<=func.dom_l] = 0.          
+            h[u+eps*h<=func.dom_l] = 0.        
+    """   
+    if func.separable:
+        u,h = sample_essential_domain(func,eps_perturbation=eps)
+    else:
+        if u is None:
+            u = func.domain.randn()
+        h = - func.subgradient(u)
     func_pp = func.hessian(u)(h)
     diffq = (func.subgradient(u+eps*h)-func.subgradient(u))/eps
     err = np.linalg.norm(func_pp-diffq)/(1e-14+np.linalg.norm(func_pp))
@@ -174,7 +201,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         If the test fails.
     """
     if(u is None):
-        if isinstance(func,IntegralFunctionalBase):
+        if func.separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -223,7 +250,7 @@ def test_functional(func,u_s=None,sample_N=5,
     """
     if (u_s is None):
         if func.separable:
-            u_s= [sample_essential_domain(func)]
+            u_s= [None] # [sample_essential_domain(func)]
         else:
             u_s = [func.domain.randn() for _ in range(sample_N)]
     if(print_results):

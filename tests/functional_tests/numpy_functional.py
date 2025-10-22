@@ -36,6 +36,10 @@ def test_kullback_leibler():
     ft.test_functional(F-2.)
     ft.test_functional(F+LinearFunctional(F.domain.rand(),domain=F.domain))
 
+
+    F2 = KL(dom,w=dom.ones(),upperConstraint=5.,lowerConstraint=1.)
+    ft.test_functional(F2)
+
 def test_relative_entropy():
     dom=UniformGridFcts((-5,7,4),(100,200,3))
     F=RE(dom,w=dom.ones())

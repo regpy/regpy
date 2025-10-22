@@ -57,32 +57,87 @@ class IntegralFunctionalBase(Functional):
     def __init__(self,domain,
                  dom_l=-np.inf, dom_u=np.inf, 
                  conj_dom_l=-np.inf,conj_dom_u=np.inf,
+                 lower_constraint=None, upper_constraint=None,
                  **kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
         self.h_domain = L2(domain)
+
+        self.lower_constraint_active = False if lower_constraint is None else np.any(lower_constraint>dom_l)
+        self.upper_constraint_active = False if upper_constraint is None else np.any(upper_constraint<dom_u)
+        if self.lower_constraint_active:
+            lower_active_ind = lower_constraint> (dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape))
+        if self.upper_constraint_active:
+            upper_active_ind = upper_constraint< (dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape))
+
+        if lower_constraint is None:
+            dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape)
+        elif np.isscalar(lower_constraint):
+            dom_l = np.maximum(dom_l,lower_constraint) if dom_l in domain else np.broadcast_to(np.maximum(dom_l,lower_constraint),domain.shape)
+        elif lower_constraint in domain:
+            dom_l = np.maximum(dom_l,lower_constraint)
+        else:
+            raise TypeError("lower_constraint must be None, scalar or in domain. Got {lower_constraint}.") 
+
+        if upper_constraint is None:
+            dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape)
+        elif np.isscalar(upper_constraint):
+            dom_u = np.minimum(dom_u,upper_constraint) if dom_u in domain else np.broadcast_to(np.minimum(dom_u,upper_constraint),domain.shape)
+        elif upper_constraint in domain:
+            dom_u = np.minimum(dom_u,upper_constraint)
+        else:
+            raise TypeError("upper_constraint must be None, scalar or in domain. Got {upper_constraint}.") 
+
         if np.isscalar(conj_dom_l) and isinstance(domain,UniformGridFcts):
             conj_dom_l = np.broadcast_to(conj_dom_l*domain.measure,domain.shape)
         else:
             conj_dom_l = self.h_domain.gram(np.broadcast_to(conj_dom_l,domain.shape))
+
         if np.isscalar(conj_dom_u) and isinstance(domain,UniformGridFcts):
             conj_dom_u = np.broadcast_to(conj_dom_u*domain.measure,domain.shape)
         else:
             conj_dom_u = self.h_domain.gram(np.broadcast_to(conj_dom_u,domain.shape))
-        self.kwargs = kwargs
-        if 'logging_level' in kwargs.keys():
-            self.log.setLevel(kwargs['logging_level'])
+
+
         Lipschitz = kwargs['Lipschitz'] if 'Lipschitz' in kwargs.keys() else inf
         convexity_param = kwargs['convexity_param'] if 'convexity_param' in kwargs.keys() else 0
+        if (self.lower_constraint_active or self.upper_constraint_active):
+            Lipschitz=np.inf
         super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
                          separable=True,
-                         dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape), 
+                         dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape),
                          dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape),
                          conj_dom_l = conj_dom_l, 
                          conj_dom_u = conj_dom_u
                          )
+
         self.everywhere_finite = (np.all(dom_l==-np.inf) and np.all(dom_u==np.inf))
         self.conj_everywhere_finite = (np.all(conj_dom_l==-np.inf) and np.all(conj_dom_u==np.inf))
+
+        if self.lower_constraint_active:
+            self.lower_kink = np.full(domain.shape,-np.inf)
+            self.lower_kink[lower_active_ind] = self._f_deriv(dom_l[lower_active_ind],mask=lower_active_ind,**kwargs)
+            self.f_dom_l = self.domain.zeros()
+            self.f_dom_l[lower_active_ind] = self._f(dom_l[lower_active_ind],mask=lower_active_ind,**kwargs)
+            if np.all(lower_active_ind):
+                self.conj_dom_l = np.broadcast_to(-np.inf,domain.shape)
+            else:
+                self.conj_dom_l = np.array(self.conj_dom_l)
+                self.conj_dom_l[lower_active_ind] = -np.inf
+        if self.upper_constraint_active:
+            self.upper_kink = np.full(domain.shape,np.inf)
+            self.upper_kink[upper_active_ind] = self._f_deriv(dom_u[upper_active_ind],mask=upper_active_ind,**kwargs)
+            self.f_dom_u = self.domain.zeros()
+            self.f_dom_u[upper_active_ind] = self._f(dom_u[upper_active_ind],mask=upper_active_ind,**kwargs)
+            if np.all(upper_active_ind):
+                self.conj_dom_u = np.broadcast_to(np.inf,domain.shape)
+            else:
+                self.conj_dom_u = np.array(self.conj_dom_u)
+                self.conj_dom_u[lower_active_ind] = np.inf
+
         self._buf = self.domain.zeros()
+        self.kwargs = kwargs
+        if 'logging_level' in kwargs.keys():
+            self.log.setLevel(kwargs['logging_level'])
 
     def _assert_essential_domain(self,v,eps=1e-10,msg=None):
         self._buf = v-self.dom_u
@@ -98,12 +153,26 @@ class IntegralFunctionalBase(Functional):
 
     def _eval(self, v):
         self._buf = self._f(v,**self.kwargs)
+        if self.lower_constraint_active:
+            self._buf[v<self.dom_l] = np.inf
+        if self.upper_constraint_active:
+            self._buf[v>self.dom_u] = np.inf
         self._buf *= self.domain.measure
         return np.sum(self._buf)
 
     def _conj(self,vstar):
-        self._buf = vstar/self.domain.measure
-        self._buf = self._f_conj(self._buf,**self.kwargs)
+        self._buf2 = vstar/self.domain.measure
+        self._buf = self._f_conj(self._buf2,**self.kwargs)
+        if self.lower_constraint_active:
+            vstar_small = (self._buf2<self.lower_kink)
+            self._buf[vstar_small] = self._buf2[vstar_small]
+            self._buf[vstar_small] *= self.dom_l if np.isscalar(self.dom_l) else self.dom_l[vstar_small]
+            self._buf[vstar_small] -= self.f_dom_l[vstar_small]
+        if self.upper_constraint_active:
+            vstar_large = (self._buf2>self.upper_kink)
+            self._buf[vstar_large] = self._buf2[vstar_large]
+            self._buf[vstar_large] *= self.dom_u if np.isscalar(self.dom_u) else self.dom_u[vstar_large]
+            self._buf[vstar_large] -= self.f_dom_u[vstar_large]        
         self._buf *= self.domain.measure
         return np.sum(self._buf)
 
@@ -117,8 +186,15 @@ class IntegralFunctionalBase(Functional):
     def _conj_subgradient(self, vstar):
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar,msg='_conj_subgradient')
-        self._buf = vstar/self.domain.measure
-        return self._f_conj_deriv(self._buf,**self.kwargs)
+        self._buf2 = vstar/self.domain.measure
+        self._buf = self._f_conj_deriv(self._buf2,**self.kwargs)
+        if self.lower_constraint_active:
+            vstar_small = (self._buf2<self.lower_kink)
+            self._buf[vstar_small] = self.dom_l if np.isscalar(self.dom_l) else self.dom_l[vstar_small]
+        if self.upper_constraint_active:
+            vstar_large = (self._buf2>self.upper_kink)
+            self._buf[vstar_large] = self.dom_u if np.isscalar(self.dom_u) else self.dom_u[vstar_large]
+        return self._buf
     
     def _hessian(self, v):
         if not self.everywhere_finite:
@@ -130,17 +206,35 @@ class IntegralFunctionalBase(Functional):
     def _conj_hessian(self, vstar):
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar,msg='_conj_hessian')
-        self._buf = vstar/self.domain.measure
-        self._buf = self._f_conj_second_deriv(self._buf,**self.kwargs)
+        self._buf2 = vstar/self.domain.measure
+        self._buf = self._f_conj_second_deriv(self._buf2,**self.kwargs)
+        if self.lower_constraint_active:
+            self._buf[self._buf2<self.lower_kink] = 0.
+        if self.upper_constraint_active:
+            self._buf[self._buf2>self.upper_kink] = 0.      
         self._buf /= self.domain.measure
         return PtwMultiplication(self.domain, self._buf)
     
     def _proximal(self, v, tau):
-        return self._f_prox(v,tau,**self.kwargs)
+        self._buf = self._f_prox(v,tau,**self.kwargs)
+        if self.lower_constraint_active:
+            np.maximum(self._buf,self.dom_l,out=self._buf)
+        if self.upper_constraint_active:
+            np.minimum(self._buf,self.dom_u,out=self._buf)
+        return self._buf
     
     def _conj_proximal(self, vstar, tau):
         self._buf = vstar/self.domain.measure
-        self._buf = self._f_conj_prox(self._buf,tau,**self.kwargs)
+        if not (self.lower_constraint_active or self.upper_constraint_active):
+            self._buf = self._f_conj_prox(self._buf,tau,**self.kwargs)
+        else: # use Moreau's identity
+            #self._buf /= tau
+            #self._buf2 = self._proximal(self._buf,1/tau)
+            #print(self._buf2)
+            #self._buf2 *= tau
+            #self._buf *= tau
+            #self._buf -= self._buf2
+            self._buf = self._buf-tau*self._proximal(self._buf/tau,1/tau)
         self._buf *= self.domain.measure
         return self._buf
 
@@ -388,15 +482,7 @@ class IntegralFunctionalBase(Functional):
             if np.max(ub-lb)>tol:
                 raise RuntimeError('Could not satisfy tolerance criterium in bisection algorithm.')
 
-        return x
-
-class Conj_IntegralFunctional(IntegralFunctionalBase,Conj):
-
-    def __init__(self, func):
-        if not isinstance(func, IntegralFunctionalBase):
-            raise TypeError(f'Argument of constructor must be of type IntegralFunctionalBase. Got {func}')
-        Conj.__init__(func)
-        
+        return x        
 
 class LppPower(IntegralFunctionalBase):
     r"""
@@ -411,15 +497,25 @@ class LppPower(IntegralFunctionalBase):
         exponent
     """
 
-    def __init__(self, domain, p=2,**kwargs):
-        assert np.isscalar(p) and p >1
+    def __init__(self, domain, p=2.,**kwargs):
+        assert np.isscalar(p) and p >1.
         self.p = p
         self.q = p/(p-1)
+        
         super().__init__(domain, 
-                         convexity_param = 2 if p==2 else 0,
-                         Lipschitz = 2 if p==2 else inf,
+                         convexity_param = 1. if p==2. else 0.,
+                         Lipschitz = 1. if p==2. else np.inf,
                          **kwargs
                          )
+        if p<2:
+            aux = np.min([-np.min(self.dom_l,0) , np.max(self.dom_u,0)])
+            if aux<np.inf:
+                self.convexity_param = (self.p-1) * aux**(self.p-2)
+        if p>2:
+            aux = np.max([np.min(self.dom_l), -np.max(self.dom_u)])
+            if aux>0:
+                self.convexity_param = (self.p-1) * aux**(self.p-2)
+
 
     def _f(self,v,**kwargs):
         # member efficient implementation of 
@@ -432,11 +528,11 @@ class LppPower(IntegralFunctionalBase):
     def _f_deriv(self, v,**kwargs):
         # member efficient implementation of  
         # res = np.abs(v)**(self.p-1)*np.sign(v) 
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.zeros()
         res = np.abs(v)
         np.power(res,self.p-1,out=res) 
-        self._aux = np.sign(v)
+        self._aux = np.sign(v,out= self._aux)
         res *= self._aux
         return res
     
@@ -444,7 +540,7 @@ class LppPower(IntegralFunctionalBase):
         # member efficient implementation of  
         # res = (self.p-1)*np.abs(v)**(self.p-2)
         res = np.abs(v)
-        np.power(res,self.p-2,out=res)        
+        res = np.power(res,self.p-2,out=res)        
         res *= (self.p-1)
         return res
     
@@ -467,7 +563,7 @@ class LppPower(IntegralFunctionalBase):
         return res 
 
     def _f_conj_deriv(self, vstar,**kwargs):
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.zeros()        
         # member efficient implementation of 
         # res = np.abs(vstar)**(self.q-1)*np.sign(vstar) 
@@ -522,7 +618,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
             return np.zeros_like(v)
 
     def _f_prox(self, v,tau,**kwargs):
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.zeros()    
         # res = np.maximum(0, np.abs(v)-tau)*np.sign(v)        
         res = np.abs(v)
@@ -595,17 +691,13 @@ class KullbackLeibler(IntegralFunctionalBase):
             raise ValueError('w not in domain.')
         if np.min(w)<0:
             raise ValueError('w must be non-negative.')
+        self.w = w
         super().__init__(domain,dom_l=1e-14*w,
                          conj_dom_u=domain.ones()-1e-14*w,
+                         convexity_param = 
+                              np.min(w/kwargs['upper_constraint']**2) if 'upper_constraint' in kwargs.keys() else 0,
                          **kwargs
                          )
-        self.w = w
-
-#   def _get_w(self,**kwargs):
-#        w= kwargs['w']
-#        if 'mask' in kwargs.keys():
-#            w=w[kwargs['mask']]
-#        return w
 
     def _f(self, u,**kwargs):
         if 'w' in kwargs.keys():
@@ -626,10 +718,8 @@ class KullbackLeibler(IntegralFunctionalBase):
    
     def _f_deriv(self, u,**kwargs):
         if 'w' in kwargs.keys():
-            raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
+            raise ValueError('first parameter w of KullbackLeibler must be fixed in constructor.')
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        if np.min(u)<0:
-            raise ValueError(f'argument must be non-negative. min(u)={np.min(u)}')
         if not np.all(np.logical_or(np.logical_not(u==0),wm==0)):
             raise ValueError('argument cannot be 0 at positions where w is not 0')
         # memory efficient implementation of 
@@ -643,15 +733,12 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     def _f_second_deriv(self, u, **kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w   
-        if np.min(u)<=0:
-            raise ValueError(f'argument must be positive. min(u)={np.min(u)}')
         # memory efficient computation of 
         # res = wm/u**2
         res = np.divide(wm,u)
         res /= u
         # end
         return res
-
 
     def _f_conj(self, u_star,**kwargs):
         if 'w' in kwargs.keys():
@@ -672,8 +759,6 @@ class KullbackLeibler(IntegralFunctionalBase):
         if 'w' in kwargs.keys():
             raise ValueError('second parameter w of KullbackLeibler must be fixed in constructor.')
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w    
-        if np.max(u_star)>1:
-            raise ValueError(f'argument must be <=1. max(u_star)={np.max(u_star)}.')
         if not np.all(np.logical_or(np.logical_not(u_star==1),wm==0)):
             raise ValueError('argument cannot be 1 at positions where w is not 0.')
         # memory efficient implementation of
@@ -686,7 +771,6 @@ class KullbackLeibler(IntegralFunctionalBase):
     
     def _f_conj_second_deriv(self, u_star,**kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        assert np.max(u_star)<=1
         assert np.all(np.logical_or(np.logical_not(u_star==1),wm==0))
         # memory efficient implementation of 
         # toret = wm/(1-u_star)**2
@@ -699,7 +783,7 @@ class KullbackLeibler(IntegralFunctionalBase):
     def _f_prox(self, v, tau, **kwargs):
         # memory efficient implementation of 
         # toret = -0.5*(tau-v) + np.sqrt(0.25*(tau-v)**2+tau*self.w)
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.zeros()
         toret = np.subtract(tau,v)
         toret *= toret
@@ -714,7 +798,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         return toret
 
     def _f_conj_prox(self, vstar, tau, **kwargs):
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.zeros()
         # memory efficient implementation of 
         # toret = 0.5*(1.+vstar) - np.sqrt(0.25*(1.+vstar)**2 + tau*self.w-vstar)
@@ -756,8 +840,11 @@ class RelativeEntropy(IntegralFunctionalBase):
             w = domain.ones()
         assert w in domain
         assert np.min(w)>0
-        super().__init__(domain,dom_l = 1e-14*w,**kwargs)
         self.w= w
+        super().__init__(domain,dom_l = 1e-14*w,
+                         convexity_param = 
+                              np.min(1/kwargs['upper_constraint']) if 'upper_constraint' in kwargs.keys() else 0,                         
+                         **kwargs)
 
 
 #    def _get_w(self,**kwargs):
@@ -790,9 +877,6 @@ class RelativeEntropy(IntegralFunctionalBase):
         if 'w' in kwargs.keys():
             raise ValueError('second parameter w of RelativeEntropy must be fixed in constructor.')        
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        dom_l = self.dom_l[kwargs['mask']] if 'mask' in kwargs.keys() else self.dom_l
-        if not np.all(u-dom_l>=0):
-            raise ValueError('Argument of _f_deriv not in essential domain.')
         # memory efficient implementation of 
         # res = np.ones_like(u)+np.log(u/wm)
         res = np.divide(u,wm)
@@ -802,9 +886,6 @@ class RelativeEntropy(IntegralFunctionalBase):
         return res
 
     def _f_second_deriv(self, u, **kwargs):     
-        dom_l = self.dom_l[kwargs['mask']] if 'mask' in kwargs.keys() else self.dom_l
-        if not np.all(u-dom_l>=0):
-            raise ValueError('Argument of _f_second_deriv not in essential domain.')
         return 1/u
 
     def _f_prox(self, v, tau, **kwargs):
@@ -818,7 +899,7 @@ class RelativeEntropy(IntegralFunctionalBase):
         toret *= self.w
         toret /= tau
         #end
-        if not hasattr(self, 'aux'):
+        if not hasattr(self, '_aux'):
             self._aux = self.domain.complex_space().zeros()        
         self._aux =  lambertw(toret)
         toret = self._aux.real
@@ -985,10 +1066,6 @@ class QuadraticIntv(IntegralFunctionalBase):
         return res  
    
     def _f_deriv(self, u,**kwargs):
-        self._aux = np.abs(u)
-        self._aux /= self.sigmaeps
-        if np.max(self._aux)>1.+self.eps:
-            raise NotInEssentialDomainError(f'QuadraticIntv. Argument too large by factor 1+{np.max(self._aux)-1:e}. eps={self.eps:e}.')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
@@ -998,12 +1075,7 @@ class QuadraticIntv(IntegralFunctionalBase):
         return res/np.maximum(self._aux,1)
 
     def _f_second_deriv(self, u,**kwargs):
-        self._aux = np.abs(u)
-        self._aux /= self.sigmaeps
-        if np.max(self._aux)>=1.+self.eps:
-            raise ValueError(f'Argument not in essential domain. Too large by a factor of 1+{np.max(self._aux)-1:e}. eps={self.eps:e}')
-        else:
-            return np.ones_like(u)
+        return np.ones_like(u)
 
     def _f_conj(self, ustar,**kwargs):
         return self.conjugate._f(ustar,**kwargs)    
@@ -1056,8 +1128,6 @@ class QuadraticNonneg(IntegralFunctionalBase):
         return res    
 
     def _f_deriv(self, u,**kwargs):
-        if np.min(u)<0:
-            raise NotInEssentialDomainError('QuadraticNonneg')
         return u.copy()
 
     def _f_prox(self,u,tau,**kwargs):
@@ -1066,10 +1136,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
         return res
 
     def _f_second_deriv(self, u,**kwargs):
-        if np.min(u)<0:
-            raise NotTwiceDifferentiableError('QuadraticNonneg')
-        else:
-            return np.ones_like(u)
+        return np.ones_like(u)
 
     def _f_conj(self, ustar,**kwargs):
         res = ustar*ustar
