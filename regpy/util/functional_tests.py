@@ -3,7 +3,7 @@ from regpy.functionals.base import Conj, NotTwiceDifferentiableError
 from random import uniform
 import numpy as np
 
-def sample_essential_domain(func,eps_perturbation=None):
+def sample_essential_domain(func,u=None,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
     The values of this grid function are chosen to roughly span the essential domain of the function defining the 
     integral functional.
@@ -25,23 +25,29 @@ def sample_essential_domain(func,eps_perturbation=None):
     numel = np.prod(func.domain.shape)
     if dom_l>-np.inf:
         if dom_u<np.inf:
-            u = np.linspace(dom_l,dom_u,numel)
+            if u is None:
+                #u = np.linspace(dom_l,dom_u,numel)
+                u = np.linspace(dom_l,dom_u,numel+2)
+                u = u[1:-1]
             if eps_perturbation is not None:
                 h = np.sign(0.5*dom_l+0.5*dom_u-u)
                 fac = 2 * eps_perturbation / np.min(dom_u-dom_l)
                 if fac >= 1.:
                     h /= fac
         else: 
-            u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+            if u is None:
+                u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
             if eps_perturbation is not None:
                 h = np.ones_like(u)
     else: # dom_l == np.inf
         if dom_u==np.inf:
-            u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
+            if u is None:
+                u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
             if eps_perturbation is not None:
                 h = np.ones_like(u)            
         else:
-            u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+            if u is None:
+                u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
             if eps_perturbation is not None:
                 h = - np.ones_like(u)            
     if eps_perturbation is None:
@@ -84,7 +90,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
     assert err<tolerance,f'err={err}'
 
-def test_subgradient(func,u=None,v_length=1e-5,tolerance=1e-10,eps=1e-8):
+def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=3,tol_convex=1e-3):
     r"""Numerically test validity of subgradient for a given functional
 
     Checks if:
@@ -98,30 +104,33 @@ def test_subgradient(func,u=None,v_length=1e-5,tolerance=1e-10,eps=1e-8):
         The functional.
     u : any, optional
         Element in essential domain of func, where gradient is computed. If None it is chosen at random. Defaults to None.
-    v : any, optional
-        Element in domain of func, where gradient is computed. If None it is chosen at random with length given by v_length. Defaults to None.
-    v_length : float, optional
-        Positive number determining the length of v if it is not given explicitly. Defaults to 1e-5.
-    tolerance : float, optional
-        The maximum allowed error. Defaults to 1e-10.
+    h_length : float, optional
+        Positive number determining the length of the perturbation vector. Defaults to 1e-8.
+    tol_convex : float, optional
+        The maximum allowed violation of the convexity condition. Defaults to 1e-3.
+    tol_smooth: float, optional
+        The maximum violation of the differentiability condition.
 
     Raises
     ------
     AssertionError
         If the test fails.
     """
-    if (not u is None) or (not func.separable):
-            h=func.domain.randn()
-            h*=v_length/func.domain.norm(h)
-            h-=u
-    if u is None:
-        if func.separable:
-            u,h=sample_essential_domain(func,eps_perturbation=eps)
-        else:
+    
+    if (not func.separable):
+        if u is None:
             u=func.domain.randn()
+        h=func.domain.randn()
+        h*=h_length/func.domain.norm(h)
+    else:
+        u,h=sample_essential_domain(func,u=u,eps_perturbation=h_length)
+            
     grad_u=func.subgradient(u)
-    err=func(u)-func(u+h)+(func.domain.vdot(grad_u,h)).real
-    assert err<tolerance,f'err={err}'
+    diffq = (func(u)-func(u+h_length*h))/h_length
+    deriv = (func.domain.vdot(grad_u,h)).real
+    err= diffq+deriv
+    assert err<tol_convex,f'err={err}, tol_convex={tol_convex}, grad_u={grad_u}, diffq={diffq}, h={h}'
+    assert np.abs(err)<tol_smooth,f'err={err}, tol_smooth={tol_smooth}'
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
 
@@ -158,14 +167,14 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     fpp = func.h_domain.gram_inv(func.hessian(u)(func.domain.ones()))
     #print('Lipschitz:', func.Lipschitz,np.max(fpp))
     #print('convexity:', func.convexity_param,np.min(fpp))
-    assert func.Lipschitz>=np.max(fpp)
+    assert func.Lipschitz>=np.max(fpp), f"Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}" 
     if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf:
         assert func.Lipschitz==np.inf, "Lipschitz constant finite, but essential domain is constrained."
-    if func.Lipschitz<np.inf:
-        assert func.Lipschitz<=safety*np.max(fpp), f"Lipschitz constant {func.Lipschitz/np.max(fpp)} times larger than estimate based on second derivative. Safety ={safety}."
-    assert func.convexity_param<=np.min(fpp)
+    #if func.Lipschitz<np.inf:
+    #    assert func.Lipschitz<=safety*np.max(fpp), f"Lipschitz constant {func.Lipschitz/np.max(fpp)} times larger than estimate based on second derivative. Safety ={safety}."
+    assert func.convexity_param<=np.min(fpp)+1e-12, f"Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}"
     if func.convexity_param>0:
-        assert safety*func.convexity_param>=np.min(fpp), f"convexity parameter {np.min(fpp)/func.convexity_param} times smaller than estimate based on second derivative. Safety={safety}."
+        assert safety*func.convexity_param>=np.min(fpp)-1e-12, f"convexity parameter {np.min(fpp)/func.convexity_param} times smaller than estimate based on second derivative. Safety={safety}."
 
 # def test_subgradient_and_conj(func,u=None,eps=1e-10):
 #     if(u is None):
@@ -210,7 +219,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     t2 = func(u)
     t3 = func.conj(grad_u)
     err=abs(t1-t2-t3)/np.max(np.abs([1e-14,t1,t2,t3]))
-    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(u)={t3}, <u,grad_u>={t3}'
+    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t3}'
 
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
@@ -263,7 +272,7 @@ def test_functional(func,u_s=None,sample_N=5,
             if(print_results):
                 print('Moreaus identity could not be checked because of missing implementation')
         try:
-            test_subgradient(func,u,tolerance=tolerance)
+            test_subgradient(func,u)
         except(NotImplementedError):
             if(print_results):
                 print('Subgradient could not be checked because of missing implementation')

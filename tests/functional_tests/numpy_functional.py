@@ -31,23 +31,30 @@ def test_kullback_leibler():
     dom=UniformGridFcts((-1,1,10),(-2,3,3))
     F=KL(dom,w=dom.ones())
     ft.test_functional(F)
-
-    ft.test_functional(HorizontalShiftDilation(F,dilation=3,shift=F.domain.ones()))
+    
+    ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()))
     ft.test_functional(F-2.)
-    ft.test_functional(F+LinearFunctional(F.domain.rand(),domain=F.domain))
 
+    F2 = KL(dom,w=dom.ones(),constr_u=5.)
+    ft.test_functional(F2,test_second_deriv_conj=False)
+    ft.test_functional(4.*F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv_conj=False)
+    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=-F2.domain.ones()),test_second_deriv_conj=False)
 
-    F2 = KL(dom,w=dom.ones(),upperConstraint=5.,lowerConstraint=1.)
-    ft.test_functional(F2)
+    F3 = KL(dom,w=dom.ones(),left_linearization=0.1)
+    ft.test_functional(F3)
 
 def test_relative_entropy():
     dom=UniformGridFcts((-5,7,4),(100,200,3))
     F=RE(dom,w=dom.ones())
     ft.test_functional(F)
 
-    ft.test_functional(3.*F)
-    ft.test_functional(F+LinearFunctional(F.domain.rand(),domain=F.domain))
+    F2 = RE(dom,w=dom.ones(),left_linearization=0.2)
+    ft.test_functional(2.*F2,test_second_deriv=False)
+    ft.test_functional(F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv=False)
+    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=F2.domain.ones()),test_second_deriv=False)
 
+    F3 = RE(dom,w=dom.ones(),constr_u=3.)
+    ft.test_functional(F3)    
 
 def test_huber():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
@@ -58,7 +65,7 @@ def test_huber():
 
     ft.test_functional(HorizontalShiftDilation(F,dilation=3,shift=F.domain.ones()))
     ft.test_functional(F-2.)
-    ft.test_functional(F+LinearFunctional(F.domain.rand(),domain=F.domain),
+    ft.test_functional(F+LinearFunctional(0.5*F.domain.ones(),domain=F.domain),
                        test_second_deriv=False,test_second_deriv_conj=False
                        )    
 
