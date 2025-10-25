@@ -216,7 +216,7 @@ class IntegralFunctionalBase(Functional):
         self._buf = self.conj_dom_l-vstar
         assert np.all(self._buf<=eps), msg+f" argument too small in {self}. diff:{np.max(self._buf)}, eps={eps}"
 
-    def _eval(self, v):
+    def _eval(self, v, func_vals =None):
         # see comment in _conj! 
         if self.conj_constr_l_active:
             v_small = (v<self.kink_l)
@@ -228,7 +228,7 @@ class IntegralFunctionalBase(Functional):
         if self.conj_constr_u_active:
             v_large = (v>self.kink_u)
             if np.any(v_large):    
-                mask = np.land(mask,~v_large) if 'mask' in locals() else ~v_large
+                mask = np.logical_and(mask,~v_large) if 'mask' in locals() else ~v_large
                 self._buf[v_large] = v[v_large]
                 self._buf[v_large] *= self.conj_dom_u[v_large]/self.measure[v_large]
                 self._buf[v_large] -= self.conj_f_conj_dom_u[v_large]  
@@ -240,10 +240,12 @@ class IntegralFunctionalBase(Functional):
             self._buf[v<self.dom_l] = np.inf
         if self.constr_u_active:
             self._buf[v>self.dom_u] = np.inf
+        if func_vals is not None:
+            np.copyto(func_vals,self._buf)
         self._buf *= self.measure
         return np.sum(self._buf)
 
-    def _conj(self,vstar):
+    def _conj(self,vstar,func_vals=None):
         # Using the definition of the conjugate, for v*<conj_kink_l := f'(dom_l)  we get  
         # f^*(v^*) = v^* dom_l - f(dom_l).
         # By Young's equality conj_kink_l * dom_l = f(dom_l) + f^*(conj_kink_l) 
@@ -261,7 +263,7 @@ class IntegralFunctionalBase(Functional):
         if self.constr_u_active:
             vstar_large = (vstar>self.conj_kink_u)
             if np.any(vstar_large):   
-                mask = np.land(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
+                mask = np.logical_and(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
                 self._buf[vstar_large] = self._buf2[vstar_large]
                 self._buf[vstar_large] *= self.dom_u[vstar_large]
                 self._buf[vstar_large] -= self.f_dom_u[vstar_large]        
@@ -273,6 +275,8 @@ class IntegralFunctionalBase(Functional):
             self._buf[vstar<self.conj_dom_l] = np.inf
         if self.conj_constr_u_active:
             self._buf[vstar>self.conj_dom_u] = np.inf
+        if func_vals is not None:
+            np.copyto(func_vals,self._buf)
         self._buf *= self.measure
         return np.sum(self._buf)
 
@@ -353,34 +357,18 @@ class IntegralFunctionalBase(Functional):
             res = self._f_prox(v,tau,**self.kwargs)
         else:
             res = self._f_prox(v,tau,mask=mask,**self.kwargs)
+
         if self.constr_l_active:
             res = np.maximum(res,self.dom_l[mask if mask is not None else slice(None)])
         if self.constr_u_active:
             res = np.minimum(res,self.dom_u[mask if mask is not None else slice(None)])
-        if  self.conj_constr_u_active:
-            too_large = res>self.kink_u[mask if mask is not None else slice(None)]
+        
         if self.conj_constr_l_active:
-            too_small = res<self.kink_l[mask if mask is not None else slice(None)]
-        if self.conj_constr_u_active and np.any(too_large):
-            if mask is None:
-                too_large_full = too_large
-            else:
-                too_large_full = np.zeros_like(mask, dtype=bool)
-                too_large_full[np.nonzero(mask)[0][too_large]] = True
-            aux = v[too_large] * self.measure[too_large_full]
-            aux -= tau*self._conj_proximal(aux/tau,1/tau,mask=too_large_full)
-            aux /=self.measure[too_large_full]
-            res[too_large] = aux
-        if self.conj_constr_l_active and np.any(too_small):
-            if mask is None:
-                too_small_full = too_small
-            else:
-                too_small_full = np.zeros_like(mask, dtype=bool)
-                too_small_full[np.nonzero(mask)[0][too_small]] = True
-            aux = v[too_small] * self.measure[too_small_full]
-            aux -= tau*self._conj_proximal(aux/tau,1/tau,mask=too_small_full)
-            aux /=self.measure[too_small_full]
-            res[too_small] = aux
+            corr = (tau*self.conj_dom_l/self.measure)[mask if mask is not None else slice(None)]                
+            res = np.minimum(res,v-corr,out = res)
+        if self.conj_constr_u_active:
+            corr = (tau*self.conj_dom_u/self.measure)[mask if mask is not None else slice(None)]               
+            res = np.maximum(res,v-corr,out = res)
         return res
     
     def _conj_proximal(self, vstar, tau,mask=None):
@@ -392,35 +380,19 @@ class IntegralFunctionalBase(Functional):
             res = vstar/self.measure[mask]
             res = self._f_conj_prox(res,tau,mask=mask,**self.kwargs)
             res *= self.measure[mask]
+
         if self.conj_constr_l_active:
             res = np.maximum(res,self.conj_dom_l[mask if mask is not None else slice(None)])
         if self.constr_u_active:
             res = np.minimum(res,self.conj_dom_u[mask if mask is not None else slice(None)])
-        if  self.constr_u_active:
-            too_large = res>self.conj_kink_u[mask if mask is not None else slice(None)]
-        if self.constr_l_active:
-            too_small = res<self.conj_kink_l[mask if mask is not None else slice(None)] 
 
-        if self.constr_u_active and np.any(too_large):
-            if mask is None:
-                too_large_full = too_large
-            else:
-                too_large_full = np.zeros_like(mask, dtype=bool)
-                too_large_full[np.nonzero(mask)[0][too_large]] = True
-            aux = vstar[too_large]/self.measure[too_large_full]      
-            aux -= tau*self._proximal(aux/tau,1/tau,mask=too_large_full)
-            aux *= self.measure[too_large_full]
-            res[too_large] = aux
-        if self.constr_l_active and np.any(too_small):
-            if mask is None:
-                too_small_full = too_small
-            else:
-                too_small_full = np.zeros_like(mask, dtype=bool)
-                too_small_full[np.nonzero(mask)[0][too_large]] = True
-            aux = vstar[too_small]/self.measure[too_small_full]      
-            aux -= tau*self._proximal(aux/tau,1/tau,mask=too_small_full)
-            aux *= self.measure[too_small_full]
-            res[too_small] = aux
+        if self.constr_l_active:
+            corr = (tau*self.dom_l*self.measure)[mask if mask is not None else slice(None)]
+            res = np.minimum(res,vstar-corr,out = res)
+        if self.constr_u_active:
+            corr = (tau*self.dom_u*self.measure)[mask if mask is not None else slice(None)]
+            res = np.maximum(res,vstar-corr,out = res)   
+
         return res
 
     def _f(self,v,**kwargs):
