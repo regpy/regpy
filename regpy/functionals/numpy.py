@@ -1051,12 +1051,17 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     def _f_prox(self, v, tau, **kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
+        
+        v_mod = (v<=700*tau) 
+        # For v>=710*tau an overflow occurs in the exponential. 
+        # For such values we use an approximation via linearization (= one Newon step) instead of the exact formula in terms of the Lambert-w function. 
+        
         # memory efficient implementation of 
         # toret = (1/tau)*self.w*np.exp(v/tau-1.)
-        toret = np.divide(v,tau)
+        toret = np.divide(v[v_mod],tau)
         toret -= 1.
         np.exp(toret,out=toret)
-        toret *= wm
+        toret *= wm[v_mod]
         toret /= tau
         #end
         #if not hasattr(self, '_aux'):
@@ -1064,7 +1069,15 @@ class RelativeEntropy(IntegralFunctionalBase):
         aux =  lambertw(toret)
         toret = aux.real
         toret *= tau
-        return toret
+
+        if np.all(v_mod):
+            return toret.reshape(v.shape)
+        else:
+            res = np.zeros_like(v)
+            res[v_mod] = toret
+            vl = v[~v_mod]       
+            res[~v_mod] = (vl - tau*np.log(vl/wm[~v_mod])) / (1. + tau/vl)
+            return res
 
     def _f_conj_prox(self, vstar, tau, **kwargs):
         toret = (1/tau)*vstar
