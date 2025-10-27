@@ -138,10 +138,10 @@ def test_adjoint_eval(op, tolerance=1e-10):
     TastT_x = op.adjoint_eval(x)
     err = op.domain.norm(Tast_T_x-TastT_x)
     if abs(err) < tolerance:
-        op.log.info(f'Adjoint test passed: err = {err}')
+        op.log.info(f'AdjointEval test passed: err = {err}')
         return True
     else:
-        op.log.warning(f'Adjoint test failed: err = {err}')
+        op.log.warning(f'AdjointEval test failed: err = {err}')
         return False
 
 def test_derivative(op, steps=None,ret_sequence=False):
