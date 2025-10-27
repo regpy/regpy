@@ -36,7 +36,7 @@ def call_safe(obj, method_name, error_log, *args, **kwargs):
         return None
     
 
-def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
+def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
     Parameters
@@ -97,7 +97,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
         x = dom.rand()
         x_alt = inv(op(x))
         diff = dom.norm(x-x_alt)
-        if not isclose(diff,0,abs_tol=1e-15):
+        if not isclose(diff,0,abs_tol=inv_tol):
             errors.append(f"Testing the inverse of operator {op} on a random vector {x} did not return the almost same vector but {x_alt} with a domain norm difference {diff} ")
     except NotImplementedError:
         pass
@@ -129,9 +129,9 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
 
     return errors
 
-def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
+def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
     op = OP(*args,**kwargs)
-    return op_basics(op,*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm,**kwargs)
+    return op_basics(op,*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm, inv_tol=inv_tol,**kwargs)
 
 def op_evaluation_and_ot(op,x=None,res=None,tol=1e-10,**kwargs):
     errors = []

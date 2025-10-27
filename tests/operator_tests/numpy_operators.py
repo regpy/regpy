@@ -25,7 +25,7 @@ def test_MatrixMultiplication():
 def test_CholeskyInverse():
     errors = []
     op_mat = MatrixMultiplication(np.array([[9, 3, 1, 5], [3, 7, 5, 1], [1, 5, 9, 2], [5, 1, 2, 6]]),domain= UniformGridFcts(4),codomain=UniformGridFcts(4))
-    errors += op_basics_wrapper(CholeskyInverse, op_mat, test_methods=True)
+    errors += op_basics_wrapper(CholeskyInverse, op_mat, test_methods=True, inv_tol=1e-14)
     
     op = CholeskyInverse(op_mat)
 
@@ -37,7 +37,7 @@ def test_SuperLUInverse():
     errors = []
     mat =  csc_array([[1,2,0,4], [1,0,0,1], [1,0,2,1], [2,2,1,0.]])
     op_mat = MatrixMultiplication(mat,domain= UniformGridFcts(4),codomain=UniformGridFcts(4))
-    errors += op_basics_wrapper(SuperLUInverse, op_mat, test_methods=True)
+    errors += op_basics_wrapper(SuperLUInverse, op_mat, test_methods=True, inv_tol=1e-14)
 
     op = SuperLUInverse(op_mat)
 
