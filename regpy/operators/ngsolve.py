@@ -282,14 +282,19 @@ class SolveSystem(NGSolveOperator):
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
-            bf : ngs.BilinearForm) -> None:
+            bf : ngs.BilinearForm,
+            use_prec : bool = True,
+            **inverse_kwargs) -> None:
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
-        self.prec = ngs.Preconditioner(self.bf, 'local')
+        self.use_prec = use_prec
+        if use_prec:
+            self.prec = ngs.Preconditioner(self.bf, 'local')
+        self.inverse_kwargs = inverse_kwargs
         self.gfu=ngs.GridFunction(self.domain.fes)
         self.gfu_adj=ngs.GridFunction(self.domain.fes)
         self.gfu_eval=ngs.GridFunction(self.domain.fes)
-        u, v=self.domain.fes.TnT()
+        _, v=self.domain.fes.TnT()
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += self.gfu * v * ngs.dx
@@ -301,7 +306,10 @@ class SolveSystem(NGSolveOperator):
             argument : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
-        self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec)
+        if self.use_prec:
+            self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec, **self.inverse_kwargs)
+        else:
+            self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, **self.inverse_kwargs)
         return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
     
     def _adjoint(self, 
