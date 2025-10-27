@@ -450,7 +450,10 @@ class Operator:
                 op = self.adjoint_eval
             else:
                 op = self.adjoint * h_codomain.gram * self
-            return sqrt(eigsh(SciPyLinearOperator(op), 1, M=SciPyLinearOperator(h_domain.gram),tol=0.01)[0][0])
+            # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
+            return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
+                              Minv=SciPyLinearOperator(h_domain.gram_inv),
+                              tol=0.01)[0][0]-1.)
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",

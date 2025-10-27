@@ -296,6 +296,15 @@ class Functional:
         In the default case `L2(domain)` is used.   
     linear: bool [default: False]
         If true, the functional should be linear. 
+    separable: bool [default: False]
+        If true, the functional should be the sum of functionals acting on only one component of the input vector.
+        In this case, the parameters  
+    dom_u, dom_l, conj_dom_u, conj_dom_l: self.domain [default:None]
+        should not be None, and they shoulspecify the essential domain of the functional by 
+        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        and the essential domain of the conjugate functional (which is then also separable) by 
+        :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
+        In case of open domains, the boundaries should be shifted in the order of machine precision. 
     convexity_param: float [default: 0]
         parameter of strong convexity of the functional. 
         0 if the functional is not strongly convex.
@@ -309,7 +318,9 @@ class Functional:
     def __init__(self, domain, h_domain=None, 
                  linear = False,
                  convexity_param=0.,
-                 Lipschitz = inf):
+                 Lipschitz = inf,
+                 separable = False,
+                 dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None):
         assert isinstance(domain, vecsps.VectorSpaceBase)
         self.domain = domain
         """The underlying vector space."""
@@ -321,6 +332,10 @@ class Functional:
         """parameter of strong convexity of the functional."""
         self.Lipschitz = Lipschitz
         """Lipschitz continuity constant of the gradient."""
+        self.separable = separable
+        """boolean indicating if the functional is separable."""
+        self.dom_l, self.dom_u, self.conj_dom_l, self.conj_dom_u = dom_l, dom_u, conj_dom_l, conj_dom_u
+        """vectors indicating the essential domain of the functional and its conjugate"""
 
     def __call__(self, x):
         assert x in self.domain
@@ -440,7 +455,10 @@ class Functional:
         try:
             grad = self._conj_subgradient(xstar)
         except NotImplementedError:
-            _, grad = self._conj_linearize(xstar)
+            try:
+                _, grad = self._conj_linearize(xstar)
+            except (NotInEssentialDomainError, NotImplementedError) as e:
+                raise e
         assert grad in self.domain
         return grad
 
@@ -634,8 +652,13 @@ class Conj(Functional):
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
                          Lipschitz = 1/func.convexity_param if func.convexity_param>0 else inf,
-                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf
-                         )
+                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf,
+                         separable = func.separable,
+                         dom_u = func.conj_dom_u if func.separable else None, 
+                         dom_l = func.conj_dom_l if func.separable else None, 
+                         conj_dom_u = func.dom_u if func.separable else None,  
+                         conj_dom_l = func.dom_l if func.separable else None 
+                         )         
 
     def _eval(self,x):
         return self.func._conj(x)
@@ -702,12 +725,18 @@ class LinearFunctional(Functional):
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None:
             domain = vecsps.NumPyVectorSpace(shape=gradient.shape,dtype=float)
-        super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0)
-        assert gradient in self.domain
+        assert gradient in domain
+        if h_domain is None:
+            h_domain = hilbert.as_hilbert_space(h_domain,domain) or hilbert.L2(domain)
         if gradient_in_dual_space:
             self._gradient = gradient
         else:
-            self._gradient = self.h_domain.gram(gradient)
+            self._gradient = h_domain.gram(gradient)
+        super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0,
+                         separable=True,
+                         dom_l=np.broadcast_to(-inf,domain.shape), dom_u = np.broadcast_to(inf,domain.shape),
+                         conj_dom_l = self._gradient, conj_dom_u = self._gradient
+                         ) 
 
     def _eval(self,x):
         return self.domain.vdot(self._gradient,x).real
@@ -1003,16 +1032,34 @@ class LinearCombination(Functional):
         else:
             domain = None
 
-        super().__init__(domain, linear = all(self.linear_table),
-                         convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
-                         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs))
-                         )
-
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
-            self.grad_sum = self.domain.zeros()
+            self.grad_sum = self.funcs[0].domain.zeros()
             for coeff,func,linear in zip(self.coeffs,self.funcs,self.linear_table):
                 if linear:
                     self.grad_sum += coeff * func.gradient
+
+        separable = np.all([F.separable for F in self.funcs])
+        conj_dom_l, conj_dom_u = None, None
+        if separable:
+            if len(self.funcs) == 1:
+                conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
+                conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
+            elif self.linear_table.count(False)==0:
+                conj_dom_l = self.grad_sum
+                conj_dom_u = self.grad_sum 
+            elif self.linear_table.count(False)==1:
+                j = self.linear_table.index(False)
+                conj_dom_l = self.funcs[j].conj_dom_l*self.coeffs[j] + self.grad_sum
+                conj_dom_u = self.funcs[j].conj_dom_u*self.coeffs[j] + self.grad_sum
+
+        super().__init__(domain, linear = all(self.linear_table),
+                         convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
+                         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs)),
+                         separable=separable,
+                         dom_l = np.max([F.dom_l for F in self.funcs]) if separable else None,
+                         dom_u = np.min([F.dom_u for F in self.funcs]) if separable else None,
+                         conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u
+                         )
 
     def _eval(self, x):
         y = 0
@@ -1138,7 +1185,12 @@ class VerticalShift(Functional):
         assert isinstance(offset,int) or isinstance(offset,float)
         super().__init__(func.domain, linear = False, 
                          convexity_param= func. convexity_param,
-                         Lipschitz = func.Lipschitz
+                         Lipschitz = func.Lipschitz,
+                         separable = func.separable,
+                         dom_l = func.dom_l, 
+                         dom_u = func.dom_u, 
+                         conj_dom_l = func.conj_dom_l, 
+                         conj_dom_u = func.conj_dom_u
                          )
         self.func = func
         """Functional to be offset.
@@ -1190,17 +1242,28 @@ class HorizontalShiftDilation(Functional):
         The functional to be shifted and dilated.
     dilation: float [default: 1]
         Dilation factor.
-    shift: self.domain [default: None]
-        Shift vector. 0 in the default case.
+    shift: self.domain or scalar or None [default: None]
+        Shift vector. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
     """
     def __init__(self, F, dilation =1., shift = None):
+        if np.isscalar(shift):
+            shift = np.broadcast_to(shift,F.domain.shape)
+        assert shift is None or shift in F.domain
+        assert isinstance(dilation,int) or isinstance(dilation,float)        
+        if F.separable:
+            dom_u = F.dom_u/dilation if shift is None else F.dom_u/dilation + shift
+            dom_l = F.dom_l/dilation if shift is None else F.dom_l/dilation + shift
+            conj_dom_u = F.conj_dom_u*dilation
+            conj_dom_l = F.conj_dom_l*dilation
+        else:
+            dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(F.domain, h_domain = F.h_domain, 
                          linear = F.linear and shift is None,
                          Lipschitz = F.Lipschitz * dilation**2,
-                         convexity_param= F.convexity_param  * dilation**2
+                         convexity_param= F.convexity_param  * dilation**2,
+                         separable = F.separable,
+                         dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u
                          )
-        assert shift is None or shift in self.domain
-        assert isinstance(dilation,int) or isinstance(dilation,float)
         self.F = F
         self.dilation = dilation
         self.shift = shift
@@ -1356,7 +1419,12 @@ class FunctionalOnDirectSum(Functional):
         """
         super().__init__(domain, linear = all([func.linear for func in funcs]),
                         convexity_param = min([func.convexity_param for func in funcs]),
-                        Lipschitz = max([func.Lipschitz for func in funcs])
+                        Lipschitz = max([func.Lipschitz for func in funcs]),
+                        separable = all([func.separable for func in funcs]),
+                        dom_l = domain.join(*[func.dom_l for func in funcs]),
+                        dom_u = domain.join(*[func.dom_u for func in funcs]),
+                        conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]),
+                        conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]),                        
                         )
 
     def _eval(self, x):
