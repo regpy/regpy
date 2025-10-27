@@ -680,10 +680,10 @@ class Operator:
     def __add__(self, other):
         if np.isscalar(other) and other == 0:
             return self
-        elif isinstance(other, Operator):
-            return LinearCombination(self, other)
         elif np.isscalar(other) or other in self.codomain:
             return OuterShift(self, other)
+        elif isinstance(other, Operator):
+            return LinearCombination(self, other)
         else:
             return NotImplemented
 
