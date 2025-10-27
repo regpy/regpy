@@ -432,7 +432,7 @@ class NgsVectorSpace(VectorSpaceBase):
                 self._gfu_fes.Interpolate(ngs_elem)
                 return self._help_x.copy()
             else:
-                return NgsBaseVector(ngs.Projector(self.fes.FreeDofs(), range=True).Project(ngs_elem.vec),make_copy=True)
+                return NgsBaseVector(ngs_elem.vec,make_copy=True)
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return self._help_x.copy()
