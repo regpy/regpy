@@ -2,7 +2,7 @@
 /doc/sphinx/source/autoapi/*
 examples/data/
 examples/PINEM/data
-
+regpy/*/private
 
 # Distribution / packaging
 .Python

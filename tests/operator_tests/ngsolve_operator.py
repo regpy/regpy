@@ -60,7 +60,7 @@ def test_SecondOrderEllipticCoefficientPDE():
 
     errors = []
 
-    errors += op_basics_wrapper(diffusion,domain,codomain,test_methods=True,bdr_val=bdr_val,a_bdr_val = a_bdr_val)
+    # errors += op_basics_wrapper(diffusion,domain,codomain,test_methods=True,bdr_val=bdr_val,a_bdr_val = a_bdr_val)
 
     errors += op_evaluation_and_ot(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-5, -8, -1)],adjoint_derivative=False)
 

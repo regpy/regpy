@@ -1,6 +1,9 @@
 import numpy as np
+
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix, csc_array
+import scipy.fft as spfft
+import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy import util
@@ -38,15 +41,32 @@ class MatrixMultiplication(Operator):
     """
 
     def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
-        assert len(matrix.shape) == 2
-        assert domain is None or isinstance(domain,NumPyVectorSpace), "Domain either none or NumPyVectorSpace given was {}".format(type(domain))
-        assert codomain is None or isinstance(codomain,NumPyVectorSpace), "Codomain either none or NumPyVectorSpace given was {}".format(type(codomain))
-        self.matrix = matrix
+        if not isinstance(matrix,(np.ndarray,csc_matrix,csc_array)):
+            try:
+                self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
+                matrix = np.asarray(matrix)
+            except Exception as e:
+                raise TypeError("Matrix could not be converted to numpy array.") from e
+        if len(matrix.shape) != 2:
+            raise ValueError(f"Matrix has to be two-dimensional. Was given a matrix {matrix} of shape {matrix.shape} of type {type(matrix)}")
+        
         if dtype == None:
             dtype = matrix.dtype
+
+        if domain is None:
+            domain = NumPyVectorSpace(matrix.shape[1],dtype = dtype)
+        elif not isinstance(domain,NumPyVectorSpace):
+            raise TypeError("Domain either None or NumPyVectorSpace given was {}".format(type(domain)))
+        if codomain is None:
+            codomain = NumPyVectorSpace(matrix.shape[0],dtype = dtype)
+        elif not isinstance(codomain,NumPyVectorSpace):
+            raise TypeError("Codomain either none or NumPyVectorSpace given was {}".format(type(codomain)))
+        
+        self.matrix = matrix
+        
         super().__init__(
-            domain=domain or NumPyVectorSpace(matrix.shape[1],dtype = dtype),
-            codomain=codomain or NumPyVectorSpace(matrix.shape[0],dtype = dtype),
+            domain=domain,
+            codomain=codomain,
             linear=True
         )
         self._inverse = inverse
@@ -59,6 +79,12 @@ class MatrixMultiplication(Operator):
             return np.conjugate(np.conjugate(y) @ self.matrix) 
         else:
             return y @ self.matrix
+        
+    def _adjoint_eval(self, x):
+        if hasattr(self,'_MTM'):
+            return self._MTM @ x
+        self._MTM = self.matrix.conj().T @ self.matrix
+        return self._MTM @ x
 
     @util.memoized_property
     def inverse(self):
@@ -114,6 +140,13 @@ class CholeskyInverse(Operator):
 
     def _adjoint(self, x):
         return self._eval(x)
+    
+    def _adjoint_eval(self, x):
+        return self.domain.fromflat(
+            cho_solve(self.factorization,cho_solve(
+                self.factorization, self.domain.flatten(x))
+                )
+            )
 
     @property
     def inverse(self):
@@ -264,13 +297,15 @@ class FourierTransform(Operator):
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, UniformGridFcts)
         self.is_complex = domain.is_complex
-        frqs = self.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
+        if axes is None:
+            axes = tuple(np.arange(domain.ndim))
+        frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
         shape = domain.shape
         s = shape[-1]
         if centered or (not domain.is_complex and domain.ndim==1):
             codomain = UniformGridFcts(*frqs, dtype=complex)
         else:
-            # In non-centered case, the frequencies are not ascencing, so even using GridFcts here is slighty questionable.
+            # In non-centered case, the frequencies are not ascencing, so using GridFcts here is slightly questionable.
             codomain = GridFcts(*frqs, dtype=complex,use_cell_measure=False)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
@@ -278,31 +313,38 @@ class FourierTransform(Operator):
   
     def _eval(self, x):
         if self.centered:
-            x = np.fft.ifftshift(x, axes=self.axes)
+            x = spfft.ifftshift(x, axes=self.axes)
         if self.is_complex:
-            y = np.fft.fftn(x, axes=self.axes, norm='ortho')
+            y = spfft.fftn(x, axes=self.axes, norm='ortho')
         else:
-            y = np.fft.rfftn(x, axes=self.axes, norm='ortho')
+            y = spfft.rfftn(x, axes=self.axes, norm='ortho') # type: ignore
         if self.centered:
-            return np.fft.fftshift(y, axes=self.axes)
+            return spfft.fftshift(y, axes=self.axes)
         else:
             return y
 
     def _adjoint(self, y):
         if self.centered:
-            y = np.fft.ifftshift(y, axes=self.axes)
+            y = spfft.ifftshift(y, axes=self.axes)
         if self.is_complex:
-            x = np.fft.ifftn(y, axes=self.axes, norm='ortho')
+            x = spfft.ifftn(y, axes=self.axes, norm='ortho')
         else:
-            x = np.fft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
+            x = spfft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
         if self.centered:
-            x = np.fft.fftshift(x, axes=self.axes)
+            x = spfft.fftshift(x, axes=self.axes)
         if self.domain.is_complex:
             return x
         else:
-            return np.real(x)
+            return x.real
         
-    def frequencies(self,domain,centered=False, axes=None, rfft=False):
+    def _adjoint_eval(self, x):
+        if self.domain.is_complex:
+            return x
+        else:
+            return x.real
+        
+    @staticmethod
+    def frequencies(domain,centered=False, axes=None, rfft=False):
         """Compute the grid of frequencies for an FFT on this grid instance.
 
         Parameters
@@ -322,15 +364,14 @@ class FourierTransform(Operator):
         array
         """
         if axes is None:
-            axes = range(domain.ndim)
-        axes = set(axes)
+            axes = np.arange(domain.ndim)
         frqs = []
         for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
             if i in axes:
                 # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
                 # to be periodic.
                 shalf = s/2+1 if (s//2)*2==s else (s+1)/2
-                if i==domain.ndim-1 and rfft==True:
+                if i==axes[-1] and rfft==True:
                     frqs.append(np.arange(0,shalf) / (s*l))
                 else:
                     if centered:

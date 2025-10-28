@@ -108,6 +108,41 @@ def test_adjoint(op, tolerance=1e-10):
         op.log.warning(f'Adjoint test failed: err = {err}')
         return False
 
+def test_adjoint_eval(op, tolerance=1e-10):
+    r"""Numerically test validity of :meth:`adjoint_eval` method.
+
+    Checks if
+
+    .. highlight:: python
+    .. code:: python
+
+        norm(adjoint_eval(x)-adjoint(eval(x))) < tolerance
+
+    in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The operator.
+    tolerance : float, optional
+        The maximum allowed difference between the inner products. Defaults to
+        1e-10.
+
+    Returns
+    -------
+    bool
+        If the test fails then False and if it passes then True.
+    """
+    x = op.domain.randn()
+    Tast_T_x = op.adjoint(op(x))
+    TastT_x = op.adjoint_eval(x)
+    err = op.domain.norm(Tast_T_x-TastT_x)
+    if abs(err) < tolerance:
+        op.log.info(f'AdjointEval test passed: err = {err}')
+        return True
+    else:
+        op.log.warning(f'AdjointEval test failed: err = {err}')
+        return False
 
 def test_derivative(op, steps=None,ret_sequence=False):
     r"""Numerically test derivative of operator.
@@ -162,8 +197,8 @@ def test_adjoint_derivative(op, tolerance=1e-10):
     """
     x = op.domain.randn()
     h = op.domain.randn()
-    _,deriv,adjoint_derivative = op.linearize(x, adjoint_derivative=True)
-    adjoint_deriv_h = adjoint_derivative(h)
+    _,deriv = op.linearize(x, return_adjoint_eval=True)
+    adjoint_deriv_h = deriv.adjoint_eval(h)
     diff = adjoint_deriv_h-deriv.adjoint(deriv(h))
     if (diff < tolerance).all() and (diff > -tolerance).all():
         op.log.info('Adjoint derivative test passed.')
@@ -204,6 +239,8 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=Fa
         for _ in range(sample_N):
             if not test_linearity(op,tolerance) or not test_adjoint(op,tolerance):
                 raise AssertionError('Linearity or adjoint test failed for linear operator.')
+            if not test_adjoint_eval(op,tolerance):
+                raise AssertionError(f'Applying the adjoint and eval deviates more then {tolerance} form the implementation of adjoint_eval with respect to the vector space l2 norm.')
     elif test_affine_linearity(op,tolerance=tolerance):
         op.log.info('Testing affine linearity of operator. Skipping test of derivative.')
         for _ in range(sample_N):

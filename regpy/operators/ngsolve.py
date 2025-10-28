@@ -56,7 +56,9 @@ class NGSolveOperator(Operator):
             bf : ngs.comp.BilinearForm, 
             lf : ngs.comp.LinearForm, 
             gf : ngs.comp.GridFunction, 
-            prec : ngs.comp.Preconditioner) -> None:
+            pre = None,
+            solver = None,
+            **kwargs) -> None:
         r"""Solves the problem 
         \begin{align*}
         b(u,v) = f(v) \;\forall v\; test\; functions,\\
@@ -73,10 +75,14 @@ class NGSolveOperator(Operator):
         gf : ngs.GridFunction
             The grid functions on which to solve the solution will be put into these and they have to satisfy 
             the boundary condition that you want.
-        prec : ngs.Preconditioner
+        prec : BaseMatirx or class or Sting, default None
             preconditioner to be used with ngsolve.
+        solver : class or None
+            A solver instance that is passed to the ngs.sovlers.BVP
+        kwargs : dict
+            Dictionary of possible arguments that can be passed to the ngs.solvers.BVP
         """
-        gf.vec.data += bf.mat.Inverse(freedofs=self.codomain.fes.FreeDofs()) * (lf.vec - bf.mat * gf.vec)
+        ngs.solvers.BVP(bf, lf, gf, pre = pre, solver = solver, **kwargs)
 
         
 class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
@@ -175,8 +181,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
 
     def _eval(self, 
             a : NgsBaseVector, 
-            differentiate : bool = False, 
-            adjoint_derivative : bool = False) -> NgsBaseVector:
+            differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
         self.gfu_a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
         # self.gfu_a.vec.data = a.vec + self.a_bdr
@@ -277,14 +282,19 @@ class SolveSystem(NGSolveOperator):
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
-            bf : ngs.BilinearForm) -> None:
+            bf : ngs.BilinearForm,
+            use_prec : bool = True,
+            **inverse_kwargs) -> None:
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
-        self.prec = ngs.Preconditioner(self.bf, 'local')
+        self.use_prec = use_prec
+        if use_prec:
+            self.prec = ngs.Preconditioner(self.bf, 'local')
+        self.inverse_kwargs = inverse_kwargs
         self.gfu=ngs.GridFunction(self.domain.fes)
         self.gfu_adj=ngs.GridFunction(self.domain.fes)
         self.gfu_eval=ngs.GridFunction(self.domain.fes)
-        u, v=self.domain.fes.TnT()
+        _, v=self.domain.fes.TnT()
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += self.gfu * v * ngs.dx
@@ -296,7 +306,10 @@ class SolveSystem(NGSolveOperator):
             argument : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
-        self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec)
+        if self.use_prec:
+            self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec, **self.inverse_kwargs)
+        else:
+            self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, **self.inverse_kwargs)
         return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
     
     def _adjoint(self, 
@@ -508,8 +521,7 @@ class Coefficient(NGSolveOperator):
 
     def _eval(self, 
         diff : NgsBaseVector, 
-        differentiate : bool = False, 
-        adjoint_derivative : bool = False) -> NgsBaseVector:
+        differentiate : bool = False) -> NgsBaseVector:
         # Assemble Bilinearform
         self.gfu_bf.vec.data = diff.vec
         self.a.Assemble()
@@ -707,7 +719,7 @@ class EIT(NGSolveOperator):
     #Hence: int_Omega [s grad u grad v + alpha u v] = int_dOmega [g trace(v)]
     #Left term: Bilinearform self.a
     #Righ term: Linearform self.b
-    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
+    def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()
@@ -849,7 +861,7 @@ class ReactionNeumann(NGSolveOperator):
         self.prec = ngs.Preconditioner(self.a, 'direct')
 
 
-    def _eval(self, diff, differentiate=False, adjoint_derivative=False):
+    def _eval(self, diff, differentiate=False):
         # Assemble Bilinearform
         self._read_in(diff, self.gfu_bf)
         self.a.Assemble()

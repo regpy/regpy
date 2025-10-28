@@ -36,7 +36,7 @@ def call_safe(obj, method_name, error_log, *args, **kwargs):
         return None
     
 
-def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
+def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
     Parameters
@@ -73,11 +73,11 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize None.")
         elif len(tup) !=2:
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize not exactly 2 results.")
-        tup = call_safe(op,"linearize",errors, dom.rand(), adjoint_derivative = True)
+        tup = call_safe(op,"linearize",errors, dom.rand(), return_adjoint_eval = True)
         if tup is None:
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize None.")
-        elif len(tup) !=3:
-            errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize with adjoint_derivative = True not exactly 3 results.")
+        elif len(tup) !=2:
+            errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize with return_adjoint_eval = True not exactly 2 results.")
         if op.linear:
             _ = call_safe(op,"as_linear_operator",errors)
             if isinstance(op,op_base.Zero):
@@ -97,7 +97,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
         x = dom.rand()
         x_alt = inv(op(x))
         diff = dom.norm(x-x_alt)
-        if not isclose(diff,0,abs_tol=1e-15):
+        if not isclose(diff,0,abs_tol=inv_tol):
             errors.append(f"Testing the inverse of operator {op} on a random vector {x} did not return the almost same vector but {x_alt} with a domain norm difference {diff} ")
     except NotImplementedError:
         pass
@@ -129,9 +129,9 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
 
     return errors
 
-def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-9,**kwargs):
+def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
     op = OP(*args,**kwargs)
-    return op_basics(op,*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm,**kwargs)
+    return op_basics(op,*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm, inv_tol=inv_tol,**kwargs)
 
 def op_evaluation_and_ot(op,x=None,res=None,tol=1e-10,**kwargs):
     errors = []

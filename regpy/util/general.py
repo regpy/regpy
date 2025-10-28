@@ -3,6 +3,77 @@ from logging import getLogger
 
 import numpy as np
 
+class Errors:
+
+    @staticmethod
+    def _compose_message(title : str, content : str):
+        return f"""-------------------------------------------------------
+            RegPy Error - {title}
+        {content}
+        -------------------------------------------------------"""
+
+    @staticmethod
+    def not_in_vecsp(vec: any, vecsp: object, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
+        return Errors._compose_message(
+            "VECTOR NOT IN VECTOR SPACE",
+            f"""The given {vec_name} does not belong to the {space_name}:
+        {add_info}
+            vec = {vec}
+            vecsp = {vecsp}""")
+
+    @staticmethod
+    def not_a_vecsp(vecsp: object, cls: type, add_info:str = "") -> str:
+        return Errors._compose_message(
+            "NOT VECTOR SPACE of CERTAIN TYPE",
+            f"""The given vector space {vecsp} is not of type {cls}.
+            {add_info}"""
+        )
+
+    @staticmethod
+    def not_equal(first: any, second: any, first_type:any = None, second_type:any = None, add_info:str = ""):
+        if first_type == None:
+            first_type = type(first)
+        if second_type == None:
+            second_type = type(second)
+        return Errors._compose_message(
+            "OBJECTS NOT EQUAL",
+            f"""Comparing an object of type {first_type} 
+            with another of type {second_type}
+            failed.
+            {add_info}
+            The objects:
+                first = {first}
+                second = {second}
+            """
+        )
+
+    @staticmethod
+    def not_linear_op(operator: object, add_info:str = "") -> str:
+        return Errors._compose_message(
+            "OPERATOR NOT LINEAR",
+            f"""The given operator {operator} is of type {type(operator)} is not linear.
+            {add_info}
+            """
+        )
+
+    @staticmethod
+    def not_instance(obj: object, cls:type, add_info:str = "") -> str:
+        return Errors._compose_message(
+            "NOT CORRECT INSTANCE",
+            f"""The given object {obj} is not an instance of {cls}.
+            {add_info}
+            """
+        )
+    
+    @staticmethod
+    def indexation(index: any, obj: object, add_info:str = "") -> str:
+        return Errors._compose_message(
+            "INDEXATION ERROR FOR {type(obj)}",
+            f"""The given index {index} is not valid for {obj}.
+        {add_info}"""
+        )
+
+
 class ClassLogger:
     """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
     fully qualified name. Subclasses should use it instead of `print` for any kind of status
@@ -28,20 +99,27 @@ class ClassLogger:
         # Allow replacing the class logger
         type(instance)._log = value
 
-def memoized_property(prop):
-    attr = '__memoized_' + prop.__qualname__
+class memoized_property:
+    def __init__(self, func):
+        wraps(func)(self)
+        self.func = func
+        self.attr = '__memoized_' + func.__qualname__
 
-    @property
-    @wraps(prop)
-    def mprop(self):
-        try:
-            return getattr(self, attr)
-        except AttributeError:
-            pass
-        setattr(self, attr, prop(self))
-        return getattr(self, attr)
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        if not hasattr(obj, self.attr):
+            setattr(obj, self.attr, self.func(obj))
+        return getattr(obj, self.attr)
 
-    return mprop
+    def __set__(self, obj, value):
+        # allow manual override if you want
+        setattr(obj, self.attr, value)
+
+    def __delete__(self, obj):
+        # allow `del obj.prop` as the reset syntax
+        if hasattr(obj, self.attr):
+            delattr(obj, self.attr)
 
 def set_defaults(params, **defaults):
     if params is not None:

@@ -174,7 +174,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
     def __repr__(self):
         if hasattr(self,"mask"):
-            return util.make_repr(self,self.shape,self.is_complex,f"mask =\n {self.mask}")
+            return util.make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}")
         else: 
             return util.make_repr(self,self.shape,self.is_complex)
 
@@ -240,9 +240,13 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     def __eq__(self, other):
         if(not super().__eq__(other)):
             return False
-        return np.all(self.measure==other.measure)
-        
-
+        return np.allclose(self.measure,other.measure)
+    
+    def __repr__(self):
+        if hasattr(self,"mask"):
+            return util.make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}",f"measure=\t ({self.measure})")
+        else: 
+            return util.make_repr(self,self.shape,self.is_complex,f"measure=\t ({self.measure})")
 
 
 class GridFcts(MeasureSpaceFcts):

@@ -12,6 +12,7 @@ __all__ = ['NgsBaseVector','NgsVectorSpace']
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
+from warnings import warn
 
 import ngsolve as ngs
 import numpy as np
@@ -38,11 +39,11 @@ class NgsBaseVector:
     def __post_init__(self):
         if isinstance(self.vec,ngs.la.BaseVector):
             if self.make_copy:
-                self.vec = deepcopy(self.vec)
+                self.vec = self.vec.Copy()
             pass
         elif isinstance(self.vec,ngs.la.DynamicVectorExpression):
             if self.make_copy:
-                self.vec = deepcopy(self.vec.Evaluate())
+                self.vec = self.vec.Evaluate().Copy()
             else:
                 self.vec = self.vec.Evaluate()
         else:
@@ -52,40 +53,73 @@ class NgsBaseVector:
 
     def conj(self):
         z = self.vec.CreateVector()
-        for i in range(self.size): 
-            z[i] = self.vec[i].real - 1j*self.vec[i].imag
+        z.FV().NumPy()[:] = self.vec.FV().NumPy().conj
         return NgsBaseVector(z)
     
     @property
-    def real(self):
+    def real(self, convert2real_vec = True):
         if self.is_complex_dtype:
-            z = ngs.la.BaseVector(size = self.size)
-            for i in range(self.size): 
-                z[i] = self.vec[i][0].real
-            return NgsBaseVector(z)
+            if convert2real_vec:
+                z = ngs.la.BaseVector(size = self.size)
+                z.FV().NumPy()[:] = self.vec.FV().NumPy().real 
+                return NgsBaseVector(z)
+            else:
+                z = self.vec.CreateVector()
+                z.FV().NumPy()[:] = self.vec.FV().NumPy().real 
+                return NgsBaseVector(z) 
         return self.copy()
     
     @property
-    def imag(self):
+    def imag(self, convert2real_vec = True):
         if self.is_complex_dtype:
-            z = ngs.la.BaseVector(size = self.size)
-            for i in range(self.size): 
-                z[i] = self.vec[i][0].imag
-            return NgsBaseVector(z)
+            if convert2real_vec:
+                z = ngs.la.BaseVector(size = self.size)
+                z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
+                return NgsBaseVector(z)
+            else:
+                z = self.vec.CreateVector()
+                z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
+                return NgsBaseVector(z) 
         return NgsBaseVector(self.vec.CreateVector())
+    
+    def to_imag(self, copy = False):
+        if self.is_complex:
+            return self
+        else:
+            z = ngs.la.BaseVector(size = self.size, complex = True)
+            z.FV().NumPy()[:] = self.vec.FV().NumPy() + 1j*0
+            return NgsBaseVector(z)
 
     def __iadd__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
-        self.vec.data += other.vec
+        if self.is_complex and not other.is_complex:
+            self.vec += other.to_imag().vec
+        elif not self.is_complex and other.is_complex:
+            warn("Adding complex vector to real vector, converting real to complex.")
+            self.vec += other.real
+        else:
+            self.vec += other.vec
         return self
 
     def __isub__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
-        self.vec.data -= other.vec
+        if self.is_complex and not other.is_complex:
+            print("Adding real vector to complex vector, converting real to complex.")
+            self.vec -= other.to_imag().vec
+        elif not self.is_complex and other.is_complex:
+            warn("Adding complex vector to real vector, converting real to complex.")
+            self.vec -= other.real
+        else:
+            self.vec -= other.vec
         return self
     
     def __add__(self,other):
         assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        if self.is_complex and not other.is_complex:
+            return self + other.to_imag()
+        if not self.is_complex and other.is_complex:
+            warn("Adding complex vector to real vector, converting real to complex.")
+            return self + other.real
         v = self.vec.CreateVector()
         v.data = self.vec + other.vec
         return NgsBaseVector(v)
@@ -236,8 +270,8 @@ class NgsVectorSpace(VectorSpaceBase):
 
     def zeros(self):
         h = self._gfu_fes.vec.CreateVector()
-        h *= 0
-        return NgsBaseVector(h,make_copy=True)
+        h.FV().NumPy()[:] = 0
+        return NgsBaseVector(h,make_copy=False)
     
     def ones(self):
         if self.codim == 1:
@@ -295,12 +329,12 @@ class NgsVectorSpace(VectorSpaceBase):
     def complex_space(self):
         if self.is_complex:
             return copy(self)
-        return NgsVectorSpace(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
+        return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
     def real_space(self):
         if not self.is_complex:
             return copy(self)
-        return NgsVectorSpace(type(fes)(fes.mesh,order=fes.globalorder,bdr=self.bdr,complex=False),bdr=self.bdr)
+        return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,dirichlet=self.bdr,complex=False),bdr=self.bdr)
     
     def flatten(self, x:NgsBaseVector) -> np.ndarray:
         if self.is_complex:
@@ -312,7 +346,7 @@ class NgsVectorSpace(VectorSpaceBase):
         if vec.ndim == 1:
             if self.is_complex and vec.size == self.shape[0] * 2:
                 x = self.zeros()
-                x.vec.FV().NumPy()[:] = vec[:self.shape[0]] + 1j*vec[self.shape[0]]
+                x.vec.FV().NumPy()[:] = vec[:self.shape[0]] + 1j*vec[self.shape[0]:]
             elif vec.size == self.shape[0]:
                 x = self.zeros()
                 x.vec.FV().NumPy()[:] = vec
