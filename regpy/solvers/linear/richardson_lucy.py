@@ -5,7 +5,7 @@ __all__ = ["RichardsonLucy"]
 class RichardsonLucy(Solver):
     r"""The Richardson-Lucy Algorithm
 
-    Minimizes :math:`g\ln Tf, f\geq 0, Tf>0` 
+    Minimizes :math:`-g\ln Tf, f\geq 0, Tf>0` 
 
     Parameters
     ----------
