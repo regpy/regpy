@@ -40,7 +40,7 @@ def test_kullback_leibler():
     ft.test_functional(4.*F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv_conj=False)
     ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=-F2.domain.ones()),test_second_deriv_conj=False)
 
-    F3 = KL(dom,w=dom.ones(),left_linearization=0.1)
+    F3 = KL(dom,w=dom.ones(),lin_taylor_l=0.1)
     ft.test_functional(F3)
 
 def test_relative_entropy():
@@ -48,7 +48,7 @@ def test_relative_entropy():
     F=RE(dom,w=dom.ones())
     ft.test_functional(F)
 
-    F2 = RE(dom,w=dom.ones(),left_linearization=0.2)
+    F2 = RE(dom,w=dom.ones(),lin_taylor_l=0.2)
     ft.test_functional(2.*F2,test_second_deriv=False)
     ft.test_functional(F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv=False)
     ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=F2.domain.ones()),test_second_deriv=False)
