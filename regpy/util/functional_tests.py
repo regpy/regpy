@@ -129,7 +129,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=3,tol_convex=1e-4):
     diffq = (func(u)-func(u+h_length*h))/h_length
     deriv = (func.domain.vdot(grad_u,h)).real
     err= diffq+deriv
-    assert err<tol_convex*np.linalg.norm(grad_u),f'err={err}, tol_convex={tol_convex},norm(grad_u)={np.linalg.norm(grad_u)}'
+    assert err<=tol_convex*np.linalg.norm(grad_u),f'err={err}, tol_convex={tol_convex},norm(grad_u)={np.linalg.norm(grad_u)}'
     assert np.abs(err)<tol_smooth,f'err={err}, tol_smooth={tol_smooth}'
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
