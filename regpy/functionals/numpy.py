@@ -508,11 +508,11 @@ class IntegralFunctionalBase(Functional):
             res = np.minimum(res,self.dom_u[mask])
         
         if self.conj_constr_l_active:
-            corr = (tau*self.conj_dom_l/self.measure)[mask]                
-            res = np.minimum(res,v-corr,out = res)
+            linprox = v- tau*self.conj_dom_l[mask]/self.measure[mask]                
+            res[linprox<=self.taylor_l] = linprox[linprox<=self.taylor_l]
         if self.conj_constr_u_active:
-            corr = (tau*self.conj_dom_u/self.measure)[mask]               
-            res = np.maximum(res,v-corr,out = res)
+            linprox = v-tau*self.conj_dom_u[mask]/self.measure[mask]
+            res[linprox>=self.taylor_u] = linprox[linprox>=self.taylor_u]
         if self.quad_taylor_l_active:
             taufpp=tau*self.fpp_l[mask]
             taufp=tau*self.conj_taylor_l[mask]/self.measure[mask]
@@ -538,15 +538,15 @@ class IntegralFunctionalBase(Functional):
 
         if self.conj_constr_l_active:
             res = np.maximum(res,self.conj_dom_l[mask])
-        if self.constr_u_active:
+        if self.conj_constr_u_active:
             res = np.minimum(res,self.conj_dom_u[mask])
 
         if self.constr_l_active:
-            corr = (tau*self.dom_l*self.measure)[mask]
-            res = np.minimum(res,vstar-corr,out = res)
+            linprox = vstar -  tau*self.dom_l[mask]*self.measure[mask]
+            res[linprox<=self.conj_taylor_l] = linprox[linprox<=self.conj_taylor_l]
         if self.constr_u_active:
-            corr = (tau*self.dom_u*self.measure)[mask]
-            res = np.maximum(res,vstar-corr,out = res)   
+            linprox = vstar -  tau*self.dom_u[mask]*self.measure[mask]
+            res[linprox>=self.conj_taylor_u] = linprox[linprox>=self.conj_taylor_u]           
 
         if self.quad_taylor_l_active:
             taufstarpp=tau*self.fstarpp_l[mask]
@@ -832,36 +832,40 @@ class LppPower(IntegralFunctionalBase):
 
         dom_l = -np.inf if constr_l is None else constr_l        
         dom_u = np.inf if constr_u is None else constr_u
+        dom2_l = dom_l
+        dom2_u = dom_u
         taylor_l = -np.inf if lin_taylor_l is None else lin_taylor_l
         if quad_taylor_l is not None:
             taylor_l = quad_taylor_l
+            dom2_l= taylor_l
         taylor_u = np.inf if lin_taylor_u is None else lin_taylor_u
         if quad_taylor_u is not None:
             taylor_u = quad_taylor_u
+            dom2_u= taylor_u
 
         if p<2:
-            aux = np.max(np.maximum(-dom_l,dom_u))
+            aux = np.abs(np.max(np.maximum(-dom2_l,dom2_u)))
             convexity_param = (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
 
-            aux = np.min(np.minimum(taylor_l,-taylor_u))
-            Lipschitz = np.maximum((self.p-1) * aux**(self.p-2),aux**(self.p-1)) if aux>0 else np.inf
+            aux = np.min(np.maximum(taylor_l,-taylor_u))
+            Lipschitz = (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
 
         if p>2:
-            aux = np.min(np.minimum(dom_l, -dom_u))
+            aux = np.min(np.maximum(dom2_l, -dom2_u))
             convexity_param = (self.p-1) * aux**(self.p-2)  if aux>0 else 0
 
-            aux =  np.max(np.maximum(-taylor_l,taylor_u))
-            Lipschitz = np.maximum((self.p-1) * np.abs(aux)**(self.p-2),np.abs(aux)**(self.p-1)) if aux<np.inf else np.inf
+            aux =  np.abs(np.max(np.maximum(-taylor_l,taylor_u)))
+            Lipschitz = (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
 
         if p==2:
-            convexity_param = 1.
-            Lipschitz = 1.
+            convexity_param = 1. if lin_taylor_l is None and lin_taylor_u is None else 0.
+            Lipschitz = 1. if constr_l is None and constr_u is None else np.inf
 
         super().__init__(domain, 
                          convexity_param=convexity_param,
                          Lipschitz = Lipschitz,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
-                        quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
+                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
 
@@ -1045,9 +1049,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             Lipschitz = np.inf
         elif quad_taylor_l is not None or lin_taylor_l is not None:
             taylor_l = quad_taylor_l if quad_taylor_l is not None else lin_taylor_l
-            if not np.isscalar(taylor_l):
-                taylor_l = min(taylor_l)
-            Lipschitz =  w/taylor_l**2 if taylor_l<0 else np.inf
+            Lipschitz =  np.max(w/taylor_l**2) if np.min(taylor_l)>0 else np.inf
         else: 
             Lipschitz = np.inf
 
@@ -1217,7 +1219,7 @@ class RelativeEntropy(IntegralFunctionalBase):
             taylor_l = quad_taylor_l if quad_taylor_l is not None else lin_taylor_l
             if not np.isscalar(taylor_l):
                 taylor_l= min(taylor_l)
-            Lipschitz = np.max(1/taylor_l) if taylor_l<=0 else np.inf
+            Lipschitz = np.max(1/taylor_l) if np.min(taylor_l)>0 else np.inf
         else: 
             Lipschitz = np.inf
 
