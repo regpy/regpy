@@ -1,11 +1,14 @@
-import logging
+from copy import copy
+from math import sqrt,isqrt
 
 import numpy as np
 
-from regpy.solvers import RegularizationSetting, RegSolver
-from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.stoprules import CountIterations
 
+from ..general import RegularizationSetting, RegSolver
+from ..linear.tikhonov import TikhonovCG
+
+__all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -43,7 +46,7 @@ class IrgnmCG(RegSolver):
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
-                inner_it_logging_level = logging.WARNING, 
+                inner_it_logging_level = "WARNING", 
                 simplified_op = None
          ):
         super().__init__(setting)
@@ -51,9 +54,9 @@ class IrgnmCG(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -78,7 +81,7 @@ class IrgnmCG(RegSolver):
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel("INFO")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
@@ -138,7 +141,7 @@ class LevenbergMarquardt(RegSolver):
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
-                inner_it_logging_level = logging.WARNING, 
+                inner_it_logging_level = "WARNING", 
                 simplified_op = None
          ):
         super().__init__(setting)
@@ -146,9 +149,9 @@ class LevenbergMarquardt(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -173,7 +176,7 @@ class LevenbergMarquardt(RegSolver):
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel("WARNING")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
             setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
@@ -265,9 +268,9 @@ class IrgnmCGPrec(RegSolver):
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
-        self.init = np.asarray(init)
+        self.init = init
         """The initial guess."""
-        self.x = np.copy(self.init)
+        self.x = copy(self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularization parameter."""
@@ -308,7 +311,7 @@ class IrgnmCGPrec(RegSolver):
         else:
             stoprule = CountIterations(2**15)
         stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(logging.WARNING)
+        stoprule.log.setLevel("WARNING")
         self.log.info('Running Tikhonov solver.')
         
         if self.need_prec_update:
@@ -345,7 +348,7 @@ class IrgnmCGPrec(RegSolver):
         self.regpar *= self.regpar_step
         
         self.k+=1
-        if (int(np.sqrt(self.k)))**2 == self.k:
+        if (isqrt(self.k))**2 == self.k:
             self.need_prec_update = True
                        
     def _preconditioner_update(self):
@@ -361,13 +364,13 @@ class IrgnmCGPrec(RegSolver):
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
 
-        diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - np.sqrt(1 / self.regpar) )
+        diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
         M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        self.M = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + np.sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        self.M = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
         """Compute preconditioner"""
 
-        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - np.sqrt(self.regpar) )
+        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
         M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + np.sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 

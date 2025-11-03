@@ -1,9 +1,8 @@
-from regpy.solvers import RegSolver
-from regpy.operators import SciPyLinearOperator
-from scipy.sparse.linalg import eigsh
+from math import sqrt
 
-import logging
-import numpy as np
+from ..general import RegSolver
+
+__all__ = ["Landweber"]
 
 class Landweber(RegSolver):
     r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
@@ -63,7 +62,7 @@ class Landweber(RegSolver):
         if self.backtracking:
             self._residual = self.y - self.rhs
             self._gy_residual = self.h_codomain.gram(self._residual)
-            self._old_err = np.vdot(self._residual, self._gy_residual).real
+            self._old_err = self.op.codomain.vdot(self._residual, self._gy_residual).real
 
     def _next(self):
         if not self.backtracking:
@@ -75,7 +74,7 @@ class Landweber(RegSolver):
             new_x = self.x - self.stepsize * self.h_domain.gram_inv(self._update)
             self._residual = self.op(new_x) - self.rhs
             self._gy_residual = self.h_codomain.gram(self._residual)
-            new_err = np.vdot(self._residual, self._gy_residual).real
+            new_err = self.op.codomain.vdot(self._residual, self._gy_residual).real
             if new_err < self._old_err:
                 self._old_err = new_err
                 break
@@ -89,9 +88,9 @@ class Landweber(RegSolver):
         self.y, self.deriv = self.op.linearize(self.x)
 
 
-        if self.log.isEnabledFor(logging.INFO):
+        if self.log.isEnabledFor(20): # INFO=20
             if self.backtracking:
-                norm_residual = np.sqrt(self._old_err)
+                norm_residual = sqrt(self._old_err)
             else:
-                norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
+                norm_residual = sqrt((self.op.codomain.vdot(self._residual, self._gy_residual)).real)
             self.log.info('|residual| = {}'.format(norm_residual))

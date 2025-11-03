@@ -1,17 +1,9 @@
-import logging
-import numpy as np
-
-from regpy.solvers import RegSolver
-from regpy import util
-from regpy.functionals import Functional
-from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
-from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.operators import Operator
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from .tikhonov import TikhonovCG
+
+__all__ = ["ADMM","AMA"]
 
 class ADMM(RegSolver):
     r"""The ADMM method for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\. 
@@ -63,7 +55,7 @@ class ADMM(RegSolver):
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = logging.INFO):
+                 regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         assert self.op.linear
@@ -167,7 +159,7 @@ class AMA(RegSolver):
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = logging.INFO):
+                 regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         assert self.op.linear

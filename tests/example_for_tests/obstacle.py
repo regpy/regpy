@@ -2,14 +2,13 @@ import logging
 
 import numpy as np
 
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 from regpy.vecsps.curve import apple
-from examples.obstacle.dirichlet_op import DirichletOp
-from examples.obstacle.dirichlet_op import create_synthetic_data
+
+from .OperatorsFromExamples.dirichlet_op import DirichletOp, create_synthetic_data
 
 
 def test_obstacle():

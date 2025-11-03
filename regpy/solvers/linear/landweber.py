@@ -1,7 +1,8 @@
-from regpy.solvers import RegSolver
+from math import sqrt
 
-import logging
-import numpy as np
+from ..general import RegSolver
+
+__all__ = ["Landweber"]
 
 class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
@@ -50,6 +51,6 @@ class Landweber(RegSolver):
         self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
         self.y = self.op(self.x)
 
-        if self.log.isEnabledFor(logging.INFO):
-            norm_residual = np.sqrt(np.real(np.vdot(self._residual, self._gy_residual)))
+        if self.log.isEnabledFor(20): # INFO = 20
+            norm_residual = sqrt((self.op.codomain.vdot(self._residual, self._gy_residual)).real)
             self.log.info('|residual| = {}'.format(norm_residual))

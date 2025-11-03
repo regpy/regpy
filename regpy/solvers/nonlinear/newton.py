@@ -1,13 +1,13 @@
-import numpy as np
-from scipy.sparse import linalg as spla
+from math import sqrt
 from copy import deepcopy
-from regpy.solvers import RegSolver, RegularizationSetting
-import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from regpy.stoprules import CountIterations
+
+from ..general import RegSolver, RegularizationSetting
+from ..linear import SemismoothNewton_bilateral
+from ..linear.tikhonov import GeometricSequence
+
+__all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen"]
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
@@ -47,7 +47,7 @@ class NewtonCG(RegSolver):
         if init is None:
             init = self.op.domain.zeros()
         """The initial guess."""
-        self.x = np.copy(init)
+        self.x = init.copy()
         if simplified_op:
             self.simplified_op = simplified_op
             """Simplified operator for derivative.
@@ -69,25 +69,24 @@ class NewtonCG(RegSolver):
         self._x_k = self.op.domain.zeros()
         # self._s += - self.deriv(self._x_k)
         self._s2 = self.h_codomain.gram(self._s)
-        self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
+        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = np.vdot(self._r, self._rtilde).real
+        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
      
-        while (self._k==0 or (np.sqrt(np.vdot(self._s2, self._s).real)
+        while (self._k==0 or (sqrt(self.op.codomain.vdot(self._s2, self._s).real)
                > self.rho * self._norms0 and self._k < self.cgmaxit)):
             self._q = self.deriv(self._d)
             self._q2 = self.h_codomain.gram(self._q)
-            self._alpha = self._inner_prod / np.vdot(self._q, self._q2).real
+            self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
             self._x_k += self._alpha * self._d
             self._s += -self._alpha * self._q
             self._s2 += -self._alpha * self._q2
             self._rtilde = self.deriv.adjoint(self._s2)
             self._r = self.h_domain.gram_inv(self._rtilde)
-            self._old_inner_prod = self._inner_prod
-            self._inner_prod = np.vdot(self._r, self._rtilde).real
-            self._beta = self._inner_prod / self._old_inner_prod
+            self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
+            self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
             self._d = self._r + self._beta * self._d
             self._k += 1
         self.log.info('Inner CG iteration required {} steps.'.format(self._k))
@@ -133,17 +132,15 @@ class NewtonCGFrozen(RegSolver):
         if int(self._n / 10) * 10 == self._n:
             _, self.deriv = self.op.linearize(self.x)
         self._x_k = self.op.domain.zeros()
-        #        self._x_k = 1j*np.zeros(np.shape(self.x))
         self.y = self._op_copy(self.x)
         self._residual = self.data - self.y
-        #        _, self.deriv=self.op.linearize(self.x)
         self._s = self._residual - self.deriv(self._x_k)
         self._s2 = self.h_codomain.gram(self._s)
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
         self._d = self._r
-        self._inner_prod = np.vdot(self._r, self._rtilde).real
-        self._norms0 = np.sqrt(np.vdot(self._s2, self._s).real)
+        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
+        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
         self._k = 1
         self._n += 1
 
@@ -151,16 +148,16 @@ class NewtonCGFrozen(RegSolver):
         _, self.deriv = self.op.linearize(self.x)
         self._q = self.deriv(self._d)
         self._q2 = self.h_codomain.gram(self._q)
-        self._alpha = self._inner_prod / np.vdot(self._q, self._q2).real
+        self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
         self._s += -self._alpha * self._q
         self._s2 += -self._alpha * self._q2
         self._rtilde = self.deriv.adjoint(self._s2)
         self._r = self.h_domain.gram_inv(self._rtilde)
-        self._beta = np.vdot(self._r, self._rtilde).real / self._inner_prod
+        self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
 
     def _next(self):
         while (
-            np.sqrt(np.vdot(self._s2, self._s).real) > self.rho * self._norms0
+            sqrt(self.op.codomain.vdot(self._s2, self._s).real) > self.rho * self._norms0
             and self._k <= self.cgmaxit
         ):
             self._inner_update()
@@ -170,9 +167,7 @@ class NewtonCGFrozen(RegSolver):
         self.x += self._x_k
         self._outer_update()
 
-from regpy.solvers.linear.semismoothNewton import SemismoothNewton_bilateral
-from regpy.solvers.linear.tikhonov import GeometricSequence, TikhonovCG
-from regpy.stoprules import CountIterations
+
 class NewtonSemiSmoothFrozen(RegSolver):
     r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
     only updates the parts needed to be updated. 
@@ -187,9 +182,9 @@ class NewtonSemiSmoothFrozen(RegSolver):
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    psi_minus : np.number
+    psi_minus : scalar
         lower constraint of the minimization. Must be larger then `psi_plus`
-    psi_plus : np.number
+    psi_plus : scalar
         upper constraint of the minimization. Must be smaller then `psi_minus`
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
@@ -253,8 +248,8 @@ class NewtonSemiSmoothFrozen(RegSolver):
             x0 = self.x,
             psi_minus=self.psi_minus,
             psi_plus=self.psi_plus,
-            logging_level= logging.WARNING,
-            cg_logging_level=logging.WARNING,
+            logging_level= "WARNING",
+            cg_logging_level="WARNING",
             cg_pars = self.cg_pars
         )
         self.lin_NSS.lam_minus = (self.alpha/self.alpha_old)*self.lam_minus

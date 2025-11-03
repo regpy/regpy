@@ -1,8 +1,6 @@
-import numpy as np
-import logging
-from regpy.solvers import RegSolver
-from regpy.solvers.linear.tikhonov import TikhonovCG 
+from ..general import RegSolver
 
+__all__ = ["CGNE"]
 
 class CGNE(RegSolver):
     r"""
@@ -20,7 +18,7 @@ class CGNE(RegSolver):
     logging_level: default: logggin.INFO
         Controls amount of output
     """
-    def __init__(self, setting, data, x0 =None, logging_level = logging.INFO):
+    def __init__(self, setting, data, x0 =None, logging_level = "INFO"):
         assert setting.op.linear
 
         super().__init__(setting)
@@ -43,17 +41,17 @@ class CGNE(RegSolver):
         """
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
-        self.sq_norm_res = np.real(np.vdot(self.g_res, res))
+        self.sq_norm_res = (self.op.domain.vdot(self.g_res, res)).real
         """The squared norm of the residual."""
         self.dir = res
         """The direction of descent."""
-        self.g_dir = np.copy(self.g_res)
+        self.g_dir = self.g_res.copy()
         """The Gram matrix applied to the direction of descent."""
 
     def _next(self):
         Tdir = self.op(self.dir)
         g_Tdir = self.h_codomain.gram(Tdir)
-        alpha = self.sq_norm_res / np.real(np.vdot(g_Tdir, Tdir))
+        alpha = self.sq_norm_res / (self.op.codomain.vdot(g_Tdir, Tdir)).real
 
         self.x += alpha * self.dir
 
@@ -63,7 +61,7 @@ class CGNE(RegSolver):
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
-        self.sq_norm_res = np.real(np.vdot(self.g_res, res))
+        self.sq_norm_res = (self.op.codomain.vdot(self.g_res, res)).real
         beta = self.sq_norm_res / sq_norm_res_old
 
         self.dir *= beta

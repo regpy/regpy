@@ -1,12 +1,16 @@
 import numpy as np
-from regpy.operators import Operator
-from regpy.vecsps import VectorSpace,GridFcts,UniformGridFcts, Prod
 from scipy.interpolate import BSpline
+
+from regpy.vecsps import NumPyVectorSpace,GridFcts,UniformGridFcts, Prod
+
+from .base import Operator
+
+__all__ = ["chebyshev_basis","legendre_basis","bspline_basis"]
 
 class BasisTransform(Operator):
     r"""
     Consider an evaluation domain given as Tensor product :math:`D_1\otimes \dots\otimes D_n` with :math:`D_1,\dots,D_n` being :math:`n` 
-    `regpy.vecsps.VectorSpace`'s and a tensor in the coefficients domain :math:`V_1\otimes \dots\otimes V_m` then we define an 
+    `regpy.vecsps.VectorSpaceBase`'s and a tensor in the coefficients domain :math:`V_1\otimes \dots\otimes V_m` then we define an 
     operator mapping coefficients to some function `f: eval_domain -> dtype`:
 
     .. math::
@@ -21,7 +25,7 @@ class BasisTransform(Operator):
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each D_i has size M_i
     coef_domain : regpy.vecsps.Prod   
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each V_i has size N_i
-    bases : [ np.ndarray, ... ]
+    bases : list(list)
         a list of matrices :math:`[B_1,..., B_n]` where the matrix :math:`B_l` of size :math:`M_l \times N_l` and contains the function values
         of the basis :math:`\{b^l_0, b^l_{M_l-1}\}` of the l-th coordinate:
 
@@ -93,7 +97,7 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
         assert len(coef_nr) == eval_domain.ndim 
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
-    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
+    coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)
@@ -130,7 +134,7 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
         assert len(coef_nr) == eval_domain.ndim 
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
-    coef_domain = Prod(*[VectorSpace(nr) for nr in coef_nr])
+    coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
         assert isinstance(D_i,GridFcts)

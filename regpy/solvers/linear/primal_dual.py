@@ -1,13 +1,10 @@
-import numpy as np
+import math as ma
 
-from regpy.solvers import RegSolver, TikhonovRegularizationSetting
-from regpy import util
-import logging
+from regpy.functionals import SquaredNorm
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from ..general import RegSolver, TikhonovRegularizationSetting, RegularizationSetting
+
+__all__ = ["PDHG","DouglasRachford"]
 
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
@@ -56,7 +53,7 @@ class PDHG(RegSolver):
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True,compute_gap =True, logging_level = logging.INFO
+                 compute_y = True,compute_gap =True, logging_level = "INFO"
                  ):
         assert isinstance(setting, TikhonovRegularizationSetting)
         super().__init__(setting)
@@ -103,7 +100,7 @@ class PDHG(RegSolver):
         self.muSstar = self.regpar/setting.data_fid.Lipschitz
         if self.muR>0:
             if self.muSstar>0:
-                self.mu = 2*np.sqrt(self.muR * self.muSstar)/L
+                self.mu = 2*ma.sqrt(self.muR * self.muSstar)/L
                 self.tau = self.mu/(2.*self.muR)
                 self.sigma = self.mu/(2.*self.muSstar)
                 self.theta = 1./(1.+self.mu)
@@ -134,7 +131,7 @@ class PDHG(RegSolver):
         self.pstar = (-1./self.regpar)*self.data_fid.conj.proximal(self.regpar*dual_step, self.regpar*self.sigma, self.proximal_pars_data_fidelity_conjugate)
         self.x_old = self.x        
         if self.muR>0 and self.muSstar==0:
-            self.theta = 1./np.sqrt(1+self.muR*self.tau)
+            self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
         if self.compute_gap:
@@ -168,8 +165,20 @@ class DouglasRachford(RegSolver):
     """
     def __init__(self,  setting, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__(setting)
-        assert init_h in self.op.domain
+        if init_h not in self.op.domain:
+            raise ValueError('init_h must be in the domain of the operator!')
         self.h = init_h
+        if isinstance(setting, TikhonovRegularizationSetting) and setting.op.domain != setting.op.codomain:
+            if setting.data_fid_shift is None:
+                raise ValueError('For TikhonovRegularizationSetting the data_fid_shift must be given!')
+            if not isinstance(self.data_fid,SquaredNorm):
+                raise ValueError('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!')
+            self.log.info('Using TikhonovRegularizationSetting. The data fidelity term is reshifted and composed with the .')
+            self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
+        elif isinstance(setting, RegularizationSetting) and setting.op.domain != setting.op.codomain:
+            raise ValueError('For RegularizationSetting the operator must be mapping from a space to itself!')
+        else:
+            self.data_fid_adjusted = self.data_fid
 
         self.tau = tau
         self.regpar = regpar
@@ -180,6 +189,6 @@ class DouglasRachford(RegSolver):
         self.y = self.op(self.x)
 
     def _next(self):
-        self.h += self.data_fid.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
+        self.h += self.data_fid_adjusted.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
         self.x = self.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
         self.y = self.op(self.x)

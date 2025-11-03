@@ -1,7 +1,8 @@
-from regpy.operators import Operator,Identity
 from regpy import vecsps
 
+from .base import Operator,Identity
 
+__all__ = ["OperatorNode","Edge","OperatorGraph"]
 
 class OperatorNode:
     """Object that represents a node in a Graph of operators and manages the input and output from the edges to the operator.
@@ -53,7 +54,7 @@ class OperatorNode:
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
         Returns:
-            np.ndarray: element in the domain of the operator
+            array-like: element in the domain of the operator
         """        
         assert all(edge is not None for edge in self.input_edges)
         if(self.N_in==1):
@@ -69,7 +70,7 @@ class OperatorNode:
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
         Returns:
-            np.ndarray: element in the codomain of the operator
+            array-like: element in the codomain of the operator
         """           
         if(self.output_edges==[]):
             return self.op.codomain.zeros()

@@ -1,8 +1,8 @@
 *.pyc
-/doc/regpy
+/doc/sphinx/source/autoapi/*
 examples/data/
 examples/PINEM/data
-
+regpy/*/private
 
 # Distribution / packaging
 .Python
@@ -24,4 +24,5 @@ share/python-wheels/
 *.egg
 MANIFEST
 .vscode/
+.gitlab-ci-local.yml
 regpy/_version.py

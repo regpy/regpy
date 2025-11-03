@@ -1,12 +1,8 @@
-import numpy as np
-import logging
+import math as ma
 
-from regpy.solvers import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver, TikhonovRegularizationSetting
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+__all__ = ["ForwardBackwardSplitting","FISTA"]
 
 class ForwardBackwardSplitting(RegSolver):
     r"""    Minimizes 
@@ -31,7 +27,7 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
 
-    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = logging.INFO):
+    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
         super().__init__(setting)
 
@@ -86,7 +82,7 @@ class FISTA(RegSolver):
     logging_level: [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= logging.INFO):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
         assert isinstance(setting,TikhonovRegularizationSetting)
         super().__init__(setting)
         self.x = self.op.domain.zeros() if init is None else init
@@ -113,7 +109,7 @@ class FISTA(RegSolver):
         self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
         if self.mu>0:
             self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
-                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-np.sqrt(self.q)))
+                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-ma.sqrt(self.q)))
         try:
             self.gap=self.setting.dualityGap(primal = self.x)
             self.dualityGapWorks =True
@@ -123,10 +119,10 @@ class FISTA(RegSolver):
 
     def _next(self):
         if self.mu == 0:
-            self.t = (1 + np.sqrt(1+4*self.t_old**2))/2
+            self.t = (1 + ma.sqrt(1+4*self.t_old**2))/2
             beta = (self.t_old-1) / self.t
         else: 
-            self.t = (1-self.q*self.t_old**2+np.sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
+            self.t = (1-self.q*self.t_old**2+ma.sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
             beta = (self.t_old-1)/self.t * (1+self.tau*self.mu_penalty-self.t*self.tau*self.mu)/(1-self.tau*self.mu_data_fidelity)
 
         h = self.x+beta*(self.x-self.x_old)

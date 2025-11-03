@@ -2,6 +2,8 @@ import numpy as np
 
 from regpy.vecsps import UniformGridFcts
 
+__all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
+
 class GenCurve:
     r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
     without self-crossing parametrization by function :math:`z(t)`\, 
@@ -386,7 +388,7 @@ class circle(StarCurve):
 
 
 class GenTrigDiscr(UniformGridFcts):
-    r"""Class for the `VectorSpace` instance of `GenTrig` instances. It provides method `bd_eval` which 
+    r"""Class for the `VectorSpaceBase` instance of `GenTrig` instances. It provides method `bd_eval` which 
     gives evaluates a curve `GenTrig` by name.  
 
     Parameters
@@ -551,7 +553,7 @@ class GenTrig:
         return pts
 
 class StarTrigDiscr(UniformGridFcts):
-    r"""Class for the `VectorSpace` instance of `StarTrigCurve` instances. It provides 
+    r"""Class for the `VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
     method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     Parameters

@@ -1,15 +1,16 @@
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-
-from regpy.operators import CoordinateProjection
-from examples.pinem.operators import get_wave_field_reco
-from regpy.hilbert import L2, HmDomain
-from regpy.vecsps import UniformGridFcts
-from regpy.solvers import RegularizationSetting
-import regpy.stoprules as rules
-
 import numpy as np
 from scipy.datasets import ascent
 import logging
+
+from regpy.vecsps import UniformGridFcts
+from regpy.operators import CoordinateProjection
+from regpy.hilbert import L2, HmDomain
+from regpy.solvers import RegularizationSetting
+from regpy.solvers.nonlinear.irgnm import IrgnmCG
+import regpy.stoprules as rules
+
+from .OperatorsFromExamples.PinemOperators import get_wave_field_reco
+
 
 def test_wave_field_inversion():
     logging.basicConfig(
@@ -47,13 +48,10 @@ def test_wave_field_inversion():
     op = get_wave_field_reco(cgrid, fresnel_number, mask.astype(float), sol_type,parallel=False)  
 
     if sol_type == None:
-        projection = CoordinateProjection(cgrid,mask)
         h_domain =  HmDomain(cgrid,mask,dtype=complex,index=1)
     else:
-        projection = CoordinateProjection(grid,mask)
         h_domain = HmDomain(grid,mask,index=1)
-    embedding = projection.adjoint
-    op = op*embedding
+    op = op
 
     # Create phantom image (= padded example-image)
     picture = ascent()
@@ -67,8 +65,8 @@ def test_wave_field_inversion():
     exact_solution = exact_solution * mask  # - 4*(1-mask)
 
     # Create exact data and Poisson data
-    exact_data = op(projection(exact_solution))
-    data = np.random.poisson(intensity * exact_data)/intensity
+    exact_data = op(exact_solution)
+    data = op.codomain.poisson(intensity * exact_data)/intensity
 
     # define codomain Gram matrix based on observed data to approximate log-likelihood
     h_codomain0 = L2(grid, weights=(1+intensity*data[0])/intensity)
@@ -79,7 +77,7 @@ def test_wave_field_inversion():
     # Image reconstruction using the IRGNM method
     setting = RegularizationSetting(op=op,penalty=h_domain,data_fid=h_codomain)
 
-    init_vec = np.zeros_like(projection(exact_solution))
+    init_vec = np.zeros_like(exact_solution)
 
     solver = IrgnmCG(
         setting, data, regpar=0.1, regpar_step=2/3, init=init_vec,
@@ -90,7 +88,7 @@ def test_wave_field_inversion():
         rules.Discrepancy(
             setting.h_codomain.norm,
             data,
-            noiselevel=setting.h_codomain.norm(np.sqrt(data/intensity)),
+            noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)),
             tau=1
         )
     )
@@ -101,8 +99,7 @@ def test_wave_field_inversion():
     # perform reconstruction    
     for reco, reco_data in solver.until(stoprule):
         newton_step = solver.iteration_step_nr
-        ereco = embedding(reco)
-        reco_error = ereco-exact_solution
+        reco_error = reco-exact_solution
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),

@@ -1,6 +1,5 @@
-from examples.medium_scattering.mediumscattering import MediumScatteringFixed
 from regpy.operators import CoordinateProjection
-from regpy.hilbert import L2, HmDomain, Sobolev
+from regpy.hilbert import L2, Hm
 from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
@@ -8,6 +7,8 @@ import regpy.util as util
 
 import numpy as np
 import logging
+
+from .OperatorsFromExamples.mediumscattering import MediumScatteringFixed
 
 
 def test_mediumscattering():
@@ -29,21 +30,15 @@ def test_mediumscattering():
     r = np.linalg.norm(scattering.domain.coords, axis=0)
     contrast[r < radius] = np.exp(-1/(radius - r[r < radius]**2))
 
-    projection = CoordinateProjection(
-        scattering.domain,
-        scattering.support
-    )
-    embedding = projection.adjoint
+    op = scattering
 
-    op = scattering * embedding
-
-    exact_solution = projection(contrast)
+    exact_solution = contrast
     exact_data = op(exact_solution)
     noise = 0.001 * op.codomain.randn()
     data = exact_data + noise
     init = op.domain.zeros()
 
-    myh_domain = HmDomain(scattering.domain,scattering.support,dtype=complex,index=2)
+    myh_domain = Hm(mask = scattering.support,dtype=complex,index=2)
     setting = RegularizationSetting(
         op=op,
         # Define Sobolev norm on support via embedding
@@ -71,10 +66,7 @@ def test_mediumscattering():
         )
     )
 
-
-
-    for reco, reco_data in solver.until(stoprule):
-        solution = embedding(reco)
+    _, _ =  solver.run(stoprule)
 
     assert stoprule.rules[1].triggered
 

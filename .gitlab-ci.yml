@@ -35,8 +35,8 @@ test_core:
   before_script:
     - pip install .[ngsolve]
   script:
-    - pytest tests/test_measure_space.py
-    - pytest tests/test_spaces.py
+    - pytest tests/test_vecsps.py
+    - pytest tests/test_hilbert.py
     - pytest tests/test_operators.py
     - pytest tests/test_functionals.py
     

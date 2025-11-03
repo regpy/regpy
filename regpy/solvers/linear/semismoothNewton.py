@@ -1,17 +1,15 @@
-from regpy.solvers import RegSolver
-import numpy as np
+from math import sqrt,inf
+
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
-from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
-from regpy.solvers.linear.tikhonov import TikhonovCG, GeometricSequence
-from regpy.functionals import Functional,QuadraticBilateralConstraints, HorizontalShiftDilation, Conj, Huber, LinearCombination
+from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
+from regpy.functionals.numpy import QuadraticBilateralConstraints, Huber
 from regpy.stoprules import CountIterations
-import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
+from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from .tikhonov import TikhonovCG,GeometricSequence
+
+__all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
 class SemismoothNewton_bilateral(RegSolver):
     r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
@@ -60,7 +58,7 @@ class SemismoothNewton_bilateral(RegSolver):
     """
 
     def __init__(self, *args,
-                 cg_pars = None, logging_level = logging.INFO, cg_logging_level = logging.INFO,x0=None,
+                 cg_pars = None, logging_level = "INFO", cg_logging_level = "INFO",x0=None,
                  **kwargs
                  ):
         if len(args)==3:
@@ -107,24 +105,24 @@ class SemismoothNewton_bilateral(RegSolver):
             if xref is None:
                 self.x=self.op.domain.zeros()
             else:
-                self.x = np.copy(self.xref)
+                self.x = self.xref.copy()
         else:
-            self.x = np.copy(x0)
+            self.x = x0.copy()
         if cg_pars is None:
-            cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
+            cg_pars = {'tol': 0.001/sqrt(self.regpar)}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         if psi_minus is None:
-            self.psi_minus = -np.inf*np.ones_like(self.x)
+            self.psi_minus = -inf*self.op.domain.ones()
         else:
             self.psi_minus=psi_minus
         """The lower bound."""
         if psi_plus is None:
-            self.psi_plus = np.inf*np.ones_like(self.x)
+            self.psi_plus = inf*self.op.domain.ones()
         else:
             self.psi_plus=psi_plus
         """The upper bound."""
-        assert np.all(self.psi_minus < self.psi_plus)
+        assert (self.psi_minus < self.psi_plus).all()
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
@@ -133,8 +131,9 @@ class SemismoothNewton_bilateral(RegSolver):
             self.b += self.regpar*self.xref
             
         """Prepare first iteration step"""
-        self.lam_plus = np.zeros_like(self.b)
-        self.lam_minus = np.zeros_like(self.b)
+        self.lam_plus = self.op.domain.zeros()
+        self.lam_minus = self.op.domain.zeros()
+
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -146,13 +145,14 @@ class SemismoothNewton_bilateral(RegSolver):
             )
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        self.active_plus = (self.lam_plus +self.regpar*(self.x-self.psi_plus ))>=0 
-        self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus))>=0 
-        if not np.any(self.active_plus) and not np.any(self.active_minus):
+        
+        self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
+        self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
+        if not (self.active_plus).any() and not (self.active_minus).any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
         self.log.debug('it {}: CG its {}; changes active sets +{},-{}'.format(self.iteration_step_nr,cg_its,
-                                                                            np.sum(1.*self.active_minus+self.active_plus),0 )
+                                                                            (1.*self.active_minus+self.active_plus).sum(),0 )
         )
 
 
@@ -160,8 +160,8 @@ class SemismoothNewton_bilateral(RegSolver):
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
-        self.active  = np.logical_or(self.active_plus, self.active_minus)
-        self.inactive= np.logical_not(self.active)
+        self.active  = self.active_plus | self.active_minus
+        self.inactive= self.op.domain.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
@@ -199,10 +199,10 @@ class SemismoothNewton_bilateral(RegSolver):
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
         self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus)) >=0
-        added_ind = np.sum(np.logical_and(self.active_plus,  np.logical_not(self.active_plus_old ))) \
-                  + np.sum(np.logical_and(self.active_minus, np.logical_not(self.active_minus_old))) 
-        removed_ind = np.sum(np.logical_and(self.active_plus_old, np.logical_not(self.active_plus))) \
-                + np.sum(np.logical_and(self.active_minus_old, np.logical_not(self.active_minus)))
+        added_ind = (self.op.domain.logical_and(self.active_plus,  self.op.domain.logical_not(self.active_plus_old ))).sum() \
+                  + (self.op.domain.logical_and(self.active_minus, self.op.domain.logical_not(self.active_minus_old))).sum() 
+        removed_ind = (self.op.domain.logical_and(self.active_plus_old, self.op.domain.logical_not(self.active_plus))).sum() \
+                + (self.op.domain.logical_and(self.active_minus_old, self.op.domain.logical_not(self.active_minus))).sum()
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind
@@ -314,7 +314,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
     """
     def __init__(self,setting, data, regpar, xref = None,  x0=None, lambda0=None, cg_pars = None, TOL = 0.,
-                 logging_level = logging.INFO, cg_logging_level = logging.INFO):
+                 logging_level = "INFO", cg_logging_level = "INFO"):
         assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
         assert self.op.domain.dtype == float
@@ -326,14 +326,14 @@ class SemismoothNewton_nonneg(RegSolver):
             if xref is None:
                 self.x=self.op.domain.zeros()
             else:
-                self.x = np.copy(xref)
+                self.x = xref.copy()
         else:
-            self.x = np.copy(x0)
+            self.x = x0.copy()
             """The current iterate"""
         self.regpar=regpar
         """The regularizaton parameter."""
         if cg_pars is None:
-            cg_pars = {'tol': 0.001/np.sqrt(self.regpar)}
+            cg_pars = {'tol': 0.001/sqrt(self.regpar)}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.TOL = TOL
@@ -347,7 +347,7 @@ class SemismoothNewton_nonneg(RegSolver):
         if self.xref is not None:
             self.b += self.regpar*self.xref
 
-        self.lam = lambda0 if lambda0 is not None else np.zeros_like(self.b)
+        self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
                 setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
@@ -359,19 +359,19 @@ class SemismoothNewton_nonneg(RegSolver):
             )
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        self.active= (self.lam-self.regpar*self.x)>=0 
-        if not np.any(self.active):
+        self.active= self.op.domain.IfPos(self.lam-self.regpar*self.x) 
+        if not self.active.any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
         self.log.debug('it {}: CG its {}; changes active set +{},-{}'.format(self.iteration_step_nr,cg_its,
-                                                                            np.sum(1.*self.active),0 )
+                                                                            self.active.sum(),0 )
         )
 
     def _next(self):
 
         """compute active and inactive sets, need to be computed in each step again"""
         self.active_old=self.active
-        self.inactive= np.logical_not(self.active)
+        self.inactive= self.op.domain.logical_not(self.active)
 
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active]=0
@@ -399,8 +399,9 @@ class SemismoothNewton_nonneg(RegSolver):
         self.y = self.op(self.x)
         z =  self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))-self.b
         aux = (-1/self.regpar)*z
-        bound = np.linalg.norm(np.maximum(aux,0)-self.x)**2 - 2*np.vdot(np.maximum(-aux,0),self.x)
-        if np.sqrt(bound)<=self.TOL:
+        aux_pos = self.op.domain.IfPos(aux)
+        bound = self.op.domain.norm(aux[aux_pos]-self.x[aux_pos])**2 - 2*self.op.domain.vdot(-aux[~aux_pos],self.x[~aux_pos])
+        if sqrt(bound)<=self.TOL:
             self.log.info('Stopped by a-posteriori error estimate.')
             self.converge()
 
@@ -409,12 +410,12 @@ class SemismoothNewton_nonneg(RegSolver):
 
         #Update active and inactive sets
         self.active = (self.lam-self.regpar*self.x)>=0
-        added_ind =  np.sum(np.logical_and(self.active, np.logical_not(self.active_old))) 
-        removed_ind = np.sum(np.logical_and(self.active_old, np.logical_not(self.active)))
+        added_ind = (self.op.domain.logical_and(self.active, self.op.domain.logical_not(self.active_old))).sum() 
+        removed_ind = (self.op.domain.logical_and(self.active_old, self.op.domain.logical_not(self.active))).sum()
         self.log.debug('it {}: CG its {}; changes active set +{},-{}; error bound {:1.2e}/{:1.2e}'.format(self.iteration_step_nr,
                                                                             cg_its,
                                                                             added_ind, removed_ind,
-                                                                            np.sqrt(bound),self.TOL
+                                                                            sqrt(bound),self.TOL
                                                                             )
                         )
         if added_ind+removed_ind==0:
@@ -441,7 +442,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         absolute tolerance for inner cg iteration is tol_fac_cg/sqrt(alpha)
     """
     def __init__(self,setting, data, alphas, xref=None,max_Newton_iter=50,
-                 delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= logging.INFO):
+                 delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
         super().__init__(setting)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
@@ -476,21 +477,21 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         setting = RegularizationSetting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
         inner_stoprule = CountIterations(max_iterations=self.max_Newton_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
-        inner_stoprule.log.setLevel(logging.WARNING)
+        inner_stoprule.log.setLevel("WARNING")
         if not hasattr(self,'alpha_old'):
             SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,
-                                TOL = self.tol_fac / np.sqrt(self.alpha),
-                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
+                                TOL = self.tol_fac / sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
-                                cg_logging_level = logging.WARNING
+                                cg_logging_level = "WARNING"
                                )    
         else:
             lambda0 = (self.alpha/self.alpha_old)*self.lam
             SSNewton = SemismoothNewton_nonneg(setting,self.data,self.alpha,xref=self.xref,x0=self.x,lambda0=lambda0,
-                                TOL = self.tol_fac / np.sqrt(self.alpha),
-                                cg_pars = {'tol': self.tol_fac_cg / np.sqrt(self.alpha)},
+                                TOL = self.tol_fac / sqrt(self.alpha),
+                                cg_pars = {'tol': self.tol_fac_cg / sqrt(self.alpha)},
                                 logging_level=self.logging_level,
-                                cg_logging_level = logging.WARNING
+                                cg_logging_level = "WARNING"
                                )
         self.x, self.y = SSNewton.run(inner_stoprule)
         self.lam = SSNewton.lam

@@ -1,6 +1,7 @@
 import ngsolve as ngs
 import numpy as np
 
+from regpy.vecsps import NgsVectorSpace
 from regpy.hilbert import HilbertSpace
 from regpy.operators import Operator
 from regpy.util import memoized_property
@@ -11,7 +12,7 @@ class Matrix(Operator):
 
     Parameters
     ----------
-    domain : NgsSpace
+    domain : NgsVectorSpace
         The vector space.
     form : ngsolve.BilinearForm or ngsolve.BaseMatrix
         The bilinear form or matrix. A bilinear form will be assembled.
@@ -19,8 +20,8 @@ class Matrix(Operator):
 
     def __init__(self, domain, form):
         #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsSpace
-        assert isinstance(domain, NgsSpace)
+        from regpy.vecsps.ngsolve import NgsVectorSpace
+        assert isinstance(domain, NgsVectorSpace)
         if isinstance(form, ngs.BilinearForm):
             assert domain.fes == form.space
             form.Assemble()
@@ -37,14 +38,14 @@ class Matrix(Operator):
         self._inverse = None
 
     def _eval(self, x):
-        self._gfu_in.vec.FV().NumPy()[:] = x
-        self._gfu_out.vec.data = self.mat * self._gfu_in.vec
-        return self._gfu_out.vec.FV().NumPy().copy()
+        res = self.domain.zeros()
+        res.vec.data = self.mat * x.vec
+        return res
 
     def _adjoint(self, y):
-        self._gfu_in.vec.FV().NumPy()[:] = y
-        self._gfu_out.vec.data = self.mat.T * self._gfu_in.vec
-        return self._gfu_out.vec.FV().NumPy().copy()
+        res = self.domain.zeros()
+        res.vec.data = self.mat.T * y.vec
+        return res
 
     @property
     def inverse(self):
@@ -61,7 +62,13 @@ class Matrix(Operator):
 
 
 class L2FESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.L2` on an `NgsSpace`."""
+    r"""The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`."""
+    def __init__(self, vecsp):
+        if not isinstance(vecsp, NgsVectorSpace):
+            raise ValueError(f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+        super().__init__(vecsp=vecsp)
+        self._no_pickle = {*self._no_pickle,"__memoized_L2FESpace.gram","__memoized_HilbertSpace.norm_functional"}
+
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
@@ -71,7 +78,13 @@ class L2FESpace(HilbertSpace):
 
 
 class SobolevFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsSpace`."""
+    r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
+    def __init__(self, vecsp):
+        if not isinstance(vecsp, NgsVectorSpace):
+            raise ValueError(f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+        super().__init__(vecsp=vecsp)
+        self._no_pickle = {*self._no_pickle,"__memoized_SobolevFESpace.gram","__memoized_HilbertSpace.norm_functional"}
+    
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
@@ -81,8 +94,13 @@ class SobolevFESpace(HilbertSpace):
 
 
 class H10FESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.Hm0` on an `NgsSpace`."""
-
+    r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
+    def __init__(self, vecsp):
+        if not isinstance(vecsp, NgsVectorSpace):
+            raise ValueError(f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+        super().__init__(vecsp=vecsp)
+        self._no_pickle = {*self._no_pickle,"__memoized_H10FESpace.gram","__memoized_HilbertSpace.norm_functional"}
+    
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
@@ -92,10 +110,13 @@ class H10FESpace(HilbertSpace):
 
 
 class L2BoundaryFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsSpace`."""
+    r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
+        if not isinstance(vecsp, NgsVectorSpace):
+            raise ValueError(f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
         assert vecsp.bdr is not None
         super().__init__(vecsp)
+        self._no_pickle = {*self._no_pickle,"__memoized_L2BoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
 
     @memoized_property
     def gram(self):
@@ -109,11 +130,13 @@ class L2BoundaryFESpace(HilbertSpace):
 
 
 class SobolevBoundaryFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsSpace`."""
+    r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
+        if not isinstance(vecsp, NgsVectorSpace):
+            raise ValueError(f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
         assert vecsp.bdr is not None
         super().__init__(vecsp)
-
+        self._no_pickle = {*self._no_pickle,"__memoized_SobolevBoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
 
     @memoized_property
     def gram(self):
