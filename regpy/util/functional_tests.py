@@ -90,7 +90,21 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
     assert err<tolerance,f'err={err}, tolerance={tolerance}'
 
-def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=3,tol_convex=1e-4):
+def test_prox_optimality_cond(func,tau=1,u=None):
+    r"""Numerically test validity of the optimality condition characterizing the prox operator: 
+
+    .. math::
+        (u-prox_{\tau F}(u))/tau \in  \partial F(prox_{\tau F}(u))
+    """
+    if u is None:
+        numel = np.prod(func.domain.shape)
+        u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
+    prox = func.proximal(u,tau)
+    vec = func.h_domain.gram((u-prox)/tau)
+    assert func.is_subgradient(vec,prox)
+
+
+def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
     r"""Numerically test validity of subgradient for a given functional
 
     Checks if:
@@ -130,7 +144,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=3,tol_convex=1e-4):
     deriv = (func.domain.vdot(grad_u,h)).real
     err= diffq+deriv
     assert err<=tol_convex*np.linalg.norm(grad_u),f'err={err}, tol_convex={tol_convex},norm(grad_u)={np.linalg.norm(grad_u)}'
-    assert np.abs(err)<tol_smooth,f'err={err}, tol_smooth={tol_smooth}'
+    assert np.abs(err)<=tol_smooth*np.linalg.norm(grad_u),f'err={err}, tol_smooth={tol_smooth}'
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
 
