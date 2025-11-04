@@ -10,16 +10,21 @@ from regpy.util import functional_tests as ft
 def test_Lpp():
     dom = UniformGridFcts((-3.,3.,100))
     x = np.linspace(-3.,3.,100)
-    #Numerical prox does not yet work together with options quad_taylor_x and lin_taylor_x!
-    #for p in [1.5,2.,2.5]:
-    #    for (l,u) in [(0.1,2.3),(-2.1,-1.2),(-1.2,1.)]:
-    #        #print('p=',p,'l=',l,'u=',u)
-    #        ft.test_functional(Lpp(dom,p=p,constr_l=l,quad_taylor_u=u))
-    #        ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,lin_taylor_u=u))
-    #        ft.test_functional(Lpp(dom,p=p,lin_taylor_l=l,constr_u=u))
-    #        ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,quad_taylor_u=u))
-    ft.test_functional(Lpp(dom,p=1.5,constr_l=-2,quad_taylor_u=3.),test_second_deriv_conj=False)
-    ft.test_functional(Lpp(dom,p=2.5,quad_taylor_l=1.1,quad_taylor_u=2.),test_second_deriv=False)
+    for p in [1.5,2.,2.5]:
+        for (l,u) in [(0.1,2.3),(-2.1,-1.2),(-1.2,1.)]:
+            print('p=',p,'l=',l,'u=',u)
+            ft.test_functional(Lpp(dom,p=p,constr_l=l,quad_taylor_u=u),
+                               test_second_deriv=(p>=2),test_second_deriv_conj=False
+                               )
+            ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,lin_taylor_u=u),
+                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                               )
+            ft.test_functional(Lpp(dom,p=p,lin_taylor_l=l,constr_u=u),
+                               test_second_deriv=False,test_second_deriv_conj=False
+                               )
+            ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,quad_taylor_u=u),
+                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                               )
 
 def test_L1():
     dom = NumPyVectorSpace((2,10)) 
@@ -43,24 +48,25 @@ def test_L1():
 #     ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)],u_stars=[func.domain.rand() for _ in range(5)])
 
 def test_kullback_leibler():
-    dom=UniformGridFcts((-1,1,10),(-2,3,3))
+    dom=UniformGridFcts((-1,1,10),(-2,3,5))
     F=KL(dom,w=dom.ones())
     ft.test_functional(F)
     
     ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()))
     ft.test_functional(F-2.)
 
-    F2 = KL(dom,w=dom.ones(),quad_taylor_l=0.5,constr_u=5.)
-    ft.test_functional(F2,test_second_deriv_conj=False)
-    ft.test_functional(4.*F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv_conj=False)
-    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=-F2.domain.ones()),test_second_deriv_conj=False)
 
-    w=1.+0.5*np.sin(dom.coords[0]*dom.coords[1])
-    F3 = KL(dom,w=5*dom.ones(),lin_taylor_l=0.1,quad_taylor_u=2.5)
+    w=1.+0.5*np.sin(dom.coords[0]*dom.coords[1])   
+    F2 = KL(dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
+    ft.test_functional(F2)
+    ft.test_functional(4.*F2+LinearFunctional(F2.domain.ones(),domain=F2.domain))
+    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=-F2.domain.ones()))
+
+    F3 = KL(dom,w=4.*dom.ones(),lin_taylor_l=0.1,quad_taylor_u=2.5)
     ft.test_functional(F3)
 
     F4 = KL(dom,w=dom.ones(),constr_l=0.3,lin_taylor_u=2.5)
-    ft.test_functional(F4)
+    ft.test_functional(F4,test_second_deriv=False,test_second_deriv_conj=False)
 
 def test_relative_entropy():
     dom=UniformGridFcts((-5,7,4),(100,200,3))
