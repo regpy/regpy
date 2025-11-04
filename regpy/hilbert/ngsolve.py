@@ -3,63 +3,8 @@ import numpy as np
 
 from regpy.vecsps import NgsVectorSpace
 from regpy.hilbert import HilbertSpace
-from regpy.operators import Operator
+from regpy.operators import NgsMatrixMultiplication
 from regpy.util import memoized_property
-
-class Matrix(Operator):
-    r"""An operator defined by an NGSolve bilinear form. This is a helper to define 
-    Gram matrices by a bilinear form.  
-
-    Parameters
-    ----------
-    domain : NgsVectorSpace
-        The vector space.
-    form : ngsolve.BilinearForm or ngsolve.BaseMatrix
-        The bilinear form or matrix. A bilinear form will be assembled.
-    """
-
-    def __init__(self, domain, form):
-        #imported here to prevent circular import
-        from regpy.vecsps.ngsolve import NgsVectorSpace
-        assert isinstance(domain, NgsVectorSpace)
-        if isinstance(form, ngs.BilinearForm):
-            assert domain.fes == form.space
-            form.Assemble()
-            mat = form.mat
-        elif isinstance(form, ngs.BaseMatrix):
-            mat = form
-        else:
-            raise TypeError('Invalid type: {}'.format(type(form)))
-        self.mat = mat
-        """The assembled matrix."""
-        super().__init__(domain, domain, linear=True)
-        self._gfu_in = ngs.GridFunction(domain.fes)
-        self._gfu_out = ngs.GridFunction(domain.fes)
-        self._inverse = None
-
-    def _eval(self, x):
-        res = self.domain.zeros()
-        res.vec.data = self.mat * x.vec
-        return res
-
-    def _adjoint(self, y):
-        res = self.domain.zeros()
-        res.vec.data = self.mat.T * y.vec
-        return res
-
-    @property
-    def inverse(self):
-        """The inverse as a `Matrix` instance."""
-        if self._inverse is not None:
-            return self._inverse
-        else:
-            self._inverse = Matrix(
-                self.domain,
-                self.mat.Inverse(freedofs=self.domain.fes.FreeDofs())
-            )
-            self._inverse._inverse = self
-            return self._inverse
-
 
 class L2FESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`."""
@@ -74,7 +19,7 @@ class L2FESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v)
-        return Matrix(self.vecsp, form)
+        return NgsMatrixMultiplication(self.vecsp, form)
 
 
 class SobolevFESpace(HilbertSpace):
@@ -90,7 +35,7 @@ class SobolevFESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v + ngs.InnerProduct(ngs.Grad(u),ngs.Grad(v)))
-        return Matrix(self.vecsp, form)
+        return NgsMatrixMultiplication(self.vecsp, form)
 
 
 class H10FESpace(HilbertSpace):
@@ -106,7 +51,7 @@ class H10FESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
-        return Matrix(self.vecsp, form)
+        return NgsMatrixMultiplication(self.vecsp, form)
 
 
 class L2BoundaryFESpace(HilbertSpace):
@@ -126,7 +71,7 @@ class L2BoundaryFESpace(HilbertSpace):
             u.Trace() * v.Trace(),
             definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return Matrix(self.vecsp, form)
+        return NgsMatrixMultiplication(self.vecsp, form)
 
 
 class SobolevBoundaryFESpace(HilbertSpace):
@@ -146,6 +91,6 @@ class SobolevBoundaryFESpace(HilbertSpace):
             ngs.InnerProduct(u.Trace(),v.Trace()) + ngs.InnerProduct(u.Trace().Deriv(), v.Trace().Deriv()),
             definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return Matrix(self.vecsp, form)
+        return NgsMatrixMultiplication(self.vecsp, form)
 
 
