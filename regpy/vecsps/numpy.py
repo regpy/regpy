@@ -208,20 +208,15 @@ class MeasureSpaceFcts(NumPyVectorSpace):
 
     """
     def __init__(self,measure=None,shape=None,dtype=float):
-        assert measure is not None or shape is not None
-        if(isinstance(measure, np.ndarray)):
-            assert np.issubdtype(measure.dtype, np.floating) or np.issubdtype(measure.dtype, np.integer)
-            assert np.min(measure)>=0
-            shape = measure.shape
-        elif(np.isscalar(measure)):
-            assert isinstance(measure, int) or isinstance(measure,float)
-            assert measure>=0
-            assert shape!=None
-        elif(measure==None):
+        if(not isinstance(measure,np.ndarray) and shape is None):
+            raise ValueError('Either measure or shape have to be set to determine shape of space.')
+        if(shape is None):
+            shape=measure.shape
+        if(measure is None):
             measure=1
-        #TODO: Make a default case            
         super().__init__(shape,dtype)
         self.measure=measure
+
 
     @property
     def measure(self):
@@ -230,12 +225,16 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     
     @measure.setter
     def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or (np.issubdtype(new_measure.dtype,np.number) and np.isrealobj(new_measure))
-        else:
-            assert  new_measure.shape==self.shape and np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
-        assert np.min(new_measure)>=0
-        self._measure=new_measure
+        broadcasted_measure=self.update_measure(new_measure)
+        self._measure=broadcasted_measure
+
+    def update_measure(self,new_measure):
+        broadcasted=np.broadcast_to(new_measure,self.shape)
+        if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
+            raise ValueError(f'Type {broadcasted.dtype} is invalid type for measure.')
+        if(np.min(broadcasted)<0):
+            raise ValueError('Negative values are not allowed in measure.')
+        return broadcasted
 
     def __eq__(self, other):
         if(not super().__eq__(other)):
@@ -305,7 +304,6 @@ class GridFcts(MeasureSpaceFcts):
                 s[n] = -1
                 v = v.reshape(s)
             v.flags.writeable = False
-            #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
         r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
@@ -326,7 +324,7 @@ class GridFcts(MeasureSpaceFcts):
         r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype)
+            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const),shape=self.coords[0].shape, dtype=dtype)
         else:
             super().__init__(shape=self.coords[0].shape, dtype=dtype)
 
@@ -351,7 +349,6 @@ class GridFcts(MeasureSpaceFcts):
             assert isinstance(ext_const, tuple)
             assert len(ext_const)==len(axes)
             for i, v in enumerate(axes):
-                
                 if isinstance(ext_const[i],tuple):
                     assert np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i][0], v[-1]+ext_const[i][1])))
@@ -359,6 +356,7 @@ class GridFcts(MeasureSpaceFcts):
                     assert np.isscalar(ext_const[i])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i], v[-1]+ext_const[i])))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         assert len(axes)<=26
         prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
@@ -413,16 +411,11 @@ class UniformGridFcts(GridFcts):
         self.measure = self.volume_elem
         """ Setting measure to be initialzed by `volume_element`"""
     
-    @MeasureSpaceFcts.measure.setter
-    def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
-            assert new_measure>0
-            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
-        elif(isinstance(new_measure,np.ndarray)):
-            assert np.all(new_measure == new_measure.flat[0])
-            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
-        self.volume_elem=self.measure
+    def update_measure(self, new_measure):
+        broadcasted_measure=super().update_measure(new_measure)
+        self.volume_elem=broadcasted_measure.flat[0]
+        return broadcasted_measure
+
 
 
 class Prod(NumPyVectorSpace):
