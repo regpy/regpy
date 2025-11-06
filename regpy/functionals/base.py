@@ -321,19 +321,36 @@ class Functional:
                  Lipschitz = inf,
                  separable = False,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None):
-        assert isinstance(domain, vecsps.VectorSpaceBase)
+        if not isinstance(domain, vecsps.VectorSpaceBase):
+            raise TypeError(f'domain must be an instance of VectorSpaceBase. Got {domain}')
         self.domain = domain
         """The underlying vector space."""
         self.h_domain = hilbert.as_hilbert_space(h_domain,domain) or hilbert.L2(domain)
         """The underlying Hilbert space."""
+
+        if not isinstance(convexity_param, (float, np.floating,int,np.integer)) and convexity_param>=0:
+            raise ValueError(f'convexity_param must be a scalar, nonnegative float. Got {convexity_param}.')
+        self.convexity_param = np.float64(convexity_param)
+        """parameter of strong convexity of the functional."""
+        if not isinstance(Lipschitz, (float, np.floating,int,np.integer)) and Lipschitz>=0:
+            raise ValueError(f'Lipschitz must be a scalar, nonnegative float. Got {Lipschitz}.')
+        self.Lipschitz = np.float64(Lipschitz)
+        """Lipschitz continuity constant of the gradient."""
+
+        if not isinstance(linear,(bool, np.bool_)):
+            raise TypeError(f'linear must be boolean. Got {linear}.')
         self.linear = linear
         """boolean indicating if the functional is linear"""
-        self.convexity_param = convexity_param
-        """parameter of strong convexity of the functional."""
-        self.Lipschitz = Lipschitz
-        """Lipschitz continuity constant of the gradient."""
+        if not isinstance(separable,(bool, np.bool_)):
+            raise TypeError(f'separable must be boolean. Got {separable}.')
         self.separable = separable
         """boolean indicating if the functional is separable."""
+
+        if self.separable:
+            if np.any(dom_l>dom_u):
+                raise ValueError('dom_l must be smaller or equal to dom_u.')
+            if conj_dom_l is not None and conj_dom_u is not None and np.any(conj_dom_l>conj_dom_u):
+                raise ValueError('conj_dom_l must be smaller or equal conj_dom_u.')
         self.dom_l, self.dom_u, self.conj_dom_l, self.conj_dom_u = dom_l, dom_u, conj_dom_l, conj_dom_u
         """vectors indicating the essential domain of the functional and its conjugate"""
 

@@ -62,61 +62,72 @@ class IntegralFunctionalBase(Functional):
         if v>contr_u(x).
     constr_l: None or float or np.ndarray [default: None]
         As constr_u, but for a lower constraint. 
-    right_linearization: None or float or np.ndarray [default: None]
+    lin_taylor_u: None or float or np.ndarray [default: None]
         If not None, f(v,x) is replaced by its first order Taylor expansion 
-        \( f(r(x),x) + (v-r(x)) \partial_v f(r(x),x) )\ if \(x>r(x):=right_linearization(x) )\
-    left_linearization: None or float or np.ndarray [default: None]
+        \( f(r(x),x) + (v-r(x)) \partial_v f(r(x),x) )\ if \(x>r(x):=lin_taylor_u(x) )\
+    lin_taylor_l: None or float or np.ndarray [default: None]
         Analogous to right linearization, but for small values of v.
+    quad_taylor_u: None or float or np.ndarray [default: None]
+        Analogous to lin_taylor_u, but with a quadratic Taylor expansion
+    quad_taylor_l: None or float or np.ndarray [default: None]
+        Analogous to quad_taylor_u, but for small values of v
     """
 
     def __init__(self,domain,
                  dom_l=-np.inf, dom_u=np.inf, 
                  conj_dom_l=-np.inf,conj_dom_u=np.inf,
                  constr_l=None, constr_u=None,
-                 left_linearization=None, right_linearization=None,
+                 lin_taylor_l=None, lin_taylor_u=None,
+                 quad_taylor_l=None, quad_taylor_u= None,
                  Lipschitz = np.inf, convexity_param=0.,
                  **kwargs):
         assert isinstance(domain,MeasureSpaceFcts)
         self.h_domain = L2(domain)
-        self.measure = np.broadcast_to(domain.measure,domain.shape) if np.isscalar(domain.measure) else domain.measure        
+        self.measure = np.broadcast_to(domain.measure,domain.shape) if np.isscalar(domain.measure) else domain.measure
+        self.domain = domain
 
-        if not (constr_l is None or left_linearization is None) or not (constr_u is None or right_linearization is None):
-            raise ValueError('On each side (left=-infinity and right=infty) you may either impose a constraint or linearized a functional, but not both.')
+        if sum([trunc is not None for trunc in [constr_l,lin_taylor_l,quad_taylor_l]])>1:
+            raise ValueError('At most one of the parameters constr_l,lin_taylor_l, quad_taylor_l may be specified.')
+        if sum([trunc is not None for trunc in [constr_u,lin_taylor_u,quad_taylor_u]])>1:
+            raise ValueError('At most one of the parameters constr_u,lin_taylor_u, quad_taylor_u may be specified.')        
+
+        assert np.isscalar(dom_l) or dom_l in domain
+        assert np.isscalar(dom_u) or dom_u in domain
+        assert constr_l is None or np.isscalar(constr_l) or constr_l in domain
+        assert constr_u is None or np.isscalar(constr_u) or constr_u in domain        
+        assert lin_taylor_l is None or np.isscalar(lin_taylor_l) or lin_taylor_l in domain
+        assert lin_taylor_u is None or np.isscalar(lin_taylor_u) or lin_taylor_u in domain
+        assert quad_taylor_l is None or np.isscalar(quad_taylor_l) or quad_taylor_l in domain
+        assert quad_taylor_u is None or np.isscalar(quad_taylor_u) or quad_taylor_u in domain
 
         self.constr_l_active = False if constr_l is None else np.any(constr_l>dom_l)
         self.constr_u_active = False if constr_u is None else np.any(constr_u<dom_u)
 
-        assert dom_l is None or np.isscalar(dom_l) or dom_l in domain
-        assert dom_u is None or np.isscalar(dom_u) or dom_u in domain
-        assert constr_l is None or np.isscalar(constr_l) or constr_l in domain
-        assert constr_u is None or np.isscalar(constr_u) or constr_u in domain        
-        assert left_linearization is None or np.isscalar(left_linearization) or left_linearization in domain
-        assert right_linearization is None or np.isscalar(right_linearization) or right_linearization in domain
-
         if self.constr_l_active:
-            lower_active_ind = constr_l> (dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape))
+            active_ind_l = constr_l> (dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape))
         if self.constr_u_active:
-            upper_active_ind = constr_u< (dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape))
+            active_ind_u = constr_u< (dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape))
 
-        if np.isscalar(dom_l) and (constr_l is None or np.isscalar(constr_l)) and (left_linearization is None or np.isscalar(left_linearization)):
-            val = - np.inf if not (left_linearization is None) else np.max([dom_l,-np.inf if constr_l is None else constr_l])
-            dom_l = np.broadcast_to(val, domain.shape)
+        self.quad_taylor_l_active = (quad_taylor_l is not None)
+        self.quad_taylor_u_active = (quad_taylor_u is not None)
+
+        dom_l = np.full(domain.shape,dom_l) if np.isscalar(dom_l) else dom_l
+        if lin_taylor_l is None and quad_taylor_l is None: 
+            if constr_l is not None:
+                dom_l = np.maximum(dom_l, constr_l)
         else:
-            if left_linearization is None: 
-                if not constr_l is None:
-                    dom_l = np.maximum(dom_l, constr_l)
-            else:
-                dom_l = np.broadcast_to(-np.inf, domain.shape)
+            taylor_l = lin_taylor_l if lin_taylor_l is not None else quad_taylor_l
+            dom_l[taylor_l>=dom_l] = -np.inf
+        self._if_constant_broadcast(dom_l)
   
-        if np.isscalar(dom_u) and (constr_u is None or np.isscalar(constr_u)) and (right_linearization is None or np.isscalar(right_linearization)):
-            val =  np.inf if not (right_linearization is None) else np.min([dom_u,np.inf if constr_u is None else constr_u])
-            dom_u = np.broadcast_to(val, domain.shape)
+        dom_u = np.full(domain.shape,dom_u) if np.isscalar(dom_u) else dom_u
+        if lin_taylor_u is None and quad_taylor_u is None:
+            if not constr_u is None:
+                dom_u = np.minimum(dom_u, constr_u)
         else:
-            if right_linearization is None: 
-                if not constr_u is None:
-                    dom_u = np.maximum(dom_u, constr_u)
-            else:
-                dom_u = np.broadcast_to(np.inf, domain.shape)
+            taylor_u = lin_taylor_u if lin_taylor_u is not None else quad_taylor_u
+            dom_u[taylor_u<=dom_u] = np.inf
+        self._if_constant_broadcast(dom_u)
 
         if np.isscalar(conj_dom_l) and isinstance(domain,UniformGridFcts):
             conj_dom_l = np.broadcast_to(conj_dom_l*self.measure,domain.shape)
@@ -132,64 +143,126 @@ class IntegralFunctionalBase(Functional):
                          separable=True,
                          dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape),
                          dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape),
-                         conj_dom_l = conj_dom_l, 
-                         conj_dom_u = conj_dom_u
+                         conj_dom_l = conj_dom_l if conj_dom_l in domain else np.broadcast_to(conj_dom_l,domain.shape), 
+                         conj_dom_u = conj_dom_u if conj_dom_u in domain else np.broadcast_to(conj_dom_u,domain.shape)
                          )
 
-
         if self.constr_l_active:
-            self.conj_kink_l = np.full(domain.shape,-np.inf)
-            self.conj_kink_l[lower_active_ind] = self._f_deriv(dom_l[lower_active_ind],mask=lower_active_ind,**kwargs)*self.measure[lower_active_ind]
-            self.f_dom_l = self.domain.zeros()
-            self.f_dom_l[lower_active_ind] = self._f(dom_l[lower_active_ind],mask=lower_active_ind,**kwargs)
-            if np.all(lower_active_ind):
-                self.conj_dom_l = np.broadcast_to(-np.inf,domain.shape)
-            else:
-                self.conj_dom_l = np.array(self.conj_dom_l)
-                self.conj_dom_l[lower_active_ind] = -np.inf
+            self.conj_taylor_l = np.full(domain.shape,-np.inf)
+            self.conj_taylor_l[active_ind_l] = self._f_deriv(dom_l[active_ind_l],mask=active_ind_l,**kwargs)*self.measure[active_ind_l]
+            self._if_constant_broadcast(self.conj_taylor_l)
+
+            self.f_l = self.domain.zeros()
+            self.f_l[active_ind_l] = self._f(dom_l[active_ind_l],mask=active_ind_l,**kwargs)
+            self._if_constant_broadcast(self.f_l,mask=active_ind_l)
+
+            self.conj_dom_l = np.array(self.conj_dom_l)
+            self.conj_dom_l[active_ind_l] = -np.inf
+            self._if_constant_broadcast(self.conj_dom_l)
+
         if self.constr_u_active:
-            self.conj_kink_u = np.full(domain.shape,np.inf)
-            self.conj_kink_u[upper_active_ind] = self._f_deriv(dom_u[upper_active_ind],mask=upper_active_ind,**kwargs)*self.measure[upper_active_ind]
-            self.f_dom_u = self.domain.zeros()
-            self.f_dom_u[upper_active_ind] = self._f(dom_u[upper_active_ind],mask=upper_active_ind,**kwargs)
-            if np.all(upper_active_ind):
-                self.conj_dom_u = np.broadcast_to(np.inf,domain.shape)
-            else:
-                self.conj_dom_u = np.array(self.conj_dom_u)
-                self.conj_dom_u[lower_active_ind] = np.inf
+            self.conj_taylor_u = np.full(domain.shape,np.inf)
+            self.conj_taylor_u[active_ind_u] = self._f_deriv(dom_u[active_ind_u],mask=active_ind_u,**kwargs)*self.measure[active_ind_u]
+            self._if_constant_broadcast(self.conj_taylor_u)
+
+            self.f_u = self.domain.zeros()
+            self.f_u[active_ind_u] = self._f(dom_u[active_ind_u],mask=active_ind_u,**kwargs)
+            self._if_constant_broadcast(self.f_u,mask=active_ind_u)
+
+            self.conj_dom_u = np.array(self.conj_dom_u)
+            self.conj_dom_u[active_ind_u] = np.inf
+            self._if_constant_broadcast(self.conj_dom_u)
 
 
-        if left_linearization is not None:
-            self.kink_l = left_linearization if left_linearization in domain else np.broadcast_to(left_linearization,domain.shape)
-            conj_lower_active_ind = self.kink_l>self.dom_l
-            self.conj_constr_l_active = np.any(conj_lower_active_ind)
+        if lin_taylor_l is not None:
+            self.taylor_l = lin_taylor_l if lin_taylor_l in domain else np.broadcast_to(lin_taylor_l,domain.shape)
+            conj_active_ind_l = self.taylor_l>self.dom_l
+            self.conj_constr_l_active = np.any(conj_active_ind_l)
             if self.conj_constr_l_active:
-                if np.all(self.conj_constr_l_active) and isinstance(domain,UniformGridFcts):
-                    conj_constr_l = self._f_deriv(self.kink_l,**kwargs).flatten()[0]*self.measure.flatten()[0] 
-                    self.conj_dom_l = np.broadcast_to(conj_constr_l,domain.shape)
-                else:
-                    self.conj_dom_l = np.array(self.conj_dom_l)
-                    self.conj_dom_l[conj_lower_active_ind] = self._f_deriv(self.kink_l[conj_lower_active_ind],mask=conj_lower_active_ind,**kwargs)*self.measure[conj_lower_active_ind]
-                self.conj_f_conj_dom_l = domain.zeros()
-                self.conj_f_conj_dom_l[conj_lower_active_ind] = self._f_conj(self.conj_dom_l[conj_lower_active_ind]/self.measure[conj_lower_active_ind],mask=conj_lower_active_ind,**kwargs)
+                self.conj_dom_l = np.array(self.conj_dom_l)
+                self.conj_dom_l[conj_active_ind_l] = self._f_deriv(self.taylor_l[conj_active_ind_l],mask=conj_active_ind_l,**kwargs)*self.measure[conj_active_ind_l]
+                self._if_constant_broadcast(self.conj_dom_l)
+                
+                self.conj_f_l = domain.zeros()
+                self.conj_f_l[conj_active_ind_l] = self._f_conj(self.conj_dom_l[conj_active_ind_l]/self.measure[conj_active_ind_l],mask=conj_active_ind_l,**kwargs)
+                self._if_constant_broadcast(self.conj_f_l,mask=conj_active_ind_l)
         else:
             self.conj_constr_l_active = False
 
-        if right_linearization is not None:
-            self.kink_u = right_linearization if right_linearization in domain else np.broadcast_to(right_linearization,domain.shape)
-            conj_upper_active_ind = self.kink_u<self.dom_u
-            self.conj_constr_u_active = np.any(conj_upper_active_ind)
+        if lin_taylor_u is not None:
+            self.taylor_u = lin_taylor_u if lin_taylor_u in domain else np.broadcast_to(lin_taylor_u,domain.shape)
+            conj_active_ind_u = self.taylor_u<self.dom_u
+            self.conj_constr_u_active = np.any(conj_active_ind_u)
             if self.conj_constr_u_active:
-                if np.all(self.conj_constr_u_active) and isinstance(domain,UniformGridFcts):
-                    conj_constr_u = self._f_deriv(self.kink_u,**kwargs).flatten()[0]*self.measure.flatten()[0]
-                    self.conj_dom_u = np.broadcast_to(conj_constr_u,domain.shape)
-                else:
-                    self.conj_dom_u = np.array(self.conj_dom_u)
-                    self.conj_dom_u[conj_upper_active_ind] = self._f_deriv(self.kink_u[conj_upper_active_ind],mask=conj_upper_active_ind,**kwargs)*self.measure[conj_upper_active_ind]
-                self.conj_f_conj_dom_u = domain.zeros()
-                self.conj_f_conj_dom_u[conj_upper_active_ind] = self._f_conj(self.conj_dom_u[conj_upper_active_ind]/self.measure[conj_upper_active_ind],mask=conj_upper_active_ind,**kwargs)
+                self.conj_dom_u = np.array(self.conj_dom_u)
+                self.conj_dom_u[conj_active_ind_u] = self._f_deriv(self.taylor_u[conj_active_ind_u],mask=conj_active_ind_u,**kwargs)*self.measure[conj_active_ind_u]
+                self._if_constant_broadcast(self.conj_dom_u)
+
+                self.conj_f_u = domain.zeros()
+                self.conj_f_u[conj_active_ind_u] = self._f_conj(self.conj_dom_u[conj_active_ind_u]/self.measure[conj_active_ind_u],mask=conj_active_ind_u,**kwargs)
+                self._if_constant_broadcast(self.conj_f_u,mask=conj_active_ind_u)
         else:
             self.conj_constr_u_active = False
+
+        if quad_taylor_l is not None:
+            self.taylor_l = quad_taylor_l if quad_taylor_l in domain else np.broadcast_to(quad_taylor_l,domain.shape)
+            self.conj_constr_l_active = False
+            taylor_active_l = self.taylor_l>=self.dom_l
+            if np.any(taylor_active_l):
+                self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
+                self.conj_taylor_l[taylor_active_l] = self._f_deriv(self.taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)*self.measure[taylor_active_l]
+                self._if_constant_broadcast(self.conj_taylor_l)
+
+                self.f_l = self.domain.zeros()
+                self.f_l[taylor_active_l] = self._f(self.taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)
+                self._if_constant_broadcast(self.f_l,mask=taylor_active_l)
+
+                self.conj_f_l = domain.zeros()
+                self.conj_f_l[taylor_active_l] = self._f_conj(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**kwargs)
+                self._if_constant_broadcast(self.conj_f_l,mask=taylor_active_l)
+
+                self.fpp_l = domain.zeros()
+                self.fpp_l[taylor_active_l] = self._f_second_deriv(self.taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)
+                self._if_constant_broadcast(self.fpp_l,mask=taylor_active_l)
+ 
+                self.fstarpp_l = domain.zeros()
+                self.fstarpp_l[taylor_active_l] = self._f_conj_second_deriv(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**kwargs)
+                self._if_constant_broadcast(self.fstarpp_l,mask=taylor_active_l)
+
+                self.conj_dom_l = np.array(self.conj_dom_l)
+                self.conj_dom_l[taylor_active_l] =  -np.inf
+                self._if_constant_broadcast(self.conj_dom_l)
+
+
+        if quad_taylor_u is not None:
+            self.taylor_u = quad_taylor_u if quad_taylor_u in domain else np.broadcast_to(quad_taylor_u,domain.shape)
+            self.conj_constr_u_active = False
+            taylor_active_u = self.taylor_u<=self.dom_u
+            if np.any(taylor_active_u):
+                self.conj_taylor_u = np.full(self.domain.shape,np.inf)
+                self.conj_taylor_u[taylor_active_u] = self._f_deriv(self.taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)*self.measure[taylor_active_u]
+                self._if_constant_broadcast(self.conj_taylor_u)
+
+                self.f_u = self.domain.zeros()
+                self.f_u[taylor_active_u] = self._f(self.taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)
+                self._if_constant_broadcast(self.f_u,mask=taylor_active_u)
+
+                self.conj_f_u = domain.zeros()
+                self.conj_f_u[taylor_active_u] = self._f_conj(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**kwargs)
+                self._if_constant_broadcast(self.conj_f_u,mask=taylor_active_u)
+
+                self.fpp_u = domain.zeros()
+                self.fpp_u[taylor_active_u] = self._f_second_deriv(self.taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)
+                self._if_constant_broadcast(self.fpp_u,mask=taylor_active_u)
+
+                self.fstarpp_u = domain.zeros()
+                self.fstarpp_u[taylor_active_u] = self._f_conj_second_deriv(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**kwargs)
+                self._if_constant_broadcast(self.fstarpp_u,mask=taylor_active_u)
+
+                self.conj_dom_u = np.array(self.conj_dom_u)
+                self.conj_dom_u[taylor_active_u] =  np.inf
+                self._if_constant_broadcast(self.conj_dom_u)
+
 
         if (self.constr_l_active or self.constr_u_active):
             self.Lipschitz=np.inf
@@ -203,6 +276,16 @@ class IntegralFunctionalBase(Functional):
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
+
+    def _if_constant_broadcast(self,x,mask=None):
+        assert isinstance(x,np.ndarray)
+        assert x.shape == self.domain.shape
+        if mask is None:
+            if np.allclose(x, x.flatten()[0],rtol=1e-10,atol=1e-12):
+                x = np.broadcast_to(x.flatten()[0],self.domain.shape)
+        else:
+            if np.allclose(x[mask], x[mask].flatten()[0],rtol=1e-10,atol=1e-12):
+                x = np.broadcast_to(x[mask].flatten()[0],self.domain.shape)
 
     def _assert_essential_domain(self,v,eps=1e-10,msg=None):
         self._buf = v-self.dom_u
@@ -218,20 +301,34 @@ class IntegralFunctionalBase(Functional):
 
     def _eval(self, v, func_vals =None):
         # see comment in _conj! 
-        if self.conj_constr_l_active:
-            v_small = (v<self.kink_l)
+        if self.conj_constr_l_active or self.quad_taylor_l_active:
+            v_small = (v<self.taylor_l)
             if np.any(v_small):    
                 mask = ~v_small
                 self._buf[v_small] = v[v_small]
-                self._buf[v_small] *= self.conj_dom_l[v_small]/self.measure[v_small]
-                self._buf[v_small] -= self.conj_f_conj_dom_l[v_small]
-        if self.conj_constr_u_active:
-            v_large = (v>self.kink_u)
+                self._buf[v_small] *= self.conj_taylor_l[v_small] if self.quad_taylor_l_active else self.conj_dom_l[v_small]
+                self._buf[v_small] /= self.measure[v_small] 
+                self._buf[v_small] -= self.conj_f_l[v_small]
+                if self.quad_taylor_l_active:
+                    aux = v[v_small]-self.taylor_l[v_small]
+                    aux *= aux
+                    aux *= 0.5
+                    aux *= self.fpp_l[v_small]
+                    self._buf[v_small] += aux
+        if self.conj_constr_u_active or self.quad_taylor_u_active:
+            v_large = (v>self.taylor_u)
             if np.any(v_large):    
                 mask = np.logical_and(mask,~v_large) if 'mask' in locals() else ~v_large
                 self._buf[v_large] = v[v_large]
-                self._buf[v_large] *= self.conj_dom_u[v_large]/self.measure[v_large]
-                self._buf[v_large] -= self.conj_f_conj_dom_u[v_large]  
+                self._buf[v_large] *= self.conj_taylor_u[v_large] if self.quad_taylor_u_active else self.conj_dom_u[v_large]
+                self._buf[v_large] /= self.measure[v_large]
+                self._buf[v_large] -= self.conj_f_u[v_large]
+                if self.quad_taylor_u_active:
+                    aux = v[v_large]-self.taylor_u[v_large]
+                    aux *= aux
+                    aux *= 0.5
+                    aux *= self.fpp_u[v_large]
+                    self._buf[v_large] += aux
         if 'mask' in locals():
             self._buf[mask] = self._f(v[mask],mask=mask,**self.kwargs)
         else:
@@ -246,27 +343,39 @@ class IntegralFunctionalBase(Functional):
         return np.sum(self._buf)
 
     def _conj(self,vstar,func_vals=None):
-        # Using the definition of the conjugate, for v*<conj_kink_l := f'(dom_l)  we get  
+        # Using the definition of the conjugate, for v*<conj_taylor_l := f'(dom_l)  we get  
         # f^*(v^*) = v^* dom_l - f(dom_l).
-        # By Young's equality conj_kink_l * dom_l = f(dom_l) + f^*(conj_kink_l) 
+        # By Young's equality conj_taylor_l * dom_l = f(dom_l) + f^*(conj_taylor_l) 
         # and by the fact that f^*' and f' are inverse to each other, f^*(v^*) equals the first order Taylor approximation
-        # f^*(v^*) = f^*(conj_kink_l) + f^*'(conj_kink_l)(v^*-conj_kink_l)
+        # f^*(v^*) = f^*(conj_taylor_l) + f^*'(conj_taylor_l)(v^*-conj_taylor_l)
         # This identity is used in the _eval.
         self._buf2 = vstar/self.measure
-        if self.constr_l_active:
-            vstar_small = (vstar<self.conj_kink_l)
+        if self.constr_l_active or self.quad_taylor_l_active:
+            vstar_small = (vstar<self.conj_taylor_l)
             if np.any(vstar_small):
                 mask = ~vstar_small            
                 self._buf[vstar_small] = self._buf2[vstar_small]
-                self._buf[vstar_small] *= self.dom_l[vstar_small]
-                self._buf[vstar_small] -= self.f_dom_l[vstar_small]
-        if self.constr_u_active:
-            vstar_large = (vstar>self.conj_kink_u)
+                self._buf[vstar_small] *= self.taylor_l[vstar_small] if self.quad_taylor_l_active else self.dom_l[vstar_small]
+                self._buf[vstar_small] -= self.f_l[vstar_small]
+                if self.quad_taylor_l_active:
+                    aux = self._buf2[vstar_small]-self.conj_taylor_l[vstar_small]/self.measure[vstar_small]
+                    aux *= aux
+                    aux *= 0.5
+                    aux *= self.fstarpp_l[vstar_small]
+                    self._buf[vstar_small] += aux
+        if self.constr_u_active or self.quad_taylor_u_active:
+            vstar_large = (vstar>self.conj_taylor_u)
             if np.any(vstar_large):   
                 mask = np.logical_and(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
                 self._buf[vstar_large] = self._buf2[vstar_large]
-                self._buf[vstar_large] *= self.dom_u[vstar_large]
-                self._buf[vstar_large] -= self.f_dom_u[vstar_large]        
+                self._buf[vstar_large] *= self.taylor_u[vstar_large] if self.quad_taylor_u_active else self.dom_u[vstar_large]
+                self._buf[vstar_large] -= self.f_u[vstar_large]
+                if self.quad_taylor_u_active:
+                    aux = self._buf2[vstar_large]-self.conj_taylor_u[vstar_large]/self.measure[vstar_large]
+                    aux *= aux
+                    aux *= 0.5
+                    aux *= self.fstarpp_u[vstar_large]
+                    self._buf[vstar_large] += aux                
         if 'mask' in locals():
             self._buf[mask] = self._f_conj(self._buf2[mask],mask=mask,**self.kwargs)
         else:
@@ -283,16 +392,26 @@ class IntegralFunctionalBase(Functional):
     def _subgradient(self, v):
         if not self.everywhere_finite:
             self._assert_essential_domain(v,msg='_subgradient')
-        if self.conj_constr_l_active:
-            v_small = (v<self.kink_l)
+        if self.conj_constr_l_active or self.quad_taylor_l_active:
+            v_small = (v<self.taylor_l)
             if np.any(v_small):
                 mask = np.logical_not(v_small)   
-                self._buf[v_small] = self.conj_dom_l[v_small]
-        if self.conj_constr_u_active:
-            v_large = (v>self.kink_u)
+                self._buf[v_small] = self.conj_taylor_l[v_small] if self.quad_taylor_l_active else self.conj_dom_l[v_small]
+                if self.quad_taylor_l_active:
+                    aux = v[v_small]-self.taylor_l[v_small]
+                    aux *= self.fpp_l[v_small]
+                    aux *= self.measure[v_small]
+                    self._buf[v_small] += aux  
+        if self.conj_constr_u_active or self.quad_taylor_u_active:
+            v_large = (v>self.taylor_u)
             if np.any(v_large):
-                mask = np.land(mask,~v_large) if 'mask' in locals() else ~v_large
-                self._buf[v_large] = self.conj_dom_u[v_large]     
+                mask = np.logical_and(mask,~v_large) if 'mask' in locals() else ~v_large
+                self._buf[v_large] = self.conj_taylor_u[v_large] if self.quad_taylor_u_active else self.conj_dom_u[v_large]
+                if self.quad_taylor_u_active:
+                    aux = v[v_large]-self.taylor_u[v_large]
+                    aux *= self.fpp_u[v_large]
+                    aux *= self.measure[v_large]
+                    self._buf[v_large] += aux                
         if 'mask' in locals():
             self._buf[mask] = self._f_deriv(v[mask],mask=mask,**self.kwargs)*self.measure[mask]
         else:
@@ -303,16 +422,24 @@ class IntegralFunctionalBase(Functional):
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar,msg='_conj_subgradient')
         self._buf2 = vstar/self.measure
-        if self.constr_l_active:
-            vstar_small = (vstar<self.conj_kink_l)
+        if self.constr_l_active or self.quad_taylor_l_active:
+            vstar_small = (vstar<self.conj_taylor_l)
             if np.any(vstar_small):
-                mask = np.land(mask,~vstar_small) if 'mask' in locals() else ~vstar_small  
-                self._buf[vstar_small] = self.dom_l[vstar_small]
-        if self.constr_u_active:
-            vstar_large = (vstar>self.conj_kink_u)
+                mask = np.logical_and(mask,~vstar_small) if 'mask' in locals() else ~vstar_small  
+                self._buf[vstar_small] = self.taylor_l[vstar_small] if self.quad_taylor_l_active else self.dom_l[vstar_small]
+                if self.quad_taylor_l_active:
+                    aux = self._buf2[vstar_small]-self.conj_taylor_l[vstar_small]/self.measure[vstar_small]
+                    aux *= self.fstarpp_l[vstar_small]
+                    self._buf[vstar_small] += aux
+        if self.constr_u_active or self.quad_taylor_u_active:
+            vstar_large = (vstar>self.conj_taylor_u)
             if np.any(vstar_large):
-                mask = np.land(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
-                self._buf[vstar_large] = self.dom_u[vstar_large]
+                mask = np.logical_and(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
+                self._buf[vstar_large] = self.taylor_u[vstar_large] if self.quad_taylor_u_active else self.dom_u[vstar_large]
+                if self.quad_taylor_u_active:
+                    aux = self._buf2[vstar_large]-self.conj_taylor_u[vstar_large]/self.measure[vstar_large]
+                    aux *= self.fstarpp_u[vstar_large]
+                    self._buf[vstar_large] += aux
         if 'mask' in locals():
             self._buf[mask] = self._f_conj_deriv(self._buf2[mask],mask=mask,**self.kwargs)
         else:
@@ -322,13 +449,21 @@ class IntegralFunctionalBase(Functional):
     def _hessian(self, v):
         if not self.everywhere_finite:
             self._assert_essential_domain(v,msg='_hessian')
-        self._buf = self.domain.ones()
+        self._buf = np.full(self.domain.shape,np.inf)
+
         if self.conj_constr_l_active:
-            self._buf[v<self.kink_l] = 0.
+            self._buf[v<self.taylor_l] = 0.
+        if self.quad_taylor_l_active:
+            v_small = v<self.taylor_l
+            self._buf[v_small] = self.fpp_l[v_small]
         if self.conj_constr_u_active:
-            self._buf[v>self.kink_u] = 0.
-        if self.conj_constr_l_active or self.conj_constr_u_active:
-            mask = (self._buf==1)
+            self._buf[v>self.taylor_u] = 0.
+        if self.quad_taylor_u_active:
+            v_large = v>self.taylor_u
+            self._buf[v_large] = self.fpp_u[v_large]
+
+        if self.conj_constr_l_active or self.conj_constr_u_active or self.quad_taylor_l_active or self.quad_taylor_u_active:
+            mask = (self._buf==np.inf)
             self._buf[mask] =  self._f_second_deriv(v[mask],mask=mask,**self.kwargs)
         else:
             self._buf =  self._f_second_deriv(v,**self.kwargs)
@@ -339,13 +474,21 @@ class IntegralFunctionalBase(Functional):
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar,msg='_conj_hessian')
         self._buf2 = vstar/self.measure
-        self._buf = self.domain.ones()
+        self._buf = np.full(self.domain.shape,np.inf)
+
         if self.constr_l_active:
-            self._buf[self._buf2<self.conj_kink_l] = 0.
+            self._buf[self._buf2<self.conj_taylor_l] = 0.
         if self.constr_u_active:
-            self._buf[self._buf2>self.conj_kink_u] = 0.   
-        if self.constr_l_active or self.constr_u_active:   
-            mask = (self._buf==1)
+            self._buf[self._buf2>self.conj_taylor_u] = 0.
+        if self.quad_taylor_l_active:
+            vstar_small = vstar<self.conj_taylor_l
+            self._buf[vstar_small] = self.fstarpp_l[vstar_small]
+        if self.quad_taylor_u_active:
+            vstar_large = vstar>self.conj_taylor_u
+            self._buf[vstar_large] = self.fstarpp_u[vstar_large]
+
+        if self.constr_l_active or self.constr_u_active or self.quad_taylor_l_active or self.quad_taylor_u_active:   
+            mask = (self._buf==np.inf)
             self._buf[mask] = self._f_conj_second_deriv(self._buf2[mask],mask=mask,**self.kwargs)
         else:
             self._buf = self._f_conj_second_deriv(self._buf2,**self.kwargs)
@@ -357,18 +500,29 @@ class IntegralFunctionalBase(Functional):
             res = self._f_prox(v,tau,**self.kwargs)
         else:
             res = self._f_prox(v,tau,mask=mask,**self.kwargs)
+        mask = mask if mask is not None else slice(None)            
 
         if self.constr_l_active:
-            res = np.maximum(res,self.dom_l[mask if mask is not None else slice(None)])
+            res = np.maximum(res,self.dom_l[mask])
         if self.constr_u_active:
-            res = np.minimum(res,self.dom_u[mask if mask is not None else slice(None)])
+            res = np.minimum(res,self.dom_u[mask])
         
         if self.conj_constr_l_active:
-            corr = (tau*self.conj_dom_l/self.measure)[mask if mask is not None else slice(None)]                
-            res = np.minimum(res,v-corr,out = res)
+            linprox = v- tau*self.conj_dom_l[mask]/self.measure[mask]                
+            res[linprox<=self.taylor_l] = linprox[linprox<=self.taylor_l]
         if self.conj_constr_u_active:
-            corr = (tau*self.conj_dom_u/self.measure)[mask if mask is not None else slice(None)]               
-            res = np.maximum(res,v-corr,out = res)
+            linprox = v-tau*self.conj_dom_u[mask]/self.measure[mask]
+            res[linprox>=self.taylor_u] = linprox[linprox>=self.taylor_u]
+        if self.quad_taylor_l_active:
+            taufpp=tau*self.fpp_l[mask]
+            taufp=tau*self.conj_taylor_l[mask]/self.measure[mask]
+            quadprox=(v+taufpp*self.taylor_l-taufp)/(1.+taufpp)
+            res[quadprox<=self.taylor_l] = quadprox[quadprox<=self.taylor_l]
+        if self.quad_taylor_u_active:
+            taufpp=tau*self.fpp_u[mask]
+            taufp=tau*self.conj_taylor_u[mask]/self.measure[mask]
+            quadprox = (v+taufpp*self.taylor_u-taufp)/(1.+taufpp)
+            res[quadprox>=self.taylor_u] = quadprox[quadprox>=self.taylor_u]
         return res
     
     def _conj_proximal(self, vstar, tau,mask=None):
@@ -380,18 +534,30 @@ class IntegralFunctionalBase(Functional):
             res = vstar/self.measure[mask]
             res = self._f_conj_prox(res,tau,mask=mask,**self.kwargs)
             res *= self.measure[mask]
+        mask = mask if mask is not None else slice(None)
 
         if self.conj_constr_l_active:
-            res = np.maximum(res,self.conj_dom_l[mask if mask is not None else slice(None)])
-        if self.constr_u_active:
-            res = np.minimum(res,self.conj_dom_u[mask if mask is not None else slice(None)])
+            res = np.maximum(res,self.conj_dom_l[mask])
+        if self.conj_constr_u_active:
+            res = np.minimum(res,self.conj_dom_u[mask])
 
         if self.constr_l_active:
-            corr = (tau*self.dom_l*self.measure)[mask if mask is not None else slice(None)]
-            res = np.minimum(res,vstar-corr,out = res)
+            linprox = vstar -  tau*self.dom_l[mask]*self.measure[mask]
+            res[linprox<=self.conj_taylor_l] = linprox[linprox<=self.conj_taylor_l]
         if self.constr_u_active:
-            corr = (tau*self.dom_u*self.measure)[mask if mask is not None else slice(None)]
-            res = np.maximum(res,vstar-corr,out = res)   
+            linprox = vstar -  tau*self.dom_u[mask]*self.measure[mask]
+            res[linprox>=self.conj_taylor_u] = linprox[linprox>=self.conj_taylor_u]           
+
+        if self.quad_taylor_l_active:
+            taufstarpp=tau*self.fstarpp_l[mask]
+            taufstarp=tau*self.taylor_l[mask]*self.measure[mask]
+            quadprox=(vstar + taufstarpp*self.conj_taylor_l[mask] - taufstarp) / (1.+taufstarpp)
+            res[quadprox<=self.conj_taylor_l] = quadprox[quadprox<=self.conj_taylor_l] 
+        if self.quad_taylor_u_active:
+            taufstarpp=tau*self.fstarpp_u[mask]
+            taufstarp=tau*self.taylor_u[mask]*self.measure[mask]
+            quadprox=(vstar + taufstarpp*self.conj_taylor_u[mask] - taufstarp) / (1.+taufstarpp) 
+            res[quadprox>=self.conj_taylor_u] = quadprox[quadprox>=self.conj_taylor_u]
 
         return res
 
@@ -404,13 +570,14 @@ class IntegralFunctionalBase(Functional):
     def _f_second_deriv(self,v,**kwargs):
         raise NotImplementedError
 
-    def _f_prox(self,v,tau,tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+    def _f_prox(self,v,tau,tol=1e-12, abstol=1e-12,maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
         if self.__class__.__dict__.get("_f_deriv") is not None:
             vclip = np.minimum(v,self.dom_u)
             vclip = np.maximum(vclip,self.dom_l)
             f_second_deriv = self._f_second_deriv if self._f_second_deriv is not None else None
             return self._numerical_prox(v,tau,self._f_deriv,f_second_deriv,self.dom_l, self.dom_u, 
-                                        tol=tol,maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
+                                        tol=tol,abstol=abstol,
+                                        maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
                                         **kwargs
                                         )
         else:
@@ -425,30 +592,31 @@ class IntegralFunctionalBase(Functional):
     def _f_conj_second_deriv(self,vstar,**kwargs):
         raise NotImplementedError
 
-    def _f_conj_prox(self,vstar,tau,tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+    def _f_conj_prox(self,vstar,tau,tol=1e-12, abstol=1e-12, 
+                     maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,
+                     **kwargs
+                     ):
         if self.__class__.__dict__.get("_f_conj_deriv") is not None:
-            print('check existence of _conj_prox',self.__class__.__dict__.get("_f_conj_prox") is not None)
             vclip = np.minimum(vstar,self.conj_dom_u)
             vclip = np.maximum(vclip,self.conj_dom_l)
             vclip /= self.measure
-            #self._f_conj_deriv(vclip,**kwargs)
-            #self._f_conj_second_deriv(vclip,**kwargs)
             f_conj_second_deriv = self._f_conj_second_deriv if self._f_conj_second_deriv is not None else None
             return self._numerical_prox(vstar,tau,
                                         self._f_conj_deriv,f_conj_second_deriv,
                                         self.conj_dom_l/self.measure, 
                                         self.conj_dom_u/self.measure, 
-                                        tol=tol,maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
+                                        tol=tol, abstol=abstol,
+                                        maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
                                         **kwargs
                                         )
         else:
-        #except NotImplementedError:
             NotImplementedError('Need first derivative of conjugate functional for numerical conjugate prox operator')
 
-    def _numerical_prox(self, y, tau, 
-                        fp, fpp, dom_l, dom_u, 
+    def _numerical_prox(self, y, tau, fp, fpp, 
+                        dom_l, dom_u, 
                         start=None,ub=None, lb=None,
-                        tol=1e-12, maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+                        tol=1e-15, abstol=1-15, 
+                        maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
         """
         Vectorized proximal operator of a smooth convex scalar function
         using Newton's method with automatic fallback to bisection.
@@ -483,9 +651,9 @@ class IntegralFunctionalBase(Functional):
         
         assert isinstance(y,np.ndarray)
         if np.isscalar(dom_u):
-            dom_u = np.full_like(y,dom_u)
+            dom_u = np.broadcast_to(dom_u,y.shape)
         if np.isscalar(dom_l):
-            dom_l = np.full_like(y,dom_l)    
+            dom_l = np.broadcast_to(dom_l,y.shape)    
         if not np.all(dom_l<=dom_u):
             raise ValueError('Upper/lower bounds of essential domain invalid.')
   
@@ -497,7 +665,7 @@ class IntegralFunctionalBase(Functional):
 
 
         r = fp(x,**kwargs) + (x - y)/tau
-        converged = (dom_u-dom_l<tol) # width of essential domain <tol
+        converged = ((dom_u-dom_l<abstol) | (dom_u-dom_l < tol * np.maximum(dom_u,-dom_l)))   # width of essential domain <tol
         converged = converged | (r==0) # optimality condition satisfied 
         converged = converged | ((x==dom_l) & (r>=0)) # optimality condition at left boundary satisfied
         converged = converged | ((x==dom_u) & (r<=0)) # optimality condition at right boundary satiesfied
@@ -516,37 +684,32 @@ class IntegralFunctionalBase(Functional):
 #            ub[x_too_small] = np.minimum(x[x_too_small] 
 #                                      + np.minimum(np.ones_like(r[x_too_small]), - tau*r[x_too_small]),
 #                                        dom_u[x_too_small]),
-                                    
+
         lb = x.copy()
         x_too_large = (r>0) & (~converged)
         if np.any(x_too_large):
-           lb[x_too_large] = np.maximum(x[x_too_large]
-                                     - np.minimum(tau*np.ones_like(r[x_too_large]), tau*r[x_too_large]),
-                                        dom_l[x_too_large])
-        """
-        if lb is None:
-            lb = np.minimum(x,dom_u)-1.
-        lb[lb==-np.inf]=x[lb==-np.inf]-1.
-        lb = np.maximum(lb,dom_l)
-        print(f'lb corrected: {lb}')
-        if ub is None:
-            ub = np.maximum(x,dom_l)+1.
-        ub[ub==np.inf]=x[ub==np.inf]+1.
-        ub = np.minimum(ub,dom_u)
-        print(f'ub corrected: {ub}')
-        """
+           xl = x[x_too_large]
+           rl = r[x_too_large]
+           dl = dom_l[x_too_large]
+           up = np.minimum(tau*np.ones_like(xl),tau*rl)
+           up2 = np.maximum(xl-up,dl)
+           lb[x_too_large] = up2
+#           lb[x_too_large] = np.maximum(x[x_too_large]
+#                                     - np.minimum(tau*np.ones_like(r[x_too_large]), tau*r[x_too_large]),
+#                                        dom_l[x_too_large])
 
-        #self.log.debug(f'before correction: r: {r}\n ub: {ub}\n lb: {lb}\n diff: {ub-lb}')
+        self.log.debug(f'before correction: r: {r}\n ub: {ub}\n lb: {lb}\n diff: {ub-lb}')
         if not np.all(lb<=ub):
             ind = lb>ub
             raise RuntimeError(f'lb<=ub violated for input values {y[lb>ub]}. lb: {lb[lb>ub]}, ub: {ub[lb>ub]} ')
+
         # decrease lb where necessary to make it a valid lower bound
         for it in range(maxBoundsIter):
             v = fp(lb,**kwargs) + (lb- y)/tau            
-            ind = (v>0) & ~converged
-            if it==0 and not np.all(ub[ind]-lb[ind]>tol):
-                ii = ind & (ub-lb<=tol)
-                lb[ii] = np.maximum(lb[ii]-tol,dom_l[ii])
+            ind = (v>0) & (~converged) & (lb>dom_l)
+            if it==0 and not np.all(ub[ind]-lb[ind]>tol*np.maximum(ub[ind],-lb[ind])):
+                ii = ind & ((ub-lb<=tol * np.maximum(ub,-lb)))
+                lb[ii] = np.maximum(lb[ii]-tol*np.abs(lb[ii])-abstol,dom_l[ii])
                 self.log.debug(f'adding {np.sum(ii & (lb==dom_l))} indices as converged.')
                 converged = converged | (ii & (lb==dom_l))
             self.log.debug(f'lower bound it {it}: {np.sum(ind)} indices invalid.')
@@ -555,7 +718,7 @@ class IntegralFunctionalBase(Functional):
             else:
                 lb[ind] = np.maximum(dom_l[ind],2*lb[ind]-ub[ind])
         if not np.sum(ind)==0:
-            raise RuntimeError("Could not determine lower bound. Increase maxBoundsIter!") 
+            raise RuntimeError(f"Could not determine lower bound. Increase maxBoundsIter! lb: {lb[ind]}, ub: {ub[ind]}, dom_l: {dom_l[ind]}") 
         r = fp(lb,**kwargs) + (lb - y)/tau 
         converged = converged | ((lb==dom_l) & (r>=0))
         if not np.all((r<=0) | converged):
@@ -564,11 +727,11 @@ class IntegralFunctionalBase(Functional):
         # increase ub where necessary to make it a valid upper bound
         for it in range(maxBoundsIter):
             v = fp(ub,**kwargs) + (ub- y)/tau            
-            ind = (v<0) & ~converged
+            ind = (v<0) & (~converged)
             self.log.debug(f'upper bound it {it}: {np.sum(ind)} indices invalid')
-            if it==0 and not np.all(ub[ind]-lb[ind]>tol):
-                ii = ind & (ub-lb<=tol)
-                ub[ii] = np.minimum(dom_u[ii],lb[ii]+tol)
+            if it==0 and not np.all(ub[ind]-lb[ind]>tol*np.maximum(ub[ind],-lb[ind])):
+                ii = ind & (ub-lb<=tol * np.maximum(ub,-lb))
+                ub[ii] = np.minimum(dom_u[ii],ub[ii]+tol*np.abs(ub[ii])+abstol)
                 self.log.debug(f'adding {np.sum(ii & (ub==dom_u))} indices as converged.')
                 converged = converged | (ii & (ub==dom_u))
             if np.sum(ind)==0:
@@ -606,10 +769,10 @@ class IntegralFunctionalBase(Functional):
                 ub[r<0]  = np.minimum(ub[r<0],x[r<0] - tau*r[r<0])
                 # Check convergence
                 #conv = np.abs(r) < tol
-                conv = np.abs(ub-lb) < tol
+                conv = ((np.abs(ub-lb) < abstol) | (ub-lb <=tol*np.maximum(ub,-lb)))
                 converged = converged | conv
                 x = np.where(conv, x, xnew)
-                self.log.debug(f'Newton it {iter}: {np.sum(converged==True)} out of {len(x)} converged.')
+                self.log.debug(f'Newton it {iter}: {np.sum(converged==True)} out of {len(x.flatten())} converged.')
     
                 if np.all(converged):
                     return x
@@ -632,14 +795,83 @@ class IntegralFunctionalBase(Functional):
                 right = fM > 0
                 ub = np.where(right, Mi, ub)
                 lb = np.where(~right, Mi, lb)
-                self.log.debug(f'bisection it. {iter}: {np.sum(ub-lb>tol)} not converged')
-                if np.all((ub-lb) < tol):
+                nr_not_converged = np.sum(((ub-lb) >= abstol) & ((ub-lb) >= tol*np.maximum(ub,-lb)))
+                self.log.debug(f'bisection it. {iter}: {nr_not_converged} not converged')
+                if nr_not_converged == 0:
                     break
             x[mask] = 0.5*(lb+ub)
-            if np.max(ub-lb)>tol:
-                raise RuntimeError('Could not satisfy tolerance criterium in bisection algorithm.')
+            if np.any((ub-lb>=abstol)  &  ((ub-lb) >= tol*np.maximum(ub,-lb))):
+                ind = (ub-lb>= abstol) &  ((ub-lb) >= tol*np.maximum(ub,-lb))
+                ff =fp(x[mask],mask=mask,**kwargs) + (x[mask]-y[mask])/tau
+                raise RuntimeError(f'Could not satisfy either of the tolerance criteria (tol = {tol}, abstol = {abstol}) after {iter} steps of bisection algorithm at indices {np.where(ind)}. x values: {x[mask][ind]}, f values: {ff[ind]}, ub-lb {ub[ind]-lb[ind]}.')
 
-        return x        
+        return x
+    
+class VectorIntegralFunctional(Functional):
+    def __init__(self, vdomain, sdomain, scalar_func,scalar_func_args=None):
+                
+        self.vdomain = vdomain
+        self.sdomain = sdomain
+        assert scalar_func_args is None or isinstance(scalar_func_args,dict)
+        if scalar_func == 'Huber':
+            self.scalar_func = Huber(sdomain)
+        elif scalar_func == 'Lpp':
+            self.scalar_func = LppPower(sdomain,**scalar_func_args)
+        elif isinstance(scalar_func,IntegralFunctionalBase):
+            self.scalar_func = scalar_func
+        else:
+            raise ValueError(f'{scalar_func} invalid as argument for scalar_func.')
+
+        super().__init__(domain, h_domain,  convexity_param, Lipschitz, 
+                         separable= False, linear= False)
+        self._sbuf = sdomain.zeros()
+        self._vbuf = vdomain.zeros()
+        self._vaxes = (-1,)
+
+    def _eval(self, vec):
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        return self.scalar_func(self._sbuf)
+
+    def _conj(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        return self.scalar_func.conj(self._sbuf)
+
+    def _subgradient(self, vec):
+        """
+        returns   [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
+        """
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.subgradient(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+    
+    def _conj_subgradient(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    def _proximal(self, vec,tau):
+        """
+        returns   [prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
+        """
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.proximal(self._sbuf,tau)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    def _conj_proximal(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.proximal(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    
+
 
 class LppPower(IntegralFunctionalBase):
     r"""
@@ -652,12 +884,13 @@ class LppPower(IntegralFunctionalBase):
         Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
     p: float >1 [option]
         exponent
-    constr_l,constr_u,left_linearization, right_linearization: None, np.isscalar or np.ndarray
+    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional  
     """
 
     def __init__(self, domain, p=2.,
-                 constr_l=None, constr_u=None, left_linearization=None, right_linearization=None,
+                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
+                  quad_taylor_l=None, quad_taylor_u=None,
                  **kwargs):
         assert np.isscalar(p) and p >1.
         self.p = p
@@ -665,31 +898,40 @@ class LppPower(IntegralFunctionalBase):
 
         dom_l = -np.inf if constr_l is None else constr_l        
         dom_u = np.inf if constr_u is None else constr_u
-        kink_l = -np.inf if left_linearization is None else left_linearization
-        kink_u = np.inf if right_linearization is None else right_linearization
+        dom2_l = dom_l
+        dom2_u = dom_u
+        taylor_l = -np.inf if lin_taylor_l is None else lin_taylor_l
+        if quad_taylor_l is not None:
+            taylor_l = quad_taylor_l
+            dom2_l= taylor_l
+        taylor_u = np.inf if lin_taylor_u is None else lin_taylor_u
+        if quad_taylor_u is not None:
+            taylor_u = quad_taylor_u
+            dom2_u= taylor_u
 
         if p<2:
-            aux = np.max(np.maximum(-dom_l,dom_u))
+            aux = np.abs(np.max(np.maximum(-dom2_l,dom2_u)))
             convexity_param = (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
 
-            aux = np.min(np.minimum(kink_l,-kink_u))
-            Lipschitz = np.maximum((self.p-1) * aux**(self.p-2),aux**(self.p-1)) if aux>0 else np.inf
+            aux = np.min(np.maximum(taylor_l,-taylor_u))
+            Lipschitz = (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
 
         if p>2:
-            aux = np.min(np.minimum(dom_l, -dom_u))
+            aux = np.min(np.maximum(dom2_l, -dom2_u))
             convexity_param = (self.p-1) * aux**(self.p-2)  if aux>0 else 0
 
-            aux =  np.max(np.maximum(-kink_l,kink_u))
-            Lipschitz = np.maximum((self.p-1) * np.abs(aux)**(self.p-2),np.abs(aux)**(self.p-1)) if aux<np.inf else np.inf
+            aux =  np.abs(np.max(np.maximum(-taylor_l,taylor_u)))
+            Lipschitz = (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
 
         if p==2:
-            convexity_param = 1.
-            Lipschitz = 1.
+            convexity_param = 1. if lin_taylor_l is None and lin_taylor_u is None else 0.
+            Lipschitz = 1. if constr_l is None and constr_u is None else np.inf
 
         super().__init__(domain, 
                          convexity_param=convexity_param,
                          Lipschitz = Lipschitz,
-                         constr_l=constr_l,constr_u=constr_u,left_linearization=left_linearization,right_linearization=right_linearization,
+                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
 
@@ -723,7 +965,7 @@ class LppPower(IntegralFunctionalBase):
             return v/(1+tau)
         else:
             return self._numerical_prox(v,tau,
-                                self._f_deriv,self._f_second_deriv,self.dom_l, self.dom_u, 
+                                self._f_deriv,self._f_second_deriv,-np.inf, np.inf,
                                 tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
                                 **kwargs
                                 )
@@ -761,8 +1003,7 @@ class LppPower(IntegralFunctionalBase):
         else:
             return self._numerical_prox(v_star,tau,
                                 self._f_conj_deriv,self._f_conj_second_deriv,
-                                np.broadcast_to(-inf,self.domain.shape), 
-                                np.broadcast_to(inf,self.domain.shape), 
+                                -np.inf, np.inf, 
                                 tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
                                 **kwargs
                                 )
@@ -774,15 +1015,17 @@ class L1MeasureSpace(IntegralFunctionalBase):
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the generic L1.
-    constr_l,constr_u,left_linearization, right_linearization: None, np.isscalar or np.ndarray
+    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional          
     """
     def __init__(self, domain,
-                constr_l=None, constr_u=None, left_linearization=None, right_linearization=None,
-                 **kwargs):
+                constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
+                quad_taylor_l=None, quad_taylor_u=None,**kwargs):
         super().__init__(domain,conj_dom_u=1.,conj_dom_l=-1.,
-                         constr_l=constr_l,constr_u=constr_u,left_linearization=left_linearization,right_linearization=right_linearization,
-                         **kwargs)
+                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
+                         **kwargs
+                         )
 
     def _f(self, v,**kwargs):
         return np.abs(v)
@@ -853,24 +1096,41 @@ class KullbackLeibler(IntegralFunctionalBase):
         Domain on which to define the Kullback-Leibler divergence
     w: domain 
         First argument of Kullback-Leibler divergence.
-    constr_l,constr_u,left_linearization, right_linearization: None, np.isscalar or np.ndarray
+    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional  
     """
 
     def __init__(self, domain, w,
-                 constr_l=None, constr_u=None, left_linearization=None, right_linearization=None,
+                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
+                 quad_taylor_l=None, quad_taylor_u=None,
                  **kwargs):
         if not w in domain:
             raise ValueError('w not in domain.')
         if np.min(w)<0:
             raise ValueError('w must be non-negative.')
-        self.w = w
-        Lipschitz =  np.max(np.maximum(w/left_linearization**2,np.abs(1-w/left_linearization))) if left_linearization is not None else np.inf
-        convexity_param = np.min(w/constr_u**2) if constr_u is not None else 0
+        self.w = w.copy()
+
+        if constr_u is not None and np.any(constr_u<np.inf):
+            Lipschitz = np.inf
+        elif quad_taylor_l is not None or lin_taylor_l is not None:
+            taylor_l = quad_taylor_l if quad_taylor_l is not None else lin_taylor_l
+            Lipschitz =  np.max(w/taylor_l**2) if np.min(taylor_l)>0 else np.inf
+        else: 
+            Lipschitz = np.inf
+
+        if lin_taylor_l is not None or lin_taylor_u is not None:
+            convexity_param = 0 
+        elif constr_u is not None or quad_taylor_u is not None:
+            u = constr_u if constr_u is not None else quad_taylor_u
+            convexity_param = np.min(w/u**2) 
+        else:
+            convexity_param = 0.
+    
         super().__init__(domain,dom_l=1e-14*w,
                          conj_dom_u=domain.ones()-1e-14*w,
                          convexity_param = convexity_param, Lipschitz= Lipschitz,                              
-                          constr_l=constr_l,constr_u=constr_u,left_linearization=left_linearization,right_linearization=right_linearization,           
+                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                          quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
 
@@ -1003,24 +1263,45 @@ class RelativeEntropy(IntegralFunctionalBase):
         Domain on which to define the Kullback-Leibler divergence
     w: scalar or in domain [optional, default: 1]
         second argument of the Kullback-Leibler diverengence; reference value if used as penalty functional
-    constr_l,constr_u,left_linearization, right_linearization: None, scalar or in domain
+    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, scalar or in domain
         see IntegralFunctional  
     """
 
     def  __init__(self, domain,w=1.,
-                  constr_l=None, constr_u=None, left_linearization=None, right_linearization=None,
-                  **kwargs):
+                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
+                  quad_taylor_l=None, quad_taylor_u=None,
+                  **kwargs
+                  ):
         if np.isscalar(w):
             w = np.broadcast_to(w,domain.shape)
         assert w in domain
         assert np.min(w)>0
-        self.w= w
-        convexity_param = np.min(1/constr_u) if constr_u is not None else 0
-        Lipschitz = np.max(np.maximum(1/left_linearization,np.abs(1.+np.log(left_linearization/w)))) if left_linearization is not None else np.inf
+        self.w= w.copy()
+
+        if constr_u is not None and np.any(constr_u<np.inf):
+            Lipschitz = np.inf
+        elif quad_taylor_l is not None or lin_taylor_l is not None:
+            taylor_l = quad_taylor_l if quad_taylor_l is not None else lin_taylor_l
+            if not np.isscalar(taylor_l):
+                taylor_l= min(taylor_l)
+            Lipschitz = np.max(1/taylor_l) if np.min(taylor_l)>0 else np.inf
+        else: 
+            Lipschitz = np.inf
+
+        if lin_taylor_u is not None or lin_taylor_l is not None:
+            convexity_param = 0.
+        elif constr_u is not None or quad_taylor_u is not None:
+            u = constr_u if constr_u is not None else quad_taylor_u
+            convexity_param = np.min(1./u) 
+        else:
+            convexity_param = 0.
+
         super().__init__(domain,dom_l = 1e-14*w,
                          convexity_param=convexity_param, Lipschitz= Lipschitz, 
-                         constr_l=constr_l,constr_u=constr_u,left_linearization=left_linearization,right_linearization=right_linearization,
-                         **kwargs)
+                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                         quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
+                         **kwargs
+                         )
 
     def _f(self, u,**kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
@@ -1052,8 +1333,9 @@ class RelativeEntropy(IntegralFunctionalBase):
     def _f_prox(self, v, tau, **kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
         
-        v_mod = (v<=700*tau) 
-        # For v>=710*tau an overflow occurs in the exponential. 
+        thres = np.log(np.finfo(v.dtype).max)
+        v_mod = (v<=thres*tau) 
+        # For v>=thres*tau an overflow occurs in the exponential (for standard doubles thres ~ 710). 
         # For such values we use an approximation via linearization (= one Newon step) instead of the exact formula in terms of the Lambert-w function. 
         
         # memory efficient implementation of 
@@ -1452,7 +1734,7 @@ class QuadraticPositiveSemidef(Functional):
         assert isinstance(domain,UniformGridFcts)
         assert domain.ndim==2
         assert domain.shape[0]==domain.shape[1]
-        assert domain.volume_elem==1
+        assert domain.volume_elem==1.
         assert tol>=0
         assert trace_val is None or trace_val>0
         self.tol=tol
