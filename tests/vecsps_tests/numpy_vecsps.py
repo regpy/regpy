@@ -44,7 +44,7 @@ def test_GridFcts():
     errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,0,5,15]),boundary_ext='const',ext_const=(1,(2,3)))
 
     gf=GridFcts(np.array([2,4,8]),np.array([-1,2,12,112]),use_cell_measure=False)
-    if gf.measure!=1.0:
+    if gf.measure.flat[0]!=1.0:
         errors.append(f"Not using cell measure should create a constant one measure but got measure = {gf.measure}")
     gf=GridFcts(np.array([2,4,8]),np.array([-1,0,5,15]))
     if not np.array_equal(gf.measure,np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]])):
@@ -63,7 +63,7 @@ def test_UniformGridFcts():
         errors.append(f"The volume element of {gf} with coords = {gf.coords} should be 6 but got {gf.volume_elem}.")
     try:
         gf.measure=3*np.ones((3,4))
-        if gf.volume_elem!=3 or gf.measure!=3:
+        if gf.volume_elem!=3 or gf.measure.flat[0]!=3:
             errors.append(f"Setting the new measure succeeded but either the volume_elem {gf.volume_elem} or the measure {gf.measure} is not equal to the new value 3.")
     except Exception as e:
         errors.append(f"Trying to redefine the measure to 3 of {gf} failed with exception {e}.")
