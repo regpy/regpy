@@ -805,7 +805,73 @@ class IntegralFunctionalBase(Functional):
                 ff =fp(x[mask],mask=mask,**kwargs) + (x[mask]-y[mask])/tau
                 raise RuntimeError(f'Could not satisfy either of the tolerance criteria (tol = {tol}, abstol = {abstol}) after {iter} steps of bisection algorithm at indices {np.where(ind)}. x values: {x[mask][ind]}, f values: {ff[ind]}, ub-lb {ub[ind]-lb[ind]}.')
 
-        return x        
+        return x
+    
+class VectorIntegralFunctional(Functional):
+    def __init__(self, vdomain, sdomain, scalar_func,scalar_func_args=None):
+                
+        self.vdomain = vdomain
+        self.sdomain = sdomain
+        assert scalar_func_args is None or isinstance(scalar_func_args,dict)
+        if scalar_func == 'Huber':
+            self.scalar_func = Huber(sdomain)
+        elif scalar_func == 'Lpp':
+            self.scalar_func = LppPower(sdomain,**scalar_func_args)
+        elif isinstance(scalar_func,IntegralFunctionalBase):
+            self.scalar_func = scalar_func
+        else:
+            raise ValueError(f'{scalar_func} invalid as argument for scalar_func.')
+
+        super().__init__(domain, h_domain,  convexity_param, Lipschitz, 
+                         separable= False, linear= False)
+        self._sbuf = sdomain.zeros()
+        self._vbuf = vdomain.zeros()
+        self._vaxes = (-1,)
+
+    def _eval(self, vec):
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        return self.scalar_func(self._sbuf)
+
+    def _conj(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        return self.scalar_func.conj(self._sbuf)
+
+    def _subgradient(self, vec):
+        """
+        returns   [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
+        """
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.subgradient(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+    
+    def _conj_subgradient(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    def _proximal(self, vec,tau):
+        """
+        returns   [prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
+        """
+        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.proximal(self._sbuf,tau)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    def _conj_proximal(self, vec_star):
+        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.proximal(self._sbuf)
+        self._vbuf *= self._sbuf
+        return self._vbuf.copy()
+
+    
+
 
 class LppPower(IntegralFunctionalBase):
     r"""
@@ -1668,7 +1734,7 @@ class QuadraticPositiveSemidef(Functional):
         assert isinstance(domain,UniformGridFcts)
         assert domain.ndim==2
         assert domain.shape[0]==domain.shape[1]
-        assert domain.volume_elem==1
+        assert domain.volume_elem==1.
         assert tol>=0
         assert trace_val is None or trace_val>0
         self.tol=tol
