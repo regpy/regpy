@@ -192,36 +192,41 @@ class NumPyVectorSpace(VectorSpaceBase):
 
 
 class MeasureSpaceFcts(NumPyVectorSpace):
-    r"""Discrete space :math:`\mathbb{R}^N` or :math:`\mathbb{C}^N` (viewed as a real
-    space) with an additional measure that is given via a non-negative weight for each element of the space.
+    r"""Space of functions :math:`\mathbb{R}^N\to \mathbb{R}^M` or :math:`\mathbb{R}^N\to \mathbb{C}^M` (viewed as a real
+    space) with an additional measure on `\mathbb{R}^N` given by `N` non-negative weights.
+    Both `N` and `M` can be multi-dimensional, i.e., tuples of integers. By default, `M` is  `()` (scalar functions). 
     Either the measure or the shape have to be specified. The measure defaults to the constant 1 measure for each point if it is not given.
 
 
     Parameters
     ----------
-    measure : np.ndarray, optional
-        The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. Default: None
-    shape : int or tuple of ints, optional
-        The shape of the arrays representing elements of this vector space. If it is not given the shape is taken from measure. Default: None
+    shape : int or tuple of positive ints, optional
+        The shape of the domain of the functions (`N`). If it is not given the shape is taken from measure. Default: None
+    shape_codomain : int or tuple of ints, optional
+        The shape of the codomain of the functions (`M`). Default: `()`. 
+    measure : np.ndarray, optional:  Default: None
+        The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. The shape of the measure has to be shape+(1,)*len(shape_codomain)
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
 
     """
-    def __init__(self,measure=None,shape=None,dtype=float):
-        assert measure is not None or shape is not None
-        if(isinstance(measure, np.ndarray)):
-            assert np.issubdtype(measure.dtype, np.floating) or np.issubdtype(measure.dtype, np.integer)
-            assert np.min(measure)>=0
-            shape = measure.shape
-        elif(np.isscalar(measure)):
-            assert isinstance(measure, int) or isinstance(measure,float)
-            assert measure>=0
-            assert shape!=None
-        elif(measure==None):
+    def __init__(self,measure=None,shape=None,shape_codomain = (),dtype=float):
+        if(not isinstance(measure,np.ndarray) and shape is None):
+            raise ValueError('Either measure or shape have to be set to determine shape of space.')
+        if(shape is None):
+            shape=measure.shape
+        if(measure is None):
             measure=1
-        #TODO: Make a default case            
-        super().__init__(shape,dtype)
+        if(isinstance(shape,int)):
+            shape=(shape,)
+        if(isinstance(shape_codomain,int)):
+            shape_codomain=(shape_codomain,)
+        super().__init__(shape+shape_codomain,dtype)
+        self.shape_codomain = shape_codomain
+        r"""The shape of the codomain of the functions (`M`)."""
         self.measure=measure
+        r"""The measure on the domain of the functions (`N`)."""
+
 
     @property
     def measure(self):
@@ -230,27 +235,33 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     
     @measure.setter
     def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or (np.issubdtype(new_measure.dtype,np.number) and np.isrealobj(new_measure))
-        else:
-            assert  new_measure.shape==self.shape and np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
-        assert np.min(new_measure)>=0
-        self._measure=new_measure
+        broadcasted_measure=self.update_measure(new_measure)
+        self._measure=broadcasted_measure
+
+    def update_measure(self,new_measure):
+        if(isinstance(new_measure,np.ndarray) and new_measure.ndim<len(self.shape)):
+            new_measure=np.expand_dims(new_measure,tuple(j for j in range(new_measure.ndim,len(self.shape))))
+        broadcasted=np.broadcast_to(new_measure,self.shape)
+        if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
+            raise ValueError(f'Type {broadcasted.dtype} is invalid type for measure.')
+        if(np.min(broadcasted)<0):
+            raise ValueError('Negative values are not allowed in measure.')
+        return broadcasted
 
     def __eq__(self, other):
         if(not super().__eq__(other)):
             return False
-        return np.allclose(self.measure,other.measure)
+        return np.allclose(self.measure,other.measure) and self.shape_codomain==other.shape_codomain
     
     def __repr__(self):
         if hasattr(self,"mask"):
-            return util.make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}",f"measure=\t ({self.measure})")
+            return util.make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}",f"measure=\t ({self.measure})",f"shape_codomain=\t {self.shape_codomain}")
         else: 
-            return util.make_repr(self,self.shape,self.is_complex,f"measure=\t ({self.measure})")
+            return util.make_repr(self,self.shape,self.is_complex,f"measure=\t ({self.measure})",f"shape_codomain=\t {self.shape_codomain}")
 
 
 class GridFcts(MeasureSpaceFcts):
-    r"""A vector space representing functions defined on a rectangular grid.
+    r"""A vector space representing (possibly vector-valued) functions defined on a rectangular grid.
 
     Parameters
     ----------
@@ -266,6 +277,8 @@ class GridFcts(MeasureSpaceFcts):
          of which must match the respective dimension's length. Besides that, no further structure
          is imposed or assumed, this parameter exists solely to keep everything related to the
          vector space in one place.
+    shape_codomain : int or tuple of ints, optional
+        The shape of the codomain of the functions. Default: `()`.
     dtype : data-type, optional
         The dtype of the vector space.
     use_cell_measure : bool, optional
@@ -285,7 +298,7 @@ class GridFcts(MeasureSpaceFcts):
     If `axisdata` is given, the `coords` can be omitted.
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
+    def __init__(self, *coords, axisdata=None, shape_codomain=(), dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
         views = []
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
@@ -305,7 +318,6 @@ class GridFcts(MeasureSpaceFcts):
                 s[n] = -1
                 v = v.reshape(s)
             v.flags.writeable = False
-            #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
             views.append(v)
         self.coords = np.asarray(np.broadcast_arrays(*views))
         r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
@@ -326,9 +338,9 @@ class GridFcts(MeasureSpaceFcts):
         r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype)
+            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const),shape=self.coords[0].shape,shape_codomain=shape_codomain, dtype=dtype)
         else:
-            super().__init__(shape=self.coords[0].shape, dtype=dtype)
+            super().__init__(shape=self.coords[0].shape, shape_codomain=shape_codomain, dtype=dtype)
 
         if axisdata is not None:
             axisdata = tuple(axisdata)
@@ -351,7 +363,6 @@ class GridFcts(MeasureSpaceFcts):
             assert isinstance(ext_const, tuple)
             assert len(ext_const)==len(axes)
             for i, v in enumerate(axes):
-                
                 if isinstance(ext_const[i],tuple):
                     assert np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i][0], v[-1]+ext_const[i][1])))
@@ -359,13 +370,14 @@ class GridFcts(MeasureSpaceFcts):
                     assert np.isscalar(ext_const[i])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i], v[-1]+ext_const[i])))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         assert len(axes)<=26
         prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
             
 
 class UniformGridFcts(GridFcts):
-    r"""A vector space representing functions defined on a rectangular grid with equidistant axes.
+    r"""A vector space representing (possibly vector-valued) functions defined on a rectangular grid with equidistant axes.
     The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
 
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
@@ -387,6 +399,7 @@ class UniformGridFcts(GridFcts):
          vector space in one place.
 
          If `axisdata` is given, the `coords` can be omitted.
+    shape_codomain : int or tuple of ints, optional
     dtype : data-type, optional
         The dtype of the vector space.
     periodic: If true, the grid is assumed to be periodic. If coords is a tuple of triples 
@@ -395,10 +408,10 @@ class UniformGridFcts(GridFcts):
         periodicity lengths. 
     """
 
-    def __init__(self, *coords, axisdata=None, dtype=float, periodic = False):
+    def __init__(self, *coords, axisdata=None, shape_codomain=(),  dtype=float, periodic = False):
         if periodic and all(isinstance(c,tuple) for c in coords):
             coords = tuple((l, (l+(n-1)*r)/n ,n) for (l,r,n) in coords)
-        super().__init__(*coords, axisdata=axisdata,dtype=dtype,use_cell_measure=False)
+        super().__init__(*coords, axisdata=axisdata,shape_codomain=shape_codomain,dtype=dtype,use_cell_measure=False)
         spacing = []
         for axis in self.axes:
             assert util.is_uniform(axis)
@@ -410,19 +423,14 @@ class UniformGridFcts(GridFcts):
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
         """The volumen element, initialized as product of `spacing`"""
-        self.measure = self.volume_elem
+        self.measure = np.broadcast_to(self.volume_elem, self.shape+(1,)*len(self.shape_codomain))
         """ Setting measure to be initialzed by `volume_element`"""
     
-    @MeasureSpaceFcts.measure.setter
-    def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
-            assert new_measure>0
-            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure)
-        elif(isinstance(new_measure,np.ndarray)):
-            assert np.all(new_measure == new_measure.flat[0])
-            super(UniformGridFcts, self.__class__).measure.fset(self, new_measure.flat[0])
-        self.volume_elem=self.measure
+    def update_measure(self, new_measure):
+        broadcasted_measure=super().update_measure(new_measure)
+        self.volume_elem=broadcasted_measure.flat[0]
+        return broadcasted_measure
+
 
 
 class Prod(NumPyVectorSpace):
@@ -450,7 +458,7 @@ class Prod(NumPyVectorSpace):
         self.factors = []
         """List of the `VectorSpaceBases` to be taken as Product."""
         shape = ()
-        self.volume_elem = 1
+        self.volume_elem = 1.
         """Product of the `volume_elem` of all factors that have defined this property. """
         if factors[0].is_complex:
             dt=np.complex128

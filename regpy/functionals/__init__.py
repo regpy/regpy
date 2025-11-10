@@ -63,11 +63,11 @@ def _register_functionals():
     QuadPosSemi.register(UniformGridFcts,QuadraticPositiveSemidef)
 
     # Import of ngsolve functionals if possible to import 
-    if NgsVectorSpace is not None:
+    try:
         from .ngsolve import NgsL1,NgsTV
 
         L1.register(NgsVectorSpace, NgsL1)
         TV.register(NgsVectorSpace,NgsTV)
-    else:
+    except :
         logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")
 

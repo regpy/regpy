@@ -15,7 +15,7 @@ def test_L2MeasureSpaceFcts():
     
     errors += hilbert_basics(l2,test_methods=True)
 
-    vs = MeasureSpaceFcts(np.arange(1,9).reshape(2,4),complex)
+    vs = MeasureSpaceFcts(measure=np.arange(1,9).reshape(2,4),dtype=complex)
     l2 = L2MeasureSpaceFcts(vs,weights=np.random.rand(8).reshape(2,4))
     
     errors += hilbert_basics(l2,test_methods=True)
