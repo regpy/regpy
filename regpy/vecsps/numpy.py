@@ -318,7 +318,7 @@ class GridFcts(MeasureSpaceFcts):
             v.flags.writeable = False
             axes.append(v)
         self.coords=np.meshgrid(*axes,indexing='ij',copy=False)
-        self.coords=np.asarray(self.coords)
+        # self.coords=np.asarray(self.coords)
         r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
         self.axes = axes

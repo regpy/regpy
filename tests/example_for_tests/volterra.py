@@ -65,7 +65,7 @@ def test_volterra():
     op = Volterra(grid, exponent=2)
 
     # Impulsive Noise
-    sigma = 0.01*np.ones(grid.coords.shape[1])
+    sigma = 0.01*np.ones(grid.coords[0].shape[0])
     sigma[100:110] = 0.5
 
     exact_data = op(exact_solution)

@@ -235,6 +235,8 @@ class ConvolutionOperator(Composition):
             raise TypeError(f'convolution_axes must be a numpy array of integers between 0 and d. Got {self.convolution_axes}')
         # array containing the numbers of the axes that are not convolution axes
         self.stackaxes = np.array(list(set(np.arange(grid.ndim)) - set(self.convolution_axes)))
+
+        print(self.stackaxes.shape)
         if not callable(fourier_multiplier) and  not isinstance(fourier_multiplier,np.ndarray):
             raise TypeError('fourier_mupltiplier must be callable or a numpy array')
         if not pad_amount is None:
@@ -274,7 +276,7 @@ class ConvolutionOperator(Composition):
                 ft_codomain = ft
             else:
                 ft_codomain = FourierTransform(codomain,axes=self.convolution_axes)
-            self._frqs = ft.codomain.coords
+            self._frqs = np.asarray(ft.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
@@ -296,7 +298,7 @@ class ConvolutionOperator(Composition):
                 ft_codomain = ft
             else:
                 ft_codomain = FourierTransform(pad_op_codomain.codomain,axes=self.convolution_axes)
-            self._frqs = ft.codomain.coords
+            self._frqs = np.asarray(ft.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
@@ -316,7 +318,7 @@ class ConvolutionOperator(Composition):
             if not grid.dtype == complex:
                 raise NotImplementedError
             trunc_op = TruncationOperator(ft.codomain,Fourier_truncation_amount)
-            self._frqs = trunc_op.codomain.coords
+            self._frqs = np.asarray(trunc_op.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
