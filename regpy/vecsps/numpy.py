@@ -299,7 +299,8 @@ class GridFcts(MeasureSpaceFcts):
     """
 
     def __init__(self, *coords, axisdata=None, shape_codomain=(), dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
-        views = []
+        axes = []
+        extents=[]
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
 
@@ -313,32 +314,20 @@ class GridFcts(MeasureSpaceFcts):
             else:
                 v = np.asarray(c).view()
                 assert np.issubdtype(v.dtype, np.number) and np.isrealobj(v), "axis must be real"
-            if 1 == v.ndim < len(coords):
-                s = [1] * len(coords)
-                s[n] = -1
-                v = v.reshape(s)
+            extents.append(abs(v[-1] - v[0]))
             v.flags.writeable = False
-            views.append(v)
-        self.coords = np.asarray(np.broadcast_arrays(*views))
+            axes.append(v)
+        self.coords=np.meshgrid(*axes,indexing='ij',copy=False)
+        self.coords=np.asarray(self.coords)
         r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
-        assert self.coords[0].ndim == len(self.coords)
-
-        axes = []
-        extents = []
-        for i in range(self.coords.shape[0]):
-            slc = [0] * self.coords.shape[0]
-            slc[i] = slice(None)
-            axis = self.coords[i][tuple(slc)]
-            axes.append(np.asarray(axis))
-            extents.append(abs(axis[-1] - axis[0]))
         self.axes = axes
         """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
         r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const),shape=self.coords[0].shape,shape_codomain=shape_codomain, dtype=dtype)
+            super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),shape=self.coords[0].shape,shape_codomain=shape_codomain, dtype=dtype)
         else:
             super().__init__(shape=self.coords[0].shape, shape_codomain=shape_codomain, dtype=dtype)
 

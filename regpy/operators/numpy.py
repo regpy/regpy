@@ -380,7 +380,7 @@ class FourierTransform(Operator):
                         frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
             else:
                 frqs.append(domain.axes[i])
-        return np.asarray(np.broadcast_arrays(*np.ix_(*frqs)))
+        return tuple(frqs)
         
 
     @property
