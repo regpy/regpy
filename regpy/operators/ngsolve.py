@@ -195,21 +195,25 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             bdr_val : NgsBaseVector | types.NoneType = None, 
             a_bdr_val : NgsBaseVector | types.NoneType = None) -> None:
         super().__init__(domain, sol_domain, linear = False)
-        self.gfu_a=ngs.GridFunction(self.domain.fes)
-        self.gfu_h=ngs.GridFunction(self.domain.fes)
+        self.a = self.domain.empty()
+        self.h = self.domain.empty()
+        # self.gfu_a=ngs.GridFunction(self.domain.fes)
+        # self.gfu_h=ngs.GridFunction(self.domain.fes)
         self.a_bdr = a_bdr_val.vec if a_bdr_val is not None and self.domain.bdr is not None and self.domain.is_on_boundary(a_bdr_val) else self.domain.zeros().vec
 
-        self.gfu_deriv=ngs.GridFunction(self.codomain.fes)
+        self.u_deriv = self.codomain.empty()
+        # self.gfu_deriv=ngs.GridFunction(self.codomain.fes)
         self.gfu_adj_help=ngs.GridFunction(self.codomain.fes)
-        self.gfu_eval=ngs.GridFunction(self.codomain.fes)
+        self.u_eval = self.codomain.empty()
+        # self.gfu_eval=ngs.GridFunction(self.codomain.fes)
         if bdr_val is not None and bdr_val in self.codomain:
-            self.gfu_eval.vec.data=bdr_val.vec
+            self.u_eval.vec.data = bdr_val.vec
         
         self.u_a, self.v_a = self.domain.fes.TnT()
         self.u, self.v = self.codomain.fes.TnT()
 
         self.bf_mat = ngs.BilinearForm(self.codomain.fes)
-        self.bf_mat += self._bf(self.gfu_a,self.u,self.v) 
+        self.bf_mat += self._bf(self.a.gf,self.u,self.v) 
         if self._bf_0() is not None:
             self.bf_mat += self._bf_0()
         
@@ -219,10 +223,10 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         self.lf = self._lf()
 
         self.c_u = ngs.LinearForm(self.codomain.fes)
-        self.c_u += self._bf(self.gfu_h,self.gfu_eval,self.v)
+        self.c_u += self._bf(self.h.gf,self.u_eval.gf,self.v)
 
         self.lf_adj = ngs.LinearForm(self.domain.fes)
-        self.lf_adj += -1*self._bf(self.v_a,self.gfu_eval,self.gfu_adj_help)
+        self.lf_adj += -1*self._bf(self.v_a,self.u_eval.gf,self.gfu_adj_help)
 
         self._consts = {*self._consts, "u_a","v_a","u","v", "bf_mat", "bf_mat_inv","lf","lf_adj","c_u"}
 
@@ -230,7 +234,7 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             a : NgsBaseVector, 
             differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
-        self.gfu_a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
+        self.a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
         # self.gfu_a.vec.data = a.vec + self.a_bdr
         
         self.bf_mat.Assemble()
@@ -240,14 +244,14 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         # else:
         #     self.bf_mat_inv.Update()
         self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
-        self.gfu_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.gfu_eval.vec)
-        return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
+        self.u_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.u_eval.vec)
+        return self.u_eval.copy()
     
     def _derivative(self, 
             h : NgsBaseVector) -> NgsBaseVector:
         lf = self._c_u(h.vec)
-        self.gfu_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.gfu_deriv.vec)
-        return NgsBaseVector(self.gfu_deriv.vec,make_copy=True)
+        self.u_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.u_deriv.vec)
+        return self.u_deriv.copy()
 
     def _adjoint(self, 
             g : NgsBaseVector) -> NgsBaseVector:
@@ -307,8 +311,8 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         
     def _c_u(self,
             h : ngs.la.BaseVector) -> ngs.comp.BilinearForm:
-        self.gfu_h.vec.data = 1*h
-        ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.gfu_h.vec)
+        self.h.vec.data = 1*h
+        self.h.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.h.vec)
         return self.c_u.Assemble()
     
 
