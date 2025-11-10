@@ -87,7 +87,7 @@ class SobolevUniformGridFcts(HilbertSpace):
         mul = PtwMultiplication(
             ft.codomain,
             self.vecsp.volume_elem * (
-                1 + np.linalg.norm(np.asarray(ft.codomain.coords)[self.axes], axis=0)**2
+                1 +  ft.codomain.coord_distances(axes=self.axes)**2
             )**self.index
         )
         return ft.adjoint * mul * ft

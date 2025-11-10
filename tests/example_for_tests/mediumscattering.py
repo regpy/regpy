@@ -27,7 +27,7 @@ def test_mediumscattering():
     )
 
     contrast = scattering.domain.zeros()
-    r = np.linalg.norm(np.asarray(scattering.domain.coords), axis=0)
+    r = scattering.domain.coord_distances()
     contrast[r < radius] = np.exp(-1/(radius - r[r < radius]**2))
 
     op = scattering

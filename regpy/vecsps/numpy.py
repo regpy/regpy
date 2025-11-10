@@ -363,6 +363,35 @@ class GridFcts(MeasureSpaceFcts):
         assert len(axes)<=26
         prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
+    
+    def coord_distances(self,point=None,axes=None):
+        r"""Computes the euclidean distances of all grid points to the given point. If the point is None, then the distance from the origin is returned.
+
+        Parameters
+        ----------
+            point : np.ndarray, optional
+              Point to which the distances are computed. Defaults to None.
+            axes : iterable, optional
+              Axes over which the distances are computed. If None the distance is computed over all axes. Defaults to None.
+
+
+        Returns
+        -------
+            np.ndarray: Numpy array with same shape as domain containing all the distances.
+        """
+        if point is None:
+            point=np.zeros(self.ndim)
+        if axes is None:
+            axes=tuple(j for j in range(self.ndim))
+        if(min(axes)<0 or max(axes)>=self.ndim):
+            raise ValueError(f"Axes {axes} out of bounds for grid with {self.ndim} axes.")
+        if(not isinstance(point,np.ndarray) or  point.shape[0]!=self.ndim or point.ndim!=1):
+            raise ValueError(f"Point {point} not a numpy array or not compatible with domain with dimension {self.ndim}.")
+        res=self.zeros()
+        for j in axes:
+            res+=(self.coords[j]-point[j])**2
+        return np.sqrt(res)    
+
             
 
 class UniformGridFcts(GridFcts):
