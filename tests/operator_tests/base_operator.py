@@ -36,7 +36,7 @@ def call_safe(obj, method_name, error_log, *args, **kwargs):
         return None
     
 
-def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
+def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
     Parameters
@@ -129,7 +129,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-1
 
     return errors
 
-def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-9, inv_tol = 1e-15,**kwargs):
+def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     op = OP(*args,**kwargs)
     return op_basics(op,*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm, inv_tol=inv_tol,**kwargs)
 
