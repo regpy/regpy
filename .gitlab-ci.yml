@@ -6,13 +6,12 @@ stages:          # List of stages for jobs, and their order of execution
   - deploy
 
 .load_gitlab_submodule: &load_gitlab_submodule
-  before_script:
-    - echo "Updating submodule examples to use GitLab URL"
-    - git submodule set-url examples https://token:${EXAMPLES_TOKEN}@gitlab.gwdg.de/regpy/regpy-examples.git
-    - echo "Sync and initialize/update submodule"
-    - git submodule sync examples
-    - git submodule update --init examples
-    - echo "Submodule examples updated successfully."
+  - echo "Updating submodule examples to use GitLab URL"
+  - git submodule set-url examples https://token:${EXAMPLES_TOKEN}@gitlab.gwdg.de/regpy/regpy-examples.git
+  - echo "Sync and initialize/update submodule"
+  - git submodule sync examples
+  - git submodule update --init examples
+  - echo "Submodule examples updated successfully."
 
 build_doc:
   stage: build
