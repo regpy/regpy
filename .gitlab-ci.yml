@@ -5,13 +5,20 @@ stages:          # List of stages for jobs, and their order of execution
   - test
   - deploy
 
-variables:
-  GIT_SUBMODULE_STRATEGY: recursive
+.load_gitlab_submodule: &load_gitlab_submodule
+  before_script:
+    - echo "Updating submodule examples to use GitLab URL"
+    - git submodule set-url examples https://token:${EXAMPLES_TOKEN}@gitlab.gwdg.de/regpy/regpy-examples.git
+    - echo "Sync and initialize/update submodule"
+    - git submodule sync examples
+    - git submodule update --init examples
+    - echo "Submodule examples updated successfully."
 
 build_doc:
   stage: build
   image: python:3.12
   before_script:
+    - *load_gitlab_submodule
     - touch examples/__init__.py
     - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
   script:
@@ -46,6 +53,7 @@ test_examples:   # This job runs in the test stage.
   needs: [test_core] # requires that the core tests were successful
   image: python:3.12
   before_script:
+    - *load_gitlab_submodule
     - touch examples/__init__.py
     - export PYTHONPATH=$PYTHONPATH:$CI_PROJECT_DIR/examples
     - pip install .[ngsolve]
