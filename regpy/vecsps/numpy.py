@@ -1,4 +1,4 @@
-from copy import copy
+from copy import copy, deepcopy
 
 import numpy as np
 
@@ -98,7 +98,7 @@ class NumPyVectorSpace(VectorSpaceBase):
             The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
-        other = copy(self)
+        other = deepcopy(self)
         other.dtype = np.result_type(1j, self.dtype)
         other.is_complex = True
         return other
@@ -112,7 +112,7 @@ class NumPyVectorSpace(VectorSpaceBase):
             The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
-        other = copy(self)
+        other = deepcopy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
         other.is_complex = False
         return other
@@ -213,30 +213,79 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     def __init__(self,measure=None,shape=None,shape_codomain = (), dtype=float):
         assert measure is not None or shape is not None
         assert shape is None or all(s>0 for s in (shape if isinstance(shape,tuple) else (shape,)))
-        assert shape_codomain is () or all(s>0 for s in (shape_codomain if isinstance(shape_codomain,tuple) else (shape_codomain,)))
+        assert shape_codomain == () or all(s>0 for s in (shape_codomain if isinstance(shape_codomain,tuple) else (shape_codomain,)))
         if isinstance(shape,int):
-            shape_codomain = (shape,)
+            shape = (shape,)
         if isinstance(shape_codomain,int):
             shape_codomain = (shape_codomain,)
         if(isinstance(measure, np.ndarray)):
             assert np.issubdtype(measure.dtype, np.floating) or np.issubdtype(measure.dtype, np.integer)
             assert np.min(measure)>=0
             if shape is None:
-                shape = measure.shape[:-len(shape_codomain)] if shape_codomain!=() else measure.shape
+                if shape_codomain==():
+                    shape_domain = measure.shape
+                else:
+                    shape_domain = measure.shape[:-len(shape_codomain)] if  measure.shape[-len(shape_codomain):] == (1,)*len(shape_codomain) else measure.shape
             else:
-                assert measure.shape == shape + (1,)*len(shape_codomain)
-            shape = measure.shape
+                if measure.shape != shape[:-len(shape_codomain)] + (1,)*len(shape_codomain) and measure.shape != shape:
+                    if measure.shape == shape[:-len(shape_codomain)] or shape_codomain==():
+                        measure = np.reshape(measure, shape + (1,)*len(shape_codomain))
+                    else:    
+                        raise ValueError(f"The shape of the measure {measure.shape} is not compatible with the given shape {shape} and shape_codomain {shape_codomain}.")
+                shape_domain = measure.shape[:-len(shape_codomain)] if shape_codomain!=() else measure.shape
+                if shape != shape + shape_codomain:
+                    raise ValueError(f"The shape deduced from the measure {shape_domain} and the codomain shape {shape_codomain} does not match the given shape {shape}.")
         elif(np.isscalar(measure)):
             assert isinstance(measure, int) or isinstance(measure,float)
             assert measure>=0
             assert shape!=None
-            measure = np.broadcast_to(float(measure), shape + (1,)*len(shape_codomain))
+            shape_domain = shape[:-len(shape_codomain)] if shape_codomain!=() else shape
+            measure = np.broadcast_to(float(measure), shape_domain + (1,)*len(shape_codomain))
         elif(measure==None):
-            measure = np.broadcast_to(1., shape + (1,)*len(shape_codomain))
-        super().__init__(shape+shape_codomain,dtype)
+            assert shape!=None
+            shape_domain = shape[:-len(shape_codomain)] if shape_codomain!=() else shape
+            measure = np.broadcast_to(1., shape_domain + (1,)*len(shape_codomain))
+        else:
+            raise TypeError("The measure has to be either a non negative scalar or a numpy ndarray with non negative entries.")      
+        super().__init__(shape_domain+shape_codomain,dtype)
+        self.shape_domain = shape_domain
         self.shape_codomain = shape_codomain
-        self.measure=measure
         r"""The shape of the codomain of the functions (`M`)."""
+        self.ndim_domain = len(self.shape_domain)
+        self.ndim_codomain = len(self.shape_codomain)   
+        self.measure=measure
+
+    def scalar_space(self):
+        r"""    Returns the correcsponding scalar-valued function space.
+    
+        Returns
+        -------
+        MeasureSpaceFcts
+            The scalar-valued function space corresponding to this vector space as a shallow copy with modified
+            shape_codomain.
+        """
+        other = deepcopy(self)
+        other.shape_codomain = ()
+        other.shape_domain = self.shape_domain
+        other.shape = other.shape_domain
+        other.measure = np.reshape(self.measure, other.shape)
+        return other
+
+    def vector_valued_space(self,shape_codomain):
+        r"""    Returns a corresponding vector-valued function space with given shape_codomain.
+
+        Returns
+        -------
+        MeasureSpaceFcts
+            The vector-valued function space corresponding to this vector space as a shallow copy with modified
+            shape_codomain.
+        """
+        other = deepcopy(self)
+        other.shape_domain = self.shape_domain
+        other.shape_codomain = shape_codomain
+        other.shape = other.shape_domain + other.shape_codomain
+        other.measure = np.reshape(self.measure, other.shape_domain + (1,)*len(shape_codomain))
+        return other
 
     @property
     def measure(self):
@@ -247,9 +296,15 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     def measure(self,new_measure):
         if np.isscalar(new_measure):
             assert isinstance(new_measure, int) or isinstance(new_measure,float) or (np.issubdtype(new_measure.dtype,np.number) and np.isrealobj(new_measure))
-            new_measure = np.broadcast_to(float(new_measure), self.shape + (1,)*len(self.shape_codomain))
+            new_measure = np.broadcast_to(float(new_measure), self.shape_domain + (1,)*len(self.shape_codomain))
         else:
-            assert  new_measure.shape==self.shape+(1,)*len(self.shape_codomain) and np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
+            assert  np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
+            assert new_measure.shape[0:len(self.shape_domain)] == self.shape_domain
+            if len(new_measure.shape) == len(self.shape_domain):
+                new_measure = np.reshape(new_measure, self.shape_domain + (1,)*len(self.shape_codomain))
+            else:
+                if new_measure.shape != self.shape_domain + (1,)*len(self.shape_codomain):
+                    raise ValueError(f"The shape of the new measure {new_measure.shape} is not compatible with the vector space shape {self.shape} and shape_codomain {self.shape_codomain}.")
         assert np.min(new_measure)>=0
         self._measure=new_measure
 
@@ -429,7 +484,7 @@ class UniformGridFcts(GridFcts):
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
         """The volumen element, initialized as product of `spacing`"""
-        self.measure = np.broadcast_to(self.volume_elem, self.shape+(1,)*len(self.shape_codomain))
+        self.measure = np.broadcast_to(self.volume_elem, self.shape_domain+(1,)*len(self.shape_codomain))
         """ Setting measure to be initialzed by `volume_element`"""
     
     @MeasureSpaceFcts.measure.setter
@@ -440,7 +495,7 @@ class UniformGridFcts(GridFcts):
             super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(float(new_measure), self.shape + (1,)*len(self.shape_codomain)))
         elif(isinstance(new_measure,np.ndarray)):
             assert np.all(new_measure == new_measure.flat[0])
-            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(new_measure.flat[0], self.shape + (1,)*len(self.shape_codomain)))
+            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(new_measure.flat[0], self.shape_domain + (1,)*len(self.shape_codomain)))
         self.volume_elem=self.measure.flat[0]
 
 
