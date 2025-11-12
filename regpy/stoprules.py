@@ -1,3 +1,4 @@
+# from regpy.solvers import RegularizationSetting,TikhonovRegularizationSetting
 from regpy.util import ClassLogger
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
@@ -23,7 +24,7 @@ class StopRule:
         Whether the stopping rule decided to stop.
         """
 
-    def stop(self, x, y=None):
+    def stop(self, x, y=None,dual=None):
         """Check whether to stop iterations.
 
         Parameters
@@ -33,6 +34,9 @@ class StopRule:
         y : array, optional
             The operator value at the current iterate. Can be omitted if
             unavailable, but some implementations may need it.
+        dual : array, optional
+            The iterate of the dual problem. Can be omitted if
+            unavailable, but some implementations may need it.
 
         Returns
         -------
@@ -41,12 +45,12 @@ class StopRule:
         """
         if self.triggered:
             return True
-        self.x = x
-        self.y = y
-        self.triggered = self._stop(x, y)
+        # self.x = x
+        # self.y = y
+        self.triggered = self._stop(x, y, dual)
         return self.triggered
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         """Check whether to stop iterations.
 
         This is an abstract method. Child classes should override it.
@@ -73,7 +77,7 @@ class NoneRule(StopRule):
     def __init__(self):
         super().__init__()
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         return False
 
 class CombineRules(StopRule):
@@ -113,15 +117,15 @@ class CombineRules(StopRule):
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         for rule in self.rules:
             try:
-                triggered = rule.stop(x, y)
+                triggered = rule.stop(x, y, dual)
             except MissingValueError:
                 if self.op is None or y is not None:
                     raise
                 y = self.op(x)
-                triggered = rule.stop(x, y)
+                triggered = rule.stop(x, y, dual)
             if triggered:
                 self.log.info('Rule {} triggered.'.format(rule))
                 self.active_rule = rule
@@ -152,7 +156,7 @@ class CountIterations(StopRule):
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if self.while_type:
             self.iteration += 1
             if  self.iteration <= self.max_iterations:
@@ -199,7 +203,7 @@ class Discrepancy(StopRule):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         residual = self.data - y
@@ -239,7 +243,7 @@ class RelativeChangeData(StopRule):
         return 'RelativeChangeData(cutoff={})'.format(
             self.cutoff)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         change = self.norm(y - self.data_old)
@@ -278,7 +282,7 @@ class RelativeChangeSol(StopRule):
         return 'RelativeChangeSol(cutoff={})'.format(
             self.cutoff)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         change = self.norm(x - self.sol_old)
         self.sol_old = x.copy()
         self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
@@ -309,7 +313,7 @@ class Monotonicity(StopRule):
     def __repr__(self):
         return 'Monotonicty'
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         residual = self.norm(self.data - y)
@@ -323,23 +327,21 @@ class Monotonicity(StopRule):
 
 
 class DualityGapStopping(StopRule):
-    def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = "INFO"):
-        from regpy.solvers.general import RegSolver
-        assert isinstance(solver,RegSolver)
-        assert hasattr(solver,'gap')
+    def __init__(self, setting, threshold = 0., logging_level = "INFO"):
         super().__init__()
-        self.solver = solver
+        self.setting = setting
         self.threshold = threshold
-        self.max_iter = max_iter
         self.log.setLevel(logging_level)
         self.gap_stat = []
 
-    def _stop(self,x,y=None):
-        self.gap_stat.append(self.solver.gap)
-        gap_stop = self.solver.gap<=self.threshold
-        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
-        if  self.solver.iteration_step_nr>=self.max_iter:
-            if not gap_stop:
-                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
-            return True            
+    def _stop(self, x, y=None, dual=None):
+        if dual is not None:
+            gap = self.setting.dualityGap(primal = x, dual = dual)
+        elif y is not None:
+            gap = self.setting.dualityGap(primal = x,dual=self.setting.primalToDual(y,argumentIsOperatorImage=True))
+        else:
+            gap = self.setting.dualityGap(primal = x)
+        self.gap_stat.append(gap)
+        gap_stop = gap<=self.threshold
+        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.threshold))      
         return gap_stop 
