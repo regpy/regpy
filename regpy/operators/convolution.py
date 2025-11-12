@@ -202,7 +202,9 @@ class ConvolutionOperator(Composition):
                 and np.max(self.convolution_axes)<grid.ndim_domain and np.min(self.convolution_axes)>=0):
             raise TypeError(f'convolution_axes must be a numpy array of integers between 0 and d. Got {self.convolution_axes}')
         # array containing the numbers of the axes that are not convolution axes
-        self.stackaxes = np.array(list(set(np.arange(ndim)) - set(self.convolution_axes)))
+
+        self.stackaxes = np.array(list(set(np.arange(grid.ndim)) - set(self.convolution_axes)))
+
         if not callable(fourier_multiplier) and  not isinstance(fourier_multiplier,np.ndarray):
             raise TypeError('fourier_mupltiplier must be callable or a numpy array')
         if not pad_amount is None:
@@ -241,7 +243,7 @@ class ConvolutionOperator(Composition):
                 ft_codomain = ft
             else:
                 ft_codomain = FourierTransform(codomain,axes=self.convolution_axes)
-            self._frqs = ft.codomain.coords
+            self._frqs = np.asarray(ft.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
@@ -263,7 +265,7 @@ class ConvolutionOperator(Composition):
                 ft_codomain = ft
             else:
                 ft_codomain = FourierTransform(pad_op_codomain.codomain,axes=self.convolution_axes)
-            self._frqs = ft.codomain.coords
+            self._frqs = np.asarray(ft.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
@@ -283,7 +285,7 @@ class ConvolutionOperator(Composition):
             if not grid.dtype == complex:
                 raise NotImplementedError
             trunc_op = TruncationOperator(ft.codomain,Fourier_truncation_amount)
-            self._frqs = trunc_op.codomain.coords
+            self._frqs = np.asarray(trunc_op.codomain.coords)
             if callable(fourier_multiplier):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
@@ -407,15 +409,15 @@ class Laplacian(ConvolutionOperator):
                         Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
                         )  
 
-def gradient(grid,on_scalar_grid=True,pad_amount=None,pad_value=0.,
+def gradient(grid,pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
-    grad = ConvolutionOperator(grid.vector_valued_space((1,)) if on_scalar_grid else grid,
-                               lambda *x : 2j*np.pi* np.stack(list(y for y in x),axis=-2),
+    grad = ConvolutionOperator(grid.vector_valued_space((1,)) if grid.shape_codomain==() else grid,
+                               lambda *x : 2j*np.pi* np.stack(list(y[...,np.newaxis] for y in x),axis=-2),
                                kernel_matrix_shape=(len(grid.shape_domain),1),
                                pad_amount=pad_amount,pad_value=pad_value,
                                Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
                             )
-    return grad * AddSingletonVectorDimension(grid) if on_scalar_grid else grad
+    return grad
 
 def curl(grid,pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):

@@ -113,7 +113,7 @@ def _register_spaces():
     SobolevBoundary.register(DirectSumVS, componentwise(SobolevBoundary))
 
     # Import of ngsolve hilbert spaces if possible to import 
-    if NgsVectorSpace is not None:
+    try:
         from .ngsolve import L2FESpace, SobolevFESpace, H10FESpace, L2BoundaryFESpace, SobolevBoundaryFESpace
 
         L2.register(NgsVectorSpace, L2FESpace)
@@ -121,5 +121,5 @@ def _register_spaces():
         Hm0.register(NgsVectorSpace,H10FESpace)
         L2Boundary.register(NgsVectorSpace, L2BoundaryFESpace)
         SobolevBoundary.register(NgsVectorSpace,SobolevBoundaryFESpace)
-    else:
+    except :
         logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")

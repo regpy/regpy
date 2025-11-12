@@ -7,16 +7,16 @@ from regpy.operators.ngsolve import *
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot,collect_errors
 
 
-def test_NgSolveOperator():
+def test_NgsOperator():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
     vs = NgsVectorSpace(fes,bdr=bdr)
 
-    errors += op_basics_wrapper(NGSolveOperator,vs,vs)
+    errors += op_basics_wrapper(NgsOperator,vs,vs)
 
-    collect_errors(NGSolveOperator,errors)
+    collect_errors(NgsOperator,errors)
 
 def test_SecondOrderEllipticCoefficientPDE():
     #taken from diffusion example

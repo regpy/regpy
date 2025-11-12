@@ -294,20 +294,19 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     
     @measure.setter
     def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or (np.issubdtype(new_measure.dtype,np.number) and np.isrealobj(new_measure))
-            new_measure = np.broadcast_to(float(new_measure), self.shape_domain + (1,)*len(self.shape_codomain))
-        else:
-            assert  np.issubdtype(new_measure.dtype, np.number) and np.isrealobj(new_measure)
-            assert new_measure.shape[0:len(self.shape_domain)] == self.shape_domain
-            if len(new_measure.shape) == len(self.shape_domain):
-                new_measure = np.reshape(new_measure, self.shape_domain + (1,)*len(self.shape_codomain))
-            else:
-                if new_measure.shape != self.shape_domain + (1,)*len(self.shape_codomain):
-                    raise ValueError(f"The shape of the new measure {new_measure.shape} is not compatible with the vector space shape {self.shape} and shape_codomain {self.shape_codomain}.")
-        assert np.min(new_measure)>=0
-        self._measure=new_measure
+        broadcasted_measure=self.update_measure(new_measure)
+        self._measure=broadcasted_measure
 
+    def update_measure(self,new_measure):
+        if(isinstance(new_measure,np.ndarray) and new_measure.ndim<len(self.shape)):
+            new_measure=np.expand_dims(new_measure,tuple(j for j in range(new_measure.ndim,len(self.shape_domain)))+(1,)*len(self.shape_codomain))
+        broadcasted=np.broadcast_to(new_measure,self.shape_domain+(1,)*len(self.shape_codomain))
+        if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
+            raise ValueError(f'Type {broadcasted.dtype} is invalid type for measure.')
+        if(np.min(broadcasted)<0):
+            raise ValueError('Negative values are not allowed in measure.')
+        return broadcasted
+    
     def __eq__(self, other):
         if(not super().__eq__(other)):
             return False
@@ -359,7 +358,8 @@ class GridFcts(MeasureSpaceFcts):
     """
 
     def __init__(self, *coords, axisdata=None, shape_codomain=(), dtype=float,use_cell_measure=True,boundary_ext='sym',ext_const=None):
-        views = []
+        axes = []
+        extents=[]
         if axisdata and not coords:
             coords = [d.shape[0] for d in axisdata]
 
@@ -373,35 +373,29 @@ class GridFcts(MeasureSpaceFcts):
             else:
                 v = np.asarray(c).view()
                 assert np.issubdtype(v.dtype, np.number) and np.isrealobj(v), "axis must be real"
-            if 1 == v.ndim < len(coords):
-                s = [1] * len(coords)
-                s[n] = -1
-                v = v.reshape(s)
+            extents.append(abs(v[-1] - v[0]))
             v.flags.writeable = False
-            #assert np.all(v[:-1] <= v[1:])    # ensure coords are ascending
-            views.append(v)
-        self.coords = np.asarray(np.broadcast_arrays(*views))
+            axes.append(v)
+        self.coords=np.meshgrid(*axes,indexing='ij',copy=False)
+        # self.coords=np.asarray(self.coords)
         r"""The coordinate arrays, broadcast to the shape of the grid. The shape will be
         `(len(self.shape),) + self.shape`."""
-        assert self.coords[0].ndim == len(self.coords)
-
-        axes = []
-        extents = []
-        for i in range(self.coords.shape[0]):
-            slc = [0] * self.coords.shape[0]
-            slc[i] = slice(None)
-            axis = self.coords[i][tuple(slc)]
-            axes.append(np.asarray(axis))
-            extents.append(abs(axis[-1] - axis[0]))
         self.axes = axes
         """The axes as 1d arrays"""
         self.extents = np.asarray(extents)
         r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(axes,boundary_ext,ext_const), dtype=dtype,shape_codomain=shape_codomain)
+            super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),
+                             shape=self.coords[0].shape+shape_codomain,
+                             shape_codomain=shape_codomain, 
+                             dtype=dtype
+                             )
         else:
-            super().__init__(shape=self.coords[0].shape, shape_codomain=shape_codomain, dtype=dtype)
+            super().__init__(shape=self.coords[0].shape+shape_codomain, 
+                             shape_codomain=shape_codomain, 
+                             dtype=dtype
+                             )
 
         if axisdata is not None:
             axisdata = tuple(axisdata)
@@ -424,7 +418,6 @@ class GridFcts(MeasureSpaceFcts):
             assert isinstance(ext_const, tuple)
             assert len(ext_const)==len(axes)
             for i, v in enumerate(axes):
-                
                 if isinstance(ext_const[i],tuple):
                     assert np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i][0], v[-1]+ext_const[i][1])))
@@ -432,9 +425,39 @@ class GridFcts(MeasureSpaceFcts):
                     assert np.isscalar(ext_const[i])
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i], v[-1]+ext_const[i])))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         assert len(axes)<=26
         prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
+    
+    def coord_distances(self,point=None,axes=None):
+        r"""Computes the euclidean distances of all grid points to the given point. If the point is None, then the distance from the origin is returned.
+
+        Parameters
+        ----------
+            point : np.ndarray, optional
+              Point to which the distances are computed. Defaults to None.
+            axes : iterable, optional
+              Axes over which the distances are computed. If None the distance is computed over all axes. Defaults to None.
+
+
+        Returns
+        -------
+            np.ndarray: Numpy array with same shape as domain containing all the distances.
+        """
+        if point is None:
+            point=np.zeros(self.ndim)
+        if axes is None:
+            axes=tuple(j for j in range(self.ndim))
+        if(min(axes)<0 or max(axes)>=self.ndim):
+            raise ValueError(f"Axes {axes} out of bounds for grid with {self.ndim} axes.")
+        if(not isinstance(point,np.ndarray) or  point.shape[0]!=self.ndim or point.ndim!=1):
+            raise ValueError(f"Point {point} not a numpy array or not compatible with domain with dimension {self.ndim}.")
+        res=self.zeros()
+        for j in axes:
+            res+=(self.coords[j]-point[j])**2
+        return np.sqrt(res)    
+
             
 
 class UniformGridFcts(GridFcts):
@@ -487,6 +510,11 @@ class UniformGridFcts(GridFcts):
         self.measure = np.broadcast_to(self.volume_elem, self.shape_domain+(1,)*len(self.shape_codomain))
         """ Setting measure to be initialzed by `volume_element`"""
     
+    def update_measure(self, new_measure):
+        broadcasted_measure=super().update_measure(new_measure)
+        self.volume_elem=broadcasted_measure.flat[0]
+        return broadcasted_measure
+
     @MeasureSpaceFcts.measure.setter
     def measure(self,new_measure):
         if np.isscalar(new_measure):

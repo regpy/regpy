@@ -9,9 +9,9 @@ from regpy.vecsps.ngsolve import NgsVectorSpace,NgsBaseVector
 
 from .base import Operator
 
-__all__ = ["NGSolveOperator", "SecondOrderEllipticCoefficientPDE"]
+__all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoefficientPDE", "SolveSystem", "LinearForm", "LinearFormGrad"]
 
-class NGSolveOperator(Operator):
+class NgsOperator(Operator):
     r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
 
     Parameters
@@ -84,8 +84,55 @@ class NGSolveOperator(Operator):
         """
         ngs.solvers.BVP(bf, lf, gf, pre = pre, solver = solver, **kwargs)
 
+class NgsMatrixMultiplication(NgsOperator):
+    r"""An operator defined by an NGSolve bilinear form. This is a helper to define 
+    Gram matrices by a bilinear form.  
+
+    Parameters
+    ----------
+    domain : NgsVectorSpace
+        The vector space.
+    form : ngsolve.BilinearForm or ngsolve.BaseMatrix
+        The bilinear form or matrix. A bilinear form will be assembled.
+    """
+
+    def __init__(self, domain, form):
+        super().__init__(domain, domain, linear=True)
+        if isinstance(form, ngs.BilinearForm):
+            assert domain.fes == form.space
+            form.Assemble()
+            mat = form.mat
+        elif isinstance(form, ngs.BaseMatrix):
+            mat = form
+        else:
+            raise TypeError('Invalid type: {}'.format(type(form)))
+        self.mat = mat
+        """The assembled matrix."""
+        self._inverse = None
+        self.res = self.domain.zeros()
+
+    def _eval(self, x):
+        self.res.vec.data = self.mat * x.vec
+        return self.res.copy()
+
+    def _adjoint(self, y):
+        self.res.vec.data = self.mat.T * y.vec
+        return self.res.copy
+
+    @property
+    def inverse(self):
+        """The inverse as a `Matrix` instance."""
+        if self._inverse is not None:
+            return self._inverse
+        else:
+            self._inverse = NgsMatrixMultiplication(
+                self.domain,
+                self.mat.Inverse(freedofs=self.domain.fes.FreeDofs())
+            )
+            self._inverse._inverse = self
+            return self._inverse
         
-class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
+class SecondOrderEllipticCoefficientPDE(NgsOperator):
     r"""Provides a general setup for the forward problems mapping PDE coefficients to their solutions.
     That is we assume that as variational formulation one can use 
 
@@ -148,21 +195,25 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
             bdr_val : NgsBaseVector | types.NoneType = None, 
             a_bdr_val : NgsBaseVector | types.NoneType = None) -> None:
         super().__init__(domain, sol_domain, linear = False)
-        self.gfu_a=ngs.GridFunction(self.domain.fes)
-        self.gfu_h=ngs.GridFunction(self.domain.fes)
+        self.a = self.domain.empty()
+        self.h = self.domain.empty()
+        # self.gfu_a=ngs.GridFunction(self.domain.fes)
+        # self.gfu_h=ngs.GridFunction(self.domain.fes)
         self.a_bdr = a_bdr_val.vec if a_bdr_val is not None and self.domain.bdr is not None and self.domain.is_on_boundary(a_bdr_val) else self.domain.zeros().vec
 
-        self.gfu_deriv=ngs.GridFunction(self.codomain.fes)
+        self.u_deriv = self.codomain.empty()
+        # self.gfu_deriv=ngs.GridFunction(self.codomain.fes)
         self.gfu_adj_help=ngs.GridFunction(self.codomain.fes)
-        self.gfu_eval=ngs.GridFunction(self.codomain.fes)
+        self.u_eval = self.codomain.empty()
+        # self.gfu_eval=ngs.GridFunction(self.codomain.fes)
         if bdr_val is not None and bdr_val in self.codomain:
-            self.gfu_eval.vec.data=bdr_val.vec
+            self.u_eval.vec.data = bdr_val.vec
         
         self.u_a, self.v_a = self.domain.fes.TnT()
         self.u, self.v = self.codomain.fes.TnT()
 
         self.bf_mat = ngs.BilinearForm(self.codomain.fes)
-        self.bf_mat += self._bf(self.gfu_a,self.u,self.v) 
+        self.bf_mat += self._bf(self.a.gf,self.u,self.v) 
         if self._bf_0() is not None:
             self.bf_mat += self._bf_0()
         
@@ -172,10 +223,10 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         self.lf = self._lf()
 
         self.c_u = ngs.LinearForm(self.codomain.fes)
-        self.c_u += self._bf(self.gfu_h,self.gfu_eval,self.v)
+        self.c_u += self._bf(self.h.gf,self.u_eval.gf,self.v)
 
         self.lf_adj = ngs.LinearForm(self.domain.fes)
-        self.lf_adj += -1*self._bf(self.v_a,self.gfu_eval,self.gfu_adj_help)
+        self.lf_adj += -1*self._bf(self.v_a,self.u_eval.gf,self.gfu_adj_help)
 
         self._consts = {*self._consts, "u_a","v_a","u","v", "bf_mat", "bf_mat_inv","lf","lf_adj","c_u"}
 
@@ -183,7 +234,7 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
             a : NgsBaseVector, 
             differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
-        self.gfu_a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
+        self.a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
         # self.gfu_a.vec.data = a.vec + self.a_bdr
         
         self.bf_mat.Assemble()
@@ -193,14 +244,14 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         # else:
         #     self.bf_mat_inv.Update()
         self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
-        self.gfu_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.gfu_eval.vec)
-        return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
+        self.u_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.u_eval.vec)
+        return self.u_eval.copy()
     
     def _derivative(self, 
             h : NgsBaseVector) -> NgsBaseVector:
         lf = self._c_u(h.vec)
-        self.gfu_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.gfu_deriv.vec)
-        return NgsBaseVector(self.gfu_deriv.vec,make_copy=True)
+        self.u_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.u_deriv.vec)
+        return self.u_deriv.copy()
 
     def _adjoint(self, 
             g : NgsBaseVector) -> NgsBaseVector:
@@ -260,12 +311,12 @@ class SecondOrderEllipticCoefficientPDE(NGSolveOperator):
         
     def _c_u(self,
             h : ngs.la.BaseVector) -> ngs.comp.BilinearForm:
-        self.gfu_h.vec.data = 1*h
-        ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.gfu_h.vec)
+        self.h.vec.data = 1*h
+        self.h.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.h.vec)
         return self.c_u.Assemble()
     
 
-class SolveSystem(NGSolveOperator):
+class SolveSystem(NgsOperator):
     r"""Solve the system 
     \begin(align*)
     Lu = f \text{ in } \Omega, \\
@@ -319,7 +370,7 @@ class SolveSystem(NGSolveOperator):
         return NgsBaseVector(self.f_adj.vec,make_copy=True)
         
         
-class LinearForm(NGSolveOperator):
+class LinearForm(NgsOperator):
     def __init__(self, 
             domain : NgsVectorSpace) -> None:
         super().__init__(domain=domain, codomain=domain, linear=True)
@@ -341,7 +392,7 @@ class LinearForm(NGSolveOperator):
             argument : NgsBaseVector) -> NgsBaseVector:
         return self._eval(argument)
     
-class LinearFormGrad(NGSolveOperator):
+class LinearFormGrad(NgsOperator):
     
     def __init__(self, 
         domain : NgsVectorSpace, 
@@ -374,7 +425,7 @@ class LinearFormGrad(NGSolveOperator):
         return self._x.copy()
 
 
-class BilinearForm(NGSolveOperator):
+class BilinearForm(NgsOperator):
     
     def __init__(self, 
         domain : NgsVectorSpace, 
@@ -402,7 +453,7 @@ class BilinearForm(NGSolveOperator):
         return self._x.conj().copy()
 
 
-class Coefficient(NGSolveOperator):
+class Coefficient(NgsOperator):
     r"""Diffusion and reaction coefficient problem
     
     Identification of a diffusion coefficient:
@@ -566,7 +617,7 @@ class Coefficient(NGSolveOperator):
             raise ValueError("Neither diffusion nor reaction was selected to be True")
 
 
-class ProjectToBoundary(NGSolveOperator):
+class ProjectToBoundary(NgsOperator):
     """Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
     this simplifies to taking ngs.Projector vor the given vectors. Note that to prevent change
     in the argument the argument will be copied before using ngs.Projector.
@@ -617,7 +668,7 @@ class ProjectToBoundary(NGSolveOperator):
             return self._y_eval
    
 
-class EIT(NGSolveOperator):
+class EIT(NgsOperator):
     r"""Electrical Impedance Tomography Problem
     PDE:
 
@@ -787,7 +838,7 @@ class EIT(NGSolveOperator):
         return toret
 
 
-class ReactionNeumann(NGSolveOperator):
+class ReactionNeumann(NgsOperator):
     r"""
     Estimation of the reaction coefficient from boundary value measurements
 
