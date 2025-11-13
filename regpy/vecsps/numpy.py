@@ -237,15 +237,23 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             shape_codomain=(shape_codomain,)
         elif not isinstance(shape_codomain,tuple):
             raise ValueError(util.Errors._compose_message("Wrong Value",'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
-        super().__init__(shape = shape_codomain + shape, dtype = dtype)
+        super().__init__(shape = shape + shape_codomain, dtype = dtype)
         self.shape_domain = shape
         r"""The shape of the domain of the functions (`N`)."""
         self.shape_codomain = shape_codomain
         r"""The shape of the codomain of the functions (`M`)."""
-        self.ndim_domain = len(self.shape_domain)
-        self.ndim_codomain = len(self.shape_codomain)   
         self.measure=measure
         r"""The measure on the domain of the functions (`N`)."""
+
+    @property
+    def ndim_domain(self):
+        r"""The number of domain dimensions."""
+        return len(self.shape_domain)
+    
+    @property
+    def ndim_codomain(self):
+        r"""The number of codomain dimensions."""
+        return len(self.shape_codomain)
 
     def scalar_space(self):
         r"""Returns the corresponding scalar-valued function space.
@@ -259,7 +267,10 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             The scalar-valued function space corresponding to this vector space as a shallow copy with modified
             shape_codomain.
         """
-        return MeasureSpaceFcts(measure=self.measure[(0,)*len(self.shape_codomain)],shape=self.shape_domain,dtype=self.dtype)
+        res = deepcopy(self)
+        res.shape_codomain = ()
+        res.measure = np.squeeze(self.measure, axis = tuple(range(self.shape_domain,self.shape)))
+        return res
 
     def vector_valued_space(self,shape_codomain):
         r"""    Returns a corresponding vector-valued function space with given shape_codomain.
@@ -273,7 +284,10 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             The vector-valued function space corresponding to this vector space as a shallow copy with modified
             shape_codomain.
         """
-        return MeasureSpaceFcts(measure=self.measure,shape_codomain=shape_codomain,dtype=self.dtype)
+        res = deepcopy(self)
+        res.shape_codomain = shape_codomain
+        res.measure = self.measure
+        return res
 
     @property
     def measure(self):
@@ -287,36 +301,15 @@ class MeasureSpaceFcts(NumPyVectorSpace):
 
     def update_measure(self,new_measure):
         try:
-            broadcasted=np.broadcast_to(new_measure,self.shape)
+            broadcasted=np.broadcast_to(new_measure,self.shape_domain)
         except ValueError as e:
-            raise ValueError(util.Errors._compose_message("Invalid Measure",f"The measure with shape {new_measure.shape} can not be broadcasted to the full shape of the domain {self.shape}. Note that the shape of the space consists is decomposed into shape_codomain + shape_domain given by {self.shape_codomain} + {self.shape_domain}.")) from e
-        if not self.measure_consistent_over_codomain():
-            warn(f"The measure {new_measure} is not consistent over the codomain {self.shape_codomain}. This may lead to unexpected results in some algorithms.",UserWarning)
+            raise ValueError(util.Errors._compose_message("Invalid Measure",f"The measure with shape {new_measure.shape} can not be broadcasted to the domain shape of the domain {self.shape_domain}. Note that the shape of the space is decomposed into shape_domain + shape_codomain given by {self.shape_domain} + {self.shape_codomain} and the measure has to be at broadcastable to the shape_domain!")) from e
+        broadcasted = np.expend_dims(broadcasted, axis=tuple(range(len(self.shape_domain), len(self.shape))))
         if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
             raise ValueError(util.Errors._compose_message("Mismatch of dtype", f'Type {broadcasted.dtype} is invalid type for measure.'))
         if(np.min(broadcasted)<0):
             raise ValueError(util.Errors._compose_message("Not a Measure"),'Negative values are not allowed in measure.')
         return broadcasted
-    
-    def measure_consistent_over_codomain(self):
-        r""" Checks if the measure is consistent over the codomain, i.e., if for all points in the domain the measure is the same for all codomain components.
-
-        Returns
-        -------
-        bool
-            True if the measure is consistent over the codomain, False otherwise.
-        """
-        if len(self.shape_codomain)==0:
-            return True
-        if all(s == 0 for s in self.measure.strides[:len(self.shape_codomain)]):
-            return True
-        slicer = (0,)*len(self.shape_codomain) + (slice(None),)*len(self.shape_domain)
-        base_measure = self.measure[slicer]
-        for idx in np.ndindex(self.shape_codomain):
-            slicer = idx + (slice(None),)*len(self.shape_domain)
-            if not np.allclose(self.measure[slicer], base_measure):
-                return False
-        return True
     
     def __eq__(self, other):
         if(not super().__eq__(other)):
