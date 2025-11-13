@@ -278,14 +278,24 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         That is given a space of functions :math:`\mathbb{R}^N\to \mathbb{R}` or :math:`\mathbb{R}^N\to \mathbb{C}`,
         it returns the space of functions :math:`\mathbb{R}^N\to \mathbb{R}^M` or :math:`\mathbb{R}^N\to \mathbb{C}^M`.
 
+        Parameters
+        ----------
+        shape_codomain : int or tuple of ints
+        
         Returns
         -------
         MeasureSpaceFcts
             The vector-valued function space corresponding to this vector space as a shallow copy with modified
             shape_codomain.
         """
+        if isinstance(shape_codomain, int):
+            shape_codomain = (shape_codomain,)
+        elif not isinstance(shape_codomain, tuple) or not all(isinstance(s,int) for s in shape_codomain):
+            raise ValueError(util.Errors.not_instance(shape_codomain,tuple,'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
+
         res = deepcopy(self)
         res.shape_codomain = shape_codomain
+        res.shape = res.shape_domain + shape_codomain
         res.measure = self.measure
         return res
 

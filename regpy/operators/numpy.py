@@ -416,7 +416,7 @@ class PtwMatrixVectorMultiplication(Operator):
         if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
             raise TypeError('matrixfct must be a numpy array of the same data type.')
         if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
-            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape}, {codomain_shape}')
+            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}')
 
         self.matrixfct= matrixfct
         remaining_codomain_shape = matrixfct.shape[len(domain_shape):-len(codomain_shape)]
