@@ -271,6 +271,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         res.shape_codomain = ()
         res.shape = res.shape_domain
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
+        del res.identity
         return res
 
     def vector_valued_space(self,shape_codomain):
@@ -298,6 +299,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         res.shape_codomain = shape_codomain
         res.shape = res.shape_domain + res.shape_codomain
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
+        del res.identity
         return res
 
     @property
