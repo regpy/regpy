@@ -269,7 +269,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         """
         res = deepcopy(self)
         res.shape_codomain = ()
-        res.measure = np.squeeze(self.measure, axis = tuple(range(self.shape_domain,self.shape)))
+        res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
         return res
 
     def vector_valued_space(self,shape_codomain):
@@ -294,9 +294,9 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             raise ValueError(util.Errors.not_instance(shape_codomain,tuple,'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
 
         res = deepcopy(self)
-        res.shape_codomain = shape_codomain
-        res.shape = res.shape_domain + shape_codomain
-        res.measure = self.measure
+        res.shape_codomain += shape_codomain
+        res.shape = res.shape_domain + res.shape_codomain
+        res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
         return res
 
     @property
@@ -533,16 +533,6 @@ class UniformGridFcts(GridFcts):
         self.volume_elem=broadcasted_measure.flat[0]
         return broadcasted_measure
 
-    @MeasureSpaceFcts.measure.setter
-    def measure(self,new_measure):
-        if np.isscalar(new_measure):
-            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
-            assert new_measure>0
-            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(float(new_measure), self.shape + (1,)*len(self.shape_codomain)))
-        elif(isinstance(new_measure,np.ndarray)):
-            assert np.all(new_measure == new_measure.flat[0])
-            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(new_measure.flat[0], self.shape_domain + (1,)*len(self.shape_codomain)))
-        self.volume_elem=self.measure.flat[0]
 
 
 class Prod(NumPyVectorSpace):
