@@ -1,4 +1,4 @@
-from copy import copy
+from copy import copy, deepcopy
 from typing import *
 
 import numpy as np
@@ -99,7 +99,7 @@ class NumPyVectorSpace(VectorSpaceBase):
             The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
-        other = copy(self)
+        other = deepcopy(self)
         other.dtype = np.result_type(1j, self.dtype)
         other.is_complex = True
         return other
@@ -113,7 +113,7 @@ class NumPyVectorSpace(VectorSpaceBase):
             The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
-        other = copy(self)
+        other = deepcopy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
         other.is_complex = False
         return other
@@ -241,9 +241,42 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         r"""The shape of the domain of the functions (`N`)."""
         self.shape_codomain = shape_codomain
         r"""The shape of the codomain of the functions (`M`)."""
+        self.ndim_domain = len(self.shape_domain)
+        self.ndim_codomain = len(self.shape_codomain)   
         self.measure=measure
-        r"""The measure on the domain of the functions (`M`,`N`)."""
+        r"""The measure on the domain of the functions (`N`)."""
 
+    def scalar_space(self):
+        r"""    Returns the correcsponding scalar-valued function space.
+    
+        Returns
+        -------
+        MeasureSpaceFcts
+            The scalar-valued function space corresponding to this vector space as a shallow copy with modified
+            shape_codomain.
+        """
+        other = deepcopy(self)
+        other.shape_codomain = ()
+        other.shape_domain = self.shape_domain
+        other.shape = other.shape_domain
+        other.measure = np.reshape(self.measure, other.shape)
+        return other
+
+    def vector_valued_space(self,shape_codomain):
+        r"""    Returns a corresponding vector-valued function space with given shape_codomain.
+
+        Returns
+        -------
+        MeasureSpaceFcts
+            The vector-valued function space corresponding to this vector space as a shallow copy with modified
+            shape_codomain.
+        """
+        other = deepcopy(self)
+        other.shape_domain = self.shape_domain
+        other.shape_codomain = shape_codomain
+        other.shape = other.shape_domain + other.shape_codomain
+        other.measure = np.reshape(self.measure, other.shape_domain + (1,)*len(shape_codomain))
+        return other
 
     @property
     def measure(self):
@@ -266,7 +299,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         if(np.min(broadcasted)<0):
             raise ValueError(util.Errors._compose_message("Not a Measure"),'Negative values are not allowed in measure.')
         return broadcasted
-
+    
     def __eq__(self, other):
         if(not super().__eq__(other)):
             return False
@@ -346,9 +379,16 @@ class GridFcts(MeasureSpaceFcts):
         r"""The lengths of the axes, i.e. `axis[-1] - axis[0]`, for each axis."""
 
         if(use_cell_measure):
-            super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),shape=self.coords[0].shape,shape_codomain=shape_codomain, dtype=dtype)
+            super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),
+                             shape=self.coords[0].shape+shape_codomain,
+                             shape_codomain=shape_codomain, 
+                             dtype=dtype
+                             )
         else:
-            super().__init__(shape=self.coords[0].shape, shape_codomain=shape_codomain, dtype=dtype)
+            super().__init__(shape=self.coords[0].shape+shape_codomain, 
+                             shape_codomain=shape_codomain, 
+                             dtype=dtype
+                             )
 
         if axisdata is not None:
             axisdata = tuple(axisdata)
@@ -472,6 +512,16 @@ class UniformGridFcts(GridFcts):
         self.volume_elem=broadcasted_measure.flat[0]
         return broadcasted_measure
 
+    @MeasureSpaceFcts.measure.setter
+    def measure(self,new_measure):
+        if np.isscalar(new_measure):
+            assert isinstance(new_measure, int) or isinstance(new_measure,float) or np.issubdtype(new_measure.dtype,np.number)
+            assert new_measure>0
+            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(float(new_measure), self.shape + (1,)*len(self.shape_codomain)))
+        elif(isinstance(new_measure,np.ndarray)):
+            assert np.all(new_measure == new_measure.flat[0])
+            super(UniformGridFcts, self.__class__).measure.fset(self, np.broadcast_to(new_measure.flat[0], self.shape_domain + (1,)*len(self.shape_codomain)))
+        self.volume_elem=self.measure.flat[0]
 
 
 class Prod(NumPyVectorSpace):
