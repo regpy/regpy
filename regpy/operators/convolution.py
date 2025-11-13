@@ -176,9 +176,12 @@ class ConvolutionOperator(Composition):
         Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implmented in Composition), 
         but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
     conv_inverse:
-        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)'
+        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)`
         Note:  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
         but an approximation of the inverse of the underlying convolution operators in R^d. 
+    conv_adjoint:
+        Output: Adjoint operator as a convolution operator with Fourier multiplier given by the pointwise Hermitian matrices
+        
     Linear combinations: 
     ::math::
 
@@ -191,7 +194,7 @@ class ConvolutionOperator(Composition):
                  Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
         if not isinstance(grid,UniformGridFcts):
             raise TypeError(f'grid must be of type UniformGridFcts. Got {grid}')
-        if not kernel_matrix_shape is None and not grid.shape[-1] ==  kernel_matrix_shape[1]:
+        if not kernel_matrix_shape is None and not grid.shape_codomain[0] ==  kernel_matrix_shape[1]:
             raise ValueError(f'Last dimension of grid must equal last matrix kernel dimension. Got {grid.shape}, {kernel_matrix_shape}')
         self.grid = grid
         ndim = grid.ndim_domain
@@ -240,7 +243,7 @@ class ConvolutionOperator(Composition):
                        'pad_value' : pad_value,
                        'Fourier_truncation_amount' : Fourier_truncation_amount,
                        'convolution_axes' : self.convolution_axes,
-                       'kernel_matrix_shape' : kernel_matrix_shape}
+                       'kernel_matrix_shape' : self.kernel_matrix_shape}
 
         freq_slice = (self.convolution_axes,  *tuple(slice(None) if i in self.convolution_axes else slice(0, 1) for i in np.arange(ndim)))
         if pad_amount is None or np.all(pad_amount ==0):
@@ -403,7 +406,7 @@ class ConvolutionOperator(Composition):
             return self
         elif isinstance(other, ConvolutionOperator):
             assert self.grid == other.grid
-            assert self._parameters_equal(self.kwargs,other.kwargs)
+            assert self._parameters_equal(self.kwargs,other.kwargs,ignore_kernel_matrix_shape=True)
             return ConvolutionOperator(self.grid,self._otf + other._otf,**self.kwargs)
         elif isinstance(other, Operator):
             return LinearCombination(self, other)
@@ -415,9 +418,18 @@ class ConvolutionOperator(Composition):
     def __repr__(self):
         return util.make_repr(self, self._otf)
 
+def _Lap_in_FD(*freq,dim_codomain=None):
+    shape_domain = freq[0].shape
+    toret = np.zeros(shape_domain+(dim_codomain,dim_codomain),dtype=complex)
+    scal_Lap = -sum((2*np.pi*y)**2 for y in freq)
+    for j in range(dim_codomain):
+        toret[...,j,j] = scal_Lap
+    return toret
+
 class Laplacian(ConvolutionOperator):
     """Laplace operator with periodic boundary conditions, implemented as convolution operator. 
     The second derivatives are computed with respect to the coordinates of the given grid. 
+    If vector-valued spaces, this is the vector-Laplacian.
 
     Parameters:
     grid: UniformGridFcts
@@ -425,11 +437,19 @@ class Laplacian(ConvolutionOperator):
     """
     def __init__(self,grid, pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
-        super().__init__(grid,
-                        lambda *x : -sum((2*np.pi*y)**2 for y in x),
-                        pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
-                        )  
+        if grid.shape_codomain == ():
+            super().__init__(grid,
+                            lambda *x : -sum((2*np.pi*y)**2 for y in x),
+                            pad_amount=pad_amount,pad_value=pad_value,
+                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            )
+        else:
+            super().__init__(grid,
+                            lambda *x : _Lap_in_FD(*x,dim_codomain=grid.shape_codomain[0]),
+                            kernel_matrix_shape=(grid.shape_codomain[0],)*2,
+                            pad_amount=pad_amount,pad_value=pad_value,
+                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            )
 
 def gradient(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
     """Gradient operator with periodic boundary conditions, implemented as convolution operator.
