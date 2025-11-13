@@ -162,3 +162,26 @@ def test_differential_operators():
             assert np.allclose(curlop(grad(f3d)),np.zeros_like(g3d))
             assert np.allclose(grad.adjoint(curlop(g3d)),np.zeros_like(f3d))
             assert np.allclose(grad(div(g3d))-curlop.adjoint(curlop(g3d)) ,  Lap3D(g3d),atol=1e-6)
+
+def test_shift_convolution_calculus():
+    errors = []
+    vs=UniformGridFcts((-pi,pi,50),dtype=np.complex128)
+    errors += op_basics_wrapper(PeriodicShift,vs,[1.],test_methods=True, rel_tol_norm=1e-3, pad_amount=2,convolution_axes=None)
+    
+    op=PeriodicShift(vs,[1.],pad_amount=2)
+
+    errors += op_evaluation_and_ot(op)
+
+    collect_errors(PeriodicShift,errors)
+
+    grid =  UniformGridFcts((-pi,pi,300),(-pi,pi,50),periodic=True,dtype=complex)
+    X,Y = grid.coords
+    f = np.exp(-100*(X**2+Y**2))
+    g = np.exp(-100*((X+1)**2+Y**2))
+    shift1 = PeriodicShift(grid,[1,0])
+    fshift = shift1(f)
+    assert norm(fshift-g)<=1e-10
+
+    blur = GaussianBlur(grid,(0.1)**2)
+    double_peak = 0.5*shift1.composition(blur) + blur
+    assert norm(double_peak(f)-blur(f)-0.5*shift1(blur(f)))<1e-12
