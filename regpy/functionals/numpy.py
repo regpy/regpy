@@ -1,4 +1,6 @@
 from math import inf
+from functools import partial
+from copy import deepcopy
 
 import numpy as np
 from scipy.linalg import ishermitian
@@ -7,10 +9,9 @@ from scipy.special import lambertw
 from regpy.operators import PtwMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
-import logging
-from copy import deepcopy
+from regpy.util import Errors
 
-from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
 
 __all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
@@ -808,69 +809,134 @@ class IntegralFunctionalBase(Functional):
         return x
     
 class VectorIntegralFunctional(Functional):
-    def __init__(self, vdomain, sdomain, scalar_func,scalar_func_args=None):
-                
-        self.vdomain = vdomain
-        self.sdomain = sdomain
-        assert scalar_func_args is None or isinstance(scalar_func_args,dict)
-        if scalar_func == 'Huber':
-            self.scalar_func = Huber(sdomain)
-        elif scalar_func == 'Lpp':
-            self.scalar_func = LppPower(sdomain,**scalar_func_args)
-        elif isinstance(scalar_func,IntegralFunctionalBase):
-            self.scalar_func = scalar_func
-        else:
-            raise ValueError(f'{scalar_func} invalid as argument for scalar_func.')
+    r"""
+    Implements a vector-valued integral functional \(v\mapsto \int f(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
+    as a functional. Here, \(f\) is some scalar integral functional and \(\|\cdot\|\) some norm on the vector values. 
 
-        super().__init__(domain, h_domain,  convexity_param, Lipschitz, 
+    The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
+    as tuple and returning the norm values. By default, the Euclidean norm is used.  
+
+    Parameters
+    ----------
+    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+    sdomain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain of scalar-valued functions on which the scalar functional is defined. Needs some Measure therefore   
+        a MeasureSpaceFcts. Defaults to vdomain.scalar_space if not provided.
+    scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
+        Scalar integral functional to be used as function \(f\). Providing a specivic IntegralFunctionalBase 
+        or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
+    scalar_func_args : dict, optional
+        Additional arguments for the scalar_func if needed (e.g. 'p' for Lpp).
+    vector_norm : callable, optional
+        Function to compute the norm of the vector values. It needs to take the vector-valued function and the vector axis 
+        as tuple and return the norm values. By default, the Euclidean norm is used.
+
+        Such a method has to process two arguments:
+        - the vector-valued function as `np.ndarray`, called `x`
+        - the vector axes as tuple, called `axis`
+        
+        The returned array has to keep the spacial dimensions of the input array and squeez the vector dimensions. That 
+        means, you have (special_dims, vector_dims) in and (special_dims,) out.
+    """    
+
+    def __init__(self, vdomain, sdomain = None, hdomain = None, scalar_func = None, scalar_func_args=None, vector_norm=None):
+        if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>1:
+            raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
+        self.vdomain = vdomain
+        if sdomain is None:
+            sdomain = vdomain.scalar_space()
+        elif not isinstance(sdomain,MeasureSpaceFcts) or sdomain.ndim_codomain!=1:
+            raise ValueError(Errors.not_instance(sdomain,MeasureSpaceFcts,f"The scalar domain needs to be an instance of MeasureSpaceFcts with ndim_codomain=1 since scalar-valued functions need a measure and a scalar domain."))
+        self.sdomain = sdomain
+        self.scalar_func_args = scalar_func_args if scalar_func_args is not None else {}
+
+        if isinstance(scalar_func, AbstractFunctional):
+            scalar_func = scalar_func(self.sdomain, **self.scalar_func_args)
+        elif scalar_func is None:
+            scalar_func = LppPower(sdomain, p=2., **self.scalar_func_args)
+        if not isinstance(scalar_func,IntegralFunctionalBase) or scalar_func.domain!=self.sdomain:
+            raise ValueError(Errors.not_instance(scalar_func, IntegralFunctionalBase, f'{scalar_func} need to be a callable giving an IntegralFunctionalBase functional or already a IntegralFunctionalBase with sdomain as domain.'))
+        else:
+            self.scalar_func = scalar_func
+
+        if vector_norm is not None:
+            if not callable(vector_norm):
+                raise ValueError(Errors._compose_message("Not callable", f"The provided vector_norm {vector_norm} needs to be a callable taking the vector-valued function and the vector axis as tuple and returning the norm values."))
+            self._vector_norm = vector_norm
+        else:
+            self._vector_norm = np.linalg.norm
+
+        super().__init__(vdomain, L2(vecsp=vdomain), 
+                         convexity_param = self.scalar_func.convexity_param, 
+                         Lipschitz = self.scalar_func.Lipschitz, 
                          separable= False, linear= False)
-        self._sbuf = sdomain.zeros()
+        self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
-        self._vaxes = (-1,)
+        self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
+
+    @property
+    def vector_norm(self):
+        """
+        Returns the method vector norm used in the functional.
+        By default, the Euclidean norm is used.
+        """
+        return self._vector_norm
+    
+    @vector_norm.setter
+    def vector_norm(self, value):
+        if not callable(value):
+            raise ValueError(Errors._compose_message("Not callable", f"The provided vector_norm {value} needs to be a callable taking the vector-valued function and the vector axis as tuple and returning the norm values."))
+        self._vector_norm = value
+
+    @property
+    def _sbuf_ext(self):
+        return np.expand_dims(self._sbuf, axis=self._vaxes)
 
     def _eval(self, vec):
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        self._sbuf = self.vector_norm(x = vec, axis=self._vaxes)
         return self.scalar_func(self._sbuf)
 
     def _conj(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        self._sbuf = self.vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
     def _subgradient(self, vec):
+        r"""
+        returns   
+        
+        .. math::
+            [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
         """
-        returns   [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
-        """
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
     
     def _conj_subgradient(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        self._sbuf = self.vector_norm(vec_star, axis=self._vaxes)
+        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
 
-    def _proximal(self, vec,tau):
+    def _proximal(self, vec, tau, mask=None):
+        r"""
+        returns   :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
         """
-        returns   [prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
-        """
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.proximal(self._sbuf,tau)
-        self._vbuf *= self._sbuf
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.proximal(self._sbuf, tau ,mask=None)
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
 
-    def _conj_proximal(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.proximal(self._sbuf)
-        self._vbuf *= self._sbuf
+    def _conj_proximal(self, vec_star, tau, mask=None):
+        self._sbuf = self.vector_norm(vec_star, axis=self._vaxes)
+        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
-
-    
 
 
 class LppPower(IntegralFunctionalBase):
