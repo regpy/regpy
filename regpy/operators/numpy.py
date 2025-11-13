@@ -397,30 +397,34 @@ import string
 class PtwMatrixVectorMultiplication(Operator):
     """
     Pointwise multiplication of a matrix-valued function with a vector-valued function.
-    Parameters:
-    gridin : MeasureSpaceFcts
+
+    Parameters
+    ----------
+    domain : MeasureSpaceFcts
         The input grid function.
     matrixfct : np.ndarray
         The matrix-valued function to multiply with the vector-valued function.  
-        The first dimensions must match the shape_domain of gridin, the last dimensions  
-        must match the shape_codomain of gridin, and the middle dimensions define the output shape_codomain.
+        The first dimensions must match the shape_domain of domain, the last dimensions  
+        must match the shape_codomain of domain, and the middle dimensions define the output shape_codomain.
     """
-    def __init__(self,gridin,matrixfct):
-        if not isinstance(gridin, MeasureSpaceFcts):
-            raise TypeError('gridin must be of type MeasureSpaceFcts.')
-        dtype = gridin.dtype
-        grid_shape = gridin.shape_domain
-        shape_in = gridin.shape_codomain
-        if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==dtype:
+    def __init__(self,domain,matrixfct):
+        if not isinstance(domain, MeasureSpaceFcts):
+            raise TypeError('domain must be of type MeasureSpaceFcts.')
+        domain_shape = domain.shape_domain
+        codomain_shape = domain.shape_codomain
+
+        if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
             raise TypeError('matrixfct must be a numpy array of the same data type.')
-        if not matrixfct.shape[-len(shape_in):]==shape_in:
-            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape}, {shape_in}')
+        if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
+            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape}, {codomain_shape}')
 
         self.matrixfct= matrixfct
-        shape_out = matrixfct.shape[len(grid_shape):-len(shape_in)]
-        super().__init__(domain=gridin,codomain=gridin.vector_valued_space(shape_out),linear=True)
-        letters_in = ''+string.ascii_letters[:len(shape_in)]
-        letters_out = ''+string.ascii_letters[len(shape_in):len(shape_in)+len(shape_out)]
+        remaining_codomain_shape = matrixfct.shape[len(domain_shape):-len(codomain_shape)]
+
+        super().__init__(domain=domain,codomain=domain.vector_valued_space(remaining_codomain_shape),linear=True)
+
+        letters_in = ''+string.ascii_letters[:len(codomain_shape)]
+        letters_out = ''+string.ascii_letters[len(codomain_shape):len(codomain_shape)+len(remaining_codomain_shape)]
         self._einstein_string_mul = '...' + letters_out + letters_in + ',...' + letters_in + '->...'+ letters_out
         # e.g., '...ba,...a->...b'
         self._einstein_string_mulT =  '...' + letters_out + letters_in + ',...' + letters_out + '->...'+ letters_in
@@ -437,20 +441,22 @@ class PtwMatrixVectorMultiplication(Operator):
 
 
 class AddSingletonVectorDimension(Operator):
-    """Operater that adds a singleton dimension as last dimension in MeasureSpaceFcts. 
+    """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 
     Wrapper to np.reshape(...,1).
-    Parameters:
+
+    Parameters
+    ----------
     grid: MeasureSpaceFcts    
     """
-    def __init__(self, grid):
-        if not isinstance(grid, MeasureSpaceFcts):
-            raise TypeError(f'grid must be of type MeasureSpaceFcts. Got {type(grid)}')
-        assert grid.shape_codomain == (), f'grid must be scalar-valued. Got shape_codomain = {grid.shape_codomain}'
-        self.shape_domain = grid.shape_domain
-        super().__init__(grid, grid.vector_valued_space((1,)), linear=True)
+    def __init__(self, domain):
+        if not isinstance(domain, MeasureSpaceFcts):
+            raise TypeError(f'The VectorSpace must be of type MeasureSpaceFcts. Got {type(domain)}')
+        assert domain.shape_codomain == (), f'grid must be scalar-valued. Got shape_codomain = {domain.shape_codomain}'
+        self.shape_domain = domain.shape_domain
+        super().__init__(domain, domain.vector_valued_space((1,)), linear=True)
 
     def _eval(self,f):
-        return np.reshape(f,self.shape_domain+(1,))
+        return np.expand_dims(f, axis=-1)
     
     def _adjoint(self,f):
-        return np.reshape(f,self.shape_domain)
+        return np.squeeze(f, axis=-1)
