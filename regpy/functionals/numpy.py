@@ -13,7 +13,7 @@ from regpy.util import Errors
 
 from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
+__all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -820,11 +820,8 @@ class VectorIntegralFunctional(Functional):
     ----------
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
         Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
-    sdomain : `regpy.vecsps.MeasureSpaceFcts`
-        Domain of scalar-valued functions on which the scalar functional is defined. Needs some Measure therefore   
-        a MeasureSpaceFcts. Defaults to vdomain.scalar_space if not provided.
     scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
-        Scalar integral functional to be used as function \(f\). Providing a specivic IntegralFunctionalBase 
+        Scalar integral functional to be used as function \(f\). Providing a specific IntegralFunctionalBase 
         or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
     scalar_func_args : dict, optional
         Additional arguments for the scalar_func if needed (e.g. 'p' for Lpp).
@@ -836,25 +833,22 @@ class VectorIntegralFunctional(Functional):
         - the vector-valued function as `np.ndarray`, called `x`
         - the vector axes as tuple, called `axis`
         
-        The returned array has to keep the spacial dimensions of the input array and squeez the vector dimensions. That 
+        The returned array has to keep the spatial dimensions of the input array and squeeze the vector dimensions. That 
         means, you have (special_dims, vector_dims) in and (special_dims,) out.
     """    
 
-    def __init__(self, vdomain, sdomain = None, hdomain = None, scalar_func = None, scalar_func_args=None, vector_norm=None):
-        if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>1:
+    def __init__(self, vdomain, hdomain = None, scalar_func = None, scalar_func_args=None, 
+                 vector_norm=None, dual_vector_norm=None):
+        if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
             raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
         self.vdomain = vdomain
-        if sdomain is None:
-            sdomain = vdomain.scalar_space()
-        elif not isinstance(sdomain,MeasureSpaceFcts) or sdomain.ndim_codomain!=1:
-            raise ValueError(Errors.not_instance(sdomain,MeasureSpaceFcts,f"The scalar domain needs to be an instance of MeasureSpaceFcts with ndim_codomain=1 since scalar-valued functions need a measure and a scalar domain."))
-        self.sdomain = sdomain
+        self.sdomain = vdomain.scalar_space()
         self.scalar_func_args = scalar_func_args if scalar_func_args is not None else {}
 
         if isinstance(scalar_func, AbstractFunctional):
             scalar_func = scalar_func(self.sdomain, **self.scalar_func_args)
         elif scalar_func is None:
-            scalar_func = LppPower(sdomain, p=2., **self.scalar_func_args)
+            scalar_func = LppPower(self.sdomain, p=2., **self.scalar_func_args)
         if not isinstance(scalar_func,IntegralFunctionalBase) or scalar_func.domain!=self.sdomain:
             raise ValueError(Errors.not_instance(scalar_func, IntegralFunctionalBase, f'{scalar_func} need to be a callable giving an IntegralFunctionalBase functional or already a IntegralFunctionalBase with sdomain as domain.'))
         else:
@@ -864,8 +858,19 @@ class VectorIntegralFunctional(Functional):
             if not callable(vector_norm):
                 raise ValueError(Errors._compose_message("Not callable", f"The provided vector_norm {vector_norm} needs to be a callable taking the vector-valued function and the vector axis as tuple and returning the norm values."))
             self._vector_norm = vector_norm
+            # Probably it is better to just allow p-norms here and use p as a parameter. 
+            # Otherwise we need also the derivative of the norm, the conjugate functional, and the derivative of the conjugate functional as parameter.  
+            self.unknown_norm = True
         else:
+            self.unknown_norm = False
             self._vector_norm = np.linalg.norm
+
+        if dual_vector_norm is not None:
+            if not callable(vector_norm):
+                raise ValueError(Errors._compose_message("Not callable", f"The provided vector_norm {vector_norm} needs to be a callable taking the vector-valued function and the vector axis as tuple and returning the norm values."))
+            self._dual_vector_norm = dual_vector_norm
+        else:
+            self._dual_vector_norm = np.linalg.norm            
 
         super().__init__(vdomain, L2(vecsp=vdomain), 
                          convexity_param = self.scalar_func.convexity_param, 
@@ -890,6 +895,20 @@ class VectorIntegralFunctional(Functional):
         self._vector_norm = value
 
     @property
+    def dual_vector_norm(self):
+        """
+        Returns the method dual vector norm used in the functional.
+        By default, the Euclidean norm is used.
+        """
+        return self._dual_vector_norm
+    
+    @dual_vector_norm.setter
+    def dual_vector_norm(self, value):
+        if not callable(value):
+            raise ValueError(Errors._compose_message("Not callable", f"The provided vector_norm {value} needs to be a callable taking the vector-valued function and the vector axis as tuple and returning the norm values."))
+        self._dual_vector_norm = value
+
+    @property
     def _sbuf_ext(self):
         return np.expand_dims(self._sbuf, axis=self._vaxes)
 
@@ -898,7 +917,7 @@ class VectorIntegralFunctional(Functional):
         return self.scalar_func(self._sbuf)
 
     def _conj(self, vec_star):
-        self._sbuf = self.vector_norm(x = vec_star, axis=self._vaxes)
+        self._sbuf = self.dual_vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
     def _subgradient(self, vec):
@@ -908,6 +927,8 @@ class VectorIntegralFunctional(Functional):
         .. math::
             [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
         """
+        if self.unknown_norm:
+            raise NotImplementedError('subgradient only implemented for L2 norm')
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.subgradient(self._sbuf)
@@ -915,7 +936,9 @@ class VectorIntegralFunctional(Functional):
         return self._vbuf.copy()
     
     def _conj_subgradient(self, vec_star):
-        self._sbuf = self.vector_norm(vec_star, axis=self._vaxes)
+        if self.unknown_norm:
+            raise NotImplementedError('conjugate subgradient only implemented for L2 norm')
+        self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
         np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
         self._vbuf *= self._sbuf_ext
@@ -925,6 +948,8 @@ class VectorIntegralFunctional(Functional):
         r"""
         returns   :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
         """
+        if self.unknown_norm:
+            raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.proximal(self._sbuf, tau ,mask=None)
@@ -932,7 +957,9 @@ class VectorIntegralFunctional(Functional):
         return self._vbuf.copy()
 
     def _conj_proximal(self, vec_star, tau, mask=None):
-        self._sbuf = self.vector_norm(vec_star, axis=self._vaxes)
+        if self.unknown_norm:
+            raise NotImplementedError('conjugate proximal only implemented for L2 norm')
+        self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
         np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
         self._vbuf *= self._sbuf_ext

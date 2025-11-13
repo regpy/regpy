@@ -117,6 +117,18 @@ def test_quadlow():
     func = QuadLow(dom)
     ft.test_functional(func)
 
+#from regpy.util.functional_tests import test_moreaus_identity, test_subgradient, test_young_equality
+#from regpy.functionals.numpy import VectorIntegralFunctional
+#def test_VectorIntegralFunctional():
+#    grid = UniformGridFcts((-1,1,10))
+#    vgrid = grid.vector_valued_space(5)
+#    for sigma in [1e-2,1e-1,1,10.]:
+#        sHuber = Hub(grid,sigma=sigma)
+#        HuberL2 = VectorIntegralFunctional(vgrid,scalar_func=sHuber)
+#        test_subgradient(HuberL2)
+#        test_young_equality(HuberL2)
+#        test_moreaus_identity(HuberL2)
+
 def test_quadratic_positive_semidef():
     N=5
     dom=UniformGridFcts(N,N,dtype=np.complex128)
