@@ -525,7 +525,7 @@ class UniformGridFcts(GridFcts):
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
         """The volumen element, initialized as product of `spacing`"""
-        self.measure = np.broadcast_to(self.volume_elem, self.shape)
+        self.measure = self.volume_elem
         """ Setting measure to be initialized by `volume_element`"""
     
     def update_measure(self, new_measure):
