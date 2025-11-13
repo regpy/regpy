@@ -314,7 +314,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             broadcasted=np.broadcast_to(new_measure,self.shape_domain)
         except ValueError as e:
             raise ValueError(util.Errors._compose_message("Invalid Measure",f"The measure with shape {new_measure.shape} can not be broadcasted to the domain shape of the domain {self.shape_domain}. Note that the shape of the space is decomposed into shape_domain + shape_codomain given by {self.shape_domain} + {self.shape_codomain} and the measure has to be at broadcastable to the shape_domain!")) from e
-        broadcasted = np.expend_dims(broadcasted, axis=tuple(range(len(self.shape_domain), len(self.shape))))
+        broadcasted = np.expand_dims(broadcasted, axis=tuple(range(len(self.shape_domain), len(self.shape))))
         if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
             raise ValueError(util.Errors._compose_message("Mismatch of dtype", f'Type {broadcasted.dtype} is invalid type for measure.'))
         if(np.min(broadcasted)<0):
