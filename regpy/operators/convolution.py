@@ -6,7 +6,9 @@ from regpy.vecsps import UniformGridFcts, GridFcts
 from .base import PtwMultiplication, Operator, Composition, LinearCombination,OuterShift
 from .numpy import FourierTransform, AddSingletonVectorDimension, PtwMatrixVectorMultiplication
 
-__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator"]
+__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur", "ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator",
+           "gradient","curl","divergence", "Laplacian",
+           "PeriodicShift"]
 
 class PaddingOperator(Operator):
     r"""Operator that implements zero-padding for numpy arrays.
@@ -110,15 +112,6 @@ def TruncationOperator(grid, truncation_amount):
             )
     pad_op = PaddingOperator(truncated_grid,truncation_amount)
     return pad_op.adjoint
-
-def change_last_grid_dimension(gridin,new_dimension):
-    axes_out = gridin.axes.copy()
-    axes_out[-1] = np.arange(new_dimension)
-    if isinstance(gridin,UniformGridFcts):
-        gridout = UniformGridFcts(*axes_out,dtype=gridin.dtype)
-    else:
-        gridout = GridFcts(*axes_out,dtype=gridin.dtype,use_cell_measure=False)
-    return gridout
 
 class ConvolutionOperator(Composition):
     r"""Periodic convolution operator on a periodic UniformGridFcts space. 
@@ -464,7 +457,7 @@ def divergence(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,
     """
     grad = gradient(grid.vector_valued_space(1),pad_amount=pad_amount,pad_value=pad_value,
                                 Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
-    return grad.conv_adjoint()
+    return - grad.conv_adjoint()
 
 def curl(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
     """Curl operator with periodic boundary conditions, implemented as convolution operator.
