@@ -273,7 +273,9 @@ class MeasureSpaceFcts(NumPyVectorSpace):
 
     def vector_valued_space(self,shape_codomain):
         r"""    Returns a corresponding vector-valued function space with given shape_codomain.
-
+        Parameters:
+        shape_codomain : int or tuple of ints
+        
         Returns
         -------
         MeasureSpaceFcts
@@ -282,9 +284,9 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         """
         other = deepcopy(self)
         other.shape_domain = self.shape_domain
-        other.shape_codomain = shape_codomain
+        other.shape_codomain = (shape_codomain,) if isinstance(shape_codomain,int) else shape_codomain
         other.shape = other.shape_domain + other.shape_codomain
-        other.measure = np.reshape(self.measure, other.shape_domain + (1,)*len(shape_codomain))
+        other.measure = np.reshape(self.measure, other.shape_domain + (1,)*len(other.shape_codomain))
         return other
 
     @property

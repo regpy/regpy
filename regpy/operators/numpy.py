@@ -414,7 +414,7 @@ class PtwMatrixVectorMultiplication(Operator):
         if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==dtype:
             raise TypeError('matrixfct must be a numpy array of the same data type.')
         if not matrixfct.shape[-len(shape_in):]==shape_in:
-            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape}, {shape_in}')
+            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape[-len(shape_in):]}, {shape_in}')
 
         self.matrixfct= matrixfct
         shape_out = matrixfct.shape[len(grid_shape):-len(shape_in)]
