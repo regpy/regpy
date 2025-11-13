@@ -269,6 +269,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         """
         res = deepcopy(self)
         res.shape_codomain = ()
+        res.shape = res.shape_domain
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
         return res
 
@@ -294,7 +295,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             raise ValueError(util.Errors.not_instance(shape_codomain,tuple,'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
 
         res = deepcopy(self)
-        res.shape_codomain += shape_codomain
+        res.shape_codomain = shape_codomain
         res.shape = res.shape_domain + res.shape_codomain
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
         return res
@@ -401,12 +402,12 @@ class GridFcts(MeasureSpaceFcts):
 
         if(use_cell_measure):
             super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),
-                             shape=self.coords[0].shape+shape_codomain,
+                             shape=self.coords[0].shape,
                              shape_codomain=shape_codomain, 
                              dtype=dtype
                              )
         else:
-            super().__init__(shape=self.coords[0].shape+shape_codomain, 
+            super().__init__(shape=self.coords[0].shape, 
                              shape_codomain=shape_codomain, 
                              dtype=dtype
                              )
