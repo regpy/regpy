@@ -6,7 +6,7 @@ from regpy import hilbert
 from .base import Functional,AbstractFunctional,SquaredNorm
 from .numpy import *
 
-__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm"]
+__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm", "VFunc"]
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
@@ -24,6 +24,7 @@ QuadBil = AbstractFunctional("QuadBil")
 QuadLow = AbstractFunctional("QuadLow")
 QuadPosSemi = AbstractFunctional("QuadPosSemi")
 HilbertNorm = AbstractFunctional('HilbertNorm')
+VFunc = AbstractFunctional('Vector Integral Functional')
 
 def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
     return HilbertNorm(h_space(vecsp))
@@ -61,6 +62,8 @@ def _register_functionals():
     QuadLow.register(MeasureSpaceFcts,QuadraticLowerBound)
     
     QuadPosSemi.register(UniformGridFcts,QuadraticPositiveSemidef)
+
+    VFunc.register(MeasureSpaceFcts,VectorIntegralFunctional)
 
     # Import of ngsolve functionals if possible to import 
     try:
