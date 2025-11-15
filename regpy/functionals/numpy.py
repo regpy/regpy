@@ -930,7 +930,7 @@ class VectorIntegralFunctional(Functional):
         return self._vbuf.copy()
     
     def _hessian(self, vec):
-        if self.unknown_norm:
+        if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
@@ -955,7 +955,7 @@ class VectorIntegralFunctional(Functional):
         return scal_mult + proj.adjoint * ptw_mult * proj                                             
         
     def _conj_hessian(self, vec):
-        if self.unknown_norm:
+        if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self._dual_vector_norm(vec, axis=self._vaxes)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
