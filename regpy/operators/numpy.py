@@ -11,7 +11,8 @@ from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpace
 
 from .base import Operator
 
-__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform"]
+__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -439,6 +440,41 @@ class PtwMatrixVectorMultiplication(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain, self.codomain)
 
+class PtwScalarMultiplication(Operator):
+    """
+    Pointwise multiplication of a scalar valued function with a vector-valued function.
+
+    Parameters
+    ----------
+    domain : MeasureSpaceFcts
+        The input grid function.
+    scalarfct : np.ndarray
+        The scalar valued function to multiply with the vector-valued function.
+        The number of dimensions must match the number of dimensions of domain.   
+        The first dimensions must match the shape_domain of domain, and the co-dimensions must be 1.
+    """   
+
+    def __init__(self, domain, multiplier):
+        if not isinstance(domain,MeasureSpaceFcts):
+            raise TypeError(f'domain must be of type MeasureSpaceFcts. Got {domain}')
+        if domain.ndim_codomain==0:
+            raise ValueError('domain must be vector valued.')
+        if multiplier in domain and (multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
+            self.multiplier = multiplier
+            print("first option", self.multiplier.shape)
+        elif multiplier in domain.scalar_space():
+            self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
+        else:
+            raise ValueError(f'multiplier must be numpy array of matching size. Got {domain}, {multiplier}')
+        
+        
+        super().__init__(domain, domain, linear=True)
+
+    def _eval(self, f):
+        return f*self.multiplier
+    
+    def _adjoint(self, g):
+        return g*self.multiplier.conj()
 
 class AddSingletonVectorDimension(Operator):
     """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 

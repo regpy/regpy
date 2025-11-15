@@ -1078,44 +1078,44 @@ class LinearCombination(Functional):
                          conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u
                          )
 
-    def _eval(self, x):
+    def _eval(self, x,**kwargs):
         y = 0
         for coeff, func in zip(self.coeffs, self.funcs):
-            y += coeff * func(x)
+            y += coeff * func(x,**kwargs)
         return y
 
-    def _linearize(self, x):
+    def _linearize(self, x,**kwargs):
         y = 0
         grad = self.domain.zeros()
         for coeff, func in zip(self.coeffs, self.funcs):
-            f, g = func.linearize(x)
+            f, g = func.linearize(x,**kwargs)
             y += coeff * f
             grad += coeff * g
         return y, grad
 
-    def _subgradient(self, x):
+    def _subgradient(self, x,**kwargs):
         grad = self.domain.zeros()
         for coeff, func in zip(self.coeffs, self.funcs):
-            grad += coeff * func.subgradient(x)
+            grad += coeff * func.subgradient(x,**kwargs)
         return grad
 
-    def is_subgradient(self, vstar, x, eps=1e-10):
+    def is_subgradient(self, vstar, x, eps=1e-10,**kwargs):
         if len(self.funcs) == 1 or self.linear_table.count(False)==0:
-            return super().is_subgradient(vstar, x, eps)
+            return super().is_subgradient(vstar, x, eps,**kwargs)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
             return self.funcs[j].is_subgradient((vstar-self.grad_sum)/self.coeffs[j],x,eps)
         else:
             return NotImplementedError
 
-    def _hessian(self, x):
+    def _hessian(self, x,**kwargs):
         if self.linear_table.count(False)==1: 
             # separate implementation of this case to be able to use inverse of hessian
             j = self.linear_table.index(False)
-            return self.coeffs[j] * self.funcs[j].hessian(x)
+            return self.coeffs[j] * self.funcs[j].hessian(x,**kwargs)
         else:
             return operators.LinearCombination(
-                *((coeff, func.hessian(x)) for coeff, func in zip(self.coeffs, self.funcs))
+                *((coeff, func.hessian(x,**kwargs)) for coeff, func in zip(self.coeffs, self.funcs))
             )
 
     def _proximal(self, x, tau,**proximal_par):
@@ -1129,20 +1129,20 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
     
-    def _conj(self, xstar):
+    def _conj(self, xstar,**kwargs):
         if len(self.funcs) == 1:
-            return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0])
+            return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
             return 0 if xstar == self.grad_sum else inf
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.coeffs[j]*self.funcs[j]._conj((xstar-self.grad_sum)/self.coeffs[j])
+            return self.coeffs[j]*self.funcs[j]._conj((xstar-self.grad_sum)/self.coeffs[j],**kwargs)
         else:
             return NotImplementedError
 
-    def _conj_subgradient(self, xstar):
+    def _conj_subgradient(self, xstar,**kwargs):
         if len(self.funcs) == 1:
-            return self.funcs[0]._conj_subgradient(xstar/self.coeffs[0])
+            return self.funcs[0]._conj_subgradient(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
             if xstar == self.grad_sum:
                 return self.domain.zeros() 
@@ -1150,13 +1150,13 @@ class LinearCombination(Functional):
                 raise NotInEssentialDomainError('Linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j]._conj_subgradient((xstar-self.grad_sum)/self.coeffs[j])
+            return self.funcs[j]._conj_subgradient((xstar-self.grad_sum)/self.coeffs[j],**kwargs)
         else:
             return NotImplementedError
 
-    def _conj_is_subgradient(self, v, xstar,eps = 1e-10):
+    def _conj_is_subgradient(self, v, xstar,eps = 1e-10,**kwargs):
         if len(self.funcs) == 1:
-            return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps)
+            return self.funcs[0]._conj_is_subgradient(v,xstar/self.coeffs[0],eps,**kwargs)
         elif self.linear_table.count(False)==0:
             return self.domain.norm(xstar-self.grad_sum)<=eps*(self.domain.norm(self.grad_sum)+eps)
         elif self.linear_table.count(False)==1:
@@ -1165,25 +1165,25 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
     
-    def _conj_hessian(self, xstar):
+    def _conj_hessian(self, xstar,**kwargs):
         if len(self.funcs) == 1:
-            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0])
+            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
             raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j])
+            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j],**kwargs)
         else:
             return NotImplementedError
 
-    def _conj_proximal(self, xstar,tau):
+    def _conj_proximal(self, xstar,tau,**kwargs):
         if len(self.funcs) == 1:
-            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0])
+            return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
             return self.grad_sum
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)            
-            return self.coeffs[j]*self.funcs[j]._conj_proximal((1./self.coeffs[j])*(xstar-self.grad_sum),tau/self.coeffs[j]) + self.grad_sum
+            return self.coeffs[j]*self.funcs[j]._conj_proximal((1./self.coeffs[j])*(xstar-self.grad_sum),tau/self.coeffs[j],**kwargs) + self.grad_sum
         else:
             return NotImplementedError
 
@@ -1216,35 +1216,35 @@ class VerticalShift(Functional):
         """Offset added to the evaluation of the functional.
         """
 
-    def _eval(self, x):
-        return self.func(x) + self.offset
+    def _eval(self, x,**kwargs):
+        return self.func(x,**kwargs) + self.offset
 
-    def _linearize(self, x):
-        return self.func._linearize(x)
+    def _linearize(self, x,**kwargs):
+        return self.func._linearize(x,**kwargs)
 
-    def _subgradient(self, x):
-        return self.func._subgradient(x)
+    def _subgradient(self, x,**kwargs):
+        return self.func._subgradient(x,**kwargs)
 
-    def is_subgradient(self, vstar,x,eps = 1e-10):
-        return self.func.is_subgradient(vstar,x,eps)
+    def is_subgradient(self, vstar,x,eps = 1e-10,**kwargs):
+        return self.func.is_subgradient(vstar,x,eps,**kwargs)
     
-    def _hessian(self, x):
-        return self.func.hessian(x)
+    def _hessian(self, x,**kwargs):
+        return self.func.hessian(x,**kwargs)
     
     def _proximal(self, x, tau,**proximal_par):
         return self.func.proximal(x, tau,**proximal_par)
 
-    def _conj(self,x):
-        return self.func.conj(x) - self.offset
+    def _conj(self,x,**kwargs):
+        return self.func.conj(x,**kwargs) - self.offset
     
-    def _conj_subgradient(self, xstar):
-        return self.func.conj.subgradient(xstar)
+    def _conj_subgradient(self, xstar,**kwargs):
+        return self.func.conj.subgradient(xstar,**kwargs)
 
-    def _conj_is_subgradient(self, v,xstar,eps = 1e-10):
-        return self.func.conj.is_subgradient(v,xstar,eps)
+    def _conj_is_subgradient(self, v,xstar,eps = 1e-10,**kwargs):
+        return self.func.conj.is_subgradient(v,xstar,eps,**kwargs)
 
-    def _conj_hessian(self, xstar):
-        return self.func.conj.hessian(xstar)
+    def _conj_hessian(self, xstar,**kwargs):
+        return self.func.conj.hessian(xstar,**kwargs)
 
     def _conj_proximal(self, x, tau,**proximal_par):
         return self.func.conj.proximal(x, tau,**proximal_par)
@@ -1285,17 +1285,17 @@ class HorizontalShiftDilation(Functional):
         self.dilation = dilation
         self.shift = shift
 
-    def _eval(self, x):
-        return self.F(self.dilation * (x if self.shift is None else x-self.shift))
+    def _eval(self, x,**kwargs):
+        return self.F(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
          
-    def _subgradient(self, x):
-        return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift))
+    def _subgradient(self, x,**kwargs):
+        return self.dilation * self.F._subgradient(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
 
-    def is_subgradient(self, vstar, x, eps= 1e-10):
-        return self.F.is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),eps)
+    def is_subgradient(self, vstar, x, eps= 1e-10,**kwargs):
+        return self.F.is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),eps,**kwargs)
 
-    def _hessian(self, x):
-        return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift))
+    def _hessian(self, x,**kwargs):
+        return self.dilation**2 * self.F._hessian(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
 
     def _proximal(self, x, tau,**proximal_par):
         if self.shift is None:
@@ -1303,26 +1303,26 @@ class HorizontalShiftDilation(Functional):
         else:
             return self.shift + (1./self.dilation) * self.F.proximal(self.dilation*(x-self.shift),tau*self.dilation**2,**proximal_par)
     
-    def _conj(self,x_star):
+    def _conj(self,x_star,**kwargs):
         if self.shift is None:
-            return self.F._conj(x_star/self.dilation)             
+            return self.F._conj(x_star/self.dilation,**kwargs)             
         else:
-            return self.F._conj(x_star/self.dilation) + self.domain.vdot(x_star,self.shift).real
+            return self.F._conj(x_star/self.dilation,**kwargs) + self.domain.vdot(x_star,self.shift).real
 
-    def _conj_subgradient(self,x_star):
+    def _conj_subgradient(self,x_star,**kwargs):
         if self.shift is None:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation             
+            return self.F._conj_subgradient(x_star/self.dilation,**kwargs)/self.dilation             
         else:
-            return self.F._conj_subgradient(x_star/self.dilation)/self.dilation + self.shift
+            return self.F._conj_subgradient(x_star/self.dilation,**kwargs)/self.dilation + self.shift
 
-    def _conj_is_subgradient(self,v,x_star, eps= 1e-10):
+    def _conj_is_subgradient(self,v,x_star, eps= 1e-10,**kwargs):
         if self.shift is None:
-            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation, eps) 
+            return self.F._conj_is_subgradient(self.dilation *v, x_star/self.dilation, eps,**kwargs) 
         else:
-            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation, eps)
+            return self.F._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation, eps,**kwargs)
 
-    def _conj_hessian(self,x_star):
-        return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation)
+    def _conj_hessian(self,x_star,**kwargs):
+        return self.dilation**(-2)*self.F._conj_hessian(x_star/self.dilation,**kwargs)
 
     def _conj_proximal(self, xstar, tau,**proximal_par):
         gram = self.h_domain.gram

@@ -6,7 +6,7 @@ import numpy as np
 from scipy.linalg import ishermitian
 from scipy.special import lambertw
 
-from regpy.operators import PtwMultiplication
+from regpy.operators import PtwMultiplication, PtwMatrixVectorMultiplication, PtwScalarMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
 from regpy.util import Errors
@@ -811,7 +811,8 @@ class IntegralFunctionalBase(Functional):
 class VectorIntegralFunctional(Functional):
     r"""
     Implements a vector-valued integral functional \(v\mapsto \int f(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
-    as a functional. Here, \(f\) is some scalar integral functional and \(\|\cdot\|\) some norm on the vector values. 
+    as a functional. Here, \(f\) is a scalar function on the real line that is assumed to be even and convex, 
+    and \(\|\cdot\|\) some norm on the vector values. 
 
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
     as tuple and returning the norm values. By default, the Euclidean norm is used.  
@@ -821,7 +822,8 @@ class VectorIntegralFunctional(Functional):
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
         Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
     scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
-        Scalar integral functional to be used as function \(f\). Providing a specific IntegralFunctionalBase 
+        Scalar separable functional to be used as (even!) function \(f\).
+        Either provides a specific separable Functional  
         or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
     scalar_func_args : dict, optional
         Additional arguments for the scalar_func if needed (e.g. 'p' for Lpp).
@@ -849,8 +851,8 @@ class VectorIntegralFunctional(Functional):
             scalar_func = scalar_func(self.sdomain, **self.scalar_func_args)
         elif scalar_func is None:
             scalar_func = LppPower(self.sdomain, p=2., **self.scalar_func_args)
-        if not isinstance(scalar_func,IntegralFunctionalBase) or scalar_func.domain!=self.sdomain:
-            raise ValueError(Errors.not_instance(scalar_func, IntegralFunctionalBase, f'{scalar_func} need to be a callable giving an IntegralFunctionalBase functional or already a IntegralFunctionalBase with sdomain as domain.'))
+        if not scalar_func.separable or scalar_func.domain!=self.sdomain:
+            raise ValueError(f'{scalar_func} need to be a callable giving a separable functional or already a separable functional with sdomain as domain.')
         else:
             self.scalar_func = scalar_func
 
@@ -964,7 +966,52 @@ class VectorIntegralFunctional(Functional):
         self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
         self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
+    
+    def _hessian(self, vec):
+        if self.unknown_norm:
+            raise NotImplementedError('proximal only implemented for L2 norm')
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        fp = self.scalar_func.subgradient(self._sbuf)
+        fp = np.expand_dims(fp,self._vaxes)
+        np.divide(fp,self._sbuf_ext, where=self._sbuf_ext>0, out= fp)
+        fpp = self.scalar_func.hessian(self._sbuf)(self.sdomain.ones())
+        # As f is even, f' is odd, so f'(0)=0 if f'' exists. Therefore, f'(v)/v tends to f''(v) as 
+        # v tends to 0, so we can use this a places where ||v|| vanishes.
+        fpp = np.expand_dims(fpp,self._vaxes)
+        fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
+        scal_mult = PtwScalarMultiplication(self.domain,fp)
+        proj = PtwMatrixVectorMultiplication(self.vdomain,
+                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             )
+        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                )
 
+        return scal_mult + proj.adjoint * ptw_mult * proj                                             
+        
+    def _conj_hessian(self, vec):
+        if self.unknown_norm:
+            raise NotImplementedError('proximal only implemented for L2 norm')
+        self._sbuf = self._dual_vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        fp = self.scalar_func.conj.subgradient(self._sbuf)
+        fp = np.expand_dims(fp,self._vaxes)
+        np.divide(fp,self._sbuf_ext, where=self._sbuf_ext>0, out= fp)
+        fpp = self.scalar_func.conj.hessian(self._sbuf)(self.sdomain.ones())
+        # As f is even, f' is odd, so f'(0)=0 if f'' exists. Therefore, f'(v)/v tends to f''(v) as 
+        # v tends to 0, so we can use this a places where ||v|| vanishes.
+        fpp = np.expand_dims(fpp,self._vaxes)
+        fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
+        scal_mult = PtwScalarMultiplication(self.domain,fp)
+        proj = PtwMatrixVectorMultiplication(self.vdomain,
+                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             )
+        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                )
+
+        return scal_mult + proj.adjoint * ptw_mult * proj   
 
 class LppPower(IntegralFunctionalBase):
     r"""
