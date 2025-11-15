@@ -957,7 +957,7 @@ class VectorIntegralFunctional(Functional):
     def _conj_hessian(self, vec):
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
-        self._sbuf = self._dual_vector_norm(vec, axis=self._vaxes)
+        self._sbuf = self.dual_vector_norm(vec, axis=self._vaxes)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         fp = self.scalar_func.conj.subgradient(self._sbuf)
         fp = np.expand_dims(fp,self._vaxes)
