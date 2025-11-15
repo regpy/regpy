@@ -287,7 +287,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     t2 = func(u)
     t3 = func.conj(grad_u)
     err=abs(t1-t2-t3)/np.max(np.abs([1e-14,t1,t2,t3]))
-    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t3}'
+    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}'
 
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
