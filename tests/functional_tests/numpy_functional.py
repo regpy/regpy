@@ -3,7 +3,7 @@ import numpy as np
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional
-from regpy.functionals.numpy import VectorIntegralFunctional
+from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 
@@ -121,9 +121,11 @@ def test_quadlow():
 def test_VectorIntegralFunctional():
     grid = UniformGridFcts((-1,1,10))
     vgrid = grid.vector_valued_space(5)
-    sfunc = Lpp(grid,p=4)
-    vfunc = VectorIntegralFunctional(vgrid,scalar_func=sfunc)
-    ft.test_functional(vfunc)
+ 
+    for p in  [1.5,2,4]:
+        ft.test_functional(LppL2(vgrid,p=p))
+    ft.test_functional(L1L2(vgrid))        
+    ft.test_functional(HuberL2(vgrid,sigma=1.))
 
 def test_quadratic_positive_semidef():
     N=5

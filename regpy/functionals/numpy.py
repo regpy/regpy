@@ -13,7 +13,7 @@ from regpy.util import Errors
 
 from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
 
-__all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
+__all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppL2","L1L2","HuberL2","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -810,8 +810,8 @@ class IntegralFunctionalBase(Functional):
     
 class VectorIntegralFunctional(Functional):
     r"""
-    Implements a vector-valued integral functional \(v\mapsto \int f(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
-    as a functional. Here, \(f\) is a scalar function on the real line that is assumed to be even and convex, 
+    Implements a vector-valued integral functional \(v\mapsto \sum_i f_i(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
+    as a functional. Here, \(f_i\) are scalar functions on the real line that are assumed to be even and convex, 
     and \(\|\cdot\|\) some norm on the vector values. 
 
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
@@ -822,7 +822,7 @@ class VectorIntegralFunctional(Functional):
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
         Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
     scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
-        Scalar separable functional to be used as (even!) function \(f\).
+        Scalar separable functional to be used as (even!) functions \(f_i\).
         Either provides a specific separable Functional  
         or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
     scalar_func_args : dict, optional
@@ -837,10 +837,17 @@ class VectorIntegralFunctional(Functional):
         
         The returned array has to keep the spatial dimensions of the input array and squeeze the vector dimensions. That 
         means, you have (special_dims, vector_dims) in and (special_dims,) out.
+    Lipschitz, convexity_param: float (default: np.inf and 0., respectively)
+        For the Euclidean norm as inner norm, \(Hess f_i(\|v\| )\) has two eigenvalues: \(f_i''(\|v\|) \)
+        and \(f_i'(\|v\|)/\|v\| \). Using this fact, analytic expression may be computed for 
+        Lipschitz = supremum of all possible EV and for convexity_param = infimum of all EV may be 
+        computed for specific \(f_i\) and passed as arguments to accelerate optimization methods.  
     """    
 
     def __init__(self, vdomain, hdomain = None, scalar_func = None, scalar_func_args=None, 
-                 vector_norm=None, dual_vector_norm=None):
+                 vector_norm=None, dual_vector_norm=None,
+                 Lipschitz =np.inf, convexity_param = 0.
+                 ):
         if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
             raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
         self.vdomain = vdomain
@@ -875,8 +882,8 @@ class VectorIntegralFunctional(Functional):
             self._dual_vector_norm = np.linalg.norm            
 
         super().__init__(vdomain, L2(vecsp=vdomain), 
-                         convexity_param = self.scalar_func.convexity_param, 
-                         Lipschitz = self.scalar_func.Lipschitz, 
+                         convexity_param = convexity_param, 
+                         Lipschitz = Lipschitz, 
                          separable= False, linear= False)
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
@@ -984,6 +991,8 @@ class VectorIntegralFunctional(Functional):
         proj = PtwMatrixVectorMultiplication(self.vdomain,
                                              np.expand_dims(self._vbuf,axis=-2).copy()
                                              )
+        # actually just a pointwise multiplication, but implemented multiplication with a 1x1 matrix 
+        # to avoid conversions to scalar functions
         ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
                                                  np.expand_dims(fpp-fp,axis=-2)
                                                 )
@@ -999,8 +1008,7 @@ class VectorIntegralFunctional(Functional):
         fp = np.expand_dims(fp,self._vaxes)
         np.divide(fp,self._sbuf_ext, where=self._sbuf_ext>0, out= fp)
         fpp = self.scalar_func.conj.hessian(self._sbuf)(self.sdomain.ones())
-        # As f is even, f' is odd, so f'(0)=0 if f'' exists. Therefore, f'(v)/v tends to f''(v) as 
-        # v tends to 0, so we can use this a places where ||v|| vanishes.
+        # see comments for hessian!
         fpp = np.expand_dims(fpp,self._vaxes)
         fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
         scal_mult = PtwScalarMultiplication(self.domain,fp)
@@ -1012,6 +1020,41 @@ class VectorIntegralFunctional(Functional):
                                                 )
 
         return scal_mult + proj.adjoint * ptw_mult * proj   
+
+class LppL2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with \(f_i(x):=(1/p)|x|^p\).
+
+    Parameters:
+    p: float (default: 2.)
+        exponent of the L^p-norm. 
+    """
+    def __init__(self, vdomain,p=2.):
+        sfunc = LppPower(vdomain.scalar_space(),p=p)
+        super().__init__(vdomain, sfunc, 
+                         Lipschitz=1. if p== 2 else np.inf,
+                         convexity_param=1. if p==2 else 0.
+                         )
+
+class L1L2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with absolute value function as \(f_i\).
+    """
+    def __init__(self, vdomain,sigma=1.):
+        sfunc = L1MeasureSpace(vdomain.scalar_space())
+        super().__init__(vdomain, sfunc, Lipschitz=1.)
+
+class HuberL2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with Huber functional as \(f_i\).
+
+    Parameters:
+    sigma: float (default: 1.)
+        Parameter in Huber functional
+    """
+    def __init__(self, vdomain,sigma=1.):
+        sfunc = Huber(vdomain.scalar_space(),sigma)
+        super().__init__(vdomain, sfunc, Lipschitz=1.)
 
 class LppPower(IntegralFunctionalBase):
     r"""
