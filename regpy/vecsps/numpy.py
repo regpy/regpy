@@ -456,7 +456,7 @@ class Prod(NumPyVectorSpace):
 
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
-    basis element from teh factored spaces. Note, that spaces with possible multidimensional elements
+    basis element from the factored spaces. Note, that spaces with possible multidimensional elements
     (e.g. `UniformGridFcts` with multiple dimensions) get flatted. 
 
     Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.

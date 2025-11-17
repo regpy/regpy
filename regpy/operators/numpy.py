@@ -7,7 +7,7 @@ import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy import util
-from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts
+from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, DirectSum, Prod
 
 from .base import Operator
 
@@ -390,3 +390,39 @@ class FourierTransform(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
+class OuterProduct(Operator):
+
+
+    def __init__(self,*domains):
+        domain=DirectSum(*domains)
+        codomain=Prod(*domains)
+        super().__init__(domain, codomain, linear=False)
+        self.adjoint_summation_strings=self._calc_adjoint_summation_strings()
+
+    def _calc_adjoint_summation_strings(self):
+        li=[]
+        characters=tuple(chr(k) for k in range(65,65+self.codomain.ndim))
+        all_characters="".join(characters)
+        for i,_ in enumerate(characters):
+            without_i=",".join(characters[:i]+characters[i+1:])
+            li.append(f"{all_characters},{without_i}")
+        return li
+
+    def _eval(self, x, differentiate=False):
+        if(differentiate):
+            self.p=self.domain.split(x)
+            self.p_conj_flat=tuple(np.conj(p_j).flat for p_j in self.p)
+        return self.codomain.product(self.p)
+
+    def _derivative(self, x):
+        y=self.codomain.zeros()
+        for j,x_j in enumerate(x):
+            y+=self.codomain.product(*self.p[:j],x_j,*self.p[j+1:])
+        return y
+    
+    def _adjoint(self, y):
+        xs=[]
+        for j,s in self.adjoint_summation_strings:
+            x_j=np.einsum(s,y,*self.p__conj_flat[:j],*self.p_conj_flat[j+1:],optimize=True)
+            xs.append(self.domain[j].from_flat(x_j))
+        return self.domain.join(*xs)
