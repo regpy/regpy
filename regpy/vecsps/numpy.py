@@ -543,7 +543,7 @@ class Prod(NumPyVectorSpace):
 
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
-    basis element from teh factored spaces. Note, that spaces with possible multidimensional elements
+    basis element from the factored spaces. Note, that spaces with possible multidimensional elements
     (e.g. `UniformGridFcts` with multiple dimensions) get flatted. 
 
     Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.
@@ -578,6 +578,9 @@ class Prod(NumPyVectorSpace):
             else:
                 self.factors.append(s)
                 shape += (s.size,)
+        characters=tuple(chr(k) for k in range(65,65+len(self.factors)))
+        self._prod_trafo_string=f"{','.join(characters)}->{''.join(characters)}"
+        """String to compute the outer product in einsum."""
         super().__init__(shape,dtype=dt)
 
     def __eq__(self, other):
@@ -602,10 +605,8 @@ class Prod(NumPyVectorSpace):
             An element of the tensor product
         """
         assert all(x in s for s, x in zip(self.factors, xs))
-        elm = 1
-        for s, x in zip(self.factors, xs):
-            elm = np.ma.outer(elm,x)
-        return elm
+        return np.einsum(self._prod_trafo_string,*[x.flat for x in xs],optimize=True)
+
 
     def __getitem__(self, item):
         return self.factors[item]

@@ -7,12 +7,11 @@ import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy import util
-from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpaceFcts
-
+from regpy.vecsps import *
 from .base import Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
-           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension"]
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -592,3 +591,48 @@ class ForwardFDGradient(Operator):
             return 2*np.linalg.norm(1./self.domain.spacing)
         else: 
             return super().norm(h_domain=h_domain,h_codomain=h_codomain,method=method,without_codomain_vectors=without_codomain_vectors)
+
+class OuterProduct(Operator):
+    r"""The operator \(x_1,x_2,\dots,x_n \mapsto x_1\otimes x_2\otimes\dots\otimes x_n\).
+
+    Parameters
+    ----------
+    domains : regpy.vecsps.NumPyVectorSpace
+        The underlying vector spaces. Have to be all real or all complex.
+    """
+
+    def __init__(self,*domains):
+        domain=DirectSum(*domains)
+        codomain=Prod(*domains)
+        super().__init__(domain, codomain, linear=False)
+        self._adjoint_summation_strings=self._calc_adjoint_summation_strings()
+        """List of strings for calculation of adjoint in einsum."""
+
+    def _calc_adjoint_summation_strings(self):
+        li=[]
+        characters=tuple(chr(k) for k in range(65,65+self.codomain.ndim))
+        all_characters="".join(characters)
+        for i,_ in enumerate(characters):
+            without_i=",".join(characters[:i]+characters[i+1:])
+            li.append(f"{all_characters},{without_i}")
+        return li
+
+    def _eval(self, x, differentiate=False):
+        self._p=self.domain.split(x)
+        if(differentiate):
+            self._p_conj_flat=tuple(np.conj(p_j).flat for p_j in self._p)
+        return self.codomain.product(*self._p)
+
+    def _derivative(self, x):
+        y=self.codomain.zeros()
+        for j,x_j in enumerate(x):
+            y+=self.codomain.product(*self._p[:j],x_j,*self._p[j+1:])
+        return y
+    
+    def _adjoint(self, y):
+        xs=[]
+        for j,s in enumerate(self._adjoint_summation_strings):
+            x_j=np.einsum(s,y,*self._p_conj_flat[:j],*self._p_conj_flat[j+1:],optimize=True)
+            xs.append(x_j.reshape(self.domain[j].shape))
+            # xs.append(self.domain[j].fromflat(x_j))
+        return self.domain.join(*xs)

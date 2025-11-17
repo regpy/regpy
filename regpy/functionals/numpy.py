@@ -11,7 +11,7 @@ from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
 from regpy.util import Errors
 
-from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed
 
 __all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppL2","L1L2","HuberL2","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
@@ -1991,8 +1991,8 @@ class TVGeneric(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-
-class TVUniformGridFcts(Functional):
+from regpy.operators import ForwardFDGradient
+class TVUniformGridFcts(Composed):
     r"""Total Variation Norm: For :math:`C^1` functions the :math:`l^1`-norm of the gradient on a `UniformGrid`
 
     Parameters
@@ -2002,50 +2002,24 @@ class TVUniformGridFcts(Functional):
     h_domain : regpy.hilbert.HilbertSapce (defaul: L2)
         Underlying Hilbert space for proximal. 
     """
-    def __init__(self, domain, h_domain=None):
-        assert isinstance(domain, UniformGridFcts)
-        self.dim = np.size(domain.shape)
-        """Dimension of the Uniform Grid functions.
-        """
-        super().__init__(domain,h_domain=h_domain)
 
-    def _eval(self, x):
-        if self.dim==1:
-            return np.sum(np.abs(self._gradientuniformgrid(x)))
+    def __init__(self, domain,beta=0.):
+        if not isinstance(domain, UniformGridFcts):
+            raise TypeError('only implemented for UniformGridFcts')
+        if not isinstance(beta,float) and (beta>=0.):
+            raise ValueError('beta must be a non-negative float')
+        self.grad = ForwardFDGradient(domain)
+        if beta==0.:
+            func = L1L2(self.grad.codomain)
         else:
-            return np.sum(np.linalg.norm(self._gradientuniformgrid(x), axis=0))
+            func = HuberL2(self.grad.codomain)
 
-    def _subgradient(self, x):
-        if self.dim==1:
-            return np.sign(self._gradientuniformgrid(x)).reshape(self.domain.shape)
-        else:
-            grad = self._gradientuniformgrid(x)
-            grad_norm = np.linalg.norm(grad, axis=0)
-            toret = np.zeros(x.shape)
-            toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
-            return toret
-
-    def _hessian(self, x):
-        raise NotImplementedError
+        super().__init__(func, op= self.grad, op_norm = self.grad.norm())
 
     def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
-        shape = [self.dim]+list(x.shape)
-        p = np.zeros(shape)
+        p = self.grad.codomain.zeros()
         for i in range(maxiter):
-            update = stepsize*self._gradientuniformgrid( self.h_domain.gram_inv( self._divergenceuniformgrid(p))-x/tau)
-            p = (p+update) / (1+np.abs(update))
-        return x-tau*self._divergenceuniformgrid(p)
-
-    def _gradientuniformgrid(self, u):
-        r"""Computes the gradient of field given by 'u'. 'u' is defined on a 
-        equidistant grid. Returns a list of vectors that are the derivatives in each 
-        dimension."""
-        # Need to reshape spacing otherwise getting braodcasting error
-        shape = [self.domain.ndim]+[1 for _ in self.domain.shape]
-        return 1/self.domain.spacing.reshape(shape)*np.array(np.gradient(u))
-
-    def _divergenceuniformgrid(self, u):
-        r"""Computes the divergence of a vector field 'u'. 'u' is assumed to be
-        a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
-        regular grid"""
-        return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i)/h for i,h in enumerate(self.domain.spacing)])
+            update = -stepsize*self.grad(  self.grad.adjoint(p)-x/tau)
+            p = (p+update) / (1.+np.abs(update))
+        return x+tau*self.grad.adjoint(p)
+    
