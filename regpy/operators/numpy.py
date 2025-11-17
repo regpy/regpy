@@ -496,14 +496,23 @@ class AddSingletonVectorDimension(Operator):
     
     def _adjoint(self,f):
         return np.squeeze(f, axis=-1)
+    
+
 class OuterProduct(Operator):
+    r"""The operator \(x_1,x_2,\dots,x_n \mapsto x_1\otimes x_2\otimes\dots\otimes x_n\).
 
-
+    Parameters
+    ----------
+    domains : regpy.vecsps.NumPyVectorSpace
+        The underlying vector spaces. Have to be all real or all complex.
+    """
+    
     def __init__(self,*domains):
         domain=DirectSum(*domains)
         codomain=Prod(*domains)
         super().__init__(domain, codomain, linear=False)
-        self.adjoint_summation_strings=self._calc_adjoint_summation_strings()
+        self._adjoint_summation_strings=self._calc_adjoint_summation_strings()
+        """List of strings for calculation of adjoint in einsum."""
 
     def _calc_adjoint_summation_strings(self):
         li=[]
@@ -515,20 +524,21 @@ class OuterProduct(Operator):
         return li
 
     def _eval(self, x, differentiate=False):
+        self._p=self.domain.split(x)
         if(differentiate):
-            self.p=self.domain.split(x)
-            self.p_conj_flat=tuple(np.conj(p_j).flat for p_j in self.p)
-        return self.codomain.product(self.p)
+            self._p_conj_flat=tuple(np.conj(p_j).flat for p_j in self._p)
+        return self.codomain.product(*self._p)
 
     def _derivative(self, x):
         y=self.codomain.zeros()
         for j,x_j in enumerate(x):
-            y+=self.codomain.product(*self.p[:j],x_j,*self.p[j+1:])
+            y+=self.codomain.product(*self._p[:j],x_j,*self._p[j+1:])
         return y
     
     def _adjoint(self, y):
         xs=[]
-        for j,s in self.adjoint_summation_strings:
-            x_j=np.einsum(s,y,*self.p__conj_flat[:j],*self.p_conj_flat[j+1:],optimize=True)
-            xs.append(self.domain[j].from_flat(x_j))
+        for j,s in enumerate(self._adjoint_summation_strings):
+            x_j=np.einsum(s,y,*self._p_conj_flat[:j],*self._p_conj_flat[j+1:],optimize=True)
+            xs.append(x_j.reshape(self.domain[j].shape))
+            # xs.append(self.domain[j].fromflat(x_j))
         return self.domain.join(*xs)

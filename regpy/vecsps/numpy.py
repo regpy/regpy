@@ -578,6 +578,9 @@ class Prod(NumPyVectorSpace):
             else:
                 self.factors.append(s)
                 shape += (s.size,)
+        characters=tuple(chr(k) for k in range(65,65+len(self.factors)))
+        self._prod_trafo_string=f"{','.join(characters)}->{''.join(characters)}"
+        """String to compute the outer product in einsum."""
         super().__init__(shape,dtype=dt)
 
     def __eq__(self, other):
@@ -602,10 +605,8 @@ class Prod(NumPyVectorSpace):
             An element of the tensor product
         """
         assert all(x in s for s, x in zip(self.factors, xs))
-        elm = 1
-        for s, x in zip(self.factors, xs):
-            elm = np.ma.outer(elm,x)
-        return elm
+        return np.einsum(self._prod_trafo_string,*[x.flat for x in xs],optimize=True)
+
 
     def __getitem__(self, item):
         return self.factors[item]
