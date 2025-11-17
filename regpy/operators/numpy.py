@@ -12,7 +12,7 @@ from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpace
 from .base import Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
-           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension"]
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","OuterProduct"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -506,7 +506,7 @@ class OuterProduct(Operator):
     domains : regpy.vecsps.NumPyVectorSpace
         The underlying vector spaces. Have to be all real or all complex.
     """
-    
+
     def __init__(self,*domains):
         domain=DirectSum(*domains)
         codomain=Prod(*domains)

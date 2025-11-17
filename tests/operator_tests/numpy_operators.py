@@ -79,3 +79,12 @@ def test_Exponential():
     errors += op_evaluation_and_ot(op,x=x,res=res)
 
     collect_errors(Exponential,errors)
+
+def test_OuterProduct():
+    errors = []
+    vs = (NumPyVectorSpace((2,4),dtype=complex),NumPyVectorSpace(3,dtype=complex),NumPyVectorSpace((5,2),dtype=complex))
+    op=OuterProduct(*vs)
+    x=op.domain.randn()
+    res = op.codomain.product(*x)
+    errors += op_evaluation_and_ot(op,x=x,res=res)
+    collect_errors(OuterProduct,errors)
