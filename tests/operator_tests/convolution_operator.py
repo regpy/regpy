@@ -2,6 +2,8 @@ import numpy as np
 
 from regpy.vecsps.numpy import *
 from regpy.operators.convolution import *
+from numpy import pi 
+from numpy.linalg import norm
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot,collect_errors
 
@@ -106,3 +108,80 @@ def test_FresnelPropagator():
     errors += op_evaluation_and_ot(op)
 
     collect_errors(FresnelPropagator,errors)
+
+def test_differential_operators():
+    errors = []
+
+    grid = UniformGridFcts((-pi,pi,10), (-pi,pi,9),dtype=float,shape_codomain=(1,))
+    pad_amount = [2,0]
+
+    errors += op_basics_wrapper(gradient,grid.vector_valued_space(1),pad_amount=pad_amount)
+    errors += op_basics_wrapper(divergence,grid.vector_valued_space(2),pad_amount=pad_amount)   
+    errors += op_basics_wrapper(Laplacian,grid.scalar_space(),pad_amount=pad_amount)   
+
+    grad =  gradient(grid.vector_valued_space(1),pad_amount=pad_amount)
+    div = divergence(grid.vector_valued_space(2),pad_amount=pad_amount)  
+    Lap = Laplacian(grid,pad_amount=pad_amount)
+    div_grad = div.composition(grad)
+    assert np.allclose(Lap.fourier_multiplier,div_grad.fourier_multiplier)
+
+    errors += op_evaluation_and_ot(grad)
+    collect_errors(gradient,errors)
+    errors += op_evaluation_and_ot(div)
+    collect_errors(divergence,errors)
+    errors += op_evaluation_and_ot(Lap)
+    collect_errors(Laplacian,errors)
+
+    # test identities curl grad = 0,  div curl = 0, and \Delta = grad div - curl curl
+    for type in [float,complex]:
+        for pad_amount in [None,  [2,0,3]]: # different implementations of convolution operators with and without padding 
+            grid3D = UniformGridFcts((-pi,pi,20), (-pi,pi,24),(-pi,pi,15),dtype=type,shape_codomain=(1,))
+
+            grad = gradient(grid3D.vector_valued_space(1),pad_amount=pad_amount)   
+            curlop = curl(grid3D.vector_valued_space(3),pad_amount=pad_amount)
+            div = divergence(grid3D.vector_valued_space(3),pad_amount=pad_amount)
+            Lap3D = Laplacian(grid3D.vector_valued_space(3),pad_amount=pad_amount)
+
+            curl_grad =  curlop.composition(grad)
+            assert norm(curl_grad.fourier_multiplier)==0
+            div_curl =  div.composition(curlop)
+            assert norm(div_curl.fourier_multiplier)==0
+            test = grad.composition(div) - curlop.composition(curlop) 
+            test -= Lap3D
+            assert norm(test.fourier_multiplier)<=1e-10
+
+            # make sure this also holds true approximately with periodization errors
+            X,Y,Z = grid3D.coords
+            f3d = grid3D.zeros()
+            f3d[...,0] = np.exp(-400*(X**2+Y**2+Z**2))*np.cos(3*X-Z+2*Z)
+            g3d = grid3D.vector_valued_space(3).zeros()
+            g3d[...,0] = f3d[...,0]
+            g3d[...,1] = np.exp(-400*(X**2+Y**2+Z**2))*np.sin(3*X)
+            g3d[...,2] = np.exp(-400*(X**2+Y**2+Z**2))*np.sin(-Z+2*Y)
+
+            assert np.allclose(curlop(grad(f3d)),np.zeros_like(g3d))
+            assert np.allclose(grad.adjoint(curlop(g3d)),np.zeros_like(f3d))
+            assert np.allclose(grad(div(g3d))-curlop.adjoint(curlop(g3d)) ,  Lap3D(g3d),atol=1e-6)
+
+def test_shift_convolution_calculus():
+    errors = []
+    vs=UniformGridFcts((-pi,pi,50),dtype=np.complex128)
+    errors += op_basics_wrapper(PeriodicShift,vs,[1.],test_methods=True, rel_tol_norm=1e-3, pad_amount=2,convolution_axes=None)
+    
+    op=PeriodicShift(vs,[1.],pad_amount=2)
+
+    errors += op_evaluation_and_ot(op)
+
+    collect_errors(PeriodicShift,errors)
+
+    grid =  UniformGridFcts((-pi,pi,300),(-pi,pi,50),periodic=True,dtype=complex)
+    X,Y = grid.coords
+    f = np.exp(-100*(X**2+Y**2))
+    g = np.exp(-100*((X+1)**2+Y**2))
+    shift1 = PeriodicShift(grid,[1,0])
+    fshift = shift1(f)
+    assert norm(fshift-g)<=1e-10
+
+    blur = GaussianBlur(grid,(0.1)**2)
+    double_peak = 0.5*shift1.composition(blur) + blur
+    assert norm(double_peak(f)-blur(f)-0.5*shift1(blur(f)))<1e-12

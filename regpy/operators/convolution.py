@@ -4,9 +4,11 @@ from regpy import util
 from regpy.vecsps import UniformGridFcts, GridFcts
 
 from .base import PtwMultiplication, Operator, Composition, LinearCombination,OuterShift
-from .numpy import FourierTransform
+from .numpy import FourierTransform, AddSingletonVectorDimension, PtwMatrixVectorMultiplication
 
-__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur","ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator"]
+__all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur", "ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator",
+           "gradient","curl","divergence", "Laplacian",
+           "PeriodicShift"]
 
 class PaddingOperator(Operator):
     r"""Operator that implements zero-padding for numpy arrays.
@@ -16,9 +18,10 @@ class PaddingOperator(Operator):
     grid : regpy.vecsps.UniformGridFcts
         The domain on which the operator is defined.
     pad_amount: integer or sequence n non-negative integers determining the amount of padding
-        where n is the dimension of grid. E.g., for n=2,  
+        where n is the dimension of the domain grid. E.g., for n=2,  
         pad_amount = [pad_bottom_top, pad_right_left]
-        If pad_amount is an integer, this value is used for the amount of padding in each direction
+        If pad_amount is an integer, this value is used for the amount of padding in each axis of the domain.
+        No padding is performed in the codomain dimensions.
 
     Notes
     -----
@@ -28,12 +31,12 @@ class PaddingOperator(Operator):
     def __init__(self,grid, pad_amount = None, pad_value =0.):
         if not isinstance(grid, UniformGridFcts):
             raise TypeError(f"First argument has to be of type UniformGridFcts. Was given {grid}")
-        s = grid.shape
         self.ndim = grid.ndim
+        self.ndim_domain = len(grid.shape_domain)
         if pad_amount is None:
             self.pad_amount = ((0,0),)*self.ndim
         elif isinstance(pad_amount,int):
-            self.pad_amount = ((pad_amount,pad_amount),)*self.ndim
+            self.pad_amount = ((pad_amount,pad_amount),)*self.ndim_domain + ((0,0),)*(self.ndim - self.ndim_domain)
             if not pad_amount>=0:
                 raise ValueError("pad_amount must be non-negative.")
         else: 
@@ -41,14 +44,17 @@ class PaddingOperator(Operator):
                 pad_amount = np.array(pad_amount)
             except:
                 raise TypeError(f'pad_amount must be None, int, or convertible to a numpy array. Got {pad_amount}')
-            if not pad_amount.shape == (self.ndim,) or not pad_amount.dtype==int:
-                raise ValueError(f"shape of pad_amount must be (grid.ndim,) array of ints. Got {pad_amount.shape}, {pad_amount.dtype}")
-            if not np.all(pad_amount>=0):
+            if not pad_amount.dtype==int or np.any(pad_amount<0):
                 raise ValueError("pad_amount must be non-negative.")
+            if not pad_amount.shape == (self.ndim,):
+                if not pad_amount.shape == (len(grid.shape_domain),):
+                    raise ValueError(f"length of pad_amount must be (grid.ndim,) or (len(grid.shape_domain),). Got {pad_amount.shape}, grid.ndim={self.ndim}, len(grid.shape_domain)={len(grid.shape_domain)}")
+                pad_amount = np.concatenate((pad_amount, np.zeros((self.ndim - len(grid.shape_domain),),dtype=int)))
             self.pad_amount = tuple((val,val) for val in pad_amount)
         padded_grid = UniformGridFcts(
-            *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape,self.pad_amount,grid.spacing,grid.axes)],
-            dtype = grid. dtype
+            *[np.arange(N+pad[0]+pad[1])*spc + ax[0] - pad[0]*spc for (N,pad,spc,ax) in zip(grid.shape[:self.ndim_domain],self.pad_amount[:self.ndim_domain],grid.spacing,grid.axes)],
+            dtype = grid. dtype,
+            shape_codomain=grid.shape_codomain
             )
         self.pad_value = pad_value
         super().__init__(domain=grid,codomain=padded_grid,linear = (pad_value ==0))
@@ -72,19 +78,27 @@ def TruncationOperator(grid, truncation_amount):
         The domain on which the operator is defined.
     truncation_amount: integer or (n,) np.array of non-negative integer determining the amount of truncation
         where n is the dimension of grid.
-        If truncation_amount is an integer, this value is used for the amount of truncation in each direction
+        If truncation_amount is an integer, this value is used for the amount of truncation in each axis of the domain.
+        No truncation is performed in the codomain dimensions.
 
     Notes
     -----
     Returns the adjoint of a PaddingOperator
     """
+    ndim = grid.ndim
+    ndim_domain = ndim - len(grid.shape_codomain)
     if not isinstance(grid, UniformGridFcts):
         raise TypeError(f'grid must be a UniformGridFcts. Got {grid}')
     if isinstance(truncation_amount,int):
-            truncation_amount = truncation_amount * np.ones((grid.ndim,),dtype =int)
+            truncation_amount = truncation_amount * np.ones((grid.ndim-len(grid.shape_codomain),),dtype =int)
     elif isinstance(truncation_amount, np.ndarray):
-        if not truncation_amount.shape == (grid.ndim,) or not truncation_amount.dtype==int:
-            raise ValueError(f"shape of truncation_amount must be (grid.ndim,) array of ints. Got {truncation_amount.shape}, {truncation_amount.dtype}")
+        if not truncation_amount.dtype==int or not np.all(truncation_amount>=0):
+            raise ValueError('truncation_amount must be non-negative integers.')
+        if not truncation_amount.shape == (ndim,):
+            if truncation_amount.shape == (ndim_domain,):
+                truncation_amount = np.concatenate((truncation_amount, np.zeros((ndim - ndim_domain,),dtype=int)))
+            else:
+                raise ValueError(f"shape of truncation_amount must be of size {ndim} or {ndim_domain}. Got {truncation_amount.shape}, {truncation_amount.dtype}")
     else:
         raise TypeError(f"truncation_amount must be int or np.array of ints. Got {truncation_amount}")
     if not np.all(np.array(grid.shape)>2*truncation_amount):
@@ -92,46 +106,12 @@ def TruncationOperator(grid, truncation_amount):
     if not np.all(truncation_amount>=0):
         raise ValueError(f'Condition truncation_amount>=0 violated: Got {truncation_amount}')
     truncated_grid = UniformGridFcts(
-            *[np.arange(N-2*trunc)*spc + ax[0] + trunc*spc for (N,trunc,spc,ax) in zip(grid.shape,truncation_amount,grid.spacing,grid.axes)],
-            dtype = grid. dtype
+            *[np.arange(N-2*trunc)*spc + ax[0] + trunc*spc for (N,trunc,spc,ax) in zip(grid.shape[:ndim_domain],truncation_amount[:ndim_domain],grid.spacing,grid.axes)],
+            dtype = grid.dtype,
+            shape_codomain = grid.shape_codomain
             )
     pad_op = PaddingOperator(truncated_grid,truncation_amount)
     return pad_op.adjoint
-
-def change_last_grid_dimension(gridin,new_dimension):
-    axes_out = gridin.axes.copy()
-    axes_out[-1] = np.arange(new_dimension)
-    if isinstance(gridin,UniformGridFcts):
-        gridout = UniformGridFcts(*axes_out,dtype=gridin.dtype)
-    else:
-        gridout = GridFcts(*axes_out,dtype=gridin.dtype,use_cell_measure=False)
-    return gridout
-
-class MatrixVectorGridFctMultiplication(Operator):
-    def __init__(self,gridin,matrixfct):
-        if not isinstance(gridin, GridFcts):
-            raise TypeError('gridin must be of type GridFcts.')
-        shape_in = gridin.shape
-        dtype = gridin.dtype
-        grid_shape = shape_in[:-1]
-        if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==dtype:
-            raise TypeError('matrixfct must be a numpy array of the same data type.')
-        self.matrixfct= matrixfct
-        mat_shape = matrixfct.shape
-        if not (mat_shape[:-2]== grid_shape and mat_shape[-1]==shape_in[-1]):
-            raise ValueError(f'shape of matrixfct does not match: {mat_shape}, {shape_in}')
-
-        gridout = change_last_grid_dimension(gridin,mat_shape[-2])
-        super().__init__(domain=gridin,codomain=gridout,linear=True)
-
-    def _eval(self, v):
-        return  np.einsum('...ji,...i->...j', self.matrixfct, v)
-    
-    def _adjoint(self, w):
-        return np.einsum('...ij,...i->...j', np.conj(self.matrixfct), w)
-
-    def __repr__(self):
-        return util.make_repr(self, self.domain, self.codomain)
 
 class ConvolutionOperator(Composition):
     r"""Periodic convolution operator on a periodic UniformGridFcts space. 
@@ -157,7 +137,7 @@ class ConvolutionOperator(Composition):
         The space on which the operator is defined.
         If it real, real-valued fft will be used, otherwise complex fft   
     fourier_multiplier: (:math:`F(k)`) 
-        - Either a d-dimensional numpy array (d=grid.ndim), the Fourier transform of the convolution kernel 
+        - Either a d-dimensional numpy array (d=grid.ndim_domain), the Fourier transform of the convolution kernel 
           If grid is real, the size of the last dimension is about half of that of grid
           The dimensions of the axes, which are not convolution axes should be one, the dimensions of the others 
           should correspond to the corresponding dimensions of grid 
@@ -178,19 +158,13 @@ class ConvolutionOperator(Composition):
         In particular, if Fourier_truncation_amount=0, the convolution on the full padded domain is returned. 
     convolution_axes: [optional, default: None] None or 1d numpy array integer of integers 
         Specifies a subset of the axes of grid along which convolution is performed. 
-        If None, np.arange(grid.ndim) is used, i.e. convolution is performed w.r.t. to all axes.
+        If None, np.arange(grid.ndim_domain) is used, i.e. convolution is performed w.r.t. to all domain axes.
     kernel_matrix_shape: [optional, default: None] None or pair of positive integers
         The case where kernel_matrix_shape is not None treats the situation that the convolution kernel k is matrix-value 
         with shape kernel_matrix_shape. 
-        In this case, the "vector-dimension" must be the last one of grid, i.e. the following condition must be satisfied
-            grid.shape[-1] = kernel_matrix_shape[1].
-        The constructor will construct a codomain satisfying the condition
-            self.codomain.shape[-1] = kernel_matrix_shape[0].
-        In this case d in the description of fourier_multiplier corresponds to grid.ndim-1, and fourier_multiplier must
-        have grid.ndim+1 dimensions, the last two dimensions given by kernel_matrix_shape. 
-        If fourier_multiplier is given by a function, the output of this function must be a numpy array 
-        with two additional trailing dimensions compared to the dimensions input arguments, 
-        the size of these last two dimensions given by kernel_matrix_shape.
+        In this case, the input space is assumed to be vector-valued with values of shape (kernel_matrix_shape[1],),
+        If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimnesional. 
+        
                     
     Methods: 
     functional_calculus: 
@@ -202,9 +176,12 @@ class ConvolutionOperator(Composition):
         Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implmented in Composition), 
         but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
     conv_inverse:
-        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)'
+        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)`
         Note:  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
         but an approximation of the inverse of the underlying convolution operators in R^d. 
+    conv_adjoint:
+        Output: Adjoint operator as a convolution operator with Fourier multiplier given by the pointwise Hermitian matrices
+        
     Linear combinations: 
     ::math::
 
@@ -217,26 +194,26 @@ class ConvolutionOperator(Composition):
                  Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
         if not isinstance(grid,UniformGridFcts):
             raise TypeError(f'grid must be of type UniformGridFcts. Got {grid}')
-        if not kernel_matrix_shape is None and not grid.shape[-1] ==  kernel_matrix_shape[1]:
+        if not kernel_matrix_shape is None and not grid.shape_codomain[0] ==  kernel_matrix_shape[1]:
             raise ValueError(f'Last dimension of grid must equal last matrix kernel dimension. Got {grid.shape}, {kernel_matrix_shape}')
         self.grid = grid
+        ndim = grid.ndim_domain
         if not convolution_axes is None:
+            if not np.all([0 <= ax < ndim for ax in convolution_axes]):
+                raise ValueError(f"Invalid axis specified: {convolution_axes}. Must be within [0, {ndim})")
+            if not len(convolution_axes) == len(set(convolution_axes)):
+                raise ValueError(f"Axes contain duplicates: {convolution_axes}")
             self.convolution_axes =  np.array(convolution_axes)
-            if not kernel_matrix_shape is None and grid.ndim-1 in self.convolution_axes:
-                raise ValueError('For matrix-valued convolution the last dimension must be the vector dimension.')
         else:
-            if kernel_matrix_shape is None:
-                self.convolution_axes = np.arange(self.grid.ndim)
-            else:
-                self.convolution_axes = np.arange(self.grid.ndim-1)
+            self.convolution_axes = np.arange(ndim)
         self.kernel_matrix_shape = kernel_matrix_shape
         if not (isinstance(self.convolution_axes,np.ndarray) and self.convolution_axes.dtype==int
-                and np.max(self.convolution_axes)<grid.ndim and np.min(self.convolution_axes)>=0):
+                and np.max(self.convolution_axes)<grid.ndim_domain and np.min(self.convolution_axes)>=0):
             raise TypeError(f'convolution_axes must be a numpy array of integers between 0 and d. Got {self.convolution_axes}')
         # array containing the numbers of the axes that are not convolution axes
-        self.stackaxes = np.array(list(set(np.arange(grid.ndim)) - set(self.convolution_axes)))
 
-        print(self.stackaxes.shape)
+        self.stackaxes = np.array(list(set(np.arange(grid.ndim_domain)) - set(self.convolution_axes)))
+
         if not callable(fourier_multiplier) and  not isinstance(fourier_multiplier,np.ndarray):
             raise TypeError('fourier_mupltiplier must be callable or a numpy array')
         if not pad_amount is None:
@@ -247,8 +224,8 @@ class ConvolutionOperator(Composition):
                     pad_amount = np.array(pad_amount)
                 except:
                     raise TypeError('pad_amount must be None, integer or convertible to a numpy array.') 
-                if not np.all(pad_amount[self.stackaxes]==0):
-                    raise ValueError(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are self.stackaxes')
+                if not len(self.stackaxes) == 0 and not np.all(pad_amount[self.stackaxes]==0):
+                    raise ValueError(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are {self.stackaxes}')
                 else:
                     self.pad_amount = pad_amount
         if not Fourier_truncation_amount is None:
@@ -260,16 +237,15 @@ class ConvolutionOperator(Composition):
                 else:
                     self.Fourier_truncation_amount = Fourier_truncation_amount
 
-        ndim = grid.ndim if kernel_matrix_shape is None else grid.ndim-1
-        codomain = grid if kernel_matrix_shape is None else change_last_grid_dimension(grid,kernel_matrix_shape[0])
+        codomain = grid if kernel_matrix_shape is None else grid.vector_valued_space((kernel_matrix_shape[0],))
 
         self.kwargs = {'pad_amount' : pad_amount,
                        'pad_value' : pad_value,
                        'Fourier_truncation_amount' : Fourier_truncation_amount,
                        'convolution_axes' : self.convolution_axes,
-                       'kernel_matrix_shape' : kernel_matrix_shape}
+                       'kernel_matrix_shape' : self.kernel_matrix_shape}
 
-        freq_slice = (self.convolution_axes,  *tuple(slice(None) if i in self.convolution_axes else slice(0, 1) for i in np.arange(self.grid.ndim)))
+        freq_slice = (self.convolution_axes,  *tuple(slice(None) if i in self.convolution_axes else slice(0, 1) for i in np.arange(ndim)))
         if pad_amount is None or np.all(pad_amount ==0):
             ft = FourierTransform(grid,axes=self.convolution_axes)
             if kernel_matrix_shape is None:
@@ -284,11 +260,8 @@ class ConvolutionOperator(Composition):
             if self.kernel_matrix_shape is None:
                 multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
             else:
-                extended_shape = ft.codomain.shape[:-1]+self.kernel_matrix_shape
-                multiplier = MatrixVectorGridFctMultiplication(ft.codomain,  np.broadcast_to(self._otf,extended_shape))
-            dom1=ft_codomain.codomain
-            dom2= multiplier.codomain
-
+                extended_shape = ft.codomain.shape_domain+self.kernel_matrix_shape
+                multiplier = PtwMatrixVectorMultiplication(ft.codomain,  np.broadcast_to(self._otf,extended_shape))
             super().__init__(ft_codomain.adjoint, multiplier, ft)
         elif Fourier_truncation_amount is None: 
             pad_op = PaddingOperator(grid,self.pad_amount,pad_value=pad_value)
@@ -306,9 +279,9 @@ class ConvolutionOperator(Composition):
             if self.kernel_matrix_shape is None:
                 multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
             else:
-                extended_shape = ft.codomain.shape[:-1]+self.kernel_matrix_shape
-                print(pad_op.codomain,ft.codomain.shape,self.kernel_matrix_shape,extended_shape)
-                multiplier = MatrixVectorGridFctMultiplication(ft.codomain, np.broadcast_to(self._otf,extended_shape))
+                extended_shape = ft.codomain.shape_domain+self.kernel_matrix_shape
+                #print(pad_op.codomain,ft.codomain.shape,self.kernel_matrix_shape,extended_shape)
+                multiplier = PtwMatrixVectorMultiplication(ft.codomain, np.broadcast_to(self._otf,extended_shape))
             trunc_op = TruncationOperator(ft_codomain.domain, self.pad_amount)
 
             super().__init__(trunc_op, ft_codomain.adjoint, multiplier, ft, pad_op)
@@ -327,11 +300,11 @@ class ConvolutionOperator(Composition):
             if self.kernel_matrix_shape is None:
                 multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(fac*self._otf,trunc_op.codomain.shape))
             else:
-                multiplier = MatrixVectorGridFctMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape)) 
+                multiplier = PtwMatrixVectorMultiplication(trunc_op.codomain, np.broadcast_to(self._otf,trunc_op.codomain.shape)) 
             new_coords = FourierTransform.frequencies(trunc_op.codomain,centered=True, axes=self.convolution_axes)
             codomain = UniformGridFcts(*new_coords, dtype=complex)
             if kernel_matrix_shape is not None:
-                codomain = change_last_grid_dimension(codomain,kernel_matrix_shape[0])
+                codomain = codomain.vector_valued_space(kernel_matrix_shape[0])
             ft_codomain = FourierTransform(codomain,axes=self.convolution_axes,centered=True)
             if ft_codomain.codomain != multiplier.codomain:
                 raise RuntimeError(f'The codomain of the multiplier and the codomain of the Fourier Transform do not match!. {ft_codomain.shape},{multiplier.codomain.shape}')
@@ -379,10 +352,29 @@ class ConvolutionOperator(Composition):
             return ConvolutionOperator(L.grid,new_otf, **kwargs_comp) 
 
     def conv_inverse(self):
-        if not self.kernel_matrix_shape is None:
-            raise NotImplementedError
-        else:
+        """Inverse convolution operator, with Fourier multiplier 1/F(k).
+        Only valid for scalar convolution kernels which are non-zero everywhere in Fourier space.
+        """
+        if self.kernel_matrix_shape is None:
             return ConvolutionOperator(self.grid, 1/self._otf,**self.kwargs)
+        else:
+            raise NotImplementedError('Inverse convolution only implemented for scalar convolution kernels.')           
+
+    def conv_adjoint(self):
+        """Adjoint convolution operator, with Fourier multiplier F(k)^*.
+        In contrast to the adjoint operator implemented in Operator, this is again a convolution operator.
+        """
+        if self.kernel_matrix_shape is None:
+            return ConvolutionOperator(self.grid, self._otf.conj(),**self.kwargs)
+        else:       
+            kernel_matrix_shape = (self.kernel_matrix_shape[1],self.kernel_matrix_shape[0])
+            hermitian_otf = np.conj(np.swapaxes(self._otf,-2,-1))
+            kwargs_adj = self.kwargs.copy()
+            kwargs_adj["kernel_matrix_shape"] = kernel_matrix_shape
+            return ConvolutionOperator(self.grid.vector_valued_space(kernel_matrix_shape[1]), 
+                                       hermitian_otf, 
+                                       **kwargs_adj
+                                       )           
 
     def _parameters_equal(self,p,q,ignore_kernel_matrix_shape=False):
         return (np.all(p['pad_amount']==q['pad_amount']) 
@@ -414,7 +406,7 @@ class ConvolutionOperator(Composition):
             return self
         elif isinstance(other, ConvolutionOperator):
             assert self.grid == other.grid
-            assert self._parameters_equal(self.kwargs,other.kwargs)
+            assert self._parameters_equal(self.kwargs,other.kwargs,ignore_kernel_matrix_shape=True)
             return ConvolutionOperator(self.grid,self._otf + other._otf,**self.kwargs)
         elif isinstance(other, Operator):
             return LinearCombination(self, other)
@@ -426,30 +418,18 @@ class ConvolutionOperator(Composition):
     def __repr__(self):
         return util.make_repr(self, self._otf)
 
-class AddSingletonDimension(Operator):
-    """Operater that adds a singleton dimension as last dimension in UniformGridFcts. 
-    Wrapper to np.reshape(...,1).
-    Parameters:
-    grid: UniformGridFcts    
-    """
-    def __init__(self, grid):
-        if not isinstance(grid, UniformGridFcts):
-            raise TypeError(f'grid must be of type UniformGridFcts. Got {type(grid)}')
-        self.shape = grid.shape
-        axes_out = grid.axes.copy()
-        axes_out.append(np.array([0.]))
-        codomain = UniformGridFcts(*axes_out,dtype= grid.dtype)
-        super().__init__(grid, codomain, linear=True)
-
-    def _eval(self,f):
-        return np.reshape(f,self.shape+(1,))
-    
-    def _adjoint(self,f):
-        return np.reshape(f,self.shape)
+def _Lap_in_FD(*freq,dim_codomain=None):
+    shape_domain = freq[0].shape
+    toret = np.zeros(shape_domain+(dim_codomain,dim_codomain),dtype=complex)
+    scal_Lap = -sum((2*np.pi*y)**2 for y in freq)
+    for j in range(dim_codomain):
+        toret[...,j,j] = scal_Lap
+    return toret
 
 class Laplacian(ConvolutionOperator):
     """Laplace operator with periodic boundary conditions, implemented as convolution operator. 
     The second derivatives are computed with respect to the coordinates of the given grid. 
+    If vector-valued spaces, this is the vector-Laplacian.
 
     Parameters:
     grid: UniformGridFcts
@@ -457,45 +437,79 @@ class Laplacian(ConvolutionOperator):
     """
     def __init__(self,grid, pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
-        super().__init__(grid,
-                        lambda *x : -sum((2*np.pi*y)**2 for y in x),
-                        pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
-                        )  
+        if grid.shape_codomain == ():
+            super().__init__(grid,
+                            lambda *x : -sum((2*np.pi*y)**2 for y in x),
+                            pad_amount=pad_amount,pad_value=pad_value,
+                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            )
+        else:
+            super().__init__(grid,
+                            lambda *x : _Lap_in_FD(*x,dim_codomain=grid.shape_codomain[0]),
+                            kernel_matrix_shape=(grid.shape_codomain[0],)*2,
+                            pad_amount=pad_amount,pad_value=pad_value,
+                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            )
 
-def gradient(grid,on_scalar_grid=True,pad_amount=None,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
-    add_dim = AddSingletonDimension(grid)
-    grad = ConvolutionOperator(add_dim.codomain,
-                               lambda *x : 2j*np.pi* np.stack(list(y for y in x),axis=-2),
-                               kernel_matrix_shape=(grid.ndim,1),
+def gradient(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+    """Gradient operator with periodic boundary conditions, implemented as convolution operator.
+    The first derivatives are computed with respect to the coordinates of the given grid.   
+    Parameters:
+    grid: UniformGridFcts
+       The codomain shape of grid is ignored. The codomain of the gradient operator is vector-valued with shape (grid.ndim_domain,), and the domain has codomain shape (1,).  
+    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    """
+    grad = ConvolutionOperator(grid.vector_valued_space((1,)) if grid.shape_codomain==() else grid,
+                               lambda *x : 2j*np.pi* np.stack(list(y[...,np.newaxis] for y in x),axis=-2),
+                               kernel_matrix_shape=(len(grid.shape_domain),1),
                                pad_amount=pad_amount,pad_value=pad_value,
                                Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
                             )
-    return grad * add_dim if on_scalar_grid else grad
+    return grad
 
-def curl(grid,pad_amount=None,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
-    if not (len(grid.shape)==4 and grid.shape[-1]==3):
-        raise ValueError('grid must be three-dimensional and vector-valued')
-    return ConvolutionOperator(grid,_curl_in_FD,kernel_matrix_shape=(3,3),pad_amount=pad_amount,pad_value=pad_value,
-                 Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
+def divergence(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+    """Divergence operator with periodic boundary conditions, implemented as convolution operator.
+    The first derivatives are computed with respect to the coordinates of the given grid.
+    Parameters:
+    grid: UniformGridFcts
+         The codomain of grid is ignored. The domain of the divergence operator is vector-valued with shape (grid.ndim_domain,), and the codomain has codomain shape (1,).
+    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    """
+    grad = gradient(grid.vector_valued_space(1),pad_amount=pad_amount,pad_value=pad_value,
+                                Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
+    return - grad.conv_adjoint()
+
+def curl(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+    """Curl operator with periodic boundary conditions, implemented as convolution operator.
+    The first derivatives are computed with respect to the coordinates of the given grid.
+    Parameters:
+    grid: UniformGridFcts
+         grid must be three-dimensional. The codomain of grid is ignored. The domain and the codomain of the curl operator are both vector-valued with shape (3,). 
+    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    """
+    if not ((convolution_axes is None and len(grid.shape_domain)==3) or (convolution_axes is not None and len(convolution_axes)==3)):
+        raise ValueError('grid must be three-dimensional')
+    return ConvolutionOperator(grid.vector_valued_space(3),
+                               _curl_in_FD,kernel_matrix_shape=(3,3),
+                               pad_amount=pad_amount,pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                               )
 
 def _curl_in_FD(Dx,Dy,Dz):
-    toret = np.zeros((Dx.shape[:-1]+(3,3)),dtype=complex)
-    toret[...,0,1] = - 2j*np.pi*Dz[...,0]
-    toret[...,0,2] =   2j*np.pi*Dy[...,0]
-    toret[...,1,0] =   2j*np.pi*Dz[...,0]
-    toret[...,1,2] = - 2j*np.pi*Dx[...,0]
-    toret[...,2,0] = - 2j*np.pi*Dy[...,0]
-    toret[...,2,1] =   2j*np.pi*Dx[...,0]
+    assert Dx.shape == Dy.shape == Dz.shape
+    toret = np.zeros(Dx.shape+(3,3),dtype=complex)
+    toret[...,0,1] = - 2j*np.pi*Dz
+    toret[...,0,2] =   2j*np.pi*Dy
+    toret[...,1,0] =   2j*np.pi*Dz
+    toret[...,1,2] = - 2j*np.pi*Dx
+    toret[...,2,0] = - 2j*np.pi*Dy
+    toret[...,2,1] =   2j*np.pi*Dx
     return toret
 
 class PeriodicShift(ConvolutionOperator):
     """Periodic shift operator on a given uniform grid, implemented as convolution operator. 
     Parameters:
     grid: UniformGridFcts 
-    shift: array or tuple of length grid.ndim
+    shift: array or tuple of length grid.ndim_domain
        Amount by which grid functions are shifted (in units of grid)
     pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
     """
@@ -606,11 +620,11 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
     """
     def __init__(self,grid, kappa):
         assert grid.is_complex
-        if not (grid.ndim ==2 or grid.ndim==3):
+        if not (grid.ndim_domain ==2 or grid.ndim_domain==3):
             raise ValueError('PeriodicHelmholtzVolumePotential only implemented for dimensions 2 and 3.')
         self.kappa = kappa      
         self.N = grid.shape[0]
-        if grid.ndim==2:
+        if grid.ndim_domain==2:
             assert grid.shape == (self.N,self.N)
             compute_kernel = self._compute_kernel_2d
         else:

@@ -1,20 +1,25 @@
+from random import uniform
+
+import numpy as np
+
 from regpy.functionals import IntegralFunctionalBase
 from regpy.functionals.base import Conj, NotTwiceDifferentiableError
-from random import uniform
-import numpy as np
+from regpy.functionals.numpy import VectorIntegralFunctional
 
 def sample_essential_domain(func,u=None,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
     The values of this grid function are chosen to roughly span the essential domain of the function defining the 
     integral functional.
 
-    Parameters:    
+    Parameters
+    ----------
     func : regpy.functionals.IntegralFunctionalBase
         The functional.
     eps_perturbation: float or None [default: None]
         If not None, an additional vector h is returned  
         
-    Result:
+    Result
+    ------
     An element u of func.domain
     If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
@@ -54,6 +59,55 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
         return np.reshape(u,func.domain.shape)
     else:
         return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
+    
+
+def sample_vector_in_domain(func, dist = 1e-10):
+    r"""
+    Samples a vector in the domain of an VectorIntegralFunctional such that the taking the norm
+    in the vector dimension :math:`lower<|v|<upper` satisfies with a given distance `dist` 
+    to the upper bounds.
+
+    Note that if lower is below zero it is treated as zero.
+
+    Parameters
+    ----------
+    func : regpy.functionals.VectorIntegralFunctional
+        The vector integral functional.
+    dist : float, optional
+        Distance to the upper and lower bound. Defaults to 1e10.
+
+    Returns
+    -------
+    array_like
+        A vector in the domain satisfying the norm constraints.
+
+    """
+    if not isinstance(func,VectorIntegralFunctional) and (isinstance(func,Conj) and not isinstance(func.func,VectorIntegralFunctional)):
+        raise ValueError("func has to be an instance of VectorIntegralFunctional")
+    if isinstance(func,Conj):
+        v_axes = func.func._vaxes
+        norm = func.func.vector_norm
+        dom_u = np.min(func.func.scalar_func.conj_dom_u) - dist
+        dom_l = max(np.max(func.func.scalar_func.conj_dom_l),0.) + dist
+    else:
+        v_axes = func._vaxes
+        norm = func.vector_norm
+        dom_u = np.min(func.scalar_func.dom_u) - dist
+        dom_l = max(np.max(func.scalar_func.dom_l),0.) + dist
+
+    if dom_l >= dom_u:
+        raise ValueError("Cannot sample vector in domain: No feasible region. upper has to be larger than lower.")
+
+    u = func.domain.randn()
+    # scaling u s.t. |u| <= 1
+    u /= np.max(norm(x = u, axis = v_axes))
+    if dom_u < np.inf and dom_l > 0:
+        return u * (dom_u - dom_l) + dom_l
+    if dom_u < np.inf:
+        return u * dom_u
+    else:
+        return u        
+
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     r"""Numerically test the validity of Moreau's identity for a given functional
@@ -233,11 +287,11 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     t2 = func(u)
     t3 = func.conj(grad_u)
     err=abs(t1-t2-t3)/np.max(np.abs([1e-14,t1,t2,t3]))
-    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t3}'
+    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}'
 
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
-                    u_stars=None,sample_conj_N=5,print_results=False,
+                    u_stars=None,sample_conj_N=5,
                     test_second_deriv = True, test_second_deriv_conj = True,
                     tolerance=1e-10):
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
@@ -260,9 +314,6 @@ def test_functional(func,u_s=None,sample_N=5,
         Same as u_s but for conjugate functional. Defaults to None.
     sample_conj_N : int, optional
         Same as sample_N but for conjugate functional. Defaults to 5.
-    print_results : bool, optional
-        If set to True, further information about test that could not be evaluated because of missing implementations
-        are printed. Defaults to False.
     tolerance : float, optional
         The maximum allowed error. Defaults to 1e-10.
 
@@ -270,45 +321,44 @@ def test_functional(func,u_s=None,sample_N=5,
     ------
     AssertionError
         If the test fails.
+
+    Notes
+    -----
+    The tests results are logged with further details when the tests failed 
+
     """
     if (u_s is None):
         if func.separable:
             u_s= [None] # [sample_essential_domain(func)]
         else:
             u_s = [func.domain.randn() for _ in range(sample_N)]
-    if(print_results):
-        print(type(func))
+    func.log.info(f'Starting tests for functional!')
     for u in u_s:
         try:
             tau=uniform(tolerance,4)
             test_moreaus_identity(func,u,tau=tau,tolerance=tolerance)
         except(NotImplementedError):
-            if(print_results):
-                print('Moreaus identity could not be checked because of missing implementation')
+            func.log.info('Moreaus identity could not be checked because of missing implementation')
         try:
             test_subgradient(func,u)
         except(NotImplementedError):
-            if(print_results):
-                print('Subgradient could not be checked because of missing implementation')
+            func.log.info('Subgradient could not be checked because of missing implementation')
         try:
             test_young_equality(func,u,tolerance=tolerance)
         except(NotImplementedError):
-            if(print_results):
-                print('Young equality could not be checked because of missing implementation')
+            func.log.info('Young equality could not be checked because of missing implementation')
         if test_second_deriv:
             try:
                 test_second_derivative(func,u)
             except (NotTwiceDifferentiableError, NotImplementedError):
-                if (print_results):
-                    print('Second derivative could not be tested as functiional is not twice differentiable.')
+                func.log.info('Second derivative could not be tested as functiional is not twice differentiable.')
             if func.separable:
                 try:
                     test_Lipschitz_convexity(func)
                 except (NotImplementedError):
-                    if print_results:
-                        print('Lipschitz constant and convexity parameter could not be checked because of missing implementation.')
+                    func.log.info('Lipschitz constant and convexity parameter could not be checked because of missing implementation.')
+        func.log.info(f'Tests passed!')
     if(test_conj):
         test_functional(func.conj,u_s=u_stars,sample_N=sample_conj_N,
-                        test_conj=False,test_second_deriv=test_second_deriv_conj, 
-                        print_results=print_results,tolerance=tolerance)
+                        test_conj=False,test_second_deriv=test_second_deriv_conj,tolerance=tolerance)
                 

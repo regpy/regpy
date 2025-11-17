@@ -1,18 +1,19 @@
 from math import inf
+from functools import partial
+from copy import deepcopy
 
 import numpy as np
 from scipy.linalg import ishermitian
 from scipy.special import lambertw
 
-from regpy.operators import PtwMultiplication
+from regpy.operators import PtwMultiplication, PtwMatrixVectorMultiplication, PtwScalarMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
-import logging
-from copy import deepcopy
+from regpy.util import Errors
 
-from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
+__all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppL2","L1L2","HuberL2","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -808,70 +809,207 @@ class IntegralFunctionalBase(Functional):
         return x
     
 class VectorIntegralFunctional(Functional):
-    def __init__(self, vdomain, sdomain, scalar_func,scalar_func_args=None):
-                
-        self.vdomain = vdomain
-        self.sdomain = sdomain
-        assert scalar_func_args is None or isinstance(scalar_func_args,dict)
-        if scalar_func == 'Huber':
-            self.scalar_func = Huber(sdomain)
-        elif scalar_func == 'Lpp':
-            self.scalar_func = LppPower(sdomain,**scalar_func_args)
-        elif isinstance(scalar_func,IntegralFunctionalBase):
-            self.scalar_func = scalar_func
-        else:
-            raise ValueError(f'{scalar_func} invalid as argument for scalar_func.')
+    r"""
+    Implements a vector-valued integral functional \(v\mapsto \sum_i f_i(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
+    as a functional. Here, \(f_i\) are scalar functions on the real line that are assumed to be even and convex, 
+    and \(\|\cdot\|\) some norm on the vector values. 
 
-        super().__init__(domain, h_domain,  convexity_param, Lipschitz, 
+    The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
+    as tuple and returning the norm values. By default, the Euclidean norm is used.  
+
+    Parameters
+    ----------
+    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+    scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
+        Scalar separable functional to be used as (even!) functions \(f_i\).
+        Either provides a specific separable Functional  
+        or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
+    scalar_func_args : dict, optional
+        Additional arguments for the scalar_func if needed (e.g. 'p' for Lpp).
+    vector_norm_p : int or float, optional
+        This is the exponent in the norm of the vectors given by a p norm :math:`(|x_1|^p+\dots+|x_n|^p)^{1/p}}`. 
+        By default, the Euclidean norm is used with p=2.
+    Lipschitz, convexity_param: float (default: np.inf and 0., respectively)
+        For the Euclidean norm as inner norm, \(Hess f_i(\|v\| )\) has two eigenvalues: \(f_i''(\|v\|) \)
+        and \(f_i'(\|v\|)/\|v\| \). Using this fact, analytic expression may be computed for 
+        Lipschitz = supremum of all possible EV and for convexity_param = infimum of all EV may be 
+        computed for specific \(f_i\) and passed as arguments to accelerate optimization methods.  
+    """    
+
+    def __init__(self, vdomain, hdomain = None, scalar_func = None, scalar_func_args=None, 
+                 vector_norm_p=2,
+                 Lipschitz =np.inf, convexity_param = 0.
+                 ):
+        if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
+            raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
+        self.vdomain = vdomain
+        self.sdomain = vdomain.scalar_space()
+        self.scalar_func_args = scalar_func_args if scalar_func_args is not None else {}
+
+        if isinstance(scalar_func, AbstractFunctional):
+            scalar_func = scalar_func(self.sdomain, **self.scalar_func_args)
+        elif scalar_func is None:
+            scalar_func = LppPower(self.sdomain, p=2., **self.scalar_func_args)
+        if not scalar_func.separable or scalar_func.domain!=self.sdomain:
+            raise ValueError(f'{scalar_func} need to be a callable giving a separable functional or already a separable functional with sdomain as domain.')
+        else:
+            self.scalar_func = scalar_func
+
+        if isinstance(vector_norm_p,(int,float)) and vector_norm_p >1 and vector_norm_p<np.inf:
+            self.p = vector_norm_p
+            self.q = vector_norm_p / (vector_norm_p - 1) 
+            self.vector_norm = partial(np.linalg.norm, ord = self.p)
+            self.dual_vector_norm = partial(np.linalg.norm, ord = self.q)
+        else:
+            raise ValueError(Errors._compose_message("Not p-Norm", f"The provided p ={vector_norm_p} is not between 1< p < inf."))
+            
+        super().__init__(vdomain, L2(vecsp=vdomain), 
+                         convexity_param = convexity_param, 
+                         Lipschitz = Lipschitz, 
                          separable= False, linear= False)
-        self._sbuf = sdomain.zeros()
+        self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
-        self._vaxes = (-1,)
+        self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
+
+    @property
+    def _sbuf_ext(self):
+        return np.expand_dims(self._sbuf, axis=self._vaxes)
 
     def _eval(self, vec):
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        self._sbuf = self.vector_norm(x = vec, axis=self._vaxes)
         return self.scalar_func(self._sbuf)
 
     def _conj(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
+        self._sbuf = self.dual_vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
     def _subgradient(self, vec):
+        r"""
+        returns   
+        
+        .. math::
+            [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
         """
-        returns   [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
-        """
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        if self.p != 2:
+            raise NotImplementedError('subgradient only implemented for L2 norm')
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
     
     def _conj_subgradient(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
+        if self.p != 2:
+            raise NotImplementedError('conjugate subgradient only implemented for L2 norm')
+        self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
+        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
 
-    def _proximal(self, vec,tau):
+    def _proximal(self, vec, tau, mask=None):
+        r"""
+        returns   :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
         """
-        returns   [prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
-        """
-        np.linalg.norm(vec, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec,self._sbuf,where=self._sbuf>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.proximal(self._sbuf,tau)
-        self._vbuf *= self._sbuf
+        if self.p != 2:
+            raise NotImplementedError('proximal only implemented for L2 norm')
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.proximal(self._sbuf, tau ,mask=None)
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
 
-    def _conj_proximal(self, vec_star):
-        np.linalg.norm(vec_star, axis=self._vaxes, keepdims=True,out= self._sbuf)
-        np.divide(vec_star,self._sbuf,where=self._sbuf>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.proximal(self._sbuf)
-        self._vbuf *= self._sbuf
+    def _conj_proximal(self, vec_star, tau, mask=None):
+        if self.p != 2:
+            raise NotImplementedError('conjugate proximal only implemented for L2 norm')
+        self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
+        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
+        self._vbuf *= self._sbuf_ext
         return self._vbuf.copy()
-
     
+    def _hessian(self, vec):
+        if self.p != 2:
+            raise NotImplementedError('proximal only implemented for L2 norm')
+        self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        fp = self.scalar_func.subgradient(self._sbuf)
+        fp = np.expand_dims(fp,self._vaxes)
+        np.divide(fp,self._sbuf_ext, where=self._sbuf_ext>0, out= fp)
+        fpp = self.scalar_func.hessian(self._sbuf)(self.sdomain.ones())
+        # As f is even, f' is odd, so f'(0)=0 if f'' exists. Therefore, f'(v)/v tends to f''(v) as 
+        # v tends to 0, so we can use this a places where ||v|| vanishes.
+        fpp = np.expand_dims(fpp,self._vaxes)
+        fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
+        scal_mult = PtwScalarMultiplication(self.domain,fp)
+        proj = PtwMatrixVectorMultiplication(self.vdomain,
+                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             )
+        # actually just a pointwise multiplication, but implemented multiplication with a 1x1 matrix 
+        # to avoid conversions to scalar functions
+        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                )
 
+        return scal_mult + proj.adjoint * ptw_mult * proj                                             
+        
+    def _conj_hessian(self, vec):
+        if self.p != 2:
+            raise NotImplementedError('proximal only implemented for L2 norm')
+        self._sbuf = self.dual_vector_norm(vec, axis=self._vaxes)
+        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
+        fp = self.scalar_func.conj.subgradient(self._sbuf)
+        fp = np.expand_dims(fp,self._vaxes)
+        np.divide(fp,self._sbuf_ext, where=self._sbuf_ext>0, out= fp)
+        fpp = self.scalar_func.conj.hessian(self._sbuf)(self.sdomain.ones())
+        # see comments for hessian!
+        fpp = np.expand_dims(fpp,self._vaxes)
+        fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
+        scal_mult = PtwScalarMultiplication(self.domain,fp)
+        proj = PtwMatrixVectorMultiplication(self.vdomain,
+                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             )
+        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                )
+
+        return scal_mult + proj.adjoint * ptw_mult * proj   
+
+class LppL2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with \(f_i(x):=(1/p)|x|^p\).
+
+    Parameters:
+    p: float (default: 2.)
+        exponent of the L^p-norm. 
+    """
+    def __init__(self, vdomain,p=2.):
+        sfunc = LppPower(vdomain.scalar_space(),p=p)
+        super().__init__(vdomain, sfunc, 
+                         Lipschitz=1. if p== 2 else np.inf,
+                         convexity_param=1. if p==2 else 0.
+                         )
+
+class L1L2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with absolute value function as \(f_i\).
+    """
+    def __init__(self, vdomain,sigma=1.):
+        sfunc = L1MeasureSpace(vdomain.scalar_space())
+        super().__init__(vdomain, sfunc, Lipschitz=1.)
+
+class HuberL2(VectorIntegralFunctional):
+    """
+    VectorIntegralFunctional with Huber functional as \(f_i\).
+
+    Parameters:
+    sigma: float (default: 1.)
+        Parameter in Huber functional
+    """
+    def __init__(self, vdomain,sigma=1.):
+        sfunc = Huber(vdomain.scalar_space(),sigma)
+        super().__init__(vdomain, sfunc, Lipschitz=1.)
 
 class LppPower(IntegralFunctionalBase):
     r"""

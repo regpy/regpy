@@ -1,8 +1,10 @@
 import numpy as np
+import logging
 
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional
+from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 
@@ -12,7 +14,7 @@ def test_Lpp():
     x = np.linspace(-3.,3.,100)
     for p in [1.5,2.,2.5]:
         for (l,u) in [(0.1,2.3),(-2.1,-1.2),(-1.2,1.)]:
-            print('p=',p,'l=',l,'u=',u)
+            logging.info(f" Testing Lpp functionals for p={p}, l={l}, u={u}")
             ft.test_functional(Lpp(dom,p=p,constr_l=l,quad_taylor_u=u),
                                test_second_deriv=(p>=2),test_second_deriv_conj=False
                                )
@@ -116,6 +118,20 @@ def test_quadlow():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
     func = QuadLow(dom)
     ft.test_functional(func)
+
+def test_VectorIntegralFunctional():
+    grid = UniformGridFcts((-1,1,10))
+    N_v = 5
+    vgrid = grid.vector_valued_space(N_v)
+    for p in  [1.5,2,4]:
+        ft.test_functional(LppL2(vgrid,p=p))
+    ft.test_functional(L1L2(vgrid)) 
+    for sigma in [1e-2,1e-1,1,10.]:
+        HuberL2 = VFunc(vgrid,scalar_func=Hub(sigma = sigma))
+        u_s = [ft.sample_vector_in_domain(HuberL2) for _ in range(5)]
+        u_stars = [ft.sample_vector_in_domain(HuberL2.conj) for _ in range(5)]
+        ft.test_functional(HuberL2, u_s = u_s, u_stars= u_stars,
+                          test_second_deriv=False, test_second_deriv_conj=False)
 
 def test_quadratic_positive_semidef():
     N=5

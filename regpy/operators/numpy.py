@@ -7,11 +7,12 @@ import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy import util
-from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, DirectSum, Prod
+from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpaceFcts, DirectSum, Prod
 
 from .base import Operator
 
-__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform"]
+__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -291,22 +292,20 @@ class FourierTransform(Operator):
             that `numpy.fft.fftshift` has to be used, which should generally be avoided for
             performance reasons. Defaults to `False`.
     axes : sequence of ints, optional
-        Axes over which to compute the Fourier transform. If not given all axes are used.
-        Defaults to None.
+        Axes over which to compute the Fourier transform. Only domain axes are allowed. 
+        If not given, all domain axes are used. Defaults to None.
     """
     def __init__(self, domain, centered=False, axes=None):
         assert isinstance(domain, UniformGridFcts)
         self.is_complex = domain.is_complex
         if axes is None:
-            axes = tuple(np.arange(domain.ndim))
+            axes = tuple(np.arange(len(domain.shape_domain)))
         frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
-        shape = domain.shape
-        s = shape[-1]
-        if centered or (not domain.is_complex and domain.ndim==1):
-            codomain = UniformGridFcts(*frqs, dtype=complex)
+        if centered or (not domain.is_complex and domain.ndim_domain==1):
+            codomain = UniformGridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain)
         else:
             # In non-centered case, the frequencies are not ascencing, so using GridFcts here is slightly questionable.
-            codomain = GridFcts(*frqs, dtype=complex,use_cell_measure=False)
+            codomain = GridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain,use_cell_measure=False)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered
         self.axes = axes
@@ -358,15 +357,20 @@ class FourierTransform(Operator):
         axes : tuple of ints, optional
             Axes for which to compute the frequencies. All other axes will be returned as-is.
             Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
-            axes will be computed. Default: `None`.
+            domain axes will be computed. Default: `None`.
         Returns
         -------
         array
         """
-        if axes is None:
-            axes = np.arange(domain.ndim)
+        if axes is not None:
+            if not np.all([0 <= ax < len(domain.shape_domain) for ax in axes]):
+                raise ValueError(f"Invalid axis specified: {axes}. Must be within [0, {len(domain.shape_domain)})")
+            if not len(axes) == len(set(axes)):
+                raise ValueError(f"Axes contain duplicates: {axes}")
+        else:
+            axes = np.arange(len(domain.shape_domain))
         frqs = []
-        for i, (s, l) in enumerate(zip(domain.shape, domain.spacing)):
+        for i, (s, l) in enumerate(zip(domain.shape_domain, domain.spacing)):
             if i in axes:
                 # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
                 # to be periodic.
@@ -390,6 +394,108 @@ class FourierTransform(Operator):
     def __repr__(self):
         return util.make_repr(self, self.domain)
 
+import string
+class PtwMatrixVectorMultiplication(Operator):
+    """
+    Pointwise multiplication of a matrix-valued function with a vector-valued function.
+
+    Parameters
+    ----------
+    domain : MeasureSpaceFcts
+        The input grid function.
+    matrixfct : np.ndarray
+        The matrix-valued function to multiply with the vector-valued function.  
+        The first dimensions must match the shape_domain of domain, the last dimensions  
+        must match the shape_codomain of domain, and the middle dimensions define the output shape_codomain.
+    """
+    def __init__(self,domain,matrixfct):
+        if not isinstance(domain, MeasureSpaceFcts):
+            raise TypeError('domain must be of type MeasureSpaceFcts.')
+        domain_shape = domain.shape_domain
+        codomain_shape = domain.shape_codomain
+
+        if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
+            raise TypeError('matrixfct must be a numpy array of the same data type.')
+        if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
+            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}')
+
+        self.matrixfct= matrixfct
+        remaining_codomain_shape = matrixfct.shape[len(domain_shape):-len(codomain_shape)]
+
+        super().__init__(domain=domain,codomain=domain.vector_valued_space(remaining_codomain_shape),linear=True)
+
+        letters_in = ''+string.ascii_letters[:len(codomain_shape)]
+        letters_out = ''+string.ascii_letters[len(codomain_shape):len(codomain_shape)+len(remaining_codomain_shape)]
+        self._einstein_string_mul = '...' + letters_out + letters_in + ',...' + letters_in + '->...'+ letters_out
+        # e.g., '...ba,...a->...b'
+        self._einstein_string_mulT =  '...' + letters_out + letters_in + ',...' + letters_out + '->...'+ letters_in
+        # e.g., '...ba,...b->...a'
+
+    def _eval(self, v):
+        return  np.einsum(self._einstein_string_mul, self.matrixfct, v)
+    
+    def _adjoint(self, w):
+        return np.einsum(self._einstein_string_mulT, np.conj(self.matrixfct), w)
+
+    def __repr__(self):
+        return util.make_repr(self, self.domain, self.codomain)
+
+class PtwScalarMultiplication(Operator):
+    """
+    Pointwise multiplication of a scalar valued function with a vector-valued function.
+
+    Parameters
+    ----------
+    domain : MeasureSpaceFcts
+        The input grid function.
+    scalarfct : np.ndarray
+        The scalar valued function to multiply with the vector-valued function.
+        The number of dimensions must match the number of dimensions of domain.   
+        The first dimensions must match the shape_domain of domain, and the co-dimensions must be 1.
+    """   
+
+    def __init__(self, domain, multiplier):
+        if not isinstance(domain,MeasureSpaceFcts):
+            raise TypeError(f'domain must be of type MeasureSpaceFcts. Got {domain}')
+        if domain.ndim_codomain==0:
+            raise ValueError('domain must be vector valued.')
+        if multiplier in domain and (multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
+            self.multiplier = multiplier
+            print("first option", self.multiplier.shape)
+        elif multiplier in domain.scalar_space():
+            self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
+        else:
+            raise ValueError(f'multiplier must be numpy array of matching size. Got {domain}, {multiplier}')
+        
+        
+        super().__init__(domain, domain, linear=True)
+
+    def _eval(self, f):
+        return f*self.multiplier
+    
+    def _adjoint(self, g):
+        return g*self.multiplier.conj()
+
+class AddSingletonVectorDimension(Operator):
+    """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 
+    Wrapper to np.reshape(...,1).
+
+    Parameters
+    ----------
+    grid: MeasureSpaceFcts    
+    """
+    def __init__(self, domain):
+        if not isinstance(domain, MeasureSpaceFcts):
+            raise TypeError(f'The VectorSpace must be of type MeasureSpaceFcts. Got {type(domain)}')
+        assert domain.shape_codomain == (), f'grid must be scalar-valued. Got shape_codomain = {domain.shape_codomain}'
+        self.shape_domain = domain.shape_domain
+        super().__init__(domain, domain.vector_valued_space((1,)), linear=True)
+
+    def _eval(self,f):
+        return np.expand_dims(f, axis=-1)
+    
+    def _adjoint(self,f):
+        return np.squeeze(f, axis=-1)
 class OuterProduct(Operator):
 
 
