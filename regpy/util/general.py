@@ -13,6 +13,14 @@ class Errors:
         -------------------------------------------------------"""
 
     @staticmethod
+    def generic_message(msg : str):
+        return Errors._compose_message(title = "Generic Error", content = msg)
+    
+    @staticmethod
+    def value_error(msg : str):
+        return Errors._compose_message(title = "Value Error", content = msg)
+
+    @staticmethod
     def not_in_vecsp(vec: any, vecsp: object, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
         return Errors._compose_message(
             "VECTOR NOT IN VECTOR SPACE",
