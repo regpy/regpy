@@ -17,8 +17,44 @@ class Errors:
         return Errors._compose_message(title = "Generic Error", content = msg)
     
     @staticmethod
-    def value_error(msg : str):
-        return Errors._compose_message(title = "Value Error", content = msg)
+    def value_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Value Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Value Error in method {meth}", content = msg)
+        elif obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Value Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Value Error in method {meth} of {obj}", content = msg)
+    
+    @staticmethod
+    def type_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Type Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Type Error in method {meth}", content = msg)
+        elif obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Type Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Type Error in method {meth} of {obj}", content = msg)
+    
+    @staticmethod
+    def runtime_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Runtime Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Runtime Error in method {meth}", content = msg)
+        elif obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Runtime Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Runtime Error in method {meth} of {obj}", content = msg)
+
 
     @staticmethod
     def not_in_vecsp(vec: any, vecsp: object, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
