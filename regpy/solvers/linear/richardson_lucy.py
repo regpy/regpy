@@ -30,10 +30,8 @@ class RichardsonLucy(Solver):
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.data=data
         """The measured data."""
-        if x_init not in self.op.domain:
+        if x_init is not None and x_init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(x_init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if(x_init==None):
-            x_init=
         self.sigma = sigma
         """The shift."""
         self.x=self.op.domain.ones() if x_init is None else x_init

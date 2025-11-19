@@ -63,7 +63,7 @@ class PDHG(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
         if init_codomain_star is not None and init_codomain_star not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(init_codomain_star,self.op.codomain,vec_name="initial guess p",space_name="codomain"))
-        if init_domain not in self.op.domain:
+        if init_domain is not None and init_domain not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init_domain,self.op.domain,vec_name="initial guess f",space_name="domain"))
 
         self.log.setLevel(logging_level)

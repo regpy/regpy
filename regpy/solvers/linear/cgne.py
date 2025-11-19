@@ -27,7 +27,7 @@ class CGNE(RegSolver):
         
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        if x0 not None and x0 not in self.op.domain:
+        if x0 is not None and x0 not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
         
         self.log.setLevel(logging_level)
