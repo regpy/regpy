@@ -1,5 +1,7 @@
 from math import sqrt
 
+from regpy.util import Errors
+
 from ..general import RegSolver
 
 __all__ = ["Landweber"]
@@ -40,6 +42,10 @@ class Landweber(RegSolver):
 
     def __init__(self, setting, data, init, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
         super().__init__(setting)
+        if self.op.linear:
+            raise RuntimeWarning(Errors.generic_message("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear"))
+        if init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.rhs = data
         """The right hand side gets initialized with the measured data."""
         self.x = init
@@ -57,7 +63,8 @@ class Landweber(RegSolver):
         
         self.eta = eta
         """Factor for decreasing the stepsize."""
-        assert 0 < eta < 1
+        if not (0<self.eta<1):
+            raise ValueError(Errors.value_error("The Step size reduction constant must be between 0 and 1!"))
 
         if self.backtracking:
             self._residual = self.y - self.rhs

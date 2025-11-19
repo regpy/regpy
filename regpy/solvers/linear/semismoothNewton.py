@@ -128,7 +128,7 @@ class SemismoothNewton_bilateral(RegSolver):
         else:
             self.psi_plus=psi_plus
         """The upper bound."""
-        if (self.psi_minus >= self.psi_plus).any<():
+        if (self.psi_minus >= self.psi_plus).any():
             raise ValueError(Errors.value_error(f"The upper bound is less or equal the lower bound in SemismoothNewton_bilateral. Given: \n\t psi_minus = {self.psi_minus} \t\n psi_plus = {self.psi_plus}"))
 
         self.log.setLevel(logging_level)

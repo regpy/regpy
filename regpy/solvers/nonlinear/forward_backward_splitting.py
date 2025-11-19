@@ -1,3 +1,5 @@
+from regpy.util import Errors
+
 from ..general import RegSolver, TikhonovRegularizationSetting
 
 __all__ = ["ForwardBackwardSplitting"]
@@ -23,15 +25,19 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
-        assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
-
+        if self.op.linear:
+            raise RuntimeWarning(Errors.generic_message("Using non-linear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear"))
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
-        assert self.x in self.op.domain
         self.y, self.deriv = self.op.linearize(self.x)
         self.tau = 1/self.deriv.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
         """The step size parameter"""
-        assert self.tau>0
+        if tau<=0:
+            raise ValueError(Errors.value_error("tau the step size needs to be positive!")) 
         self.proximal_pars = proximal_pars
         self.log.setLevel(logging_level)
         
