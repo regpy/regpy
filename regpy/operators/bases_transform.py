@@ -2,6 +2,7 @@ import numpy as np
 from scipy.interpolate import BSpline
 
 from regpy.vecsps import NumPyVectorSpace,GridFcts,UniformGridFcts, Prod
+from regpy.util import Errors
 
 from .base import Operator
 
@@ -34,14 +35,20 @@ class BasisTransform(Operator):
 
     """
     def __init__(self,coef_domain,eval_domain,bases,dtype=float):
-        assert isinstance(coef_domain,Prod)
-        assert isinstance(eval_domain,Prod)
-        assert len(bases) == eval_domain.ndim
-        assert coef_domain.ndim == eval_domain.ndim
-        assert len(bases) <= 26
-        assert coef_domain.dtype == dtype and eval_domain.dtype == dtype
-        assert np.all(basis.shape[1]== eval.size for (basis,eval) in zip(bases,eval_domain))
-        assert np.all(basis.shape[1]== coef.size for (basis,coef) in zip(bases,coef_domain))
+        if not isinstance(coef_domain,Prod):
+            raise TypeError(Errors.not_instance(coef_domain,Prod))
+        if not isinstance(eval_domain,Prod):
+            raise TypeError(Errors.not_instance(eval_domain,Prod))
+        if len(bases) != eval_domain.ndim or coef_domain.ndim != eval_domain.ndim:
+            raise ValueError(Errors.value_error(f"The number of bases vectors need to match the domain vector dimension and codomain vector dimension. \n len(bases) = { len(bases)}\n eval_domain.ndim = {eval_domain.ndim} \n coef_domain.ndim = {coef_domain.ndim}."))
+        if len(bases) > 26:
+            raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
+        if coef_domain.dtype != dtype or eval_domain.dtype != dtype:
+            raise ValueError(Errors.value_error("The dtypes of the different domains have to be identical with the given dtype."))
+        if np.any(basis.shape[0] != eval.size for (basis,eval) in zip(bases,eval_domain)):
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"))
+        if np.any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 1 the size of the coef domain!"))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
         r""" `dtype` of the vector spaces."""
@@ -92,15 +99,17 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
     BasisTransform 
         A bases transform from coefficients of Chebychev polynomial to their evaluation.
     """
-    assert isinstance(eval_domain,Prod)
-    if isinstance(coef_nr, tuple):
-        assert len(coef_nr) == eval_domain.ndim 
+    if not isinstance(eval_domain,Prod):
+        raise TypeError(Errors.not_instance(eval_domain,Prod))
+    if isinstance(coef_nr, tuple) and len(coef_nr) != eval_domain.ndim: 
+        raise ValueError(Errors.value_error("When given coef_nr as a tuple it has to have the same number of entries as the domain has dimensions."))
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
     coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
-        assert isinstance(D_i,GridFcts)
+        if not isinstance(D_i,GridFcts):
+            raise TypeError(Errors.not_instance(D_i,GridFcts,"All domains in the product for a chebyshev basis need to be GridFcts"))
         x = D_i.axes[0]
         B_i = np.zeros((len(x),N_i))
         Id = np.eye(N_i)
@@ -129,15 +138,17 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
         A bases transform from coefficients of Legendre polynomial to their evaluation.
     """
 
-    assert isinstance(eval_domain,Prod)
-    if isinstance(coef_nr, tuple):
-        assert len(coef_nr) == eval_domain.ndim 
+    if not isinstance(eval_domain,Prod):
+        raise TypeError(Errors.not_instance(eval_domain,Prod))
+    if isinstance(coef_nr, tuple) and len(coef_nr) != eval_domain.ndim: 
+        raise ValueError(Errors.value_error("When given coef_nr as a tuple it has to have the same number of entries as the domain has dimensions."))
     elif isinstance(coef_nr,int):
         coef_nr = (coef_nr,)*eval_domain.ndim
     coef_domain = Prod(*[NumPyVectorSpace(nr) for nr in coef_nr])
     bases = []
     for D_i, N_i in zip(eval_domain,coef_nr):
-        assert isinstance(D_i,GridFcts)
+        if not isinstance(D_i,GridFcts):
+            raise TypeError(Errors.not_instance(D_i,GridFcts,"All domains in the product for a legendre basis need to be GridFcts"))
         x = D_i.axes[0]
         B_i = np.zeros((len(x),N_i))
         Id = np.eye(N_i)
@@ -178,8 +189,14 @@ def bspline_basis(k,t,dim=1,add_points=10):
         A base transform from coefficients of Splines to evaluation on a grid constructed from a refined
         grid of the given evaluation knots. 
     """
-    assert t.ndim == 1 and isinstance(k,int) and isinstance(dim,int) and isinstance(add_points,int)
-    assert t.size > k+1
+    if not isinstance(t, np.ndarray):
+        raise TypeError(Errors.type_error("t for a B-Spline basis need to be an ndarray."))
+    if t.ndim != 1:
+        raise ValueError(Errors.value_error("t for a B-Spline basis needs to be one dimensional"))
+    if not isinstance(k,int) or not isinstance(dim,int) or not isinstance(add_points,int):
+        raise TypeError(Errors.type_error("k, dim, and add_points need to be integers!"))
+    if t.size < k+1:
+        raise ValueError(Errors.value_error("For a B-SPline basis we need t.size >= k+1."))
     n = t.size -k-1
     coef_domain = Prod(*[UniformGridFcts(np.arange(n)) for i in range(dim)])
     eval_domain = Prod(*[UniformGridFcts(np.linspace(t[0],t[-1],t.size*add_points)) for i in range(dim)])

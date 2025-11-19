@@ -6,7 +6,7 @@ import logging
 from warnings import warn
 from weakref import WeakValueDictionary
 
-from regpy.util import ClassLogger
+from regpy.util import ClassLogger, Errors
 from regpy.vecsps import VectorSpaceBase
 from regpy.vecsps import DirectSum as DirectSumVS
 
@@ -304,16 +304,16 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
 
     def __init__(self, ops,  domain=None, codomain=None):
         if not isinstance(ops,(list,tuple)) or len(ops) == 0:
-            raise ValueError('At least one operator must be given.')
+            raise ValueError(Errors.value_error('At least one operator must be given in the ParallelVectorOperator'))
         if any([not isinstance(op, Operator) for op in ops]):
-            raise TypeError('All arguments must be instances of regpy.operators.Operator. The given arguments are of types: {}'.format([type(op) for op in ops]))
+            raise TypeError(Errors.type_error('All arguments must be instances of regpy.operators.Operator in the ParallelVectorOperator. The given arguments are of types: {}'.format([type(op) for op in ops])))
 
         if domain is None:
             self.domain = ops[0].domain
         else:
             self.domain = domain
         if any(op.domain != self.domain for op in ops):
-            raise ValueError('All operators must have the same domain.')
+            raise ValueError(Errors.value_error('All operators must have the same domain in a ParallelVectorOfOperators.'))
 
         if codomain is None:
             codomain = DirectSumVS
@@ -322,9 +322,9 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
         else:
-            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
+            raise TypeError(Errors.type_error('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain),self))
         if any(op.codomain != c for op, c in zip(ops, codomain)):
-            raise ValueError('All operators must have the same codomain as the corresponding summand of the codomain.')
+            raise ValueError(Errors.value_error('All operators must have the same codomain as the corresponding summand of the codomain.',self))
 
         conns = []
         it = 0
@@ -380,11 +380,14 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     """
 
     def __init__(self, ops,  domain,distribution_mat, codomain=None):
-        assert all([isinstance(op, Operator) for op in ops])
-        assert ops
+        if not isinstance(ops,(list,tuple)) or len(ops) == 0:
+            raise ValueError(Errors.value_error('At least one operator must be given in the DistributedVectorOfOperators'))
+        if any([not isinstance(op, Operator) for op in ops]):
+            raise TypeError(Errors.type_error('All arguments must be instances of regpy.operators.Operator in the DistributedVectorOfOperators. The given arguments are of types: {}'.format([type(op) for op in ops])))
 
-        self.domain = domain
-        assert isinstance(self.domain,DirectSumVS)
+        if not isinstance(domain,DirectSumVS):
+            raise TypeError(Errors.not_instance(domain,DirectSumVS, add_info="DistributedVectorOfOperators: Domain needs to be a DirectSum vector space!"))
+
         if codomain is None:
             codomain = DirectSumVS
         if isinstance(codomain, VectorSpaceBase):
@@ -392,16 +395,19 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         elif callable(codomain):
             codomain = codomain(*(op.codomain for op in ops))
         else:
-            raise TypeError('codomain={} is neither a VectorSpaceBase nor callable'.format(codomain))
-        assert all(op.codomain == c for op, c in zip(ops, codomain))
+            raise TypeError(Errors.type_error('DistributedVectorOfOperators: codomain={} is neither a VectorSpaceBase nor callable'.format(codomain)))
+        if any(op.codomain != c for op, c in zip(ops, codomain)):
+            raise ValueError(Errors.value_error(f'DistributedVectorOfOperators: The summands of the codomain need to match with the codomain of the operators!'))
         self.distribution_mat=distribution_mat
         self.distribution_lists=[[j for j in range(distribution_mat.shape[1]) if distribution_mat[i,j]] for i in range(distribution_mat.shape[0])]
         for op,indices in zip(ops,self.distribution_lists):
-            if len(indices) == 1:
-                assert op.domain == self.domain.summands[indices[0]]
-            else:
-                assert isinstance(op.domain,DirectSumVS)
-                assert all((d == self.domain.summands[indices[j]] for j,d in enumerate(op.domain.summands)))
+            if len(indices) == 1 and op.domain != domain[indices[0]]:
+                raise ValueError(Errors.value_error(f"The domain of index {indices[0]} that should be used by the operator {op} does not match! \n\t domain = {domain[indices[0]]} \n\t op.domain = {op.domain}."))
+            elif not isinstance(op.domain,DirectSumVS) or any((d != domain[indices[j]] for j,d in enumerate(op.domain.summands))):
+                raise ValueError(Errors.value_error(f"""Either the domain of the operator is not a DirectSum but should get multiple inputs as defined by indices = {indices} or 
+                                                    one of the domains referred to by the indices does not match the operators domain summands! 
+                                                        domain.summands[indices] = {tuple(domain[ind] for ind in indices)} 
+                                                        op.domain = {op.domain.summands}."""))
         conns = []
         it = 0
         for op in ops:
@@ -411,7 +417,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             G.start()
             it += 1
         self.ops=ops
-        Operator.__init__(self,domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
+        Operator.__init__(self,domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
         ParallelInterface.__init__(self,conns)
     
     def _distribute(self,x):
