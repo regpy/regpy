@@ -1,3 +1,5 @@
+from regpy.util import Errors
+
 from ..general import RegSolver
 
 __all__ = ["CGNE"]
@@ -19,9 +21,15 @@ class CGNE(RegSolver):
         Controls amount of output
     """
     def __init__(self, setting, data, x0 =None, logging_level = "INFO"):
-        assert setting.op.linear
-
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="CGNE requires the operator to be linear!"))
+        
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
+        if x0 not None and x0 not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
+        
         self.log.setLevel(logging_level)
         self.x0 = x0
         r"""The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""

@@ -1,4 +1,5 @@
 from regpy.operators import Operator
+from regpy.util import Errors
 
 from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
 from .tikhonov import TikhonovCG
@@ -56,10 +57,13 @@ class ADMM(RegSolver):
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
-        assert isinstance(setting,TikhonovRegularizationSetting)
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ADMM requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
-        assert self.op.linear
-        assert regularizedInverse is None or (isinstance(regularizedInverse,Operator))
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="ADMM requires the operator to be linear!"))
+        if regularizedInverse is not None and (isinstance(regularizedInverse,Operator)):
+            raise TypeError(Errors.not_instance(regularizedInverse,Operator,add_info="ADMM requires the the regularized inverse to be either not given and None or a proper Operator!"))
         
         self.log.setLevel(logging_level)
 
@@ -160,10 +164,13 @@ class AMA(RegSolver):
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
-        assert isinstance(setting,TikhonovRegularizationSetting)
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="AMA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
-        assert self.op.linear
-        assert regularizedInverse is None or (isinstance(regularizedInverse,Operator))
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="AMA requires the operator to be linear!"))
+        if regularizedInverse is not None and (isinstance(regularizedInverse,Operator)):
+            raise TypeError(Errors.not_instance(regularizedInverse,Operator,add_info="AMA requires the the regularized inverse to be either not given and None or a proper Operator!"))
         
         self.log.setLevel(logging_level)
 
