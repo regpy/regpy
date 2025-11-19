@@ -12,7 +12,7 @@ from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpace
 from .base import Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
-           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","OuterProduct"]
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","OuterProduct","EinSum"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -516,7 +516,7 @@ class OuterProduct(Operator):
 
     def _calc_adjoint_summation_strings(self):
         li=[]
-        characters=tuple(chr(k) for k in range(65,65+self.codomain.ndim))
+        characters=tuple(chr(k) for k in range(ord('A'),ord('A')+self.codomain.ndim))
         all_characters="".join(characters)
         for i,_ in enumerate(characters):
             without_i=",".join(characters[:i]+characters[i+1:])
@@ -540,5 +540,106 @@ class OuterProduct(Operator):
         for j,s in enumerate(self._adjoint_summation_strings):
             x_j=np.einsum(s,y,*self._p_conj_flat[:j],*self._p_conj_flat[j+1:],optimize=True)
             xs.append(x_j.reshape(self.domain[j].shape))
-            # xs.append(self.domain[j].fromflat(x_j))
+        return self.domain.join(*xs)
+
+class EinSum(Operator):
+
+
+    def __init__(self, subscripts,*domains,tensors=(),codomain=None):
+        EinSum._check_parameter_validity(subscripts,*domains,tensors=tensors)
+        self.indoms,self.inconsts,self.out=EinSum._get_standard_subscript_info(subscripts,len(domains))
+        self.subscripts=subscripts
+        self.tensors=tensors
+        self._adjoint_subscripts=self._calc_adjoint_subscripts()
+        if(codomain is None):
+            codomain=self._calc_codomain(*domains)
+        if(len(domains)==1):
+            super().__init__(domains[0], codomain, linear=True)
+        else:
+            super().__init__(DirectSum(*domains), codomain, linear=False)
+
+    @staticmethod
+    def _get_standard_subscript_info(subscipts,n_domains):
+        in_out_split=subscipts.split("->")
+        ins=in_out_split[0]
+        if(len(in_out_split)==2):
+            out=in_out_split[1]
+        else:
+            fullset=set()
+            doubleset=set()
+            for s in ins:
+                if(s!=","):
+                    if(s in fullset):
+                        doubleset.add(s)
+                    else:
+                        fullset.add(s)
+            out="".join(sorted(fullset.difference(doubleset)))
+        fullins=ins.split(",")
+        return fullins[:n_domains],fullins[n_domains:],out
+    
+    @staticmethod
+    def _check_parameter_validity(subscripts,*domains,tensors):
+        if("." in subscripts):
+            raise ValueError(f"EinSum operator currently does not support ellipses, so input:\'{subscripts}\' is invalid.")
+        #TODO add further tests
+
+    def _calc_codomain(self,*domains):
+        axesinfo=[]
+        for s in self.out:
+            index=-1
+            j=0
+            while index==-1 and j<len(self.indoms):
+                index=self.indoms[j].find(s)
+                j+=1
+            if(index!=-1):
+                axesinfo.append(domains[j-1].axes[index])
+            else:
+                j=0
+                while index==-1 and j<len(self.inconsts):
+                    index=self.inconsts[j].find(s)
+                    j+=1
+                if(index!=-1):
+                    axesinfo.append(self.tensors[j-1].shape[index])
+                else:
+                    raise ValueError(f"Output with index \'{s}\' could not be matched to input.")
+        return GridFcts(*axesinfo,dtype=np.result_type(*(domain.dtype for domain in domains),*self.tensors))
+    
+    def _calc_adjoint_subscripts(self):
+        adj_subscripts=[]
+        if(len(self.inconsts)!=0):
+            constant_part=",".join(self.inconsts)+","
+        else:
+            constant_part=""
+        print(constant_part)
+        if(len(self.indoms)==1):
+            return [f"{constant_part}{self.out}->{self.indoms[0]}"]
+        for j,input in enumerate(self.indoms):
+            indom_scr=",".join(self.indoms[:j]+self.indoms[j+1:])
+            adj_subscripts.append(f"{indom_scr},{constant_part}{self.out}->{input}")
+        return adj_subscripts
+    
+    def _eval(self, x, differentiate=False):
+        self._p=(x,) if self.linear else self.domain.split(x)
+        if(differentiate):
+            self._p_conj=tuple(np.conj(p_j) for p_j in self._p)
+        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=True)
+
+    def _derivative(self, x):
+        y=self.codomain.zeros()
+        for j,x_j in enumerate(x):
+            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=True)
+        return y
+    
+    def _adjoint(self, y):
+        if(self.linear):
+            x=np.einsum(self._adjoint_subscripts[0],*self.tensors,y,optimize=True)
+            if(np.issubdtype(self.domain.dtype, np.floating)):
+                x=np.real(x)
+            return x
+        xs=[]
+        for j,s in enumerate(self._adjoint_subscripts):
+            x_j=np.einsum(s,*self._p_conj[:j],*self._p_conj[j+1:],*self.tensors,y,optimize=True)
+            if(np.issubdtype(self.domain[j].dtype, np.floating)):
+                x_j=np.real(x_j)
+            xs.append(x_j)
         return self.domain.join(*xs)
