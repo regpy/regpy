@@ -8,12 +8,11 @@ import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
 from regpy.util import make_repr,memoized_property,Errors
-from regpy.vecsps import NumPyVectorSpace,UniformGridFcts,GridFcts, MeasureSpaceFcts, DirectSum, Prod
-
+from regpy.vecsps import *
 from .base import Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
-           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","OuterProduct"]
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -511,7 +510,102 @@ class AddSingletonVectorDimension(Operator):
     
     def _adjoint(self,f):
         return np.squeeze(f, axis=-1)
+
+class ForwardFDGradient(Operator):
+    """ Forward finite difference gradient on  UniformGridFcts. The codomain are is a vector-valued UniformGridFcts space.
+    Parameters:
+        domain: UniformGridFcts
+            The grid on which the gradient (with respect to the given coordinates) is defined.
+        boundary_condition: Either 'Neum' or 'Diri' or 'per' (default: 'Neum')
+            Boundary condition on the 'left' boundaries. The strings stand for Neumann, Dirichlet, and periodic, respectively
+    """
+    def __init__(self, domain,boundary_condition = 'Neum'):
+        if not isinstance(domain,UniformGridFcts):
+            raise TypeError(f'ForwardFDGradient only implemented for UniformGridFcts')
+        if domain.ndim_codomain!=0:
+            raise ValueError(f'domain must be scalar valued.')
+        self.boundary_condition = boundary_condition
+        super().__init__(domain, domain.vector_valued_space(domain.ndim), linear=True)
+
+    def _eval(self, v):
+        out = self.codomain.zeros()
+        for (ax,h) in zip(range(self.domain.ndim),self.domain.spacing):
+            # Interior: forward differences: out[i1,...in,ax] = (v[... i_ax+1 ...] - v[...,i_ax ...])/h_ax
+            slc_mid = [slice(None)] * self.domain.ndim
+            slc_mid[ax] = slice(0, -1)
+            slc_p1 = slc_mid.copy(); slc_p1[ax] = slice(1, None)
+            out[tuple(slc_mid)+(ax,)] = (v[tuple(slc_p1)] - v[tuple(slc_mid)])/h
+
+            # right boundary Dirichlet: out[... N_ax ...] = -v[....N_ax ...]/h_ax
+            if self.boundary_condition in ['Diri','per']:
+                slN = [slice(None)] * self.domain.ndim
+                slN[ax] = -1
+                out[tuple(slN)+(ax,)] = - v[tuple(slN)]/h
+                if self.boundary_condition == 'per':
+                    slN_p1 = slN.copy(); slN_p1[ax] = 0
+                    out[tuple(slN)+(ax,)] += v[tuple(slN_p1)]/h
+            # For Neumann boundary conditions the last row of the matrix (in 1D) is identically 0. 
+
+        return out
+
+    def _adjoint(self, v):
+        out = self.domain.zeros()
+        for ax,h in zip(range(self.domain.ndim),self.domain.spacing):
+            # Interior: backward difference: (v[i_ax-1]-v[i_ax])/h_ax
+            slc_mid = [slice(None)] * self.domain.ndim
+            slc_mid[ax] = slice(1, -1)
+            slc_m1 = slc_mid.copy(); slc_m1[ax] = slice(None, -2)
+            out[tuple(slc_mid)] += (v[tuple(slc_m1)+(ax,)] - v[tuple(slc_mid)+(ax,)])/h
+ 
+            # left boundary
+            sl0 = [slice(None)] * self.domain.ndim
+            sl0[ax] = 0
+            out[tuple(sl0)] -=  v[tuple(sl0)+(ax,)] /h
+            if self.boundary_condition == 'per':
+                sl0_m1 = sl0.copy(); sl0_m1[ax] = -1
+                out[tuple(sl0)] += v[tuple(sl0_m1)+(ax,)] /h
+
+            slN =  [slice(None)] * self.domain.ndim
+            slN[ax] = -1
+            slN_m1 = slN.copy(); slN_m1[ax] = -2
+            out[tuple(slN)] += v[tuple(slN_m1)+(ax,)]/h
+            if self.boundary_condition in ['Diri','per']:
+                out[tuple(slN)] -= v[tuple(slN)+(ax,)]/h
+
+        return out
+
+    def matrices(self):
+        """ Returns a list of matrices of length domain.ndim containing matrix representations of the partial derivatives
+        """
+        N = np.prod(self.domain.shape)
+        ndim = self.domain.ndim
+        shape = self.domain.shape
+        out = [np.zeros((N,N)) for j in range(ndim)]
+        for (ax,h) in zip(range(ndim),self.domain.spacing):
+            for idx in np.ndindex(shape):
+                i_flat = np.ravel_multi_index(idx,shape)
+                if idx[ax] < shape[ax]-1:
+                    out[ax][i_flat,i_flat] = -1/h
+                    neigh = list(idx)
+                    neigh[ax]+=1
+                    neigh_flat = np.ravel_multi_index(tuple(neigh),shape)
+                    out[ax][i_flat,neigh_flat] = 1/h
+                elif self.boundary_condition in ['Diri','per']:
+                    out[ax][i_flat,i_flat] = -1/h
+                    if self.boundary_condition == 'per':
+                        neigh = list(idx)
+                        neigh[ax] = 0
+                        neigh_flat = np.ravel_multi_index(tuple(neigh),shape)
+                        out[ax][i_flat,neigh_flat] = 1/h 
+        return out
     
+    def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
+        """ A good upper bound on the  norm with respect to the standard L2 inner product can be computed analytically.         
+        """
+        if (h_domain is None or h_domain==L2) and (h_codomain is None or h_codomain==L2) and method is None:
+            return 2*np.linalg.norm(1./self.domain.spacing)
+        else: 
+            return super().norm(h_domain=h_domain,h_codomain=h_codomain,method=method,without_codomain_vectors=without_codomain_vectors)
 
 class OuterProduct(Operator):
     r"""The operator \(x_1,x_2,\dots,x_n \mapsto x_1\otimes x_2\otimes\dots\otimes x_n\).
