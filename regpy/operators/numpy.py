@@ -1,7 +1,7 @@
 import numpy as np
 
 from scipy.linalg import cho_factor, cho_solve
-from scipy.sparse import csc_matrix, csc_array
+from scipy.sparse import csc_matrix, csc_array, lil_matrix
 import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
@@ -565,7 +565,7 @@ class ForwardFDGradient(Operator):
         N = np.prod(self.domain.shape)
         ndim = self.domain.ndim
         shape = self.domain.shape
-        out = [np.zeros((N,N)) for j in range(ndim)]
+        out = [lil_matrix((N,N)) for j in range(ndim)]
         for (ax,h) in zip(range(ndim),self.domain.spacing):
             for idx in np.ndindex(shape):
                 i_flat = np.ravel_multi_index(idx,shape)
@@ -582,11 +582,12 @@ class ForwardFDGradient(Operator):
                         neigh[ax] = 0
                         neigh_flat = np.ravel_multi_index(tuple(neigh),shape)
                         out[ax][i_flat,neigh_flat] = 1/h 
-        return out
+        return [out[j].tocsc() for j in range(ndim)]
     
     def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
         """ A good upper bound on the  norm with respect to the standard L2 inner product can be computed analytically.         
         """
+        from regpy.hilbert import L2
         if (h_domain is None or h_domain==L2) and (h_codomain is None or h_codomain==L2) and method is None:
             return 2*np.linalg.norm(1./self.domain.spacing)
         else: 
