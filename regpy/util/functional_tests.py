@@ -2,7 +2,8 @@ from random import uniform
 
 import numpy as np
 
-from regpy.functionals import IntegralFunctionalBase
+from regpy.util import Errors
+from regpy.functionals import IntegralFunctionalBase, Functional
 from regpy.functionals.base import Conj, NotTwiceDifferentiableError
 from regpy.functionals.numpy import VectorIntegralFunctional
 
@@ -23,10 +24,12 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     An element u of func.domain
     If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
-    assert func.separable
+    if not isinstance(func,IntegralFunctionalBase):
+        raise TypeError(Errors.not_instance(func,IntegralFunctionalBase,add_info="To sample in the domain the functional needs to be a IntegralFunctionalBase"))
+    if not func.separable:
+        raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     dom_l = np.max(func.dom_l)
     dom_u = np.min(func.dom_u)
-    assert dom_l<=dom_u
     numel = np.prod(func.domain.shape)
     if dom_l>-np.inf:
         if dom_u<np.inf:
@@ -83,7 +86,7 @@ def sample_vector_in_domain(func, dist = 1e-10):
 
     """
     if not isinstance(func,VectorIntegralFunctional) and (isinstance(func,Conj) and not isinstance(func.func,VectorIntegralFunctional)):
-        raise ValueError("func has to be an instance of VectorIntegralFunctional")
+        raise ValueError(Errors.value_error("func has to be an instance of VectorIntegralFunctional"))
     if isinstance(func,Conj):
         v_axes = func.func._vaxes
         norm = func.func.vector_norm
@@ -128,11 +131,13 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     tolerance : float, optional
         The maximum allowed error in norm. Defaults to 1e-10.
 
-    Raises
-    ------
-    AssertionError
-        If the test fails.
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
     """
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if(u is None):
         if func.separable:
             u=sample_essential_domain(func)
@@ -142,20 +147,47 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     gram = func.h_domain.gram
     proxstar = func.conj.proximal(gram(u/tau),1/tau)
     err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
-    assert err<tolerance,f'err={err}, tolerance={tolerance}'
+    if err < tolerance:
+        func.log.info(f"Passed Moreaus identy with: err={err}, tolerance={tolerance}")
+        return True
+    else:
+        func.log.warning(f"Failed Moreaus identy with: err={err}, tolerance={tolerance}")
+        return False
 
 def test_prox_optimality_cond(func,tau=1,u=None):
     r"""Numerically test validity of the optimality condition characterizing the prox operator: 
 
     .. math::
         (u-prox_{\tau F}(u))/tau \in  \partial F(prox_{\tau F}(u))
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        The functional.
+    tau : float, optional
+        Positive number tau in prox. Defaults to 1.
+    u : array-like
+        Element in domain of func, if None it is chosen at random. Defaults to None.
+    
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
     """
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if u is None:
         numel = np.prod(func.domain.shape)
         u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
     prox = func.proximal(u,tau)
     vec = func.h_domain.gram((u-prox)/tau)
-    assert func.is_subgradient(vec,prox)
+    if func.is_subgradient(vec,prox):
+        func.log.info(f"Passed optimality condition characterizing the prox operator")
+        return True
+    else:
+        func.log.warning(f"Failed optimality condition characterizing the prox operator")
+        return False
+
 
 
 def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
@@ -179,12 +211,13 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
     tol_smooth: float, optional
         The maximum violation of the differentiability condition.
 
-    Raises
-    ------
-    AssertionError
-        If the test fails.
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
     """
-    
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing subgradient is only supported to Functionals"))
     if (not func.separable):
         if u is None:
             u=func.domain.randn()
@@ -197,8 +230,16 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
     diffq = (func(u)-func(u+h_length*h))/h_length
     deriv = (func.domain.vdot(grad_u,h)).real
     err= diffq+deriv
-    assert err<=tol_convex*np.linalg.norm(grad_u),f'err={err}, tol_convex={tol_convex},norm(grad_u)={np.linalg.norm(grad_u)}'
-    assert np.abs(err)<=tol_smooth*np.linalg.norm(grad_u),f'err={err}, tol_smooth={tol_smooth}'
+    if err<=tol_convex*func.domain.norm(grad_u):
+        if np.abs(err)<=tol_smooth*func.domain.norm(grad_u):
+            func.log.info(f"Passed subgradient test! Both the convexity and differentiability condition!")
+            return True
+        else:
+            func.log.warning(f"Failed subgradient test! The differentiability condition is violated: |err|={np.abs(err)}, tol_smooth={tol_smooth}, |grad u| = {func.domain.norm(grad_u)}")
+            return False
+    else:
+        func.log.warning(f"Failed subgradient test! The convexity condition is violated: err={err}, tol_convex={tol_convex}, |grad u| = {func.domain.norm(grad_u)}")
+        return False
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
 
@@ -214,8 +255,30 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
             h[u+eps*h>=func.dom_u] *= -1.
             h[u+eps*h<=func.dom_l] *= -1.
             h[u+eps*h>=func.dom_u] = 0.
-            h[u+eps*h<=func.dom_l] = 0.        
-    """   
+            h[u+eps*h<=func.dom_l] = 0.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        The functional.
+    u : any, optional
+        Element in essential domain of func. If None it is chosen at random. Defaults to None.
+    h : any, optional
+        Perturbation to u. Defaults to None.
+    eps : float, optional
+        Perturbation scalar. Defaults to 1e-3.
+    tolerance: float, optional
+        The maximum relative violation of the condition.
+    abs_tol: float, optional
+        the maximum absolute violation of the condition.
+    
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
+    """
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing second derivative is only supported to Functionals"))
     if func.separable:
         u,h = sample_essential_domain(func,eps_perturbation=eps)
     else:
@@ -224,25 +287,52 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
         h = - func.subgradient(u)
     func_pp = func.hessian(u)(h)
     diffq = (func.subgradient(u+eps*h)-func.subgradient(u))/eps
-    err = np.linalg.norm(func_pp-diffq)/(1e-14+np.linalg.norm(func_pp))
-    #print('err second der: ',err,'rel.err',(func_pp-diffq)/func_pp) #'diffq',diffq,'u',u,'h',h)
-    assert np.linalg.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * np.linalg.norm(func_pp)]), f"err: {err}, tol: {tolerance}, norm second deriv. {np.linalg.norm(func_pp)}"
+    err = func.domain.norm(func_pp-diffq)/(1e-14+func.domain.norm(func_pp))
+
+    if func.domain.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * func.domain.norm(func_pp)]):
+        func.log.info(f"Passed second derivative test!")
+        return True
+    else:
+        func.log.warning(f"Failed the second derivative test! err: {err}, tol: {tolerance}, norm second deriv. {func.domain.norm(func_pp)}")
+        return False
 
 def test_Lipschitz_convexity(func,u=None,safety=1.5):
-    assert func.separable
+    """Tests the Lipschitz convexity of the Functional!
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        The functional.
+    u : any, optional
+        Element in essential domain of func. If None it is chosen at random. Defaults to None.
+    safety : float, optional
+    
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
+    """
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
+    if not func.separable:
+        raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if u is None :
         u=sample_essential_domain(func)
     fpp = func.h_domain.gram_inv(func.hessian(u)(func.domain.ones()))
-    #print('Lipschitz:', func.Lipschitz,np.max(fpp))
-    #print('convexity:', func.convexity_param,np.min(fpp))
-    assert func.Lipschitz>=(1-1e-10)*np.max(fpp), f"Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}" 
-    if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf:
-        assert func.Lipschitz==np.inf, "Lipschitz constant finite, but essential domain is constrained."
-    #if func.Lipschitz<np.inf:
-    #    assert func.Lipschitz<=safety*np.max(fpp), f"Lipschitz constant {func.Lipschitz/np.max(fpp)} times larger than estimate based on second derivative. Safety ={safety}."
-    assert func.convexity_param<=np.min(fpp)+1e-12, f"Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}"
-    if func.convexity_param>0:
-        assert safety*func.convexity_param>=np.min(fpp)-1e-12, f"convexity parameter {np.min(fpp)/func.convexity_param} times smaller than estimate based on second derivative. Safety={safety}."
+    if func.Lipschitz<(1-1e-10)*np.max(fpp):
+        func.log.warning(f"Failed Lipschitz test! Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}")
+        return False
+    if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf and func.Lipschitz!=np.inf:
+        func.log.warning("Failed Lipschitz test! Lipschitz constant finite, but essential domain is constrained.")
+        return False
+    if func.convexity_param>np.min(fpp)+1e-12:
+        func.log.warning("Failed Lipschitz test! Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}")
+        return False
+    if func.convexity_param>0 and safety*func.convexity_param<np.min(fpp)-1e-12:
+        func.log.warning("Failed Lipschitz test! Convexity parameter {np.min(fpp)/func.convexity_param} times smaller than estimate based on second derivative. Safety={safety}.")
+        return False
+    func.log.info("Passed Lipschitz test!")
+    return True
 
 # def test_subgradient_and_conj(func,u=None,eps=1e-10):
 #     if(u is None):
@@ -272,11 +362,13 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     tolerance : float, optional
         The maximum allowed error. Defaults to 1e-10.
 
-    Raises
-    ------
-    AssertionError
-        If the test fails.
+    Returns
+    -------
+    boolean
+        False, if the test fails and True otherwise.
     """
+    if not isinstance(func,Functional):
+        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
     if(u is None):
         if func.separable:
             u=sample_essential_domain(func)
@@ -287,7 +379,12 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     t2 = func(u)
     t3 = func.conj(grad_u)
     err=abs(t1-t2-t3)/np.max(np.abs([1e-14,t1,t2,t3]))
-    assert err<tolerance,f'err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}'
+    if err<tolerance:
+        func.log.info("Passed Young inequality test!")
+        return True
+    else:
+        func.log.warning("Failed Young inequality test! err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}")
+        return False
 
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
@@ -336,28 +433,33 @@ def test_functional(func,u_s=None,sample_N=5,
     for u in u_s:
         try:
             tau=uniform(tolerance,4)
-            test_moreaus_identity(func,u,tau=tau,tolerance=tolerance)
+            if not test_moreaus_identity(func,u,tau=tau,tolerance=tolerance):
+                raise AssertionError(f"{func} failed Moreaus identity!")
         except(NotImplementedError):
             func.log.info('Moreaus identity could not be checked because of missing implementation')
         try:
-            test_subgradient(func,u)
+            if not test_subgradient(func,u):
+                raise AssertionError(f"{func} failed Subgradient Test!")
         except(NotImplementedError):
             func.log.info('Subgradient could not be checked because of missing implementation')
         try:
-            test_young_equality(func,u,tolerance=tolerance)
+            if not test_young_equality(func,u,tolerance=tolerance):
+                raise AssertionError(f"{func} failed Young equality!")
         except(NotImplementedError):
             func.log.info('Young equality could not be checked because of missing implementation')
         if test_second_deriv:
             try:
-                test_second_derivative(func,u)
+                if not test_second_derivative(func,u):
+                    raise AssertionError(f"{func} failed second derivative test!")
             except (NotTwiceDifferentiableError, NotImplementedError):
                 func.log.info('Second derivative could not be tested as functiional is not twice differentiable.')
             if func.separable:
                 try:
-                    test_Lipschitz_convexity(func)
+                    if not test_Lipschitz_convexity(func):
+                        raise AssertionError(f"{func} failed Lipschitz convexity test!")
                 except (NotImplementedError):
                     func.log.info('Lipschitz constant and convexity parameter could not be checked because of missing implementation.')
-        func.log.info(f'Tests passed!')
+        func.log.info(f'All tests passed!')
     if(test_conj):
         test_functional(func.conj,u_s=u_stars,sample_N=sample_conj_N,
                         test_conj=False,test_second_deriv=test_second_deriv_conj,tolerance=tolerance)
