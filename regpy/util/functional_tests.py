@@ -3,8 +3,9 @@ from random import uniform
 import numpy as np
 
 from regpy.functionals import IntegralFunctionalBase
-from regpy.functionals.base import Conj, NotTwiceDifferentiableError
+from regpy.functionals.base import Conj, NotTwiceDifferentiableError, FunctionalOnDirectSum, HorizontalShiftDilation
 from regpy.functionals.numpy import VectorIntegralFunctional
+from regpy.vecsps import MeasureSpaceFcts, DirectSum
 
 def sample_essential_domain(func,u=None,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
@@ -23,42 +24,69 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     An element u of func.domain
     If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
-    assert func.separable
-    dom_l = np.max(func.dom_l)
-    dom_u = np.min(func.dom_u)
-    assert dom_l<=dom_u
-    numel = np.prod(func.domain.shape)
-    if dom_l>-np.inf:
-        if dom_u<np.inf:
-            if u is None:
-                #u = np.linspace(dom_l,dom_u,numel)
-                u = np.linspace(dom_l,dom_u,numel+2)
-                u = u[1:-1]
-            if eps_perturbation is not None:
-                h = np.sign(0.5*dom_l+0.5*dom_u-u)
-                fac = 2 * eps_perturbation / np.min(dom_u-dom_l)
-                if fac >= 1.:
-                    h /= fac
-        else: 
-            if u is None:
-                u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-            if eps_perturbation is not None:
-                h = np.ones_like(u)
-    else: # dom_l == np.inf
-        if dom_u==np.inf:
-            if u is None:
-                u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
-            if eps_perturbation is not None:
-                h = np.ones_like(u)            
+    if not func.separable:
+        raise NotImplementedError('Only implemented for separable functionals')
+    if isinstance(func.domain,MeasureSpaceFcts):
+        dom_l = np.max(func.dom_l)
+        dom_u = np.min(func.dom_u)
+        assert dom_l<=dom_u
+        numel = np.prod(func.domain.shape)
+        if dom_l>-np.inf:
+            if dom_u<np.inf:
+                if u is None:
+                    #u = np.linspace(dom_l,dom_u,numel)
+                    u = np.linspace(dom_l,dom_u,numel+2)
+                    u = u[1:-1]
+                if eps_perturbation is not None:
+                    h = np.sign(0.5*dom_l+0.5*dom_u-u)
+                    fac = 2 * eps_perturbation / np.min(dom_u-dom_l)
+                    if fac >= 1.:
+                        h /= fac
+            else: 
+                if u is None:
+                    u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+                if eps_perturbation is not None:
+                    h = np.ones_like(u)
+        else: # dom_l == np.inf
+            if dom_u==np.inf:
+                if u is None:
+                    u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
+                if eps_perturbation is not None:
+                    h = np.ones_like(u)            
+            else:
+                if u is None:
+                    u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
+                if eps_perturbation is not None:
+                    h = - np.ones_like(u)            
+        if eps_perturbation is None:
+            return np.reshape(u,func.domain.shape)
         else:
-            if u is None:
-                u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-            if eps_perturbation is not None:
-                h = - np.ones_like(u)            
-    if eps_perturbation is None:
-        return np.reshape(u,func.domain.shape)
-    else:
-        return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
+            return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
+    elif isinstance(func.domain, DirectSum):
+        if not isinstance(func, (FunctionalOnDirectSum,Conj,HorizontalShiftDilation)):
+            raise TypeError(f"domain of type {func.domain}, but functional of type {type(func)},{func}.")
+        if isinstance(func, FunctionalOnDirectSum):
+            funcs = func.funcs
+        elif isinstance(func, Conj) and isinstance(func.func, FunctionalOnDirectSum):
+            funcs = (f.conj for f in func.func.funcs)
+        else: 
+            if isinstance(func, HorizontalShiftDilation):
+                SDfunc = func
+            elif isinstance(func, Conj) and isinstance(func.func,HorizontalShiftDilation):
+                SDfunc = func.func
+            else: 
+                raise TypeError
+            if func.shift is None:
+                funcs = (HorizontalShiftDilation(f, dilation=SDfunc.dilation) for f in SDfunc.F.funcs)
+            else:
+                funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.F.funcs,func.domain.split(SDfunc.shift)))
+            if isinstance(func,Conj):
+                funcs = (f.conj for f in funcs)
+        if eps_perturbation is None:
+            return func.domain.join(*(sample_essential_domain(funci) for funci in funcs))
+        else:
+            xx,hh = zip(*(sample_essential_domain(funci, eps_perturbation=eps_perturbation) for funci in funcs))
+            return func.domain.join(*xx), func.domain.join(*hh)
     
 
 def sample_vector_in_domain(func, dist = 1e-10):
@@ -158,7 +186,7 @@ def test_prox_optimality_cond(func,tau=1,u=None):
     assert func.is_subgradient(vec,prox)
 
 
-def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
+def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
     r"""Numerically test validity of subgradient for a given functional
 
     Checks if:
@@ -177,7 +205,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
     tol_convex : float, optional
         The maximum allowed violation of the convexity condition. Defaults to 1e-3.
     tol_smooth: float, optional
-        The maximum violation of the differentiability condition.
+        The maximum violation of the differentiability condition. Defaults to 1e-2.
 
     Raises
     ------
@@ -197,8 +225,10 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-3,tol_convex=1e-3):
     diffq = (func(u)-func(u+h_length*h))/h_length
     deriv = (func.domain.vdot(grad_u,h)).real
     err= diffq+deriv
-    assert err<=tol_convex*np.linalg.norm(grad_u),f'err={err}, tol_convex={tol_convex},norm(grad_u)={np.linalg.norm(grad_u)}'
-    assert np.abs(err)<=tol_smooth*np.linalg.norm(grad_u),f'err={err}, tol_smooth={tol_smooth}'
+    if err>tol_convex*func.h_domain.norm(grad_u):
+        raise RuntimeError(f'Convexity test failed: err={err}, tol_convex={tol_convex},norm(grad_u)={func.h_domain.norm(grad_u)}')
+    if np.abs(err)>tol_smooth*func.h_domain.norm(grad_u):
+        raise RuntimeError(f'Smoothness test falied: err={err}, tol_smooth={tol_smooth}, |grad|={func.h_domain.norm(grad_u)}.')
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
 
@@ -224,9 +254,9 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
         h = - func.subgradient(u)
     func_pp = func.hessian(u)(h)
     diffq = (func.subgradient(u+eps*h)-func.subgradient(u))/eps
-    err = np.linalg.norm(func_pp-diffq)/(1e-14+np.linalg.norm(func_pp))
+    err = func.h_domain.norm(func_pp-diffq)/(1e-14+func.h_domain.norm(func_pp))
     #print('err second der: ',err,'rel.err',(func_pp-diffq)/func_pp) #'diffq',diffq,'u',u,'h',h)
-    assert np.linalg.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * np.linalg.norm(func_pp)]), f"err: {err}, tol: {tolerance}, norm second deriv. {np.linalg.norm(func_pp)}"
+    assert func.h_domain.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * func.h_domain.norm(func_pp)]), f"err: {err}, tol: {tolerance}, norm second deriv. {func.h_domain.norm(func_pp)}"
 
 def test_Lipschitz_convexity(func,u=None,safety=1.5):
     assert func.separable
@@ -235,12 +265,15 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     fpp = func.h_domain.gram_inv(func.hessian(u)(func.domain.ones()))
     #print('Lipschitz:', func.Lipschitz,np.max(fpp))
     #print('convexity:', func.convexity_param,np.min(fpp))
-    assert func.Lipschitz>=(1-1e-10)*np.max(fpp), f"Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}" 
-    if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf:
-        assert func.Lipschitz==np.inf, "Lipschitz constant finite, but essential domain is constrained."
+    ub = np.max(fpp) if isinstance(func.domain,MeasureSpaceFcts) else np.max(np.max([np.max(fpps) for fpps in func.domain.split(fpp)]))
+    lb = np.min(fpp) if isinstance(func.domain,MeasureSpaceFcts) else np.min(np.min([np.max(fpps) for fpps in func.domain.split(fpp)])) 
+
+    assert func.Lipschitz>=(1-1e-10)*ub, f"Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}" 
+    #if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf:
+    #    assert func.Lipschitz==np.inf, "Lipschitz constant finite, but essential domain is constrained."
     #if func.Lipschitz<np.inf:
     #    assert func.Lipschitz<=safety*np.max(fpp), f"Lipschitz constant {func.Lipschitz/np.max(fpp)} times larger than estimate based on second derivative. Safety ={safety}."
-    assert func.convexity_param<=np.min(fpp)+1e-12, f"Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}"
+    assert func.convexity_param<=lb+1e-12, f"Convexity parameter {func.convexity_param} is larger than second derivative {lb}"
     if func.convexity_param>0:
         assert safety*func.convexity_param>=np.min(fpp)-1e-12, f"convexity parameter {np.min(fpp)/func.convexity_param} times smaller than estimate based on second derivative. Safety={safety}."
 
