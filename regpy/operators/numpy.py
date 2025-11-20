@@ -542,15 +542,35 @@ class OuterProduct(Operator):
             xs.append(x_j.reshape(self.domain[j].shape))
         return self.domain.join(*xs)
 
+
+
 class EinSum(Operator):
+    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed numpy arrays t1...tn.
+    Nearly all accepted subscripts are supported except ellipses and subscripts resulting in scalar values.
+
+    Parameters
+    ----------
+    subscripts : string
+        Subscripts used for the evaluation in numpy.einsum. See the documentation of numpy.einsum for further information.
+    domains : regpy.vecsps.NumPyVectorSpace
+        The underlying vector spaces.
+    tensors : tuple of numpy.ndarray
+        Tuple of constant numpy arrays.
+    codomain : regpy.vecsps.NumPyVectorSpace, optional
+        Codomain of the operator. If it is not specified it is computed based on the input data.
+    """
 
 
     def __init__(self, subscripts,*domains,tensors=(),codomain=None):
         EinSum._check_parameter_validity(subscripts,*domains,tensors=tensors)
         self.indoms,self.inconsts,self.out=EinSum._get_standard_subscript_info(subscripts,len(domains))
+        '''Split information from subscripts corresponding to domains, tensors and output'''
         self.subscripts=subscripts
+        '''Subscripts used in einsum in evaluation'''
         self.tensors=tensors
+        '''Constant tensors'''
         self._adjoint_subscripts=self._calc_adjoint_subscripts()
+        '''Information necessary for computation of adjoints via einsum'''
         if(codomain is None):
             codomain=self._calc_codomain(*domains)
         if(len(domains)==1):
@@ -558,6 +578,7 @@ class EinSum(Operator):
         else:
             super().__init__(DirectSum(*domains), codomain, linear=False)
         self._eval_opt,self._adjoint_opt=self._optimize_einsum_paths()
+        '''Optimal paths for computation of einsum in evaluation and evaluation of adjoint.'''
 
     @staticmethod
     def _get_standard_subscript_info(subscripts,n_domains):
