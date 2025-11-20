@@ -76,7 +76,7 @@ def test_volterra():
     #The penalty term |f|_{TV}
     setting = TikhonovRegularizationSetting(
         op=op, 
-        penalty=TV(h_domain=Sobolev), 
+        penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 
         data_fid_shift = data,
         regpar = 0.01
