@@ -646,7 +646,7 @@ class EinSum(Operator):
     ----------
     subscripts : string
         Subscripts used for the evaluation in numpy.einsum. See the documentation of numpy.einsum for further information.
-    domains : regpy.vecsps.NumPyVectorSpace
+    domains : regpy.vecsps.GridFcts
         The underlying vector spaces.
     tensors : tuple of numpy.ndarray
         Tuple of constant numpy arrays.
@@ -739,7 +739,6 @@ class EinSum(Operator):
     
     @staticmethod
     def _calc_adjoint_assignment_info(ins_str,out_str):
-        print(ins_str,out_str)
         outset=set(out_str)
         insset=set(ins_str.replace(",",""))
         if(len(out_str)==len(outset) and outset.issubset(insset)):

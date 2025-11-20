@@ -88,3 +88,24 @@ def test_OuterProduct():
     res = op.codomain.product(*x)
     errors += op_evaluation_and_ot(op,x=x,res=res)
     collect_errors(OuterProduct,errors)
+
+def test_EinSum():
+    errors = []
+    u1=UniformGridFcts(2,3,3,2,dtype=np.complex128)
+    u2=UniformGridFcts(3,2)
+    tensors=(np.arange(12).reshape(2,6),)
+    #nonlinear example
+    s="ijki,ji,il->ik"
+    errors += op_basics_wrapper(EinSum,s,u1,u2,test_methods=True,tensors=tensors)
+    op=EinSum(s,u1,u2,tensors=tensors)
+    x=op.domain.randn()
+    res = np.einsum(s,*x,*tensors)
+    errors += op_evaluation_and_ot(op,x=x,res=res)
+    #linear example
+    s2="ijki,il->ji"
+    errors += op_basics_wrapper(EinSum,s2,u1,test_methods=True,tensors=tensors)
+    op2=EinSum(s2,u1,tensors=tensors)
+    x=op2.domain.randn()
+    res = np.einsum(s2,x,*tensors)
+    errors += op_evaluation_and_ot(op2,x=x,res=res)
+    collect_errors(EinSum,errors)
