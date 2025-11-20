@@ -366,9 +366,11 @@ class Functional:
         """boolean indicating if the functional is separable."""
 
         if self.separable:
-            if np.any(dom_l>dom_u):
+            if isinstance(dom_l,np.ndarray) and isinstance(dom_u,np.ndarray) and np.any(dom_l>dom_u):
                 raise ValueError('dom_l must be smaller or equal to dom_u.')
-            if conj_dom_l is not None and conj_dom_u is not None and np.any(conj_dom_l>conj_dom_u):
+            if conj_dom_l is not None  and isinstance(conj_dom_l,np.ndarray) \
+                and conj_dom_u is not None and isinstance(conj_dom_u, np.ndarray) \
+                and np.any(conj_dom_l>conj_dom_u):
                 raise ValueError('conj_dom_l must be smaller or equal conj_dom_u.')
         self.dom_l, self.dom_u, self.conj_dom_l, self.conj_dom_u = dom_l, dom_u, conj_dom_l, conj_dom_u
         """vectors indicating the essential domain of the functional and its conjugate"""
@@ -1507,7 +1509,7 @@ class FunctionalOnDirectSum(Functional):
         self.length = len(domain.summands)
         """Number of the summands in the direct sum domain. 
         """
-        self.funcs = funcs
+        self.funcs = list(funcs)
         """List of the functionals on each summand of the direct sum domain.
         """
         super().__init__(domain, linear = all([func.linear for func in funcs]),
@@ -1520,14 +1522,11 @@ class FunctionalOnDirectSum(Functional):
                         conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]),                        
                         )
 
-    def _eval(self, x):
-        toret = 0 
-        for f_i,x_i in zip(self.funcs,x):
-            toret += f_i(x_i)
-        return toret
+    def _eval(self, x): 
+        return np.sum([f_i(x_i) for f_i,x_i in zip(self.funcs,x)])
 
     def _subgradient(self, x):
-        return self.domain.join([f_i.subgradient(x_i) for f_i,x_i in zip(self.funcs,x)])
+        return self.domain.join(*[f_i.subgradient(x_i) for f_i,x_i in zip(self.funcs,x)])
 
     def is_subgradient(self,vstar, x, eps= 1e-10):
         return all([f_i.is_subgradient(vstar_i,x_i,eps) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
@@ -1543,7 +1542,7 @@ class FunctionalOnDirectSum(Functional):
         return self.domain.join(*[f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
     def _conj(self, xstar):
-        return sum([f_i.conj(xstar_i) for f_i,xstar_i in (self.funcs,xstar)])
+        return sum([f_i.conj(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
 
     def _conj_subgradient(self, xstar):
         return self.domain.join(*[f_i.conj.subgradient(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
@@ -1564,6 +1563,8 @@ class FunctionalOnDirectSum(Functional):
     def __add__(self,other):
         if isinstance(other,FunctionalOnDirectSum):
             return FunctionalOnDirectSum([F+G for F,G in zip(self.funcs,other.funcs)],self.domain)
+        elif isinstance(other,(int,float)):
+            return FunctionalOnDirectSum([F+other for F in self.funcs])
         else: 
             return super().__add__(self,other)
         
