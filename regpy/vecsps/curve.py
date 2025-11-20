@@ -1,5 +1,6 @@
 import numpy as np
 
+from regpy.util import Errors
 from regpy.vecsps import UniformGridFcts
 
 __all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
@@ -43,7 +44,8 @@ class GenCurve:
 
     def __call__(self,der=0):
         res = self._call(der=der)
-        assert res.ndim == 2 and res.shape[0] == 2
+        if res.ndim != 2 or res.shape[0] != 2:
+            raise RuntimeError(Errors.runtime_error(f"Calling the GenCurve {self} did not construct a array of Nx2 dimension!"))
         return res
     
     def _call(self,der=0):
@@ -56,7 +58,8 @@ class GenCurve:
 
     @der.setter
     def der(self,der_new):
-        assert isinstance(der_new,int) and der_new <=3
+        if not isinstance(der_new,int) or der_new >3:
+            raise ValueError(Errors.value_error(f"The number of derivatives needs to be an integer between 0 and 3!"))
         if self.der < der_new:
             for i in range(self.der+1,der_new+1):
                 self._z.append(self(i))
@@ -69,7 +72,8 @@ class GenCurve:
     
     @n.setter
     def n(self,n_new):
-        assert isinstance(n_new,int)
+        if not isinstance(n_new,int) or n_new <= 0:
+            raise ValueError(Errors.value_error(f"The number of discretization points of the GenCurve needs to be a positive integer!"))
         self.t = 2*np.pi*np.linspace(0, n_new-1, n_new)/n_new
         self._n = n_new
         for i in range(0,self.der+1):
@@ -81,7 +85,7 @@ class GenCurve:
         if self.der >= 0:
             return self._z[0]
         else:
-            raise ValueError
+            raise RuntimeError(Errors.runtime_error("To return the evaluation the self.der >=0 please change that!",self,"z"))
     
     @property
     def zp(self):
@@ -89,7 +93,7 @@ class GenCurve:
         if self.der >= 1:
             return self._z[1]
         else:
-            raise ValueError
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the first derivative the self.der >=1 please change that!",self,"zp"))
     
     @property
     def zpabs(self):
@@ -106,7 +110,7 @@ class GenCurve:
         if self.der >= 2:
             return self._z[2]
         else:
-            raise ValueError
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the second derivative the self.der >=2 please change that!",self,"zpp"))
 
     @property
     def zppp(self):
@@ -114,7 +118,7 @@ class GenCurve:
         if self.der >= 3:
             return self._z[3]
         else:
-            raise ValueError
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.der >=3 please change that!",self,"zppp"))
 
 
 class kite(GenCurve):
@@ -174,7 +178,8 @@ class StarCurve(GenCurve):
 
     def __call__(self,der=0):
         res = self._call(der=der)
-        assert res.ndim == 1
+        if not res.ndim != 1:
+            raise RuntimeError(Errors.runtime_error(f"Calling the StarCurve {self} did not construct a array of one dimension!"))
         if der == 0:
             return np.array([res*np.cos(self.t),res*np.sin(self.t)])
         elif der == 1:
@@ -397,7 +402,8 @@ class GenTrigDiscr(UniformGridFcts):
         Number of discretization points. 
     """
     def __init__(self, n):
-        assert isinstance(n, int)
+        if not isinstance(n, int):
+            raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigDiscr need n to be an integer!"))
         self.n = n
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
@@ -562,7 +568,8 @@ class StarTrigDiscr(UniformGridFcts):
         Number of discretization points. 
     """
     def __init__(self, n):
-        assert isinstance(n, int)
+        if not isinstance(n, int):
+            raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigDiscr need n to be an integer!"))
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def eval_curve(self, coeffs, nvals=None, nderivs=0):
@@ -604,7 +611,8 @@ class StarTrigCurve:
     """
 
     def __init__(self, vecsp, coeffs, nvals=None, nderivs=0):
-        assert isinstance(nderivs, int) and 0 <= nderivs <= 3
+        if not isinstance(n, nderivs) or nderivs <0 or nderivs >3:
+            raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
         self.vecsp = vecsp
         """The vector space."""
         self.coeffs = coeffs
@@ -694,7 +702,8 @@ def adjoint_rfft(y, size, n=None):
    
     if n is None:
         n = size
-    assert n // 2 + 1 == y.size
+    if n // 2 + 1 != y.size:
+        raise ValueError(Errors.value_error(f"The size of y, y.size = {y.size}, for the adjoint_rfft is not n//2+1 where n = {n}"))
 
     result = np.fft.irfft(y, n)
     result *= n / 2

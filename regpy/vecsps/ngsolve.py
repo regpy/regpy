@@ -53,7 +53,7 @@ class NgsBaseVector:
             else:
                 self.vec = self.vec.Evaluate()
         else:
-            raise TypeError("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec)))
+            raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
         if isinstance(self.gf,ngs.GridFunction):
             if self.gf.vec.FV().NumPy().__array_interface__ != self.vec.FV().NumPy().__array_interface__:
                 warn("The vector of the Grid function and and the given Vector do not match! Setting associated GridFunction to the given vector")
@@ -104,7 +104,8 @@ class NgsBaseVector:
             return NgsBaseVector(z)
 
     def __iadd__(self,other):
-        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+            raise ValueError(Errors.value_error(f"Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             self.vec += other.to_imag().vec
         elif not self.is_complex and other.is_complex:
@@ -115,7 +116,8 @@ class NgsBaseVector:
         return self
 
     def __isub__(self,other):
-        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+            raise ValueError(Errors.value_error(f"Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             print("Adding real vector to complex vector, converting real to complex.")
             self.vec -= other.to_imag().vec
@@ -127,7 +129,8 @@ class NgsBaseVector:
         return self
     
     def __add__(self,other):
-        assert isinstance(other,NgsBaseVector) and other.size == self.vec.size 
+        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+            raise ValueError(Errors.value_error(f"Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             return self + other.to_imag()
         if not self.is_complex and other.is_complex:
@@ -150,12 +153,14 @@ class NgsBaseVector:
         return -1*self
     
     def __imul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Multiplying NgsBaseVector only supported for scalars (int, float, or complex)!"))
         self.vec.data *= other
         return self
     
     def __itruediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
         self.vec.data /= other
         return self
     
@@ -168,13 +173,14 @@ class NgsBaseVector:
         elif isinstance(other,Operator):
             return PtwMultiplication(other.codomain, self) * other
         else:
-            raise NotImplementedError(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator.")
+            raise NotImplementedError(Errors.generic_message(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator."))
         
     def __rmul__(self,other):
         return self * other
 
     def __truediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
         v = self.vec.CreateVector()
         v.data = (1/other)*self.vec
         return NgsBaseVector(v)
@@ -196,7 +202,7 @@ class NgsBaseVector:
             try:
                 self.vec[i] = val
             except TypeError:
-                raise TypeError(f"Not able to set {val} to NgsBaseVector. It has to be either an NgsBaseVector of same size or Something compatible to set to an ngsolve.la.BaseVector.")
+                raise TypeError(Errors.type_error(f"Not able to set {val} to NgsBaseVector. It has to be either an NgsBaseVector of same size or Something compatible to set to an ngsolve.la.BaseVector."))
 
     def __iter__(self):
         return self.vec
@@ -212,15 +218,18 @@ class NgsBaseVector:
             v[i] = 0                
 
     def __and__(self,x,y):
-        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        if not isinstance(y,NgsBaseVector) or y.size != x.size:
+            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i == y_i for x_i,y_i in zip(x,y))
     
     def __or__(self,x,y):
-        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        if not isinstance(y,NgsBaseVector) or y.size != x.size:
+            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
 
     def __xor__(self,x,y):
-        assert isinstance(y,NgsBaseVector) and x.size == y.size
+        if not isinstance(y,NgsBaseVector) or y.size != x.size:
+            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
     
     def __copy__(self):
@@ -247,7 +256,8 @@ class NgsVectorSpace(VectorSpaceBase):
     """
 
     def __init__(self, fes, bdr=None):
-        assert isinstance(fes, ngs.FESpace)
+        if not isinstance(fes, ngs.FESpace):
+            raise TypeError(Errors.not_instance(fes,ngs.FESpace))
         self.fes = fes
         self.bdr = bdr
         super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex)
@@ -255,7 +265,6 @@ class NgsVectorSpace(VectorSpaceBase):
         from netgen.libngpy._meshing import NgException
         try:
             self.codim = len(fes.components)
-            # assert self.codim == fes.mesh.dim
             if (isinstance(fes,ngs.VectorH1),isinstance(fes,ngs.VectorL2),isinstance(fes,ngs.VectorValued)):
                 self._fes_util = ngs.VectorL2(self.fes.mesh, order = 0, dim = fes.dim, complex = self.is_complex)
             else:
@@ -265,7 +274,12 @@ class NgsVectorSpace(VectorSpaceBase):
                         if (isinstance(f,ngs.VectorH1),isinstance(f,ngs.VectorL2),isinstance(f,ngs.VectorValued)):
                             l_fes.append(ngs.VectorL2(self.fes.mesh, order = 0, complex = self.is_complex))
                         else:
-                            raise ValueError
+                            raise ValueError(Errors.value_error(f""" To construct a NgsVectorSpace for FES which has components which are ProductSpaces 
+                                                                the spaces have to be either VectorH1, VectorL2 or VectorValued!
+                                                                The component that was not able to process is:
+                                                                    f = {f}
+                                                                in the FES:
+                                                                    fes = {fes}"""))
                     else:
                         l_fes.append(ngs.L2(self.fes.mesh, order=0, dim = f.dim, complex = self.is_complex))
                 self._fes_util = ngs.ProductSpace(*l_fes)
@@ -301,7 +315,7 @@ class NgsVectorSpace(VectorSpaceBase):
     
     def rand(self,random_generator = None):
         if self._fes_util is None:
-            raise RuntimeError("the utility fes was not created random generator is not available!")
+            raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
         random_generator = random_generator or np.random.random_sample 
         r = random_generator(self._fes_util.ndof)
         if self.is_complex and not is_complex_dtype(r.dtype):
@@ -321,9 +335,11 @@ class NgsVectorSpace(VectorSpaceBase):
         return NgsBaseVector(h_gf.vec, gf = h_gf)
     
     def poisson(self,x, n = 1):
-        assert not self.is_complex
+        if self.is_complex:
+            raise NotImplemented(Errors.generic_message(f"Poisson sampling for the NgsVectorSpace {self} is not defined since it is complex."))
         self._gfu_util.Set(self.to_gf(x))
-        assert np.all(self._gfu_util.vec.FV().NumPy()>=0), f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive."
+        if np.any(self._gfu_util.vec.FV().NumPy()<0):
+            raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
         self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
         h_gf = ngs.GridFunction(self.fes)
         h_gf.Set(self._gfu_util)
@@ -368,9 +384,9 @@ class NgsVectorSpace(VectorSpaceBase):
                 x = self.zeros()
                 x.vec.FV().NumPy()[:] = vec
             else:
-                raise ValueError("provided vector has non fitting shape.")
+                raise ValueError(Errors.value_error("Provided numpy vector to unflatten has non fitting shape!"))
         else:
-            raise ValueError("Provided vector must be one dimensional")
+            raise ValueError(Errors.value_error("Provided numpy vector to unflatten must be one dimensional"))
         return x
     
     def __eq__(self, other: object) -> bool:
@@ -393,7 +409,7 @@ class NgsVectorSpace(VectorSpaceBase):
             A BitArray of masks for the vector components contributing to the positive part of a function.
         """
         if not x in self:
-            raise ValueError("The vector {} is not an element of the vector space {}".format(x,self))
+            raise ValueError(Errors.not_in_vecsp(x,self,"IfPos requires the a vector in the space!"))
         if not self.is_complex: 
             self._gfu_fes.vec.data = x.vec
             gfu_help = ngs.GridFunction(self.fes)
