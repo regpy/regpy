@@ -11,7 +11,7 @@ from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
 from regpy.util import Errors
 
-from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed
 
 __all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppL2","L1L2","HuberL2","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
@@ -1803,14 +1803,12 @@ class QuadraticBilateralConstraints(LinearCombination):
         center = (ub+lb)/2
         lin = LinearFunctional(center-x0,
                             domain=domain,
-                            gradient_in_dual_space=False,
-                            **kwargs
+                            gradient_in_dual_space=False
                             )
         offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
         # return  alpha*HorizontalShiftDilation(F,shift=center) + alpha*lin + alpha*offset
         super().__init__((alpha,HorizontalShiftDilation(F,shift=center)+offset),
-                          (alpha,lin),
-                          **kwargs
+                          (alpha,lin)
                           )
 
 def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
@@ -1991,61 +1989,64 @@ class TVGeneric(Functional):
     def _proximal(self, x, tau):
         return NotImplementedError
 
-
-class TVUniformGridFcts(Functional):
+from regpy.operators import ForwardFDGradient
+class TVUniformGridFcts(Composed):
     r"""Total Variation Norm: For :math:`C^1` functions the :math:`l^1`-norm of the gradient on a `UniformGrid`
 
     Parameters
     ----------
     domain : regpy.vecsps.UniformGridFcts
         Underlying domain. 
-    h_domain : regpy.hilbert.HilbertSapce (defaul: L2)
+    h_domain : regpy.hilbert.HilbertSapce (default: L2)
         Underlying Hilbert space for proximal. 
+    beta: float (>=0) [optional, default:0.]
+        If beta>0, the L^1-norm is approximated by a Huber functional with this parameter. 
+    boundary_condition: 'Neum', 'Diri' or 'per' (default: 'Neum')
+        Boundary condition in the discretization of gradient, see ForwardFDGradient
     """
-    def __init__(self, domain, h_domain=None):
-        assert isinstance(domain, UniformGridFcts)
-        self.dim = np.size(domain.shape)
-        """Dimension of the Uniform Grid functions.
+
+    def __init__(self, domain,beta=0.,boundary_condition='Neum'):
+        if not isinstance(domain, UniformGridFcts):
+            raise TypeError('only implemented for UniformGridFcts')
+        if not isinstance(beta,float) and (beta>=0.):
+            raise ValueError('beta must be a non-negative float')
+        else:
+            self.beta = beta
+        self.grad = ForwardFDGradient(domain, boundary_condition=boundary_condition)
+        if beta==0.:
+            self.func = L1L2(self.grad.codomain)
+        else:
+            self.func = HuberL2(self.grad.codomain)
+
+        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm())
+
+    def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
+        """Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89–97, 2004) 
+        Parameters:
+            x: np.array 
+                First argument of prox
+            tau: float >=0
+                Second (scaling) argument of prox
+            stepsize_safety: float [optional, default: 2.]
+                Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
+                best results are optained for stepsize_safety =2.
+            maxiter: int [optional: default: 1000]
+                Maximum number of iterations
+            tol: float>=0 [optional, default: 0.01]
+                Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
+                iteratives differ by less than tol in the maxium norm. 
         """
-        super().__init__(domain,h_domain=h_domain)
-
-    def _eval(self, x):
-        if self.dim==1:
-            return np.sum(np.abs(self._gradientuniformgrid(x)))
-        else:
-            return np.sum(np.linalg.norm(self._gradientuniformgrid(x), axis=0))
-
-    def _subgradient(self, x):
-        if self.dim==1:
-            return np.sign(self._gradientuniformgrid(x)).reshape(self.domain.shape)
-        else:
-            grad = self._gradientuniformgrid(x)
-            grad_norm = np.linalg.norm(grad, axis=0)
-            toret = np.zeros(x.shape)
-            toret = np.where(grad_norm != 0, np.sum(grad, axis=0) / grad_norm, toret)
-            return toret
-
-    def _hessian(self, x):
-        raise NotImplementedError
-
-    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
-        shape = [self.dim]+list(x.shape)
-        p = np.zeros(shape)
+        if self.beta!=0.:
+            raise ValueError("Chambolle's method only works for beta=0.")
+        p = self.grad.codomain.zeros()
+        lastp = p
+        stepsize = stepsize_safety/self.grad.norm()**2
         for i in range(maxiter):
-            update = stepsize*self._gradientuniformgrid( self.h_domain.gram_inv( self._divergenceuniformgrid(p))-x/tau)
-            p = (p+update) / (1+np.abs(update))
-        return x-tau*self._divergenceuniformgrid(p)
-
-    def _gradientuniformgrid(self, u):
-        r"""Computes the gradient of field given by 'u'. 'u' is defined on a 
-        equidistant grid. Returns a list of vectors that are the derivatives in each 
-        dimension."""
-        # Need to reshape spacing otherwise getting braodcasting error
-        shape = [self.domain.ndim]+[1 for _ in self.domain.shape]
-        return 1/self.domain.spacing.reshape(shape)*np.array(np.gradient(u))
-
-    def _divergenceuniformgrid(self, u):
-        r"""Computes the divergence of a vector field 'u'. 'u' is assumed to be
-        a list of matrices u=(u_x, u_y, u_z, ...) holding the values for u on a
-        regular grid"""
-        return np.ufunc.reduce(np.add, [np.gradient(u[i], axis=i)/h for i,h in enumerate(self.domain.spacing)])
+            update = stepsize*self.grad( -self.grad.adjoint(p)-x/tau)
+            p = (p+update) / np.expand_dims(1.+self.func.vector_norm(x = update, axis=self.func._vaxes),-1)
+            if np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))<tol:
+                self.log.info(f'TV prox Chambolle terminated after {i} iterations.')
+                break
+            else:
+                lastp=p
+        return x+tau*self.grad.adjoint(p)
