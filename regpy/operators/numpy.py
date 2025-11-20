@@ -2,7 +2,7 @@ import string
 
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from scipy.sparse import csc_matrix, csc_array
+from scipy.sparse import csc_matrix, csc_array, lil_matrix
 import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
@@ -12,7 +12,7 @@ from regpy.vecsps import *
 from .base import Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
-           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct"]
+           "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct","EinSum"]
 
 class MatrixMultiplication(Operator):
     r"""Implements an operator that does matrix-vector multiplication with a given matrix. Domain and codomain 
@@ -580,7 +580,7 @@ class ForwardFDGradient(Operator):
         N = np.prod(self.domain.shape)
         ndim = self.domain.ndim
         shape = self.domain.shape
-        out = [np.zeros((N,N)) for j in range(ndim)]
+        out = [lil_matrix((N,N)) for j in range(ndim)]
         for (ax,h) in zip(range(ndim),self.domain.spacing):
             for idx in np.ndindex(shape):
                 i_flat = np.ravel_multi_index(idx,shape)
@@ -597,11 +597,12 @@ class ForwardFDGradient(Operator):
                         neigh[ax] = 0
                         neigh_flat = np.ravel_multi_index(tuple(neigh),shape)
                         out[ax][i_flat,neigh_flat] = 1/h 
-        return out
+        return [out[j].tocsc() for j in range(ndim)]
     
     def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
         """ A good upper bound on the  norm with respect to the standard L2 inner product can be computed analytically.         
         """
+        from regpy.hilbert import L2
         if (h_domain is None or h_domain==L2) and (h_codomain is None or h_codomain==L2) and method is None:
             return 2*np.linalg.norm(1./self.domain.spacing)
         else: 
@@ -625,7 +626,7 @@ class OuterProduct(Operator):
 
     def _calc_adjoint_summation_strings(self):
         li=[]
-        characters=tuple(chr(k) for k in range(65,65+self.codomain.ndim))
+        characters=tuple(chr(k) for k in range(ord('A'),ord('A')+self.codomain.ndim))
         all_characters="".join(characters)
         for i,_ in enumerate(characters):
             without_i=",".join(characters[:i]+characters[i+1:])
@@ -649,5 +650,164 @@ class OuterProduct(Operator):
         for j,s in enumerate(self._adjoint_summation_strings):
             x_j=np.einsum(s,y,*self._p_conj_flat[:j],*self._p_conj_flat[j+1:],optimize=True)
             xs.append(x_j.reshape(self.domain[j].shape))
-            # xs.append(self.domain[j].fromflat(x_j))
+        return self.domain.join(*xs)
+
+
+class EinSum(Operator):
+    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed numpy arrays t1...tn.
+    Nearly all accepted subscripts are supported except ellipses and subscripts resulting in scalar values.
+
+    Parameters
+    ----------
+    subscripts : string
+        Subscripts used for the evaluation in numpy.einsum. See the documentation of numpy.einsum for further information.
+    domains : regpy.vecsps.GridFcts
+        The underlying vector spaces.
+    tensors : tuple of numpy.ndarray
+        Tuple of constant numpy arrays.
+    codomain : regpy.vecsps.NumPyVectorSpace, optional
+        Codomain of the operator. If it is not specified it is computed based on the input data.
+    """
+
+
+    def __init__(self, subscripts,*domains,tensors=(),codomain=None):
+        EinSum._check_parameter_validity(subscripts,*domains,tensors=tensors)
+        self.indoms,self.inconsts,self.out=EinSum._get_standard_subscript_info(subscripts,len(domains))
+        '''Split information from subscripts corresponding to domains, tensors and output'''
+        self.subscripts=subscripts
+        '''Subscripts used in einsum in evaluation'''
+        self.tensors=tensors
+        '''Constant tensors'''
+        self._adjoint_subscripts=self._calc_adjoint_subscripts()
+        '''Information necessary for computation of adjoints via einsum'''
+        if(codomain is None):
+            codomain=self._calc_codomain(*domains)
+        if(len(domains)==1):
+            super().__init__(domains[0], codomain, linear=True)
+        else:
+            super().__init__(DirectSum(*domains), codomain, linear=False)
+        self._eval_opt,self._adjoint_opt=self._optimize_einsum_paths()
+        '''Optimal paths for computation of einsum in evaluation and evaluation of adjoint.'''
+
+    @staticmethod
+    def _get_standard_subscript_info(subscripts,n_domains):
+        in_out_split=subscripts.split("->")
+        ins=in_out_split[0]
+        if(len(in_out_split)==2):
+            out=in_out_split[1]
+        else:
+            fullset=set()
+            doubleset=set()
+            for s in ins:
+                if(s!=","):
+                    if(s in fullset):
+                        doubleset.add(s)
+                    else:
+                        fullset.add(s)
+            out="".join(sorted(fullset.difference(doubleset)))
+            if(out==""):
+                raise ValueError(f"Invalid subscripts \'{subscripts}\'. Operations with scalar results are currently not supported.")
+        fullins=ins.split(",")
+        return fullins[:n_domains],fullins[n_domains:],out
+    
+    @staticmethod
+    def _check_parameter_validity(subscripts,*domains,tensors):
+        if("." in subscripts):
+            raise ValueError(f"EinSum operator currently does not support ellipses, so input:\'{subscripts}\' is invalid.")
+        #TODO add further tests
+
+    def _calc_codomain(self,*domains):
+        axesinfo=[]
+        for s in self.out:
+            index=-1
+            j=0
+            while index==-1 and j<len(self.indoms):
+                index=self.indoms[j].find(s)
+                j+=1
+            if(index!=-1):
+                axesinfo.append(domains[j-1].axes[index])
+            else:
+                j=0
+                while index==-1 and j<len(self.inconsts):
+                    index=self.inconsts[j].find(s)
+                    j+=1
+                if(index!=-1):
+                    axesinfo.append(self.tensors[j-1].shape[index])
+                else:
+                    raise ValueError(f"Output with index \'{s}\' could not be matched to input.")
+        return GridFcts(*axesinfo,dtype=np.result_type(*(domain.dtype for domain in domains),*self.tensors))
+    
+    def _calc_adjoint_subscripts(self):
+        adj_subscripts=[]
+        if(len(self.inconsts)!=0):
+            constant_part=",".join(self.inconsts)+","
+        else:
+            constant_part=""
+        if(len(self.indoms)==1):
+            info=EinSum._calc_adjoint_assignment_info(f"{constant_part}{self.out}",self.indoms[0])
+            return [info]
+        for j,input in enumerate(self.indoms):
+            indom_scr=",".join(self.indoms[:j]+self.indoms[j+1:])
+            info=EinSum._calc_adjoint_assignment_info(f"{indom_scr},{constant_part}{self.out}",input)
+            adj_subscripts.append(info)
+        return adj_subscripts
+    
+    @staticmethod
+    def _calc_adjoint_assignment_info(ins_str,out_str):
+        outset=set(out_str)
+        insset=set(ins_str.replace(",",""))
+        if(len(out_str)==len(outset) and outset.issubset(insset)):
+            return True,f"{ins_str}->{out_str}",f"{out_str}->{out_str}"
+        unknowns="".join(outset.difference(insset))
+        knowns="".join(outset.difference(unknowns))
+        return False,f"{ins_str}->{knowns}",f"{out_str}->{unknowns}{knowns}"
+        
+    def _optimize_einsum_paths(self):
+        inputs=self.domain.zeros()
+        output=self.codomain.zeros()
+        if(self.linear):
+            eval_opt=np.einsum_path(self.subscripts,inputs,*self.tensors)[0]
+            adjoint_opt=np.einsum_path(self._adjoint_subscripts[0][1],*self.tensors,output)[0]
+            return eval_opt,[adjoint_opt]
+        eval_opt=np.einsum_path(self.subscripts,*inputs,*self.tensors)[0]
+        adjoint_opt=[]
+        for j,s in enumerate(self._adjoint_subscripts):
+            opt_j=np.einsum_path(s[1],*inputs[:j],*inputs[j+1:],*self.tensors,output)[0]
+            adjoint_opt.append(opt_j)
+        return eval_opt,adjoint_opt
+
+    
+    def _eval(self, x, differentiate=False):
+        self._p=(x,) if self.linear else self.domain.split(x)
+        if(differentiate):
+            self._p_conj=tuple(np.conj(p_j) for p_j in self._p)
+        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=self._eval_opt)
+
+    def _derivative(self, x):
+        y=self.codomain.zeros()
+        for j,x_j in enumerate(x):
+            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=self._eval_opt)
+        return y
+    
+    def _adjoint(self, y):
+        if(self.linear):
+            x=np.einsum(self._adjoint_subscripts[0][1],*self.tensors,y,optimize=self._adjoint_opt[0])
+            if(np.issubdtype(self.domain.dtype, np.floating)):
+                x=np.real(x)
+            if(self._adjoint_subscripts[0][0]):
+                return x
+            x_full=self.domain.zeros()
+            np.einsum(self._adjoint_subscripts[0][2],x_full)[:]=x
+            return x_full
+        xs=[]
+        for j,s in enumerate(self._adjoint_subscripts):
+            x_j=np.einsum(s[1],*self._p_conj[:j],*self._p_conj[j+1:],*self.tensors,y,optimize=self._adjoint_opt[j])
+            if(np.issubdtype(self.domain[j].dtype, np.floating)):
+                x_j=np.real(x_j)
+            if(s[0]):
+                xs.append(x_j)
+            else:
+                x_j_full=self.domain[j].zeros()
+                np.einsum(s[2],x_j_full)[:]=x_j
+                xs.append(x_j_full)
         return self.domain.join(*xs)

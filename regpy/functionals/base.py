@@ -1323,6 +1323,8 @@ class HorizontalShiftDilation(Functional):
                                                         dialation = {dilation}
                                                         shift = {shift}.
                                                         """))
+        if dilation==0.:
+            raise ValueError(util.Errors.value_error("dilation must not vanisch."))
         if np.isscalar(shift):
             if isinstance(func.domain, vecsps.NumPyVectorSpace):
                 shift = np.broadcast_to(shift,func.domain.shape)
@@ -1333,6 +1335,9 @@ class HorizontalShiftDilation(Functional):
             dom_l = func.dom_l/dilation if shift is None else func.dom_l/dilation + shift
             conj_dom_u = func.conj_dom_u*dilation
             conj_dom_l = func.conj_dom_l*dilation
+            if dilation<0:
+                dom_u, dom_l = dom_l, dom_u
+                conj_dom_u, conj_dom_l = conj_dom_l, conj_dom_u
         else:
             dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(func.domain, h_domain = func.h_domain, 
@@ -1597,7 +1602,7 @@ def as_functional(func, vecsp):
             func = SquaredNorm(func)
     if func.domain != vecsp:
         raise ValueError(f"Given Vector space {vecsp} and the domain of the functional {func.domain} do not match.")
-    elif isinstance(func,Composed) and func.func.domain != vecsp:
+    elif isinstance(func,Composed) and func.op.domain != vecsp:
         raise ValueError(f"Given Vector space {vecsp} and the domain of the composed functional {func.func.domain} do not match.")
     return func
 

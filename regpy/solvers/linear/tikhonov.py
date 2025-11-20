@@ -123,10 +123,10 @@ class TikhonovCG(RegSolver):
 
         if preconditioner is None:
             self.preconditioner = Identity (self.h_domain.vecsp)
-            self.penalty = Identity (self.h_domain.vecsp)
+            self.full_penalty = Identity (self.h_domain.vecsp)
         else: 
             self.preconditioner = preconditioner
-            self.penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
+            self.full_penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
 
         self.g_res = self.preconditioner( self.op.adjoint(self.h_codomain.gram(data-self.y)) )
         """The gram matrix applied to the residual of the normal equation. 
@@ -163,7 +163,7 @@ class TikhonovCG(RegSolver):
     def _next(self):
         Tdir = self.op( self.preconditioner(self.dir) )
         g_Tdir = self.h_codomain.gram(Tdir)
-        alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)).real
+        alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.full_penalty (self.g_dir), self.dir)).real
         if alpha_pre == 0:
             raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
         stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
@@ -183,7 +183,7 @@ class TikhonovCG(RegSolver):
             else: 
                 self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
 
-        self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.penalty (self.g_dir) )
+        self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.full_penalty (self.g_dir) )
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
