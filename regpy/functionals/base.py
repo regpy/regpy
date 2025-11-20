@@ -1308,7 +1308,7 @@ class HorizontalShiftDilation(Functional):
     
     Parameters
     ----------
-    F: Functional
+    func: Functional
         The functional to be shifted and dilated.
     dilation: float [default: 1]
         Dilation factor.

@@ -78,9 +78,9 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
             else: 
                 raise TypeError
             if func.shift is None:
-                funcs = (HorizontalShiftDilation(f, dilation=SDfunc.dilation) for f in SDfunc.F.funcs)
+                funcs = (HorizontalShiftDilation(f, dilation=SDfunc.dilation) for f in SDfunc.func.funcs)
             else:
-                funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.F.funcs,func.domain.split(SDfunc.shift)))
+                funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.func.funcs,func.domain.split(SDfunc.shift)))
             if isinstance(func,Conj):
                 funcs = (f.conj for f in funcs)
         if eps_perturbation is None:
@@ -356,8 +356,8 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     # if func.convexity_param>np.min(fpp)+1e-12:
     #     func.log.warning("Failed Lipschitz test! Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}")
     #     return False
-    if func.convexity_param<lb-1e-12:
-        func.log.warning("Failed Lipschitz test! Convexity parameter {func.convexity_param} is larger than second derivative {lb}")
+    if func.convexity_param > 0 and func.convexity_param>lb+1e-12:
+        func.log.warning(f"Failed Lipschitz test! Convexity parameter {func.convexity_param} is larger than second derivative {lb}")
         return False
     func.log.info("Passed Lipschitz test!")
     return True
