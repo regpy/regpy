@@ -448,7 +448,7 @@ class GridFcts(MeasureSpaceFcts):
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
         ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         assert len(axes)<=26
-        prod_string=','.join([chr(k) for k in range(65,65+len(axes))])
+        prod_string=','.join([chr(k) for k in range(ord('A'),ord('A')+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
     
     def coord_distances(self,point=None,axes=None):
@@ -578,7 +578,7 @@ class Prod(NumPyVectorSpace):
             else:
                 self.factors.append(s)
                 shape += (s.size,)
-        characters=tuple(chr(k) for k in range(65,65+len(self.factors)))
+        characters=tuple(chr(k) for k in range(ord('A'),ord('A')+len(self.factors)))
         self._prod_trafo_string=f"{','.join(characters)}->{''.join(characters)}"
         """String to compute the outer product in einsum."""
         super().__init__(shape,dtype=dt)

@@ -199,7 +199,7 @@ class LevenbergMarquardt(RegSolver):
         return self._nr_inner_steps
 
 
-from regpy.operators import MatrixMultiplication
+from regpy.operators import EinSum,PtwMultiplication
 from regpy import util
 from scipy.sparse.linalg import eigsh
         
@@ -227,7 +227,7 @@ class IrgnmCGPrec(RegSolver):
     We approximate A by the operator:
 
     .. math::
-        C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle lambda_j v_j
+        C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle \lambda_j v_j
 
     where lambda are the biggest eigenvalues of :math:`T*T`.
     
@@ -294,7 +294,7 @@ class IrgnmCGPrec(RegSolver):
             self.krylov_order = precpars['krylov_order']
             self.number_eigenvalues = precpars['number_eigenvalues']
 
-        self.krylov_basis = np.zeros((self.krylov_order, self.h_domain.vecsp.size),dtype=self.op.domain.dtype)
+        self.krylov_basis = np.zeros((self.krylov_order, *self.h_domain.vecsp.shape),dtype=self.op.domain.dtype)
         """Orthonormal Basis of Krylov subspace"""
         self.krylov_basis_img = np.zeros((self.krylov_order, *self.h_codomain.vecsp.shape),dtype=self.op.codomain.dtype)
         """Image of the Krylov Basis under the derivative of the operator"""
@@ -332,13 +332,12 @@ class IrgnmCGPrec(RegSolver):
             self.log.info('Spectral preconditioner updated')
           
         else:
-            preconditioner = MatrixMultiplication(self.M, domain=self.h_domain.vecsp, codomain=self.h_domain.vecsp)
             step, _ = TikhonovCG(
                 setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,
-                preconditioner=preconditioner,
+                preconditioner=self.preconditioner,
                 **self.cg_pars
             ).run(stoprule=stoprule)
             step = self.M @ step
@@ -366,11 +365,14 @@ class IrgnmCGPrec(RegSolver):
 
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
         M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        self.M = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(1/self.regpar) * np.identity(self.krylov_basis.shape[1])
+        tensors=(self.krylov_basis.conjugate(),M_krylov,self.krylov_basis)
+        chars1 = ''.join(chr(i) for i in range(ord('a'), ord('a') + self.krylov_basis.ndim))
+        chars2 = ''.join(chr(i) for i in range(ord('A'), ord('A') + self.krylov_basis.ndim))
+        subscript=f"{chars1[1:]},{chars1},{chars1[0]+chars2[0]},{chars2}"
+        self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,sqrt(1/self.regpar))
         """Compute preconditioner"""
-
-        diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
-        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
+        # diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
+        # M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        # self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
         """Compute inverse preconditioner matrix"""
 
