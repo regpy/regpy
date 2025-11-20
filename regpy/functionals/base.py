@@ -1265,13 +1265,20 @@ class HorizontalShiftDilation(Functional):
     def __init__(self, F, dilation =1., shift = None):
         if np.isscalar(shift):
             shift = np.broadcast_to(shift,F.domain.shape)
-        assert shift is None or shift in F.domain
-        assert isinstance(dilation,int) or isinstance(dilation,float)        
+        if not (shift is None or shift in F.domain):
+            raise TypeError(f"shift must be None, scalar or in domain. Got {shift}.")
+        if not (isinstance(dilation,int) or isinstance(dilation,float)):
+            raise TypeError(f"dialation must be float or int. Got {dilation}.")
+        if dilation==0.:
+            raise ValueError("dilation must not vanisch.")
         if F.separable:
             dom_u = F.dom_u/dilation if shift is None else F.dom_u/dilation + shift
             dom_l = F.dom_l/dilation if shift is None else F.dom_l/dilation + shift
             conj_dom_u = F.conj_dom_u*dilation
             conj_dom_l = F.conj_dom_l*dilation
+            if dilation<0:
+                dom_u, dom_l = dom_l, dom_u
+                conj_dom_u, conj_dom_l = conj_dom_l, conj_dom_u
         else:
             dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(F.domain, h_domain = F.h_domain, 
