@@ -1,5 +1,5 @@
 import logging
-
+import sys
 
 import numpy as np
 
@@ -9,10 +9,11 @@ import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 
+from . import import_example_package
 
-from .OperatorsFromExamples.potential import Potential
+import_example_package("./examples/potential/")
 
-
+from potential import Potential
 
 def test_potential():
     logging.basicConfig(
@@ -69,4 +70,4 @@ def test_potential():
     solver.run(stoprule)
 
 
-
+sys.path.pop(0)

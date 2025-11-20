@@ -1,6 +1,8 @@
+import logging
+import sys
+
 import numpy as np
 from scipy.datasets import ascent
-import logging
 
 from regpy.vecsps import UniformGridFcts
 from regpy.operators import CoordinateProjection
@@ -9,7 +11,11 @@ from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 
-from .OperatorsFromExamples.PinemOperators import get_wave_field_reco
+from . import import_example_package
+
+import_example_package("./examples/pinem/")
+
+from operators import get_wave_field_reco
 
 
 def test_wave_field_inversion():
@@ -104,3 +110,6 @@ def test_wave_field_inversion():
             newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
             np.linalg.norm(reco_error.imag)/np.linalg.norm(exact_solution.imag)))
+
+
+sys.path.pop(0)
