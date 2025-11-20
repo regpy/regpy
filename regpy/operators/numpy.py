@@ -557,10 +557,11 @@ class EinSum(Operator):
             super().__init__(domains[0], codomain, linear=True)
         else:
             super().__init__(DirectSum(*domains), codomain, linear=False)
+        self._eval_opt,self._adjoint_opt=self._optimize_einsum_paths()
 
     @staticmethod
-    def _get_standard_subscript_info(subscipts,n_domains):
-        in_out_split=subscipts.split("->")
+    def _get_standard_subscript_info(subscripts,n_domains):
+        in_out_split=subscripts.split("->")
         ins=in_out_split[0]
         if(len(in_out_split)==2):
             out=in_out_split[1]
@@ -574,6 +575,8 @@ class EinSum(Operator):
                     else:
                         fullset.add(s)
             out="".join(sorted(fullset.difference(doubleset)))
+            if(out==""):
+                raise ValueError(f"Invalid subscripts \'{subscripts}\'. Operations with scalar results are currently not supported.")
         fullins=ins.split(",")
         return fullins[:n_domains],fullins[n_domains:],out
     
@@ -610,36 +613,72 @@ class EinSum(Operator):
             constant_part=",".join(self.inconsts)+","
         else:
             constant_part=""
-        print(constant_part)
         if(len(self.indoms)==1):
-            return [f"{constant_part}{self.out}->{self.indoms[0]}"]
+            info=EinSum._calc_adjoint_assignment_info(f"{constant_part}{self.out}",self.indoms[0])
+            return [info]
         for j,input in enumerate(self.indoms):
             indom_scr=",".join(self.indoms[:j]+self.indoms[j+1:])
-            adj_subscripts.append(f"{indom_scr},{constant_part}{self.out}->{input}")
+            info=EinSum._calc_adjoint_assignment_info(f"{indom_scr},{constant_part}{self.out}",input)
+            adj_subscripts.append(info)
         return adj_subscripts
+    
+    @staticmethod
+    def _calc_adjoint_assignment_info(ins_str,out_str):
+        print(ins_str,out_str)
+        outset=set(out_str)
+        insset=set(ins_str.replace(",",""))
+        if(len(out_str)==len(outset) and outset.issubset(insset)):
+            return True,f"{ins_str}->{out_str}",f"{out_str}->{out_str}"
+        unknowns="".join(outset.difference(insset))
+        knowns="".join(outset.difference(unknowns))
+        return False,f"{ins_str}->{knowns}",f"{out_str}->{unknowns}{knowns}"
+        
+    def _optimize_einsum_paths(self):
+        inputs=self.domain.zeros()
+        output=self.codomain.zeros()
+        if(self.linear):
+            eval_opt=np.einsum_path(self.subscripts,inputs,*self.tensors)[0]
+            adjoint_opt=np.einsum_path(self._adjoint_subscripts[0][1],*self.tensors,output)[0]
+            return eval_opt,[adjoint_opt]
+        eval_opt=np.einsum_path(self.subscripts,*inputs,*self.tensors)[0]
+        adjoint_opt=[]
+        for j,s in enumerate(self._adjoint_subscripts):
+            opt_j=np.einsum_path(s[1],*inputs[:j],*inputs[j+1:],*self.tensors,output)[0]
+            adjoint_opt.append(opt_j)
+        return eval_opt,adjoint_opt
+
     
     def _eval(self, x, differentiate=False):
         self._p=(x,) if self.linear else self.domain.split(x)
         if(differentiate):
             self._p_conj=tuple(np.conj(p_j) for p_j in self._p)
-        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=True)
+        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=self._eval_opt)
 
     def _derivative(self, x):
         y=self.codomain.zeros()
         for j,x_j in enumerate(x):
-            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=True)
+            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=self._eval_opt)
         return y
     
     def _adjoint(self, y):
         if(self.linear):
-            x=np.einsum(self._adjoint_subscripts[0],*self.tensors,y,optimize=True)
+            x=np.einsum(self._adjoint_subscripts[0][1],*self.tensors,y,optimize=self._adjoint_opt[0])
             if(np.issubdtype(self.domain.dtype, np.floating)):
                 x=np.real(x)
-            return x
+            if(self._adjoint_subscripts[0][0]):
+                return x
+            x_full=self.domain.zeros()
+            np.einsum(self._adjoint_subscripts[0][2],x_full)[:]=x
+            return x_full
         xs=[]
         for j,s in enumerate(self._adjoint_subscripts):
-            x_j=np.einsum(s,*self._p_conj[:j],*self._p_conj[j+1:],*self.tensors,y,optimize=True)
+            x_j=np.einsum(s[1],*self._p_conj[:j],*self._p_conj[j+1:],*self.tensors,y,optimize=self._adjoint_opt[j])
             if(np.issubdtype(self.domain[j].dtype, np.floating)):
                 x_j=np.real(x_j)
-            xs.append(x_j)
+            if(s[0]):
+                xs.append(x_j)
+            else:
+                x_j_full=self.domain[j].zeros()
+                np.einsum(s[2],x_j_full)[:]=x_j
+                xs.append(x_j_full)
         return self.domain.join(*xs)
