@@ -26,7 +26,7 @@ class SobolevFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         if not isinstance(vecsp, NgsVectorSpace):
-            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         super().__init__(vecsp=vecsp)
         self._no_pickle = {*self._no_pickle,"__memoized_SobolevFESpace.gram","__memoized_HilbertSpace.norm_functional"}
     
@@ -42,7 +42,7 @@ class H10FESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         if not isinstance(vecsp, NgsVectorSpace):
-            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         super().__init__(vecsp=vecsp)
         self._no_pickle = {*self._no_pickle,"__memoized_H10FESpace.gram","__memoized_HilbertSpace.norm_functional"}
     
@@ -58,7 +58,7 @@ class L2BoundaryFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         if not isinstance(vecsp, NgsVectorSpace):
-            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         if vecsp.bdr is None:
             raise ValueError(Errors.value_error("To use L2BoundaryFESpace on an NgsVectorSpace the vector space needs to define a boundary and it cannot be None."))
         super().__init__(vecsp)
@@ -79,7 +79,7 @@ class SobolevBoundaryFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
         if not isinstance(vecsp, NgsVectorSpace):
-            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}")
+            raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         if vecsp.bdr is None:
             raise ValueError(Errors.value_error("To use SobolevBoundaryFESpace on an NgsVectorSpace the vector space needs to define a boundary and it cannot be None."))
         super().__init__(vecsp)

@@ -89,7 +89,7 @@ def test_wave_field_inversion():
             setting.h_codomain.norm,
             data,
             noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)),
-            tau=1
+            tau=1.01
         )
     )
 

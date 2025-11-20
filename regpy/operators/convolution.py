@@ -338,9 +338,8 @@ class ConvolutionOperator(Composition):
         if not self._parameters_equal(self.kwargs, L.kwargs,ignore_kernel_matrix_shape=True):
             raise ValueError(Errors.value_error(f'Keyword arguments must agree. Own: {self.kwargs} Got {L.kwargs}'))
         if self.kernel_matrix_shape is None:
-
-            if L.kernel_matrix_shape is None:
-                raise ValueError(Errors.value_error(f'Kernel matrices cannot be multiplied. Both have Matrix shape None'))
+            if L.kernel_matrix_shape is not None:
+                raise ValueError(Errors.value_error(f'Kernel matrix shape is none but L has a defined kernel shape.'))
         else:
             if L.kernel_matrix_shape is None or not self.kernel_matrix_shape[1] == L.kernel_matrix_shape[0]:
                 raise ValueError(Errors.value_error(f'Kernel matrices cannot be multiplied. Given shapes are {self.kernel_matrix_shape} and {L.kernel_matrix_shape}'))
@@ -415,7 +414,7 @@ class ConvolutionOperator(Composition):
                 raise ValueError(Errors.value_error("Cannot add two Convolution operators with different parameters ignoring the kernel matrix!"))
             return ConvolutionOperator(self.grid,self._otf + other._otf,**self.kwargs)
         else:
-            return super().__add__(self,other)
+            return super().__add__(other)
 
     def __repr__(self):
         return util.make_repr(self, self._otf)

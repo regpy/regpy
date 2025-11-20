@@ -23,7 +23,7 @@ class Errors:
                 return Errors._compose_message(title = "Value Error", content = msg)
             else:
                 return Errors._compose_message(title = "Value Error in method {meth}", content = msg)
-        elif obj is None:
+        else:
             if meth is None:
                 return Errors._compose_message(title = "Value Error in {obj}", content = msg)
             else:
@@ -36,7 +36,7 @@ class Errors:
                 return Errors._compose_message(title = "Type Error", content = msg)
             else:
                 return Errors._compose_message(title = "Type Error in method {meth}", content = msg)
-        elif obj is None:
+        else:
             if meth is None:
                 return Errors._compose_message(title = "Type Error in {obj}", content = msg)
             else:
@@ -49,7 +49,7 @@ class Errors:
                 return Errors._compose_message(title = "Runtime Error", content = msg)
             else:
                 return Errors._compose_message(title = "Runtime Error in method {meth}", content = msg)
-        elif obj is None:
+        else:
             if meth is None:
                 return Errors._compose_message(title = "Runtime Error in {obj}", content = msg)
             else:
@@ -184,7 +184,7 @@ def complex2real(z, axis=-1):
 
 
 def real2complex(x, axis=-1):
-    if not is_real_dtype(z.dtype):
+    if not is_real_dtype(x.dtype):
         raise TypeError(Errors.type_error("real2complex is only defined for real dtypes!"))
     if x.shape[axis] != 2:
         raise ValueError(Errors.value_error(f"real2complex needs the complex axis {axis} to be of size 2  but it is {x.shape[axis]}!"))

@@ -45,10 +45,10 @@ class BasisTransform(Operator):
             raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
         if coef_domain.dtype != dtype or eval_domain.dtype != dtype:
             raise ValueError(Errors.value_error("The dtypes of the different domains have to be identical with the given dtype."))
-        if np.any(basis.shape[0] != eval.size for (basis,eval) in zip(bases,eval_domain)):
-            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"))
-        if np.any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
-            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 1 the size of the coef domain!"))
+        if any(basis.shape[0] != int(eval.size) for (basis,eval) in zip(bases,eval_domain)):
+            raise ValueError(Errors.value_error(f"The vectors in the bases need to have as shape 0 the size of the eval domain!\n\t  bases shapes = {tuple(basis.shape[0] for basis in bases)} \n\t eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
+        if any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
+            raise ValueError(Errors.value_error(f"The vectors in the bases need to have as shape 1 the size of the coef domain! \n\t  bases shapes = {tuple(basis.shape[1] for basis in bases)} \n\t coef_domain sizes = {tuple(int(coef.size) for coef in coef_domain)}"))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
         r""" `dtype` of the vector spaces."""

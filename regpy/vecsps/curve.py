@@ -178,7 +178,7 @@ class StarCurve(GenCurve):
 
     def __call__(self,der=0):
         res = self._call(der=der)
-        if not res.ndim != 1:
+        if res.ndim != 1:
             raise RuntimeError(Errors.runtime_error(f"Calling the StarCurve {self} did not construct a array of one dimension!"))
         if der == 0:
             return np.array([res*np.cos(self.t),res*np.sin(self.t)])
@@ -611,7 +611,7 @@ class StarTrigCurve:
     """
 
     def __init__(self, vecsp, coeffs, nvals=None, nderivs=0):
-        if not isinstance(n, nderivs) or nderivs <0 or nderivs >3:
+        if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
             raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
         self.vecsp = vecsp
         """The vector space."""

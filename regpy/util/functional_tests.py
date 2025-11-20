@@ -14,8 +14,8 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
 
     Parameters
     ----------
-    func : regpy.functionals.IntegralFunctionalBase
-        The functional.
+    func : regpy.functionals.Functional
+        The functional. Needs to be separable!
     eps_perturbation: float or None [default: None]
         If not None, an additional vector h is returned  
         
@@ -24,8 +24,6 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     An element u of func.domain
     If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
-    if not isinstance(func,IntegralFunctionalBase):
-        raise TypeError(Errors.not_instance(func,IntegralFunctionalBase,add_info="To sample in the domain the functional needs to be a IntegralFunctionalBase"))
     if not func.separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     dom_l = np.max(func.dom_l)
@@ -322,8 +320,8 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     if func.Lipschitz<(1-1e-10)*np.max(fpp):
         func.log.warning(f"Failed Lipschitz test! Lipschitz constant {func.Lipschitz} is smaller than second derivative {np.max(fpp)}")
         return False
-    if np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf and func.Lipschitz!=np.inf:
-        func.log.warning("Failed Lipschitz test! Lipschitz constant finite, but essential domain is constrained.")
+    if (np.max(func.dom_u)< np.inf or np.min(func.dom_l)>-np.inf) and func.Lipschitz != np.inf:
+        func.log.warning(f"Failed Lipschitz test! Lipschitz constant finite {func.Lipschitz}, but essential domain is constrained: \n\t dom_u = {func.dom_u} \n\t dom_l = {func.dom_l}")
         return False
     if func.convexity_param>np.min(fpp)+1e-12:
         func.log.warning("Failed Lipschitz test! Convexity parameter {func.convexity_param} is larger than second derivative {np.min(fpp)}")

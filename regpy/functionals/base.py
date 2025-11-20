@@ -6,8 +6,7 @@ import logging
 import numpy as np
 from numpy import isscalar
 
-from regpy import operators, util, vecsps
-from regpy import hilbert
+from regpy import operators, util, vecsps, hilbert
 
 __all__ = ["as_functional","AbstractFunctional","Functional","LinearFunctional","LinearCombination","Composed","SquaredNorm","VerticalShift","HorizontalShiftDilation","FunctionalOnDirectSum"]
 
@@ -147,8 +146,8 @@ class AbstractFunctional(AbstractFunctionalBase):
             clone.args.update(kwargs)
             return clone
         for cls in type(vecsp).mro():
-            if not isinstance(vecsp,vecsps.VectorSpaceBase):
-                raise ValueError(util.Errors.not_instance(vecsp,vecsps.VectorSpaceBase))
+            if not isinstance(vecsp,(vecsps.VectorSpaceBase, hilbert.HilbertSpace)):
+                raise TypeError(util.Errors.type_error("The vecsp of an Abstract functional can be either a RegPy vector space or Hilbert space!"))
             try:
                 impls = self._registry[cls]
             except KeyError:
@@ -906,7 +905,7 @@ class SquaredNorm(Functional):
             self.log.warning("The inverse of the gram operator is not implemented. This will lead to errors in the conjugate functionals.")
         self.a=float(a)
         if shift is None:
-            if b is None 
+            if b is None:
                 if isinstance(self.domain,vecsps.NumPyVectorSpace):
                     self.b = np.broadcast_to(np.zeros(()),self.domain.shape)
                 else:
@@ -1315,14 +1314,15 @@ class HorizontalShiftDilation(Functional):
         Shift vector. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
     """
     def __init__(self, func, dilation =1., shift = None):
-        if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) or shift in func.domain):
-            raise ValueError(util.Errors.value_error(f""" The HorizontalShiftDilation only takes three arguments one Functional, 
-                                                     one dialation that is a scalar and one shift that is either a scalar or a elemnt in the domain of the functionals. 
-                                                     However, you gave:
-                                                        func = {func},
-                                                        dialation = {dilation}
-                                                        shift = {shift}.
-                                                        """))
+        if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
+            raise ValueError(util.Errors.value_error(f""" 
+    The HorizontalShiftDilation only takes three arguments Functional, 
+    dialation a scalar and shift that is either a scalar or a element in the domain of the functionals. 
+    However, you gave:
+    func = {func},
+    dialation = {dilation}
+    shift = {shift}.
+    """))
         if dilation==0.:
             raise ValueError(util.Errors.value_error("dilation must not vanisch."))
         if np.isscalar(shift):
@@ -1419,7 +1419,7 @@ class Composed(Functional):
         possible arguments passed to the operator norm computation.
     """
     def __init__(self, func, op, op_norm = inf, op_lower_bound = 0, compute_op_norm = False, norm_kwargs = {}):
-        if not isinstance(func, func):
+        if not isinstance(func, Functional):
             raise TypeError(util.Errors.not_instance(func,Functional))
         if not isinstance(op,operators.Operator):
             raise TypeError(util.Errors.not_instance(op,operators.Operator))

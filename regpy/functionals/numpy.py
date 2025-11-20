@@ -92,9 +92,9 @@ class IntegralFunctionalBase(Functional):
         if sum([trunc is not None for trunc in [constr_u,lin_taylor_u,quad_taylor_u]])>1:
             raise ValueError(Errors.value_error('At most one of the parameters constr_u,lin_taylor_u, quad_taylor_u may be specified.',self))     
 
-        if dom_l != -np.inf and not np.isscalar(dom_l) and dom_l not in domain: 
+        if np.any(dom_l != -np.inf) and not np.isscalar(dom_l) and dom_l not in domain: 
             raise TypeError(Errors.type_error(f"The lower bound of the essential domain if defined, can only be either a scaler or an element in the domain."))
-        if dom_u != np.inf and not np.isscalar(dom_u) and dom_u not in domain: 
+        if np.any(dom_u != np.inf) and not np.isscalar(dom_u) and dom_u not in domain: 
             raise TypeError(Errors.type_error(f"The upper bound of the essential domain if defined, can only be either a scaler or an element in the domain."))
         if constr_l is not None and not np.isscalar(constr_l) and constr_l not in domain: 
             raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scaler or an element in the domain."))
@@ -754,7 +754,7 @@ class IntegralFunctionalBase(Functional):
             raise RuntimeError(Errors.runtime_error(f'upper bound not satisfied for indices {np.where((r<0) & ~converged)}',self,"_numerical_prox"))
         if not np.all(lb>=dom_l):
             raise RuntimeError(Errors.runtime_error(f"Lower bound under the domains lower bound of the essential domain. \n\t lb = {lb},\n\t dom_l = {dom_l}", self,"_numerical_prox"))
-        if not np.all(ub>=dom_u):
+        if not np.all(ub<=dom_u):
             raise RuntimeError(Errors.runtime_error(f"Uper bound above the domains uper bound of the essential domain. \n\t ub = {ub},\n\t dom_u = {dom_u}", self,"_numerical_prox"))
 
         self.log.debug(f'lb: {lb}\n diff: {ub-lb}')
@@ -1810,7 +1810,7 @@ class QuadraticBilateralConstraints(LinearCombination):
             ub = domain.zeros()
         elif ub not in domain:
             raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:\n\t {ub}"))
-        if np.anl(lb>=ub):
+        if np.any(lb>=ub):
             raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint: \n\t lb = {lb},\n\t ub = {ub}"))
         if x0 is None:
             x0 =0.5*(lb+ub)
@@ -1985,7 +1985,7 @@ class L1Generic(Functional):
         Domain on which to define the generic L1.
     """
     def __init__(self, domain):
-        if not isinstance(self.domain,NumPyVectorSpace):
+        if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,"To construct a L1Generic functional you need a NumPyVectorSpace"))
         super().__init__(domain)
 

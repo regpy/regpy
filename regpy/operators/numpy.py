@@ -124,7 +124,7 @@ class CholeskyInverse(Operator):
             raise ValueError(Errors.not_linear_op(op,add_info="To construct a CholeskyInverse the operator needs to be linear."))
         if op.domain != op.codomain:
             raise ValueError(Errors.not_equal(op.domain,op.codomain,add_info= "Domain  has to match codomain to construct a CholeskyInverse operator."))
-        if not isinstance(op.domain,NumPyVectorSpace)
+        if not isinstance(op.domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(op.domain,NumPyVectorSpace,add_info="Domain has to be a NumPyVectorSpace for the CholeskyInverse"))
         domain = op.domain
         if matrix is None:
