@@ -20,9 +20,9 @@ class StopRule:
         self.y = None
         """The operator value at the current iterate. This is set by the solver when calling :meth:`stop`. Can be `None` if not available."""
         self.triggered = False
-        """
-        Whether the stopping rule decided to stop.
-        """
+        """Whether the stopping rule decided to stop."""
+        self.history_dict = {}
+        """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
 
     def stop(self, x, y=None,dual=None):
         """Check whether to stop iterations.
@@ -197,7 +197,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
-        self.history_dict = {"relative discrepancy":[]}
+        self.history_dict["relative discrepancy"] = []
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
@@ -237,7 +237,7 @@ class RelativeChangeData(StopRule):
         self.norm = norm
         self.cutoff = cutoff
         self.data_old = data
-        self.history_dict = {"relative change of y":[]}
+        self.stat_list["relative change of y"] = []
 
     def __repr__(self):
         return 'RelativeChangeData(cutoff={})'.format(
@@ -278,7 +278,7 @@ class RelativeChangeSol(StopRule):
         self.norm = norm
         self.cutoff = cutoff
         self.sol_old = init
-        self.history_dict = {"relative change of x":[]}
+        self.history_dict["relative change of x"] = []
 
     def __repr__(self):
         return 'RelativeChangeSol(cutoff={})'.format(
@@ -312,7 +312,8 @@ class Monotonicity(StopRule):
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
-        self.history_dict = {"monotonicity":[],"residual":[]}
+        self.history_dict["monotonicity"] = []
+        self.history_dict["residual"] = []
 
     def __repr__(self):
         return 'Monotonicty'
@@ -341,7 +342,7 @@ class DualityGapStopping(StopRule):
         else:
             self.cutoff = cutoff
         self.log.setLevel(logging_level)
-        self.history_dict = {"duality gap":[]}
+        self.history_dict["duality gap"] = []
 
     def __repr__(self):
         return 'DualityGapStopping(cutoff={})'.format(
