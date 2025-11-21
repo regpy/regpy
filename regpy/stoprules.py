@@ -261,7 +261,7 @@ class RelativeChangeData(StopRule):
         self.norm = norm
         self.cutoff = cutoff
         self.data_old = data
-        self.stat_list["relative change of y"] = []
+        self.history_dict["relative change of y"] = []
 
     def __repr__(self):
         return 'RelativeChangeData(cutoff={})'.format(
@@ -272,7 +272,7 @@ class RelativeChangeData(StopRule):
             raise MissingValueError
         change = self.norm(y - self.data_old)
         self.data_old = y.copy()
-        self.stat_list["relative change of y"].append(change)
+        self.history_dict["relative change of y"].append(change)
         self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
