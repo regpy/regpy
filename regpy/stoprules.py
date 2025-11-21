@@ -197,9 +197,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
-        self.stat_list = []
-        self.stat_name = "relative discrepancy"
-
+        self.stat_dict = {"relative discrepancy":[]}
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
@@ -210,7 +208,7 @@ class Discrepancy(StopRule):
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
-        self.stat_list.append(rel)
+        self.stat_dict["relative discrepancy"].append(rel)
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
@@ -239,8 +237,7 @@ class RelativeChangeData(StopRule):
         self.norm = norm
         self.cutoff = cutoff
         self.data_old = data
-        self.stat_list = []
-        self.stat_name = "relative change of y"
+        self.stat_dict = {"relative change of y":[]}
 
     def __repr__(self):
         return 'RelativeChangeData(cutoff={})'.format(
@@ -251,7 +248,7 @@ class RelativeChangeData(StopRule):
             raise MissingValueError
         change = self.norm(y - self.data_old)
         self.data_old = y.copy()
-        self.stat_list.append(change)
+        self.stat_list["relative change of y"].append(change)
         self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -281,8 +278,7 @@ class RelativeChangeSol(StopRule):
         self.norm = norm
         self.cutoff = cutoff
         self.sol_old = init
-        self.stat_list = []
-        self.stat_name = "relative change of x"
+        self.stat_dict = {"relative change of x":[]}
 
     def __repr__(self):
         return 'RelativeChangeSol(cutoff={})'.format(
@@ -291,7 +287,7 @@ class RelativeChangeSol(StopRule):
     def _stop(self, x, y=None,dual=None):
         change = self.norm(x - self.sol_old)
         self.sol_old = x.copy()
-        self.stat_list.append(change)
+        self.stat_dict["relative change of x"].append(change)
         self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -316,8 +312,7 @@ class Monotonicity(StopRule):
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
-        self.stat_list = [[],[]]
-        self.stat_name = ["monotonicity","residual"]
+        self.stat_dict = {"monotonicity":[],"residual":[]}
 
     def __repr__(self):
         return 'Monotonicty'
@@ -327,8 +322,8 @@ class Monotonicity(StopRule):
             raise MissingValueError
         residual = self.norm(self.data - y)
         change = self.residual - residual
-        self.stat_list[0].append(change)
-        self.stat_list[1].append(residual)
+        self.stat_dict["monotonicity"].append(change)
+        self.stat_dict["residual"].append(residual)
         self.residual = residual
         self.log.info('Monotonicity = {}, residual = {}'.format(
             change, residual))
@@ -346,8 +341,7 @@ class DualityGapStopping(StopRule):
         else:
             self.cutoff = cutoff
         self.log.setLevel(logging_level)
-        self.stat_list = []
-        self.stat_name = "duality gap"
+        self.stat_dict = {"duality gap":[]}
 
     def _stop(self, x, y=None, dual=None):
         if dual is not None:
@@ -356,7 +350,7 @@ class DualityGapStopping(StopRule):
             gap = self.setting.dualityGap(primal = x,dual=self.setting.primalToDual(y,argumentIsOperatorImage=True))
         else:
             gap = self.setting.dualityGap(primal = x)
-        self.stat_list.append(gap)
+        self.stat_dict["duality gap"].append(gap)
         gap_stop = gap<=self.cutoff
         self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
         return gap_stop 
