@@ -2,7 +2,7 @@ import math as ma
 from scipy.sparse.linalg import eigsh
 
 
-from regpy.util import ClassLogger, Errors
+from regpy.util import ClassLogger, Errors,DualityGapStopping,CombineRules
 from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
 from regpy.functionals.base import  as_functional, Composed
@@ -102,8 +102,10 @@ class Solver:
             The (x, y) pair of the current iteration, or the solution chosen by
             the stopping rule.
         """
-
-        while not stoprule.stop(self.x,self.y) and self.next(): 
+        self.check_for_duality_stoprule(stoprule)
+        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
+            self._compute_dual()
+        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
             yield self.x, self.y
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
  
@@ -128,7 +130,10 @@ class Solver:
         """
         self.next()
         yield self.x, self.y
-        while not stoprule.stop(self.x,self.y) and self.next(): 
+        self.check_for_duality_stoprule(stoprule)
+        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
+            self._compute_dual()
+        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
             yield self.x, self.y
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
@@ -144,6 +149,14 @@ class Solver:
             x = self.x
             y = self.y
         return x, y
+    
+    def check_for_duality_stoprule(self,stoprule) -> None:
+        if not hasattr(self,"compute_dual") or not self.compute_dual:
+            if isinstance(stoprule,DualityGapStopping):
+                self.compute_dual = True
+            elif isinstance(stoprule,CombineRules):
+                for rule in stoprule.rules:
+                    self.check_for_duality_stoprule(rule)
 
 
 class RegSolver(Solver):
