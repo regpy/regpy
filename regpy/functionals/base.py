@@ -1446,14 +1446,16 @@ class FunctionalOnDirectSum(Functional):
         self.funcs = list(funcs)
         """List of the functionals on each summand of the direct sum domain.
         """
+        separable = all([func.separable for func in funcs])
+        dom_l = domain.join(*[func.dom_l for func in funcs]) if separable else None
+        dom_u = domain.join(*[func.dom_u for func in funcs]) if separable else None
+        conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]) if separable else None
+        conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]) if separable else None
         super().__init__(domain, linear = all([func.linear for func in funcs]),
                         convexity_param = min([func.convexity_param for func in funcs]),
                         Lipschitz = max([func.Lipschitz for func in funcs]),
-                        separable = all([func.separable for func in funcs]),
-                        dom_l = domain.join(*[func.dom_l for func in funcs]),
-                        dom_u = domain.join(*[func.dom_u for func in funcs]),
-                        conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]),
-                        conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]),                        
+                        separable = separable,
+                        dom_l = dom_l, dom_u = dom_u, conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u                        
                         )
 
     def _eval(self, x): 
