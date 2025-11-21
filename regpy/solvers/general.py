@@ -2,12 +2,12 @@ import math as ma
 from scipy.sparse.linalg import eigsh
 
 
-from regpy.util import ClassLogger, Errors,DualityGapStopping,CombineRules
+from regpy.util import ClassLogger, Errors
 from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import SquaredNorm
-from regpy.stoprules import NoneRule
+from regpy.stoprules import NoneRule,DualityGapStopping,CombineRules
 
 
 class Solver:

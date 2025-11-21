@@ -128,11 +128,6 @@ class FISTA(RegSolver):
         if self.compute_dual:
             self._compute_dual()
         
-        # try:
-        #     self.gap=self.setting.dualityGap(primal = self.x)
-        #     self.dualityGapWorks =True
-        # except NotImplementedError:
-        #     self.dualityGapWorks = False
 
     def _compute_dual(self):
         self.dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True)
@@ -156,4 +151,4 @@ class FISTA(RegSolver):
         self.y = self.op(self.x)
 
         if self.compute_dual:
-            self.dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True)
+            self._compute_dual()

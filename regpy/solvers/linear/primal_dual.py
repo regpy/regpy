@@ -80,7 +80,6 @@ class PDHG(RegSolver):
         self.dual = self.pstar
         self.x_old = self.x
         self.compute_y = compute_y
-        # self.compute_gap = compute_gap
         self.y = self.op(self.x) if self.compute_y else None
 
         if tau<0 or sigma<0:
@@ -116,13 +115,7 @@ class PDHG(RegSolver):
             self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
-        # if self.compute_gap:
-        #     try:
-        #         self.gap = self.setting.dualityGap(primal=self.x)
-        #     except:
-        #         self.log.warning('missing implemtation in fuctionals to compute duality gap. The gap is not computed')
-        #         self.compute_gap = False
-        #         self.gap = None      
+
 
 
     def _next(self):
@@ -138,8 +131,7 @@ class PDHG(RegSolver):
             self.tau *= self.theta
             self.sigma /= self.theta
         self.dual = self.pstar
-        # if self.compute_gap:
-        #     self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
+
 
  
 
