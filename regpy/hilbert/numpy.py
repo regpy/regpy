@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.sparse import csc_matrix
 
-from regpy import util, vecsps
+from regpy import vecsps
+from regpy.util import memoized_property,Errors
 from regpy.operators import PtwMultiplication,Pow,MatrixMultiplication,FourierTransform,CoordinateProjection
 
 from .base import HilbertSpace
@@ -20,11 +21,12 @@ class L2MeasureSpaceFcts(HilbertSpace):
     """
 
     def __init__(self, vecsp, weights=None):
-        assert isinstance(vecsp,vecsps.MeasureSpaceFcts)
+        if not isinstance(vecsp,vecsps.MeasureSpaceFcts):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or an derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         if self.weights is None:
             if np.all(self.vecsp.measure==1):
@@ -41,10 +43,12 @@ class L2UniformGridFcts(HilbertSpace):
     """
 
     def __init__(self, vecsp, weights=None):
+        if not isinstance(vecsp,vecsps.UniformGridFcts):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         if self.weights is None:
             return self.vecsp.volume_elem * self.vecsp.identity
@@ -65,7 +69,8 @@ class SobolevUniformGridFcts(HilbertSpace):
         List of axes for which to compute in default all axes, Defaults: None
     """
     def __init__(self, vecsp, index=1, axes=None):
-        assert isinstance(vecsp,vecsps.UniformGridFcts)
+        if not isinstance(vecsp,vecsps.UniformGridFcts):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
         super().__init__(vecsp)
         self.index = index
         if axes is None:
@@ -81,7 +86,7 @@ class SobolevUniformGridFcts(HilbertSpace):
         else:
             return NotImplemented
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         ft = FourierTransform(self.vecsp, axes=self.axes)
         mul = PtwMultiplication(
@@ -139,14 +144,15 @@ class HmDomain(HilbertSpace):
                 alpha = 1,
                 dtype = float):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise ValueError("The underlying vecsp has to be of type UniformGridFcts")
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"The underlying vecsp has to be of type UniformGridFcts"))
         if mask is None:
             mask = vecsp.ones() == 1
         elif vecsp.shape != mask.shape:
-            raise ValueError("mask has to have the same shape as the vector space")
-        if not isinstance(index,int) or index<0:
-            raise ValueError("index has to be a non-negative integer")
-        
+            raise ValueError(Errors.value_error("mask has to have the same shape as the vector space"),self)
+        if not isinstance(index,int):
+            raise TypeError(Errors.not_instance(index,int,add_info="index has to be a non-negative integer!"))
+        elif index<0:
+            raise ValueError(Errors.value_error("The index in an HmDomain has to be a non-negative integer!"))
         super().__init__(vecsp)
 
 
@@ -194,7 +200,7 @@ class HmDomain(HilbertSpace):
         elif weight.shape == mask.shape:
             self.weight = np.pad(weight,1,'edge')
         else:
-            raise ValueError("weight has to have the same shape as the vector space or be None")
+            raise ValueError(Errors.value_error("weight has to have the same shape as the vector space or be None",self))
 
     def I_minus_Delta(self):
         r"""
@@ -246,7 +252,7 @@ class HmDomain(HilbertSpace):
         s = np.concatenate([s,dia])
         return csc_matrix((s, (i,j)),(N,N))
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         mat = Pow(
             MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),

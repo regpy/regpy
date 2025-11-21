@@ -1,5 +1,7 @@
 import math as ma
 
+from regpy.util import Errors
+
 from ..general import RegSolver, TikhonovRegularizationSetting
 
 __all__ = ["ForwardBackwardSplitting","FISTA"]
@@ -28,15 +30,19 @@ class ForwardBackwardSplitting(RegSolver):
     """
 
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
-        assert isinstance(setting,TikhonovRegularizationSetting), "Setting is not a TikhonovRegularizationSetting instance."
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
-
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
-        assert self.x in self.op.domain
-        assert self.op.linear
+
         self.tau = 1/setting.op.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
         """The step size parameter"""
-        assert self.tau>0        
+        if tau<=0:
+            raise ValueError(Errors.value_error("tau the step size needs to be positive!"))   
         self.proximal_pars = proximal_pars
         self.log.setLevel(logging_level)
 
@@ -83,11 +89,15 @@ class FISTA(RegSolver):
         logging level
     """
     def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
-        assert isinstance(setting,TikhonovRegularizationSetting)
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
-        assert self.x in self.op.domain    
-        assert self.op.linear  
+
         self.log.setLevel(logging_level)
 
         self.y = self.op(self.x)
@@ -99,8 +109,8 @@ class FISTA(RegSolver):
 
         self.tau = 1./(setting.op.norm(setting.h_domain,setting.h_codomain)**2 * self.data_fid.Lipschitz) if tau is None else tau
         """The step size parameter"""
-        assert self.tau>0
- 
+        if tau<=0:
+            raise ValueError(Errors.value_error("tau the step size needs to be positive!"))  
         self.t = 0
         self.t_old = 0
         self.mu = self.mu_data_fidelity+self.mu_penalty

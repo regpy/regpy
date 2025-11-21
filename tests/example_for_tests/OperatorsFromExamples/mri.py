@@ -1,1 +1,0 @@
-../../../examples/mri/mri.py

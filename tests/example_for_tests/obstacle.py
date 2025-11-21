@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import numpy as np
 
@@ -8,7 +9,11 @@ from regpy.hilbert import L2, Sobolev
 from regpy.solvers import RegularizationSetting
 from regpy.vecsps.curve import apple
 
-from .OperatorsFromExamples.dirichlet_op import DirichletOp, create_synthetic_data
+from . import import_example_package
+
+import_example_package("./examples/obstacle/")
+
+from dirichlet_op import DirichletOp, create_synthetic_data
 
 
 def test_obstacle():
@@ -56,5 +61,4 @@ def test_obstacle():
     solver.run(stoprule)
 
 
-
-
+sys.path.pop(0)

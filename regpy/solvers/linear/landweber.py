@@ -1,5 +1,6 @@
 from math import sqrt
 
+from regpy.util import Errors
 from ..general import RegSolver
 
 __all__ = ["Landweber"]
@@ -36,6 +37,12 @@ class Landweber(RegSolver):
 
     def __init__(self, setting, data, init, stepsize=None, norm_method = None):
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="The linear Landweber requires the operator to be linear! Use the Landweber from non-linear module!"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
+        if init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.rhs = data
         """The right hand side gets initialized to measured data"""
         self.x = init

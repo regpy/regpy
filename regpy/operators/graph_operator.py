@@ -1,4 +1,5 @@
 from regpy import vecsps
+from regpy.util import Errors
 
 from .base import Operator,Identity
 
@@ -14,6 +15,8 @@ class OperatorNode:
     """
 
     def __init__(self,op):
+        if not isinstance(op,Operator):
+            raise TypeError(Errors.not_instance(op,Operator, add_info="An OperatorNode can only be constructed on a RegPy Operator!"))
         self.op=op
         self.N_in=len(self.op.domain.summands) if isinstance(self.op.domain,vecsps.DirectSum) else 1
         self.N_out=len(self.op.codomain.summands) if isinstance(self.op.codomain,vecsps.DirectSum) else 1
@@ -50,13 +53,16 @@ class OperatorNode:
     def combine_input(self,data_dict):
         """Combines the input from the input edges.
 
-        Parameteres:
+        Parameters
+        ----------
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
-        Returns:
+        Returns
+        -------
             array-like: element in the domain of the operator
-        """        
-        assert all(edge is not None for edge in self.input_edges)
+        """ 
+        if any(edge is None for edge in self.input_edges):
+            raise RuntimeError(Errors.runtime_error("There is an empty input edge. Not able to combine such inputs!",self,"combine_input"))
         if(self.N_in==1):
             edge=self.input_edges[0]
             return edge.pass_forward(data_dict[edge.start_node])
@@ -66,10 +72,12 @@ class OperatorNode:
     def combine_output(self,data_dict):
         """Combines the output from the output edges. This is used for the evaluation of the adjoint.
 
-        Parameteres:
+        Parameters
+        ----------
             data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
 
-        Returns:
+        Returns
+        -------
             array-like: element in the codomain of the operator
         """           
         if(self.output_edges==[]):
@@ -106,20 +114,27 @@ class Edge:
     """
 
     def __init__(self,start_node,end_node,start_list,end_index):
-        assert isinstance(start_node,OperatorNode) or start_node is None
-        assert isinstance(end_node,OperatorNode) or end_node is None
-        assert isinstance(start_list,list)
-        assert isinstance(end_index,int)
+        if not isinstance(start_node,OperatorNode) and start_node is not None:
+            raise TypeError(Errors.type_error("The start node for an Edge in operator networks need to be either None or an OperatorNode"))
+        if not isinstance(end_node,OperatorNode) and end_node is not None:
+            raise TypeError(Errors.type_error("The end node for an Edge in operator networks need to be either None or an OperatorNode"))
+        if not isinstance(start_list,list) or any(not isinstance(k,int) for k in start_list):
+            raise TypeError(Errors.not_instance(start_list,list,add_info="The list of output indices needs to be a list of integers!"))
+        if not isinstance(end_index,int):
+            raise TypeError(Errors.not_instance(end_index,int,add_info="The index of the input needs to be a single integer!"))
         self.start_node=start_node
         self.end_node=end_node
         self.start_list=start_list
         self.end_index=end_index
         if(self.start_node is not None):
-            assert all(i>=0 and i<self.start_node.N_out for i in self.start_list)
+            if any(i<0 or i>=self.start_node.N_out for i in self.start_list):
+                raise ValueError(Errors.value_error(f"The given list of start indices has indices out of the index set of the start node!\n\t start_list = {start_list}\n\t start_node.N_out = {start_node.N_out}"))
             self.start_node.output_edges.append(self)
         if(self.end_node is not None):
-            assert end_index<self.end_node.N_in
-            assert self.end_node.input_edges[self.end_index] is None
+            if end_index<0 or end_index>=self.end_node.N_in:
+                raise ValueError(Errors.value_error(f"The given end index is out of the bound of indices of the end node!\n\t end_index = {end_index}\n\t end_node.N_in = {end_node.N_in}"))
+            if self.end_node.input_edges[self.end_index] is not None:
+                raise ValueError(Errors.value_error(f"The input edge of the end_node is not empty for the index {end_index} you gave! It is already set to {self.end_node.input_edges[self.end_index]}"))
             self.end_node.input_edges[self.end_index]=self
             if(self.end_node.N_in==1):
                 self.end_space=self.end_node.op.domain
@@ -129,10 +144,12 @@ class Edge:
     def construct_start_space(self):
         """Constructs vector space corresponding to input of the edge.
 
-        Returns:
+        Returns
+        -------
             regpy.vecsps.VectorSpace: VectorSpace corresponding to combined input of this edge.
-        """        
-        assert self.start_node is not None
+        """
+        if self.start_node is None:
+            raise RuntimeError(Errors.runtime_error("Constructing a start space of an edge with no start_node is not possible!",self,"construct_start_space"))
         if(self.start_node.N_out==1):
             return self.start_node.op.codomain
         if(len(self.start_list)==1):
@@ -155,13 +172,18 @@ class Edge:
     def pass_forward(self,x):
         """Passes and transforms data forwards through the edge.
 
-        Parameters:
-            x (_type_): element of the codomain of the operator of the input node.
+        Parameters
+        ----------
+        x : array_like
+            element of the codomain of the operator of the input node.
 
-        Returns:
-            _type_: element of the part of the domain of the operator of the output node.
-        """        
-        assert self.end_node is not None and self.start_node is not None
+        Returns
+        -------
+        array_like 
+            element of the part of the domain of the operator of the output node.
+        """       
+        if self.end_node is None or self.start_node is None:
+            raise RuntimeError(Errors.runtime_error(f"Cannot pass data through this edge because either start node or end node are None:\n\t start_node = {self.start_node}\n\t end_node = {self.end_node}",self,"pass_forward"))
         if(self.start_node.N_out==1):
             if(len(self.start_list)==1):
                 return x
@@ -200,13 +222,14 @@ class Edge:
             return x_vals
         
     def __getitem__(self,index):
-        assert isinstance(index,int)
+        if not isinstance(index,int):
+            raise IndexError(Errors.indexation(index=index,obj=self,add_info="Indexation of edge only allows integers 0 or 1, for start and end node respectively!"))
         if index == 0:
             return self.start_node.op,self.start_list
         elif index == 1:
             return self.end_node.op,self.end_index
         else:
-            raise IndexError("Only index 0 for start,1 for end allowed.")
+            raise IndexError(Errors.indexation(index=index,obj=self,add_info="Only index 0 for start,1 for end allowed."))
         
 
 class OperatorGraph(Operator):
@@ -223,6 +246,10 @@ class OperatorGraph(Operator):
         the operators are given. Defaults to True.
     """
     def __init__(self, operators,edges,calc_exec_order=True):
+        if not isinstance(operators,list) or any(not isinstance(op_i,Operator) for op_i in operators):
+            raise TypeError(Errors.type_error("To construct an operator graph the operators need to be a list of proper RegPy operators"))
+        if not self._validate_edges_input(edges):
+            raise ValueError(Errors.value_error(f"The given edges do not follow the desired format of a list of ((input operator,[input indices]),(output operator,output index)). Was given\n\t {edges}"))
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
@@ -261,6 +288,40 @@ class OperatorGraph(Operator):
         else:
             self.operators=self.input_op+operators+self.output_op
         super().__init__(self.input_op.domain, self.output_op.codomain, linear)
+
+    def _validate_edges_input(edges):
+        """ Validates the input of edges determining if edges are a list of the format  
+        ((input operator,[input indices]),(output operator,output index)). 
+        
+        Parameters
+        ----------
+        edges : list of tuple
+            Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
+        
+        Returns
+        -------
+        boolean
+            Returns true if the given edge set has a valid structure.
+        """
+        # needs to be a list or tuple
+        if not isinstance(edges,(tuple,list)):
+            return False
+        # each entry needs and in and out 
+        elif any(not isinstance(e,tuple) or len(e)!=2 for e in edges):
+            return False
+        # each output needs to be (output operator,output index)
+        elif any(len(e[1])!=2 or 
+                 not isinstance(e[1][0],Operator) or 
+                 not isinstance(e[1][1],int) for e in edges):
+            return False
+        # each input needs to be (input operator,[input indices])
+        elif any(len(e[0])!=2 or 
+                 not isinstance(e[0][0],Operator) or 
+                 not isinstance(e[0][1],list) or 
+                 any(ind is not None or not isinstance(ind,int) for ind in e[0][1]) for e in edges):
+            return False
+        else:
+            return True
 
     def _clean_edge_data(edge_data):
         """Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.

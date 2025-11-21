@@ -1,6 +1,7 @@
 from math import sqrt,inf
 import numpy as np
 
+from regpy.util import Errors
 from ..general import RegSolver, TikhonovRegularizationSetting
 
 __all__ = ["FISTA"]
@@ -38,10 +39,14 @@ class FISTA(RegSolver):
     def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, 
                  proximal_pars=None,logging_level= "INFO",
                  data=None, without_codomain_vectors=False):
-        assert isinstance(setting,TikhonovRegularizationSetting)
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="FISTA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
+        if self.op.linear:
+            raise RuntimeWarning(Errors.generic_message("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear"))
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
-        assert init is None or init in self.op.domain
         
         if data is not None:
             self.data = data
@@ -57,7 +62,8 @@ class FISTA(RegSolver):
 
         self.without_codomain_vectors=without_codomain_vectors
         self.eta = eta
-        assert 0<self.eta<1
+        if not (0<self.eta<1):
+            raise ValueError(Errors.value_error("The Step size reduction constant must be between 0 and 1!"))
 
         if self.data_fid.Lipschitz != inf:
             if without_codomain_vectors:
@@ -72,8 +78,8 @@ class FISTA(RegSolver):
             self.y = self.op(self.x)
             self.tau = tau
             self.backtracking = True
-        assert self.tau>0 
-
+        if self.tau<=0:
+            raise ValueError(Errors.value_error("The Step size must be positive!"))
         self.t = 0
         self.t_old = 0
         self.mu = self.mu_data_fidelity+self.mu_penalty

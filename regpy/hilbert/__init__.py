@@ -3,6 +3,7 @@ r"""Concrete and abstract Hilbert spaces on vector spaces.
 
 import logging
 
+from regpy.util import Errors
 from regpy.vecsps import *
 from regpy.vecsps import DirectSum as DirectSumVS
 from regpy.operators import Operator
@@ -30,8 +31,10 @@ def as_hilbert_space(h, vecsp):
             h = GramHilbertSpace(h)
         elif callable(h):
             h = h(vecsp)
-    assert isinstance(h, HilbertSpace)
-    assert h.vecsp == vecsp
+    if not isinstance(h, HilbertSpace):
+        raise RuntimeError(Errors.not_instance(h,HilbertSpace,add_info="The construction with the method as_hilbert_space failed to construct a Hilbert Space!"))
+    if h.vecsp != vecsp:
+        raise RuntimeError(Errors.not_equal(vecsp,h.vecsp,add_info="The constructed Hilbert space with as_hilbert_space constructed a Hilbert space with diverting vector space than the method was called with!"))
     return h
 
 

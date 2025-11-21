@@ -1,1 +1,0 @@
-../../../../examples/obstacle/functions/setup_iop_data.py

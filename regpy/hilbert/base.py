@@ -4,8 +4,9 @@ import logging
 
 import numpy as np
 
-from regpy import util, vecsps
-from regpy.operators import CholeskyInverse,PtwMultiplication
+from regpy import vecsps
+from regpy.util import Errors, memoized_property, ClassLogger
+from regpy.operators import CholeskyInverse,PtwMultiplication, Operator
 from regpy.operators import DirectSum as DirectSumOp
 from regpy.operators.bases_transform import BasisTransform
 
@@ -36,10 +37,11 @@ class HilbertSpace:
         The underlying vector space. Should be the domain and codomain of the Gram matrix.
     """
 
-    log = util.ClassLogger()
+    log = ClassLogger()
 
     def __init__(self, vecsp):
-        assert isinstance(vecsp, vecsps.VectorSpaceBase)
+        if not isinstance(vecsp, vecsps.VectorSpaceBase):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are only defined on vector spaces defined on subsidies of the RegPy VectorSpaceBase"))
         self.vecsp = vecsp
         """The underlying vector space."""
         self._no_pickle = {}
@@ -102,7 +104,7 @@ class HilbertSpace:
         """
         return sqrt(self.inner(x, x))
 
-    @util.memoized_property
+    @memoized_property
     def norm_functional(self):
         r"""The squared norm functional as a `regpy.functionals.Functional` instance.
         """
@@ -156,9 +158,15 @@ class GramHilbertSpace(HilbertSpace):
         Inverse of the Gram matrix    
     """
     def __init__(self, gram, gram_inv=None):
-        assert gram.domain == gram.codomain
+        if not isinstance(gram,Operator):
+            raise TypeError(Errors.not_instance(gram,Operator,"To define a GramHilbertSpace the gram operator has to be a proper RegPy operator."))
+        if gram.domain != gram.codomain:
+            raise ValueError(Errors.value_error(f"The domain and codomain of the gram operator for the GramHilbertSpace has to be identical. Was given:\n gram = {gram}"))
         if gram_inv is not None:
-            assert gram_inv.domain == gram_inv.codomain == gram.domain
+            if not isinstance(gram_inv,Operator):
+                raise TypeError(Errors.not_instance(gram_inv,Operator,"To define a GramHilbertSpace the with inverse, the gram_inv operator has to be a proper RegPy operator."))
+            if gram_inv.domain != gram_inv.codomain or gram_inv.domain != gram.domain:
+                raise ValueError(Errors.value_error(f"The domain and codomain of the gram_inv operator for the GramHilbertSpace has to be identical and match with the domain of the gram operator. Was given:\n\t gram = {gram}\n\t gram_inv={gram_inv}"))
         self._gram = gram
         self._gram_inv = gram_inv
         super().__init__(gram.domain)
@@ -201,11 +209,16 @@ class HilbertPullBack(HilbertSpace):
     """
 
     def __init__(self, space, op, inverse=None):
-        assert op.linear
+        if not isinstance(op,Operator):
+            raise TypeError(Errors.not_instance(op,Operator,"To define a HilbertPullBack the operator has to be a proper RegPy operator."))
+        if not op.linear:
+            raise ValueError(Errors.not_linear_op(op,add_info="To define a HilbertPullBack space the operator has to be linear!"))
         if not isinstance(space, HilbertSpace) and callable(space):
             space = space(op.codomain)
-        assert isinstance(space, HilbertSpace)
-        assert op.codomain == space.vecsp
+        if not isinstance(space, HilbertSpace):
+            raise TypeError(Errors.not_instance(space,HilbertSpace,add_info="The space for a HilbertSpacePullBack has to be a method returning a Hilbert space or a HilbertSpace"))
+        if op.codomain != space.vecsp:
+            raise ValueError(Errors.not_equal(op.codomain,space.vecsp,add_info="The vector space codomain of the operator and vector space of the Hilbert space to be pulled back need to match."))
         self.op = op
         """The operator."""
         self.space = space
@@ -220,7 +233,7 @@ class HilbertPullBack(HilbertSpace):
         elif inverse == 'cholesky':
             self.inverse = CholeskyInverse(self.gram)
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         return self.op.adjoint * self.space.gram * self.op
 
@@ -263,10 +276,13 @@ class DirectSum(HilbertSpace):
         for arg in args:
             if isinstance(arg, tuple):
                 w, s = arg
+                if not np.isscalar(w): raise TypeError(Errors.type_error("Weights in the DirectSum Hilbert Space need to be scalars!"))
+                if w <= 0:
+                    raise ValueError(Errors.value_error("Weights in the DirectSum Hilbert space need to be positive!"))
             else:
                 w, s = 1, arg
-            assert w > 0
-            assert isinstance(s, HilbertSpace)
+            if not isinstance(s, HilbertSpace):
+                raise TypeError(Errors.not_instance(s,HilbertSpace,add_info="The spaces in the direct sum hilbert space need to be proper HilbertSpaces!"))
             if flatten and isinstance(s, type(self)):
                 self.summands.extend(s.summands)
                 self.weights.extend(w * sw for sw in s.weights)
@@ -280,9 +296,13 @@ class DirectSum(HilbertSpace):
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.summands))
         else:
-            raise TypeError('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp))
-        assert isinstance(vecsp, vecsps.DirectSum) and len(self.summands) == len(vecsp.summands)
-        assert all(s.vecsp == d for s, d in zip(self.summands, vecsp))
+            raise TypeError(Errors.type_error('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp)))
+        if not isinstance(vecsp, vecsps.DirectSum):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.DirectSum,"The vector space for a DirectSum Hilbert space need to be a DirectSum!"))
+        if len(self.summands) != len(vecsp.summands):
+            raise ValueError(Errors.value_error("The number of summands of in the vector space does not match the number of Hilbert spaces to be summed!",self))
+        if any(s.vecsp != d for s, d in zip(self.summands, vecsp)):
+            raise ValueError(Errors.value_error("The vector spaces in the direct sum vector space does not match the vector spaces in the Hilbert spaces to be summed!"))
         super().__init__(vecsp)
 
     def __eq__(self, other):
@@ -295,7 +315,7 @@ class DirectSum(HilbertSpace):
         else:
             return NotImplemented
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         ops = []
         for w, s in zip(self.weights, self.summands):
@@ -359,10 +379,13 @@ class TensorProd(HilbertSpace):
         for arg in args:
             if isinstance(arg, tuple):
                 w, s = arg
+                if not np.isscalar(w): raise TypeError(Errors.type_error("Weights in the TensorProd Hilbert Space need to be scalars!"))
+                if w <= 0:
+                    raise ValueError(Errors.value_error("Weights in the TensorProd Hilbert space need to be positive!"))
             else:
                 w, s = 1, arg
-            assert w > 0
-            assert isinstance(s, HilbertSpace)
+            if not isinstance(s, HilbertSpace):
+                raise TypeError(Errors.not_instance(s,HilbertSpace,add_info="The spaces in the TensorProd Hilbert space need to be proper HilbertSpaces!"))
             if flatten and isinstance(s, type(self)):
                 self.factors.extend(s.factors)
                 self.weights.extend(w * sw for sw in s.weights)
@@ -377,8 +400,14 @@ class TensorProd(HilbertSpace):
         elif callable(vecsp):
             vecsp = vecsp(*(s.vecsp for s in self.factors))
         else:
-            raise TypeError('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp))
-        assert all(s.vecsp == d for s, d in zip(self.factors, vecsp))
+            raise TypeError(Errors.type_error('vecsp={} is neither a VectorSpaceBase nor callable'.format(vecsp)))
+        if not isinstance(vecsp, vecsps.Prod):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.Prod,"The vector space for a TensorProd Hilbert space need to be a Prod!"))
+        if len(self.factors) != len(vecsp.factors):
+            raise ValueError(Errors.value_error("The number of factors of in the vector space does not match the number of Hilbert spaces to be tensored!",self))
+        if any(s.vecsp != d for s, d in zip(self.factors, vecsp)):
+            raise ValueError(Errors.value_error("The vector spaces in the product vector space does not match the vector spaces in the Hilbert spaces to be tensored!"))
+        
 
         super().__init__(vecsp)
 
@@ -392,7 +421,7 @@ class TensorProd(HilbertSpace):
         else:
             return NotImplemented
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         bases = []
         domains = []
@@ -429,7 +458,7 @@ class L2Generic(HilbertSpace):
         super().__init__(vecsp)
         self.weights = weights
 
-    @util.memoized_property
+    @memoized_property
     def gram(self):
         if self.weights is None:
             return self.vecsp.identity
@@ -452,7 +481,7 @@ class AbstractSpaceBase:
     interesing stuff is in `AbstractSpace`.
     """
 
-    log = util.ClassLogger()
+    log = ClassLogger()
 
     def __add__(self, other):
         if callable(other):
@@ -550,7 +579,8 @@ class AbstractSpace(AbstractSpaceBase):
                 result = impl(vecsp, **kws)
                 if result is NotImplemented:
                     continue
-                assert isinstance(result, HilbertSpace)
+                if not isinstance(result, HilbertSpace):
+                    raise RuntimeError(Errors.not_instance(result,HilbertSpace,add_info=f"The Abstract Hilbert space {self} did not construct a proper Hilbert space on {vecsp}. THe result was:\n\t result = {result}."))
                 return result
         raise NotImplementedError(
             '{} not implemented on {}'.format(self.name, vecsp)
@@ -576,10 +606,12 @@ class AbstractSum(AbstractSpaceBase):
         for arg in args:
             if isinstance(arg, tuple):
                 w, s = arg
+                if w <= 0:
+                    raise ValueError(Errors.value_error("Weights in the AbstractDirectSum Hilbert space need to be positive!"))
             else:
                 w, s = 1, arg
-            assert w > 0
-            assert callable(s)
+            if not callable(s):
+                raise TypeError(Errors.not_instance(s,callable,add_info="The spaces in the AbstractDirectSum hilbert space need to be proper HilbertSpaces!"))
             if flatten and isinstance(s, type(self)):
                 self.summands.extend(s.summands)
                 self.weights.extend(w * sw for sw in s.weights)
@@ -588,7 +620,8 @@ class AbstractSum(AbstractSpaceBase):
                 self.weights.append(w)
 
     def __call__(self, vecsp):
-        assert isinstance(vecsp, vecsps.DirectSum)
+        if not isinstance(vecsp, vecsps.DirectSum):
+            raise TypeError(Errors.not_instance(vecsp,vecsps.DirectSum,f"The Abstract direct sum is only callable on a DirectSUm VectorSpace. Not a {vecsp}"))
         return DirectSum(
             *((w, s(d)) for w, s, d in zip(self.weights, self.summands, vecsp.summands)),
             vecsp=vecsp

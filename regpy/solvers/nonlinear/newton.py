@@ -2,6 +2,7 @@ from math import sqrt
 from copy import deepcopy
 
 from regpy.stoprules import CountIterations
+from regpy.util import Errors
 
 from ..general import RegSolver, RegularizationSetting
 from ..linear import SemismoothNewton_bilateral
@@ -40,14 +41,15 @@ class NewtonCG(RegSolver):
     """
 
     def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
-        assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.data = data
         """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        """The initial guess."""
-        self.x = init.copy()
+
+        self.x = init.copy() if init is not None else self.op.domain.zeros()
         if simplified_op:
             self.simplified_op = simplified_op
             """Simplified operator for derivative.
@@ -117,10 +119,15 @@ class NewtonCGFrozen(RegSolver):
     rho : number, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     """
-    def __init__(self, setting, data, init, cgmaxit=50, rho=0.8):
+    def __init__(self, setting, data, init = None, cgmaxit=50, rho=0.8):
         super().__init__(setting)
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.data = data
-        self.x = init
+        
+        self.x = init.copy() if init is not None else self.op.domain.zeros()
         _, self.deriv = self.op.linearize(self.x)
         self._n = 1
         self._op_copy = deepcopy(self.op)
@@ -197,8 +204,11 @@ class NewtonSemiSmoothFrozen(RegSolver):
         Semi-Smooth Newton. (Default: None)
     """
     def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
-        assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
+        if init is not None and init not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.rhs = data
         """The rhs y of the equation to be solved. Initialized by data
         """

@@ -1,4 +1,5 @@
-from regpy.util import ClassLogger
+from regpy.util import ClassLogger, Errors
+from regpy.operators import Operator
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
 
@@ -92,6 +93,10 @@ class CombineRules(StopRule):
     """
 
     def __init__(self, rules, op=None):
+        if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules!"))
+        if op is not None and not isinstance(op,Operator):
+            raise TypeError(Errors.type_error("The operator that is passed to the combined rules needs to be either None or an Operator!"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
@@ -143,6 +148,10 @@ class CountIterations(StopRule):
     """
 
     def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
+        if not isinstance(max_iterations,int):
+            raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
+        if max_iterations<0:
+            raise ValueError(Errors.value_error("The maximal iteration in CountIteration needs to be at least zero (for no iteration)!"))
         super().__init__()
         self.max_iterations = max_iterations
         self.iteration = 0
@@ -188,6 +197,16 @@ class Discrepancy(StopRule):
     """
 
     def __init__(self, norm, data, noiselevel, tau=2):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the discrepancy principle needs to be a callable!"))
+        if not isinstance(noiselevel,(int,float)):
+            raise TypeError(Errors.type_error("The noise level in the discrepancy principle should be real scalar!"))
+        if noiselevel<=0:
+            raise ValueError(Errors.value_error("The noise level in the discrepancy principle needs to be bigger then zero!"))
+        if not isinstance(tau,(int,float)):
+            raise TypeError(Errors.type_error("The multiplier in the discrepancy principle should be real scalar!"))
+        if tau<=1:
+            raise ValueError(Errors.value_error("The multiplier in the discrepancy principle needs to be bigger then one!"))
         super().__init__()
         self.norm = norm
         self.data = data
@@ -230,6 +249,12 @@ class RelativeChangeData(StopRule):
     """
 
     def __init__(self, norm, data, cutoff):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable!"))
+        if not isinstance(cutoff,(int,float)):
+            raise TypeError(Errors.type_error("The cutoff in the relative change of data stopping should be real scalar!"))
+        if cutoff<=0:
+            raise ValueError(Errors.value_error("The cutoff in the relative change of data stopping needs to be bigger then zero!"))
         super().__init__()
         self.norm = norm
         self.cutoff = cutoff
@@ -269,6 +294,12 @@ class RelativeChangeSol(StopRule):
     """
 
     def __init__(self, norm, init, cutoff):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
+        if not isinstance(cutoff,(int,float)):
+            raise TypeError(Errors.type_error("The cutoff in the relative change of solution stopping should be real scalar!"))
+        if cutoff<=0:
+            raise ValueError(Errors.value_error("The cutoff in the relative change of solution stopping needs to be bigger then zero!"))
         super().__init__()
         self.norm = norm
         self.cutoff = cutoff
@@ -301,6 +332,8 @@ class Monotonicity(StopRule):
     """
 
     def __init__(self, norm, data, init_data):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the monotonicity stopping needs to be a callable!"))
         super().__init__()
         self.norm = norm
         self.data = data
@@ -325,8 +358,10 @@ class Monotonicity(StopRule):
 class DualityGapStopping(StopRule):
     def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = "INFO"):
         from regpy.solvers.general import RegSolver
-        assert isinstance(solver,RegSolver)
-        assert hasattr(solver,'gap')
+        if not isinstance(solver,RegSolver):
+            raise TypeError(Errors.not_instance(solver,RegSolver,add_info="For the Duality gap stopping rule the solver need to be a RegSolver!"))
+        if not hasattr(solver,'gap'):
+            raise ValueError(Errors.value_error("The solver has no attribute gap! You cannot use the duality gap stopping rule!"))
         super().__init__()
         self.solver = solver
         self.threshold = threshold
