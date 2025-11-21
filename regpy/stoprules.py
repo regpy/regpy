@@ -343,6 +343,10 @@ class DualityGapStopping(StopRule):
         self.log.setLevel(logging_level)
         self.history_dict = {"duality gap":[]}
 
+    def __repr__(self):
+        return 'DualityGapStopping(cutoff={})'.format(
+            self.cutoff)
+
     def _stop(self, x, y=None, dual=None):
         if dual is not None:
             gap = self.setting.dualityGap(primal = x, dual = dual)
