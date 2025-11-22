@@ -47,14 +47,10 @@ class PDHG(RegSolver):
     compute_y : boolean [True]
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
         so this may considerably increase computational costs. If False, None is returned for y_k. 
-    compute_gap : boolean [default: True]
-        If True the duality gap is computed each Term. For this 'penalty.conj' and 'data_fid.conj'
-        need to be implemented, if not a warning is frown and this is set to False. it is not nessesary 
-        to compute the gap for the algorithm, but it might be used in stopping criteria.
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True,compute_gap =True, logging_level = "INFO"
+                 compute_y = True, logging_level = "INFO"
                  ):
         if not isinstance(setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="PDHG requires the Setting to be a Tikhonov setting!"))
@@ -81,10 +77,9 @@ class PDHG(RegSolver):
                 self.pstar = setting.primalToDual(self.x)
             else:
                 self.pstar = init_codomain_star
-
+        self.dual = self.pstar
         self.x_old = self.x
         self.compute_y = compute_y
-        self.compute_gap = compute_gap
         self.y = self.op(self.x) if self.compute_y else None
 
         if tau<0 or sigma<0:
@@ -120,13 +115,7 @@ class PDHG(RegSolver):
             self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
-        if self.compute_gap:
-            try:
-                self.gap = self.setting.dualityGap(primal=self.x)
-            except:
-                self.log.warning('missing implemtation in fuctionals to compute duality gap. The gap is not computed')
-                self.compute_gap = False
-                self.gap = None      
+
 
 
     def _next(self):
@@ -141,8 +130,8 @@ class PDHG(RegSolver):
             self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        if self.compute_gap:
-            self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
+        self.dual = self.pstar
+
 
  
 

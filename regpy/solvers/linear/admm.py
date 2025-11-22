@@ -104,12 +104,6 @@ class ADMM(RegSolver):
             self.x = self.regularizedInverse(self.v2+self.p2 + self.op.adjoint(self.v1+self.p1))
             self.y = self.op(self.x)
 
-        try:
-            gap=self.setting.dualityGap(primal = self.x)
-            self.dualityGapWorks =True
-            self.log.info('initial duality gap: {}'.format(gap))
-        except NotImplementedError:
-            self.dualityGapWorks = False
 
     def _next(self):
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)
@@ -128,9 +122,7 @@ class ADMM(RegSolver):
         else:
             self.x = self.regularizedInverse(self.v2+self.p2 + self.gramXinv(self.op.adjoint(self.gramY(self.v1+self.p1))))
             self.y = self.op(self.x)
-        if self.dualityGapWorks:
-            gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
-            self.log.debug('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,gap))
+
 
 class AMA(RegSolver):
     r"""The alternating minimization algorithm (AMA) for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\ with \(R)\ strongly convex.
@@ -160,10 +152,12 @@ class AMA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
     logging_level: [default: logging.INFO]
         logging level
+    compute_dual: boolean [False]
+        sets if dual is computed, it is not directly necessary for the algorithm. The default is False
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
+                 regularizedInverse=None, cg_pars = None,logging_level = "INFO",compute_dual = False):
         if not isinstance(setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="AMA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
@@ -188,12 +182,14 @@ class AMA(RegSolver):
         self.gramY = self.h_codomain.gram
         """ The gram matrix of the image space"""
 
-        try:
-            gap=self.setting.dualityGap(primal = self.x)
-            self.dualityGapWorks =True
-            self.log.info('initial duality gap: {}'.format(gap))
-        except NotImplementedError:
-            self.dualityGapWorks = False
+        if not hasattr(self,"compute_dual") or not self.compute_dual:
+            self.compute_dual = compute_dual
+        if self.compute_dual:
+            self._compute_dual()
+
+
+    def _compute_dual(self):
+        self.dual = self.gramY(self.p)
 
     def _next(self):
         Tstar_p = self.op.adjoint(self.gramY(self.p))
@@ -204,6 +200,5 @@ class AMA(RegSolver):
         self.g = self.data_fid.prox(Tf-(1./self.gamma)*self.p,1./self.gamma)
         self.p += self.gamma*(self.g - Tf) 
 
-        if self.dualityGapWorks:
-            gap=self.setting.dualityGap(primal = self.x,dual=self.gramY(self.p))
-            self.log.debug('it.{}: duality gap={:.3e}'.format(self.iteration_step_nr,gap))
+        if self.compute_dual:
+            self._compute_dual()
