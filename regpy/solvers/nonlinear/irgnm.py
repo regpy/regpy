@@ -202,6 +202,7 @@ class LevenbergMarquardt(RegSolver):
 from regpy.operators import EinSum,PtwMultiplication
 from regpy import util
 from scipy.sparse.linalg import eigsh
+from regpy.vecsps import UniformGridFcts
         
 class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -220,7 +221,7 @@ class IrgnmCGPrec(RegSolver):
     .. math::
         M  A  M \approx Id
 
-    where :math:`A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
+    where :math:`A = (T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
     the order of the number of iterations: :math:`\{v_j\}`
@@ -239,12 +240,12 @@ class IrgnmCGPrec(RegSolver):
         M     &: v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j \\
         M^{-1}&: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.
 
-    At the moment this method does not work for complex domains/codomains
+    This only works for UniformGridFcts domains.
 
     Parameters
     ----------
     setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem.
+        The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
     data : array-like
         The measured data.
     regpar : float
@@ -263,6 +264,8 @@ class IrgnmCGPrec(RegSolver):
         self, setting, data, regpar, regpar_step=2 / 3, 
         init=None, cg_pars=None,cgstop =None, precpars=None
         ):
+        if(not isinstance(setting.op.domain,UniformGridFcts)):
+            raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
         self.data = data
         """The measured data."""
