@@ -1,1 +1,0 @@
-../../../../examples/obstacle/functions/operator.py

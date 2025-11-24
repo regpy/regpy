@@ -6,7 +6,7 @@ import types
 
 import numpy as np
 
-from regpy import util
+from regpy.util import ClassLogger,Errors,make_repr,memoized_property
 
 __all__ = ["TupleVector", "VectorSpaceBase", "DirectSum"]
 
@@ -16,7 +16,7 @@ class TupleVector:
 
     __array_ufunc__ = None
 
-    log = util.ClassLogger()
+    log = ClassLogger()
 
     def copy(self):
         return copy(self)
@@ -80,7 +80,8 @@ class TupleVector:
         return any((v_i.any() for v_i in self.v))
     
     def __or__(self,other):
-        assert isinstance(other,TupleVector) and self.ndim == other.ndim 
+        if not isinstance(other,TupleVector) or self.ndim != other.ndim:
+            raise ValueError(Errors.value_error(f"Comparing with TupleVector only supported for TupleVectors of identical dimension!"))
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
     def sum(self,**kwargs):
@@ -100,14 +101,16 @@ class TupleVector:
         return sum(z)
     
     def __iadd__(self,other):
-        assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
+        if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
+            raise ValueError(Errors.value_error(f"Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         v = self.v
         for k,v_o in enumerate(other.v):
             v[k] += v_o
         return TupleVector(v)
 
     def __isub__(self,other):
-        assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
+        if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
+            raise ValueError(Errors.value_error(f"Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         v = self.v
         for k,v_o in enumerate(other.v):
             v[k] -= v_o
@@ -117,7 +120,8 @@ class TupleVector:
         return TupleVector([-v_i for v_i in self])
     
     def __add__(self,other):
-        assert isinstance(other,TupleVector) and other.ndim == self.ndim and all([t_o==t_s for t_o,t_s in zip(other.types,self.types)])
+        if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
+            raise ValueError(Errors.value_error(f"Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         return TupleVector([s_k + o_k for s_k,o_k in zip(self,other)])
     
     def __radd__(self,other):
@@ -130,14 +134,16 @@ class TupleVector:
         return (-1*self) + other
     
     def __imul__(self,other):
-        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
         v = self.v
         for k in range(self.ndim):
             v[k] *= other
         return TupleVector(v)
     
     def __itruediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Division TupleVector only supported for scalars (int, float, or complex)!"))
         v = self.v
         for k in range(self.ndim):
             v[k] /= other
@@ -150,13 +156,14 @@ class TupleVector:
         elif isinstance(other,Operator):
             return PtwMultiplication(other.codomain, self) * other
         else:
-            raise NotImplementedError(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator.")
+            raise NotImplementedError(Errors.generic_message(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator."))
         
     def __rmul__(self,other):
         return self * other
 
     def __truediv__(self,other):
-        assert isinstance(other,float) or isinstance(other,int) or isinstance(other,complex)
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error(f"Division TupleVector only supported for scalars (int, float, or complex)!"))
         return TupleVector([s_k / other for s_k in self])
 
     def __iter__(self):
@@ -170,7 +177,7 @@ class TupleVector:
         elif isinstance(key,(list,tuple)) and len(key) == self.ndim: 
             return TupleVector([v_i[k_i] for v_i,k_i in zip(self,key)])
         else:
-            raise KeyError("keys of type {} are not supported either int or list of length {}".format(type(key),self.ndim))
+            raise KeyError(Errors.indexation(key,self,add_info=f"keys of type {type(key)} are not supported either int or list of length {self.ndim}"))
     
     def __setitem__(self, key, item):
         if isinstance(key,slice) or isinstance(key,int):
@@ -186,7 +193,7 @@ class TupleVector:
                 for k_i,item_i in zip(key,item.v):
                     self.v[k_i] = item_i
             else:
-                raise TypeError("items has to be a list of length {} not {} type".format(self.ndim,type(item)))                
+                raise TypeError(Errors.type_error("items has to be a list of length {} not {} type".format(self.ndim,type(item))))              
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
             if (isinstance(item,TupleVector) and item.ndim == key.ndim):
                 for v_i,k_i,item_i in zip(self.v,key,item):
@@ -195,9 +202,9 @@ class TupleVector:
                 for v_i,k_i in zip(self.v,key):
                     v_i[k_i] = item
             else:
-                raise TypeError("items has to be a TupleVector if key is TupleVector of ndim {} not {} type".format(self.ndim,type(item)))                
+                raise TypeError(Errors.type_error("items has to be a TupleVector if key is TupleVector of ndim {} not {} type".format(self.ndim,type(item))))         
         else:
-            raise KeyError("keys of type {} are not supported either int or list of length {} or TupleVector".format(type(key),self.ndim))
+            raise KeyError(Errors.indexation(key,self,add_info=f"keys of type {type(key)} are not supported either int or list of length {self.ndim} or TupleVector"))
     
     def __copy__(self):
         return deepcopy(self)
@@ -211,7 +218,8 @@ class TupleVector:
         return result
     
     def component_wise(self,method):
-        assert callable(method)
+        if not callable(method):
+            raise TypeError(Errors.type_error(f"To apply a method component wise to a TupleVector the method has to be a callable. {method} is not callable"))
         return TupleVector([method(s_k) for s_k in self])
 
 class VectorSpaceBase:
@@ -249,7 +257,7 @@ class VectorSpaceBase:
         above methods. Default, None.
     """
 
-    log = util.ClassLogger()
+    log = ClassLogger()
 
     def __init__(self, vec_type : object, shape : tuple, complex : bool = False, type = None):
         self.vec_type = vec_type
@@ -321,7 +329,8 @@ class VectorSpaceBase:
         """
         if self.type is None:
             raise NotImplementedError
-        assert x in self
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
         return self.type.poisson(x)
     
     def vdot(self,x,y):
@@ -407,7 +416,7 @@ class VectorSpaceBase:
         """The number of array dimensions, i.e. the length of the shape. """
         return len(self.shape)
 
-    @util.memoized_property
+    @memoized_property
     def identity(self):
         """The `regpy.operators.Identity` operator on this vector space. """
         from regpy.operators import Identity
@@ -528,14 +537,15 @@ class VectorSpaceBase:
             return NotImplemented
         
     def __pow__(self, power):
-        assert isinstance(power, int)
+        if not isinstance(power, int):
+            raise TypeError(Errors.not_instance(power,int,add_info="Construction of powers of a vector space only supported for integer!"))
         domain = self
         for i in range(power-1):
             domain = DirectSum(domain, self, flatten=True)
         return domain
     
     def __repr__(self):
-        return util.make_repr(self,self.shape,self.is_complex)
+        return make_repr(self,self.shape,self.is_complex)
 
 
 class DirectSum(VectorSpaceBase):
@@ -564,7 +574,8 @@ class DirectSum(VectorSpaceBase):
     """
 
     def __init__(self, *summands, flatten=False):
-        assert all(isinstance(s, VectorSpaceBase) for s in summands)
+        if any(not isinstance(s, VectorSpaceBase) for s in summands):
+            raise TypeError(Errors.type_error(f"The list of summands for a DirectSum vector space contains elements which are not a RegPy vector space! Given \n\t summands = {summands}"))
         if flatten:
             self.summands = []
             for s in summands:
@@ -599,11 +610,15 @@ class DirectSum(VectorSpaceBase):
         return TupleVector([s.rand(random_generator=random_generator) for s in self.summands])
     
     def poisson(self,x)-> TupleVector:
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in poisson not in the VectorSpace."))
         return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
 
     def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
-        assert x in self, "x of type {} is not a vector of {}".format(type(x),self) 
-        assert y in self, "y of type {} is not a vector of {}".format(type(y),self)
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="First argument in vdot not in the VectorSpace."))
+        if y not in self:
+            raise ValueError(Errors.not_in_vecsp(y,self,add_info="Second argument in vdot not in the VectorSpace."))
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
     def logical_and(self,x,y) -> TupleVector:
@@ -625,7 +640,8 @@ class DirectSum(VectorSpaceBase):
         return DirectSum(*[s.real_space() for s in self.summands])
     
     def flatten(self, x : TupleVector) -> np.ndarray:
-        assert x in self
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in flatten not in the VectorSpace."))
         return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
     
     def fromflat(self, x : np.ndarray) -> TupleVector:
@@ -641,7 +657,7 @@ class DirectSum(VectorSpaceBase):
                     ind += s.size
             return TupleVector(ret)
         else:
-            raise ValueError("x has to be of type np.ndarray not {}".format(type(x)))
+            raise ValueError(Errors.value_error("Construction of a vector from a flat vector only supported for x an np.ndarray not {}".format(type(x))))
     
     def iter_basis(self):
         for i,s in enumerate(self.summands()):
@@ -673,7 +689,7 @@ class DirectSum(VectorSpaceBase):
             Tuple of masks for the vector components contributing to the positive part of a function.
         """
         if not x in self:
-            raise ValueError("x of type {} is not a vector in {}".format(type(x),type(self)))
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="IfPos only defined for vectors in the space!"))
         return tuple(s_i.IfPos(x_i) for s_i,x_i in zip(self.summands,x.v))
 
     def __eq__(self, other):
@@ -703,7 +719,8 @@ class DirectSum(VectorSpaceBase):
         1d array
             An element of the direct sum
         """
-        assert all(x in s for s, x in zip(self.summands, xs))
+        if any(x not in s for s, x in zip(self.summands, xs)):
+            raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: \n\t xs = {xs},\n\t summands = {self.summands} "))
         return TupleVector(list(xs))
 
     def split(self, x):
@@ -723,7 +740,8 @@ class DirectSum(VectorSpaceBase):
         tuple of arrays
             The components of x for the summands.
         """
-        assert x in self
+        if not x in self:
+            raise ValueError(Errors.not_in_vecsp(x,self,add_info="split only defined for vectors in the space!"))
         return tuple(x.v)
 
     def __getitem__(self, item):

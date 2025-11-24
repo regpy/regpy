@@ -1,6 +1,7 @@
 import numpy as np
 
 from regpy import util
+from regpy.util import Errors
 from regpy.vecsps import UniformGridFcts, GridFcts
 
 from .base import PtwMultiplication, Operator, Composition, LinearCombination,OuterShift
@@ -30,7 +31,7 @@ class PaddingOperator(Operator):
 
     def __init__(self,grid, pad_amount = None, pad_value =0.):
         if not isinstance(grid, UniformGridFcts):
-            raise TypeError(f"First argument has to be of type UniformGridFcts. Was given {grid}")
+            raise TypeError(Errors.type_error(f"First argument has to be of type UniformGridFcts. Was given {grid}"))
         self.ndim = grid.ndim
         self.ndim_domain = len(grid.shape_domain)
         if pad_amount is None:
@@ -38,17 +39,17 @@ class PaddingOperator(Operator):
         elif isinstance(pad_amount,int):
             self.pad_amount = ((pad_amount,pad_amount),)*self.ndim_domain + ((0,0),)*(self.ndim - self.ndim_domain)
             if not pad_amount>=0:
-                raise ValueError("pad_amount must be non-negative.")
+                raise ValueError(Errors.value_error("pad_amount must be non-negative."))
         else: 
             try:
                 pad_amount = np.array(pad_amount)
             except:
-                raise TypeError(f'pad_amount must be None, int, or convertible to a numpy array. Got {pad_amount}')
+                raise TypeError(Errors.type_error(f'pad_amount must be None, int, or convertible to a numpy array. Got {pad_amount}'))
             if not pad_amount.dtype==int or np.any(pad_amount<0):
-                raise ValueError("pad_amount must be non-negative.")
+                raise ValueError(Errors.value_error("pad_amount must be non-negative."))
             if not pad_amount.shape == (self.ndim,):
                 if not pad_amount.shape == (len(grid.shape_domain),):
-                    raise ValueError(f"length of pad_amount must be (grid.ndim,) or (len(grid.shape_domain),). Got {pad_amount.shape}, grid.ndim={self.ndim}, len(grid.shape_domain)={len(grid.shape_domain)}")
+                    raise ValueError(Errors.value_error(f"length of pad_amount must be (grid.ndim,) or (len(grid.shape_domain),). Got {pad_amount.shape}, grid.ndim={self.ndim}, len(grid.shape_domain)={len(grid.shape_domain)}"))
                 pad_amount = np.concatenate((pad_amount, np.zeros((self.ndim - len(grid.shape_domain),),dtype=int)))
             self.pad_amount = tuple((val,val) for val in pad_amount)
         padded_grid = UniformGridFcts(
@@ -88,23 +89,23 @@ def TruncationOperator(grid, truncation_amount):
     ndim = grid.ndim
     ndim_domain = ndim - len(grid.shape_codomain)
     if not isinstance(grid, UniformGridFcts):
-        raise TypeError(f'grid must be a UniformGridFcts. Got {grid}')
+        raise TypeError(Errors.type_error(f'grid must be a UniformGridFcts. Got {grid}'))
     if isinstance(truncation_amount,int):
             truncation_amount = truncation_amount * np.ones((grid.ndim-len(grid.shape_codomain),),dtype =int)
     elif isinstance(truncation_amount, np.ndarray):
         if not truncation_amount.dtype==int or not np.all(truncation_amount>=0):
-            raise ValueError('truncation_amount must be non-negative integers.')
+            raise ValueError(Errors.value_error('truncation_amount must be non-negative integers.'))
         if not truncation_amount.shape == (ndim,):
             if truncation_amount.shape == (ndim_domain,):
                 truncation_amount = np.concatenate((truncation_amount, np.zeros((ndim - ndim_domain,),dtype=int)))
             else:
-                raise ValueError(f"shape of truncation_amount must be of size {ndim} or {ndim_domain}. Got {truncation_amount.shape}, {truncation_amount.dtype}")
+                raise ValueError(Errors.value_error(f"shape of truncation_amount must be of size {ndim} or {ndim_domain}. Got {truncation_amount.shape}, {truncation_amount.dtype}"))
     else:
-        raise TypeError(f"truncation_amount must be int or np.array of ints. Got {truncation_amount}")
+        raise TypeError(Errors.type_error(f"truncation_amount must be int or np.array of ints. Got {truncation_amount}"))
     if not np.all(np.array(grid.shape)>2*truncation_amount):
-        raise ValueError(f'Condition grid.shape>2*truncation_amount violated: {grid.shape}, {truncation_amount}')
+        raise ValueError(Errors.value_error(f'Condition grid.shape>2*truncation_amount violated: {grid.shape}, {truncation_amount}'))
     if not np.all(truncation_amount>=0):
-        raise ValueError(f'Condition truncation_amount>=0 violated: Got {truncation_amount}')
+        raise ValueError(Errors.value_error(f'Condition truncation_amount>=0 violated: Got {truncation_amount}'))
     truncated_grid = UniformGridFcts(
             *[np.arange(N-2*trunc)*spc + ax[0] + trunc*spc for (N,trunc,spc,ax) in zip(grid.shape[:ndim_domain],truncation_amount[:ndim_domain],grid.spacing,grid.axes)],
             dtype = grid.dtype,
@@ -193,29 +194,29 @@ class ConvolutionOperator(Composition):
     def __init__(self, grid, fourier_multiplier, pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
         if not isinstance(grid,UniformGridFcts):
-            raise TypeError(f'grid must be of type UniformGridFcts. Got {grid}')
+            raise TypeError(Errors.type_error(f'grid must be of type UniformGridFcts. Got {grid}'))
         if not kernel_matrix_shape is None and not grid.shape_codomain[0] ==  kernel_matrix_shape[1]:
-            raise ValueError(f'Last dimension of grid must equal last matrix kernel dimension. Got {grid.shape}, {kernel_matrix_shape}')
+            raise ValueError(Errors.value_error(f'Last dimension of grid must equal last matrix kernel dimension. Got {grid.shape}, {kernel_matrix_shape}'))
         self.grid = grid
         ndim = grid.ndim_domain
         if not convolution_axes is None:
             if not np.all([0 <= ax < ndim for ax in convolution_axes]):
-                raise ValueError(f"Invalid axis specified: {convolution_axes}. Must be within [0, {ndim})")
+                raise ValueError(Errors.value_error(f"Invalid axis specified: {convolution_axes}. Must be within [0, {ndim})"))
             if not len(convolution_axes) == len(set(convolution_axes)):
-                raise ValueError(f"Axes contain duplicates: {convolution_axes}")
+                raise ValueError(Errors.value_error(f"Axes contain duplicates: {convolution_axes}"))
             self.convolution_axes =  np.array(convolution_axes)
         else:
             self.convolution_axes = np.arange(ndim)
         self.kernel_matrix_shape = kernel_matrix_shape
         if not (isinstance(self.convolution_axes,np.ndarray) and self.convolution_axes.dtype==int
                 and np.max(self.convolution_axes)<grid.ndim_domain and np.min(self.convolution_axes)>=0):
-            raise TypeError(f'convolution_axes must be a numpy array of integers between 0 and d. Got {self.convolution_axes}')
+            raise TypeError(Errors.type_error(f'convolution_axes must be a numpy array of integers between 0 and d. Got {self.convolution_axes}'))
         # array containing the numbers of the axes that are not convolution axes
 
         self.stackaxes = np.array(list(set(np.arange(grid.ndim_domain)) - set(self.convolution_axes)))
 
         if not callable(fourier_multiplier) and  not isinstance(fourier_multiplier,np.ndarray):
-            raise TypeError('fourier_mupltiplier must be callable or a numpy array')
+            raise TypeError(Errors.type_error('fourier_mupltiplier must be callable or a numpy array'))
         if not pad_amount is None:
             if isinstance(pad_amount,int):
                 self.pad_amount =np.array([(pad_amount if i in self.convolution_axes else 0) for i in np.arange(grid.ndim)])
@@ -223,9 +224,9 @@ class ConvolutionOperator(Composition):
                 try:
                     pad_amount = np.array(pad_amount)
                 except:
-                    raise TypeError('pad_amount must be None, integer or convertible to a numpy array.') 
+                    raise TypeError(Errors.type_error('pad_amount must be None, integer or convertible to a numpy array.') )
                 if not len(self.stackaxes) == 0 and not np.all(pad_amount[self.stackaxes]==0):
-                    raise ValueError(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are {self.stackaxes}')
+                    raise ValueError(Errors.value_error(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are {self.stackaxes}'))
                 else:
                     self.pad_amount = pad_amount
         if not Fourier_truncation_amount is None:
@@ -233,7 +234,7 @@ class ConvolutionOperator(Composition):
                 self.Fourier_truncation_amount = [(Fourier_truncation_amount if i in self.convolution_axes else 0) for i in np.arange(grid.ndim)]
             else:
                 if not np.all(Fourier_truncation_amount[self.stackaxes]==0):
-                    raise ValueError(f'Fourier_truncation_amount should be 0 for non-convolution axes. Got {Fourier_truncation_amount}')
+                    raise ValueError(Errors.value_error(f'Fourier_truncation_amount should be 0 for non-convolution axes. Got {Fourier_truncation_amount}'))
                 else:
                     self.Fourier_truncation_amount = Fourier_truncation_amount
 
@@ -322,24 +323,26 @@ class ConvolutionOperator(Composition):
         return self._otf
 
     def functional_calculus(self,f):
-        assert callable(f)
+        if not callable(f):
+            raise TypeError(Errors.type_error("To use functional calculus of need to be a callable!",self,"functional_calculus"))
         if not self.kernel_matrix_shape is None:
             raise NotImplementedError
         return ConvolutionOperator(self.grid,f(self.fourier_multiplier),**self.kwargs)
 
     def composition(self,L):
         if not isinstance(L,ConvolutionOperator):
-            raise TypeError(f'Argument must be a convolution operator. Got {L}')
+            raise TypeError(Errors.type_error(f'Argument must be a convolution operator. Got {L}'))
         if not (self.grid == L.grid or 
                 (not self.kernel_matrix_shape is None and self.grid.shape[:-1]==L.grid.shape[:-1] and self.grid.dtype==L.grid.dtype)):
-            raise ValueError(f'Compositions only possible on same grid. Got {self.grid}, {L.grid}')
+            raise ValueError(Errors.value_error(f'Compositions only possible on same grid. Got {self.grid}, {L.grid}'))
         if not self._parameters_equal(self.kwargs, L.kwargs,ignore_kernel_matrix_shape=True):
-            raise ValueError(f'Keyword arguments must agree. Own: {self.kwargs} Got {L.kwargs}')
+            raise ValueError(Errors.value_error(f'Keyword arguments must agree. Own: {self.kwargs} Got {L.kwargs}'))
         if self.kernel_matrix_shape is None:
-            assert L.kernel_matrix_shape is None
+            if L.kernel_matrix_shape is not None:
+                raise ValueError(Errors.value_error(f'Kernel matrix shape is none but L has a defined kernel shape.'))
         else:
             if L.kernel_matrix_shape is None or not self.kernel_matrix_shape[1] == L.kernel_matrix_shape[0]:
-                raise ValueError(f'Kernel matrices cannot be multiplied. Given shapes are {self.kernel_matrix_shape} and {L.kernel_matrix_shape}')
+                raise ValueError(Errors.value_error(f'Kernel matrices cannot be multiplied. Given shapes are {self.kernel_matrix_shape} and {L.kernel_matrix_shape}'))
         if self.kernel_matrix_shape is None:
             new_otf = self._otf*L._otf
         else:
@@ -405,15 +408,13 @@ class ConvolutionOperator(Composition):
         if np.isscalar(other) and other == 0:
             return self
         elif isinstance(other, ConvolutionOperator):
-            assert self.grid == other.grid
-            assert self._parameters_equal(self.kwargs,other.kwargs,ignore_kernel_matrix_shape=True)
+            if self.grid != other.grid:
+                raise ValueError(Errors.value_error("Cannot add two Convolution operators with different grids!"))
+            if not self._parameters_equal(self.kwargs,other.kwargs,ignore_kernel_matrix_shape=True):
+                raise ValueError(Errors.value_error("Cannot add two Convolution operators with different parameters ignoring the kernel matrix!"))
             return ConvolutionOperator(self.grid,self._otf + other._otf,**self.kwargs)
-        elif isinstance(other, Operator):
-            return LinearCombination(self, other)
-        elif np.isscalar(other) or other in self.codomain:
-            return OuterShift(self, other)
         else:
-            return NotImplemented
+            return super().__add__(other)
 
     def __repr__(self):
         return util.make_repr(self, self._otf)
@@ -488,14 +489,15 @@ def curl(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convol
     pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
     """
     if not ((convolution_axes is None and len(grid.shape_domain)==3) or (convolution_axes is not None and len(convolution_axes)==3)):
-        raise ValueError('grid must be three-dimensional')
+        raise ValueError(Errors.value_error('grid must be three-dimensional'))
     return ConvolutionOperator(grid.vector_valued_space(3),
                                _curl_in_FD,kernel_matrix_shape=(3,3),
                                pad_amount=pad_amount,pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
                                )
 
 def _curl_in_FD(Dx,Dy,Dz):
-    assert Dx.shape == Dy.shape == Dz.shape
+    if not(Dx.shape == Dy.shape == Dz.shape):
+        raise ValueError(Errors.value_error("To compute the curl the single vectors need to have identical shape",meth="_curl_in_FD")) 
     toret = np.zeros(Dx.shape+(3,3),dtype=complex)
     toret[...,0,1] = - 2j*np.pi*Dz
     toret[...,0,2] =   2j*np.pi*Dy
@@ -530,7 +532,8 @@ def GaussianBlur(grid,sigma=1.,pad_amount=None,pad_value=0.,
            width of the Gaussian kernel
         pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
     """
-    assert np.isscalar(sigma)
+    if not np.isscalar(sigma):
+        raise TypeError(Errors.type_error("To define a Gaussian blur the width of the gaussian kernel has to be a scalar!"))
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
     return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))
@@ -600,7 +603,8 @@ def FresnelPropagator(grid,fresnel_number, pad_amount=None,pad_value=0.,
     In this case, the Fresnel number is :math:`F = 1 / (\lambda d)`  
     with wavelength  :math:`lambda` and propagation distance :math:`d`.
     """
-    assert grid.is_complex
+    if not grid.is_complex:
+        raise ValueError(Errors.value_error("The grid for a Fresnel propagation need to be complex!"))
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
     return Lap.functional_calculus(lambda t: np.exp(1j / (4*np.pi* fresnel_number) * t))
@@ -619,20 +623,24 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
     Gilbert, R. P. / Kajiwara, J. / Xu, Y. S. (Eds.) Direct and Inverse Problems of Mathematical Physics Kluwer Acad. Publ.: Dordrecht
     """
     def __init__(self,grid, kappa):
-        assert grid.is_complex
+        if not grid.is_complex:
+            raise ValueError(Errors.value_error("The grid for a periodized Helmholtz volume potential need to be complex!"))
         if not (grid.ndim_domain ==2 or grid.ndim_domain==3):
-            raise ValueError('PeriodicHelmholtzVolumePotential only implemented for dimensions 2 and 3.')
+            raise ValueError(Errors.value_error('PeriodicHelmholtzVolumePotential only implemented for dimensions 2 and 3.'))
         self.kappa = kappa      
         self.N = grid.shape[0]
         if grid.ndim_domain==2:
-            assert grid.shape == (self.N,self.N)
+            if grid.shape != (self.N,self.N):
+                raise ValueError(Errors.value_error("The shape of a two dimensional grid needs to be square!"))
             compute_kernel = self._compute_kernel_2d
         else:
-            assert grid.shape == (self.N,)*3
+            if grid.shape != (self.N,)*3:
+                raise ValueError(Errors.value_error("The shape of a non two dimensional grid needs to be a cube!"))
             compute_kernel = self._compute_kernel_3d   
-        assert self.N%2 == 0
+        if self.N%2 != 0:
+            raise ValueError(Errors.value_error("The number of points in each dimension need to be even!"))
         if not np.all(grid.extents == grid.extents[0]):
-            raise ValueError('grid must be quadratic.')
+            raise ValueError(Errors.value_error('grid must be quadratic.'))
         self.a = self.N * grid.spacing[0]/2.  # half of the periodicity length of the grid
 
         super().__init__(grid,

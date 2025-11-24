@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import numpy as np
 from scipy.datasets import ascent
@@ -9,7 +10,11 @@ from regpy.solvers import RegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 
-from .OperatorsFromExamples.xray_phase_contrast_operatos import get_xray_phase_contrast
+from . import import_example_package
+
+import_example_package("./examples/xray_phase_contrast/")
+
+from xray_phase_contrast_operator import get_xray_phase_contrast
 
 def test_xray_phase_contrast():
     logging.basicConfig(
@@ -58,3 +63,5 @@ def test_xray_phase_contrast():
     reco, reco_data = solver.run(stoprule)
 
     assert stoprule.rules[1].triggered
+
+sys.path.pop(0)

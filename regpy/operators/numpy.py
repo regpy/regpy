@@ -1,12 +1,13 @@
-import numpy as np
+import string
 
+import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.sparse import csc_matrix, csc_array, lil_matrix
 import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
-from regpy import util
+from regpy.util import make_repr,memoized_property,Errors
 from regpy.vecsps import *
 from .base import Operator
 
@@ -46,9 +47,9 @@ class MatrixMultiplication(Operator):
                 self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
                 matrix = np.asarray(matrix)
             except Exception as e:
-                raise TypeError("Matrix could not be converted to numpy array.") from e
+                raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to numpy array!")) from e
         if len(matrix.shape) != 2:
-            raise ValueError(f"Matrix has to be two-dimensional. Was given a matrix {matrix} of shape {matrix.shape} of type {type(matrix)}")
+            raise ValueError(Errors.value_error(f"While initializing MatrixMultiplication the matrix has to be two-dimensional. Was given \n matrix = {matrix} \n of shape {matrix.shape} and type {type(matrix)}"))
         
         if dtype == None:
             dtype = matrix.dtype
@@ -56,11 +57,11 @@ class MatrixMultiplication(Operator):
         if domain is None:
             domain = NumPyVectorSpace(matrix.shape[1],dtype = dtype)
         elif not isinstance(domain,NumPyVectorSpace):
-            raise TypeError("Domain either None or NumPyVectorSpace given was {}".format(type(domain)))
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Domain either None or NumPyVectorSpace given was {type(domain)}"))
         if codomain is None:
             codomain = NumPyVectorSpace(matrix.shape[0],dtype = dtype)
         elif not isinstance(codomain,NumPyVectorSpace):
-            raise TypeError("Codomain either none or NumPyVectorSpace given was {}".format(type(codomain)))
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or NumPyVectorSpace given was {type(codomain)}"))
         
         self.matrix = matrix
         
@@ -86,7 +87,7 @@ class MatrixMultiplication(Operator):
         self._MTM = self.matrix.conj().T @ self.matrix
         return self._MTM @ x
 
-    @util.memoized_property
+    @memoized_property
     def inverse(self):
         if isinstance(self._inverse, Operator):
             return self._inverse
@@ -99,10 +100,10 @@ class MatrixMultiplication(Operator):
                 return CholeskyInverse(self, matrix=self.matrix)
             if self._inverse == 'superLU':
                 return SuperLUInverse(self)
-        raise NotImplementedError
+        raise NotImplementedError(Errors.generic_message(f"The inverse for this MatrixMultiplication {self} is not properly set and thus not implemented!"))
 
     def __repr__(self):
-        return util.make_repr(self, self.matrix)
+        return make_repr(self, self.matrix)
 
 
 class CholeskyInverse(Operator):
@@ -117,14 +118,22 @@ class CholeskyInverse(Operator):
         If a matrix of `op` is already available, it can be passed in to avoid recomputation.
     """
     def __init__(self, op, matrix=None):
-        assert op.linear, "Operator is not linear."
-        assert op.domain and op.domain == op.codomain, "Domain cannot be None and has to match codomain."
-        assert isinstance(op.domain,NumPyVectorSpace), "Domain has to be a NumPyVectorSpace"
+        if not isinstance(op,Operator):
+            raise TypeError(Errors.not_instance(op,Operator,add_info="For a CholeskyInverse the operator need to be a RegPy operator!"))
+        if not op.linear:
+            raise ValueError(Errors.not_linear_op(op,add_info="To construct a CholeskyInverse the operator needs to be linear."))
+        if op.domain != op.codomain:
+            raise ValueError(Errors.not_equal(op.domain,op.codomain,add_info= "Domain  has to match codomain to construct a CholeskyInverse operator."))
+        if not isinstance(op.domain,NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(op.domain,NumPyVectorSpace,add_info="Domain has to be a NumPyVectorSpace for the CholeskyInverse"))
         domain = op.domain
         if matrix is None:
-            matrix = np.empty((domain.realsize,) * 2, dtype=float)
-            for j, elm in enumerate(domain.iter_basis()):
-                matrix[j, :] = domain.flatten(op(elm))
+            if isinstance(op,MatrixMultiplication):
+                matrix = op.matrix
+            else:
+                matrix = np.empty((domain.realsize,) * 2, dtype=float)
+                for j, elm in enumerate(domain.iter_basis()):
+                    matrix[j, :] = domain.flatten(op(elm))
         self.factorization = cho_factor(matrix)
         """The Cholesky factorization for use with `scipy.linalg.cho_solve`"""
         super().__init__(
@@ -154,7 +163,7 @@ class CholeskyInverse(Operator):
         return self.op
 
     def __repr__(self):
-        return util.make_repr(self, self.op)
+        return make_repr(self, self.op)
 
 
 class SuperLUInverse(Operator):
@@ -166,8 +175,10 @@ class SuperLUInverse(Operator):
             The operator to be inverted.   
     """
     def __init__(self,op):
-        assert isinstance(op,MatrixMultiplication)
-        assert isinstance(op.matrix, csc_matrix) or isinstance(op.matrix, csc_array)
+        if not isinstance(op,MatrixMultiplication):
+            raise TypeError(Errors.not_instance(op,Operator,add_info="For a SuperLUInverse the operator need to be a RegPy MatrixMultiplication!"))
+        if not isinstance(op.matrix,(csc_matrix,csc_array)):
+            raise TypeError(Errors.type_error(f"To construct a SuperLUInverse of a Matrixmultiplication operator the matrix in that operator needs to be a csc_matrix or csc_array not a simple ndarray!"))
         super().__init__(
             domain=op.codomain, 
             codomain = op.domain,
@@ -193,7 +204,7 @@ class SuperLUInverse(Operator):
         return self.op
 
     def __repr__(self):
-        return util.make_repr(self, self.op)
+        return make_repr(self, self.op)
 
 
 class Power(Operator):
@@ -208,10 +219,12 @@ class Power(Operator):
     """
 
     def __init__(self, power, domain, integer = False):
-        assert isinstance(domain,NumPyVectorSpace)
+        if not isinstance(domain,NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Power operator needs to be a NumPyVectorSpace!"))
         self.integer = integer
         if integer:
-            assert power>=0 and int(power)==power
+            if power<0 or int(power)!=power:
+                raise ValueError(Errors.value_error(f"If specifying the power to be an integer the given power need to non-negative and its int casting need to be identical to the power. \n\t power = {power} \n\t int(power) = {int(power)}"))
             power=int(power)
             self._power_bin = "{0:b}".format(power)
         self.power = power
@@ -260,7 +273,8 @@ class Exponential(Operator):
     """
 
     def __init__(self, domain):
-        assert isinstance(domain,NumPyVectorSpace)
+        if not isinstance(domain,NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Exponential operator needs to be a NumPyVectorSpace!"))
         super().__init__(domain, domain)
 
     def _eval(self, x, differentiate=False):
@@ -275,7 +289,6 @@ class Exponential(Operator):
     def _adjoint(self, y):
         return self._exponential_factor.conj() * y
 
-###################### General Operators that require UniformGirdFcts or GridFcts ######################
 
 class FourierTransform(Operator):
     """Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
@@ -295,7 +308,8 @@ class FourierTransform(Operator):
         If not given, all domain axes are used. Defaults to None.
     """
     def __init__(self, domain, centered=False, axes=None):
-        assert isinstance(domain, UniformGridFcts)
+        if not isinstance(domain,UniformGridFcts):
+            raise TypeError(Errors.not_instance(domain, UniformGridFcts, add_info="Domain of a FourierTransform operator needs to be a UniformGridFcts!"))
         self.is_complex = domain.is_complex
         if axes is None:
             axes = tuple(np.arange(len(domain.shape_domain)))
@@ -363,9 +377,9 @@ class FourierTransform(Operator):
         """
         if axes is not None:
             if not np.all([0 <= ax < len(domain.shape_domain) for ax in axes]):
-                raise ValueError(f"Invalid axis specified: {axes}. Must be within [0, {len(domain.shape_domain)})")
+                raise ValueError(Errors.value_error(f"Invalid axis specified: {axes}. Must be within [0, {len(domain.shape_domain)})",obj=FourierTransform,meth="frequencies"))
             if not len(axes) == len(set(axes)):
-                raise ValueError(f"Axes contain duplicates: {axes}")
+                raise ValueError(Errors.value_error(f"Axes contain duplicates: {axes}",obj=FourierTransform,meth="frequencies"))
         else:
             axes = np.arange(len(domain.shape_domain))
         frqs = []
@@ -391,9 +405,9 @@ class FourierTransform(Operator):
         return self.adjoint
 
     def __repr__(self):
-        return util.make_repr(self, self.domain)
+        return make_repr(self, self.domain)
 
-import string
+
 class PtwMatrixVectorMultiplication(Operator):
     """
     Pointwise multiplication of a matrix-valued function with a vector-valued function.
@@ -409,14 +423,14 @@ class PtwMatrixVectorMultiplication(Operator):
     """
     def __init__(self,domain,matrixfct):
         if not isinstance(domain, MeasureSpaceFcts):
-            raise TypeError('domain must be of type MeasureSpaceFcts.')
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts, add_info='The domain of a PtwMultiplication must be at least of type MeasureSpaceFcts.'))
         domain_shape = domain.shape_domain
         codomain_shape = domain.shape_codomain
 
         if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
-            raise TypeError('matrixfct must be a numpy array of the same data type.')
+            raise TypeError(Errors.type_error(f'To initialize a PtwMatrixVectorMultiplication the matrix functions matrixfct must be a numpy array of the same data type. Was given\n\t matrixfct = {matrixfct}\n\t and matrixfcts.dtype={matrixfct.dtype} and domain.dtype = {domain.dtype}'))
         if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
-            raise ValueError(f'shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}')
+            raise ValueError(Errors.value_error(f'Initializing a PtwMatrixVectorMultiplication: shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}'))
 
         self.matrixfct= matrixfct
         remaining_codomain_shape = matrixfct.shape[len(domain_shape):-len(codomain_shape)]
@@ -437,7 +451,7 @@ class PtwMatrixVectorMultiplication(Operator):
         return np.einsum(self._einstein_string_mulT, np.conj(self.matrixfct), w)
 
     def __repr__(self):
-        return util.make_repr(self, self.domain, self.codomain)
+        return make_repr(self, self.domain, self.codomain)
 
 class PtwScalarMultiplication(Operator):
     """
@@ -455,16 +469,16 @@ class PtwScalarMultiplication(Operator):
 
     def __init__(self, domain, multiplier):
         if not isinstance(domain,MeasureSpaceFcts):
-            raise TypeError(f'domain must be of type MeasureSpaceFcts. Got {domain}')
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info=f'For a PtwScalarMultiplication the domain must be of type MeasureSpaceFcts. Got \n\t domain = {domain}'))
         if domain.ndim_codomain==0:
-            raise ValueError('domain must be vector valued.')
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the domain must be vector valued!'))
         if multiplier in domain and (multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
             self.multiplier = multiplier
             print("first option", self.multiplier.shape)
         elif multiplier in domain.scalar_space():
             self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
-            raise ValueError(f'multiplier must be numpy array of matching size. Got {domain}, {multiplier}')
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be numpy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
         
         
         super().__init__(domain, domain, linear=True)
@@ -485,8 +499,9 @@ class AddSingletonVectorDimension(Operator):
     """
     def __init__(self, domain):
         if not isinstance(domain, MeasureSpaceFcts):
-            raise TypeError(f'The VectorSpace must be of type MeasureSpaceFcts. Got {type(domain)}')
-        assert domain.shape_codomain == (), f'grid must be scalar-valued. Got shape_codomain = {domain.shape_codomain}'
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info=f'The VectorSpace must be of type MeasureSpaceFcts. Got {type(domain)}'))
+        if domain.ndim_codomain != 0:
+            raise ValueError(Errors.value_error(f'TO add a SignletonVector dimension the domain must be scalar-valued. Got shape_codomain = {domain.shape_codomain}'))
         self.shape_domain = domain.shape_domain
         super().__init__(domain, domain.vector_valued_space((1,)), linear=True)
 

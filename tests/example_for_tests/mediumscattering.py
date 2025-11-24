@@ -1,3 +1,5 @@
+import sys
+
 from regpy.operators import CoordinateProjection
 from regpy.hilbert import L2, Hm
 from regpy.solvers import RegularizationSetting
@@ -8,7 +10,11 @@ import regpy.util as util
 import numpy as np
 import logging
 
-from .OperatorsFromExamples.mediumscattering import MediumScatteringFixed
+from . import import_example_package
+
+import_example_package("./examples/medium_scattering/")
+
+from mediumscattering import MediumScatteringFixed
 
 
 def test_mediumscattering():
@@ -71,4 +77,4 @@ def test_mediumscattering():
     assert stoprule.rules[1].triggered
 
 
-
+sys.path.pop(0)

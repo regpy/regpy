@@ -1,4 +1,5 @@
-from regpy.util import ClassLogger
+from regpy.util import ClassLogger, Errors
+from regpy.operators import Operator
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
 
@@ -19,11 +20,11 @@ class StopRule:
         self.y = None
         """The operator value at the current iterate. This is set by the solver when calling :meth:`stop`. Can be `None` if not available."""
         self.triggered = False
-        """
-        Whether the stopping rule decided to stop.
-        """
+        """Whether the stopping rule decided to stop."""
+        self.history_dict = {}
+        """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
 
-    def stop(self, x, y=None):
+    def stop(self, x, y=None,dual=None):
         """Check whether to stop iterations.
 
         Parameters
@@ -33,6 +34,9 @@ class StopRule:
         y : array, optional
             The operator value at the current iterate. Can be omitted if
             unavailable, but some implementations may need it.
+        dual : array, optional
+            The iterate of the dual problem. Can be omitted if
+            unavailable, but some implementations may need it.
 
         Returns
         -------
@@ -41,12 +45,12 @@ class StopRule:
         """
         if self.triggered:
             return True
-        self.x = x
-        self.y = y
-        self.triggered = self._stop(x, y)
+        # self.x = x
+        # self.y = y
+        self.triggered = self._stop(x, y, dual)
         return self.triggered
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         """Check whether to stop iterations.
 
         This is an abstract method. Child classes should override it.
@@ -73,7 +77,7 @@ class NoneRule(StopRule):
     def __init__(self):
         super().__init__()
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         return False
 
 class CombineRules(StopRule):
@@ -92,6 +96,10 @@ class CombineRules(StopRule):
     """
 
     def __init__(self, rules, op=None):
+        if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules!"))
+        if op is not None and not isinstance(op,Operator):
+            raise TypeError(Errors.type_error("The operator that is passed to the combined rules needs to be either None or an Operator!"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
@@ -113,15 +121,15 @@ class CombineRules(StopRule):
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         for rule in self.rules:
             try:
-                triggered = rule.stop(x, y)
+                triggered = rule.stop(x, y, dual)
             except MissingValueError:
                 if self.op is None or y is not None:
                     raise
                 y = self.op(x)
-                triggered = rule.stop(x, y)
+                triggered = rule.stop(x, y, dual)
             if triggered:
                 self.log.info('Rule {} triggered.'.format(rule))
                 self.active_rule = rule
@@ -143,6 +151,10 @@ class CountIterations(StopRule):
     """
 
     def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
+        if not isinstance(max_iterations,int):
+            raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
+        if max_iterations<0:
+            raise ValueError(Errors.value_error("The maximal iteration in CountIteration needs to be at least zero (for no iteration)!"))
         super().__init__()
         self.max_iterations = max_iterations
         self.iteration = 0
@@ -152,7 +164,7 @@ class CountIterations(StopRule):
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if self.while_type:
             self.iteration += 1
             if  self.iteration <= self.max_iterations:
@@ -188,24 +200,33 @@ class Discrepancy(StopRule):
     """
 
     def __init__(self, norm, data, noiselevel, tau=2):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the discrepancy principle needs to be a callable!"))
+        if not isinstance(noiselevel,(int,float)):
+            raise TypeError(Errors.type_error("The noise level in the discrepancy principle should be real scalar!"))
+        if noiselevel<=0:
+            raise ValueError(Errors.value_error("The noise level in the discrepancy principle needs to be bigger then zero!"))
+        if not isinstance(tau,(int,float)):
+            raise TypeError(Errors.type_error("The multiplier in the discrepancy principle should be real scalar!"))
+        if tau<=1:
+            raise ValueError(Errors.value_error("The multiplier in the discrepancy principle needs to be bigger then one!"))
         super().__init__()
         self.norm = norm
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
-        self.hist_dic ={"relative discrepancy":[]}
-
+        self.history_dict["relative discrepancy"] = []
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         residual = self.data - y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
-        self.hist_dic["relative discrepancy"].append(rel)
+        self.history_dict["relative discrepancy"].append(rel)
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
@@ -230,20 +251,28 @@ class RelativeChangeData(StopRule):
     """
 
     def __init__(self, norm, data, cutoff):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable!"))
+        if not isinstance(cutoff,(int,float)):
+            raise TypeError(Errors.type_error("The cutoff in the relative change of data stopping should be real scalar!"))
+        if cutoff<=0:
+            raise ValueError(Errors.value_error("The cutoff in the relative change of data stopping needs to be bigger then zero!"))
         super().__init__()
         self.norm = norm
         self.cutoff = cutoff
         self.data_old = data
+        self.history_dict["relative change of y"] = []
 
     def __repr__(self):
         return 'RelativeChangeData(cutoff={})'.format(
             self.cutoff)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         change = self.norm(y - self.data_old)
         self.data_old = y.copy()
+        self.history_dict["relative change of y"].append(change)
         self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -255,7 +284,7 @@ class RelativeChangeSol(StopRule):
     Stops at the first iterate at which the difference between the old estimate
     and the new estimate is smaller than a pre-determined cutoff::
 
-        ||y_k-y_{k+1}|| < delta
+        ||y_k-y_{k+1}|| < cutoff
 
     Parameters
     ----------
@@ -269,18 +298,26 @@ class RelativeChangeSol(StopRule):
     """
 
     def __init__(self, norm, init, cutoff):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
+        if not isinstance(cutoff,(int,float)):
+            raise TypeError(Errors.type_error("The cutoff in the relative change of solution stopping should be real scalar!"))
+        if cutoff<=0:
+            raise ValueError(Errors.value_error("The cutoff in the relative change of solution stopping needs to be bigger then zero!"))
         super().__init__()
         self.norm = norm
         self.cutoff = cutoff
         self.sol_old = init
+        self.history_dict["relative change of x"] = []
 
     def __repr__(self):
         return 'RelativeChangeSol(cutoff={})'.format(
             self.cutoff)
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         change = self.norm(x - self.sol_old)
         self.sol_old = x.copy()
+        self.history_dict["relative change of x"].append(change)
         self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
             change, self.cutoff))
         return change < self.cutoff
@@ -301,19 +338,25 @@ class Monotonicity(StopRule):
     """
 
     def __init__(self, norm, data, init_data):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the monotonicity stopping needs to be a callable!"))
         super().__init__()
         self.norm = norm
         self.data = data
         self.residual = self.norm(self.data - init_data)
+        self.history_dict["monotonicity"] = []
+        self.history_dict["residual"] = []
 
     def __repr__(self):
         return 'Monotonicty'
 
-    def _stop(self, x, y=None):
+    def _stop(self, x, y=None,dual=None):
         if y is None:
             raise MissingValueError
         residual = self.norm(self.data - y)
         change = self.residual - residual
+        self.history_dict["monotonicity"].append(change)
+        self.history_dict["residual"].append(residual)
         self.residual = residual
         self.log.info('Monotonicity = {}, residual = {}'.format(
             change, residual))
@@ -323,23 +366,31 @@ class Monotonicity(StopRule):
 
 
 class DualityGapStopping(StopRule):
-    def __init__(self, solver, threshold = 0.,max_iter=1000, logging_level = "INFO"):
-        from regpy.solvers.general import RegSolver
-        assert isinstance(solver,RegSolver)
-        assert hasattr(solver,'gap')
+    def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
+        from regpy.solvers import TikhonovRegularizationSetting
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="For the Duality gap stopping rule the setting needs to be a TikhonovRegularizationSetting!"))
         super().__init__()
-        self.solver = solver
-        self.threshold = threshold
-        self.max_iter = max_iter
+        self.setting = setting
+        if threshold is not None:
+            self.cutoff= threshold
+        else:
+            self.cutoff = cutoff
         self.log.setLevel(logging_level)
-        self.gap_stat = []
+        self.history_dict["duality gap"] = []
 
-    def _stop(self,x,y=None):
-        self.gap_stat.append(self.solver.gap)
-        gap_stop = self.solver.gap<=self.threshold
-        self.log.info('it. {}/{}: duality gap={:.3e} ({:.3e})'.format(self.solver.iteration_step_nr,self.max_iter,self.solver.gap,self.threshold))
-        if  self.solver.iteration_step_nr>=self.max_iter:
-            if not gap_stop:
-                self.log.warning('Duality gap has not reached required threshold at maximum number of iterations.')
-            return True            
+    def __repr__(self):
+        return 'DualityGapStopping(cutoff={})'.format(
+            self.cutoff)
+
+    def _stop(self, x, y=None, dual=None):
+        if dual is not None:
+            gap = self.setting.dualityGap(primal = x, dual = dual)
+        elif y is not None:
+            gap = self.setting.dualityGap(primal = x,dual=self.setting.primalToDual(y,argumentIsOperatorImage=True))
+        else:
+            gap = self.setting.dualityGap(primal = x)
+        self.history_dict["duality gap"].append(gap)
+        gap_stop = gap<=self.cutoff
+        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
         return gap_stop 

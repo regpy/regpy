@@ -6,6 +6,7 @@ import ngsolve as ngs
 import numpy as np
 
 from regpy.vecsps.ngsolve import NgsVectorSpace,NgsBaseVector
+from regpy.util import Errors
 
 from .base import Operator
 
@@ -27,6 +28,10 @@ class NgsOperator(Operator):
             domain : NgsVectorSpace, 
             codomain : NgsVectorSpace, 
             linear : bool = False)->None:
+        if not isinstance(domain,NgsVectorSpace):
+            raise TypeError(Errors.not_instance(domain,NgsVectorSpace,add_info="The domain of an NgsOperator needs to be an NgsVectorSpace"))
+        if not isinstance(codomain,NgsVectorSpace):
+            raise TypeError(Errors.not_instance(codomain,NgsVectorSpace,add_info="The domain of an NgsOperator needs to be an NgsVectorSpace"))
         super().__init__(domain = domain, codomain = codomain, linear = linear)
         self.gfu_read_in = ngs.GridFunction(self.domain.fes)
 
@@ -99,7 +104,8 @@ class NgsMatrixMultiplication(NgsOperator):
     def __init__(self, domain, form):
         super().__init__(domain, domain, linear=True)
         if isinstance(form, ngs.BilinearForm):
-            assert domain.fes == form.space
+            if domain.fes != form.space:
+                raise ValueError(Errors.not_equal(domain.fes,form.space,add_info="The FES of the domain has to match with the one of the Bilinear form to construct an NgsMatrixMultiplication."))
             form.Assemble()
             mat = form.mat
         elif isinstance(form, ngs.BaseMatrix):
@@ -336,6 +342,8 @@ class SolveSystem(NgsOperator):
             bf : ngs.BilinearForm,
             use_prec : bool = True,
             **inverse_kwargs) -> None:
+        if not isinstance(bf, ngs.BilinearForm):
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         self.use_prec = use_prec
@@ -376,7 +384,7 @@ class LinearForm(NgsOperator):
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.gfu=ngs.GridFunction(self.domain.fes)
         self.gfu_adj=ngs.GridFunction(self.domain.fes)
-        u, v=self.domain.fes.TnT()
+        _, v=self.domain.fes.TnT()
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += self.gfu * v * ngs.dx
@@ -402,7 +410,7 @@ class LinearFormGrad(NgsOperator):
         self.gfu=ngs.GridFunction(self.domain.fes)
         self.gfu_adj=ngs.GridFunction(self.domain.fes)
         self.gfu_eval=gfu_eval
-        u, v=self.domain.fes.TnT()
+        _, v=self.domain.fes.TnT()
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += ngs.grad(self.gfu) * ngs.grad(self.gfu_eval) * v * ngs.dx
@@ -430,7 +438,8 @@ class BilinearForm(NgsOperator):
     def __init__(self, 
         domain : NgsVectorSpace, 
         bf : ngs.BilinearForm) -> None:
-        assert isinstance(domain,NgsVectorSpace)
+        if not isinstance(bf, ngs.BilinearForm):
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a BilinearForm operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         

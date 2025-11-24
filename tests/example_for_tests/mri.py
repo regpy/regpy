@@ -1,4 +1,6 @@
 import logging
+import sys
+
 import numpy as np
 from scipy.io import loadmat
 
@@ -10,7 +12,11 @@ from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
 
-from .OperatorsFromExamples.mri import parallel_mri, sobolev_smoother, estimate_sampling_pattern
+from . import import_example_package
+
+import_example_package("./examples/mri/")
+
+from mri import parallel_mri, sobolev_smoother, estimate_sampling_pattern
 
 
 def test_mri():
@@ -73,6 +79,4 @@ def test_mri():
         rho, coils = smoother.codomain.split(smoother(reco))
         #rho, coils = normalize(rho,coils)
 
-
-
-
+sys.path.pop(0)

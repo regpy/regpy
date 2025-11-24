@@ -2,9 +2,12 @@ import math as ma
 from scipy.sparse.linalg import eigsh
 
 
-from regpy.util import ClassLogger
-from regpy.stoprules import NoneRule
+from regpy.util import ClassLogger, Errors
 from regpy.util.operator_tests import test_derivative
+from regpy.operators import Operator
+from regpy.functionals.base import  as_functional, Composed
+from regpy.functionals import SquaredNorm
+from regpy.stoprules import NoneRule,DualityGapStopping,CombineRules
 
 
 class Solver:
@@ -99,8 +102,10 @@ class Solver:
             The (x, y) pair of the current iteration, or the solution chosen by
             the stopping rule.
         """
-
-        while not stoprule.stop(self.x,self.y) and self.next(): 
+        self.check_for_duality_stoprule(stoprule)
+        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
+            self._compute_dual()
+        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
             yield self.x, self.y
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
  
@@ -125,7 +130,10 @@ class Solver:
         """
         self.next()
         yield self.x, self.y
-        while not stoprule.stop(self.x,self.y) and self.next(): 
+        self.check_for_duality_stoprule(stoprule)
+        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
+            self._compute_dual()
+        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
             yield self.x, self.y
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
@@ -141,6 +149,14 @@ class Solver:
             x = self.x
             y = self.y
         return x, y
+    
+    def check_for_duality_stoprule(self,stoprule) -> None:
+        if not hasattr(self,"compute_dual") or not self.compute_dual:
+            if isinstance(stoprule,DualityGapStopping):
+                self.compute_dual = True
+            elif isinstance(stoprule,CombineRules):
+                for rule in stoprule.rules:
+                    self.check_for_duality_stoprule(rule)
 
 
 class RegSolver(Solver):
@@ -169,7 +185,8 @@ class RegSolver(Solver):
     """
 
     def __init__(self,setting,x=None,y=None):
-        assert isinstance(setting,RegularizationSetting)
+        if not isinstance(setting,RegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,RegularizationSetting))
         self.op=setting.op
         """The operator."""
         self.penalty = setting.penalty
@@ -180,9 +197,9 @@ class RegSolver(Solver):
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  setting.h_codomain
         """The Hilbert space associated to data fidelity functional"""
+        self.setting = setting
+        """The regularization setting"""
         if isinstance(setting,TikhonovRegularizationSetting):
-            self.setting = setting
-            """The regularization setting"""
             self.regpar = setting.regpar
             """The regularization parameter"""
         super().__init__(x,y)
@@ -243,9 +260,8 @@ class RegularizationSetting:
     log = ClassLogger()
 
     def __init__(self, op, penalty, data_fid):
-        from regpy.functionals.base import  as_functional, Composed
-        from regpy.operators import Operator
-        assert isinstance(op,Operator)
+        if not isinstance(op,Operator):
+            raise TypeError(Errors.not_instance(op,Operator,add_info="Regularization Setting requires op to be a RegPy operator."))
         self.op = op
         """The operator."""
         self.penalty = as_functional(penalty, op.domain)
@@ -341,7 +357,6 @@ class RegularizationSetting:
         Boolean
             True if both `penalty` and `data_fid` are `SquaredNorm` functionals. 
         """
-        from regpy.functionals.base import SquaredNorm
         return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
         
 
@@ -352,17 +367,17 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
 
     In contrast to RegularizationSetting, the regularization parameter is fixed, 
-    the data fidelity functional \(\mathcal{S}=self.data_fid)\ incorporates the data \(g^{\delta})\ of the inverse problem, 
-    and the penalty term \(\mathcal{R})\ incorporates a potential initial guess.
+    the data fidelity functional :math:`\mathcal{S}=self.data_fid` incorporates the data :math:`g^{\delta}` of the inverse problem, 
+    and the penalty term :math:`\mathcal{R}` incorporates a potential initial guess.
 
     Parameters
-    -------------------
+    ----------
     op : regpy.operators.Operator
         The forward operator.
     penalty : regpy.functionals.Functional
         The penalty functional :math:`\mathcal{R}`.
     data_fid : regpy.functionals.Functional
-        The data misfit functional \(\mathcal{S}_{g^{\delta}})\.
+        The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
     regpar: float [default: 1]
         regularization parameter
     penalty_shift: op.domain [default: None]
@@ -392,12 +407,16 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         else:
             self.data_fid_shift = None
 
-        assert isinstance(regpar,(float,int)) and regpar>=0
+        if not isinstance(regpar,(float,int)):
+            raise TypeError(Errors.type_error(f"The regularization parameter need to be a scalar"))
+        if regpar <= 0:
+            raise ValueError(Errors.value_error(f"The regularization parameter need to be a positive scalar"))
         self.regpar = float(regpar)
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
         """The regularization parameter"""
-        assert primal_setting is None or isinstance(primal_setting,TikhonovRegularizationSetting)
+        if primal_setting is not None and isinstance(primal_setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
         self.primal_setting = primal_setting
     
     def dualSetting(self):
@@ -407,7 +426,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
            \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
 
         """
-        assert self.op.linear
+        if not self.op.linear:
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To properly construct a dual setting the operator needs to be linear!"))
         return TikhonovRegularizationSetting(
             self.op.adjoint,
             self.data_fid.conj.dilation(-self.regpar),
@@ -436,7 +456,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             if argumentIsOperatorImage:
                 return self.penalty.conj.subgradient(pstar)
             else:
-                assert self.op.linear
+                if not self.op.linear:
+                    raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To construct a primal solution from the dual in case using the adjoint only allowed for linear operators!"))
                 return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         else:
             return self.primal_setting.primalToDual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
@@ -481,9 +502,11 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             primal variable f
         dual: setting.op.codomain [default: None]
             dual variable p        
-        """        
-        assert self.op.linear
-        assert not (primal is None and dual is None)
+        """
+        if not self.op.linear:
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"The duality gap can only be computed for settings with linear operators!"))
+        if primal is None and dual is None:
+            raise ValueError(Errors.value_error("Either a primal or dual vector need to be given to compute the duality gap!"))
         if primal is None:
             f = self.dualToPrimal(dual)
         else:
@@ -527,7 +550,8 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         tol: float [default: 1e-10]
         Tolerance value
         """
-        assert self.op.linear
+        if not self.op.linear:
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To determine if on a saddle point the setting need to be with linear operators!"))
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 

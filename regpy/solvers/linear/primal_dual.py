@@ -1,5 +1,6 @@
 import math as ma
 
+from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
 from ..general import RegSolver, TikhonovRegularizationSetting, RegularizationSetting
@@ -46,20 +47,21 @@ class PDHG(RegSolver):
     compute_y : boolean [True]
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
         so this may considerably increase computational costs. If False, None is returned for y_k. 
-    compute_gap : boolean [default: True]
-        If True the duality gap is computed each Term. For this 'penalty.conj' and 'data_fid.conj'
-        need to be implemented, if not a warning is frown and this is set to False. it is not nessesary 
-        to compute the gap for the algorithm, but it might be used in stopping criteria.
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
                  theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True,compute_gap =True, logging_level = "INFO"
+                 compute_y = True, logging_level = "INFO"
                  ):
-        assert isinstance(setting, TikhonovRegularizationSetting)
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="PDHG requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
-        assert self.op.linear
-        assert init_domain is None or init_domain in self.op.domain
-        assert init_codomain_star is None or init_codomain_star in self.op.codomain
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
+        if init_codomain_star is not None and init_codomain_star not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(init_codomain_star,self.op.codomain,vec_name="initial guess p",space_name="codomain"))
+        if init_domain is not None and init_domain not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(init_domain,self.op.domain,vec_name="initial guess f",space_name="domain"))
+
         self.log.setLevel(logging_level)
 
         if init_domain is None:
@@ -75,13 +77,13 @@ class PDHG(RegSolver):
                 self.pstar = setting.primalToDual(self.x)
             else:
                 self.pstar = init_codomain_star
-
+        self.dual = self.pstar
         self.x_old = self.x
         self.compute_y = compute_y
-        self.compute_gap = compute_gap
         self.y = self.op(self.x) if self.compute_y else None
 
-        assert tau>=0 and sigma>=0
+        if tau<0 or sigma<0:
+            raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))
         L = self.setting.op.norm(self.setting.h_domain,self.setting.h_codomain)  
         if tau==0 and sigma==0:
             self.tau = 1/L
@@ -113,13 +115,7 @@ class PDHG(RegSolver):
             self.log.info('Using unaccelerated version')            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
-        if self.compute_gap:
-            try:
-                self.gap = self.setting.dualityGap(primal=self.x)
-            except:
-                self.log.warning('missing implemtation in fuctionals to compute duality gap. The gap is not computed')
-                self.compute_gap = False
-                self.gap = None      
+
 
 
     def _next(self):
@@ -134,8 +130,8 @@ class PDHG(RegSolver):
             self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        if self.compute_gap:
-            self.gap = self.setting.dualityGap(primal=self.x,dual= self.pstar) 
+        self.dual = self.pstar
+
 
  
 
@@ -165,18 +161,20 @@ class DouglasRachford(RegSolver):
     """
     def __init__(self,  setting, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="DouglasRachford requires the operator to be linear!"))
         if init_h not in self.op.domain:
-            raise ValueError('init_h must be in the domain of the operator!')
+            raise ValueError(Errors.value_error('init_h must be in the domain of the operator!'))
         self.h = init_h
         if isinstance(setting, TikhonovRegularizationSetting) and setting.op.domain != setting.op.codomain:
             if setting.data_fid_shift is None:
-                raise ValueError('For TikhonovRegularizationSetting the data_fid_shift must be given!')
+                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting the data_fid_shift must be given!'))
             if not isinstance(self.data_fid,SquaredNorm):
-                raise ValueError('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!')
+                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!'))
             self.log.info('Using TikhonovRegularizationSetting. The data fidelity term is reshifted and composed with the .')
             self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
         elif isinstance(setting, RegularizationSetting) and setting.op.domain != setting.op.codomain:
-            raise ValueError('For RegularizationSetting the operator must be mapping from a space to itself!')
+            raise ValueError(Errors.value_error('For RegularizationSetting the operator must be mapping from a space to itself!'))
         else:
             self.data_fid_adjusted = self.data_fid
 

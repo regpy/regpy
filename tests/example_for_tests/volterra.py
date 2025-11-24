@@ -1,3 +1,4 @@
+import sys
 
 import numpy as np
 
@@ -10,8 +11,11 @@ from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.solvers.nonlinear.landweber import Landweber
 from regpy.solvers.nonlinear.fista import FISTA
 
-from .OperatorsFromExamples.volterra import Volterra
+from . import import_example_package
 
+import_example_package("./examples/volterra/")
+
+from volterra import Volterra
 
 def test_volterra():
     grid = UniformGridFcts(np.linspace(0, 2 * np.pi, 200))
@@ -76,7 +80,7 @@ def test_volterra():
     #The penalty term |f|_{TV}
     setting = TikhonovRegularizationSetting(
         op=op, 
-        penalty=TV(h_domain=Sobolev), 
+        penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 
         data_fid_shift = data,
         regpar = 0.01
@@ -100,3 +104,6 @@ def test_volterra():
     )
 
     _, _ = solver.run(stoprule)
+
+
+sys.path.pop(0)

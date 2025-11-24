@@ -13,6 +13,50 @@ class Errors:
         -------------------------------------------------------"""
 
     @staticmethod
+    def generic_message(msg : str):
+        return Errors._compose_message(title = "Generic Error", content = msg)
+    
+    @staticmethod
+    def value_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Value Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Value Error in method {meth}", content = msg)
+        else:
+            if meth is None:
+                return Errors._compose_message(title = "Value Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Value Error in method {meth} of {obj}", content = msg)
+    
+    @staticmethod
+    def type_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Type Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Type Error in method {meth}", content = msg)
+        else:
+            if meth is None:
+                return Errors._compose_message(title = "Type Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Type Error in method {meth} of {obj}", content = msg)
+    
+    @staticmethod
+    def runtime_error(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Runtime Error", content = msg)
+            else:
+                return Errors._compose_message(title = "Runtime Error in method {meth}", content = msg)
+        else:
+            if meth is None:
+                return Errors._compose_message(title = "Runtime Error in {obj}", content = msg)
+            else:
+                return Errors._compose_message(title = "Runtime Error in method {meth} of {obj}", content = msg)
+
+
+    @staticmethod
     def not_in_vecsp(vec: any, vecsp: object, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
         return Errors._compose_message(
             "VECTOR NOT IN VECTOR SPACE",
@@ -128,7 +172,8 @@ def set_defaults(params, **defaults):
 
 
 def complex2real(z, axis=-1):
-    assert is_complex_dtype(z.dtype)
+    if not is_complex_dtype(z.dtype):
+        raise TypeError(Errors.type_error("complex2real is only defined for complex dtypes!"))
     if z.flags.c_contiguous:
         x = z.view(dtype=z.real.dtype).reshape(z.shape + (2,))
     else:
@@ -139,8 +184,10 @@ def complex2real(z, axis=-1):
 
 
 def real2complex(x, axis=-1):
-    assert is_real_dtype(x.dtype)
-    assert x.shape[axis] == 2
+    if not is_real_dtype(x.dtype):
+        raise TypeError(Errors.type_error("real2complex is only defined for real dtypes!"))
+    if x.shape[axis] != 2:
+        raise ValueError(Errors.value_error(f"real2complex needs the complex axis {axis} to be of size 2  but it is {x.shape[axis]}!"))
     x = np.moveaxis(x, axis, -1)
     if np.issubdtype(x.dtype, np.floating) and x.flags.c_contiguous:
         return x.view(dtype=np.result_type(1j, x))[..., 0]
@@ -174,7 +221,8 @@ def is_complex_dtype(obj):
 
 def is_uniform(x):
     x = np.asarray(x)
-    assert x.ndim == 1
+    if x.ndim != 1:
+        raise ValueError(Errors.value_error("To determine if a vector is uniform the vector need to be one dimensional was given vector of dimension {x.ndim}"))
     if(x.shape[0]==1):
         return True
     diffs = x[1:] - x[:-1]

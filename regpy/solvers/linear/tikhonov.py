@@ -1,7 +1,7 @@
 from math import sqrt,inf
 
+from regpy.util import Errors
 from regpy.functionals.base import SquaredNorm
-
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
@@ -68,29 +68,29 @@ class TikhonovCG(RegSolver):
         krylov_basis=None, preconditioner=None,
         logging_level = "INFO"
         ):
-        assert isinstance(setting,RegularizationSetting)
-        assert setting.op.linear
-
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovCG in as a linear solver requires the operator to be linear!"))
         self.log.setLevel(logging_level)
         if data is None:
-            assert isinstance(self.data_fid,SquaredNorm)
+            if not isinstance(self.data_fid,SquaredNorm):
+                raise ValueError(Errors.value_error(f"If you do not pass data to the TikhonovCG and the data fidelity functional is not a SquaredNorm we cannot guess the data!"))
             data = (-1./self.data_fid.a) * self.data_fid.b
 
-            if xref is not None:
-                self.log.warning('Ignoring given parameter xref')
-            assert isinstance(self.penalty,SquaredNorm)                
+        if isinstance(self.data_fid,SquaredNorm):
+            if xref is not None:        
+                self.log.warning('Ignoring given parameter xref')        
             xref = (-1./self.penalty.a) * self.penalty.b
 
-            if isinstance(setting,TikhonovRegularizationSetting):
-                if regpar is not None:
-                    self.log.warning('Ignoring given value of regularization parameter')
-                regpar = (self.penalty.a/self.data_fid.a) * self.regpar
-            else:
-                assert regpar is not None
-                regpar *= self.penalty.a/self.data_fid.a
+        if isinstance(setting,TikhonovRegularizationSetting):
+            if regpar is not None:
+                self.log.warning('Ignoring given value of regularization parameter')
+            regpar = (self.penalty.a/self.data_fid.a) * self.regpar
+        else:
+            if regpar is None:
+                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the Regularization parameter needs to be specified in TIkhonovCG!"))
+            regpar *= self.penalty.a/self.data_fid.a
 
-        assert regpar is not None
         self.regpar = regpar
         """The regularization parameter."""
         #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
@@ -267,7 +267,7 @@ class GeometricSequence:
     Sequence defined recursively by
     
     .. math::
-        \alpha_0 &= \alpha_0 \\
+        \alpha_0 &= \alpha_0 
         \alpha_{n+1} &= q*\alpha_n
     """    
     def __init__(self, alpha0,q):
@@ -313,7 +313,8 @@ class TikhonovAlphaGrid(RegSolver):
     def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= "INFO"):
         super().__init__(setting)
-        self.setting = setting
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -381,7 +382,8 @@ class NonstationaryIteratedTikhonov(RegSolver):
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= "INFO"):
         super().__init__(setting)
-        self.setting = setting
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
@@ -502,26 +504,23 @@ class TikhonovCGOnlyDomain(RegSolver):
             self.log.setLevel("INFO")
             self.log.warning(f"Could not set logging level to {logging_level}, using INFO. Error: {e}")
 
-        if not isinstance(setting,RegularizationSetting):
-            raise TypeError("setting must be an instance of RegularizationSetting or subclass.")
-        if not setting.op.linear:
-            raise ValueError("The operator setting.op must be linear.")
-        
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
 
         if backprop_data not in setting.op.domain:
-            raise TypeError("The back propagated data backprop_data must be an element of setting.op.domain")
+            raise ValueError(Errors.value_error("The back propagated data backprop_data must be an element of setting.op.domain"))
         self.backprop_data = backprop_data
         """The back propagated data :math:`T^\ast g^\delta`."""
 
         if regpar is None:
             if not isinstance(setting, TikhonovRegularizationSetting):
-                raise ValueError("If regpar is None, setting must be an instance of TikhonovRegularizationSetting")
+                raise ValueError(Errors.value_error("If regpar is None, setting must be an instance of TikhonovRegularizationSetting"))
             self.regpar = setting.regpar
         elif isinstance(regpar, (int, float)) and regpar > 0:
             self.regpar = regpar
         else:
-            raise ValueError("regpar must be a positive float or None")
+            raise ValueError(Errors.value_error("regpar must be a positive float or None"))
         
         if x0 is not None:
             if x0 in setting.op.domain:
@@ -530,7 +529,7 @@ class TikhonovCGOnlyDomain(RegSolver):
                 self.x0 = x0
                 """The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
             else:
-                raise ValueError("The starting value x0 must be an element of setting.op.domain")
+                raise ValueError(Errors.value_error("The starting value x0 must be an element of setting.op.domain"))
         else:
             self.x = self.op.domain.zeros()
             self.x0 = self.op.domain.zeros()

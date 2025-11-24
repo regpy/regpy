@@ -3,7 +3,7 @@ import logging
 
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
-from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional
+from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
 from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
@@ -132,6 +132,17 @@ def test_VectorIntegralFunctional():
         u_stars = [ft.sample_vector_in_domain(HuberL2.conj) for _ in range(5)]
         ft.test_functional(HuberL2, u_s = u_s, u_stars= u_stars,
                           test_second_deriv=False, test_second_deriv_conj=False)
+
+def test_FunctionalOnDirectSum():
+    grid1 = UniformGridFcts((0,1,10))
+    grid2 = UniformGridFcts((0,1,12))
+    f1 = KL(grid1,w=grid1.ones())
+    f2 = L1(grid2)
+
+    f = FunctionalOnDirectSum((f1,f2))
+    ft.test_functional(f)
+    ft.test_functional(f+2.)
+    ft.test_functional(f.shift(f.domain.ones()))
 
 def test_quadratic_positive_semidef():
     N=5

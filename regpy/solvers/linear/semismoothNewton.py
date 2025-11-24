@@ -1,5 +1,6 @@
 from math import sqrt,inf
 
+from regpy.util import Errors
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
@@ -63,7 +64,8 @@ class SemismoothNewton_bilateral(RegSolver):
                  ):
         if len(args)==3:
             setting, data, regpar = args
-            assert isinstance(setting,RegularizationSetting)
+            if not isinstance(setting,RegularizationSetting):
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must be a RegularizationSetting"))
             if 'psi_plus' in kwargs:
                 psi_plus = kwargs['psi_plus']
             else:
@@ -79,7 +81,8 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            assert isinstance(Tsetting,TikhonovRegularizationSetting)
+            if not isinstance(setting,TikhonovRegularizationSetting):
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one arguments the setting must be a TikhonovRegularizationSetting"))
             R = Tsetting.penalty
             gram = Tsetting.h_domain.gram
             psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
@@ -94,7 +97,10 @@ class SemismoothNewton_bilateral(RegSolver):
             raise TypeError('SemismoothNewton_bilateral takes either 1 or 3 positional arguments ({} given)'.format(len(args)))
                                 
         super().__init__(setting)
-        assert self.op.domain.dtype == float
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewton_bilateral in as a linear solver requires the operator to be linear!"))
+        if self.op.domain.dtype != float:
+            raise TypeError(Errors.type_error("SemismoothNewton_bilateral requires the domain to be real!"))
         self.data=data
         """The measured data"""
         self.regpar=regpar * alpha_fac
@@ -122,7 +128,9 @@ class SemismoothNewton_bilateral(RegSolver):
         else:
             self.psi_plus=psi_plus
         """The upper bound."""
-        assert (self.psi_minus < self.psi_plus).all()
+        if (self.psi_minus >= self.psi_plus).any():
+            raise ValueError(Errors.value_error(f"The upper bound is less or equal the lower bound in SemismoothNewton_bilateral. Given: \n\t psi_minus = {self.psi_minus} \t\n psi_plus = {self.psi_plus}"))
+
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
@@ -227,7 +235,8 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     gram: regpy.operator.Operator [default: None]
        Gram matrix of the dual Hilbert space. Only used if R is a conjugate functional       
     """
-    assert isinstance(R,Functional)
+    if not isinstance(R,Functional):
+        raise TypeError(Errors.not_instance(R,Functional,add_info=f"Construction the parameters of upper and lower bound, x_0 and alpha from the regularization functional is only defined for a Functional!"))
     if isinstance(R,QuadraticBilateralConstraints):
         return R.ub, R.lb, R.x0, 1.
     elif isinstance(R,HorizontalShiftDilation):
@@ -243,7 +252,7 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     elif isinstance(R,Conj):
         return getPenaltyParamsFromConjFunctional(R.func,gram.inverse)
     else:
-        raise TypeError('Unknown or inappropriate type of functional')
+        raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the regularization functional.'))
     
 def getPenaltyParamsFromConjFunctional(Rs,gram):
     r"""
@@ -261,21 +270,25 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
     gram: regpy.operator.Operator [default: None]
        Gram matrix of the Hilbert space on which Rs is defined 
     """
-    assert isinstance(Rs,Functional)
+    if not isinstance(Rs,Functional):
+        raise TypeError(Errors.not_instance(Rs,Functional,add_info=f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional is only defined for a Functional!"))
     if isinstance(Rs,Huber):
         return gram(Rs.sigma), gram(-Rs.sigma), gram.domain.zeros(), 1.
     elif isinstance(Rs,LinearCombination):
-        assert len(Rs.coeffs)==1
+        if len(Rs.coeffs)!=1:
+            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations of length one (Scalar multiplications)!"))
         ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.funcs[0],gram)
         lam = Rs.coeffs[0]
-        assert lam>0
+        if lam<=0:
+            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations with positive scalar multiplication!"))
         return lam*ub, lam*lb, x0 , alpha/lam
     elif isinstance(Rs,HorizontalShiftDilation):
-        assert Rs.dilation == 1.
+        if Rs.dilation != 1.:
+            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
         ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.F,gram)
         return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
     else:
-        raise TypeError('Unknown or inappropriate type of functional')
+        raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional.'))
 
 
 class SemismoothNewton_nonneg(RegSolver):
@@ -307,7 +320,7 @@ class SemismoothNewton_nonneg(RegSolver):
         Parameters of CG method for minimizing Tikhnonov functional on inactive set in each SS Newton step.
     TOL: float, default: 0
         Tolerance for absolute error in standard l^2-norm for a-posteriori duality gap error estimate given by 
-         \|x-xtrue\|_2^2 \leq \|[T^*p-xref]_+-x\|^2 - 2 <[T^*p-xref]_-,x> \leq TOL^2  where p =-(Tx-data)/regpar
+         :math:`\|x-xtrue\|_2^2 \leq \|[T^*p-xref]_+-x\|^2 - 2 <[T^*p-xref]_-,x> \leq TOL^2`  where :math:`p =-(Tx-data)/regpar`
     logging_level: default: logging:INFO
 
     cg_logging_level: default: logging.INFO
@@ -315,9 +328,17 @@ class SemismoothNewton_nonneg(RegSolver):
     """
     def __init__(self,setting, data, regpar, xref = None,  x0=None, lambda0=None, cg_pars = None, TOL = 0.,
                  logging_level = "INFO", cg_logging_level = "INFO"):
-        assert isinstance(setting,RegularizationSetting)
         super().__init__(setting)
-        assert self.op.domain.dtype == float
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewton_nonneg in as a linear solver requires the operator to be linear!"))
+        if self.op.domain.dtype != float:
+            raise TypeError(Errors.type_error("SemismoothNewton_nonneg requires the domain to be real!"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
+        if x0 is not None and x0 not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
+        if xref is not None and xref not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
         self.data=data
         """The measured data"""
         self.xref = xref
@@ -444,6 +465,14 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     def __init__(self,setting, data, alphas, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
         super().__init__(setting)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
+        if self.op.domain.dtype != float:
+            raise TypeError(Errors.type_error("SemismoothNewtonAlphaGrid requires the domain to be real!"))
+        if data not in self.op.codomain:
+            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
+        if xref is not None and xref not in self.op.domain:
+            raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:

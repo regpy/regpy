@@ -1,4 +1,5 @@
 from regpy.operators import CoordinateMask
+from regpy.util import Errors
 
 from ..general import RegularizationSetting, RegSolver
 from ..linear.tikhonov import TikhonovCG
@@ -39,9 +40,9 @@ class IrgnmSemiSmooth(RegSolver):
         Dictionary of parameter to be given to the inner `TikhonovCG` solver. (Default: None) 
     """
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
-        assert isinstance(setting,RegularizationSetting)
-        assert psi_minus < psi_plus
         super().__init__(setting)
+        if (psi_minus >= psi_plus).any():
+            raise ValueError(Errors.value_error(f"The upper constraint is less or equal the lower constraint in IrgnmSemiSmooth. Given: \n\t psi_minus = {psi_minus} \t\n psi_plus = {psi_plus}"))
         self.data=data
         """The measured data"""
         if init is None:
