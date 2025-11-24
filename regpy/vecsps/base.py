@@ -103,18 +103,16 @@ class TupleVector:
     def __iadd__(self,other):
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error(f"Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
-        v = self.v
         for k,v_o in enumerate(other.v):
-            v[k] += v_o
-        return TupleVector(v)
+            self.v[k] += v_o
+        return self
 
     def __isub__(self,other):
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error(f"Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
-        v = self.v
         for k,v_o in enumerate(other.v):
-            v[k] -= v_o
-        return TupleVector(v)
+            self.v[k] -= v_o
+        return self
     
     def __neg__(self):
         return TupleVector([-v_i for v_i in self])
@@ -136,18 +134,16 @@ class TupleVector:
     def __imul__(self,other):
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error(f"Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
-        v = self.v
         for k in range(self.ndim):
-            v[k] *= other
-        return TupleVector(v)
+            self.v[k] *= other
+        return self
     
     def __itruediv__(self,other):
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error(f"Division TupleVector only supported for scalars (int, float, or complex)!"))
-        v = self.v
         for k in range(self.ndim):
-            v[k] /= other
-        return TupleVector(v)
+            self.v[k] /= other
+            return self
     
     def __mul__(self,other):
         from regpy.operators.base import Operator,PtwMultiplication
@@ -182,18 +178,15 @@ class TupleVector:
     def __setitem__(self, key, item):
         if isinstance(key,slice) or isinstance(key,int):
             self.v[key] = item
-        elif (isinstance(key,list) or isinstance(key,tuple)) and len(key) == self.ndim:
-            if (isinstance(item,list) and len(item) == self.ndim):
+        elif isinstance(key,(list,tuple)) and len(key) <= self.ndim:
+            if (isinstance(item,(list,tuple)) and len(item) == len(key)):
                 for k_i,item_i in zip(key,item):
                     self.v[k_i] = item_i
-            elif np.isscalar(item):
-                for k_i in key:
-                    self.v[k_i] = item
-            elif isinstance(item,TupleVector) and item.ndim == self.ndim:
+            elif isinstance(item,TupleVector) and item.ndim == len(key):
                 for k_i,item_i in zip(key,item.v):
                     self.v[k_i] = item_i
             else:
-                raise TypeError(Errors.type_error("items has to be a list of length {} not {} type".format(self.ndim,type(item))))              
+                raise TypeError(Errors.type_error(f"If keys are lists or tuples of length smaller then the length of the Vector  the items can be list or TupleVectors of length same length. Sou gave key list of length {len(key)} and item of length {len(item)}"))
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
             if (isinstance(item,TupleVector) and item.ndim == key.ndim):
                 for v_i,k_i,item_i in zip(self.v,key,item):
