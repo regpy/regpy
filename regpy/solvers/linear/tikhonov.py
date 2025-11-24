@@ -55,6 +55,9 @@ class TikhonovCG(RegSolver):
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
+    preconditioner : Preconditioner such that the iteration is done on .. math::
+        \Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2
+        The iterates (self.x) still solve the original equation without preconditioner.
     """
 
     def __init__(
@@ -143,8 +146,10 @@ class TikhonovCG(RegSolver):
         """The squared norm of the residual."""
         self.dir = self.preconditioner(res)
         """The direction of descent."""
-        self.g_dir = self.h_domain.gram(self.dir)
-        # self.g_dir = self.g_res.copy()
+        if(isinstance(self.preconditioner,Identity)):
+            self.g_dir = self.g_res.copy()
+        else:
+            self.g_dir = self.h_domain.gram(self.dir)
         """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
@@ -239,9 +244,12 @@ class TikhonovCG(RegSolver):
 
         self.dir *= beta
         self.dir += self.preconditioner(res)
-        self.g_dir=self.h_domain.gram(self.dir)
-        # self.g_dir *= beta
-        # self.g_dir += self.g_res
+        if(isinstance(self.preconditioner,Identity)):
+            self.g_dir *= beta
+            self.g_dir += self.g_res
+        else:
+            self.g_dir=self.h_domain.gram(self.dir)
+        
 
 
 class GeometricSequence:
