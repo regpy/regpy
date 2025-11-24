@@ -340,7 +340,7 @@ class IrgnmCGPrec(RegSolver):
                 preconditioner=self.preconditioner,
                 **self.cg_pars
             ).run(stoprule=stoprule)
-            step = self.M @ step
+
             
         self.x += step
         self.y, self.deriv = self.op.linearize(self.x)
@@ -359,20 +359,13 @@ class IrgnmCGPrec(RegSolver):
                 L[i, j] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[j, :])
                 L[j, i] = L[i, j].conjugate()
         r"""Express `T*T` in Krylov_basis"""
-
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
-
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
-        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
+        M_krylov = self.op.domain.volume_elem*U @ diag_lamb @ U.transpose().conjugate()
         tensors=(self.krylov_basis.conjugate(),M_krylov,self.krylov_basis)
         chars1 = ''.join(chr(i) for i in range(ord('a'), ord('a') + self.krylov_basis.ndim))
         chars2 = ''.join(chr(i) for i in range(ord('A'), ord('A') + self.krylov_basis.ndim))
         subscript=f"{chars1[1:]},{chars1},{chars1[0]+chars2[0]},{chars2}"
-        self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,sqrt(1/self.regpar))
+        self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,1/sqrt(self.regpar))
         """Compute preconditioner"""
-        # diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
-        # M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        # self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
-        """Compute inverse preconditioner matrix"""
-
