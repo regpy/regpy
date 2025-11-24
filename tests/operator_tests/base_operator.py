@@ -334,8 +334,6 @@ def test_DirectSum():
 
     op_with_const = op_base.DirectSum(vs.identity, op_base.CoordinateMask(vs,mask), op_base.CoordinateProjection(vs,mask))
     op_with_const.set_constant(vs.randn(),0)
-    print(op_with_const(op_with_const.domain.rand()))
-    print("Constants",op_with_const._constants)
     errors += op_basics(op_with_const,test_methods=True)
     op_with_const.set_constant(vs.randn(),2)
     errors += op_basics(op_with_const,test_methods=True)
