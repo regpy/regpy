@@ -55,6 +55,9 @@ class TikhonovCG(RegSolver):
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
+    preconditioner : Preconditioner such that the iteration is done on .. math::
+        \Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2
+        The iterates (self.x) still solve the original equation without preconditioner.
     """
 
     def __init__(
@@ -123,26 +126,30 @@ class TikhonovCG(RegSolver):
 
         if preconditioner is None:
             self.preconditioner = Identity (self.h_domain.vecsp)
-            self.full_penalty = Identity (self.h_domain.vecsp)
+            # self.full_penalty = Identity (self.h_domain.vecsp)
         else: 
             self.preconditioner = preconditioner
-            self.full_penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
+            # self.full_penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
 
-        self.g_res = self.preconditioner( self.op.adjoint(self.h_codomain.gram(data-self.y)) )
+        self.g_res = self.op.adjoint(self.h_codomain.gram(data-self.y))
         """The gram matrix applied to the residual of the normal equation. 
         g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         if xref is not None:
-            self.g_res += self.regpar *self.preconditioner( self.h_domain.gram(xref-self.x) )
+            self.g_res += self.regpar *self.h_domain.gram(xref-self.x)
         elif x0 is not None:
-            self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
+            self.g_res -= self.regpar * self.h_domain.gram(self.x)
+        self.g_res=self.preconditioner.adjoint(self.g_res)
         res = self.h_domain.gram_inv(self.g_res)
         """The residual of the normal equation."""
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
         """The squared norm of the residual."""
-        self.dir = res
+        self.dir = self.preconditioner(res)
         """The direction of descent."""
-        self.g_dir = self.g_res.copy()
+        if(isinstance(self.preconditioner,Identity)):
+            self.g_dir = self.g_res.copy()
+        else:
+            self.g_dir = self.h_domain.gram(self.dir)
         """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
@@ -156,14 +163,14 @@ class TikhonovCG(RegSolver):
         self.krylov_basis=krylov_basis
         if self.krylov_basis is not None: 
             self.iteration_number=0
-            self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
+            self.krylov_basis[self.iteration_number, :] = res / sqrt(self.sq_norm_res)
         """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
 
     def _next(self):
-        Tdir = self.op( self.preconditioner(self.dir) )
+        Tdir = self.op(self.dir)
         g_Tdir = self.h_codomain.gram(Tdir)
-        alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.full_penalty (self.g_dir), self.dir)).real
+        alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.g_dir, self.dir)).real
         if alpha_pre == 0:
             raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
         stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
@@ -183,7 +190,7 @@ class TikhonovCG(RegSolver):
             else: 
                 self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
 
-        self.g_res -= stepsize * (self.preconditioner( self.op.adjoint(g_Tdir) )+ self.regpar * self.full_penalty (self.g_dir) )
+        self.g_res -= stepsize * self.preconditioner.adjoint(self.op.adjoint(g_Tdir)+self.regpar*self.g_dir)
         res = self.h_domain.gram_inv(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
@@ -193,7 +200,7 @@ class TikhonovCG(RegSolver):
         if self.krylov_basis is not None:
             self.iteration_number+=1
             if self.iteration_number < self.krylov_basis.shape[0]:
-                self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
+                self.krylov_basis[self.iteration_number, :] = res / sqrt(self.sq_norm_res)
 
         self.kappa = 1 + beta * self.kappa
 
@@ -236,9 +243,13 @@ class TikhonovCG(RegSolver):
                 self.log.debug(tol_report)
 
         self.dir *= beta
-        self.dir += res
-        self.g_dir *= beta
-        self.g_dir += self.g_res
+        self.dir += self.preconditioner(res)
+        if(isinstance(self.preconditioner,Identity)):
+            self.g_dir *= beta
+            self.g_dir += self.g_res
+        else:
+            self.g_dir=self.h_domain.gram(self.dir)
+        
 
 
 class GeometricSequence:

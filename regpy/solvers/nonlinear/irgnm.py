@@ -202,6 +202,7 @@ class LevenbergMarquardt(RegSolver):
 from regpy.operators import EinSum,PtwMultiplication
 from regpy import util
 from scipy.sparse.linalg import eigsh
+from regpy.vecsps import UniformGridFcts
         
 class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -220,7 +221,7 @@ class IrgnmCGPrec(RegSolver):
     .. math::
         M  A  M \approx Id
 
-    where :math:`A = (Gram_{domain}^{-1} T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
+    where :math:`A = (T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
 
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
     the order of the number of iterations: :math:`\{v_j\}`
@@ -239,12 +240,12 @@ class IrgnmCGPrec(RegSolver):
         M     &: v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j \\
         M^{-1}&: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.
 
-    At the moment this method does not work for complex domains/codomains
+    This only works for UniformGridFcts domains.
 
     Parameters
     ----------
     setting : regpy.solvers.RegularizationSetting
-        The setting of the forward problem.
+        The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
     data : array-like
         The measured data.
     regpar : float
@@ -263,6 +264,8 @@ class IrgnmCGPrec(RegSolver):
         self, setting, data, regpar, regpar_step=2 / 3, 
         init=None, cg_pars=None,cgstop =None, precpars=None
         ):
+        if(not isinstance(setting.op.domain,UniformGridFcts)):
+            raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
         self.data = data
         """The measured data."""
@@ -340,7 +343,7 @@ class IrgnmCGPrec(RegSolver):
                 preconditioner=self.preconditioner,
                 **self.cg_pars
             ).run(stoprule=stoprule)
-            step = self.M @ step
+
             
         self.x += step
         self.y, self.deriv = self.op.linearize(self.x)
@@ -359,20 +362,14 @@ class IrgnmCGPrec(RegSolver):
                 L[i, j] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[j, :])
                 L[j, i] = L[i, j].conjugate()
         r"""Express `T*T` in Krylov_basis"""
-
         lamb, U = eigsh(L, self.number_eigenvalues, which='LM')
         """Perform the computation of eigenvalues and eigenvectors"""
-
         diag_lamb = np.diag( np.sqrt(1 / (lamb + self.regpar) ) - sqrt(1 / self.regpar) )
-        M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        tensors=(self.krylov_basis.conjugate(),M_krylov,self.krylov_basis)
+        M_krylov = self.op.domain.volume_elem*U @ diag_lamb @ U.transpose().conjugate()
         chars1 = ''.join(chr(i) for i in range(ord('a'), ord('a') + self.krylov_basis.ndim))
         chars2 = ''.join(chr(i) for i in range(ord('A'), ord('A') + self.krylov_basis.ndim))
-        subscript=f"{chars1[1:]},{chars1},{chars1[0]+chars2[0]},{chars2}"
-        self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,sqrt(1/self.regpar))
+        krylov_M_krylov=np.einsum(f"{chars1[0]+chars2[0]},{chars2}->{chars1[0]+chars2[1:]}",M_krylov,self.krylov_basis,optimize=True)
+        tensors=(self.krylov_basis.conjugate(),krylov_M_krylov)
+        subscript=f"{chars1[1:]},{chars1},{chars1[0]+chars2[1:]}"
+        self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,1/sqrt(self.regpar))
         """Compute preconditioner"""
-        # diag_lamb = np.diag ( np.sqrt(lamb + self.regpar) - sqrt(self.regpar) )
-        # M_krylov = U @ diag_lamb @ U.transpose().conjugate()
-        # self.M_inverse = self.krylov_basis.transpose().conjugate() @ M_krylov @ self.krylov_basis + sqrt(self.regpar) * np.identity(self.krylov_basis.shape[1]) 
-        """Compute inverse preconditioner matrix"""
-
