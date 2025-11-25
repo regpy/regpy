@@ -2701,6 +2701,31 @@ class ImaginaryPart(Operator):
             out += 1j * y
         return out
 
+class SplitRealImag(VectorOfOperators):
+    """Splits a complex vector into its real and imaginary part. 
+    Implemented as VectorOfOperators of RealPart and ImaginaryPart.
+
+    Parameters:
+    domain: regpy.vecsps.VectorSpaceBase
+    """
+    def __init__(self, domain):
+        if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase,
+                add_info="To consider a ImaginaryPart operator the domain is required to be complex!"
+            ))
+        Re = RealPart(domain)
+        Im = ImaginaryPart(domain)
+        super().__init__((Re,Im))
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
 
 class SquaredModulus(Operator):
     r"""The pointwise squared modulus operator.

@@ -380,7 +380,7 @@ def test_RealPart():
 
     collect_errors(op_base.RealPart,errors)
     
-def test_RealPart():
+def test_ImagPart():
     vs = NumPyVectorSpace((4,3),dtype=complex)
     errors = []
     errors += op_basics_wrapper(op_base.ImaginaryPart, vs, test_methods=True)
@@ -393,6 +393,19 @@ def test_RealPart():
 
     collect_errors(op_base.ImaginaryPart,errors)
     
+def test_SplitRealImagPart():
+    vs = NumPyVectorSpace((4,3),dtype=complex)
+    errors = []
+    errors += op_basics_wrapper(op_base.SplitRealImag, vs, test_methods=True)
+
+    op=op_base.SplitRealImag(domain=vs)
+    x=vs.randn()
+    res = op.codomain.join(np.real(x),np.imag(x))
+
+    errors += op_evaluation_and_ot(op,x,res)
+
+    collect_errors(op_base.ImaginaryPart,errors)
+
 def test_Zero():
     vs = NumPyVectorSpace((4,3),dtype=complex)
     errors = []
