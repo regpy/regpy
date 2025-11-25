@@ -1,8 +1,9 @@
 import string
+from functools import partial
 
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from scipy.sparse import csc_matrix, csc_array, lil_matrix
+from scipy.sparse import csc_matrix, csc_array, lil_matrix, linalg
 import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
@@ -64,6 +65,16 @@ class MatrixMultiplication(Operator):
             raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or NumPyVectorSpace given was {type(codomain)}"))
         
         self.matrix = matrix
+
+        if isinstance(matrix,np.ndarray):
+            self.is_numpy_mat = True
+            self.matvec = lambda v, **kwargs: np.matvec(self.matrix, v, **kwargs)
+            self.rmatvec = lambda v, **kwargs: np.conjugate(np.vecmat(v,self.matrix, **kwargs), out = kwargs["out"] if "out" in kwargs else None)
+        else:
+            self.is_numpy_mat = False
+            lin_op = linalg.aslinearoperator(self.matrix)
+            self.matvec = lambda v, **kwargs: lin_op.matvec(v)
+            self.rmatvec = lambda v, **kwargs: lin_op.rmatvec(v)
         
         super().__init__(
             domain=domain,
@@ -72,14 +83,25 @@ class MatrixMultiplication(Operator):
         )
         self._inverse = inverse
 
-    def _eval(self, x):
-        return self.matrix @ x
-
-    def _adjoint(self, y):
-        if self.codomain.is_complex:
-            return np.conjugate(np.conjugate(y) @ self.matrix) 
+    def _eval(self, x, out = None):
+        if out is None:
+            return self.matvec(x)
+        elif self.is_numpy_mat:
+            return self.matvec(x, out = out)
         else:
-            return y @ self.matrix
+            out *= 0
+            out += self.matvec(x)
+            return out
+
+    def _adjoint(self, y, out = None):
+        if out is None:
+            return self.rmatvec(y)
+        elif self.is_numpy_mat:
+            return self.rmatvec(y, out = out)
+        else:
+            out *= 0
+            out += self.rmatvec(y)
+            return out
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
@@ -277,17 +299,16 @@ class Exponential(Operator):
             raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Exponential operator needs to be a NumPyVectorSpace!"))
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x, out = None, differentiate=False):
         if differentiate:
             self._exponential_factor = np.exp(x)
-            return self._exponential_factor
-        return np.exp(x)
+        return np.exp(x, out = out)
 
-    def _derivative(self, x):
-        return self._exponential_factor * x
+    def _derivative(self, x, out = None):
+        return np.multiply(self._exponential_factor,x,out = out)
 
-    def _adjoint(self, y):
-        return self._exponential_factor.conj() * y
+    def _adjoint(self, y, out = None):
+        return np.multiply(self._exponential_factor.conj(), y, out = out)
 
 
 class FourierTransform(Operator):
@@ -444,11 +465,11 @@ class PtwMatrixVectorMultiplication(Operator):
         self._einstein_string_mulT =  '...' + letters_out + letters_in + ',...' + letters_out + '->...'+ letters_in
         # e.g., '...ba,...b->...a'
 
-    def _eval(self, v):
-        return  np.einsum(self._einstein_string_mul, self.matrixfct, v)
+    def _eval(self, v, out = None):
+        return  np.einsum(self._einstein_string_mul, self.matrixfct, v, out = out)
     
-    def _adjoint(self, w):
-        return np.einsum(self._einstein_string_mulT, np.conj(self.matrixfct), w)
+    def _adjoint(self, w, out = None):
+        return np.einsum(self._einstein_string_mulT, np.conj(self.matrixfct), w, out = out)
 
     def __repr__(self):
         return make_repr(self, self.domain, self.codomain)
@@ -483,11 +504,11 @@ class PtwScalarMultiplication(Operator):
         
         super().__init__(domain, domain, linear=True)
 
-    def _eval(self, f):
-        return f*self.multiplier
+    def _eval(self, f, out = None):
+        return np.multiply(f,self.multiplier,out = out)
     
-    def _adjoint(self, g):
-        return g*self.multiplier.conj()
+    def _adjoint(self, g, out = None):
+        return np.multiply(g,self.multiplier.conj(), out = out)
 
 class AddSingletonVectorDimension(Operator):
     """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 

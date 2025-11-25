@@ -31,7 +31,6 @@ def _override_vector(vec : ngs.BaseVector, gf : ngs.GridFunction) -> None:
 class NgsBaseVector:
     vec: ngs.la.BaseVector
     make_copy: Optional[bool] = field(default=False)
-    gf: Optional[ngs.GridFunction] = field(default=None)
 
     __array_ufunc__ = None
 
@@ -54,19 +53,12 @@ class NgsBaseVector:
                 self.vec = self.vec.Evaluate()
         else:
             raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
-        if isinstance(self.gf,ngs.GridFunction):
-            if self.gf.vec.FV().NumPy().__array_interface__ != self.vec.FV().NumPy().__array_interface__:
-                warn("The vector of the Grid function and and the given Vector do not match! Setting associated GridFunction to the given vector")
-                _override_vector(self.vec,self.gf)
-        elif self.gf is not None:
-            warn(f"Was given {self.gf} as GridFunction for NgsBaseVector initialization. This is not allowed, it will be set to None!")
-            self.gf = None
         self.size = self.vec.size
         self.is_complex = self.vec.is_complex
 
     def conj(self):
         z = self.vec.CreateVector()
-        z.FV().NumPy()[:] = self.vec.FV().NumPy().conj
+        z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
         return NgsBaseVector(z,)
     
     @property
@@ -95,7 +87,7 @@ class NgsBaseVector:
                 return NgsBaseVector(z) 
         return NgsBaseVector(self.vec.CreateVector())
     
-    def to_imag(self, copy = False):
+    def to_imag(self):
         if self.is_complex:
             return self
         else:
@@ -297,19 +289,18 @@ class NgsVectorSpace(VectorSpaceBase):
         self._no_pickle = {*self._no_pickle,"fes"}
 
     def zeros(self):
-        h_gf = ngs.GridFunction(self.fes)
-        h_gf.vec.FV().NumPy()[:] = 0
-        return NgsBaseVector(h_gf.vec,make_copy=False, gf = h_gf)
+        vec = self._gfu_fes.vec.CreateVector()
+        vec.FV().NumPy()[:] = 0
+        return NgsBaseVector(vec,make_copy=False)
     
     def ones(self):
-        h_gf = ngs.GridFunction(self.fes)
         if self.codim == 1:
-            h_gf.Set(1)
+            self._gfu_fes.Set(1)
         else:
-            for h_gf_i in h_gf.components:
-                h_gf_i.Set(tuple(1 for _ in range(h_gf_i.dim)))
-        h_gf.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(h_gf.vec)
-        return NgsBaseVector(h_gf.vec, gf = h_gf)
+            for gf_i in self._gfu_fes.components:
+                gf_i.Set(tuple(1 for _ in range(gf_i.dim)))
+        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+        return NgsBaseVector(self._gfu_fes.vec, make_copy=True)
     
     def empty(self):
         return self.zeros()
@@ -326,14 +317,13 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
-        h_gf = ngs.GridFunction(self.fes)
         if self.codim == 1:
-            h_gf.Set(self._gfu_util)
+            self._gfu_fes.Set(self._gfu_util)
         else:
-            for gfu_i,gfu_util_i in zip(h_gf.components,self._gfu_util.components):
+            for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
                 gfu_i.Set(gfu_util_i)
-        h_gf.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(h_gf.vec)
-        return NgsBaseVector(h_gf.vec, gf = h_gf)
+        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
     
     def poisson(self,x, n = 1):
         if self.is_complex:
@@ -342,10 +332,9 @@ class NgsVectorSpace(VectorSpaceBase):
         if np.any(self._gfu_util.vec.FV().NumPy()<0):
             raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
         self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
-        h_gf = ngs.GridFunction(self.fes)
-        h_gf.Set(self._gfu_util)
-        h_gf.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(h_gf.vec)
-        return NgsBaseVector(h_gf.vec, gf = h_gf)
+        self._gfu_fes.Set(self._gfu_util)
+        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
 
     def __contains__(self,x):
         if not isinstance(x,NgsBaseVector):
@@ -456,25 +445,24 @@ class NgsVectorSpace(VectorSpaceBase):
         return np.all(t.FV().NumPy() == 0)
     
     def to_gf(self, x):
+        # This Workaround to connect the GridFunction to the Vector can be replaced by 
+        # creating GridFunction with existing Vector. Feature was added after ngs version 6.2.2506!
         gf = ngs.GridFunction(self.fes)
         gf.vec.data = x.vec
         x.vec = gf.vec
-        x.gf = gf
         return gf
     
     def from_ngs(self, ngs_elem, definedon : ngs.comp.Region|None = None, copy = False):
         if isinstance(ngs_elem,ngs.comp.GridFunction):
             if ngs_elem.space != self.fes:
-                h_gf = ngs.GridFunction(self.fes)
-                h_gf.Interpolate(ngs_elem)
-                return NgsBaseVector(h_gf.vec, gf = h_gf)
+                self._gfu_fes.Set(ngs_elem)
+                return NgsBaseVector(self._gfu_fes.vec,make_copy=True)
             else:
                 if copy:
                     return NgsBaseVector(ngs_elem.vec,make_copy=True)
                 else:
-                    return NgsBaseVector(ngs_elem.vec,gf = ngs_elem)
+                    return NgsBaseVector(ngs_elem.vec)
         else:
-            h_gf = ngs.GridFunction(self.fes)
-            h_gf.Set(ngs_elem,definedon=definedon)
-            return NgsBaseVector(h_gf.vec, gf = h_gf)
+            self._gfu_fes.Set(ngs_elem,definedon=definedon)
+            return NgsBaseVector(self._gfu_fes.vec)
 

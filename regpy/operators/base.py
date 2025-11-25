@@ -2720,6 +2720,9 @@ class SquaredModulus(Operator):
     def _eval(self, x, out = None, differentiate=False):
         if out is None:
             out = self.codomain.zeros()
+        elif out is x:
+            x = x.copy()
+            out *= 0
         else:
             out *= 0
         if differentiate:
@@ -2731,6 +2734,8 @@ class SquaredModulus(Operator):
         if out is None:
             return (self._factor.conj() * h).real
         else:
+            if out is h:
+                h = h.copy()
             out *= 0
             out += (self._factor.conj() * h).real
             return out
@@ -2738,7 +2743,10 @@ class SquaredModulus(Operator):
     def _adjoint(self, y, out = None):
         if out is None:
             return self._factor * y
-        else:
+        elif out is y:
+            out *= self._factor
+            return out
+        else:    
             out *= 0
             out += self._factor * y
             return out
@@ -2816,13 +2824,13 @@ class ApproximateHessian(Operator):
 
     def _eval(self, h, out = None):
         if out is None:
-            grad = self.func.gradient(self.x + self.stepsize * h)
+            grad = self.func.subgradient(self.x + self.stepsize * h)
             return grad - self.gradx
         else:
             if h is out:
                 h = h.copy()
             out *= 0
-            out += self.func.gradient(self.x + self.stepsize * h)
+            out += self.func.subgradient(self.x + self.stepsize * h)
             out -= self.gradx
             return out
 
