@@ -967,8 +967,8 @@ class SquaredNorm(Functional):
         return self.a * self.gram
     
     def _proximal(self,z, tau, **proximal_par):
-        if self.a>=0:
-            raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the SquaredNorm functional {self} is not implemented for a = {self.a}. a>=0"))
+        if self.a<=0:
+            raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the SquaredNorm functional {self} is not implemented for a = {self.a}. a<=0"))
         return (1./(tau*self.a+1)) * (z-tau*self.b)
     
     def _conj(self, xstar):
@@ -1012,7 +1012,7 @@ class SquaredNorm(Functional):
             return NotTwiceDifferentiableError
     
     def _conj_proximal(self, zstar, tau, **proximal_par):
-        if self.a>=0:
+        if self.a<=0:
             raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the conjugate of the SquaredNorm functional {self} is not implemented for a = {self.a}. it has to satisfy a>0"))
         bstar = self.gram(self.b)
         return (1./(1.+tau/self.a)) * (zstar-bstar) + bstar

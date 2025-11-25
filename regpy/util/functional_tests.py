@@ -459,28 +459,20 @@ def test_functional(func,u_s=None,sample_N=5,
             u_s = [func.domain.randn() for _ in range(sample_N)]
     func.log.info(f'Starting tests for functional!')
     for u in u_s:
-        try:
+        if "proximal" in func.methods and "proximal" in func.conj.methods:
             tau=uniform(tolerance,4)
             if not test_moreaus_identity(func,u,tau=tau,tolerance=tolerance):
-                raise AssertionError(f"{func} failed Moreaus identity!")
-        except(NotImplementedError):
-            func.log.info('Moreaus identity could not be checked because of missing implementation')
-        try:
+                raise AssertionError(f"{func} failed Moreaus identity!")        
+        if {"eval","subgradient"} <= func.methods:
             if not test_subgradient(func,u):
                 raise AssertionError(f"{func} failed Subgradient Test!")
-        except(NotImplementedError):
-            func.log.info('Subgradient could not be checked because of missing implementation')
-        try:
+        if {"eval","subgradient"} <= func.methods and "eval" in func.conj.methods:
             if not test_young_equality(func,u,tolerance=tolerance):
                 raise AssertionError(f"{func} failed Young equality!")
-        except(NotImplementedError):
-            func.log.info('Young equality could not be checked because of missing implementation')
         if test_second_deriv:
-            try:
+            if {"subgradient","hessian"} <= func.methods:
                 if not test_second_derivative(func,u):
                     raise AssertionError(f"{func} failed second derivative test!")
-            except (NotTwiceDifferentiableError, NotImplementedError):
-                func.log.info('Second derivative could not be tested as functiional is not twice differentiable.')
             if func.separable:
                 try:
                     if not test_Lipschitz_convexity(func):

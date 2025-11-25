@@ -1925,7 +1925,10 @@ class QuadraticPositiveSemidef(Functional):
             self.trace_val=trace_val
         else:
             self.has_trace_constraint=False
-        super().__init__(domain,Lipschitz=1,convexity_param=1,**kwargs)
+        super().__init__(domain,Lipschitz=1,convexity_param=1,
+                         methods = {'eval','subgradient','hessian','is_subgradient','proximal'},
+                         conj_methods = {'eval'},
+                         **kwargs)
 
     def is_in_essential_domain(self,rho):
         if(not ishermitian(rho,atol=self.tol)):
@@ -2003,7 +2006,8 @@ class L1Generic(Functional):
     def __init__(self, domain):
         if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,"To construct a L1Generic functional you need a NumPyVectorSpace"))
-        super().__init__(domain)
+        super().__init__(domain,
+                         methods = {'eval','subgradient','hessian','proximal'})
 
     def _eval(self, x):
         return np.sum(np.abs(x))
