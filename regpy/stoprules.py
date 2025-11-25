@@ -97,7 +97,7 @@ class CombineRules(StopRule):
 
     def __init__(self, rules, op=None):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
-            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules!"))
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
         if op is not None and not isinstance(op,Operator):
             raise TypeError(Errors.type_error("The operator that is passed to the combined rules needs to be either None or an Operator!"))
         super().__init__()

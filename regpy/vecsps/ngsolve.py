@@ -105,7 +105,7 @@ class NgsBaseVector:
 
     def __iadd__(self,other):
         if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
-            raise ValueError(Errors.value_error(f"Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             self.vec += other.to_imag().vec
         elif not self.is_complex and other.is_complex:
@@ -117,7 +117,7 @@ class NgsBaseVector:
 
     def __isub__(self,other):
         if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
-            raise ValueError(Errors.value_error(f"Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             print("Adding real vector to complex vector, converting real to complex.")
             self.vec -= other.to_imag().vec
@@ -130,7 +130,7 @@ class NgsBaseVector:
     
     def __add__(self,other):
         if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
-            raise ValueError(Errors.value_error(f"Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             return self + other.to_imag()
         if not self.is_complex and other.is_complex:
@@ -154,13 +154,13 @@ class NgsBaseVector:
     
     def __imul__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Multiplying NgsBaseVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Multiplying NgsBaseVector only supported for scalars (int, float, or complex)!"))
         self.vec.data *= other
         return self
     
     def __itruediv__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
         self.vec.data /= other
         return self
     
@@ -180,7 +180,7 @@ class NgsBaseVector:
 
     def __truediv__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
         v = self.vec.CreateVector()
         v.data = (1/other)*self.vec
         return NgsBaseVector(v)
@@ -219,17 +219,17 @@ class NgsBaseVector:
 
     def __and__(self,x,y):
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i == y_i for x_i,y_i in zip(x,y))
     
     def __or__(self,x,y):
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
 
     def __xor__(self,x,y):
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error(f"Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
+            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
     
     def __copy__(self):
@@ -274,12 +274,13 @@ class NgsVectorSpace(VectorSpaceBase):
                         if (isinstance(f,ngs.VectorH1),isinstance(f,ngs.VectorL2),isinstance(f,ngs.VectorValued)):
                             l_fes.append(ngs.VectorL2(self.fes.mesh, order = 0, complex = self.is_complex))
                         else:
-                            raise ValueError(Errors.value_error(f""" To construct a NgsVectorSpace for FES which has components which are ProductSpaces 
-                                                                the spaces have to be either VectorH1, VectorL2 or VectorValued!
-                                                                The component that was not able to process is:
-                                                                    f = {f}
-                                                                in the FES:
-                                                                    fes = {fes}"""))
+                            raise ValueError(Errors.value_error(f""" 
+        To construct a NgsVectorSpace for FES which has components which are ProductSpaces 
+        the spaces have to be either VectorH1, VectorL2 or VectorValued!
+        The component that was not able to process is:
+            f = {f}
+        in the FES:
+            fes = {fes}"""))
                     else:
                         l_fes.append(ngs.L2(self.fes.mesh, order=0, dim = f.dim, complex = self.is_complex))
                 self._fes_util = ngs.ProductSpace(*l_fes)

@@ -208,10 +208,10 @@ def test_prox_optimality_cond(func,tau=1,u=None):
     prox = func.proximal(u,tau)
     vec = func.h_domain.gram((u-prox)/tau)
     if func.is_subgradient(vec,prox):
-        func.log.info(f"Passed optimality condition characterizing the prox operator")
+        func.log.info("Passed optimality condition characterizing the prox operator")
         return True
     else:
-        func.log.warning(f"Failed optimality condition characterizing the prox operator")
+        func.log.warning("Failed optimality condition characterizing the prox operator")
         return False
 
 
@@ -258,7 +258,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
     err= diffq+deriv
     if err<=tol_convex*func.domain.norm(grad_u):
         if np.abs(err)<=tol_smooth*func.domain.norm(grad_u):
-            func.log.info(f"Passed subgradient test! Both the convexity and differentiability condition!")
+            func.log.info("Passed subgradient test! Both the convexity and differentiability condition!")
             return True
         else:
             func.log.warning(f"Failed subgradient test! The differentiability condition is violated: |err|={np.abs(err)}, tol_smooth={tol_smooth}, |grad u| = {func.domain.norm(grad_u)}")
@@ -316,7 +316,7 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
     err = func.h_domain.norm(func_pp-diffq)/(1e-14+func.h_domain.norm(func_pp))
 
     if func.h_domain.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * func.h_domain.norm(func_pp)]):
-        func.log.info(f"Passed second derivative test!")
+        func.log.info("Passed second derivative test!")
         return True
     else:
         func.log.warning(f"Failed the second derivative test! err: {err}, tol: {tolerance}, norm second deriv. {func.h_domain.norm(func_pp)}")

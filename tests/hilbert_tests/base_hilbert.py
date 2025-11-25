@@ -11,7 +11,7 @@ from regpy.hilbert.base import *
 def collect_errors(cls,errors):
     if errors:
         sep = "\n" +"-"*125 +"\n"
-        title = f"\t\tDuring the testing of {cls} were the following errors collected"
+        title = f"During the testing of {cls} were the following errors collected"
         massage = sep+title+sep+ sep.join(errors)
         raise AssertionError(massage)
     else:
@@ -32,7 +32,7 @@ def call_safe(obj, method_name, error_log, *args, **kwargs):
         return result
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        error_log.append(f"The method {method_name} of {obj} with arguments {args} and keyword arguments {kwargs} could not construct an object resulting in exception {e}.\n Resulting from {tb} \n")
+        error_log.append(f"The method {method_name} of {obj} with arguments {args} and keyword arguments {kwargs} could not construct an object resulting in exception {e}."+"\n"+f"Resulting from {tb}")
         return None
 
 def check_parallelogram_identity(h_space,tol=1e-10, u= None, v = None):
@@ -71,7 +71,7 @@ def hilbert_basics(sp,test_methods = False,**kwargs):
         _ = 6 * sp 
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"The addition and power implementations for {sp} do not properly work. Throwing and exception {e}.\n Resulting from {tb} \n")
+        errors.append(f"The addition and power implementations for {sp} do not properly work. Throwing and exception {e}. Resulting from {tb}")
 
     tol = 1e-10 if "tol" not in kwargs else kwargs["tol"]
     u = None if "u" not in kwargs else kwargs["u"]
@@ -141,18 +141,18 @@ def test_AbstractSpace():
         ab_sp = AbstractSpace("TestSpace")
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"Trying to create a new Abstract space failed with exception {e} from:\n {tb}")
+        errors.append(f"Trying to create a new Abstract space failed with exception {e} from: {tb}")
     vs = NumPyVectorSpace((4,2),dtype=complex)
     try:
         ab_sp.register(NumPyVectorSpace,L2Generic)
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"Trying to register space failed with exception {e} from:\n {tb}")
+        errors.append(f"Trying to register space failed with exception {e} from: {tb}")
     try:
         sp = ab_sp(vs)
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"Trying to evaluate on the registered space failed with exception {e} from:\n {tb}")
+        errors.append(f"Trying to evaluate on the registered space failed with exception {e} from: {tb}")
 
     collect_errors(AbstractSpace,errors)
     

@@ -31,20 +31,28 @@ build_doc:
   artifacts:
     paths:
       - public
-  # Docs build always runs
+  # Docs build only when push to release branch
   rules:
-    - when: always
+    - if: $CI_COMMIT_BRANCH == "release"
+      when: on_success
+    - when: manual
+      allow_failure: true
+    - when: never
 
 test_core:
   stage: test
-  image: python:3.12
+  image: "python:$VERSION"
   before_script:
+    - python -V 
     - pip install .[ngsolve]
   script:
     - pytest tests/test_vecsps.py
     - pytest tests/test_hilbert.py
     - pytest tests/test_operators.py
     - pytest tests/test_functionals.py
+  parallel:
+    matrix:
+      - VERSION: ['3.10','3.11','3.12']
     
 
 test_examples:   # This job runs in the test stage.

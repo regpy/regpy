@@ -93,21 +93,21 @@ class IntegralFunctionalBase(Functional):
             raise ValueError(Errors.value_error('At most one of the parameters constr_u,lin_taylor_u, quad_taylor_u may be specified.',self))     
 
         if np.any(dom_l != -np.inf) and not np.isscalar(dom_l) and dom_l not in domain: 
-            raise TypeError(Errors.type_error(f"The lower bound of the essential domain if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The lower bound of the essential domain if defined, can only be either a scaler or an element in the domain. Given dom_l = {dom_l}"))
         if np.any(dom_u != np.inf) and not np.isscalar(dom_u) and dom_u not in domain: 
-            raise TypeError(Errors.type_error(f"The upper bound of the essential domain if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The upper bound of the essential domain if defined, can only be either a scaler or an element in the domain. Given dom_u = {dom_u}"))
         if constr_l is not None and not np.isscalar(constr_l) and constr_l not in domain: 
-            raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scaler or an element in the domain. Given constr_l = {constr_l}"))
         if constr_u is not None and not np.isscalar(constr_u) and constr_u not in domain: 
-            raise TypeError(Errors.type_error(f"The upper constraint if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The upper constraint if defined, can only be either a scaler or an element in the domain. Given constr_u = {constr_u}"))
         if lin_taylor_l is not None and not np.isscalar(lin_taylor_l) and lin_taylor_l not in domain: 
-            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain. Given lin_taylor_l = {lin_taylor_l}"))
         if lin_taylor_u is not None and not np.isscalar(lin_taylor_u) and lin_taylor_u not in domain: 
-            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain. Given lin_taylor_u = {lin_taylor_u}"))
         if quad_taylor_l is not None and not np.isscalar(quad_taylor_l) and quad_taylor_l not in domain: 
-            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
         if quad_taylor_u is not None and not np.isscalar(quad_taylor_u) and quad_taylor_u not in domain: 
-            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain."))
+            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_u = {quad_taylor_u}"))
 
         self.constr_l_active = False if constr_l is None else np.any(constr_l>dom_l)
         self.constr_u_active = False if constr_u is None else np.any(constr_u<dom_u)
@@ -288,7 +288,7 @@ class IntegralFunctionalBase(Functional):
 
     def _if_constant_broadcast(self,x,mask=None):
         if not isinstance(x,np.ndarray) and x.shape != self.domain.shape:
-            raise TypeError(Errors.type_error(f"If constant use broadcasting in the IntegralFunctional init not allowed for non numpy arrays of other shape then domain.\n\tx={x} "))
+            raise TypeError(Errors.type_error(f"If constant use broadcasting in the IntegralFunctional init only allowed for numpy arrays of same shape as domain." +"\n\t" + f"x = {x}"))
         if mask is None:
             if np.allclose(x, x.flatten()[0],rtol=1e-10,atol=1e-12):
                 x = np.broadcast_to(x.flatten()[0],self.domain.shape)
@@ -298,15 +298,15 @@ class IntegralFunctionalBase(Functional):
 
     def _assert_essential_domain(self,v,eps=1e-10,msg=None):
         self._buf = v-self.dom_u
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}.\n\tdiff:{np.max(self._buf)},\n\t eps={eps}"))
+        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t" + f"diff:{np.max(self._buf)},"+"\n\t"+ f"eps={eps}"))
         self._buf = self.dom_l-v
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}.\n\t diff:{np.max(self._buf)},\n\t eps={eps}"))
+        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
 
     def _assert_conj_essential_domain(self,vstar,eps=1e-10,msg=None):
         self._buf = vstar-self.conj_dom_u
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}.\n\tdiff:{np.max(self._buf)},\n\teps={eps}"))
+        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
         self._buf = self.conj_dom_l-vstar
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}.\n\tdiff:{np.max(self._buf)},\n\teps={eps}"))
+        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
 
     def _eval(self, v, func_vals =None):
         # see comment in _conj! 
@@ -753,9 +753,9 @@ class IntegralFunctionalBase(Functional):
         if not np.all((r>=0) | converged): 
             raise RuntimeError(Errors.runtime_error(f'upper bound not satisfied for indices {np.where((r<0) & ~converged)}',self,"_numerical_prox"))
         if not np.all(lb>=dom_l):
-            raise RuntimeError(Errors.runtime_error(f"Lower bound under the domains lower bound of the essential domain. \n\t lb = {lb},\n\t dom_l = {dom_l}", self,"_numerical_prox"))
+            raise RuntimeError(Errors.runtime_error(f"Lower bound under the domains lower bound of the essential domain. "+"\n\t "+f"lb = {lb},"+"\n\t "+f"dom_l = {dom_l}", self,"_numerical_prox"))
         if not np.all(ub<=dom_u):
-            raise RuntimeError(Errors.runtime_error(f"Uper bound above the domains uper bound of the essential domain. \n\t ub = {ub},\n\t dom_u = {dom_u}", self,"_numerical_prox"))
+            raise RuntimeError(Errors.runtime_error(f"Uper bound above the domains uper bound of the essential domain. "+"\n\t "+f"ub = {ub},"+"\n\t "+f"dom_u = {dom_u}", self,"_numerical_prox"))
 
         self.log.debug(f'lb: {lb}\n diff: {ub-lb}')
 
@@ -1356,7 +1356,7 @@ class KullbackLeibler(IntegralFunctionalBase):
     def _f_conj_second_deriv(self, u_star,**kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
         if not np.all(np.logical_or(np.logical_not(u_star==1),wm==0)):
-            raise RuntimeError(Errors.runtime_error(f"Whenever u^\\ast is not 1 the first argument of initial Kullback-Leibler cannot be zero for the computation of second derivativ of conjugate functional.", self,"_f_conj_second_deriv"))
+            raise RuntimeError(Errors.runtime_error(f"Whenever u^ast is not 1 the first argument of initial Kullback-Leibler cannot be zero for the computation of second derivativ of conjugate functional.", self,"_f_conj_second_deriv"))
         # memory efficient implementation of 
         # toret = wm/(1-u_star)**2
         toret = np.subtract(1.,u_star)
@@ -1560,7 +1560,7 @@ class Huber(IntegralFunctionalBase):
     def  __init__(self, domain,as_primal=True,sigma = 1.,eps=1e-10,**kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSPaceFcts isntance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or elemnt in the domain! Given:\n\t {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if isinstance(sigma, (float,int)) :
             self.sigma = np.broadcast_to(np.real(sigma),domain.shape)
         else:
@@ -1647,7 +1647,7 @@ class QuadraticIntv(IntegralFunctionalBase):
     def  __init__(self, domain,as_primal=True,sigma=1.,eps=1e-10,**kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSPaceFcts isntance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or elemnt in the domain! Given:\n\t {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if np.min(sigma)<=0:
             raise ValueError(Errors.value_error("The interval width in the QuadtraticIntv needs to be positiv!", self))
         self.eps=eps
@@ -1803,21 +1803,21 @@ class QuadraticBilateralConstraints(LinearCombination):
         elif lb is None:
             lb = domain.zeros()
         elif lb not in domain:
-            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:\n\t {lb}"))
+            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
         if isinstance(ub,(float,int)):
             ub = ub*domain.ones()
         elif ub is None:
             ub = domain.zeros()
         elif ub not in domain:
-            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:\n\t {ub}"))
+            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"ub = {ub}"))
         if np.any(lb>=ub):
-            raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint: \n\t lb = {lb},\n\t ub = {ub}"))
+            raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint:"+"\n\t "+f"lb = {lb},"+"\n\t "+f"ub = {ub}"))
         if x0 is None:
             x0 =0.5*(lb+ub)
         elif isinstance(x0,(float,int)):
             x0 = x0*domain.ones()
         elif x0 not in domain:
-            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:\n\t {x0}"))
+            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
 
         if not isinstance(alpha,(float,int)):
             raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
@@ -1859,13 +1859,13 @@ def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
     elif lb is None:
         lb = domain.zeros()
     elif lb not in domain:
-        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:\n\t {lb}"))
+        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
     if isinstance(x0,(float,int)):
         x0 = x0*domain.ones()
     elif x0 is None:
         x0 = domain.zeros()
     elif x0 not in domain:
-        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:\n\t {x0}"))
+        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
     if not isinstance(a,(float,int)):
             raise TypeError(Errors.not_instance(a,float,add_info="Scaling factor a in QuadraticLowerBound needs to be a scalar!"))
 
@@ -1898,9 +1898,9 @@ class QuadraticPositiveSemidef(Functional):
     def  __init__(self, domain,trace_val=None,tol=1e-15,**kwargs):
         if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts isntance."))
         if domain.ndim!=2 or domain.shape[0]!=domain.shape[1] or domain.volume_elem!=1.:
-            raise ValueError(Errors.value_error(f"The domain for QuadraticPositiveSemidef must be a two-dimensional domain with identical spread in the two domensions and uniform one measure!\n This is to represent vectors as a matrix."))
+            raise ValueError(Errors.value_error("The domain for QuadraticPositiveSemidef must be a two-dimensional domain with identical spread in the two domensions and uniform one measure! This is to represent vectors as a matrix."))
         if tol<0:
-            raise ValueError(Errors.value_error(f"The tolerance for determinating PSD of a matrix needs to be non-negative"))
+            raise ValueError(Errors.value_error("The tolerance for determinating PSD of a matrix needs to be non-negative"))
         if trace_val is not None and trace_val<=0:
             raise ValueError(Errors.value_error("The desired value of traces needs to be either None or positive!"))
         self.tol=tol

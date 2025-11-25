@@ -7,10 +7,11 @@ class Errors:
 
     @staticmethod
     def _compose_message(title : str, content : str):
-        return f"""-------------------------------------------------------
-            RegPy Error - {title}
-        {content}
-        -------------------------------------------------------"""
+        return f"""
+-------------------------------------------------------
+    RegPy Error - {title}
+{content}
+-------------------------------------------------------"""
 
     @staticmethod
     def generic_message(msg : str):
@@ -60,7 +61,8 @@ class Errors:
     def not_in_vecsp(vec: any, vecsp: object, vec_name:str = "vector", space_name:str = "vector space", add_info:str = "") -> str:
         return Errors._compose_message(
             "VECTOR NOT IN VECTOR SPACE",
-            f"""The given {vec_name} does not belong to the {space_name}:
+            f"""
+        The given {vec_name} does not belong to the {space_name}.
         {add_info}
             vec = {vec}
             vecsp = {vecsp}""")
@@ -69,8 +71,9 @@ class Errors:
     def not_a_vecsp(vecsp: object, cls: type, add_info:str = "") -> str:
         return Errors._compose_message(
             "NOT VECTOR SPACE of CERTAIN TYPE",
-            f"""The given vector space {vecsp} is not of type {cls}.
-            {add_info}"""
+            f"""
+        The given vector space {vecsp} is not of type {cls}.
+        {add_info}"""
         )
 
     @staticmethod
@@ -81,9 +84,9 @@ class Errors:
             second_type = type(second)
         return Errors._compose_message(
             "OBJECTS NOT EQUAL",
-            f"""Comparing an object of type {first_type} 
-            with another of type {second_type}
-            failed.
+            f"""
+            Comparing an object of type {first_type} 
+            with another of type {second_type} failed.
             {add_info}
             The objects:
                 first = {first}
@@ -95,7 +98,8 @@ class Errors:
     def not_linear_op(operator: object, add_info:str = "") -> str:
         return Errors._compose_message(
             "OPERATOR NOT LINEAR",
-            f"""The given operator {operator} is of type {type(operator)} is not linear.
+            f"""
+            The given operator {operator} is of type {type(operator)} is not linear.
             {add_info}
             """
         )
@@ -104,7 +108,8 @@ class Errors:
     def not_instance(obj: object, cls:type, add_info:str = "") -> str:
         return Errors._compose_message(
             "NOT CORRECT INSTANCE",
-            f"""The given object {obj} is not an instance of {cls}.
+            f"""
+            The given object {obj} is not an instance of {cls}.
             {add_info}
             """
         )
@@ -113,8 +118,9 @@ class Errors:
     def indexation(index: any, obj: object, add_info:str = "") -> str:
         return Errors._compose_message(
             "INDEXATION ERROR FOR {type(obj)}",
-            f"""The given index {index} is not valid for {obj}.
-        {add_info}"""
+            f"""
+            The given index {index} is not valid for {obj}.
+            {add_info}"""
         )
 
 

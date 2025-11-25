@@ -132,7 +132,7 @@ class AbstractFunctional(AbstractFunctionalBase):
         """
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
-            self.__doc__ += "-"*125 + f"\n--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---\n {impl.__doc__}\n" + "-"*125
+            self.__doc__ += "-"*125+ "\n" + f"--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---" +"\n" + f"{impl.__doc__}" +"\n" + "-"*125
         else:
             def decorator(i):
                 self.register(vecsp_type, i)
@@ -183,9 +183,10 @@ class AbstractLinearCombination(AbstractFunctional):
             else:
                 coeff, func = 1, arg
             if not isinstance(func, AbstractFunctional) or not isinstance(coeff,(int,float)):
-                raise ValueError(util.Errors.value_error(f""" The AbstractLinearCombination only takes a list of arbitrary items provided either tuples 
-                                                         (coeff,func) which are a real number and functional or a only a functional. However, you gave:
-                                                         {",\n".join(f"\t{arg}" for arg in args)}"""))
+                raise ValueError(util.Errors.value_error(f"""
+        The AbstractLinearCombination only takes a list of arbitrary items provided either tuples 
+        (coeff,func) which are a real number and functional or a only a functional. However, you gave:
+        [{";  ".join(f"({arg})" for arg in args)}]"""))
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
                     coeff_for_func[f] += coeff * c
@@ -230,11 +231,11 @@ class AbstractVerticalShift(AbstractFunctional):
     """
     def __init__(self, func, offset):
         if not isinstance(func, AbstractFunctional) or not isinstance(offset,(int,float)):
-            raise ValueError(util.Errors.value_error(f""" The AbstractVerticalShift only takes two arguments one AbstractFunctional 
-                                                     and one offset that is a scalar. However, you gave:
-                                                        func = {func},
-                                                        offset = {offset}.
-                                                        """))
+            raise ValueError(util.Errors.value_error(f""" 
+        The AbstractVerticalShift only takes two arguments one AbstractFunctional 
+        and one offset that is a scalar. However, you gave:
+            func = {func},
+            offset = {offset}."""))
         super().__init__(func.domain)
         self.func = func
         """Functional to be offset.
@@ -383,7 +384,7 @@ class Functional:
         except NotImplementedError:
             y, _ = self._linearize(x)
         if not isinstance(y, (int,float)):
-            raise RuntimeError(util.Errors.not_instance(x,float, add_info=f"The evaluation of the functional {self} for \n x = {x} \n did not return a float or int."))
+            raise RuntimeError(util.Errors.not_instance(x,float, add_info=f"The evaluation of the functional {self} did not return a float or int."+"\n\t"+f"x = {x}"))
         return y
 
     def linearize(self, x):
@@ -415,7 +416,7 @@ class Functional:
             y = self._eval(x)
             grad = self._subgradient(x)
         if not isinstance(y, (int,float)):
-            raise RuntimeError(util.Errors.not_instance(y,float, add_info=f"The evaluation of the functional {self} for \n x = {x} \n did not return a float or int."))
+            raise RuntimeError(util.Errors.not_instance(y,float, add_info=f"The evaluation of the functional {self} did not return a float or int."+"\n\t" + f"x = {x}"))
         if grad not in self.domain:
             raise RuntimeError(util.Errors.not_in_vecsp(grad,self.domain,vec_name="gradient",space_name="domain", add_info=f"The computation of the gradient of functional {self} did not return an element in the domain." ))
         return y, grad
@@ -583,7 +584,7 @@ class Functional:
                 gram_inv = self.h_domain.gram_inv
                 proximal = x - tau *gram_inv(self.conj_proximal(gram(x)/tau,1/tau,recursion_safeguard=True,**proximal_par))
         if proximal not in self.domain:
-            raise ValueError(util.Errors.not_in_vecsp(proximal,self.domain,space_name="domain", add_info=f"The proximal of the functional {self} for \n x = {x} \n did not return somthing the domain."))
+            raise ValueError(util.Errors.not_in_vecsp(proximal,self.domain,space_name="domain", add_info=f"The proximal of the functional {self} did not return somthing the domain."+"\n\t"+ f"x = {x}"))
         return proximal
 
     def conj_proximal(self, xstar, tau, recursion_safeguard = False,**proximal_par):
@@ -601,7 +602,7 @@ class Functional:
                 gram_inv = self.h_domain.gram_inv
                 proximal = xstar - tau * gram(self.proximal(gram_inv(xstar/tau),1/tau,recursion_safeguard=True,**proximal_par))
         if proximal not in self.domain:
-            raise ValueError(util.Errors.not_in_vecsp(proximal,self.domain,space_name="domain", add_info=f"The proximal of the conjugate of functional {self} for \n x = {x} \n did not return somthing the domain."))
+            raise ValueError(util.Errors.not_in_vecsp(proximal,self.domain,space_name="domain", add_info=f"The proximal of the conjugate of functional {self} did not return somthing the domain."+"\n\t"+f"xstar = {xstar}"))
         return proximal 
 
     def shift(self,v):
@@ -1074,9 +1075,10 @@ class LinearCombination(Functional):
             else:
                 coeff, func = 1, arg
             if not isinstance(func, Functional) or not isinstance(coeff,(int,float)) or coeff<0:
-                raise ValueError(util.Errors.value_error(f""" The LinearCombination only takes a list of arbitrary items provided either tuples 
-                                                         (coeff,func) which are a real positive number and functional or a only a functional. However, you gave:
-                                                         {",\n".join(f"\t{arg}" for arg in args)}"""))
+                raise ValueError(util.Errors.value_error(f"""
+        The LinearCombination only takes a list of arbitrary items provided either tuples 
+        (coeff,func) which are a real positive number and functional or a only a functional. However, you gave:
+            [{"; ".join(f"({arg})" for arg in args)}]"""))
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
                     coeff_for_func[f] += coeff * c
@@ -1096,7 +1098,7 @@ class LinearCombination(Functional):
 
         domains = [func.domain for func in self.funcs if func.domain]
         domain = domains[0]
-        if  any(d != domain for d in domains): raise ValueError(util.Errors.generic_message(f"The domains of the functionals to be combined in a linear combination have to match. The functioanls domains ar\n domain = {domains}"))
+        if  any(d != domain for d in domains): raise ValueError(util.Errors.generic_message(f"The domains of the functionals to be combined in a linear combination have to match. The functioanls domains are" +"\n\t" +f"domains = {domains}"))
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
             self.grad_sum = self.funcs[0].domain.zeros()
@@ -1248,11 +1250,11 @@ class VerticalShift(Functional):
     """
     def __init__(self, func, offset):
         if not isinstance(func, Functional) or not isinstance(offset,(int,float)):
-            raise ValueError(util.Errors.value_error(f""" The VerticalShift only takes two arguments one AbstractFunctional 
-                                                     and one offset that is a scalar. However, you gave:
-                                                        func = {func},
-                                                        offset = {offset}.
-                                                        """))
+            raise ValueError(util.Errors.value_error(f""" 
+            The VerticalShift only takes two arguments one AbstractFunctional 
+            and one offset that is a scalar. However, you gave:
+                func = {func},
+                offset = {offset}."""))
         super().__init__(func.domain, linear = False, 
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz,
@@ -1318,13 +1320,12 @@ class HorizontalShiftDilation(Functional):
     def __init__(self, func, dilation =1., shift = None):
         if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
             raise ValueError(util.Errors.value_error(f""" 
-    The HorizontalShiftDilation only takes three arguments Functional, 
-    dialation a scalar and shift that is either a scalar or a element in the domain of the functionals. 
-    However, you gave:
-    func = {func},
-    dialation = {dilation}
-    shift = {shift}.
-    """))
+            The HorizontalShiftDilation only takes three arguments Functional, 
+            dialation a scalar and shift that is either a scalar or a element in the domain of the functionals. 
+            However, you gave:
+                func = {func},
+                dialation = {dilation}
+                shift = {shift}."""))
         if dilation==0.:
             raise ValueError(util.Errors.value_error("dilation must not vanisch."))
         if np.isscalar(shift):

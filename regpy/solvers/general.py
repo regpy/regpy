@@ -408,9 +408,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             self.data_fid_shift = None
 
         if not isinstance(regpar,(float,int)):
-            raise TypeError(Errors.type_error(f"The regularization parameter need to be a scalar"))
+            raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
         if regpar <= 0:
-            raise ValueError(Errors.value_error(f"The regularization parameter need to be a positive scalar"))
+            raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
         self.regpar = float(regpar)
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
@@ -427,7 +427,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
         """
         if not self.op.linear:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To properly construct a dual setting the operator needs to be linear!"))
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info="To properly construct a dual setting the operator needs to be linear!"))
         return TikhonovRegularizationSetting(
             self.op.adjoint,
             self.data_fid.conj.dilation(-self.regpar),
@@ -457,7 +457,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
                 return self.penalty.conj.subgradient(pstar)
             else:
                 if not self.op.linear:
-                    raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To construct a primal solution from the dual in case using the adjoint only allowed for linear operators!"))
+                    raise RuntimeError(Errors.not_linear_op(self.op,add_info="To construct a primal solution from the dual in case using the adjoint only allowed for linear operators!"))
                 return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         else:
             return self.primal_setting.primalToDual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
@@ -504,7 +504,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             dual variable p        
         """
         if not self.op.linear:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"The duality gap can only be computed for settings with linear operators!"))
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for settings with linear operators!"))
         if primal is None and dual is None:
             raise ValueError(Errors.value_error("Either a primal or dual vector need to be given to compute the duality gap!"))
         if primal is None:
@@ -551,7 +551,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         Tolerance value
         """
         if not self.op.linear:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info=f"To determine if on a saddle point the setting need to be with linear operators!"))
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info="To determine if on a saddle point the setting need to be with linear operators!"))
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 

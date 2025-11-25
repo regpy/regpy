@@ -49,7 +49,7 @@ class PaddingOperator(Operator):
                 raise ValueError(Errors.value_error("pad_amount must be non-negative."))
             if not pad_amount.shape == (self.ndim,):
                 if not pad_amount.shape == (len(grid.shape_domain),):
-                    raise ValueError(Errors.value_error(f"length of pad_amount must be (grid.ndim,) or (len(grid.shape_domain),). Got {pad_amount.shape}, grid.ndim={self.ndim}, len(grid.shape_domain)={len(grid.shape_domain)}"))
+                    raise ValueError(Errors.value_error(f"length of pad_amount must be (grid.ndim,) or (len(grid.shape_domain),). Got pad_amount.shape = {pad_amount.shape}, grid.ndim={self.ndim}, len(grid.shape_domain)={len(grid.shape_domain)}"))
                 pad_amount = np.concatenate((pad_amount, np.zeros((self.ndim - len(grid.shape_domain),),dtype=int)))
             self.pad_amount = tuple((val,val) for val in pad_amount)
         padded_grid = UniformGridFcts(
@@ -309,7 +309,6 @@ class ConvolutionOperator(Composition):
             ft_codomain = FourierTransform(codomain,axes=self.convolution_axes,centered=True)
             if ft_codomain.codomain != multiplier.codomain:
                 raise RuntimeError(f'The codomain of the multiplier and the codomain of the Fourier Transform do not match!. {ft_codomain.shape},{multiplier.codomain.shape}')
-                self.log.error(f"The codomain of the multiplier and the codomain of the Fourier Transform do not match! \n Please have a closer look!")
             super().__init__(ft_codomain.adjoint,multiplier,trunc_op,ft,pad_op)
 
     @property
