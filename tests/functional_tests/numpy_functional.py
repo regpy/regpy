@@ -44,10 +44,11 @@ def test_L1():
                        #u_stars=[func.domain.rand() for _ in range(5)],
                        #test_second_deriv=False)
 
-# def test_TV():
-#     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
-#     func = TV(ugf)
-#     ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)],u_stars=[func.domain.rand() for _ in range(5)])
+def test_TV():
+     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
+     func = TV(ugf)
+     func(ugf.rand())
+     func.proximal(ugf.rand(),1.)
 
 def test_kullback_leibler():
     dom=UniformGridFcts((-1,1,10),(-2,3,5))
