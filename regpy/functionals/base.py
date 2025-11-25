@@ -1479,7 +1479,7 @@ class Composed(Functional):
                          convexity_param= func.convexity_param * op_lower_bound**2,
                          Lipschitz= func.Lipschitz * op_norm**2,
                          methods = {'eval','subgradient','is_subgradient','proximal'} if methods is None else methods,
-                         conj_methods = set() 
+                         conj_methods = {'eval','subgradient','hessian'} if op.invertible else set() 
                          )
         if isinstance(func, type(self)):
             op = func.op * op
@@ -1507,12 +1507,19 @@ class Composed(Functional):
         if self.op.linear:
             return self.op.adjoint * self.func.hessian(x) * self.op
         else:
-            # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
-    def _conj(self,x):
+    def _conj(self,x_star):
         if self.op.linear:
-            return self.func._conj(self.op.adjoint.inverse(x))
+            return self.func._conj(self.op.inverse.adjoint(x_star))
+
+    def _conj_subgradient(self, x_star):
+        if self.op.linear:
+            return self.op.inverse(self.func._conj_subgradient(self.op.inverse.adjoint(x_star)))
+
+    def _conj_hessian(self, x_star):
+        if self.op.linear:
+            return self.op.inverse * self.func._conj_hessian (self.op.inverse.adjoint(x_star)) * self.op.inverse.adjoint
 
     def _proximal(self, x, tau, cg_params={}):
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver

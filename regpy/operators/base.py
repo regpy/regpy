@@ -463,6 +463,10 @@ class Operator:
         self.log.info("Setting the inverse of the operator {} to {} overwriting the old {}.".format(self,inv,self._inverse))
         self._inverse = inv
 
+    @property
+    def invertible(self):
+        return self._inverse is not None
+
     def as_linear_operator(self):
         r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
 
