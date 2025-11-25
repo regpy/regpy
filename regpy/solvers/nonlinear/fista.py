@@ -43,7 +43,7 @@ class FISTA(RegSolver):
             raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="FISTA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
         if self.op.linear:
-            raise RuntimeWarning(Errors.generic_message("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear"))
+            self.log.warning("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear")
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init

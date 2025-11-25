@@ -43,7 +43,7 @@ class Landweber(RegSolver):
     def __init__(self, setting, data, init, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
         super().__init__(setting)
         if self.op.linear:
-            raise RuntimeWarning(Errors.generic_message("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear"))
+            self.log.warning("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear")
         if init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.rhs = data
