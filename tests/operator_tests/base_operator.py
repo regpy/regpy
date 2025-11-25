@@ -11,7 +11,7 @@ import regpy.util.operator_tests as ot
 def collect_errors(cls,errors):
     if errors:
         sep = "\n" +"-"*125 +"\n"
-        title = f"\t\tDuring the testing of {cls} were the following errors collected"
+        title = f"During the testing of {cls} were the following errors collected"
         massage = sep+title+sep+ sep.join(errors)
         raise AssertionError(massage)
     else:
@@ -32,7 +32,7 @@ def call_safe(obj, method_name, error_log, *args, **kwargs):
         return result
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        error_log.append(f"The method {method_name} of {obj} with arguments {args} and keyword arguments {kwargs} could not construct an object resulting in exception {e}.\n Resulting from {tb} \n")
+        error_log.append(f"The method {method_name} of {obj} with arguments {args} and keyword arguments {kwargs} could not construct an object resulting in exception {e}. Resulting from {tb}")
         return None
     
 
@@ -103,7 +103,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
         pass
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"The inverse implementation for {op} does not properly work. Throwing and exception {e}.\n Resulting from {tb} \n")
+        errors.append(f"The inverse implementation for {op} does not properly work. Throwing and exception {e}. Resulting from {tb} ")
     try:
         _ = op + op_alt
         op_alt += op
@@ -125,7 +125,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
             _ = op**4
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-        errors.append(f"The addition and power implementations for {op} do not properly work. Throwing and exception {e}.\n Resulting from {tb} \n")
+        errors.append(f"The addition and power implementations for {op} do not properly work. Throwing and exception {e}.Resulting from {tb} ")
 
     return errors
 

@@ -81,7 +81,7 @@ class TupleVector:
     
     def __or__(self,other):
         if not isinstance(other,TupleVector) or self.ndim != other.ndim:
-            raise ValueError(Errors.value_error(f"Comparing with TupleVector only supported for TupleVectors of identical dimension!"))
+            raise ValueError(Errors.value_error("Comparing with TupleVector only supported for TupleVectors of identical dimension!"))
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
     def sum(self,**kwargs):
@@ -102,14 +102,14 @@ class TupleVector:
     
     def __iadd__(self,other):
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
-            raise ValueError(Errors.value_error(f"Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
+            raise ValueError(Errors.value_error("Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
             self.v[k] += v_o
         return self
 
     def __isub__(self,other):
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
-            raise ValueError(Errors.value_error(f"Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
+            raise ValueError(Errors.value_error("Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
             self.v[k] -= v_o
         return self
@@ -119,7 +119,7 @@ class TupleVector:
     
     def __add__(self,other):
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
-            raise ValueError(Errors.value_error(f"Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
+            raise ValueError(Errors.value_error("Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         return TupleVector([s_k + o_k for s_k,o_k in zip(self,other)])
     
     def __radd__(self,other):
@@ -133,14 +133,14 @@ class TupleVector:
     
     def __imul__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
             self.v[k] *= other
         return self
     
     def __itruediv__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Division TupleVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Division TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
             self.v[k] /= other
             return self
@@ -159,7 +159,7 @@ class TupleVector:
 
     def __truediv__(self,other):
         if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error(f"Division TupleVector only supported for scalars (int, float, or complex)!"))
+            raise ValueError(Errors.value_error("Division TupleVector only supported for scalars (int, float, or complex)!"))
         return TupleVector([s_k / other for s_k in self])
 
     def __iter__(self):
@@ -186,7 +186,7 @@ class TupleVector:
                 for k_i,item_i in zip(key,item.v):
                     self.v[k_i] = item_i
             else:
-                raise TypeError(Errors.type_error(f"If keys are lists or tuples of length smaller then the length of the Vector  the items can be list or TupleVectors of length same length. Sou gave key list of length {len(key)} and item of length {len(item)}"))
+                raise TypeError(Errors.type_error(f"If keys are lists or tuples of length smaller then the length of the Vector  the items can be list or TupleVectors of length same length. Got key list of length {len(key)} and item of length {len(item)}"))
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
             if (isinstance(item,TupleVector) and item.ndim == key.ndim):
                 for v_i,k_i,item_i in zip(self.v,key,item):
@@ -568,7 +568,7 @@ class DirectSum(VectorSpaceBase):
 
     def __init__(self, *summands, flatten=False):
         if any(not isinstance(s, VectorSpaceBase) for s in summands):
-            raise TypeError(Errors.type_error(f"The list of summands for a DirectSum vector space contains elements which are not a RegPy vector space! Given \n\t summands = {summands}"))
+            raise TypeError(Errors.type_error(f"The list of summands for a DirectSum vector space contains elements which are not a RegPy vector space! Given "+"\n\t "+f"summands = {summands}"))
         if flatten:
             self.summands = []
             for s in summands:
@@ -713,7 +713,7 @@ class DirectSum(VectorSpaceBase):
             An element of the direct sum
         """
         if any(x not in s for s, x in zip(self.summands, xs)):
-            raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: \n\t xs = {xs},\n\t summands = {self.summands} "))
+            raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: "+"\n\t "+f"xs = {xs},"+"\n\t "+f"summands = {self.summands} "))
         return TupleVector(list(xs))
 
     def split(self, x):

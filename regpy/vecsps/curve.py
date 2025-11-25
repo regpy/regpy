@@ -59,7 +59,7 @@ class GenCurve:
     @der.setter
     def der(self,der_new):
         if not isinstance(der_new,int) or der_new >3:
-            raise ValueError(Errors.value_error(f"The number of derivatives needs to be an integer between 0 and 3!"))
+            raise ValueError(Errors.value_error("The number of derivatives needs to be an integer between 0 and 3!"))
         if self.der < der_new:
             for i in range(self.der+1,der_new+1):
                 self._z.append(self(i))
@@ -73,7 +73,7 @@ class GenCurve:
     @n.setter
     def n(self,n_new):
         if not isinstance(n_new,int) or n_new <= 0:
-            raise ValueError(Errors.value_error(f"The number of discretization points of the GenCurve needs to be a positive integer!"))
+            raise ValueError(Errors.value_error("The number of discretization points of the GenCurve needs to be a positive integer!"))
         self.t = 2*np.pi*np.linspace(0, n_new-1, n_new)/n_new
         self._n = n_new
         for i in range(0,self.der+1):

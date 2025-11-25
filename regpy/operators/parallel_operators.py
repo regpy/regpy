@@ -88,7 +88,7 @@ class OperatorAsWorker(mp.Process):
                 res=TypeError(f"Error in subprocess: {self.name}: unknown command",command[0])
             except BaseException as error:
                 exit_code=ExitCode.ERROR
-                res=RuntimeError(f"{error} in subprocess {self.name}: An error occured during the computation of {command[0]}")
+                res=RuntimeError(f"{error} in subprocess {self.name}: An error occurred during the computation of {command[0]}")
             if(not terminate):
                 self.conn.send([exit_code,res])
         return 0
@@ -266,7 +266,7 @@ class ParallelInterface:
             for i,conn in enumerate(self.conns):
                 conn.send(same_info+[args_specific[i]])
         else:
-            raise ValueError(f"Invalid number of arguments for parallel operators!")
+            raise ValueError("Invalid number of arguments for parallel operators!")
         rec_data=[conn.recv() for conn in self.conns]
         for rec_d in rec_data:
             self.handle_errors(rec_d)
@@ -402,12 +402,14 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         self.distribution_lists=[[j for j in range(distribution_mat.shape[1]) if distribution_mat[i,j]] for i in range(distribution_mat.shape[0])]
         for op,indices in zip(ops,self.distribution_lists):
             if len(indices) == 1 and op.domain != domain[indices[0]]:
-                raise ValueError(Errors.value_error(f"The domain of index {indices[0]} that should be used by the operator {op} does not match! \n\t domain = {domain[indices[0]]} \n\t op.domain = {op.domain}."))
+                raise ValueError(Errors.value_error(f"The domain of index {indices[0]} that should be used by the operator {op} does not match! "+"\n\t "+f"domain = {domain[indices[0]]} "+"\n\t "+f"op.domain = {op.domain}."))
             elif not isinstance(op.domain,DirectSumVS) or any((d != domain[indices[j]] for j,d in enumerate(op.domain.summands))):
-                raise ValueError(Errors.value_error(f"""Either the domain of the operator is not a DirectSum but should get multiple inputs as defined by indices = {indices} or 
-                                                    one of the domains referred to by the indices does not match the operators domain summands! 
-                                                        domain.summands[indices] = {tuple(domain[ind] for ind in indices)} 
-                                                        op.domain = {op.domain.summands}."""))
+                raise ValueError(Errors.value_error(f"""
+            Either the domain of the operator is not a DirectSum but should get multiple inputs as defined by 
+            indices = {indices} or one of the domains referred to by the indices does not match the operators 
+            domain summands! 
+                domain.summands[indices] = {tuple(domain[ind] for ind in indices)} 
+                op.domain = {op.domain.summands}."""))
         conns = []
         it = 0
         for op in ops:

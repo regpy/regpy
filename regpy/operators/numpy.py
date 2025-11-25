@@ -49,7 +49,7 @@ class MatrixMultiplication(Operator):
             except Exception as e:
                 raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to numpy array!")) from e
         if len(matrix.shape) != 2:
-            raise ValueError(Errors.value_error(f"While initializing MatrixMultiplication the matrix has to be two-dimensional. Was given \n matrix = {matrix} \n of shape {matrix.shape} and type {type(matrix)}"))
+            raise ValueError(Errors.value_error(f"While initializing MatrixMultiplication the matrix has to be two-dimensional. Was given:"+"\n\t"+ f"matrix = {matrix}"+"\n\t"+ f"of shape {matrix.shape} and type {type(matrix)}"))
         
         if dtype == None:
             dtype = matrix.dtype
@@ -178,7 +178,7 @@ class SuperLUInverse(Operator):
         if not isinstance(op,MatrixMultiplication):
             raise TypeError(Errors.not_instance(op,Operator,add_info="For a SuperLUInverse the operator need to be a RegPy MatrixMultiplication!"))
         if not isinstance(op.matrix,(csc_matrix,csc_array)):
-            raise TypeError(Errors.type_error(f"To construct a SuperLUInverse of a Matrixmultiplication operator the matrix in that operator needs to be a csc_matrix or csc_array not a simple ndarray!"))
+            raise TypeError(Errors.type_error("To construct a SuperLUInverse of a MatrixMultiplication operator the matrix in that operator needs to be a csc_matrix or csc_array not a simple ndarray!"))
         super().__init__(
             domain=op.codomain, 
             codomain = op.domain,
@@ -224,7 +224,7 @@ class Power(Operator):
         self.integer = integer
         if integer:
             if power<0 or int(power)!=power:
-                raise ValueError(Errors.value_error(f"If specifying the power to be an integer the given power need to non-negative and its int casting need to be identical to the power. \n\t power = {power} \n\t int(power) = {int(power)}"))
+                raise ValueError(Errors.value_error(f"If specifying the power to be an integer the given power need to non-negative and its int casting need to be identical to the power. "+"\n\t "+f"power = {power} "+"\n\t "+f"int(power) = {int(power)}"))
             power=int(power)
             self._power_bin = "{0:b}".format(power)
         self.power = power

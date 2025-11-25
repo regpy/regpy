@@ -185,13 +185,13 @@ class Operator:
             raise ValueError(util.Errors.not_in_vecsp(
                 x,
                 self.domain,
-                add_info=f">\t Evaluation of {self} not possible!, {self.domain.shape}, {self.codomain.shape}, {x.shape if hasattr(x,"shape") else 0}"
+                add_info=f"Evaluation of {self} not possible!, {self.domain.shape}, {self.codomain.shape}, {x.shape if hasattr(x,"shape") else 0}"
                 ))
         if out is not None and out not in self.codomain:
             raise ValueError(util.Errors.not_in_vecsp(
                 out,
                 self.codomain,
-                add_info=f">\t Given output does not belong to codomain evaluation of {self} not possible!"
+                add_info=f"Given output does not belong to codomain evaluation of {self} not possible!"
                 ))
         if out is None:
             if self.linear:
@@ -203,7 +203,7 @@ class Operator:
                 raise RuntimeError(util.Errors.not_in_vecsp(
                     y,
                     self.codomain,
-                    add_info=f">\t Evaluation went wrong!\n Please analyse your evaluation method _eval it does not return a proper\n>\t element in the codomain."
+                    add_info=" Evaluation went wrong! Please analyse your evaluation method _eval it does not return a proper element in the codomain."
                     ))
             return y
         else:
@@ -214,7 +214,7 @@ class Operator:
                     self.__revoke()
                     self._eval(self._insert_constants(x), differentiate=False, out = out, **kwargs)
             except TypeError:
-                self.log.warning(f"The operator {self} currently does not support defining an output vector. \n\t Your output vector was not used only the return value is contains the image value. \n Please use the standard method out = op(x) to not see this message again.")
+                self.log.warning(f"The operator {self} currently does not support defining an output vector. Your output vector was not used only the return value is contains the image value. Please use the standard method out = op(x) to not see this message again.")
                 out = self(x,**kwargs)
             return out
 
@@ -248,11 +248,11 @@ class Operator:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,"vector for evaluation","domain"))
         if return_adjoint_eval and out is not None and not isinstance(out,list) and out[0] is not None and out[0] not in self.domain:
             raise ValueError(util.Errors.value_error(
-                f"The output must be a list of two elements [vec,any] where the first one belongs to the domain if linearize with return_adjoint_eval = True. \n Evaluation of {self} not possible! You gave\n\t out = {out}\n\t out[0] in codomain is {out[0] in self.codomain} "
+                f"The output must be a list of two elements [vec,any] where the first one belongs to the domain if linearize with return_adjoint_eval = True. Evaluation of {self} not possible! You gave "+"\n\t "+f"out = {out}"+"\n\t "+f"out[0] in codomain is {out[0] in self.codomain} "
                 ))            
         if not return_adjoint_eval and out is not None and not isinstance(out,list) and out[0] is not None and out[0] not in self.codomain:
             raise ValueError(util.Errors.value_error(
-                f"The output must be a list of two elements [vec,any] where the first one belongs to the codomain. \n Evaluation of {self} not possible! You gave\n\t out = {out}\n\t out[0] in codomain is {out[0] in self.codomain} "
+                f"The output must be a list of two elements [vec,any] where the first one belongs to the codomain. \n Evaluation of {self} not possible! You gave:"+"\n\t "+f"out = {out}"+"\n\t "+f"out[0] in codomain is {out[0] in self.codomain} "
                 ))
         if out is None or out[0] is None:
             if self.linear:
@@ -311,7 +311,7 @@ class Operator:
                         self._adjoint_eval(self._insert_constants(x), out = out[0],**kwargs)
                         out[1] = Derivative(self.__get_handle()) 
             except TypeError as e:
-                self.log.warning(f"The operator {self} currently does not support defining an output vector. \n\t Your output vector was not used only the return value is contains the image value. \n Please use the standard method out = op(x) to not see this message again. Coming from {e}")
+                self.log.warning(f"The operator {self} currently does not support defining an output vector. Your output vector was not used only the return value is contains the image value. Please use the standard method out = op(x) to not see this message again. Coming from {e}")
                 out[0], out[1] = self.linearize(x,return_adjoint_eval=return_adjoint_eval,**kwargs)
             return out[0],out[1]
 
@@ -397,7 +397,7 @@ class Operator:
         else:
             if out not in self.domain:
                 raise ValueError(util.Errors.value_error(
-                f"The output must be a an element of the domain when calling constructing adjoint data. \n You gave\n\t out = {out}"
+                f"The output must be a an element of the domain when calling constructing adjoint data. You gave:"+"\n\t"+f"out = {out}"
                 )) 
             try:
                 return self._adjoint_data(data, out = out, **kwargs)
@@ -405,9 +405,9 @@ class Operator:
                 return self._adjoint(data, out = out,**kwargs)
     
     def _adjoint_eval(self, x, out = None, **kwargs):
-        self.log.warning(f"The default implementation of _adjoint_eval is not optimised to exclude constructing elements in the codomain!")
+        self.log.warning("The default implementation of _adjoint_eval is not optimised to exclude constructing elements in the codomain!")
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.\n Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours \n\t kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
         if out is None:
             if self.linear:
                 return self.adjoint(self(x))
@@ -425,7 +425,7 @@ class Operator:
     def _adjoint_derivative(self, x, out = None, **kwargs):
         self.log.warning(f"The default implementation of _adjoint_derivative is not optimised to exclude constructing elements in the codomain!")
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.\n Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours \n\t kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
         if out is None:
             if self.linear:
                 return self._adjoint(self._eval(x))
@@ -531,7 +531,7 @@ class Operator:
             raise ValueError(util.Errors.not_equal(
                 h_domain.vecsp,
                 self.domain,
-                add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on codomain."))
+                add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_domain} on codomain."))
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
             return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
@@ -603,7 +603,7 @@ class Operator:
                 raise TypeError(util.Errors.not_instance(
                     self.domain,
                     vecsps.DirectSum,
-                    f"Setting constants for an Operator is only allowed if that Operator \n has a domain that is a DirectSum."
+                    "Setting constants for an Operator is only allowed if that Operator has a domain that is a DirectSum."
                     ))
             self.full_domain = deepcopy(self.domain)
         
@@ -662,13 +662,13 @@ class Operator:
             except Exception as e:
                 raise RuntimeError(util.Errors._compose_message(
                     "ERROR WHILE RESETTING OPERATOR CONSTANTS",
-                    f"Something went wrong while resetting. \n Cannot reset constants!\n got an exception: {e}"))
+                    f"Something went wrong while resetting. Cannot reset constants! Got an exception:"+"\n\t"+ f"{e}"))
             self.linear = util.operator_tests.test_linearity(self)
         elif len(self._constants)!=0:
             raise RuntimeError(util.Errors._compose_message(
-                    "ERROR WHILE RESETTING OPERATOR CONSTANTS",f"Something went wrong while resetting. \n Their exists constants {self._constants} but no full_domain"))
+                    "ERROR WHILE RESETTING OPERATOR CONSTANTS",f"Something went wrong while resetting. Their exists constants {self._constants} but no full_domain"))
         else:
-            self.log.warning(f"Resetting constants while non are specified might not be necessary!")
+            self.log.warning("Resetting constants while non are specified might not be necessary!")
 
     def get_constants(self):
         """Returns the constants set by `set_constant` as a dictionary. The keys are the indices
@@ -733,7 +733,7 @@ class Operator:
                     y,
                     self.full_domain,
                     space_name= "full domain",
-                    add_info= f"The vector supposed to be reduced to the domain is not in the full domain."
+                    add_info= "The vector supposed to be reduced to the domain is not in the full domain."
                 ))
             y_full_split = self.full_domain.split(y)
             if isinstance(self.domain,vecsps.DirectSum):
@@ -830,7 +830,7 @@ class Adjoint(Operator):
         if not op.linear:
             raise ValueError(util.Errors.not_linear_op(
                 op,
-                f"An adjoint operator can only be constructed from a linear operator.\n Please use linearize to get the derivative and use its adjoint!"))
+                "An adjoint operator can only be constructed from a linear operator. Please use linearize to get the derivative and use its adjoint!"))
         self.op = op
         r"""The underlying operator."""
         super().__init__(op.codomain, op.domain, linear=True)
@@ -1040,8 +1040,8 @@ class LinearCombination(Operator):
             raise ValueError(util.Errors.not_equal(
                 domain,
                 domains,
-                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n"
-                                                +"\n".join([f"{op} with domain {op.domain}" for op in self.ops])))
+                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n\t"
+                                                +"\n\t".join([f"{op} with domain {op.domain}," for op in self.ops])))
 
         codomains = [op.codomain for op in self.ops if op.codomain]
         if len(codomains) == 0:
@@ -1053,8 +1053,8 @@ class LinearCombination(Operator):
             raise ValueError(util.Errors.not_equal(
                 codomain,
                 codomains,
-                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n"
-                                                +"\n".join([f"{op} with domain {op.codomain}" for op in self.ops])))
+                add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n\t"
+                                                +"\n\t".join([f"{op} with domain {op.codomain}," for op in self.ops])))
 
         super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
 
@@ -1092,7 +1092,7 @@ class LinearCombination(Operator):
                     self._derivs = [deriv]
                 out *= np.abs(self.coeffs[0])**2
                 return out
-        self.log.warning(f"A defualt fast implementation for an adjoint evaluation of a linear combination is only available for a single\n scalar multiplication! Consider defining your own operator with a faster method!")
+        self.log.warning("A default fast implementation for an adjoint evaluation of a linear combination is only available for a single scalar multiplication! Consider defining your own operator with a faster method!")
         return super()._adjoint_eval(x, out = out, **kwargs)
     
     def _adjoint_derivative(self, x, out = None, **kwargs):
@@ -1103,7 +1103,7 @@ class LinearCombination(Operator):
                 out = self._derivs[0].adjoint_eval(x, out = out, **kwargs)
                 out *= np.abs(self.coeffs[0])**2
                 return out
-        self.log.warning(f"A default fast implementation for an adjoint derivative of a linear combination is only available for a single\n scalar multiplication! Consider defining your own operator with a faster method!")
+        self.log.warning("A default fast implementation for an adjoint derivative of a linear combination is only available for a single scalar multiplication! Consider defining your own operator with a faster method!")
         return super()._adjoint_derivative(x,**kwargs)
 
     def _derivative(self, x, out = None, **kwargs):
@@ -1145,7 +1145,7 @@ class LinearCombination(Operator):
         if len(self.ops) > 1:
             raise NotImplementedError(util.Errors._compose_message(
                     "INVERSE NOT DEFINED",
-                f"The inverse of the linear combination {self} is not defined.\n Since it was not explicitly defined and automatically computing it with more \n then one operator is ambiguous.\n You may specify an explicit inverse by setting self.inverse for this operator."
+                f"The inverse of the linear combination {self} is not defined. Since it was not explicitly defined and automatically computing it with more then one operator is ambiguous. You may specify an explicit inverse by setting self.inverse for this operator."
                 ))
         return (1 / self.coeffs[0]) * self.ops[0].inverse
 
@@ -1195,7 +1195,7 @@ class Composition(Operator):
                 raise ValueError(util.Errors.not_equal(
                     f,
                     g,
-                    add_info=f"The domain of the {i+1}-th and codomain of {i+2}-th entry do not match up.\n"
+                    add_info=f"The domain of the {i+1}-th and codomain of {i+2}-th entry do not match up."
                     ))
         self.ops = []
         """The list of composed operators."""
@@ -1259,7 +1259,7 @@ class Composition(Operator):
     
     def _adjoint_eval(self, x, out = None, **kwargs):
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.\n Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours \n\t kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
         y = x.copy()
         if self.linear:
             self.log.debug(f"{self.ops}, reduced {self.ops[:0:-1]}")
@@ -1302,7 +1302,7 @@ class Composition(Operator):
     
     def _adjoint_derivative(self, x, out = None, **kwargs):
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.\n Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours \n\t kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
         y = x
         for deriv in self._derivs[:0:-1]:
             y = deriv(y)
@@ -1390,7 +1390,7 @@ class PartOfOperator(Operator):
                 raise IndexError(util.Errors.indexation(
                     index,
                     self,
-                    f"The given tuple/list of indeces has to be a list of integers \n in the range of {-n_codim},...,{n_codim}."))
+                    f"The given tuple/list of indeces has to be a list of integers in the range of {-n_codim},...,{n_codim}."))
             if(len(index)==1):
                 self.index=index[0]
             else:
@@ -1599,7 +1599,7 @@ class CoordinateProjection(Operator):
             except:
                 raise ValueError(util.Errors._compose_message(
                     "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. \n \t mask = {mask}"
+                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t"+ f"mask = {mask}"
                 ))
             if mask.dtype != bool:
                 raise TypeError(util.Errors.not_instance(
@@ -1615,7 +1615,7 @@ class CoordinateProjection(Operator):
             except:
                 raise ValueError(util.Errors._compose_message(
                     "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. \n \t mask = {mask}"
+                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
                 ))
         self.mask = mask
         super().__init__(
@@ -1675,7 +1675,7 @@ class CoordinateMask(Operator):
             except:
                 raise ValueError(util.Errors._compose_message(
                     "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. \n \t mask = {mask}"
+                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t "+f"mask = {mask}"
                 ))
             if mask.dtype != bool:
                 raise TypeError(util.Errors.not_instance(
@@ -1691,7 +1691,7 @@ class CoordinateMask(Operator):
             except:
                 raise ValueError(util.Errors._compose_message(
                     "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. \n \t mask = {mask}"
+                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
                 ))
         self.mask = mask
         super().__init__(
@@ -1749,7 +1749,7 @@ class PtwMultiplication(Operator):
             except:
                 raise ValueError(util.Errors._compose_message(
                     "BROADCAST ERROR",
-                    f"The factor for a PtwMultiplication for NumPyVectorSpace instances \n has to be broadcastable to the shape of the domain {domain.shape}. \n \t factor = {factor}"
+                    f"The factor for a PtwMultiplication for NumPyVectorSpace instances \n has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t "+f"factor = {factor}"
                 ))
         elif np.isscalar(factor):
             factor = factor*domain.ones()
@@ -2001,13 +2001,13 @@ class DirectSum(Operator):
                 raise ValueError(util.Errors.not_a_vecsp(
                     domain,
                     vecsps.DirectSum,
-                    add_info=f"The given callabel to construct the domain for a DirectSum Operator did not produce a DirectSum vector space."
+                    add_info="The given callabel to construct the domain for a DirectSum Operator did not produce a DirectSum vector space."
                 ))
             if any([d != op.domain for d,op in zip(domain.summands,self.ops)]):
                 raise TypeError(util.Errors.not_equal(
                     domain,
                     [op.domain for op in self.ops],
-                    add_info=f"The callable to construct the domain for  a DirectSum Operator created a DirectSum vectorspace \n whos components do not match with the domain of the operators. \n "
+                    add_info="The callable to construct the domain for  a DirectSum Operator created a DirectSum vectorspace whos components do not match with the domain of the operators. "
                     ))
         else:
             raise TypeError(util.Errors.not_a_vecsp(
@@ -2021,7 +2021,7 @@ class DirectSum(Operator):
                 raise ValueError(util.Errors.not_equal(
                     codomain,
                     [op.codomain for op in self.ops],
-                    add_info=f"Was given a DirectSum whos components do not match with the domain of the operators. \n"
+                    add_info="Was given a DirectSum whos components do not match with the domain of the operators."
                     ))
             else:
                 pass
@@ -2033,13 +2033,13 @@ class DirectSum(Operator):
                 raise ValueError(util.Errors.not_a_vecsp(
                     codomain,
                     vecsps.DirectSum,
-                    add_info=f"The given callabel to construct the codomain for a DirectSum Operator did not produce a DirectSum vector space."
+                    add_info="The given callabel to construct the codomain for a DirectSum Operator did not produce a DirectSum vector space."
                 ))
             if any([d != op.codomain for d,op in zip(codomain.summands,self.ops)]):
                 raise TypeError(util.Errors.not_equal(
                     codomain,
                     [op.codomain for op in self.ops],
-                    add_info=f"The callable to construct the codomain for  a DirectSum Operator created a DirectSum vectorspace \n whos components do not match with the codomain of the operators. \n "
+                    add_info="The callable to construct the codomain for a DirectSum Operator created a DirectSum vectorspace whos components do not match with the codomain of the operators."
                     ))
         else:
             raise TypeError(util.Errors.not_a_vecsp(
@@ -2349,13 +2349,13 @@ class MatrixOfOperators(Operator):
             raise ValueError(util.Errors.not_instance(
                 ops,
                 list(Operator),
-                add_info=f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator, ...],[Operator, ...], ...]. Moreover \n the internal lists have to be of identical lengths. "
+                add_info="Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples. That is defining [[Operator, ...],[Operator, ...], ...]. Moreover, the internal lists have to be of identical lengths. "
             ))
         ops_flat = [op for op_col in ops for op in op_col]
         if any((not isinstance(op, Operator) and op!=None for op in ops_flat)):
             raise ValueError(util.Errors._compose_message(
                     "NOT CORRECT TYPE",
-                f"Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples.\n That is defining [[Operator/None, ...],[Operator/None, ...], ...].\n The given lists Contains other objects than Operators or None: \n " +"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+                "Construction of a MatrixOfOperators requires to define a Matrix by lists/tuples. That is defining [[Operator/None, ...],[Operator/None, ...], ...]. The given lists Contains other objects than Operators or None: "+"\n" +"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
             ))
 
         domains = [None]*len(ops)
@@ -2374,7 +2374,7 @@ class MatrixOfOperators(Operator):
         if None in domains:
             raise ValueError(util.Errors._compose_message(
                     "EMPTY DOMAIN",
-                f"At least one column of the MatrixOfOperators is empty and contains no domain. Since the domains:\n\t\t {domains} \n has an not specified entry. When construction from given operots:\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+                f"At least one column of the MatrixOfOperators is empty and contains no domain. Since the domains {domains} has a not specified entry. When construction from given operots:"+"\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
             ))
 
         if domain is None:
@@ -2413,7 +2413,7 @@ class MatrixOfOperators(Operator):
         if None in codomains:
             raise ValueError(util.Errors._compose_message(
                     "EMPTY CODOMAIN",
-                f"At least one row of the MatrixOfOperators is empty and contains no codomain. Since the codomains:\n\t\t {codomains} \n has an not specified entry. When construction from given operots:\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
+                f"At least one row of the MatrixOfOperators is empty and contains no codomain. Since the codomains:{codomains} has an not specified entry. When construction from given operots:"+"\n"+"[[" +"],\n[".join([", ".join([repr(op) if op else "0" for op in row]) for row in self.ops])+"]"
             ))
 
         if codomain is None:
@@ -2803,7 +2803,7 @@ class ApproximateHessian(Operator):
         if not hasattr(func,"gradient"):
             raise ValueError(util.Errors._compose_message(
                     "MISSING ATTRIBUTE",
-                f"The given functional {func} does not have a defined gradient.\n Making it impossible to approximate a Hessian operator."
+                f"The given functional {func} does not have a defined gradient. Making it impossible to approximate a Hessian operator."
             ))
         self.gradx = func.gradient(x)
         """The gradient at `x`"""

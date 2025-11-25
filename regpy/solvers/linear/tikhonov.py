@@ -71,7 +71,7 @@ class TikhonovCG(RegSolver):
         self.log.setLevel(logging_level)
         if data is None:
             if not isinstance(self.data_fid,SquaredNorm):
-                raise ValueError(Errors.value_error(f"If you do not pass data to the TikhonovCG and the data fidelity functional is not a SquaredNorm we cannot guess the data!"))
+                raise ValueError(Errors.value_error("If you do not pass data to the TikhonovCG and the data fidelity functional is not a SquaredNorm we cannot guess the data!"))
             data = (-1./self.data_fid.a) * self.data_fid.b
 
         if isinstance(self.data_fid,SquaredNorm):

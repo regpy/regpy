@@ -129,7 +129,7 @@ class SemismoothNewton_bilateral(RegSolver):
             self.psi_plus=psi_plus
         """The upper bound."""
         if (self.psi_minus >= self.psi_plus).any():
-            raise ValueError(Errors.value_error(f"The upper bound is less or equal the lower bound in SemismoothNewton_bilateral. Given: \n\t psi_minus = {self.psi_minus} \t\n psi_plus = {self.psi_plus}"))
+            raise ValueError(Errors.value_error("The upper bound is less or equal the lower bound in SemismoothNewton_bilateral. Given: "+"\n\t "+f"psi_minus = {self.psi_minus} "+"\t\n "+f"psi_plus = {self.psi_plus}"))
 
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
@@ -236,7 +236,7 @@ def getPenaltyParamsFromFunctional(R,gram=None):
        Gram matrix of the dual Hilbert space. Only used if R is a conjugate functional       
     """
     if not isinstance(R,Functional):
-        raise TypeError(Errors.not_instance(R,Functional,add_info=f"Construction the parameters of upper and lower bound, x_0 and alpha from the regularization functional is only defined for a Functional!"))
+        raise TypeError(Errors.not_instance(R,Functional,add_info="Construction the parameters of upper and lower bound, x_0 and alpha from the regularization functional is only defined for a Functional!"))
     if isinstance(R,QuadraticBilateralConstraints):
         return R.ub, R.lb, R.x0, 1.
     elif isinstance(R,HorizontalShiftDilation):
@@ -271,20 +271,20 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
        Gram matrix of the Hilbert space on which Rs is defined 
     """
     if not isinstance(Rs,Functional):
-        raise TypeError(Errors.not_instance(Rs,Functional,add_info=f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional is only defined for a Functional!"))
+        raise TypeError(Errors.not_instance(Rs,Functional,add_info="Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional is only defined for a Functional!"))
     if isinstance(Rs,Huber):
         return gram(Rs.sigma), gram(-Rs.sigma), gram.domain.zeros(), 1.
     elif isinstance(Rs,LinearCombination):
         if len(Rs.coeffs)!=1:
-            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations of length one (Scalar multiplications)!"))
+            raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations of length one (Scalar multiplications)!"))
         ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.funcs[0],gram)
         lam = Rs.coeffs[0]
         if lam<=0:
-            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations with positive scalar multiplication!"))
+            raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a LinearCombination is only given for linear combinations with positive scalar multiplication!"))
         return lam*ub, lam*lb, x0 , alpha/lam
     elif isinstance(Rs,HorizontalShiftDilation):
         if Rs.dilation != 1.:
-            raise ValueError(Errors.value_error(f"Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
+            raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
         ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.F,gram)
         return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
     else:

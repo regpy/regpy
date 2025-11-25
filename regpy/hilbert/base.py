@@ -161,12 +161,12 @@ class GramHilbertSpace(HilbertSpace):
         if not isinstance(gram,Operator):
             raise TypeError(Errors.not_instance(gram,Operator,"To define a GramHilbertSpace the gram operator has to be a proper RegPy operator."))
         if gram.domain != gram.codomain:
-            raise ValueError(Errors.value_error(f"The domain and codomain of the gram operator for the GramHilbertSpace has to be identical. Was given:\n gram = {gram}"))
+            raise ValueError(Errors.value_error("The domain and codomain of the gram operator for the GramHilbertSpace has to be identical. Was given:"+"\n\t "+f"gram = {gram}"))
         if gram_inv is not None:
             if not isinstance(gram_inv,Operator):
                 raise TypeError(Errors.not_instance(gram_inv,Operator,"To define a GramHilbertSpace the with inverse, the gram_inv operator has to be a proper RegPy operator."))
             if gram_inv.domain != gram_inv.codomain or gram_inv.domain != gram.domain:
-                raise ValueError(Errors.value_error(f"The domain and codomain of the gram_inv operator for the GramHilbertSpace has to be identical and match with the domain of the gram operator. Was given:\n\t gram = {gram}\n\t gram_inv={gram_inv}"))
+                raise ValueError(Errors.value_error("The domain and codomain of the gram_inv operator for the GramHilbertSpace has to be identical and match with the domain of the gram operator. Was given:"+"\n\t "+f"gram = {gram}"+"\n\t "+f"gram_inv={gram_inv}"))
         self._gram = gram
         self._gram_inv = gram_inv
         super().__init__(gram.domain)
@@ -555,7 +555,7 @@ class AbstractSpace(AbstractSpaceBase):
     def register(self, vecsp_type, impl=None):
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
-            self.__doc__ += "-"*125 + f"\n--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---\n {impl.__doc__}\n" + "-"*125
+            self.__doc__ += "-"*125 + "\n" + f"--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---" +"\n"+ f"{impl.__doc__}" + "\n" + "-"*125
         else:
             def decorator(i):
                 self.register(vecsp_type, i)
@@ -580,7 +580,7 @@ class AbstractSpace(AbstractSpaceBase):
                 if result is NotImplemented:
                     continue
                 if not isinstance(result, HilbertSpace):
-                    raise RuntimeError(Errors.not_instance(result,HilbertSpace,add_info=f"The Abstract Hilbert space {self} did not construct a proper Hilbert space on {vecsp}. THe result was:\n\t result = {result}."))
+                    raise RuntimeError(Errors.not_instance(result,HilbertSpace,add_info=f"The Abstract Hilbert space {self} did not construct a proper Hilbert space on {vecsp}. The result was:"+"\n\t"+f"result = {result}."))
                 return result
         raise NotImplementedError(
             '{} not implemented on {}'.format(self.name, vecsp)
@@ -621,7 +621,7 @@ class AbstractSum(AbstractSpaceBase):
 
     def __call__(self, vecsp):
         if not isinstance(vecsp, vecsps.DirectSum):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.DirectSum,f"The Abstract direct sum is only callable on a DirectSUm VectorSpace. Not a {vecsp}"))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.DirectSum,f"The Abstract direct sum is only callable on a DirectSum VectorSpace. Not a {vecsp}"))
         return DirectSum(
             *((w, s(d)) for w, s, d in zip(self.weights, self.summands, vecsp.summands)),
             vecsp=vecsp

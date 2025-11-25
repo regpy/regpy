@@ -128,11 +128,11 @@ class Edge:
         self.end_index=end_index
         if(self.start_node is not None):
             if any(i<0 or i>=self.start_node.N_out for i in self.start_list):
-                raise ValueError(Errors.value_error(f"The given list of start indices has indices out of the index set of the start node!\n\t start_list = {start_list}\n\t start_node.N_out = {start_node.N_out}"))
+                raise ValueError(Errors.value_error("The given list of start indices has indices out of the index set of the start node!"+"\n\t"+f"start_list = {start_list}"+"\n\t"+f"start_node.N_out = {start_node.N_out}"))
             self.start_node.output_edges.append(self)
         if(self.end_node is not None):
             if end_index<0 or end_index>=self.end_node.N_in:
-                raise ValueError(Errors.value_error(f"The given end index is out of the bound of indices of the end node!\n\t end_index = {end_index}\n\t end_node.N_in = {end_node.N_in}"))
+                raise ValueError(Errors.value_error("The given end index is out of the bound of indices of the end node!"+"\n\t"+f"end_index = {end_index}"+"\n\t"+f"end_node.N_in = {end_node.N_in}"))
             if self.end_node.input_edges[self.end_index] is not None:
                 raise ValueError(Errors.value_error(f"The input edge of the end_node is not empty for the index {end_index} you gave! It is already set to {self.end_node.input_edges[self.end_index]}"))
             self.end_node.input_edges[self.end_index]=self
@@ -183,7 +183,7 @@ class Edge:
             element of the part of the domain of the operator of the output node.
         """       
         if self.end_node is None or self.start_node is None:
-            raise RuntimeError(Errors.runtime_error(f"Cannot pass data through this edge because either start node or end node are None:\n\t start_node = {self.start_node}\n\t end_node = {self.end_node}",self,"pass_forward"))
+            raise RuntimeError(Errors.runtime_error(f"Cannot pass data through this edge because either start node or end node are None:"+"\n\t "+f"start_node = {self.start_node}"+"\n\t "+f"end_node = {self.end_node}",self,"pass_forward"))
         if(self.start_node.N_out==1):
             if(len(self.start_list)==1):
                 return x
@@ -249,7 +249,7 @@ class OperatorGraph(Operator):
         if not isinstance(operators,list) or any(not isinstance(op_i,Operator) for op_i in operators):
             raise TypeError(Errors.type_error("To construct an operator graph the operators need to be a list of proper RegPy operators"))
         if not self._validate_edges_input(edges):
-            raise ValueError(Errors.value_error(f"The given edges do not follow the desired format of a list of ((input operator,[input indices]),(output operator,output index)). Was given\n\t {edges}"))
+            raise ValueError(Errors.value_error("The given edges do not follow the desired format of a list of ((input operator,[input indices]),(output operator,output index)). Was given: "+"\n\t"+f"edges = {edges}"))
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())

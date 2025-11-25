@@ -40,15 +40,15 @@ class BasisTransform(Operator):
         if not isinstance(eval_domain,Prod):
             raise TypeError(Errors.not_instance(eval_domain,Prod))
         if len(bases) != eval_domain.ndim or coef_domain.ndim != eval_domain.ndim:
-            raise ValueError(Errors.value_error(f"The number of bases vectors need to match the domain vector dimension and codomain vector dimension. \n len(bases) = { len(bases)}\n eval_domain.ndim = {eval_domain.ndim} \n coef_domain.ndim = {coef_domain.ndim}."))
+            raise ValueError(Errors.value_error(f"The number of bases vectors need to match the domain vector dimension and codomain vector dimension. "+"\n\t" +f"len(bases) = { len(bases)}"+"\n\t"+f"eval_domain.ndim = {eval_domain.ndim} "+"\n\t"+f"coef_domain.ndim = {coef_domain.ndim}."))
         if len(bases) > 26:
             raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
         if coef_domain.dtype != dtype or eval_domain.dtype != dtype:
             raise ValueError(Errors.value_error("The dtypes of the different domains have to be identical with the given dtype."))
         if any(basis.shape[0] != int(eval.size) for (basis,eval) in zip(bases,eval_domain)):
-            raise ValueError(Errors.value_error(f"The vectors in the bases need to have as shape 0 the size of the eval domain!\n\t  bases shapes = {tuple(basis.shape[0] for basis in bases)} \n\t eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[0] for basis in bases)}"+"\n\t"+f"eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
         if any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
-            raise ValueError(Errors.value_error(f"The vectors in the bases need to have as shape 1 the size of the coef domain! \n\t  bases shapes = {tuple(basis.shape[1] for basis in bases)} \n\t coef_domain sizes = {tuple(int(coef.size) for coef in coef_domain)}"))
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 1 the size of the coef domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[1] for basis in bases)}"+"\n\t"+f"coef_domain sizes = {tuple(int(coef.size) for coef in coef_domain)}"))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
         r""" `dtype` of the vector spaces."""

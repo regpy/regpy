@@ -87,7 +87,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     def fromflat(self, x : np.ndarray) -> np.ndarray:
         x = np.asarray(x)
         if not is_real_dtype(x.dtype):
-            raise TypeError(Errors.type_error(f"Flatted vectors need to be of real dtype. The given vector has different dtype\n\t x = {x}"))
+            raise TypeError(Errors.type_error(f"Flatted vectors need to be of real dtype. The given vector has different dtype"+"\n\t "+f"x = {x}"))
         if self.is_complex:
             return real2complex(x.reshape(self.shape + (2,)))
         else:
@@ -124,7 +124,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     def masked_space(self, mask):
         mask = np.broadcast_to(mask, self.shape)
         if mask.dtype != bool:
-            raise TypeError(Errors.type_error(f"The dtype of a mask need to be boolean! was given \n\ mask = {mask}"))
+            raise TypeError(Errors.type_error(f"The dtype of a mask need to be boolean! was given "+"\n\t"+f"mask = {mask}"))
         res = NumPyVectorSpace(np.sum(mask).item(), dtype=self.dtype)
         res.mask = mask
         return res
@@ -179,7 +179,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
     def __repr__(self):
         if hasattr(self,"mask"):
-            return make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}")
+            return make_repr(self,self.shape,self.is_complex,f"mask = {self.mask}")
         else: 
             return make_repr(self,self.shape,self.is_complex)
 
@@ -334,9 +334,9 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     
     def __repr__(self):
         if hasattr(self,"mask"):
-            return make_repr(self,self.shape,self.is_complex,f"mask =\t {self.mask}",f"measure=\t ({self.measure})",f"shape_codomain=\t {self.shape_codomain}")
+            return make_repr(self,self.shape,self.is_complex,f"mask = {self.mask}",f"measure= ({self.measure})",f"shape_codomain= {self.shape_codomain}")
         else: 
-            return make_repr(self,self.shape,self.is_complex,f"measure=\t ({self.measure})",f"shape_codomain=\t {self.shape_codomain}")
+            return make_repr(self,self.shape,self.is_complex,f"measure= ({self.measure})",f"shape_codomain= {self.shape_codomain}")
 
 
 class GridFcts(MeasureSpaceFcts):
@@ -389,12 +389,12 @@ class GridFcts(MeasureSpaceFcts):
                 v = np.arange(c)
             elif isinstance(c, tuple):
                 if len(c) != 3 or any([not isinstance(c_i,(int,float)) for c_i in c[:2]]) or not isinstance(c[2],int):
-                    raise ValueError(Errors.value_error(f"If giving coords a tuples, the tuples must be 2 real numbers and an integer to construct a np.linspace! You gave:\n\t c = {c}"))
+                    raise ValueError(Errors.value_error(f"If giving coords a tuples, the tuples must be 2 real numbers and an integer to construct a np.linspace! You gave:"+"\n\t "+f"c = {c}"))
                 v = np.linspace(*c)
             else:
                 v = np.asarray(c).view()
                 if is_complex_dtype(v):
-                    raise ValueError(Errors.value_error(f"The given explicit coords are not real! You gave \n\t c = {c}"))
+                    raise ValueError(Errors.value_error(f"The given explicit coords are not real! You gave "+"\n\t "+f"c = {c}"))
             extents.append(abs(v[-1] - v[0]))
             v.flags.writeable = False
             axes.append(v)
@@ -445,14 +445,14 @@ class GridFcts(MeasureSpaceFcts):
             if(np.isscalar(ext_const)):
                 ext_const=len(axes)*(ext_const,)
             elif not isinstance(ext_const, tuple) or len(ext_const)!=len(axes):
-                raise ValueError(Errors.value_error(f"When computing cell measure with constant boundary the constants have to be either a scalar or tuple of length of axes! not\n\t {ext_const}"))
+                raise ValueError(Errors.value_error("When computing cell measure with constant boundary the constants have to be either a scalar or tuple of length of axes! Gave: "+"\n\t "+f"{ext_const}"))
             for i, v in enumerate(axes):
                 if isinstance(ext_const[i],tuple) and len(ext_const[i]) == 2 and np.isscalar(ext_const[i][0]) and np.isscalar(ext_const[i][1]):
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i][0], v[-1]+ext_const[i][1])))
                 elif np.isscalar(ext_const[i]):
                     ext_axes.append(np.pad(v,(1,1),mode='constant',constant_values=(v[0]-ext_const[i], v[-1]+ext_const[i])))
                 else:
-                    raise ValueError(Errors.value_error(f"The extending constants need to be a tuple of a tuple (left_bnd_val,right_bnd_val) for left and right \n boundary values or a scalar both_bnd_val for both sides. You defined the {i}-th value by \n\t ext_const = {ext_const[i]}"))
+                    raise ValueError(Errors.value_error(f"The extending constants need to be a tuple of a tuple (left_bnd_val,right_bnd_val) for left and right boundary values or a scalar both_bnd_val for both sides. You defined the {i}-th value by ext_const = {ext_const[i]}"))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
         ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         prod_string=','.join([chr(k) for k in range(ord('A'),ord('A')+len(axes))])
@@ -527,7 +527,7 @@ class UniformGridFcts(GridFcts):
         spacing = []
         for axis in self.axes:
             if not is_uniform(axis):
-                raise ValueError(Errors.value_error(f"One of the axis is failed the uniformity test!\n\t axis = {axis} "))
+                raise ValueError(Errors.value_error("One of the axis is failed the uniformity test!\n\t "+f"axis = {axis} "))
             if(axis.shape[0]==1):
                 spacing.append(1.0)
             else:
@@ -567,9 +567,9 @@ class Prod(NumPyVectorSpace):
 
     def __init__(self, *factors, flatten=False):
         if any(not isinstance(s, VectorSpaceBase) for s in factors):
-            raise TypeError(Errors.type_error(f"One of spaces is to factor is not a VectorSpace!"))
+            raise TypeError(Errors.type_error("One of spaces is to factor is not a VectorSpace!"))
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
-            raise TypeError(Errors.type_error(f"There are both complex and non-complex Factors. This is not supported in Prod!"))
+            raise TypeError(Errors.type_error("There are both complex and non-complex Factors. This is not supported in Prod!"))
         self.factors = []
         """List of the `VectorSpaceBases` to be taken as Product."""
         shape = ()
@@ -615,7 +615,7 @@ class Prod(NumPyVectorSpace):
             An element of the tensor product
         """
         if any(x not in s for s, x in zip(self.factors, xs)):
-            raise ValueError(Errors.value_error(f"One of the vectors to be taken in the outer product is not in the corresponding factor."))
+            raise ValueError(Errors.value_error("One of the vectors to be taken in the outer product is not in the corresponding factor."))
         return np.einsum(self._prod_trafo_string,*[x.flat for x in xs],optimize=True)
 
 
