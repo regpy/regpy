@@ -8,7 +8,7 @@ description = "A python library to solve Inverse and Ill-Posed problems by regul
 readme = "README.md"
 license-files = ["LICENSE"]
 keywords = ["inverse problems", "ill-posed problems", "regularization", "numerical optimization", "numerical analysis"]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
