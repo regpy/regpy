@@ -185,7 +185,7 @@ class Operator:
             raise ValueError(util.Errors.not_in_vecsp(
                 x,
                 self.domain,
-                add_info=f"Evaluation of {self} not possible!, {self.domain.shape}, {self.codomain.shape}, {x.shape if hasattr(x,"shape") else 0}"
+                add_info=f"Evaluation of {self} not possible!, domain.shape = {self.domain.shape}, codomain.shape = {self.codomain.shape}"
                 ))
         if out is not None and out not in self.codomain:
             raise ValueError(util.Errors.not_in_vecsp(
