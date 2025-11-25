@@ -215,6 +215,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
+        self.cutoff = self.tau
         self.history_dict["relative discrepancy"] = []
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
