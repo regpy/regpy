@@ -368,7 +368,7 @@ class IrgnmCGPrec(RegSolver):
         M_krylov = self.op.domain.volume_elem*U @ diag_lamb @ U.transpose().conjugate()
         chars1 = ''.join(chr(i) for i in range(ord('a'), ord('a') + self.krylov_basis.ndim))
         chars2 = ''.join(chr(i) for i in range(ord('A'), ord('A') + self.krylov_basis.ndim))
-        krylov_M_krylov=np.einsum(f"{chars1[0]+chars2[0]},{chars2}->{chars1[0]+chars2[1:]}",M_krylov,self.krylov_basis,optimize=True))
+        krylov_M_krylov=np.einsum(f"{chars1[0]+chars2[0]},{chars2}->{chars1[0]+chars2[1:]}",M_krylov,self.krylov_basis,optimize=True)
         tensors=(self.krylov_basis.conjugate(),krylov_M_krylov)
         subscript=f"{chars1[1:]},{chars1},{chars1[0]+chars2[1:]}"
         self.preconditioner=EinSum(subscript,self.op.domain,tensors=tensors,codomain=self.op.domain)+PtwMultiplication(self.op.domain,1/sqrt(self.regpar))
