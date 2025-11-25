@@ -48,11 +48,11 @@ class ForwardBackwardSplitting(RegSolver):
 
         self.y = self.op(self.x)
 
-        try:
-            self.gap=self.setting.dualityGap(primal = self.x)
-            self.dualityGapWorks =True
-        except NotImplementedError:
-            self.dualityGapWorks = False
+        # try:
+        #     self.gap=self.setting.dualityGap(primal = self.x)
+        #     self.dualityGapWorks =True
+        # except NotImplementedError:
+        #     self.dualityGapWorks = False
         
     def _next(self):
         self.x -= self.tau*self.h_domain.gram_inv(self.op.adjoint(self.data_fid.subgradient(self.y)))
@@ -60,8 +60,8 @@ class ForwardBackwardSplitting(RegSolver):
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y = self.op(self.x)
  
-        if self.dualityGapWorks:
-            self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
+        # if self.dualityGapWorks:
+        #     self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
             
 class FISTA(RegSolver):
     r"""
@@ -87,8 +87,10 @@ class FISTA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     logging_level: [default: logging.INFO]
         logging level
+    compute_dual: boolean [False]
+        sets if dual is computed, it is not directly necessary for the algorithm. The default is False
     """
-    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO",compute_dual = False):
         if not isinstance(setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
@@ -120,11 +122,15 @@ class FISTA(RegSolver):
         if self.mu>0:
             self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
                 self.mu_penalty,self.mu_data_fidelity,self.tau,1.-ma.sqrt(self.q)))
-        try:
-            self.gap=self.setting.dualityGap(primal = self.x)
-            self.dualityGapWorks =True
-        except NotImplementedError:
-            self.dualityGapWorks = False
+            
+        if not hasattr(self,"compute_dual") or not self.compute_dual:
+            self.compute_dual = compute_dual
+        if self.compute_dual:
+            self._compute_dual()
+        
+
+    def _compute_dual(self):
+        self.dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True)
 
 
     def _next(self):
@@ -144,5 +150,5 @@ class FISTA(RegSolver):
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y = self.op(self.x)
 
-        if self.dualityGapWorks:
-            self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True) )
+        if self.compute_dual:
+            self._compute_dual()
