@@ -11,7 +11,7 @@ import regpy.util.operator_tests as ot
 def collect_errors(cls,errors):
     if errors:
         sep = "\n" +"-"*125 +"\n"
-        title = f"During the testing of {cls} were the following errors collected"
+        title = f"During the testing of {cls} the following errors were collected"
         massage = sep+title+sep+ sep.join(errors)
         raise AssertionError(massage)
     else:
