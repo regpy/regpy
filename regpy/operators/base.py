@@ -18,7 +18,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from regpy import util, vecsps
 
-__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum", "Product", "RealPart", "ImaginaryPart", "SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
+__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum", "Product", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
 
 
 class _Revocable:
@@ -1805,6 +1805,11 @@ class PtwMultiplication(Operator):
                 out += x
             out *= factor
             return out
+
+    @property
+    def invertible(self):
+        # TODO: check if multiplier has zeros!
+        return True
 
     @Operator.inverse.getter
     def inverse(self):

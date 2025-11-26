@@ -334,7 +334,7 @@ class Functional:
     methods: set [default: set()]
         names of the methods implemented by a given Functional instance.
         Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}
-    methods_conj: set [default: set()]
+    conj_methods set [default: set()]
         names of the methods implemented by the conjugate of a given Functional instance.
         Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}        
     """
@@ -1465,7 +1465,7 @@ class Composed(Functional):
         possible arguments passed to the operator norm computation.
     """
     def __init__(self, func, op, op_norm = inf, op_lower_bound = 0, compute_op_norm = False, norm_kwargs = {},
-                 methods = None):
+                 methods = None,conj_methods=None):
         if not isinstance(func, Functional):
             raise TypeError(util.Errors.not_instance(func,Functional))
         if not isinstance(op,operators.Operator):
@@ -1474,12 +1474,18 @@ class Composed(Functional):
             raise ValueError(util.Errors.not_equal(func.domain,op.codomain, add_info="Codomain of operator and domain of fucntional have to match to be composed."))
         if op_norm == inf and compute_op_norm:
             op_norm = op.norm(h_codomain = func.h_domain, **norm_kwargs)
+        if conj_methods is None:
+            if op.invertible:
+                conj_methods = {'eval','subgradient','hessian'}
+            else:
+                conj_methods = set()
+
         super().__init__(op.domain,
                          linear = func.linear,
                          convexity_param= func.convexity_param * op_lower_bound**2,
                          Lipschitz= func.Lipschitz * op_norm**2,
-                         methods = {'eval','subgradient','is_subgradient','proximal'} if methods is None else methods,
-                         conj_methods = {'eval','subgradient','hessian'} if op.invertible else set() 
+                         methods = {'eval','subgradient','hessian'} if methods is None else methods,
+                         conj_methods = conj_methods
                          )
         if isinstance(func, type(self)):
             op = func.op * op
@@ -1505,7 +1511,7 @@ class Composed(Functional):
 
     def _hessian(self, x):
         if self.op.linear:
-            return self.op.adjoint * self.func.hessian(x) * self.op
+            return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
         else:
             return super()._hessian(x)
 
@@ -1522,6 +1528,7 @@ class Composed(Functional):
             return self.op.inverse * self.func._conj_hessian (self.op.inverse.adjoint(x_star)) * self.op.inverse.adjoint
 
     def _proximal(self, x, tau, cg_params={}):
+        # TODO: Remove this from the general class! All derived classes should implement their own prox!
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver
         if isinstance(self.func,SquaredNorm) and self.func.a == 1 and (self.func.b == 0).all() and self.func.c == 0 and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
             from regpy.solvers.linear.tikhonov import TikhonovCG

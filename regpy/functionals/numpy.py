@@ -2070,7 +2070,7 @@ class TVUniformGridFcts(Composed):
             self.func = HuberL2(self.grad.codomain)
 
         super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
-                         methods = {'eval','proximal'})
+                         methods = {'eval','proximal'},conj_methods = {'proximal'})
 
     def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
         """Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89–97, 2004) 

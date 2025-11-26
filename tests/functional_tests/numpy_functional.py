@@ -120,6 +120,13 @@ def test_quadlow():
     func = QuadLow(dom)
     ft.test_functional(func)
 
+def test_Composed():
+    dom = UniformGridFcts((0,1,10))
+    func = Lpp(dom,p=2.5) * np.arange(1,11)
+    ft.test_functional(func,test_second_deriv_conj=False)
+    func2 = Lpp(dom,p=1.5) * np.arange(1,11)
+    ft.test_functional(func2,test_second_deriv=False)
+
 def test_VectorIntegralFunctional():
     grid = UniformGridFcts((-1,1,10))
     N_v = 5
