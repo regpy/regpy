@@ -45,8 +45,8 @@ class StopRule:
         """
         if self.triggered:
             return True
-        # self.x = x
-        # self.y = y
+        self.x = x
+        self.y = y
         self.triggered = self._stop(x, y, dual)
         return self.triggered
 

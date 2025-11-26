@@ -41,7 +41,7 @@ class ForwardBackwardSplitting(RegSolver):
 
         self.tau = 1/setting.op.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
         """The step size parameter"""
-        if tau<=0:
+        if self.tau<=0:
             raise ValueError(Errors.value_error("tau the step size needs to be positive!"))   
         self.proximal_pars = proximal_pars
         self.log.setLevel(logging_level)
@@ -111,7 +111,7 @@ class FISTA(RegSolver):
 
         self.tau = 1./(setting.op.norm(setting.h_domain,setting.h_codomain)**2 * self.data_fid.Lipschitz) if tau is None else tau
         """The step size parameter"""
-        if tau<=0:
+        if self.tau<=0:
             raise ValueError(Errors.value_error("tau the step size needs to be positive!"))  
         self.t = 0
         self.t_old = 0
