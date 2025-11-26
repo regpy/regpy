@@ -18,7 +18,7 @@ import ngsolve as ngs
 import numpy as np
 from pyngcore.pyngcore import BitArray
 
-from regpy.util import is_complex_dtype, Errors
+from regpy.util import is_complex_dtype, Errors, ClassLogger
 
 from .base import VectorSpaceBase
 
@@ -29,10 +29,12 @@ def _override_vector(vec : ngs.BaseVector, gf : ngs.GridFunction) -> None:
 
 @dataclass 
 class NgsBaseVector:
-    vec: ngs.la.BaseVector
+    vec: ngs.la.BaseVector | ngs.la.DynamicVectorExpression
     make_copy: Optional[bool] = field(default=False)
 
     __array_ufunc__ = None
+
+    log = ClassLogger()
 
     def copy(self):
         return copy(self)
@@ -42,27 +44,42 @@ class NgsBaseVector:
         return self.vec.is_complex
 
     def __post_init__(self):
+        self.is_dynamic = False
         if isinstance(self.vec,ngs.la.BaseVector):
             if self.make_copy:
                 self.vec = self.vec.Copy()
+            self.size = self.vec.size
+            self.is_complex = self.vec.is_complex
             pass
         elif isinstance(self.vec,ngs.la.DynamicVectorExpression):
             if self.make_copy:
-                self.vec = self.vec.Evaluate().Copy()
-            else:
+                self.log.debug("To make a Copy of a Dynamic VectorExpression it has to be evaluated")
                 self.vec = self.vec.Evaluate()
+                self.size = self.vec.size
+                self.is_complex = self.vec.is_complex
+            else:
+                self.is_dynamic = True
+                self.vec = self.vec.Evaluate()
+                vec = self.vec.CreateVector()
+                self.size = vec.size
+                self.is_complex = vec.is_complex
+            pass
         else:
             raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
-        self.size = self.vec.size
-        self.is_complex = self.vec.is_complex
 
     def conj(self):
+        if self.is_dynamic:
+            self.log.debug("To make a conjugate of a Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         z = self.vec.CreateVector()
         z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
         return NgsBaseVector(z,)
     
     @property
     def real(self, convert2real_vec = True):
+        if self.is_dynamic:
+            self.log.debug("To make a real of a Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         if self.is_complex_dtype:
             if convert2real_vec:
                 z = ngs.la.BaseVector(size = self.size)
@@ -76,6 +93,9 @@ class NgsBaseVector:
     
     @property
     def imag(self, convert2real_vec = True):
+        if self.is_dynamic:
+            self.log.debug("To make a imag of a Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         if self.is_complex_dtype:
             if convert2real_vec:
                 z = ngs.la.BaseVector(size = self.size)
@@ -91,12 +111,15 @@ class NgsBaseVector:
         if self.is_complex:
             return self
         else:
+            if self.is_dynamic:
+                self.log.debug("For to_imag of a Dynamic VectorExpression it has to be evaluated")
+                self.vec = self.vec.Evaluate()
             z = ngs.la.BaseVector(size = self.size, complex = True)
             z.FV().NumPy()[:] = self.vec.FV().NumPy() + 1j*0
             return NgsBaseVector(z)
 
     def __iadd__(self,other):
-        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+        if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             self.vec += other.to_imag().vec
@@ -108,7 +131,7 @@ class NgsBaseVector:
         return self
 
     def __isub__(self,other):
-        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+        if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             print("Adding real vector to complex vector, converting real to complex.")
@@ -120,17 +143,33 @@ class NgsBaseVector:
             self.vec -= other.vec
         return self
     
+    def __imul__(self,other):
+        if self.is_dynamic:
+            self.log.debug("To have inplace multiplication of a Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error("Multiplying NgsBaseVector only supported for scalars (int, float, or complex)!"))
+        self.vec.data *= other
+        return self
+    
+    def __itruediv__(self,other):
+        if self.is_dynamic:
+            self.log.debug("To have inplace division of a Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
+        if not isinstance(other,(float,int,complex)):
+            raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
+        self.vec.data /= other
+        return self
+    
     def __add__(self,other):
-        if not isinstance(other,NgsBaseVector) or other.size != self.vec.size:
+        if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
             return self + other.to_imag()
         if not self.is_complex and other.is_complex:
             warn("Adding complex vector to real vector, converting real to complex.")
             return self + other.real
-        v = self.vec.CreateVector()
-        v.data = self.vec + other.vec
-        return NgsBaseVector(v)
+        return NgsBaseVector(self.vec + other.vec)
     
     def __radd__(self,other):
         return self + other
@@ -144,24 +183,10 @@ class NgsBaseVector:
     def __neg__(self):
         return -1*self
     
-    def __imul__(self,other):
-        if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error("Multiplying NgsBaseVector only supported for scalars (int, float, or complex)!"))
-        self.vec.data *= other
-        return self
-    
-    def __itruediv__(self,other):
-        if not isinstance(other,(float,int,complex)):
-            raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
-        self.vec.data /= other
-        return self
-    
     def __mul__(self,other):
         from regpy.operators.base import Operator,PtwMultiplication
         if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
-            v = self.vec.CreateVector()
-            v.data = other * self.vec
-            return NgsBaseVector(v)
+            return NgsBaseVector(other * self.vec)
         elif isinstance(other,Operator):
             return PtwMultiplication(other.codomain, self) * other
         else:
@@ -173,11 +198,12 @@ class NgsBaseVector:
     def __truediv__(self,other):
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
-        v = self.vec.CreateVector()
-        v.data = (1/other)*self.vec
-        return NgsBaseVector(v)
+        return NgsBaseVector((1/other)*self.vec)
     
     def __getitem__(self,i):
+        if self.is_dynamic:
+            self.log.debug("To get items the Dynamic VectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         if isinstance(i,BitArray):
             v = self.vec.CreateVector()
             v[i] = self.vec
@@ -188,6 +214,9 @@ class NgsBaseVector:
             return NgsBaseVector(self.vec[i])
     
     def __setitem__(self,i,val):
+        if self.is_dynamic:
+            self.log.debug("To set items the DynamicVectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         if isinstance(val, NgsBaseVector) and self.size == val.size:
             self.vec[i] = val.vec
         else:
@@ -197,6 +226,9 @@ class NgsBaseVector:
                 raise TypeError(Errors.type_error(f"Not able to set {val} to NgsBaseVector. It has to be either an NgsBaseVector of same size or Something compatible to set to an ngsolve.la.BaseVector."))
 
     def __iter__(self):
+        if self.is_dynamic:
+            self.log.debug("To iterate the DynamicVectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
         return self.vec
 
     def iter_basis(self):
@@ -225,15 +257,16 @@ class NgsBaseVector:
         return (x_i != y_i for x_i,y_i in zip(x,y))
     
     def __copy__(self):
-        return deepcopy(self)
+        if self.is_dynamic:
+            self.log.debug("To copy the DynamicVectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
+        return NgsBaseVector(self.vec.Copy())
     
     def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, deepcopy(v, memo))
-        return result
+        if self.is_dynamic:
+            self.log.debug("To copy the DynamicVectorExpression it has to be evaluated")
+            self.vec = self.vec.Evaluate()
+        return NgsBaseVector(self.vec.Copy())
 
 
 class NgsVectorSpace(VectorSpaceBase):
