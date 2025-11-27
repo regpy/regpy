@@ -419,8 +419,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if primal_setting is not None and not isinstance(primal_setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
         self.primal_setting = primal_setting
-
-        self.determine_methods()
     
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
@@ -558,64 +556,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
-    def determine_methods(self):
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,semismoothNewton,TikhonovCG
-        self._methods = {
-            'FB': {'class':ForwardBackwardSplitting, 'primal': True},
-            'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False},
-            'FISTA': {'class':FISTA, 'primal': True},
-            'dual_FISTA': {'class':FISTA, 'primal': False},
-            'PDHG': {'class':PDHG, 'primal': True},
-            'dual_PDHG': {'class':PDHG, 'primal': False},
-            'ADMM': {'class':ADMM, 'primal': True},
-            'AMA': {'class':AMA, 'primal': True},
-            'SSNewton': {'class':semismoothNewton, 'primal': True},
-            'dual_SSNewton': {'class':semismoothNewton, 'primal': False}, 
-            'CG': {'class':TikhonovCG, 'primal':True},
-            'dual_CG': {'class':TikhonovCG, 'primal':False}
-        }
-        self._methods['FB']['applicable'] =  ('proximal' in self.penalty.methods and self.data_fid.Lipschitz<inf)
-        self._methods['FISTA']['applicable'] = ('proximal' in self.penalty.methods and self.data_fid.Lipschitz<inf)
-        
-        self._methods['dual_FB']['applicable'] = ('proximal' in self.data_fid.conj.methods and 'subgradient' in self.penalty.conj.methods
-                                    and self.penalty.conj.Lipschitz<inf)
-        self._methods['dual_FISTA']['applicable'] = ('proximal' in self.data_fid.conj.methods and 'subgradient' in self.penalty.conj.methods 
-                                       and self.penalty.conj.Lipschitz<inf)
 
-        self._methods['PDHG']['applicable'] = ('proximal' in self.penalty.methods and 'proximal' in self.data_fid.conj.methods)
-        self._methods['dual_PDHG']['applicable'] = ('proximal' in self.penalty.conj.methods and 'subgradient' in self.penalty.conj.methods
-                                      and 'proximal' in self.data_fid.methods)
-
-        self._methods['ADMM']['applicable'] = ('proximal' in self.penalty.methods and 'proximal' in self.data_fid.methods)
-        self._methods['AMA']['applicable'] = ('subgradient' in self.penalty.conj.methods and 'proximal' in self.data_fid.methods)
-
-        self._methods['SSNewton']['applicable'] = (isinstance(self.penalty,(QuadraticNonneg, QuadraticBilateralConstraints)) 
-                                     and isinstance(self.data_fid,SquaredNorm))
-        self._methods['dual_SSNewton']['applicable'] = (isinstance(self.data_fid.conj,(QuadraticNonneg, QuadraticBilateralConstraints)) 
-                                     and isinstance(self.penalty,SquaredNorm))
-
-        self._methods['CG']['applicable'] = isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
-        self._methods['dual_CG']['applicable'] = isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
-
-    def run(self,method = 'FISTA',**kwargs):
-        if not method in self._methods:
-            raise ValueError('Unknown method')
-        themethod= self._methods[method]
-        if themethod['applicable'] == False:
-            raise RuntimeError(f'{method} is not applicable in this setting.')
-
-        thesetting = self if themethod['primal'] else self.dualSetting()
-        if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            themethod['stoprule'] = DualityGapStopping(thesetting,threshold = 1.,logging_level=logging.INFO) + CountIterations(max_iterations=1000)
-
-        
-        solver = themethod['class'](thesetting,**kwargs)
-        x,y = solver.run(themethod['stoprule'])
-        
-        if themethod['primal']==False:
-            x_star,y_star = x,y
-            x = self.dualToPrimal(y_star,argumentIsOperatorImage=True)
-            y = self.op(x)
-        return x,y
 
         
