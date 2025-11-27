@@ -1,4 +1,5 @@
 import math as ma
+import numpy as np
 
 from regpy.util import Errors
 
@@ -31,7 +32,7 @@ class ForwardBackwardSplitting(RegSolver):
 
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
         if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the setting to be a Tikhonov setting!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
@@ -39,7 +40,12 @@ class ForwardBackwardSplitting(RegSolver):
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
 
-        self.tau = 1/setting.op.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
+        out, par = ForwardBackwardSplitting.check_applicability(setting)
+        if out['applicable']:
+            self.log.info(out['info'])
+        else:
+            raise ValueError('ForwardBackwardSplitting not applicable to this setting. '+out['info'])
+        self.tau = par['tau'] if tau is None else tau
         """The step size parameter"""
         if self.tau<=0:
             raise ValueError(Errors.value_error("tau the step size needs to be positive!"))   
@@ -47,6 +53,30 @@ class ForwardBackwardSplitting(RegSolver):
         self.log.setLevel(logging_level)
 
         self.y = self.op(self.x)
+
+    @staticmethod
+    def check_applicability(setting, op_norm=None, op_lower_bound=0.):
+        out = {'info':''}; par={}
+        if 'proximal' not in setting.penalty.methods:
+            out['info']+='Missing prox of penalty functional. '
+        if 'subgradient' not in setting.data_fid.methods:
+            out['info']+='Missing gradient of data functional. '
+        if setting.data_fid.Lipschitz==np.inf:
+            out['info']+='Gradient of data functional not Lischitz.'        
+        out['applicable'] = out['info']==''
+        if out['applicable']: 
+            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
+            par = {'tau':1/(op_norm**2 * setting.data_fid.Lipschitz)}
+            mu_penalty  = setting.regpar * setting.penalty.convexity_param
+            mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
+            out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
+            out['info'] = "ForwardBackwardSplitting used with step length tau={:.3e}".format(par['tau'])
+            if out['rate']<1.:
+                out['info'] += "Expected linear convergence rate: {:.3e}.".format(out['rate'])
+            else:
+                out['info'] += "Expected convergen rate O(1/n^2)."
+                out['rate'] = -1
+        return out, par
 
         # try:
         #     self.gap=self.setting.dualityGap(primal = self.x)
@@ -92,10 +122,10 @@ class FISTA(RegSolver):
     """
     def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO",compute_dual = False):
         if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="FISTA requires the setting to be a Tikhonov setting!"))
         super().__init__(setting)
         if not self.op.linear:
-            raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
+            raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
@@ -104,30 +134,58 @@ class FISTA(RegSolver):
 
         self.y = self.op(self.x)
 
-        self.mu_penalty  = self.regpar * self.penalty.convexity_param
-        self.mu_data_fidelity = self.data_fid.convexity_param * op_lower_bound**2
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        self.tau = 1./(setting.op.norm(setting.h_domain,setting.h_codomain)**2 * self.data_fid.Lipschitz) if tau is None else tau
-        """The step size parameter"""
+        out, par = FISTA.check_applicability(setting, op_lower_bound=op_lower_bound)
+        if out['applicable']:
+            self.log.info(out['info'])
+        else:
+            raise ValueError('FISTA not applicable to this setting. '+out['info'])
+        self.mu_penalty, self.mu_data_fidelity, self.mu = par['mu_penalty'], par['mu_data_fidelity'], par['mu']
+        if tau is None:
+            self.tau, self.q = par['tau'], par['q'] 
+        else: 
+            self.tau= tau
+            """The step size parameter"""
+            self.q = self.tau * self.mu / (1.+self.tau * self.mu_penalty)            
         if self.tau<=0:
-            raise ValueError(Errors.value_error("tau the step size needs to be positive!"))  
+            raise ValueError(Errors.value_error("The step size tau needs to be positive!"))  
         self.t = 0
         self.t_old = 0
-        self.mu = self.mu_data_fidelity+self.mu_penalty
 
         self.x_old = self.x
-        self.q = (self.tau * self.mu) / (1+self.tau*self.mu_penalty)
-        if self.mu>0:
-            self.log.info('Setting up FISTA with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(
-                self.mu_penalty,self.mu_data_fidelity,self.tau,1.-ma.sqrt(self.q)))
             
         if not hasattr(self,"compute_dual") or not self.compute_dual:
             self.compute_dual = compute_dual
         if self.compute_dual:
             self._compute_dual()
         
+    @staticmethod
+    def check_applicability(setting,op_lower_bound=0.,op_norm=None):
+        out = {'info':''}; par={}
+        if 'proximal' not in setting.penalty.methods:
+            out['info']+='Missing prox of penalty functional. '
+        if 'subgradient' not in setting.data_fid.methods:
+            out['info']+='Missing gradient of data functional. '
+        if setting.data_fid.Lipschitz==np.inf:
+            out['info']+='Gradient of data functional not Lischitz.'        
+        out['applicable'] = out['info']==''
+        if out['applicable']: 
+            par = {}
+            par['mu_penalty']  = setting.regpar * setting.penalty.convexity_param
+            par['mu_data_fidelity'] = setting.data_fid.convexity_param * op_lower_bound**2 
+            par['mu'] = par['mu_data_fidelity']+par['mu_penalty']
+            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
+            par['tau'] = 1./(op_norm**2 * setting.data_fid.Lipschitz)
+            par['q'] = (par['tau'] * par['mu']) / (1+par['tau']*par['mu_penalty'])
+            out['rate'] = 1.-ma.sqrt(par['q']) 
+            if par['mu']>0:
+                out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}. Expected linear convergence rate: {:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'],out['rate'])
+            else:
+                out['info'] = "Expected convergen rate O(1/n^2)."
+                out['rate'] = -2
+        return out, par
 
     def _compute_dual(self):
         self.dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True)

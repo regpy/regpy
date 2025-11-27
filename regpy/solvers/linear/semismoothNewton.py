@@ -1,10 +1,11 @@
 from math import sqrt,inf
+from numpy import NaN
 
 from regpy.util import Errors
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
-from regpy.functionals.numpy import QuadraticBilateralConstraints, Huber
+from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
@@ -101,6 +102,9 @@ class SemismoothNewton_bilateral(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewton_bilateral in as a linear solver requires the operator to be linear!"))
         if self.op.domain.dtype != float:
             raise TypeError(Errors.type_error("SemismoothNewton_bilateral requires the domain to be real!"))
+        out = SemismoothNewton_bilateral.check_applicability(setting)
+        if not out['applicable']:
+            raise RuntimeError('SemismoothNewton_bilatteral not applicable to this setting. '+out['info'])
         self.data=data
         """The measured data"""
         self.regpar=regpar * alpha_fac
@@ -218,6 +222,40 @@ class SemismoothNewton_bilateral(RegSolver):
                         )
         if added_ind+removed_ind==0:
             self.converge()
+
+    @staticmethod
+    def check_applicability(setting,op_norm=None):
+        out = {'info':''}
+        if not isQuadratic(setting.data_fid):
+            out['info'] += 'Data functional not quadratic.'
+        if not isQuadratic(setting.penalty):
+            out['info'] += 'Penalty term not quadratic.'
+        out['applicable'] = out['info']==''
+        out['rate'] = NaN
+        return out
+
+def isQuadratic(func):
+    r"""checks if a functional is quadratic."""
+
+    if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg,QuadraticLowerBound)):
+        return True
+    elif isinstance(func,LppPower):
+        return func.p==2
+    elif isinstance(func,HorizontalShiftDilation):
+        return isQuadratic(func.F)
+    elif isinstance(func,LinearCombination):
+        if len(func.coeffs!=1):
+            return False
+        else:
+            return isQuadratic(func.funcs[0])
+    elif isinstance(func,Conj):
+        if isinstance(func.F, Huber):
+            return True
+        else:
+           return isQuadratic(func.F)
+    else:
+        return False
+    
 
 
 def getPenaltyParamsFromFunctional(R,gram=None):
@@ -339,6 +377,9 @@ class SemismoothNewton_nonneg(RegSolver):
             raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
         if xref is not None and xref not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
+        out = SemismoothNewton_nonneg.check_applicability(setting)
+        if not out['applicable']:
+            raise RuntimeError('SemismoothNewton_nonneg not applicable to this setting. '+out['info'])
         self.data=data
         """The measured data"""
         self.xref = xref
@@ -387,6 +428,15 @@ class SemismoothNewton_nonneg(RegSolver):
         self.log.debug('it {}: CG its {}; changes active set +{},-{}'.format(self.iteration_step_nr,cg_its,
                                                                             self.active.sum(),0 )
         )
+
+    @staticmethod
+    def check_applicability(setting,op_norm=None):
+        out = SemismoothNewton_bilateral(setting)
+        if np.any(setting.penalty.dom_u<inf):
+            out['info'] = '' if out['applicable'] else out['info']
+            out['applicable'] = False
+            out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
+        return out
 
     def _next(self):
 
