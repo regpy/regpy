@@ -486,3 +486,25 @@ def test_VectorOfOperators():
     errors += op_evaluation_and_ot(op,x,res)
 
     collect_errors(op_base.VectorOfOperators,errors)
+
+def test_Sum():
+    vs = NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3),dtype=np.complex128)
+    errors = []
+    errors+=op_basics_wrapper(op_base.Sum,vs,test_methods=True)
+    op=op_base.Sum(vs)
+    x=vs.ones()
+    x[0][0,0]=2
+    res = x[0]+x[1]+x[2]
+    errors+=op_evaluation_and_ot(op,x=x,res=res)
+    collect_errors(op_base.Sum,errors)
+
+# def test_Product():
+#     vs = NumPyVectorSpace((4,3))+NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3))
+#     errors = []
+#     errors+=op_basics_wrapper(op_base.Product,vs,test_methods=True)
+#     op=op_base.Product(vs)
+#     x=vs.ones()
+#     x[0][0,0]=2
+#     res = x[0]*x[1]*x[2]
+#     errors+=op_evaluation_and_ot(op,x=x,res=res)
+#     collect_errors(op_base.Product,errors)

@@ -18,7 +18,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from regpy import util, vecsps
 
-__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum", "Product", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
+__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]#"Product"
 
 
 class _Revocable:
@@ -2544,7 +2544,7 @@ class Sum(Operator):
             raise ValueError(util.Errors.not_equal(
                 self.domain.summands[0],
                 self.codomain,
-                add_info="The codomain has to be indentiocal to the summands of the domain."
+                add_info="The codomain has to be indentical to the summands of the domain."
             ))
 
     def _eval(self,x, out = None):
@@ -2563,71 +2563,72 @@ class Sum(Operator):
             out[i] = y.real if not summand.is_complex else y
         return out
     
-class Product(Operator):
-    r"""Maps element in direct sum of vector spaces to their product.
+# Derivative of Product is currently broken
+# class Product(Operator):
+#     r"""Maps element in direct sum of vector spaces to their product.
 
-    Parameters
-    ----------
-    domain : vecsps.DirectSum
-        The domain of the operator. Summands have to have the same shape.
-    codomain : vecsps.VectorSpace or None, optional
-        The codomain of the operator. Has to have same shape as a summand of the domain.
-        If set to None the first summand of the domain is chosen instead. Defaults to None.
-    """
+#     Parameters
+#     ----------
+#     domain : vecsps.DirectSum
+#         The domain of the operator. Summands have to have the same shape.
+#     codomain : vecsps.VectorSpace or None, optional
+#         The codomain of the operator. Has to have same shape as a summand of the domain.
+#         If set to None the first summand of the domain is chosen instead. Defaults to None.
+#     """
 
-    def __init__(self, domain,codomain=None):
-        if not isinstance(domain,vecsps.DirectSum):
-            raise ValueError(util.Errors.not_a_vecsp(
-                domain,
-                vecsps.DirectSum,
-                add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
-            ))
-        if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
-            raise ValueError(util.Errors.not_equal(
-                domain,
-                domain.summands[0],
-                first_type="DirectSum containing identical domains.",
-                second_type="the first domain",
-                add_info="The domain has to be a DirectSum of identical domains."
-            ))
-        if codomain is None:
-            codomain=domain.summands[0]    
-        super().__init__(domain, codomain, True)
-        if self.domain.summands[0] != codomain:
-            raise ValueError(util.Errors.not_equal(
-                self.domain.summands[0],
-                self.codomain,
-                add_info="The codomain has to be indentiocal to the summands of the domain."
-            ))
+#     def __init__(self, domain,codomain=None):
+#         if not isinstance(domain,vecsps.DirectSum):
+#             raise ValueError(util.Errors.not_a_vecsp(
+#                 domain,
+#                 vecsps.DirectSum,
+#                 add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
+#             ))
+#         if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
+#             raise ValueError(util.Errors.not_equal(
+#                 domain,
+#                 domain.summands[0],
+#                 first_type="DirectSum containing identical domains.",
+#                 second_type="the first domain",
+#                 add_info="The domain has to be a DirectSum of identical domains."
+#             ))
+#         if codomain is None:
+#             codomain=domain.summands[0]    
+#         super().__init__(domain, codomain, False)
+#         if self.domain.summands[0] != codomain:
+#             raise ValueError(util.Errors.not_equal(
+#                 self.domain.summands[0],
+#                 self.codomain,
+#                 add_info="The codomain has to be indentiocal to the summands of the domain."
+#             ))
 
-    def _eval(self,x, out = None,differentiate=False):
-        if out is None:
-            out = x[0].copy()
-        else:
-            out *= 0
-            out += x[0].copy()
-        for x_i in x[1:]:
-            out *= x_i
-        if differentiate:
-            self.deriv_data=[out/x_j for x_j in x]
-        return out
+#     def _eval(self,x, out = None,differentiate=False):
+#         if out is None:
+#             out = x[0].copy()
+#         else:
+#             out *= 0
+#             out += x[0].copy()
+#         for x_i in x[1:]:
+#             out *= x_i
+#         if differentiate:
+#             self.deriv_data=[out/x_j for x_j in x]
+#         return out
     
-    def _derivative(self, x, out = None):
-        if out is None:
-            out = self.deriv_data[0]*x[0]
-        else:
-            out *= 0
-            out += self.deriv_data[0]*x[0]
-        for i,x_i in enumerate(x[1:]):
-            out+=self.deriv_data[i]*x_i
-        return out
+#     def _derivative(self, x, out = None):
+#         if out is None:
+#             out = self.deriv_data[0]*x[0]
+#         else:
+#             out *= 0
+#             out += self.deriv_data[0]*x[0]
+#         for i,x_i in enumerate(x[1:]):
+#             out+=self.deriv_data[i]*x_i
+#         return out
 
-    def _adjoint(self,y, out = None):
-        if out is None:
-            out = self.domain.zeros()
-        for i, summand in enumerate(self.domain.summands):
-            out[i] = (y*self.deriv_data[i].conj()).real if not summand.is_complex else y*self.deriv_data[i].conj()
-        return out
+#     def _adjoint(self,y, out = None):
+#         if out is None:
+#             out = self.domain.zeros()
+#         for i, summand in enumerate(self.domain.summands):
+#             out[i] = (y*self.deriv_data[i].conj()).real if not summand.is_complex else y*self.deriv_data[i].conj()
+#         return out
 
 
 class RealPart(Operator):
