@@ -773,7 +773,7 @@ class Conj(Functional):
         return self.func.proximal(x,tau,**proximal_par)    
 
     @property
-    def conj_functional(self):
+    def conj(self):
         return self.func
     
     @property
