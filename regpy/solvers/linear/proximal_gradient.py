@@ -70,7 +70,7 @@ class ForwardBackwardSplitting(RegSolver):
             mu_penalty  = setting.regpar * setting.penalty.convexity_param
             mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
             out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
-            out['info'] = "ForwardBackwardSplitting used with step length tau={:.3e}".format(par['tau'])
+            out['info'] = "ForwardBackwardSplitting used with step length tau={:.3e}.\n".format(par['tau'])
             if out['rate']<1.:
                 out['info'] += "Expected linear convergence rate: {:.3e}.".format(out['rate'])
             else:
@@ -181,7 +181,7 @@ class FISTA(RegSolver):
             par['q'] = (par['tau'] * par['mu']) / (1+par['tau']*par['mu_penalty'])
             out['rate'] = 1.-ma.sqrt(par['q']) 
             if par['mu']>0:
-                out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}. Expected linear convergence rate: {:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'],out['rate'])
+                out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\nExpected linear convergence rate: {:.3e}.\n".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'],out['rate'])
             else:
                 out['info'] = "Expected convergen rate O(1/n^2)."
                 out['rate'] = -2

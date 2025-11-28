@@ -85,10 +85,10 @@ class ADMM(RegSolver):
         """ Prox parameters of data fidelity."""
         self.proximal_pars_penalty = proximal_pars_penalty
         """ Prox parameters of penalty."""
-        if regularizedInverse is None and isinstance(setting.op, ConvolutionOperator) and setting.op.domain.codomain==():
+        if regularizedInverse is None and isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==():
             adj = setting.op.conv_adjoint()
             regularizedInverse = adj.composition(setting.op)
-            regularizedInverse = regularizedInverse.functional_calculus(lambda t: 1./(1.+t))
+            self.regularizedInverse = regularizedInverse.functional_calculus(lambda t: 1./(1.+t))
         else:
             self.regularizedInverse = regularizedInverse
         """ operator (T^*T+I)^{-1}"""
@@ -114,14 +114,14 @@ class ADMM(RegSolver):
             self.x = self.regularizedInverse(self.v2+self.p2 + self.op.adjoint(self.v1+self.p1))
             self.y = self.op(self.x)
 
-    def check_applicability(setting, regularizaedInverse = None):
+    def check_applicability(setting, regularizaedInverse = None,op_norm=None):
         out = {'info': ''}; par = {}
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
         if not 'proximal' in setting.data_fid.methods:
             out['info'] += 'Missing prox in data fidelity functional. '
         if regularizaedInverse is None and not \
-            (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.codomain==()):
+            (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==()):
             out['info'] += 'No efficient regularized inverse seems to be available. '
         out['applicable'] = out['info']==''
         if out['applicable']:
@@ -181,18 +181,16 @@ class AMA(RegSolver):
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = "INFO",compute_dual = False):
+                 cg_pars = None,logging_level = "INFO",compute_dual = False):
         if not isinstance(setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="AMA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="AMA requires the operator to be linear!"))
-        if regularizedInverse is not None and (isinstance(regularizedInverse,Operator)):
-            raise TypeError(Errors.not_instance(regularizedInverse,Operator,add_info="AMA requires the the regularized inverse to be either not given and None or a proper Operator!"))
         
         self.log.setLevel(logging_level)
 
-        out, _ = AMA.check_applicability(setting, regularizaedInverse=regularizedInverse)
+        out, _ = AMA.check_applicability(setting)
         if out['applicable']==False:
             raise RuntimeError('AMA not applicable in this setting. '+out['info'])
 
@@ -215,7 +213,7 @@ class AMA(RegSolver):
         if self.compute_dual:
             self._compute_dual()
 
-    def check_applicability(setting):
+    def check_applicability(setting,op_norm=None):
         out = {'info': ''}; par = {}
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
