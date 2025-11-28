@@ -1,5 +1,5 @@
 from math import sqrt,inf
-from numpy import NaN
+from numpy import nan
 
 from regpy.util import Errors
 from regpy.operators import CoordinateMask 
@@ -231,7 +231,7 @@ class SemismoothNewton_bilateral(RegSolver):
         if not isQuadratic(setting.penalty):
             out['info'] += 'Penalty term not quadratic.'
         out['applicable'] = out['info']==''
-        out['rate'] = NaN
+        out['rate'] = nan
         return out
 
 def isQuadratic(func):
