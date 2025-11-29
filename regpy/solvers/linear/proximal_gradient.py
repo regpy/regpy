@@ -74,7 +74,7 @@ class ForwardBackwardSplitting(RegSolver):
             if out['rate']<1.:
                 out['info'] += "Expected linear convergence rate: {:.3e}.".format(out['rate'])
             else:
-                out['info'] += "Expected convergen rate O(1/n^2)."
+                out['info'] += "Expected convergen rate O(1/n)."
                 out['rate'] = -1
         return out, par
 

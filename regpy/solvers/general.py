@@ -558,7 +558,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
 
-    def _evaluate_methods(self):
+    def evaluate_methods(self):
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
         self._methods = {
             'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
@@ -597,11 +597,12 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         print('Applicable methods:\n')
         for name,method in self.applicable_methods().items():
             print(name, (' ('+method['full']+'): ' if full_names else ''),
-                  method['info'],'linear rate: {:.3e}\n'.format(method['rate']))
+                  method['info'],'linear rate: {:.3e}'.format(method['rate']))
         print('\n Non-applicable methods:\n')
         for name,method in self._methods.items(): 
             if method['applicable']==False:
-                print(name,' (',method['full'],'): ',method['info'],'\n')
+                print(name, (' ('+method['full']+'): ' if full_names else ''),
+                      method['info'])
 
     def select_best_method(self):
         """Returns the name of the applicable method with the best convergence rate predicted by theory 
@@ -627,7 +628,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
         if not method_name in self._methods.keys():
-            raise ValueError(f"{name} is unknown method key.")
+            raise ValueError(f"{method_name} is unknown method key.")
         self._methods[method_name]['stoprule'] = rule
 
     def get_stopping_rule(self,method_name):
@@ -641,7 +642,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         """
         if not method_name in self._methods.keys():
             raise ValueError(f"{method_name} is unknown method key.")
-        if 'stoprule' not in self.methods[method_name]:
+        if 'stoprule' not in self._methods[method_name]:
             raise RuntimeError(f'Method {method_name} has not StopRule.')
         else:
             return self._methods[method_name]['stoprule']   
@@ -669,7 +670,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
         thesetting = self if themethod['primal'] else self.dualSetting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            themethod['stoprule'] = DualityGapStopping(thesetting,threshold = 1.,logging_level=logging.INFO) + CountIterations(max_iterations=1000)
+            themethod['stoprule'] = DualityGapStopping(thesetting,threshold = 0.1,logging_level=logging.INFO) + CountIterations(max_iterations=1000)
 
         
         solver = themethod['class'](thesetting,**kwargs)
