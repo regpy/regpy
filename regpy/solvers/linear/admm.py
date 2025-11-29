@@ -232,12 +232,12 @@ class AMA(RegSolver):
 
     def _next(self):
         Tstar_p = self.op.adjoint(self.gramY(self.p))
-        self.f = self.penalty.conj.subgradient(Tstar_p)
-        if not self.penalty.is_subgradient(Tstar_p,self.f):
+        self.x = self.penalty.conj.subgradient(Tstar_p)
+        if not self.penalty.is_subgradient(Tstar_p,self.x):
             raise Warning('update f may not be correct')
-        Tf = self.op(self.f)
-        self.g = self.data_fid.proximal(Tf-(1./self.gamma)*self.p,1./self.gamma)
-        self.p += self.gamma*(self.g - Tf) 
+        self.y = self.op(self.x)
+        self.g = self.data_fid.proximal(self.y-(1./self.gamma)*self.p,1./self.gamma)
+        self.p += self.gamma*(self.g - self.y) 
 
         if self.compute_dual:
             self._compute_dual()
