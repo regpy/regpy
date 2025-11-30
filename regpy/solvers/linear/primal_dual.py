@@ -1,4 +1,5 @@
 import math as ma
+import numpy as np
 
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
@@ -129,7 +130,7 @@ class PDHG(RegSolver):
                     out['rate']=-2
             else:
                 out['info']='Using unaccelerated version.'
-                out['rate']=0
+                out['rate']=np.nan
                 theta =0.
             par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
