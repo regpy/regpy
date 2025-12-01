@@ -442,6 +442,7 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
 
     def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None, 
                  primal_setting=None,logging_level = "INFO",gap_threshold = 1e5):
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
         #TODO check that penalty and data_fid are convex!
         if not op.linear:
             raise ValueError('Operator must be linear in Tikhonov regularization setting')
@@ -453,6 +454,20 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         if primal_setting is not None and not isinstance(primal_setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
         self.primal_setting = primal_setting
+        if primal_setting is None:
+            self._methods = {
+                'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
+                'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
+                'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
+                'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
+                'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
+                'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
+                'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
+                'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
+                'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
+                'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+            }
+
 
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
@@ -584,23 +599,24 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
+    def evaluate_methods(self,method_names = None):
+        """Evaluates which methods are applicable to the current TikhonovRegularizationSetting. 
+        This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
-    def evaluate_methods(self):
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
-        self._methods = {
-            'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
-            'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
-            'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
-            'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
-            'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
-            'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
-            'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
-            'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
-            'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
-            'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
-        }
-        op_norm = self.op.norm()
-        for method_name, method in self._methods.items():
+        Parameters:
+        method_names: List of strings or None [default:None]
+            List of names of methods to be evaluated. If None, all methods are evaluated.   
+        """
+        if method_names is None:
+            method_names = self._methods.keys()
+        else:
+            for method_name in method_names:
+                if not method_name in self._methods:
+                    raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
+        if len(method_names)>0:
+            op_norm = self.op.norm()
+        for method_name in method_names:
+            method = self._methods[method_name]
             out,_ = method['class'].check_applicability(self if method['primal'] else self.dualSetting(),op_norm=op_norm)
             if not method['primal'] and not 'subgradient' in self.penalty.conj.methods:
                 method['info'] = ('' if out['applicable'] else out['info']) + 'Missing subgradient of conjugate penalty.'
@@ -614,13 +630,16 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
     def applicable_methods(self):
         """Yields subdictionary of the methods that can be applied to the given Tikhonov functional.
         """
+        if any('applicable' not in self._methods[name] for name in self._methods.keys()):
+            self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
     def display_all_methods(self,full_names=True):
         """
         Displays all the methods for minimizing Tikhonov functionals together with information 
-        on their applicability to the given functional. 
+        on their applicability to the given Tikhonov functional. 
         """
+        self.evaluate_methods()
         print('Applicable methods:\n')
         for name,method in self.applicable_methods().items():
             print(name, (' ('+method['full']+'): ' if full_names else ''),
@@ -654,7 +673,7 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
-        if not method_name in self._methods.keys():
+        if method_name not in self._methods.keys():
             raise ValueError(f"{method_name} is unknown method key.")
         self._methods[method_name]['stoprule'] = rule
 
@@ -692,12 +711,14 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         if not method_name in self._methods:
             raise ValueError('Unknown method name')
         themethod= self._methods[method_name]
+        if not 'applicable' in themethod:
+            self.evaluate_methods(themethod) 
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting.')
 
         thesetting = self if themethod['primal'] else self.dualSetting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            themethod['stoprule'] = DualityGapStopping(thesetting,threshold = 0.1,logging_level=logging.INFO) + CountIterations(max_iterations=1000)
+            self.set_stopping_rule(method_name, DualityGapStopping(thesetting,threshold = 0.1,logging_level=logging.INFO) + CountIterations(max_iterations=1000))
 
         
         solver = themethod['class'](thesetting,**kwargs)
