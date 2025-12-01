@@ -1,4 +1,5 @@
 import math as ma
+import numpy as np
 
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
@@ -124,12 +125,13 @@ class PDHG(RegSolver):
                     out['rate']=(1.+theta)/(2.+mu)
                     out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(muR,muSstar,L,out['rate'])
                 else:
-                    theta = 0
+                    theta = 0.
                     out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
                     out['rate']=-2
             else:
                 out['info']='Using unaccelerated version.'
-                out['rate']=0
+                out['rate']=np.nan
+                theta =0.
             par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 

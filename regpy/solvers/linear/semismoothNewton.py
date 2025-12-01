@@ -82,8 +82,11 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            if not isinstance(setting,TikhonovRegularizationSetting):
+            if not isinstance(Tsetting,TikhonovRegularizationSetting):
                 raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one arguments the setting must be a TikhonovRegularizationSetting"))
+            out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
+            if not out['applicable']:
+                raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
             R = Tsetting.penalty
             gram = Tsetting.h_domain.gram
             psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
@@ -102,9 +105,6 @@ class SemismoothNewton_bilateral(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewton_bilateral in as a linear solver requires the operator to be linear!"))
         if self.op.domain.dtype != float:
             raise TypeError(Errors.type_error("SemismoothNewton_bilateral requires the domain to be real!"))
-        out = SemismoothNewton_bilateral.check_applicability(setting)
-        if not out['applicable']:
-            raise RuntimeError('SemismoothNewton_bilatteral not applicable to this setting. '+out['info'])
         self.data=data
         """The measured data"""
         self.regpar=regpar * alpha_fac
@@ -227,36 +227,48 @@ class SemismoothNewton_bilateral(RegSolver):
     def check_applicability(setting,op_norm=None):
         out = {'info':''}
         if not isQuadratic(setting.data_fid):
-            out['info'] += 'Data functional not quadratic.'
+            out['info'] += 'Data functional not quadratic. '
         if not isQuadratic(setting.penalty):
-            out['info'] += 'Penalty term not quadratic.'
+            out['info'] += 'Penalty term not quadratic. '
         out['applicable'] = out['info']==''
         out['rate'] = np.nan
-        return out
+        return out, None
 
 def isQuadratic(func):
     r"""checks if a functional is quadratic."""
-
-    if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg,QuadraticLowerBound)):
+    print("")
+    if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
         return True
     elif isinstance(func,LppPower):
         return func.p==2
     elif isinstance(func,HorizontalShiftDilation):
-        return isQuadratic(func.F)
+        return isQuadratic(func.func)
     elif isinstance(func,LinearCombination):
-        if len(func.coeffs!=1):
+        if len(func.coeffs)!=1:
             return False
         else:
             return isQuadratic(func.funcs[0])
     elif isinstance(func,Conj):
-        if isinstance(func.F, Huber):
-            return True
-        else:
-           return isQuadratic(func.F)
+        return isQuadraticConj(func.func)
     else:
         return False
-    
 
+def isQuadraticConj(func):
+    if isinstance(func, Huber):
+        return True
+    elif isinstance(func,LppPower):
+        return func.p==2
+    elif isinstance(func,HorizontalShiftDilation):
+        return isQuadraticConj(func.func)
+    elif isinstance(func,LinearCombination):
+        if len(func.coeffs)!=1:
+            return False
+        else:
+            return isQuadraticConj(func.funcs[0])        
+    else:
+        return False
+
+ 
 
 def getPenaltyParamsFromFunctional(R,gram=None):
     r"""
@@ -278,7 +290,7 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     if isinstance(R,QuadraticBilateralConstraints):
         return R.ub, R.lb, R.x0, 1.
     elif isinstance(R,HorizontalShiftDilation):
-        ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.F,gram)
+        ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.func,gram)
         if R.shift is None:
             shift = R.domain.zeros()
         else:
@@ -323,7 +335,7 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
     elif isinstance(Rs,HorizontalShiftDilation):
         if Rs.dilation != 1.:
             raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
-        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.F,gram)
+        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.func,gram)
         return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
     else:
         raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional.'))
@@ -377,7 +389,7 @@ class SemismoothNewton_nonneg(RegSolver):
             raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
         if xref is not None and xref not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
-        out = SemismoothNewton_nonneg.check_applicability(setting)
+        out, _ = SemismoothNewton_nonneg.check_applicability(setting)
         if not out['applicable']:
             raise RuntimeError('SemismoothNewton_nonneg not applicable to this setting. '+out['info'])
         self.data=data
@@ -436,7 +448,7 @@ class SemismoothNewton_nonneg(RegSolver):
             out['info'] = '' if out['applicable'] else out['info']
             out['applicable'] = False
             out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
-        return out
+        return out, None
 
     def _next(self):
 

@@ -1,4 +1,5 @@
 import math as ma
+import numpy as np
 from scipy.sparse.linalg import eigsh
 
 
@@ -7,7 +8,7 @@ from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import SquaredNorm, QuadraticLowerBound, QuadraticNonneg, QuadraticBilateralConstraints
-from regpy.stoprules import NoneRule,DualityGapStopping,CombineRules,CountIterations
+from regpy.stoprules import StopRule,NoneRule,DualityGapStopping,CombineRules,CountIterations
 from numpy import inf
 import logging
 
@@ -452,7 +453,7 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         if primal_setting is not None and not isinstance(primal_setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
         self.primal_setting = primal_setting
-    
+
     def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
 
@@ -582,4 +583,128 @@ class TikhonovRegularizationSetting(NonconvexTikhonovRegularizationSetting):
         """
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
+
+
+    def evaluate_methods(self):
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
+        self._methods = {
+            'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
+            'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
+            'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
+            'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
+            'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
+            'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
+            'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
+            'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
+            'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
+            'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+        }
+        op_norm = self.op.norm()
+        for method_name, method in self._methods.items():
+            out,_ = method['class'].check_applicability(self if method['primal'] else self.dualSetting(),op_norm=op_norm)
+            if not method['primal'] and not 'subgradient' in self.penalty.conj.methods:
+                method['info'] = ('' if out['applicable'] else out['info']) + 'Missing subgradient of conjugate penalty.'
+                method['applicable'] = False
+            else:
+                method['applicable'] = out['applicable']
+                method['info'] = out['info']
+                if out['applicable']:
+                    method['rate'] = out['rate']
+
+    def applicable_methods(self):
+        """Yields subdictionary of the methods that can be applied to the given Tikhonov functional.
+        """
+        return {name:method for name, method in self._methods.items() if method['applicable']}
         
+    def display_all_methods(self,full_names=True):
+        """
+        Displays all the methods for minimizing Tikhonov functionals together with information 
+        on their applicability to the given functional. 
+        """
+        print('Applicable methods:\n')
+        for name,method in self.applicable_methods().items():
+            print(name, (' ('+method['full']+'): ' if full_names else ''),
+                  method['info'],'linear rate: {:.3e}'.format(method['rate']))
+        print('\n Non-applicable methods:\n')
+        for name,method in self._methods.items(): 
+            if method['applicable']==False:
+                print(name, (' ('+method['full']+'): ' if full_names else ''),
+                      method['info'])
+
+    def select_best_method(self):
+        """Returns the name of the applicable method with the best convergence rate predicted by theory 
+        and the convexity and Lipschitz parameters of the data and penalty functional.
+        (Since comparisons of first and second order methods are difficult, we only choose among first 
+        order methods, and to achieve this, we set convergence rates of second order method >1.)
+        """
+        d = self.applicable_methods()
+        best_method_name = min(d, key=lambda name: np.abs(d[name]['rate']))
+        if isinstance(d[best_method_name]['rate'],int):
+            best_method_name = min(d, key=lambda name: np.abs(d[name]['rate']))
+        self.log.info('Choose '+best_method_name+' as best method.')
+        return best_method_name
+
+    def set_stopping_rule(self,method_name,rule):
+        """Sets a StopRule for an optimization method.
+        Parameters:
+        method_name: string 
+            key of the method
+        rule: StopRule
+            the stopping rule
+        """
+        if not isinstance(rule,StopRule):
+            raise TypeError(f"rule must be of class StopRule. Got{rule}.")
+        if not method_name in self._methods.keys():
+            raise ValueError(f"{method_name} is unknown method key.")
+        self._methods[method_name]['stoprule'] = rule
+
+    def get_stopping_rule(self,method_name):
+        """Retrieves a stopping rule that has run an optimization method 
+        (e.g. to view statistics or (intermediate) solutions)
+        Parameters:
+        method_name: string
+            Key of the method
+        Returns:
+        StopRule
+        """
+        if not method_name in self._methods.keys():
+            raise ValueError(f"{method_name} is unknown method key.")
+        if 'stoprule' not in self._methods[method_name]:
+            raise RuntimeError(f'Method {method_name} has not StopRule.')
+        else:
+            return self._methods[method_name]['stoprule']   
+
+    def run(self,method_name = None,**kwargs):
+        """Runs a given method to minimize the Tikhonov functional.
+        
+        Parameters:
+        method_name: string or None [default: None] 
+            Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
+            If None the "best" method is selected by select_best_method().
+        **kwargs: dict
+            Arguments to be passed to the method.
+
+        Returns:
+            x,y: x is the minimizer of the Tikhonov functional and y its value under the operator.         
+        """
+        if method_name is None:
+            method_name = self.select_best_method()
+        if not method_name in self._methods:
+            raise ValueError('Unknown method name')
+        themethod= self._methods[method_name]
+        if themethod['applicable'] == False:
+            raise RuntimeError(f'{method_name} is not applicable in this setting.')
+
+        thesetting = self if themethod['primal'] else self.dualSetting()
+        if 'stoprule' not in themethod or themethod['stoprule'] is None:
+            themethod['stoprule'] = DualityGapStopping(thesetting,threshold = 0.1,logging_level=logging.INFO) + CountIterations(max_iterations=1000)
+
+        
+        solver = themethod['class'](thesetting,**kwargs)
+        x,y = solver.run(themethod['stoprule'])
+        
+        if themethod['primal']==False:
+            x_star,y_star = x,y
+            x = self.dualToPrimal(y_star,argumentIsOperatorImage=True)
+            y = self.op(x)
+        return x,y
