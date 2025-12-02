@@ -392,7 +392,11 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
 
     def _set_flags(self):
-        pass
+        if(self.regpar is not None):
+            self.is_tikhonov=True
+        if(self.op.linear):
+            #TODO check for convexity
+            self.is_convex=True
 
     @property
     def regpar(self):
