@@ -377,11 +377,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             self.data_fid = self.data_fid.shift(data_fid_shift)
         else:
             self.data_fid_shift = None
-        if not isinstance(regpar,(float,int)):
-            raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
-        if regpar <= 0:
-            raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
-        self.regpar = float(regpar)
+        self.regpar=regpar
         self.log.setLevel(logging_level)
         #TODO check that penalty and data_fid are convex!
         if not op.linear:
@@ -397,6 +393,21 @@ class TikhonovRegularizationSetting(RegularizationSetting):
 
     def _set_flags(self):
         pass
+
+    @property
+    def regpar(self):
+        return self._regpar
+
+    @regpar.setter
+    def regpar(self,new_regpar):
+        if(new_regpar is not None):
+            if not isinstance(new_regpar,(float,int)):
+                raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
+            if new_regpar <= 0:
+                raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
+            new_regpar = float(new_regpar)
+        self._regpar=new_regpar
+        self._set_flags()
 
 
     def dualSetting(self):
