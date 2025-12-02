@@ -68,6 +68,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
         
     if test_methods:
         _ = call_safe(op,"_eval",errors,full_dom.rand())
+        op.reset_detect_loop()
         tup = call_safe(op,"linearize",errors, dom.rand())
         if tup is None:
             errors.append(f"The Operator {op} being initiated with {args} and {kwargs} returned from linearize None.")
