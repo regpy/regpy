@@ -7,7 +7,7 @@ from scipy.io import loadmat
 import regpy.stoprules as rules
 
 from regpy.operators import PtwMultiplication
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import Setting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
@@ -59,7 +59,7 @@ def test_mri():
 
     # ### Set up regularization method
 
-    setting = RegularizationSetting(op=parallel_mri_op, penalty=L2, data_fid=L2)
+    setting = Setting(op=parallel_mri_op, penalty=L2, data_fid=L2)
 
     solver = IrgnmCG(
         setting=setting,

@@ -1532,9 +1532,9 @@ class Composed(Functional):
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver
         if isinstance(self.func,SquaredNorm) and self.func.a == 1 and (self.func.b == 0).all() and self.func.c == 0 and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
             from regpy.solvers.linear.tikhonov import TikhonovCG
-            from regpy.solvers import RegularizationSetting
+            from regpy.solvers import Setting
             f, _ = TikhonovCG(
-                setting=RegularizationSetting(self.op.op, hilbert.L2, self.func.h_domain),
+                setting=Setting(self.op.op, hilbert.L2, self.func.h_domain),
                 data=-self.op.offset,
                 xref=x,
                 regpar=tau,

@@ -5,7 +5,7 @@ from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 
 __all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov"]
 
@@ -27,12 +27,12 @@ class TikhonovCG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : setting.op.codomain [default: None]
         The measured data. 
         If None, then setting must have SquaredNorm as data fidelity and penalty term. In this case xref is ignored, 
-        and if setting is a TikhonovRegularizationSetting, then also regpar is ignored.
+        and if setting is a Setting, then also regpar is ignored.
         If not None, then setting.penalty and setting.data_fid are ignored except for their Hilbert space structures. 
     regpar : float [default:None]
         The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
@@ -82,7 +82,7 @@ class TikhonovCG(RegSolver):
                 self.log.warning('Ignoring given parameter xref')        
             xref = (-1./self.penalty.a) * self.penalty.b
 
-        if isinstance(setting,TikhonovRegularizationSetting):
+        if(setting.is_tikhonov):
             if regpar is not None:
                 self.log.warning('Ignoring given value of regularization parameter')
             regpar = (self.penalty.a/self.data_fid.a) * self.regpar
@@ -291,7 +291,7 @@ class TikhonovAlphaGrid(RegSolver):
 
     Parameters
     ----------
-    setting:  regpy.solvers.RegularizationSetting
+    setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
         The right hand side.
@@ -366,7 +366,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
 
     Parameters
     ----------
-    setting:  regpy.solvers.RegularizationSetting
+    setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
         The right hand side.
@@ -457,13 +457,13 @@ class TikhonovCGOnlyDomain(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     backprop_data : setting.op.domain [default: None]
         The back propagated measured data given by :math:`T^\ast g^\delta`. Note that you have to incorporate the 
         appropriate Gram matrix of the codomain in this back propagation!
     regpar : float [default:None]
-        The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
+        The regularization parameter. Must be positive. If None, then setting must not contain it. 
     xref: setting.op.domain [default: None]
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: setting.op.domain  [default: None]
@@ -514,8 +514,8 @@ class TikhonovCGOnlyDomain(RegSolver):
         """The back propagated data :math:`T^\ast g^\delta`."""
 
         if regpar is None:
-            if not isinstance(setting, TikhonovRegularizationSetting):
-                raise ValueError(Errors.value_error("If regpar is None, setting must be an instance of TikhonovRegularizationSetting"))
+            if not setting.is_tikhonov:
+                raise ValueError(Errors.value_error("If regpar is None, setting must contain the regularization parameter."))
             self.regpar = setting.regpar
         elif isinstance(regpar, (int, float)) and regpar > 0:
             self.regpar = regpar

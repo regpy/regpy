@@ -368,9 +368,8 @@ class Monotonicity(StopRule):
 
 class DualityGapStopping(StopRule):
     def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
-        from regpy.solvers import TikhonovRegularizationSetting
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="For the Duality gap stopping rule the setting needs to be a TikhonovRegularizationSetting!"))
+        if not setting.is_tikhonov and setting.is_convex:
+            raise ValueError("For the Duality gap stopping rule the setting needs to be a convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
         if threshold is not None:
@@ -386,11 +385,11 @@ class DualityGapStopping(StopRule):
 
     def _stop(self, x, y=None, dual=None):
         if dual is not None:
-            gap = self.setting.dualityGap(primal = x, dual = dual)
+            gap = self.setting.duality_gap(primal = x, dual = dual)
         elif y is not None:
-            gap = self.setting.dualityGap(primal = x,dual=self.setting.primalToDual(y,argumentIsOperatorImage=True))
+            gap = self.setting.duality_gap(primal = x,dual=self.setting.primal_to_dual(y,argumentIsOperatorImage=True))
         else:
-            gap = self.setting.dualityGap(primal = x)
+            gap = self.setting.duality_gap(primal = x)
         self.history_dict["duality gap"].append(gap)
         gap_stop = gap<=self.cutoff
         self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      

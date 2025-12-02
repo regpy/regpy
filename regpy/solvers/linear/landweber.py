@@ -24,7 +24,7 @@ class Landweber(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data/right hand side.

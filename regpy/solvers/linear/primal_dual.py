@@ -4,7 +4,7 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, TikhonovRegularizationSetting, RegularizationSetting
+from ..general import RegSolver, Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -25,7 +25,7 @@ class PDHG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
     init_domain : setting.op.domain [default: None]
@@ -54,8 +54,8 @@ class PDHG(RegSolver):
                  proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
                  compute_y = True, logging_level = "INFO"
                  ):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="PDHG requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("PDHG requires the setting to contain a regularization parameter!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
@@ -72,11 +72,11 @@ class PDHG(RegSolver):
                 self.pstar = setting.op.codomain.zeros()
             else:
                 self.pstar = init_codomain_star
-                self.x = setting.dualToPrimal(self.pstar)
+                self.x = setting.dual_to_primal(self.pstar)
         else:
             self.x = init_domain
             if init_codomain_star is None:
-                self.pstar = setting.primalToDual(self.x)
+                self.pstar = setting.primal_to_dual(self.x)
             else:
                 self.pstar = init_codomain_star
         self.dual = self.pstar
@@ -161,7 +161,7 @@ class DouglasRachford(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.
@@ -183,15 +183,15 @@ class DouglasRachford(RegSolver):
         if init_h not in self.op.domain:
             raise ValueError(Errors.value_error('init_h must be in the domain of the operator!'))
         self.h = init_h
-        if isinstance(setting, TikhonovRegularizationSetting) and setting.op.domain != setting.op.codomain:
+        if setting.is_tikhonov and setting.op.domain != setting.op.codomain:
             if setting.data_fid_shift is None:
-                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting the data_fid_shift must be given!'))
+                raise ValueError(Errors.value_error('If the regularization parameter is given, the data_fid_shift must be given!'))
             if not isinstance(self.data_fid,SquaredNorm):
-                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!'))
-            self.log.info('Using TikhonovRegularizationSetting. The data fidelity term is reshifted and composed with the .')
+                raise ValueError(Errors.value_error('For setting with not matching domains the data_fid must be a SquaredNorm functional!'))
+            self.log.info('Using Tikhonov regularization setting. The data fidelity term is reshifted and composed with the operator.')
             self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
-        elif isinstance(setting, RegularizationSetting) and setting.op.domain != setting.op.codomain:
-            raise ValueError(Errors.value_error('For RegularizationSetting the operator must be mapping from a space to itself!'))
+        elif not setting.is_tikhonov and setting.op.domain != setting.op.codomain:
+            raise ValueError(Errors.value_error('If no regularization parameter is given, the operator must be mapping from a space to itself!'))
         else:
             self.data_fid_adjusted = self.data_fid
 

@@ -36,7 +36,7 @@ class NgsL1(Functional):
     r"""Implementation of the :math:`L^1`-norm on a given `NgsVectorSpace`. It is registered under the
     Abstract functional `L1` and should not be called directly but rather used by defining the 
     abstract `L1` functional as the `penalty` or `data_fid` when initializing the regularization
-    setting by calling `regpy.solvers.RegularizationSetting`.
+    setting by calling `regpy.solvers.Setting`.
 
     Parameters
     ----------
@@ -79,7 +79,7 @@ class NgsTV(Functional):
     r"""Implementation of the total variation functional :math:`TV` on a given `NgsVectorSpace`. It is 
     registered under the Abstract functional `TV` and should not be called directly but rather 
     used by defining the abstract `TV` functional as the `penalty` or `data_fid` when initializing 
-    the regularization setting by calling `regpy.solvers.RegularizationSetting`.
+    the regularization setting by calling `regpy.solvers.Setting`.
 
     Parameters
     ----------

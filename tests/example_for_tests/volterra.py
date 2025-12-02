@@ -5,8 +5,7 @@ import numpy as np
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2, Sobolev
 from regpy.functionals import HilbertNorm, TV
-from regpy.solvers import RegularizationSetting, TikhonovRegularizationSetting
-from regpy.solvers.general import NonconvexTikhonovRegularizationSetting
+from regpy.solvers import Setting
 import regpy.stoprules as rules
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.solvers.nonlinear.landweber import Landweber
@@ -31,7 +30,7 @@ def test_volterra():
     noise = 0.03 * op.domain.randn()
     data = exact_data + noise
 
-    setting = RegularizationSetting(op, L2, L2)
+    setting = Setting(op, L2, L2)
 
     solver = TikhonovCG(setting, data, regpar=0.01)
     stoprule = (
@@ -52,7 +51,7 @@ def test_volterra():
     data = exact_data + noise
     init = op.domain.ones()*0.05
 
-    setting = RegularizationSetting(op, Sobolev, L2)
+    setting = Setting(op, Sobolev, L2)
 
     solver = Landweber(setting, data, init, stepsize=0.01)
     stoprule = (
@@ -79,7 +78,7 @@ def test_volterra():
     init = op.domain.ones()
 
     #The penalty term |f|_{TV}
-    setting = NonconvexTikhonovRegularizationSetting(
+    setting = Setting(
         op=op, 
         penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 

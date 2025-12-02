@@ -2,7 +2,7 @@ import sys
 
 from regpy.operators import CoordinateProjection
 from regpy.hilbert import L2, Hm
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import Setting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 import regpy.util as util
@@ -45,7 +45,7 @@ def test_mediumscattering():
     init = op.domain.zeros()
 
     myh_domain = Hm(mask = scattering.support,dtype=complex,index=2)
-    setting = RegularizationSetting(
+    setting = Setting(
         op=op,
         # Define Sobolev norm on support via embedding
         #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
