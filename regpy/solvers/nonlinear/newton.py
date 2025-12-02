@@ -4,7 +4,7 @@ from copy import deepcopy
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
 
-from ..general import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 from ..linear import SemismoothNewton_bilateral
 from ..linear.tikhonov import GeometricSequence
 
@@ -248,7 +248,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
 
     def _next(self):
         self.lin_NSS = SemismoothNewton_bilateral(
-            TikhonovRegularizationSetting(
+            Setting(
                 self.deriv,
                 self.penalty,
                 self.data_fid

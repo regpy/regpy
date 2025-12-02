@@ -5,7 +5,7 @@ from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting, Setting
 
 __all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov"]
 

@@ -187,8 +187,8 @@ class RegSolver(Solver):
     """
 
     def __init__(self,setting,x=None,y=None):
-        if not (isinstance(setting,TikhonovRegularizationSetting) or isinstance(setting,TikhonovRegularizationSetting)):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting))
+        if not (isinstance(setting,Setting) or isinstance(setting,Setting)):
+            raise TypeError(Errors.not_instance(setting,Setting))
         self.op=setting.op
         """The operator."""
         self.penalty = setting.penalty
@@ -233,7 +233,7 @@ class RegSolver(Solver):
 
         
 
-class TikhonovRegularizationSetting:
+class Setting:
 
     log = ClassLogger()
 
@@ -270,7 +270,7 @@ class TikhonovRegularizationSetting:
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
         self.primal_setting = primal_setting
         if primal_setting is None:
-            self._methods = TikhonovRegularizationSetting.method_dict
+            self._methods = Setting.method_dict
 
 
     def _set_flags(self):
@@ -294,7 +294,7 @@ class TikhonovRegularizationSetting:
         self._regpar=new_regpar
         self._set_flags()
 
-    ######Convenience check methods
+    ######General convenience methods
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
@@ -370,18 +370,8 @@ class TikhonovRegularizationSetting:
         else:
             _ , deriv = self.op.linearize(y)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
-        
-    def is_hilbert_setting(self):
-        r"""Assert if the setting is a Hilbert space setting. 
 
-        Returns
-        -------
-        Boolean
-            True if both `penalty` and `data_fid` are `SquaredNorm` functionals. 
-        """
-        return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
-
-
+    ######Methods exploiting duality
     def get_dual_setting(self):
         r"""Yields the setting of the dual optimization problem
 
@@ -394,7 +384,7 @@ class TikhonovRegularizationSetting:
         if(not self.is_convex):
             raise RuntimeError("The setting has to be convex for the computation of a dual setting.")
 
-        return TikhonovRegularizationSetting(
+        return Setting(
             self.op.adjoint,
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
@@ -552,7 +542,7 @@ class TikhonovRegularizationSetting:
 
 
 
-
+    ######Methods checking applicability
     def evaluate_methods(self,method_names = None):
         """Evaluates which methods are applicable to the current TikhonovRegularizationSetting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.

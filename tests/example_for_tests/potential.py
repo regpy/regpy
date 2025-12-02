@@ -7,7 +7,7 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
-from regpy.solvers import TikhonovRegularizationSetting
+from regpy.solvers import Setting
 
 from . import import_example_package
 
@@ -26,7 +26,7 @@ def test_potential():
         radius=1.3
     )
 
-    setting = TikhonovRegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
+    setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
 
     #Exact data and Poission data
     exact_solution = op.domain.sample(lambda t: np.sqrt(3*np.cos(t)**2+1)/2)

@@ -8,7 +8,7 @@ from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, Li
 from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting, Setting
 from .tikhonov import TikhonovCG,GeometricSequence
 
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
@@ -93,7 +93,7 @@ class SemismoothNewton_bilateral(RegSolver):
             regpar= Tsetting.regpar
             gramY = Tsetting.h_codomain.gram
             data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.codomain.zeros()))
-            setting = TikhonovRegularizationSetting(Tsetting.op,
+            setting = Setting(Tsetting.op,
                                             GramHilbertSpace(R.hessian(0.5*(psi_plus+psi_minus))),
                                             GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
                                             )
@@ -147,7 +147,7 @@ class SemismoothNewton_bilateral(RegSolver):
         self.lam_minus = self.op.domain.zeros()
 
         tikhcg=TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -191,7 +191,7 @@ class SemismoothNewton_bilateral(RegSolver):
             self.log.info('all indices active!')
         else:
             tikhcg = TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
                 data=self.data-self.op(self.x-projection(self.x)), 
                 regpar=self.regpar,
                 xref=projection(self.xref),
@@ -423,7 +423,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
         self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -468,7 +468,7 @@ class SemismoothNewton_nonneg(RegSolver):
             self.log.debug('all indices active!')
         else:
             tikhcg=TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
                 data=self.data-self.op(self.x-projection(self.x)), 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -565,7 +565,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
             self.alpha = next(self._alphas)
         except StopIteration:
             return self.converge()
-        setting = TikhonovRegularizationSetting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
+        setting = Setting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
         inner_stoprule = CountIterations(max_iterations=self.max_Newton_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")

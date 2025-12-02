@@ -1,7 +1,7 @@
 from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting, Setting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM","AMA"]
@@ -104,7 +104,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,
@@ -137,7 +137,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,

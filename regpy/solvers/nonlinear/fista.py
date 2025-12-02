@@ -2,7 +2,7 @@ from math import sqrt,inf
 import numpy as np
 
 from regpy.util import Errors
-from ..general import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 
 __all__ = ["FISTA"]
 

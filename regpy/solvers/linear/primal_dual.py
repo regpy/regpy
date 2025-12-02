@@ -4,7 +4,7 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting, Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 

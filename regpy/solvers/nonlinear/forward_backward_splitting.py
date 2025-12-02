@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 
 __all__ = ["ForwardBackwardSplitting"]
 
