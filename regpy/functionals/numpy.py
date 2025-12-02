@@ -1561,21 +1561,23 @@ class Huber(IntegralFunctionalBase):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSPaceFcts isntance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
             raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
-        if isinstance(sigma, (float,int)) :
+        if isinstance(sigma,int):
+            self.sigma = np.broadcast_to(np.real(float(sigma)),domain.shape)
+        if isinstance(sigma, float):
             self.sigma = np.broadcast_to(np.real(sigma),domain.shape)
         else:
             self.sigma = np.real(sigma)
         if np.min(sigma)<=0:
             raise ValueError(Errors.value_error(f'sigma must be positive. min(sigma)={np.min(sigma)}',self))
         if as_primal:
-            super().__init__(domain,Lipschitz=1,
+            super().__init__(domain,Lipschitz=1.,
                              conj_dom_l=-self.sigma, conj_dom_u = self.sigma,
                              **kwargs)
             self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
         else:
             dual_domain = deepcopy(domain)
             dual_domain.measure = 1./domain.measure
-            super().__init__(dual_domain, Lipschitz=1, **kwargs)
+            super().__init__(dual_domain, Lipschitz=1., **kwargs)
         # auxiliary vectors
         self._abs_u = self.domain.zeros() 
         self._small = np.zeros(self.domain.shape,dtype=bool)
@@ -1909,7 +1911,7 @@ class QuadraticPositiveSemidef(Functional):
             self.trace_val=trace_val
         else:
             self.has_trace_constraint=False
-        super().__init__(domain,Lipschitz=1,convexity_param=1,**kwargs)
+        super().__init__(domain,Lipschitz=1.,convexity_param=1.,**kwargs)
 
     def is_in_essential_domain(self,rho):
         if(not ishermitian(rho,atol=self.tol)):
