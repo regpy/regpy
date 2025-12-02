@@ -188,7 +188,7 @@ class FISTA(RegSolver):
         return out, par
 
     def _compute_dual(self):
-        self.dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True,own=True)
+        self.dual=self.setting.primal_to_dual(self.y,argumentIsOperatorImage=True,own=True)
 
 
     def _next(self):
