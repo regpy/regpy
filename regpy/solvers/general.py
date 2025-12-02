@@ -379,7 +379,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             self.data_fid_shift = None
         self.regpar=regpar
         self.log.setLevel(logging_level)
-        #TODO check that penalty and data_fid are convex!
         if not op.linear:
             raise ValueError('Operator must be linear in Tikhonov regularization setting')
         self.gap_threshold = gap_threshold
@@ -395,7 +394,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if(self.regpar is not None):
             self.is_tikhonov=True
         if(self.op.linear):
-            #TODO check for convexity
+            #TODO check for convexity of data fidelity and penalty
             self.is_convex=True
 
     @property
@@ -421,6 +420,11 @@ class TikhonovRegularizationSetting(RegularizationSetting):
            \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
 
         """
+        if(not self.is_tikhonov):
+            raise RuntimeError("Incomplete setting: A regularization parameter is required for the computation of a dual setting.")
+        if(not self.is_convex):
+            raise RuntimeError("The setting has to be convex for the computation of a dual setting.")
+
         return TikhonovRegularizationSetting(
             self.op.adjoint,
             self.data_fid.conj.dilation(-self.regpar),
@@ -445,6 +449,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
         """
+        if(not self.is_tikhonov):
+            raise RuntimeError("Incomplete setting: A regularization parameter is required for the computation of a dual primal mapping.")
+        if(not self.is_convex):
+            raise RuntimeError("The setting has to be convex for the computation of a dual primal mapping.")
         if self.primal_setting is None or own == True:
             if argumentIsOperatorImage:
                 return self.penalty.conj.subgradient(pstar)
@@ -473,6 +481,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
         """
+        if(not self.is_tikhonov):
+            raise RuntimeError("Incomplete setting: A regularization parameter is required for the computation of a primal dual mapping.")
+        if(not self.is_convex):
+            raise RuntimeError("The setting has to be convex for the computation of a primal dual mapping.")
         if self.primal_setting is None or own==True:
             if argumentIsOperatorImage:
                 return (-1./self.regpar) * self.data_fid.subgradient(x)
@@ -494,8 +506,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         dual: setting.op.codomain [default: None]
             dual variable p        
         """
-        if not self.op.linear:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for settings with linear operators!"))
+        if(not self.is_tikhonov):
+            raise RuntimeError("Incomplete setting: A regularization parameter is required for the computation of the duality gap.")
+        if not self.is_convex:
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
         if primal is None and dual is None:
             raise ValueError(Errors.value_error("Either a primal or dual vector need to be given to compute the duality gap!"))
         if primal is None:
@@ -541,6 +555,10 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         tol: float [default: 1e-10]
         Tolerance value
         """
+        if(not self.is_tikhonov):
+            raise RuntimeError("Incomplete setting: A regularization parameter is required for this check.")
+        if not self.is_convex:
+            raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
