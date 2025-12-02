@@ -41,7 +41,7 @@ class IrgnmSemiSmooth(RegSolver):
     """
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
         super().__init__(setting)
-        if (psi_minus >= psi_plus).any():
+        if (psi_minus >= psi_plus):
             raise ValueError(Errors.value_error("The upper constraint is less or equal the lower constraint in IrgnmSemiSmooth. Given: "+"\n\t "+f"psi_minus = {psi_minus} "+"\t\n "+f"psi_plus = {psi_plus}"))
         self.data=data
         """The measured data"""
