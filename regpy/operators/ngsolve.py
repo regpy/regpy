@@ -617,11 +617,10 @@ class Coefficient(NgsOperator):
             raise ValueError("Neither diffusion nor reaction was selected to be True")
 
 
+
 class ProjectToBoundary(NgsOperator):
     """Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
-    this simplifies to taking ngs.Projector vor the given vectors. Note that to prevent change
-    in the argument the argument will be copied before using ngs.Projector.
-
+    this simplifies to taking ngs.Projector for the given vectors.
     Parameters
     ----------
     domain : NgsVectorSpace
@@ -638,34 +637,32 @@ class ProjectToBoundary(NgsOperator):
         super().__init__(domain, codomain)
         self.linear=True
         self.bdr = codomain.bdr
-        if self.same_domain:
-            self._x_eval = self.codomain.zeros()
-        else:
-            self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
-            self._x_eval = NgsBaseVector(self.gfu_codomain.vec)
-            self.gfu_domain = ngs.GridFunction(self.domain.fes)
-            self._y_eval = NgsBaseVector(self.gfu_domain.vec)
         
     def _eval(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
-            self._x_eval = x.copy()
-            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(self._x_eval.vec)
+            _x_eval = x.copy()
+            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(_x_eval.vec)
+            return _x_eval
         else:
-            self.gfu_domain.vec.data = x.vec
-            self.gfu_codomain.Set(self.gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return self._x_eval
+            gfu_codomain=ngs.GridFunction(self.codomain.fes)
+            gfu_domain=ngs.GridFunction(self.domain.fes)
+            gfu_domain.vec.data = x.vec
+            gfu_codomain.Set(gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+        return NgsBaseVector(gfu_codomain.vec)
 
     def _adjoint(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
-            self._x_eval = x.copy()
-            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(self._x_eval.vec)
-            return self._x_eval
+            _x_eval = x.copy()
+            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(_x_eval.vec)
+            return _x_eval
         else:
-            self.gfu_codomain.vec.data = x.vec
-            self.gfu_domain.Set(self.gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-            return self._y_eval
+            gfu_codomain=ngs.GridFunction(self.codomain.fes)
+            gfu_domain=ngs.GridFunction(self.domain.fes)
+            gfu_codomain.vec.data = x.vec
+            gfu_domain.Set(gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
+            return NgsBaseVector(gfu_codomain.vec)
    
 
 class EIT(NgsOperator):
