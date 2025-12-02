@@ -1,7 +1,7 @@
 from regpy.operators import CoordinateMask
 from regpy.util import Errors
 
-from ..general import RegularizationSetting, RegSolver
+from ..general import Setting, RegSolver
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmSemiSmooth"]
@@ -18,7 +18,7 @@ class IrgnmSemiSmooth(RegSolver):
     
     Parameters
     ----------
-    setting : RegularizationSetting
+    setting : Setting
         Setting for regularization. 
     data : array-like
         Data for reconstruction. Must be in the operators codomain.
@@ -41,7 +41,7 @@ class IrgnmSemiSmooth(RegSolver):
     """
     def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
         super().__init__(setting)
-        if (psi_minus >= psi_plus).any():
+        if (psi_minus >= psi_plus):
             raise ValueError(Errors.value_error("The upper constraint is less or equal the lower constraint in IrgnmSemiSmooth. Given: "+"\n\t "+f"psi_minus = {psi_minus} "+"\t\n "+f"psi_plus = {psi_plus}"))
         self.data=data
         """The measured data"""
@@ -140,7 +140,7 @@ class IrgnmSemiSmooth(RegSolver):
 
         project = CoordinateMask(self.h_domain.vecsp, self.inactive)
         tik = TikhonovCG(
-            setting=RegularizationSetting(self.deriv * project, self.h_domain, self.h_codomain),
+            setting=Setting(self.deriv * project, self.h_domain, self.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,

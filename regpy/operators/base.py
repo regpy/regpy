@@ -18,7 +18,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from regpy import util, vecsps
 
-__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum", "Product", "RealPart", "ImaginaryPart", "SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
+__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum","Product", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
 
 
 class _Revocable:
@@ -564,6 +564,10 @@ class Operator:
                 ))
         self.log.info("Setting the inverse of the operator {} to {} overwriting the old {}.".format(self,inv,self._inverse))
         self._inverse = inv
+
+    @property
+    def invertible(self):
+        return self._inverse is not None
 
     def as_linear_operator(self):
         r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
@@ -1816,7 +1820,8 @@ class CoordinateMask(Operator):
 
 class PtwMultiplication(Operator):
     r"""A multiplication operator by a constant factor where each vector entry is multiplied 
-    by the vector entry of `factor`. 
+    by the vector entry of `factor`. This works analogous to the pointwise multiplication in numpy. Note that the pointwise multiplication of the coefficients
+    might not represent a pointwise multiplication of the underlying functions depending on the vector space.
 
     Parameters
     ----------
@@ -1896,6 +1901,11 @@ class PtwMultiplication(Operator):
         else:
             out *= self.factor**2
         return out
+
+    @property
+    def invertible(self):
+        # TODO: check if multiplier has zeros!
+        return True
 
     @Operator.inverse.getter
     def inverse(self):
@@ -2540,13 +2550,16 @@ class Sum(Operator):
                 add_info="The domain has to be a DirectSum of identical domains."
             ))
         if codomain is None:
-            codomain=domain.summands[0]    
+            if(domain.is_complex):
+                codomain=domain.summands[0].complex_space()
+            else:
+                codomain=domain.summands[0]  
         super().__init__(domain, codomain, True)
-        if self.domain.summands[0] != codomain:
+        if self.domain.summands[0].shape != codomain.shape:
             raise ValueError(util.Errors.not_equal(
                 self.domain.summands[0],
                 self.codomain,
-                add_info="The codomain has to be indentiocal to the summands of the domain."
+                add_info="The codomain has to be indentical to the summands of the domain."
             ))
 
     def _eval(self,x):
@@ -2558,6 +2571,7 @@ class Sum(Operator):
             out[i] = y.real if not summand.is_complex else y
         return out
     
+
 class Product(Operator):
     r"""Maps element in direct sum of vector spaces to their product.
 
@@ -2575,7 +2589,7 @@ class Product(Operator):
             raise ValueError(util.Errors.not_a_vecsp(
                 domain,
                 vecsps.DirectSum,
-                add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
+                add_info="To construct a Product (product operator) the domain has to be a DirectSum!"
             ))
         if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
             raise ValueError(util.Errors.not_equal(
@@ -2586,13 +2600,16 @@ class Product(Operator):
                 add_info="The domain has to be a DirectSum of identical domains."
             ))
         if codomain is None:
-            codomain=domain.summands[0]    
-        super().__init__(domain, codomain, True)
-        if self.domain.summands[0] != codomain:
+            if(domain.is_complex):
+                codomain=domain.summands[0].complex_space()
+            else:
+                codomain=domain.summands[0]
+        super().__init__(domain, codomain, False)
+        if self.domain.summands[0].shape != codomain.shape:
             raise ValueError(util.Errors.not_equal(
                 self.domain.summands[0],
                 self.codomain,
-                add_info="The codomain has to be indentiocal to the summands of the domain."
+                add_info="The codomain has to be indentical to the summands of the domain."
             ))
 
     def _eval(self,x,differentiate=False):
@@ -2600,13 +2617,17 @@ class Product(Operator):
         for x_i in x[1:]:
             out *= x_i
         if differentiate:
-            self.deriv_data=[out/x_j for x_j in x]
+            self.deriv_data=[self.codomain.ones() for _ in x]
+            for j,x_j in enumerate(x):
+                for i in range(self.domain.ndim):
+                    if(i!=j):
+                        self.deriv_data[i]*=x_j
         return out
     
     def _derivative(self, x):
         out = self.deriv_data[0]*x[0]
         for i,x_i in enumerate(x[1:]):
-            out+=self.deriv_data[i]*x_i
+            out+=self.deriv_data[i+1]*x_i
         return out
 
     def _iadjoint(self,y, out):
@@ -2674,6 +2695,31 @@ class ImaginaryPart(Operator):
     def _adjoint(self, y):
         return 1j * y
 
+class SplitRealImag(VectorOfOperators):
+    """Splits a complex vector into its real and imaginary part. 
+    Implemented as VectorOfOperators of RealPart and ImaginaryPart.
+
+    Parameters:
+    domain: regpy.vecsps.VectorSpaceBase
+    """
+    def __init__(self, domain):
+        if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
+            raise ValueError(util.Errors.not_a_vecsp(
+                domain,
+                vecsps.VectorSpaceBase,
+                add_info="To consider a ImaginaryPart operator the domain is required to be complex!"
+            ))
+        Re = RealPart(domain)
+        Im = ImaginaryPart(domain)
+        super().__init__((Re,Im))
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
 
 class SquaredModulus(Operator):
     r"""The pointwise squared modulus operator.

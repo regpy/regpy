@@ -11,7 +11,7 @@ class CGNE(RegSolver):
 
     Parameters
     ----------
-    setting: RegularizationSetting
+    setting: Setting
        Regularization setting involving Hilbert space norms
     data: array-like
         Right hand side g

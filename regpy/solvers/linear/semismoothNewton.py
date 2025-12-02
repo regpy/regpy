@@ -1,13 +1,14 @@
 from math import sqrt,inf
+import numpy as np
 
 from regpy.util import Errors
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
-from regpy.functionals.numpy import QuadraticBilateralConstraints, Huber
+from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG,GeometricSequence
 
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
@@ -23,10 +24,10 @@ class SemismoothNewton_bilateral(RegSolver):
     
     Parameters
     ----------
-    *args : [regpy.solvers.RegularizationSetting,array-like,float] or [regpy.solver.TikhonovRegularizationSetting]
-        Either 3 positional arguments [setting : `regpy.solvers.RegularizationSetting`, data : `array-like`,
+    *args : [regpy.solvers.Setting,array-like,float] or [regpy.solver.Setting]
+        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `array-like`,
         regpar : `float`] consisting og the regularization setting, data and a positive float for the 
-        regularization parameter or 1 positional argument [setting : regpy.solver.TikhonovRegularizationSetting] which 
+        regularization parameter or 1 positional argument [setting : regpy.solver.Setting] which 
         already binds the former arguments together.
     xref: array-like, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
@@ -64,8 +65,8 @@ class SemismoothNewton_bilateral(RegSolver):
                  ):
         if len(args)==3:
             setting, data, regpar = args
-            if not isinstance(setting,RegularizationSetting):
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must be a RegularizationSetting"))
+            if setting.is_tikhonov:
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must not contain a regularization parameter"))
             if 'psi_plus' in kwargs:
                 psi_plus = kwargs['psi_plus']
             else:
@@ -81,15 +82,18 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            if not isinstance(setting,TikhonovRegularizationSetting):
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one arguments the setting must be a TikhonovRegularizationSetting"))
+            if Tsetting.is_tikhonov:
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one argument the setting must contain a regularization parameter."))
+            out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
+            if not out['applicable']:
+                raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
             R = Tsetting.penalty
             gram = Tsetting.h_domain.gram
             psi_plus, psi_minus, xref, alpha_fac = getPenaltyParamsFromFunctional(R,gram)
             regpar= Tsetting.regpar
             gramY = Tsetting.h_codomain.gram
             data = -gramY.inverse(Tsetting.data_fid.subgradient(Tsetting.op.codomain.zeros()))
-            setting = RegularizationSetting(Tsetting.op,
+            setting = Setting(Tsetting.op,
                                             GramHilbertSpace(R.hessian(0.5*(psi_plus+psi_minus))),
                                             GramHilbertSpace(Tsetting.data_fid.hessian(Tsetting.op.codomain.zeros()))
                                             )
@@ -143,7 +147,7 @@ class SemismoothNewton_bilateral(RegSolver):
         self.lam_minus = self.op.domain.zeros()
 
         tikhcg=TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -187,7 +191,7 @@ class SemismoothNewton_bilateral(RegSolver):
             self.log.info('all indices active!')
         else:
             tikhcg = TikhonovCG(
-                setting=RegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
                 data=self.data-self.op(self.x-projection(self.x)), 
                 regpar=self.regpar,
                 xref=projection(self.xref),
@@ -219,6 +223,52 @@ class SemismoothNewton_bilateral(RegSolver):
         if added_ind+removed_ind==0:
             self.converge()
 
+    @staticmethod
+    def check_applicability(setting,op_norm=None):
+        out = {'info':''}
+        if not isQuadratic(setting.data_fid):
+            out['info'] += 'Data functional not quadratic. '
+        if not isQuadratic(setting.penalty):
+            out['info'] += 'Penalty term not quadratic. '
+        out['applicable'] = out['info']==''
+        out['rate'] = np.nan
+        return out, None
+
+def isQuadratic(func):
+    r"""checks if a functional is quadratic."""
+    print("")
+    if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
+        return True
+    elif isinstance(func,LppPower):
+        return func.p==2
+    elif isinstance(func,HorizontalShiftDilation):
+        return isQuadratic(func.func)
+    elif isinstance(func,LinearCombination):
+        if len(func.coeffs)!=1:
+            return False
+        else:
+            return isQuadratic(func.funcs[0])
+    elif isinstance(func,Conj):
+        return isQuadraticConj(func.func)
+    else:
+        return False
+
+def isQuadraticConj(func):
+    if isinstance(func, Huber):
+        return True
+    elif isinstance(func,LppPower):
+        return func.p==2
+    elif isinstance(func,HorizontalShiftDilation):
+        return isQuadraticConj(func.func)
+    elif isinstance(func,LinearCombination):
+        if len(func.coeffs)!=1:
+            return False
+        else:
+            return isQuadraticConj(func.funcs[0])        
+    else:
+        return False
+
+ 
 
 def getPenaltyParamsFromFunctional(R,gram=None):
     r"""
@@ -240,7 +290,7 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     if isinstance(R,QuadraticBilateralConstraints):
         return R.ub, R.lb, R.x0, 1.
     elif isinstance(R,HorizontalShiftDilation):
-        ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.F,gram)
+        ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.func,gram)
         if R.shift is None:
             shift = R.domain.zeros()
         else:
@@ -285,7 +335,7 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
     elif isinstance(Rs,HorizontalShiftDilation):
         if Rs.dilation != 1.:
             raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
-        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.F,gram)
+        ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.func,gram)
         return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
     else:
         raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional.'))
@@ -304,7 +354,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -339,6 +389,9 @@ class SemismoothNewton_nonneg(RegSolver):
             raise ValueError(Errors.not_in_vecsp(x0,self.op.domain,vec_name="first iteration",space_name="domain"))
         if xref is not None and xref not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
+        out, _ = SemismoothNewton_nonneg.check_applicability(setting)
+        if not out['applicable']:
+            raise RuntimeError('SemismoothNewton_nonneg not applicable to this setting. '+out['info'])
         self.data=data
         """The measured data"""
         self.xref = xref
@@ -370,7 +423,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
         self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.data, 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -387,6 +440,15 @@ class SemismoothNewton_nonneg(RegSolver):
         self.log.debug('it {}: CG its {}; changes active set +{},-{}'.format(self.iteration_step_nr,cg_its,
                                                                             self.active.sum(),0 )
         )
+
+    @staticmethod
+    def check_applicability(setting,op_norm=None):
+        out = SemismoothNewton_bilateral(setting)
+        if np.any(setting.penalty.dom_u<inf):
+            out['info'] = '' if out['applicable'] else out['info']
+            out['applicable'] = False
+            out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
+        return out, None
 
     def _next(self):
 
@@ -406,7 +468,7 @@ class SemismoothNewton_nonneg(RegSolver):
             self.log.debug('all indices active!')
         else:
             tikhcg=TikhonovCG(
-                setting=RegularizationSetting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
                 data=self.data-self.op(self.x-projection(self.x)), 
                 regpar=self.regpar,
                 xref=self.xref,
@@ -447,7 +509,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
 
     Parameters
     ----------
-    setting:  regpy.solvers.RegularizationSetting
+    setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
         The right hand side.
@@ -503,7 +565,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
             self.alpha = next(self._alphas)
         except StopIteration:
             return self.converge()
-        setting = RegularizationSetting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
+        setting = Setting(op=self.op, penalty = self.h_domain, data_fid = self.h_codomain)
         inner_stoprule = CountIterations(max_iterations=self.max_Newton_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")

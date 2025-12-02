@@ -11,7 +11,7 @@ import regpy.util.operator_tests as ot
 def collect_errors(cls,errors):
     if errors:
         sep = "\n" +"-"*125 +"\n"
-        title = f"During the testing of {cls} were the following errors collected"
+        title = f"During the testing of {cls} the following errors were collected"
         massage = sep+title+sep+ sep.join(errors)
         raise AssertionError(massage)
     else:
@@ -381,7 +381,7 @@ def test_RealPart():
 
     collect_errors(op_base.RealPart,errors)
     
-def test_RealPart():
+def test_ImagPart():
     vs = NumPyVectorSpace((4,3),dtype=complex)
     errors = []
     errors += op_basics_wrapper(op_base.ImaginaryPart, vs, test_methods=True)
@@ -394,6 +394,19 @@ def test_RealPart():
 
     collect_errors(op_base.ImaginaryPart,errors)
     
+def test_SplitRealImagPart():
+    vs = NumPyVectorSpace((4,3),dtype=complex)
+    errors = []
+    errors += op_basics_wrapper(op_base.SplitRealImag, vs, test_methods=True)
+
+    op=op_base.SplitRealImag(domain=vs)
+    x=vs.randn()
+    res = op.codomain.join(np.real(x),np.imag(x))
+
+    errors += op_evaluation_and_ot(op,x,res)
+
+    collect_errors(op_base.ImaginaryPart,errors)
+
 def test_Zero():
     vs = NumPyVectorSpace((4,3),dtype=complex)
     errors = []
@@ -474,3 +487,25 @@ def test_VectorOfOperators():
     errors += op_evaluation_and_ot(op,x,res)
 
     collect_errors(op_base.VectorOfOperators,errors)
+
+def test_Sum():
+    vs = NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3),dtype=np.complex128)
+    errors = []
+    errors+=op_basics_wrapper(op_base.Sum,vs,test_methods=True)
+    op=op_base.Sum(vs)
+    x=vs.ones()
+    x[0][0,0]=2
+    res = x[0]+x[1]+x[2]
+    errors+=op_evaluation_and_ot(op,x=x,res=res)
+    collect_errors(op_base.Sum,errors)
+
+def test_Product():
+    vs = NumPyVectorSpace((4,3))+NumPyVectorSpace((4,3),dtype=np.complex128)+NumPyVectorSpace((4,3))
+    errors = []
+    errors+=op_basics_wrapper(op_base.Product,vs,test_methods=True)
+    op=op_base.Product(vs)
+    x=vs.ones()
+    x[0][0,0]=2
+    res = x[0]*x[1]*x[2]
+    errors+=op_evaluation_and_ot(op,x=x,res=res)
+    collect_errors(op_base.Product,errors)

@@ -606,7 +606,7 @@ class DirectSum(VectorSpaceBase):
                     self.summands.append(s)
         else:
             self.summands = summands
-        self.n_components = len(summands)
+        self.n_components = len(self.summands)
         shape = tuple(s.shape for s in self.summands)
         super().__init__(vec_type=TupleVector,shape=shape,complex=any((s.is_complex for s in self.summands)))
 

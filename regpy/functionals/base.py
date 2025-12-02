@@ -331,6 +331,12 @@ class Functional:
     Lipschitz: float [default: math.inf]
         Lipschitz continuity constant of the gradient.  
         math.inf the gradient is not Lipschitz continuous.
+    methods: set [default: set()]
+        names of the methods implemented by a given Functional instance.
+        Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}
+    conj_methods set [default: set()]
+        names of the methods implemented by the conjugate of a given Functional instance.
+        Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}        
     """
 
     log = util.ClassLogger()
@@ -340,7 +346,9 @@ class Functional:
                  convexity_param=0.,
                  Lipschitz = inf,
                  separable = False,
-                 dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None):
+                 dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
+                 methods = set(), conj_methods = set()
+                 ):
         if not isinstance(domain, vecsps.VectorSpaceBase):
             raise TypeError(f'domain must be an instance of VectorSpaceBase. Got {domain}')
         self.domain = domain
@@ -375,6 +383,15 @@ class Functional:
                 raise ValueError('conj_dom_l must be smaller or equal conj_dom_u.')
         self.dom_l, self.dom_u, self.conj_dom_l, self.conj_dom_u = dom_l, dom_u, conj_dom_l, conj_dom_u
         """vectors indicating the essential domain of the functional and its conjugate"""
+
+        if not methods <= {'eval','subgradient','hessian','proximal','is_subgradient'}:
+            raise ValueError(f"Given methods set {methods} contains inadmissable elements.")
+        else:
+            self._methods  =methods
+        if not conj_methods <= {'eval','subgradient','hessian','proximal','is_subgradient'}:
+            raise ValueError(f"Given methods set {methods} contains inadmissable elements.")
+        else:
+            self._conj_methods = conj_methods
 
     def __call__(self, x):
         if x not in self.domain:
@@ -685,6 +702,12 @@ class Functional:
     def __pos__(self):
         return self
 
+    @property
+    def methods(self):
+        r"""Set of strings of the names of the methods are available for a given Functional instance. 
+        """
+        return self._methods
+
     @util.memoized_property
     def conj(self):
         r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
@@ -750,8 +773,12 @@ class Conj(Functional):
         return self.func.proximal(x,tau,**proximal_par)    
 
     @property
-    def conj_functional(self):
+    def conj(self):
         return self.func
+    
+    @property
+    def methods(self):
+        return self.func._conj_methods
 
     def __repr__(self):
         return util.make_repr(self, self.func)
@@ -795,7 +822,9 @@ class LinearFunctional(Functional):
         super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0,
                          separable=True,
                          dom_l=np.broadcast_to(-inf,domain.shape), dom_u = np.broadcast_to(inf,domain.shape),
-                         conj_dom_l = self._gradient, conj_dom_u = self._gradient
+                         conj_dom_l = self._gradient, conj_dom_u = self._gradient,
+                         methods = {'eval','subgradient','hessian','proximal','is_subgradient'},
+                         conj_methods= {'eval','subgradient','proximal','is_subgradient'}
                          ) 
 
     def _eval(self,x):
@@ -897,7 +926,9 @@ class SquaredNorm(Functional):
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
                         convexity_param = a,
-                        Lipschitz = a
+                        Lipschitz = a, 
+                        methods = {'eval','subgradient','hessian','proximal','is_subgradient'},
+                        conj_methods= {'eval','subgradient','hessian','proximal','is_subgradient'}                        
                         )
         if not isinstance(a,(float,int)): raise ValueError(util.Errors.not_instance(a,float,add_info="for SquaredNorm `a` has to be a scalar!"))
         self.gram = self.h_domain.gram
@@ -936,8 +967,8 @@ class SquaredNorm(Functional):
         return self.a * self.gram
     
     def _proximal(self,z, tau, **proximal_par):
-        if self.a>=0:
-            raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the SquaredNorm functional {self} is not implemented for a = {self.a}. a>=0"))
+        if self.a<=0:
+            raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the SquaredNorm functional {self} is not implemented for a = {self.a}. a<=0"))
         return (1./(tau*self.a+1)) * (z-tau*self.b)
     
     def _conj(self, xstar):
@@ -981,7 +1012,7 @@ class SquaredNorm(Functional):
             return NotTwiceDifferentiableError
     
     def _conj_proximal(self, zstar, tau, **proximal_par):
-        if self.a>=0:
+        if self.a<=0:
             raise NotImplementedError(util.Errors.generic_message(f"The prox operator for the conjugate of the SquaredNorm functional {self} is not implemented for a = {self.a}. it has to satisfy a>0"))
         bstar = self.gram(self.b)
         return (1./(1.+tau/self.a)) * (zstar-bstar) + bstar
@@ -1077,7 +1108,7 @@ class LinearCombination(Functional):
             if not isinstance(func, Functional) or not isinstance(coeff,(int,float)) or coeff<0:
                 raise ValueError(util.Errors.value_error(f"""
         The LinearCombination only takes a list of arbitrary items provided either tuples 
-        (coeff,func) which are a real positive number and functional or a only a functional. However, you gave:
+        (coeff,func) which are a real non-negative number and functional or a only a functional. However, you gave:
             [{"; ".join(f"({arg})" for arg in args)}]"""))
             if isinstance(func, type(self)):
                 for c, f in zip(func.coeffs, func.funcs):
@@ -1120,13 +1151,23 @@ class LinearCombination(Functional):
                 conj_dom_l = self.funcs[j].conj_dom_l*self.coeffs[j] + self.grad_sum
                 conj_dom_u = self.funcs[j].conj_dom_u*self.coeffs[j] + self.grad_sum
 
+        methods = set.intersection(*[func.methods for func in self.funcs])
+        conj_computable = (len(self.funcs) == 1) or (self.linear_table.count(False)==0) or (self.linear_table.count(False)==1)
+        if not conj_computable:
+            methods -= {'proximal'}
+        if  conj_computable: 
+            conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
+        else: 
+            conj_methods = set()
+
         super().__init__(domain, linear = all(self.linear_table),
                          convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
                          Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs)),
                          separable=separable,
                          dom_l = np.max([F.dom_l for F in self.funcs]) if separable else None,
                          dom_u = np.min([F.dom_u for F in self.funcs]) if separable else None,
-                         conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u
+                         conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
+                         methods = methods, conj_methods = conj_methods
                          )
 
     def _eval(self, x,**kwargs):
@@ -1262,7 +1303,8 @@ class VerticalShift(Functional):
                          dom_l = func.dom_l, 
                          dom_u = func.dom_u, 
                          conj_dom_l = func.conj_dom_l, 
-                         conj_dom_u = func.conj_dom_u
+                         conj_dom_u = func.conj_dom_u,
+                         methods = func._methods, conj_methods = func._conj_methods 
                          )
         self.func = func
         """Functional to be offset.
@@ -1348,7 +1390,8 @@ class HorizontalShiftDilation(Functional):
                          Lipschitz = func.Lipschitz * dilation**2,
                          convexity_param= func.convexity_param  * dilation**2,
                          separable = func.separable,
-                         dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u
+                         dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u,
+                         methods = func.methods, conj_methods=func._conj_methods
                          )
         self.func = func
         self.dilation = dilation
@@ -1421,7 +1464,8 @@ class Composed(Functional):
     norm_kwargs : dict
         possible arguments passed to the operator norm computation.
     """
-    def __init__(self, func, op, op_norm = inf, op_lower_bound = 0, compute_op_norm = False, norm_kwargs = {}):
+    def __init__(self, func, op, op_norm = inf, op_lower_bound = 0, compute_op_norm = False, norm_kwargs = {},
+                 methods = None,conj_methods=None):
         if not isinstance(func, Functional):
             raise TypeError(util.Errors.not_instance(func,Functional))
         if not isinstance(op,operators.Operator):
@@ -1430,10 +1474,18 @@ class Composed(Functional):
             raise ValueError(util.Errors.not_equal(func.domain,op.codomain, add_info="Codomain of operator and domain of fucntional have to match to be composed."))
         if op_norm == inf and compute_op_norm:
             op_norm = op.norm(h_codomain = func.h_domain, **norm_kwargs)
+        if conj_methods is None:
+            if op.invertible:
+                conj_methods = {'eval','subgradient','hessian'}
+            else:
+                conj_methods = set()
+
         super().__init__(op.domain,
                          linear = func.linear,
                          convexity_param= func.convexity_param * op_lower_bound**2,
-                         Lipschitz= func.Lipschitz * op_norm**2   
+                         Lipschitz= func.Lipschitz * op_norm**2,
+                         methods = {'eval','subgradient','hessian'} if methods is None else methods,
+                         conj_methods = conj_methods
                          )
         if isinstance(func, type(self)):
             op = func.op * op
@@ -1459,22 +1511,30 @@ class Composed(Functional):
 
     def _hessian(self, x):
         if self.op.linear:
-            return self.op.adjoint * self.func.hessian(x) * self.op
+            return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
         else:
-            # TODO this can be done slightly more efficiently
             return super()._hessian(x)
 
-    def _conj(self,x):
+    def _conj(self,x_star):
         if self.op.linear:
-            return self.func._conj(self.op.adjoint.inverse(x))
+            return self.func._conj(self.op.inverse.adjoint(x_star))
+
+    def _conj_subgradient(self, x_star):
+        if self.op.linear:
+            return self.op.inverse(self.func._conj_subgradient(self.op.inverse.adjoint(x_star)))
+
+    def _conj_hessian(self, x_star):
+        if self.op.linear:
+            return self.op.inverse * self.func._conj_hessian (self.op.inverse.adjoint(x_star)) * self.op.inverse.adjoint
 
     def _proximal(self, x, tau, cg_params={}):
+        # TODO: Remove this from the general class! All derived classes should implement their own prox!
         # In case it is a functional 1/2||Tx-g^delta||^2 can approximated by a Tikhonov solver
         if isinstance(self.func,SquaredNorm) and self.func.a == 1 and (self.func.b == 0).all() and self.func.c == 0 and isinstance(self.op,operators.OuterShift) and self.op.op.linear:
             from regpy.solvers.linear.tikhonov import TikhonovCG
-            from regpy.solvers import RegularizationSetting
+            from regpy.solvers import Setting
             f, _ = TikhonovCG(
-                setting=RegularizationSetting(self.op.op, hilbert.L2, self.func.h_domain),
+                setting=Setting(self.op.op, hilbert.L2, self.func.h_domain),
                 data=-self.op.offset,
                 xref=x,
                 regpar=tau,
@@ -1518,11 +1578,14 @@ class FunctionalOnDirectSum(Functional):
         dom_u = domain.join(*[func.dom_u for func in funcs]) if separable else None
         conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]) if separable else None
         conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]) if separable else None
+        methods = set.intersection(*[func.methods for func in funcs])
+        conj_methods = set.intersection(*[func.conj.methods for func in funcs])
         super().__init__(domain, linear = all([func.linear for func in funcs]),
                         convexity_param = min([func.convexity_param for func in funcs]),
                         Lipschitz = max([func.Lipschitz for func in funcs]),
                         separable = separable,
-                        dom_l = dom_l, dom_u = dom_u, conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u                        
+                        dom_l = dom_l, dom_u = dom_u, conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
+                        methods=methods,conj_methods=conj_methods 
                         )
 
     def _eval(self, x): 

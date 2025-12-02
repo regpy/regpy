@@ -403,11 +403,14 @@ class FourierTransform(Operator):
             else:
                 frqs.append(domain.axes[i])
         return tuple(frqs)
-        
 
-    @property
+    @Operator.inverse.getter
     def inverse(self):
         return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
 
     def __repr__(self):
         return make_repr(self, self.domain)
@@ -493,6 +496,59 @@ class PtwScalarMultiplication(Operator):
     def _iadjoint(self, g, out):
         return np.multiply(g,self.multiplier.conj(), out = out)
 
+    @Operator.inverse.getter
+    def inverse(self):
+        return PtwScalarDivision(self.domain,self.multiplier)
+
+    @property
+    def invertible(self):
+        return np.all(self.multiplier!=0)
+
+class PtwScalarDivision(Operator):
+    """
+    Pointwise division of a vector-valued function by a scalar valued function
+
+    Parameters
+    ----------
+    domain : MeasureSpaceFcts
+        The input grid function.
+    scalarfct : np.ndarray
+        The scalar valued function to divide by.
+        The number of dimensions must match the number of dimensions of domain.   
+        The first dimensions must match the shape_domain of domain, and the co-dimensions must be 1.
+    """   
+
+    def __init__(self, domain, divisor):
+        if not isinstance(domain,MeasureSpaceFcts):
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info=f'For a PtwScalarMultiplication the domain must be of type MeasureSpaceFcts. Got \n\t domain = {domain}'))
+        if domain.ndim_codomain==0:
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the domain must be vector valued!'))
+        if divisor in domain and (divisor.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
+            self.divisor = divisor
+            print("first option", self.divisor.shape)
+        elif divisor in domain.scalar_space():
+            self.divisor = np.reshape(divisor,domain.shape_domain+(1,)*domain.ndim_codomain)
+        else:
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be numpy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
+        if np.any(self.divisor==0):
+            raise ValueError(Errors.value_error('Divisor must not vanish anywhere.'))
+        
+        super().__init__(domain, domain, linear=True)
+
+    def _eval(self, f, out = None):
+        return np.divide(f,self.divisor,out = out)
+    
+    def _adjoint(self, g, out = None):
+        return np.divide(g,self.divisor.conj(), out = out)
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return PtwScalarMultiplication(self.domain,self.divisor)
+
+    @property
+    def invertible(self):
+        return True
+
 class AddSingletonVectorDimension(Operator):
     """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 
     Wrapper to np.reshape(...,1).
@@ -514,6 +570,14 @@ class AddSingletonVectorDimension(Operator):
     
     def _adjoint(self,f):
         return np.squeeze(f, axis=-1)
+    
+    @property
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True   
 
 class ForwardFDGradient(Operator):
     """ Forward finite difference gradient on  UniformGridFcts. The codomain are is a vector-valued UniformGridFcts space.

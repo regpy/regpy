@@ -5,7 +5,7 @@ import numpy as np
 
 from regpy.stoprules import CountIterations
 
-from ..general import RegularizationSetting, RegSolver
+from ..general import Setting, RegSolver
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
@@ -21,7 +21,7 @@ class IrgnmCG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -84,7 +84,7 @@ class IrgnmCG(RegSolver):
         stoprule.log.setLevel("INFO")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
-            setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
+            setting=Setting(self.deriv, self.h_domain, self.h_codomain),
             data=self.data - self.y,
             regpar=self.regpar,
             xref=self.init - self.x,
@@ -116,7 +116,7 @@ class LevenbergMarquardt(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -179,7 +179,7 @@ class LevenbergMarquardt(RegSolver):
         stoprule.log.setLevel("WARNING")
         # Running Tikhonov solver
         step, _ = TikhonovCG(
-            setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
+            setting=Setting(self.deriv, self.h_domain, self.h_codomain),
             data=self.data - self.y,
             regpar=self.regpar,
             **self.cg_pars,
@@ -244,7 +244,7 @@ class IrgnmCGPrec(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
     data : array-like
         The measured data.
@@ -320,7 +320,7 @@ class IrgnmCGPrec(RegSolver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
+                setting=Setting(self.deriv, self.h_domain, self.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
@@ -336,7 +336,7 @@ class IrgnmCGPrec(RegSolver):
           
         else:
             step, _ = TikhonovCG(
-                setting=RegularizationSetting(self.deriv, self.h_domain, self.h_codomain),
+                setting=Setting(self.deriv, self.h_domain, self.h_codomain),
                 data=self.data - self.y,
                 regpar=self.regpar,
                 xref=self.init-self.x,

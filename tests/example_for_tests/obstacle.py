@@ -6,7 +6,7 @@ import numpy as np
 from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import Setting
 from regpy.vecsps.curve import apple
 
 from . import import_example_package
@@ -28,7 +28,7 @@ def test_obstacle():
         N_inc = 4
     )
 
-    setting = RegularizationSetting(op=op, penalty=Sobolev, data_fid=L2)
+    setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
 
     #Exact data
     farfield, _ = create_synthetic_data(op, apple(64,der=3))

@@ -1,7 +1,7 @@
-from regpy.operators import Operator
+from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM","AMA"]
@@ -36,7 +36,7 @@ class ADMM(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
     init : dict [default: {}]
         The initial guess. Relevant keys are v1, v2, p1 and p2. If a key does not exist or if the value in None, 
@@ -47,8 +47,9 @@ class ADMM(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
     proximal_pars_penalty : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
-    regularizedInverse: `regpy.operators.operator` [default: None]
-        The operator \( (T^*T+\I)^{-1} )\. If None, the application of this operator is implemented by CG.
+    regularizedInverse: `regpy.operators.Operator` [default: None]
+        The operator \( (T^*T+\I)^{-1})\. If None, this operator is computed if T is a regpy.operators.Convolution. 
+        Otherwise, the application of this inverse operator is implemented by CG.
     cg_pars : dict [default: {}]
         Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     logging_level: [default: logging.INFO]
@@ -57,15 +58,19 @@ class ADMM(RegSolver):
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ADMM requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("ADMM requires the setting to contain a regularization parameter!"))       
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="ADMM requires the operator to be linear!"))
-        if regularizedInverse is not None and (isinstance(regularizedInverse,Operator)):
+        if regularizedInverse is not None and not isinstance(regularizedInverse,Operator):
             raise TypeError(Errors.not_instance(regularizedInverse,Operator,add_info="ADMM requires the the regularized inverse to be either not given and None or a proper Operator!"))
         
         self.log.setLevel(logging_level)
+
+        out, _ = ADMM.check_applicability(setting, regularizaedInverse=regularizedInverse)
+        if out['applicable']==False and not out['info'] == 'No efficient regularized inverse seems to be available. ':
+            raise RuntimeError('ADMM not applicable in this setting. '+out['info'])
 
         self.setting = setting
 
@@ -80,7 +85,12 @@ class ADMM(RegSolver):
         """ Prox parameters of data fidelity."""
         self.proximal_pars_penalty = proximal_pars_penalty
         """ Prox parameters of penalty."""
-        self.regularizedInverse = regularizedInverse
+        if regularizedInverse is None and isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==():
+            adj = setting.op.conv_adjoint()
+            regularizedInverse = adj.composition(setting.op)
+            self.regularizedInverse = regularizedInverse.functional_calculus(lambda t: 1./(1.+t))
+        else:
+            self.regularizedInverse = regularizedInverse
         """ operator (T^*T+I)^{-1}"""
 
         if cg_pars is None:
@@ -94,7 +104,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,
@@ -104,6 +114,20 @@ class ADMM(RegSolver):
             self.x = self.regularizedInverse(self.v2+self.p2 + self.op.adjoint(self.v1+self.p1))
             self.y = self.op(self.x)
 
+    def check_applicability(setting, regularizaedInverse = None,op_norm=None):
+        out = {'info': ''}; par = {}
+        if not 'proximal' in setting.penalty.methods:
+            out['info'] += 'Missing prox in penalty. '
+        if not 'proximal' in setting.data_fid.methods:
+            out['info'] += 'Missing prox in data fidelity functional. '
+        if regularizaedInverse is None and not \
+            (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==()):
+            out['info'] += 'No efficient regularized inverse seems to be available. '
+        out['applicable'] = out['info']==''
+        if out['applicable']:
+            out['info'] += 'Ergodic rate O(1/n).'
+            out['rate'] = -1
+        return out, par
 
     def _next(self):
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)
@@ -113,7 +137,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,
@@ -141,7 +165,7 @@ class AMA(RegSolver):
     
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
     init : dict [default: {}]
         The initial guess. Relevant keys are g and p. If a key does not exist or if the value in None, 
@@ -157,16 +181,18 @@ class AMA(RegSolver):
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = "INFO",compute_dual = False):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="AMA requires the Setting to be a Tikhonov setting!"))
+                 cg_pars = None,logging_level = "INFO",compute_dual = False):
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("AMA requires the setting to contain a regularization parameter!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="AMA requires the operator to be linear!"))
-        if regularizedInverse is not None and (isinstance(regularizedInverse,Operator)):
-            raise TypeError(Errors.not_instance(regularizedInverse,Operator,add_info="AMA requires the the regularized inverse to be either not given and None or a proper Operator!"))
         
         self.log.setLevel(logging_level)
+
+        out, _ = AMA.check_applicability(setting)
+        if out['applicable']==False:
+            raise RuntimeError('AMA not applicable in this setting. '+out['info'])
 
         self.setting = setting
 
@@ -187,18 +213,31 @@ class AMA(RegSolver):
         if self.compute_dual:
             self._compute_dual()
 
+    def check_applicability(setting,op_norm=None):
+        out = {'info': ''}; par = {}
+        if not 'proximal' in setting.penalty.methods:
+            out['info'] += 'Missing prox in penalty. '
+        if not setting.penalty.convexity_param>0:
+            out['info'] += 'Penalty functional not strongly convex. '
+        if not 'proximal' in setting.data_fid.methods:
+            out['info'] += 'Missing prox in data functional. '
+        out['applicable'] = out['info']==''
+        if out['applicable']:
+            out['info'] += 'Ergodic rate O(1/n).'
+            out['rate'] = -1
+        return out, par
 
     def _compute_dual(self):
         self.dual = self.gramY(self.p)
 
     def _next(self):
         Tstar_p = self.op.adjoint(self.gramY(self.p))
-        self.f = self.penalty.conj.subgradient(Tstar_p)
-        if not self.penalty.is_subgradient(Tstar_p,self.f):
+        self.x = self.penalty.conj.subgradient(Tstar_p)
+        if not self.penalty.is_subgradient(Tstar_p,self.x):
             raise Warning('update f may not be correct')
-        Tf = self.op(self.f)
-        self.g = self.data_fid.proximal(Tf-(1./self.gamma)*self.p,1./self.gamma)
-        self.p += self.gamma*(self.g - Tf) 
+        self.y = self.op(self.x)
+        self.g = self.data_fid.proximal(self.y-(1./self.gamma)*self.p,1./self.gamma)
+        self.p += self.gamma*(self.g - self.y) 
 
         if self.compute_dual:
             self._compute_dual()

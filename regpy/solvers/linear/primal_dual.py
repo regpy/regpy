@@ -1,9 +1,10 @@
 import math as ma
+import numpy as np
 
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, TikhonovRegularizationSetting, RegularizationSetting
+from ..general import RegSolver, Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -24,7 +25,7 @@ class PDHG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
     init_domain : setting.op.domain [default: None]
@@ -48,12 +49,13 @@ class PDHG(RegSolver):
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
         so this may considerably increase computational costs. If False, None is returned for y_k. 
     """
-    def __init__(self,  setting, init_domain=None, init_codomain_star=None, tau = 0, sigma = 0, 
-                 theta= 1, proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
+    def __init__(self,  setting, init_domain=None, init_codomain_star=None, 
+                 tau = 0, sigma = 0, theta= 1, op_norm = None, 
+                 proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
                  compute_y = True, logging_level = "INFO"
                  ):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="PDHG requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("PDHG requires the setting to contain a regularization parameter!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
@@ -70,11 +72,11 @@ class PDHG(RegSolver):
                 self.pstar = setting.op.codomain.zeros()
             else:
                 self.pstar = init_codomain_star
-                self.x = setting.dualToPrimal(self.pstar)
+                self.x = setting.dual_to_primal(self.pstar)
         else:
             self.x = init_domain
             if init_codomain_star is None:
-                self.pstar = setting.primalToDual(self.x)
+                self.pstar = setting.primal_to_dual(self.x)
             else:
                 self.pstar = init_codomain_star
         self.dual = self.pstar
@@ -82,41 +84,56 @@ class PDHG(RegSolver):
         self.compute_y = compute_y
         self.y = self.op(self.x) if self.compute_y else None
 
-        if tau<0 or sigma<0:
-            raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))
-        L = self.setting.op.norm(self.setting.h_domain,self.setting.h_codomain)  
-        if tau==0 and sigma==0:
-            self.tau = 1/L
-            self.sigma = 1/L
-        elif tau==0 and sigma>0:
-            self.tau = 1./(L**2*self.sigma)
-            self.sigma = sigma
-        elif sigma==0 and tau>0:
-            self.sigma = 1./(L**2*self.tau)
-            self.tau = tau
+        out,par = PDHG.check_applicability(setting,op_norm=op_norm,tau=tau,sigma=sigma)
+        if out['applicable']:
+            self.log.info(out['info'])
         else:
-            self.sigma = sigma
-            self.tau = tau
+            raise ValueError('FDHG not applicable to this setting. '+out['info'])
+        self.tau, self.sigma, self.theta, self.muR, self.muSstar = par['tau'], par['sigma'], par['theta'], par['muR'], par['muSstar']
 
-        self.muR = setting.penalty.convexity_param
-        self.muSstar = self.regpar/setting.data_fid.Lipschitz
-        if self.muR>0:
-            if self.muSstar>0:
-                self.mu = 2*ma.sqrt(self.muR * self.muSstar)/L
-                self.tau = self.mu/(2.*self.muR)
-                self.sigma = self.mu/(2.*self.muSstar)
-                self.theta = 1./(1.+self.mu)
-                self.log.info('Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(self.muR,self.muSstar,L,(1.+self.theta)/(2.+self.mu)))
-            else:
-                self.theta = 0
-                self.log.info('Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(self.muR,L))                
-        else:
-            self.theta = theta
-            self.log.info('Using unaccelerated version')            
+        if tau<0 or sigma<0:
+            raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))            
         self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
         self.proximal_pars_penalty = proximal_pars_penalty
 
+    @staticmethod
+    def check_applicability(setting,op_norm=None,tau=0,sigma=0):
+        out = {'info':''}; par = {}
+        if 'proximal' not in setting.penalty.methods:
+            out['info'] += 'Missing prox of penalty. '
+        if 'proximal' not in setting.data_fid.conj.methods:
+            out['info'] += 'Missing prox of conjugate data functional.'
+        out['applicable'] = out['info'] == ''
+        if out['applicable']:
+            L = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm  
+            if tau==0 and sigma==0:
+                tau = 1/L
+                sigma = 1/L
+            elif tau==0 and sigma>0:
+                tau = 1./(L**2*sigma)
+            elif sigma==0 and tau>0:
+                sigma = 1./(L**2*tau)
 
+            muR = setting.penalty.convexity_param
+            muSstar = setting.regpar/setting.data_fid.Lipschitz
+            if muR>0:
+                if muSstar>0:
+                    mu = 2*ma.sqrt(muR * muSstar)/L
+                    tau = mu/(2.*muR)
+                    sigma = mu/(2.*muSstar)
+                    theta = 1./(1.+mu)
+                    out['rate']=(1.+theta)/(2.+mu)
+                    out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(muR,muSstar,L,out['rate'])
+                else:
+                    theta = 0.
+                    out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
+                    out['rate']=-2
+            else:
+                out['info']='Using unaccelerated version.'
+                out['rate']=np.nan
+                theta =0.
+            par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
+        return out, par
 
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.op.adjoint(self.pstar))
@@ -144,7 +161,7 @@ class DouglasRachford(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.
@@ -166,15 +183,15 @@ class DouglasRachford(RegSolver):
         if init_h not in self.op.domain:
             raise ValueError(Errors.value_error('init_h must be in the domain of the operator!'))
         self.h = init_h
-        if isinstance(setting, TikhonovRegularizationSetting) and setting.op.domain != setting.op.codomain:
+        if setting.is_tikhonov and setting.op.domain != setting.op.codomain:
             if setting.data_fid_shift is None:
-                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting the data_fid_shift must be given!'))
+                raise ValueError(Errors.value_error('If the regularization parameter is given, the data_fid_shift must be given!'))
             if not isinstance(self.data_fid,SquaredNorm):
-                raise ValueError(Errors.value_error('For TikhonovRegularizationSetting with not matching domains the data_fid must be a SquaredNorm functional!'))
-            self.log.info('Using TikhonovRegularizationSetting. The data fidelity term is reshifted and composed with the .')
+                raise ValueError(Errors.value_error('For setting with not matching domains the data_fid must be a SquaredNorm functional!'))
+            self.log.info('Using Tikhonov regularization setting. The data fidelity term is reshifted and composed with the operator.')
             self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
-        elif isinstance(setting, RegularizationSetting) and setting.op.domain != setting.op.codomain:
-            raise ValueError(Errors.value_error('For RegularizationSetting the operator must be mapping from a space to itself!'))
+        elif not setting.is_tikhonov and setting.op.domain != setting.op.codomain:
+            raise ValueError(Errors.value_error('If no regularization parameter is given, the operator must be mapping from a space to itself!'))
         else:
             self.data_fid_adjusted = self.data_fid
 

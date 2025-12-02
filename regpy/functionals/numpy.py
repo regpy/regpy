@@ -72,6 +72,9 @@ class IntegralFunctionalBase(Functional):
         Analogous to lin_taylor_u, but with a quadratic Taylor expansion
     quad_taylor_l: None or float or np.ndarray [default: None]
         Analogous to quad_taylor_u, but for small values of v
+    methods, conj_methods = set of strings or None [default: None]
+        Names of the methods implemented by an IntegralFunctionalBase instance (see Functional!).
+        In the default case all methods are indicated as being implemented. 
     """
 
     def __init__(self,domain,
@@ -81,6 +84,7 @@ class IntegralFunctionalBase(Functional):
                  lin_taylor_l=None, lin_taylor_u=None,
                  quad_taylor_l=None, quad_taylor_u= None,
                  Lipschitz = np.inf, convexity_param=0.,
+                 methods = None, conj_methods = None,
                  **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info="Integral functionals are only implemented for MeasureSPaceFcts domains."))
         self.h_domain = L2(domain)
@@ -148,12 +152,16 @@ class IntegralFunctionalBase(Functional):
         else:
             conj_dom_u = self.h_domain.gram(np.broadcast_to(conj_dom_u,domain.shape))
 
+        all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}
+
         super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
                          separable=True,
                          dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape),
                          dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape),
                          conj_dom_l = conj_dom_l if conj_dom_l in domain else np.broadcast_to(conj_dom_l,domain.shape), 
-                         conj_dom_u = conj_dom_u if conj_dom_u in domain else np.broadcast_to(conj_dom_u,domain.shape)
+                         conj_dom_u = conj_dom_u if conj_dom_u in domain else np.broadcast_to(conj_dom_u,domain.shape),
+                         methods = methods if methods is not None else all_methods, 
+                         conj_methods = conj_methods if conj_methods is not None else all_methods
                          )
 
         if self.constr_l_active:
@@ -848,7 +856,8 @@ class VectorIntegralFunctional(Functional):
 
     def __init__(self, vdomain, hdomain = None, scalar_func = None, scalar_func_args=None, 
                  vector_norm_p=2,
-                 Lipschitz =np.inf, convexity_param = 0.
+                 Lipschitz =np.inf, convexity_param = 0.,
+                 methods = None, conj_methods = None
                  ):
         if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
             raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
@@ -872,11 +881,18 @@ class VectorIntegralFunctional(Functional):
             self.dual_vector_norm = partial(np.linalg.norm, ord = self.q)
         else:
             raise ValueError(Errors.value_error("Not p-Norm", f"The provided p ={vector_norm_p} is not between 1< p < inf."))
-            
+
+        methods = methods if methods is not None else self.scalar_func.methods
+        conj_methods = conj_methods if conj_methods is not None else self.scalar_func.conj.methods
+        if self.p!=2:
+            methods -= {'subgradient','hessian','proximal'}
+            conj_methods =  {'subgradient','hessian','proximal'}
+
         super().__init__(vdomain, L2(vecsp=vdomain), 
                          convexity_param = convexity_param, 
                          Lipschitz = Lipschitz, 
-                         separable= False, linear= False)
+                         separable= False, linear= False,
+                         methods = methods, conj_methods = conj_methods)
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
         self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
@@ -1911,7 +1927,10 @@ class QuadraticPositiveSemidef(Functional):
             self.trace_val=trace_val
         else:
             self.has_trace_constraint=False
-        super().__init__(domain,Lipschitz=1.,convexity_param=1.,**kwargs)
+        super().__init__(domain,Lipschitz=1.,convexity_param=1.,
+                         methods = {'eval','subgradient','hessian','is_subgradient','proximal'},
+                         conj_methods = {'eval'},
+                         **kwargs)
 
     def is_in_essential_domain(self,rho):
         if(not ishermitian(rho,atol=self.tol)):
@@ -1989,7 +2008,8 @@ class L1Generic(Functional):
     def __init__(self, domain):
         if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,"To construct a L1Generic functional you need a NumPyVectorSpace"))
-        super().__init__(domain)
+        super().__init__(domain,
+                         methods = {'eval','subgradient','hessian','proximal'})
 
     def _eval(self, x):
         return np.sum(np.abs(x))
@@ -2051,7 +2071,8 @@ class TVUniformGridFcts(Composed):
         else:
             self.func = HuberL2(self.grad.codomain)
 
-        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm())
+        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
+                         methods = {'eval','proximal'},conj_methods = {'proximal'})
 
     def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
         """Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89–97, 2004) 

@@ -44,10 +44,11 @@ def test_L1():
                        #u_stars=[func.domain.rand() for _ in range(5)],
                        #test_second_deriv=False)
 
-# def test_TV():
-#     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
-#     func = TV(ugf)
-#     ft.test_functional(func,u_s=[func.domain.rand() for _ in range(5)],u_stars=[func.domain.rand() for _ in range(5)])
+def test_TV():
+     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
+     func = TV(ugf)
+     func(ugf.rand())
+     func.proximal(ugf.rand(),1.)
 
 def test_kullback_leibler():
     dom=UniformGridFcts((-1,1,10),(-2,3,5))
@@ -118,6 +119,13 @@ def test_quadlow():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
     func = QuadLow(dom)
     ft.test_functional(func)
+
+def test_Composed():
+    dom = UniformGridFcts((0,1,10))
+    func = Lpp(dom,p=2.5) * np.arange(1,11)
+    ft.test_functional(func,test_second_deriv_conj=False)
+    func2 = Lpp(dom,p=1.5) * np.arange(1,11)
+    ft.test_functional(func2,test_second_deriv=False)
 
 def test_VectorIntegralFunctional():
     grid = UniformGridFcts((-1,1,10))

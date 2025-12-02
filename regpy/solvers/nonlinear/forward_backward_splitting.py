@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import RegSolver, TikhonovRegularizationSetting
+from ..general import RegSolver
 
 __all__ = ["ForwardBackwardSplitting"]
 
@@ -10,7 +10,7 @@ class ForwardBackwardSplitting(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: domain.zeros()]
         The initial guess. 
@@ -25,8 +25,8 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
         if self.op.linear:
             self.log.warning("Using non-linear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear")
