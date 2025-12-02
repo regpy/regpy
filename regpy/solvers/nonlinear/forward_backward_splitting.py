@@ -25,8 +25,8 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
     def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ForwardBackwardSplitting requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
         if self.op.linear:
             raise RuntimeWarning(Errors.generic_message("Using non-linear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear"))

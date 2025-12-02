@@ -368,9 +368,8 @@ class Monotonicity(StopRule):
 
 class DualityGapStopping(StopRule):
     def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
-        from regpy.solvers import TikhonovRegularizationSetting
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="For the Duality gap stopping rule the setting needs to be a TikhonovRegularizationSetting!"))
+        if not setting.is_tikhonov and setting.is_convex:
+            raise ValueError("For the Duality gap stopping rule the setting needs to be a convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
         if threshold is not None:

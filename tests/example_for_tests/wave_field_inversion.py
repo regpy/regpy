@@ -7,7 +7,7 @@ from scipy.datasets import ascent
 from regpy.vecsps import UniformGridFcts
 from regpy.operators import CoordinateProjection
 from regpy.hilbert import L2, HmDomain
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import TikhonovRegularizationSetting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
 
@@ -81,7 +81,7 @@ def test_wave_field_inversion():
     h_codomain = h_codomain0+h_codomain1+h_codomain2
 
     # Image reconstruction using the IRGNM method
-    setting = RegularizationSetting(op=op,penalty=h_domain,data_fid=h_codomain)
+    setting = TikhonovRegularizationSetting(op=op,penalty=h_domain,data_fid=h_codomain)
 
     init_vec = np.zeros_like(exact_solution)
 

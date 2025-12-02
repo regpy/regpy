@@ -20,8 +20,8 @@ used by solvers to compute the regularized solution. Moreover, with this import 
 non-linear solvers since `linear` and `nonlinear` are also provided as submodules.
 """
 
-from .general import RegularizationSetting,TikhonovRegularizationSetting
+from .general import TikhonovRegularizationSetting,TikhonovRegularizationSetting
 from . import linear
 from . import nonlinear
 
-__all__ = ["RegularizationSetting","TikhonovRegularizationSetting","linear","nonlinear"]
+__all__ = ["TikhonovRegularizationSetting","TikhonovRegularizationSetting","linear","nonlinear"]

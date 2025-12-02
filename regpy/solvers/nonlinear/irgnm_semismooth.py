@@ -1,7 +1,7 @@
 from regpy.operators import CoordinateMask
 from regpy.util import Errors
 
-from ..general import RegularizationSetting, RegSolver
+from ..general import TikhonovRegularizationSetting, RegSolver
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmSemiSmooth"]
@@ -140,7 +140,7 @@ class IrgnmSemiSmooth(RegSolver):
 
         project = CoordinateMask(self.h_domain.vecsp, self.inactive)
         tik = TikhonovCG(
-            setting=RegularizationSetting(self.deriv * project, self.h_domain, self.h_codomain),
+            setting=TikhonovRegularizationSetting(self.deriv * project, self.h_domain, self.h_codomain),
             data=self.rhs, 
             regpar=self.regpar,
             xref=self.init,

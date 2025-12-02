@@ -187,8 +187,8 @@ class RegSolver(Solver):
     """
 
     def __init__(self,setting,x=None,y=None):
-        if not isinstance(setting,RegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,RegularizationSetting))
+        if not (isinstance(setting,TikhonovRegularizationSetting) or isinstance(setting,TikhonovRegularizationSetting)):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting))
         self.op=setting.op
         """The operator."""
         self.penalty = setting.penalty
@@ -201,7 +201,7 @@ class RegSolver(Solver):
         """The Hilbert space associated to data fidelity functional"""
         self.setting = setting
         """The regularization setting"""
-        if isinstance(setting,TikhonovRegularizationSetting):
+        if setting.is_tikhonov:
             self.regpar = setting.regpar
             """The regularization parameter"""
         super().__init__(x,y)
@@ -231,37 +231,14 @@ class RegSolver(Solver):
             self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
         return reco, reco_data
 
+        
 
-class RegularizationSetting:
-    r"""A Regularization *setting* for an inverse problem, used by solvers. A
-    setting consists of
-
-    - a forward operator,
-    - a penalty functional with an associated Hilbert space structure to measure the error, and
-    - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
-
-    This class is mostly a container that keeps all of this data in one place and makes sure that
-    the the used penalty and data fidelity have matching domains `regpy.hilbert.HilbertSpace.vecsp`\s 
-    with the operator's domain and codomain.
-
-    It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
-    the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
-    it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
-
-    Parameters
-    ----------
-    op : regpy.operators.Operator
-        The forward operator.
-    penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The penalty functional.
-    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The data misfit functional.
-    """
+class TikhonovRegularizationSetting:
 
     log = ClassLogger()
 
-    def __init__(self, op, penalty, data_fid):
+    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
+                 logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Regularization Setting requires op to be a RegPy operator."))
         self.op = op
@@ -274,7 +251,50 @@ class RegularizationSetting:
         """The Hilbert space associated to penalty functional"""
         self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
         """The Hilbert space associated to data fidelity functional"""
+        if not penalty_shift is None:
+            self.penalty_shift = penalty_shift
+            self.penalty = self.penalty.shift(penalty_shift)
+        else:
+            self.penalty_shift = None
+        if not data_fid_shift is None:
+            self.data_fid_shift = data_fid_shift
+            self.data_fid = self.data_fid.shift(data_fid_shift)
+        else:
+            self.data_fid_shift = None
+        self.regpar=regpar
+        """The Regularization parameter"""
+        self.log.setLevel(logging_level)
+        self.gap_threshold = gap_threshold
+        """The regularization parameter"""
+        if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
+            raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
+        self.primal_setting = primal_setting
+        if primal_setting is None:
+            self._methods = TikhonovRegularizationSetting.method_dict
 
+
+    def _set_flags(self):
+        self.is_tikhonov=(self.regpar is not None)
+        #TODO check for convexity of data fidelity and penalty
+        self.is_convex=self.op.linear
+        self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
+
+    @property
+    def regpar(self):
+        return self._regpar
+
+    @regpar.setter
+    def regpar(self,new_regpar):
+        if(new_regpar is not None):
+            if not isinstance(new_regpar,(float,int)):
+                raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
+            if new_regpar <= 0:
+                raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
+            new_regpar = float(new_regpar)
+        self._regpar=new_regpar
+        self._set_flags()
+
+    ######Convenience check methods
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
@@ -360,57 +380,6 @@ class RegularizationSetting:
             True if both `penalty` and `data_fid` are `SquaredNorm` functionals. 
         """
         return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
-        
-
-class TikhonovRegularizationSetting(RegularizationSetting):
-
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
-                 logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
-        super().__init__(op, penalty, data_fid)
-        if not penalty_shift is None:
-            self.penalty_shift = penalty_shift
-            self.penalty = self.penalty.shift(penalty_shift)
-        else:
-            self.penalty_shift = None
-        if not data_fid_shift is None:
-            self.data_fid_shift = data_fid_shift
-            self.data_fid = self.data_fid.shift(data_fid_shift)
-        else:
-            self.data_fid_shift = None
-        self.regpar=regpar
-        self.log.setLevel(logging_level)
-        if not op.linear:
-            raise ValueError('Operator must be linear in Tikhonov regularization setting')
-        self.gap_threshold = gap_threshold
-        """The regularization parameter"""
-        if primal_setting is not None and not isinstance(primal_setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
-        self.primal_setting = primal_setting
-        if primal_setting is None:
-            self._methods = TikhonovRegularizationSetting.method_dict
-
-
-    def _set_flags(self):
-        if(self.regpar is not None):
-            self.is_tikhonov=True
-        if(self.op.linear):
-            #TODO check for convexity of data fidelity and penalty
-            self.is_convex=True
-
-    @property
-    def regpar(self):
-        return self._regpar
-
-    @regpar.setter
-    def regpar(self,new_regpar):
-        if(new_regpar is not None):
-            if not isinstance(new_regpar,(float,int)):
-                raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
-            if new_regpar <= 0:
-                raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
-            new_regpar = float(new_regpar)
-        self._regpar=new_regpar
-        self._set_flags()
 
 
     def get_dual_setting(self):

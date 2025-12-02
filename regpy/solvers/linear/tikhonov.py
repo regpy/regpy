@@ -5,7 +5,7 @@ from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
 
 __all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov"]
 
@@ -82,7 +82,7 @@ class TikhonovCG(RegSolver):
                 self.log.warning('Ignoring given parameter xref')        
             xref = (-1./self.penalty.a) * self.penalty.b
 
-        if isinstance(setting,TikhonovRegularizationSetting):
+        if(setting.is_tikhonov):
             if regpar is not None:
                 self.log.warning('Ignoring given value of regularization parameter')
             regpar = (self.penalty.a/self.data_fid.a) * self.regpar
@@ -514,8 +514,8 @@ class TikhonovCGOnlyDomain(RegSolver):
         """The back propagated data :math:`T^\ast g^\delta`."""
 
         if regpar is None:
-            if not isinstance(setting, TikhonovRegularizationSetting):
-                raise ValueError(Errors.value_error("If regpar is None, setting must be an instance of TikhonovRegularizationSetting"))
+            if not setting.is_tikhonov:
+                raise ValueError(Errors.value_error("If regpar is None, setting must contain the regularization parameter."))
             self.regpar = setting.regpar
         elif isinstance(regpar, (int, float)) and regpar > 0:
             self.regpar = regpar

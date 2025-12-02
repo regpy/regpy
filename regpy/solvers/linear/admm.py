@@ -1,7 +1,7 @@
 from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..general import RegSolver, RegularizationSetting, TikhonovRegularizationSetting
+from ..general import RegSolver, TikhonovRegularizationSetting, TikhonovRegularizationSetting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM","AMA"]
@@ -58,8 +58,8 @@ class ADMM(RegSolver):
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="ADMM requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("ADMM requires the setting to contain a regularization parameter!"))       
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="ADMM requires the operator to be linear!"))
@@ -104,7 +104,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,
@@ -137,7 +137,7 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=RegularizationSetting(self.op, self.h_domain, self.h_codomain),
+                setting=TikhonovRegularizationSetting(self.op, self.h_domain, self.h_codomain),
                 data=self.v1+self.p1,
                 xref=self.v2+self.p2,
                 regpar=1.,
@@ -182,8 +182,8 @@ class AMA(RegSolver):
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  cg_pars = None,logging_level = "INFO",compute_dual = False):
-        if not isinstance(setting,TikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="AMA requires the Setting to be a Tikhonov setting!"))
+        if not setting.is_tikhonov:
+            raise ValueError(Errors.value_error("AMA requires the setting to contain a regularization parameter!"))
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="AMA requires the operator to be linear!"))
