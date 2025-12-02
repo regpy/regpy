@@ -2,7 +2,7 @@ from math import sqrt,inf
 import numpy as np
 
 from regpy.util import Errors
-from ..general import RegSolver, NonconvexTikhonovRegularizationSetting
+from ..general import RegSolver, TikhonovRegularizationSetting
 
 __all__ = ["FISTA"]
 
@@ -39,8 +39,8 @@ class FISTA(RegSolver):
     def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, 
                  proximal_pars=None,logging_level= "INFO",
                  data=None, without_codomain_vectors=False):
-        if not isinstance(setting,NonconvexTikhonovRegularizationSetting):
-            raise TypeError(Errors.not_instance(setting,NonconvexTikhonovRegularizationSetting,add_info="FISTA requires the Setting to be a Tikhonov setting!"))
+        if not isinstance(setting,TikhonovRegularizationSetting):
+            raise TypeError(Errors.not_instance(setting,TikhonovRegularizationSetting,add_info="FISTA requires the Setting to be a Tikhonov setting!"))
         super().__init__(setting)
         if self.op.linear:
             raise RuntimeWarning(Errors.generic_message("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear"))
