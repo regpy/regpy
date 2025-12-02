@@ -67,14 +67,12 @@ class MatrixMultiplication(Operator):
         self.matrix = matrix
 
         if isinstance(matrix,np.ndarray):
-            self.is_numpy_mat = True
-            self.matvec = lambda v, **kwargs: np.matvec(self.matrix, v, **kwargs)
-            self.rmatvec = lambda v, **kwargs: np.conjugate(np.vecmat(v,self.matrix, **kwargs), out = kwargs["out"] if "out" in kwargs else None)
+            self.matvec = lambda v: np.matvec(self.matrix, v)
+            self.rmatvec = lambda v: np.conjugate(np.vecmat(v,self.matrix))
         else:
-            self.is_numpy_mat = False
             lin_op = linalg.aslinearoperator(self.matrix)
-            self.matvec = lambda v, **kwargs: lin_op.matvec(v)
-            self.rmatvec = lambda v, **kwargs: lin_op.rmatvec(v)
+            self.matvec = lambda v: lin_op.matvec(v)
+            self.rmatvec = lambda v: lin_op.rmatvec(v)
         
         super().__init__(
             domain=domain,
@@ -83,25 +81,11 @@ class MatrixMultiplication(Operator):
         )
         self._inverse = inverse
 
-    def _eval(self, x, out = None):
-        if out is None:
-            return self.matvec(x)
-        elif self.is_numpy_mat:
-            return self.matvec(x, out = out)
-        else:
-            out *= 0
-            out += self.matvec(x)
-            return out
+    def _eval(self, x):
+        return self.matvec(x)
 
-    def _adjoint(self, y, out = None):
-        if out is None:
-            return self.rmatvec(y)
-        elif self.is_numpy_mat:
-            return self.rmatvec(y, out = out)
-        else:
-            out *= 0
-            out += self.rmatvec(y)
-            return out
+    def _adjoint(self, y):
+        return self.rmatvec(y)
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
@@ -299,15 +283,15 @@ class Exponential(Operator):
             raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Exponential operator needs to be a NumPyVectorSpace!"))
         super().__init__(domain, domain)
 
-    def _eval(self, x, out = None, differentiate=False):
+    def _ieval(self, x, out, differentiate=False):
         if differentiate:
             self._exponential_factor = np.exp(x)
         return np.exp(x, out = out)
 
-    def _derivative(self, x, out = None):
+    def _iderivative(self, x, out):
         return np.multiply(self._exponential_factor,x,out = out)
 
-    def _adjoint(self, y, out = None):
+    def _iadjoint(self, y, out):
         return np.multiply(self._exponential_factor.conj(), y, out = out)
 
 
@@ -465,10 +449,10 @@ class PtwMatrixVectorMultiplication(Operator):
         self._einstein_string_mulT =  '...' + letters_out + letters_in + ',...' + letters_out + '->...'+ letters_in
         # e.g., '...ba,...b->...a'
 
-    def _eval(self, v, out = None):
+    def _ieval(self, v, out):
         return  np.einsum(self._einstein_string_mul, self.matrixfct, v, out = out)
     
-    def _adjoint(self, w, out = None):
+    def _iadjoint(self, w, out):
         return np.einsum(self._einstein_string_mulT, np.conj(self.matrixfct), w, out = out)
 
     def __repr__(self):
@@ -495,7 +479,6 @@ class PtwScalarMultiplication(Operator):
             raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the domain must be vector valued!'))
         if multiplier in domain and (multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
             self.multiplier = multiplier
-            print("first option", self.multiplier.shape)
         elif multiplier in domain.scalar_space():
             self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
@@ -504,10 +487,10 @@ class PtwScalarMultiplication(Operator):
         
         super().__init__(domain, domain, linear=True)
 
-    def _eval(self, f, out = None):
+    def _ieval(self, f, out):
         return np.multiply(f,self.multiplier,out = out)
     
-    def _adjoint(self, g, out = None):
+    def _iadjoint(self, g, out):
         return np.multiply(g,self.multiplier.conj(), out = out)
 
 class AddSingletonVectorDimension(Operator):

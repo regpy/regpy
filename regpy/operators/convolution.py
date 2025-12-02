@@ -281,7 +281,6 @@ class ConvolutionOperator(Composition):
                 multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
             else:
                 extended_shape = ft.codomain.shape_domain+self.kernel_matrix_shape
-                #print(pad_op.codomain,ft.codomain.shape,self.kernel_matrix_shape,extended_shape)
                 multiplier = PtwMatrixVectorMultiplication(ft.codomain, np.broadcast_to(self._otf,extended_shape))
             trunc_op = TruncationOperator(ft_codomain.domain, self.pad_amount)
 
