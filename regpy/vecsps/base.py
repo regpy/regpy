@@ -510,6 +510,34 @@ class VectorSpaceBase:
                 self.shape == other.shape and
                 self.is_complex == other.is_complex and
                 self.vec_type == other.vec_type)
+    
+    def compatible(self,other):
+        """Tests compatibility of vectors! This is not as restrictive as `__eq__`
+        in the sense, that we only compare the underlying vector type, shape and
+        if both are complex. This guarantees that vectors of the space can be 
+        also considered as vectors of the other space. Note that the interpretation
+        of the vectors might be significantly different! 
+
+        Parameters
+        ----------
+        other : object
+            Another vector space to be compared with.
+
+        Returns
+        -------
+        boolean
+            True if the vectors are compatible
+        
+        Raise
+        -----
+        ValueError
+            If other is not a VectorSpaceBase.
+        """
+        if not isinstance(other, VectorSpaceBase):
+            raise ValueError(Errors.not_instance(other,VectorSpaceBase,add_info="TO have a compatible vector space the other object has to be a vector space in RegPy."))
+        return (self.shape == other.shape and
+                self.is_complex == other.is_complex and
+                self.vec_type == other.vec_type)
         
     def __iadd__(self, other):
         if isinstance(other, VectorSpaceBase):

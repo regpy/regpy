@@ -1292,7 +1292,7 @@ class Composition(Operator):
                     Operator,
                     add_info=f"The {i+2}-th entry of operators is not an Operator."
                     ))  
-            if f.domain != g.codomain:
+            if not f.domain.compatible(g.codomain):
                 raise ValueError(util.Errors.not_equal(
                     f,
                     g,
@@ -1308,49 +1308,50 @@ class Composition(Operator):
                 self.d_eq_cd.extend(op.d_eq_cd)
             else:
                 self.ops.append(op)
-                self.d_eq_cd.append(op.domain == op.codomain)
+                self.d_eq_cd.append(op.domain.compatible(op.codomain))
         super().__init__(
             self.ops[-1].domain, self.ops[0].codomain,
             linear=all(op.linear for op in self.ops))
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
-        y = x.copy()
         if differentiate:
             self._derivs = []
-            for d_eq_cd, op in zip(self.d_eq_cd[:0:-1],self.ops[:0:-1]):
+            x, deriv = self.ops[-1].linearize(x,**kwargs)
+            self._derivs.append(deriv)
+            for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
                 if d_eq_cd:
-                    y, deriv = op.linearize(y, out = y,**kwargs)
+                    x, deriv = op.linearize(x, out = x,**kwargs)
                 else:
-                    y, deriv = op.linearize(y,**kwargs)
+                    x, deriv = op.linearize(x,**kwargs)
                 self._derivs.insert(0,deriv)
-            out, deriv = self.ops[0].linearize(y, out = out,**kwargs)
+            out, deriv = self.ops[0].linearize(x, out = out,**kwargs)
             self._derivs.insert(0,deriv)
             return out
         else:
-            for d_eq_cd, op in zip(self.d_eq_cd[:0:-1],self.ops[:0:-1]):
+            x = self.ops[-1](x,**kwargs)
+            for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
                 if d_eq_cd:
-                    y = op(y, out = y,**kwargs)
+                    x = op(x, out = x,**kwargs)
                 else:
-                    y = op(y,**kwargs)
-            return self.ops[0](y, out = out,**kwargs)
+                    x = op(x,**kwargs)
+            return self.ops[0](x, out = out,**kwargs)
 
     def _iderivative(self, x, out, **kwargs):
-        y = x.copy()
-        for d_eq_cd, deriv in zip(self.d_eq_cd[:0:-1],self._derivs[:0:-1]):
+        x = self._derivs[-1](x, **kwargs)
+        for d_eq_cd, deriv in zip(self.d_eq_cd[-2:0:-1],self._derivs[-2:0:-1]):
             if d_eq_cd:
-                y = deriv(y, out = y, **kwargs)
+                x = deriv(x, out = x, **kwargs)
             else:
-                y = deriv(y, **kwargs)
-        return self._derivs[0](y, out = out,**kwargs)
+                x = deriv(x, **kwargs)
+        return self._derivs[0](x, out = out,**kwargs)
 
     def _iadjoint(self, y, out, **kwargs):
-        y = y.copy()
         if self.linear:
             ops = self.ops
         else:
             ops = self._derivs
-        self.log.debug(f"type = {type(ops)}, ops = {ops}.")
-        for d_eq_cd,op in zip(self.d_eq_cd[:-1],ops[:-1]):
+        y = ops[0].adjoint(y, **kwargs)
+        for d_eq_cd,op in zip(self.d_eq_cd[1:-1],ops[1:-1]):
             if d_eq_cd:
                 y = op.adjoint(y, out = y, **kwargs)
             else:
@@ -1361,37 +1362,39 @@ class Composition(Operator):
     def _iadjoint_eval(self, x, out, **kwargs):
         if len(kwargs) != 0:
             self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        y = x.copy()
         if self.linear:
-            for d_eq_cd,op in zip(self.d_eq_cd[:0:-1],self.ops[:0:-1]):
+            x = self.ops[-1](x)
+            for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
                 self.log.debug(f"domain = {op.domain}, codomain = {op.codomain}")
                 if d_eq_cd:
-                    y = op(y, out = y)
+                    x = op(x, out = x)
                 else:
-                    y = op(y)
-            y = self.ops[0].adjoint_eval(y, out = y)
+                    x = op(x)
+            x = self.ops[0].adjoint_eval(x, out = x)
             for d_eq_cd,op in zip(self.d_eq_cd[1:-1],self.ops[1:-1]):
                 if d_eq_cd:
-                    y = op.adjoint(y, out = y)
+                    x = op.adjoint(x, out = x)
                 else:
-                    y = op.adjoint(y)
-            return self.ops[-1].adjoint(y, out = out)
+                    x = op.adjoint(x)
+            return self.ops[-1].adjoint(x, out = out)
         else:
             self._derivs = []
-            for d_eq_cd,op in zip(self.d_eq_cd[:0:-1],self.ops[:0:-1]):
-                if d_eq_cd:
-                    y, deriv = op.linearize(y, out = y)
+            x, deriv = self.ops[-1].linearize(x)
+            self._derivs.append(deriv)
+            for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
+                if d_eq_cd and not first:
+                    x, deriv = op.linearize(x, out = x)
                 else:
-                    y, deriv = op.linearize(y)
+                    x, deriv = op.linearize(x)
                 self._derivs.insert(0,deriv)
-            y, deriv = self.ops[0].linearize(y, out = y,return_adjoint_eval=True)
+            x, deriv = self.ops[0].linearize(x, out = x,return_adjoint_eval=True)
             self._derivs.insert(0,deriv)
             for d_eq_cd,deriv in zip(self.d_eq_cd[1:-1],self._derivs[1:-1]):
                 if d_eq_cd:
-                    y = deriv.adjoint(y, out = y)
+                    x = deriv.adjoint(x, out = x)
                 else:
-                    y = deriv.adjoint(y)
-            return self._derivs[-1].adjoint(y, out = out)
+                    x = deriv.adjoint(x)
+            return self._derivs[-1].adjoint(x, out = out)
     
     def _iadjoint_data(self, data, out, **kwargs):
         if self.linear:
@@ -1412,19 +1415,19 @@ class Composition(Operator):
     def _iadjoint_derivative(self, x, out, **kwargs):
         if len(kwargs) != 0:
             self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        y = x.copy()
-        for d_eq_cd,deriv in zip(self.d_eq_cd[:0:-1],self._derivs[:0:-1]):
+        x = self._derivs[-1](x)
+        for d_eq_cd,deriv in zip(self.d_eq_cd[-2:0:-1],self._derivs[-2:0:-1]):
             if d_eq_cd:
-                y = deriv(y, out = y)
+                x = deriv(x, out = x)
             else:
-                y = deriv(y)
-        y = self._derivs[0].adjoint_eval(y, out = y)
+                x = deriv(x)
+        x = self._derivs[0].adjoint_eval(x, out = x)
         for d_eq_cd,deriv in zip(self.d_eq_cd[1:-1],self._derivs[1:-1]):
             if d_eq_cd:
-                y = deriv.adjoint(y, out = y)
+                x = deriv.adjoint(x, out = x)
             else:
-                y = deriv.adjoint(y)
-        return self._derivs[-1].adjoint(y, out = out)
+                x = deriv.adjoint(x)
+        return self._derivs[-1].adjoint(x, out = out)
 
     @Operator.inverse.getter
     def inverse(self):
