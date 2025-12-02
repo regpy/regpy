@@ -8,7 +8,7 @@ from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, Li
 from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting, Setting
+from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG,GeometricSequence
 
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
@@ -24,10 +24,10 @@ class SemismoothNewton_bilateral(RegSolver):
     
     Parameters
     ----------
-    *args : [regpy.solvers.RegularizationSetting,array-like,float] or [regpy.solver.TikhonovRegularizationSetting]
-        Either 3 positional arguments [setting : `regpy.solvers.RegularizationSetting`, data : `array-like`,
+    *args : [regpy.solvers.Setting,array-like,float] or [regpy.solver.Setting]
+        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `array-like`,
         regpar : `float`] consisting og the regularization setting, data and a positive float for the 
-        regularization parameter or 1 positional argument [setting : regpy.solver.TikhonovRegularizationSetting] which 
+        regularization parameter or 1 positional argument [setting : regpy.solver.Setting] which 
         already binds the former arguments together.
     xref: array-like, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
@@ -354,7 +354,7 @@ class SemismoothNewton_nonneg(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -509,7 +509,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
 
     Parameters
     ----------
-    setting:  regpy.solvers.RegularizationSetting
+    setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
         The right hand side.

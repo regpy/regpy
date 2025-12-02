@@ -178,8 +178,8 @@ class RegSolver(Solver):
 
     Parameters
     ----------
-    setting: RegularizationSetting
-        RegularizationSetting used for solver
+    setting: Setting
+        Setting used for solver
     x : numpy.ndarray
         Initial argument for iteration. Defaults to None.
     y : numpy.ndarray
@@ -187,7 +187,7 @@ class RegSolver(Solver):
     """
 
     def __init__(self,setting,x=None,y=None):
-        if not (isinstance(setting,Setting) or isinstance(setting,Setting)):
+        if not isinstance(setting,Setting):
             raise TypeError(Errors.not_instance(setting,Setting))
         self.op=setting.op
         """The operator."""
@@ -240,7 +240,7 @@ class Setting:
     def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
                  logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
         if not isinstance(op,Operator):
-            raise TypeError(Errors.not_instance(op,Operator,add_info="Regularization Setting requires op to be a RegPy operator."))
+            raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self.op = op
         """The operator."""
         self.penalty = as_functional(penalty, op.domain)
@@ -544,7 +544,7 @@ class Setting:
 
     ######Methods checking applicability
     def evaluate_methods(self,method_names = None):
-        """Evaluates which methods are applicable to the current TikhonovRegularizationSetting. 
+        """Evaluates which methods are applicable to the current Setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
         Parameters:

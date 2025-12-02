@@ -4,7 +4,7 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, Setting, Setting
+from ..general import RegSolver, Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -25,7 +25,7 @@ class PDHG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
     init_domain : setting.op.domain [default: None]
@@ -161,7 +161,7 @@ class DouglasRachford(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.

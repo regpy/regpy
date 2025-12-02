@@ -26,7 +26,7 @@ class NewtonCG(RegSolver):
 
     Parameters
     ----------
-    setting : RegularizationSetting
+    setting : Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
@@ -108,7 +108,7 @@ class NewtonCGFrozen(RegSolver):
 
     Parameters
     ----------
-    setting : RegularizationSetting
+    setting : Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
@@ -181,7 +181,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
 
     Parameters
     ----------
-    setting : RegularizationSetting
+    setting : Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The data from which to recover. Initializes the rhs y of the equation to be solved. Must 

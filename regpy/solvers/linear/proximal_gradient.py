@@ -3,7 +3,7 @@ import numpy as np
 
 from regpy.util import Errors
 
-from ..general import RegSolver, Setting
+from ..general import RegSolver
 
 __all__ = ["ForwardBackwardSplitting","FISTA"]
 
@@ -17,7 +17,7 @@ class ForwardBackwardSplitting(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: None]
         The initial guess. (domain.zeros() in the default case)
@@ -104,7 +104,7 @@ class FISTA(RegSolver):
     
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
     init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess

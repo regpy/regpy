@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import RegSolver, Setting
+from ..general import RegSolver
 
 __all__ = ["ForwardBackwardSplitting"]
 
@@ -10,7 +10,7 @@ class ForwardBackwardSplitting(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: domain.zeros()]
         The initial guess. 

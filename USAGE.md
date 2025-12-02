@@ -224,7 +224,7 @@ $$
 
 Such regularization methods usually include also penalty functional $R\colon X \to \mathbb{R} \cup \{\infty\}$ which models the domain structure.
 
-To bind all of the structure of your specific regularization setting together the library uses `regpy.solvers.RegularizationSetting` or `regpy.solvers.TikhonovRegularizationSetting`. Objects of this class provide an easy access for any solver to access the operator and both the data fidelity and penalty functional.
+To bind all of the structure of your specific regularization setting together the library uses `regpy.solvers.Setting`. Objects of this class provide an easy access for any solver to access the operator and both the data fidelity and penalty functional.
 
 ```python
 from regpy.vecsps import UniformGridFcts, GridGcts
@@ -239,9 +239,9 @@ op = My_Op(domain,codomain)
 from regpy.hilbert import L2,H1
 from regpy.functionals import L1
 
-from regpy.solvers import RegularizationSetting
+from regpy.solvers import Setting
 
-setting = RegularizationSetting(
+setting = Setting(
     op = op, # the operator
     penalty = L1, # Using the abstract Functional L1 as penalty in the domain
     data_fid = L2+H1, # Using the abstract direct sum of Hilbert space L2 and H1 on the direct sum codomain of UniformGridFcts and GridFcts

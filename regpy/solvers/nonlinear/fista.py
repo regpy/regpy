@@ -20,7 +20,7 @@ class FISTA(RegSolver):
     
     Parameters
     ----------
-    setting : regpy.solvers.TikhonovRegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
     init : setting.op.domain [defaul: setting.op.domain.zeros()]
         The initial guess

@@ -21,7 +21,7 @@ class IrgnmCG(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -116,7 +116,7 @@ class LevenbergMarquardt(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     data : array-like
         The measured data.
@@ -244,7 +244,7 @@ class IrgnmCGPrec(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
     data : array-like
         The measured data.

@@ -1,7 +1,7 @@
 from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..general import RegSolver, Setting, Setting
+from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM","AMA"]
@@ -36,7 +36,7 @@ class ADMM(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
     init : dict [default: {}]
         The initial guess. Relevant keys are v1, v2, p1 and p2. If a key does not exist or if the value in None, 
@@ -165,7 +165,7 @@ class AMA(RegSolver):
     
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
     init : dict [default: {}]
         The initial guess. Relevant keys are g and p. If a key does not exist or if the value in None, 

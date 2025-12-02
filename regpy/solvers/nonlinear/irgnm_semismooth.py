@@ -18,7 +18,7 @@ class IrgnmSemiSmooth(RegSolver):
     
     Parameters
     ----------
-    setting : RegularizationSetting
+    setting : Setting
         Setting for regularization. 
     data : array-like
         Data for reconstruction. Must be in the operators codomain.
