@@ -297,8 +297,7 @@ class Setting:
     def _set_flags(self):
         self.is_tikhonov=(self.regpar is not None)
         """True if a regularization parameter is set"""
-        #TODO check for convexity of data fidelity and penalty
-        self.is_convex=self.op.linear
+        self.is_convex=self.op.linear and self.penalty.convex and self.data_fid.convex
         """True if the operator is linear"""
         self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
         """Ture if penalty and data fidelity are both squared norms"""

@@ -24,7 +24,7 @@ class IntegralFunctionalBase(Functional):
         F\colon X \to \mathbb{R}
         v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
 
-    with \(f\colon \mathbb{R}^2\to \mathbb{R})\. 
+    with :math:`f\colon \mathbb{R}^2\to \mathbb{R})`. 
 
     Subclasses defining explicit functionals of this type have to implement
      * `_f` evaluation the function \(f)\
@@ -34,7 +34,7 @@ class IntegralFunctionalBase(Functional):
      * `_f_conj` evaluation the Fenchel conjugate function \(f^*(v^*,x))\
      * `_f_conj_deriv` the derivative \(\partial_{v^*}f*)\
      * `_f_conj_second_deriv' the second derivative \(\partial f*^2/\partial v_*^2)\ (often not needed!)
-     * `_f_conj_prox` giving the proximal  function \( \(\mathrm{prox}_{\tau f^*(\cdot,x)})\     
+     * `_f_conj_prox` giving the proximal  function \(\mathrm{prox}_{\tau f^*(\cdot,x)})\     
     
     since 
 
@@ -1003,7 +1003,7 @@ class VectorIntegralFunctional(Functional):
 
 class LppL2(VectorIntegralFunctional):
     """
-    VectorIntegralFunctional with \(f_i(x):=(1/p)|x|^p\).
+    VectorIntegralFunctional with :math:`f_i(x):=(1/p)|x|^p`.
 
     Parameters:
     p: float (default: 2.)
@@ -1018,7 +1018,7 @@ class LppL2(VectorIntegralFunctional):
 
 class L1L2(VectorIntegralFunctional):
     """
-    VectorIntegralFunctional with absolute value function as \(f_i\).
+    VectorIntegralFunctional with absolute value function as :math:`f_i`.
     """
     def __init__(self, vdomain,sigma=1.):
         sfunc = L1MeasureSpace(vdomain.scalar_space())
@@ -1026,7 +1026,7 @@ class L1L2(VectorIntegralFunctional):
 
 class HuberL2(VectorIntegralFunctional):
     """
-    VectorIntegralFunctional with Huber functional as \(f_i\).
+    VectorIntegralFunctional with Huber functional as :math:`f_i`.
 
     Parameters:
     sigma: float (default: 1.)

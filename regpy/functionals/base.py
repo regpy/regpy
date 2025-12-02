@@ -290,7 +290,7 @@ class AbstractComposed(AbstractFunctional):
 
 class Functional:
     r"""
-    Base class for implementation of convex functionals. Subsclasses should at least implement the 
+    Base class for implementation of functionals. Subsclasses should at least implement the 
         `_eval` :  evaluating the funcitonal
     and 
         `_subgradient` or `_linearize` : returning a subgradient at `x`.
@@ -313,7 +313,9 @@ class Functional:
     h_domain : regpy.hilbert.HilbertSpace (default: None)
         The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
         and the Lipschitz constant are defined with respect to this Hilbert space.
-        In the default case `L2(domain)` is used.   
+        In the default case `L2(domain)` is used.
+    convex: bool [default: True]
+        If true, the functional should be convex.   
     linear: bool [default: False]
         If true, the functional should be linear. 
     separable: bool [default: False]
@@ -346,6 +348,7 @@ class Functional:
                  convexity_param=0.,
                  Lipschitz = inf,
                  separable = False,
+                 convex = True,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
                  methods = set(), conj_methods = set()
                  ):
@@ -373,6 +376,8 @@ class Functional:
             raise TypeError(f'separable must be boolean. Got {separable}.')
         self.separable = separable
         """boolean indicating if the functional is separable."""
+        self.convex = convex
+        """boolean indicating if the functional is convex."""
 
         if self.separable:
             if isinstance(dom_l,np.ndarray) and isinstance(dom_u,np.ndarray) and np.any(dom_l>dom_u):
@@ -729,11 +734,14 @@ class Conj(Functional):
 
     def __init__(self, func):
         self.func = func
+        if not func.convex:
+            self.log.warning("Taking conjugate of a non-convex functional. The biconjugate will not coincide with the primal functional.")
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
                          Lipschitz = 1/func.convexity_param if func.convexity_param>0 else inf,
                          convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf,
                          separable = func.separable,
+                         convex = True,
                          dom_u = func.conj_dom_u if func.separable else None, 
                          dom_l = func.conj_dom_l if func.separable else None, 
                          conj_dom_u = func.dom_u if func.separable else None,  
@@ -821,6 +829,7 @@ class LinearFunctional(Functional):
             self._gradient = h_domain.gram(gradient)
         super().__init__(domain=domain,h_domain=h_domain,linear=True,Lipschitz = 0,
                          separable=True,
+                         convex = True,
                          dom_l=np.broadcast_to(-inf,domain.shape), dom_u = np.broadcast_to(inf,domain.shape),
                          conj_dom_l = self._gradient, conj_dom_u = self._gradient,
                          methods = {'eval','subgradient','hessian','proximal','is_subgradient'},
@@ -1105,7 +1114,7 @@ class LinearCombination(Functional):
                 coeff, func = arg
             else:
                 coeff, func = 1, arg
-            if not isinstance(func, Functional) or not isinstance(coeff,(int,float)) or coeff<0:
+            if not isinstance(func, Functional) or not isinstance(coeff,(int,float)):
                 raise ValueError(util.Errors.value_error(f"""
         The LinearCombination only takes a list of arbitrary items provided either tuples 
         (coeff,func) which are a real non-negative number and functional or a only a functional. However, you gave:
@@ -1159,10 +1168,15 @@ class LinearCombination(Functional):
             conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
         else: 
             conj_methods = set()
-
+        all_convex = all([func.convex for func in self.funcs])
+        Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
+        Lipschitz -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
+        convexity_param = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
+        convexity_param += sum(coeff*fun.Lipschitz_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
         super().__init__(domain, linear = all(self.linear_table),
-                         convexity_param= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs)),
-                         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs)),
+                         Lipschitz = Lipschitz if all_convex else np.inf,
+                         convexity_param = convexity_param if (convexity_param>=0 and all_convex) else 0.,
+                         convex =  all_convex and convexity_param>=0,
                          separable=separable,
                          dom_l = np.max([F.dom_l for F in self.funcs]) if separable else None,
                          dom_u = np.min([F.dom_u for F in self.funcs]) if separable else None,
@@ -1222,6 +1236,8 @@ class LinearCombination(Functional):
             return NotImplementedError
     
     def _conj(self, xstar,**kwargs):
+        if not self.convex:
+            raise RuntimeError('conj of non-convex LinearCombination not implemented.')
         if len(self.funcs) == 1:
             return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
@@ -1233,6 +1249,8 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _conj_subgradient(self, xstar,**kwargs):
+        if not self.convex:
+            raise RuntimeError('conj.subgradient of non-convex linear combination not implemented.')        
         if len(self.funcs) == 1:
             return self.funcs[0]._conj_subgradient(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
@@ -1258,6 +1276,8 @@ class LinearCombination(Functional):
             return NotImplementedError
     
     def _conj_hessian(self, xstar,**kwargs):
+        if not self.convex:
+            raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
         if len(self.funcs) == 1:
             return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
@@ -1269,6 +1289,8 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _conj_proximal(self, xstar,tau,**kwargs):
+        if not self.convex:
+            raise RuntimeError('conj.proximal of non-convex linear combination not implemented.')
         if len(self.funcs) == 1:
             return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0],**kwargs)
         elif self.linear_table.count(False)==0:
@@ -1300,6 +1322,7 @@ class VerticalShift(Functional):
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz,
                          separable = func.separable,
+                         convex = func.convex,
                          dom_l = func.dom_l, 
                          dom_u = func.dom_u, 
                          conj_dom_l = func.conj_dom_l, 
@@ -1390,6 +1413,7 @@ class HorizontalShiftDilation(Functional):
                          Lipschitz = func.Lipschitz * dilation**2,
                          convexity_param= func.convexity_param  * dilation**2,
                          separable = func.separable,
+                         convex = func.convex,
                          dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u,
                          methods = func.methods, conj_methods=func._conj_methods
                          )
@@ -1481,9 +1505,10 @@ class Composed(Functional):
                 conj_methods = set()
 
         super().__init__(op.domain,
-                         linear = func.linear,
+                         linear = func.linear and  op.linear,
                          convexity_param= func.convexity_param * op_lower_bound**2,
                          Lipschitz= func.Lipschitz * op_norm**2,
+                         convex = func.convex and op.linear, 
                          methods = {'eval','subgradient','hessian'} if methods is None else methods,
                          conj_methods = conj_methods
                          )
@@ -1574,6 +1599,7 @@ class FunctionalOnDirectSum(Functional):
         """List of the functionals on each summand of the direct sum domain.
         """
         separable = all([func.separable for func in funcs])
+        convex = all([func.convex for func in funcs])
         dom_l = domain.join(*[func.dom_l for func in funcs]) if separable else None
         dom_u = domain.join(*[func.dom_u for func in funcs]) if separable else None
         conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]) if separable else None
@@ -1584,6 +1610,7 @@ class FunctionalOnDirectSum(Functional):
                         convexity_param = min([func.convexity_param for func in funcs]),
                         Lipschitz = max([func.Lipschitz for func in funcs]),
                         separable = separable,
+                        convex = convex,
                         dom_l = dom_l, dom_u = dom_u, conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
                         methods=methods,conj_methods=conj_methods 
                         )
@@ -1672,6 +1699,3 @@ def as_functional(func, vecsp):
     elif isinstance(func,Composed) and func.op.domain != vecsp:
         raise ValueError(f"Given Vector space {vecsp} and the domain of the composed functional {func.func.domain} do not match.")
     return func
-
-
-
