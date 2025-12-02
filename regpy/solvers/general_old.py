@@ -363,58 +363,113 @@ class RegularizationSetting:
         
 
 class TikhonovRegularizationSetting(RegularizationSetting):
+    r"""Tikhonov regularization setting for minimizing a Tikhonov functional 
 
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
-                 logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
+    .. math::
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+
+    In contrast to RegularizationSetting, the regularization parameter is fixed, 
+    the data fidelity functional :math:`\mathcal{S}=self.data_fid` incorporates the data :math:`g^{\delta}` of the inverse problem, 
+    and the penalty term :math:`\mathcal{R}` incorporates a potential initial guess.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The forward operator.
+    penalty : regpy.functionals.Functional
+        The penalty functional :math:`\mathcal{R}`.
+    data_fid : regpy.functionals.Functional
+        The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
+    regpar: float [default: 1]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data_fid_shift: op.co_domain [default: None]
+        If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
+    """
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None,
+                 logging_level = "INFO"):
         super().__init__(op, penalty, data_fid)
         if not penalty_shift is None:
             self.penalty_shift = penalty_shift
             self.penalty = self.penalty.shift(penalty_shift)
         else:
             self.penalty_shift = None
+        
         if not data_fid_shift is None:
             self.data_fid_shift = data_fid_shift
             self.data_fid = self.data_fid.shift(data_fid_shift)
         else:
             self.data_fid_shift = None
-        self.regpar=regpar
+        if not isinstance(regpar,(float,int)):
+            raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
+        if regpar <= 0:
+            raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
+        self.regpar = float(regpar)
         self.log.setLevel(logging_level)
+
+class TikhonovRegularizationSetting(TikhonovRegularizationSetting):
+    r"""Tikhonov regularization setting for minimizing a convex Tikhonov functional 
+
+    .. math::
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+
+    To ensure convexity, the operator $T$ must be linear here, and the functionals $\mathcal{S}_{g^{\delta}}$
+    and $\mathcal{R}$ must be convex. This is, more generally, the setting of Rockafellar-Fenchel duality, 
+    which involves a rich and algorithmically useful mathematical structure. In particular, the dual setting 
+    and primal-dual optimality conditions are provided. 
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The linear forward operator.
+    penalty : regpy.functionals.Functional
+        The penalty functional :math:`\mathcal{R}`.
+    data_fid : regpy.functionals.Functional
+        The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
+    regpar: float [default: 1]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data_fid_shift: op.co_domain [default: None]
+        If not None, the data fidelity functional is replaced by data_fid(. - data_fid_shift).
+    primal_setting: None or TikhonovRegularizationSetting [default:None]
+        Indicates whether or not a setting serves as primal setting. For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
+        This affects the duality relations and the duality gap. 
+    logging_level: int [default: INFO]
+        logging level
+    """
+
+    def __init__(self, op, penalty, data_fid,regpar=1.,penalty_shift= None, data_fid_shift= None, 
+                 primal_setting=None,logging_level = "INFO",gap_threshold = 1e5):
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
         #TODO check that penalty and data_fid are convex!
         if not op.linear:
             raise ValueError('Operator must be linear in Tikhonov regularization setting')
+        super().__init__(op,penalty=penalty, data_fid= data_fid,regpar=regpar,
+                         penalty_shift=penalty_shift,data_fid_shift=data_fid_shift,logging_level=logging_level)
+
         self.gap_threshold = gap_threshold
         """The regularization parameter"""
         if primal_setting is not None and not isinstance(primal_setting,TikhonovRegularizationSetting):
             raise TypeError(Errors.type_error(f"The primal_setting needs to be either None or of {type(self)}!"))
         self.primal_setting = primal_setting
         if primal_setting is None:
-            self._methods = TikhonovRegularizationSetting.method_dict
+            self._methods = {
+                'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
+                'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
+                'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
+                'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
+                'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
+                'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
+                'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
+                'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
+                'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
+                'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+            }
 
 
-    def _set_flags(self):
-        if(self.regpar is not None):
-            self.is_tikhonov=True
-        if(self.op.linear):
-            #TODO check for convexity
-            self.is_convex=True
-
-    @property
-    def regpar(self):
-        return self._regpar
-
-    @regpar.setter
-    def regpar(self,new_regpar):
-        if(new_regpar is not None):
-            if not isinstance(new_regpar,(float,int)):
-                raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
-            if new_regpar <= 0:
-                raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
-            new_regpar = float(new_regpar)
-        self._regpar=new_regpar
-        self._set_flags()
-
-
-    def get_dual_setting(self):
+    def dualSetting(self):
         r"""Yields the setting of the dual optimization problem
 
         .. math::
@@ -430,7 +485,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             logging_level=self.log.level
         )
 
-    def dual_to_primal(self,pstar,argumentIsOperatorImage = False, own= False):
+    def dualToPrimal(self,pstar,argumentIsOperatorImage = False, own= False):
         r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
         If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
         If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
@@ -451,12 +506,12 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             else:
                 return self.penalty.conj.subgradient(self.op.adjoint(pstar))
         else:
-            return self.primal_setting.primal_to_dual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
+            return self.primal_setting.primalToDual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
             """Note that the dual variables of the dual problem differ by a factor -alpha_d from the primal variables of the primal problem.
             Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
             """
         
-    def primal_to_dual(self,x,argumentIsOperatorImage = False, own=False):
+    def primalToDual(self,x,argumentIsOperatorImage = False, own=False):
         r"""
         Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tx)` 
         If :math:`x` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
@@ -479,9 +534,9 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             else:
                 return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
         else:
-            return self.primal_setting.dual_to_primal(x, argumentIsOperatorImage=argumentIsOperatorImage)
+            return self.primal_setting.dualToPrimal(x, argumentIsOperatorImage=argumentIsOperatorImage)
 
-    def duality_gap(self, primal=None, dual=None):
+    def dualityGap(self, primal=None, dual=None):
         r"""Computes the value of the duality gap 
         
         .. math::
@@ -499,11 +554,11 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if primal is None and dual is None:
             raise ValueError(Errors.value_error("Either a primal or dual vector need to be given to compute the duality gap!"))
         if primal is None:
-            f = self.dual_to_primal(dual)
+            f = self.dualToPrimal(dual)
         else:
             f = primal
         if dual is None:
-            p = self.primal_to_dual(primal)
+            p = self.primalToDual(primal)
         else:
             p = dual
         alpha = self.regpar
@@ -523,7 +578,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
-    def is_saddle_point(self,x,p,tol):
+    def isSaddlePoint(self,x,p,tol):
         r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
         or equivalently (in case of strong duality)
         - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
@@ -544,28 +599,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
 
-
-
-
-    #TODO fix imports
-    #from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
-    method_dict={}
-    # method_dict={
-    #             'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
-    #             'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
-    #             'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
-    #             'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
-    #             'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
-    #             'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
-    #             'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
-    #             'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
-    #             'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
-    #             'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
-    #         }
-
-
-
-
     def evaluate_methods(self,method_names = None):
         """Evaluates which methods are applicable to the current TikhonovRegularizationSetting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
@@ -584,7 +617,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
             op_norm = self.op.norm()
         for method_name in method_names:
             method = self._methods[method_name]
-            out,_ = method['class'].check_applicability(self if method['primal'] else self.get_dual_setting(),op_norm=op_norm)
+            out,_ = method['class'].check_applicability(self if method['primal'] else self.dualSetting(),op_norm=op_norm)
             if not method['primal'] and not 'subgradient' in self.penalty.conj.methods:
                 method['info'] = ('' if out['applicable'] else out['info']) + 'Missing subgradient of conjugate penalty.'
                 method['applicable'] = False
@@ -683,7 +716,7 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting.')
 
-        thesetting = self if themethod['primal'] else self.get_dual_setting()
+        thesetting = self if themethod['primal'] else self.dualSetting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
             self.set_stopping_rule(method_name, DualityGapStopping(thesetting,threshold = 0.1,logging_level=logging.INFO) + CountIterations(max_iterations=1000))
 
@@ -693,6 +726,6 @@ class TikhonovRegularizationSetting(RegularizationSetting):
         
         if themethod['primal']==False:
             x_star,y_star = x,y
-            x = self.dual_to_primal(y_star,argumentIsOperatorImage=True)
+            x = self.dualToPrimal(y_star,argumentIsOperatorImage=True)
             y = self.op(x)
         return x,y

@@ -386,11 +386,11 @@ class DualityGapStopping(StopRule):
 
     def _stop(self, x, y=None, dual=None):
         if dual is not None:
-            gap = self.setting.dualityGap(primal = x, dual = dual)
+            gap = self.setting.duality_gap(primal = x, dual = dual)
         elif y is not None:
-            gap = self.setting.dualityGap(primal = x,dual=self.setting.primalToDual(y,argumentIsOperatorImage=True))
+            gap = self.setting.duality_gap(primal = x,dual=self.setting.primal_to_dual(y,argumentIsOperatorImage=True))
         else:
-            gap = self.setting.dualityGap(primal = x)
+            gap = self.setting.duality_gap(primal = x)
         self.history_dict["duality gap"].append(gap)
         gap_stop = gap<=self.cutoff
         self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      

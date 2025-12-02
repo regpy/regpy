@@ -72,11 +72,11 @@ class PDHG(RegSolver):
                 self.pstar = setting.op.codomain.zeros()
             else:
                 self.pstar = init_codomain_star
-                self.x = setting.dualToPrimal(self.pstar)
+                self.x = setting.dual_to_primal(self.pstar)
         else:
             self.x = init_domain
             if init_codomain_star is None:
-                self.pstar = setting.primalToDual(self.x)
+                self.pstar = setting.primal_to_dual(self.x)
             else:
                 self.pstar = init_codomain_star
         self.dual = self.pstar
