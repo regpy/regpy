@@ -1729,7 +1729,8 @@ class CoordinateMask(Operator):
 
 class PtwMultiplication(Operator):
     r"""A multiplication operator by a constant factor where each vector entry is multiplied 
-    by the vector entry of `factor`. 
+    by the vector entry of `factor`. This works analogous to the pointwise multiplication in numpy. Note that the pointwise multiplication of the coefficients
+    might not represent a pointwise multiplication of the underlying functions depending on the vector space.
 
     Parameters
     ----------
