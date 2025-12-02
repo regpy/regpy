@@ -2613,8 +2613,8 @@ class Product(Operator):
             ))
 
     def _eval(self,x,differentiate=False):
-        out = x[0].copy()
-        for x_i in x[1:]:
+        out = self.codomain.ones()
+        for x_i in x:
             out *= x_i
         if differentiate:
             self.deriv_data=[self.codomain.ones() for _ in x]
