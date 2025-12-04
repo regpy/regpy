@@ -26,19 +26,24 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like
-        The measured data/right hand side.
     init : array-like
         The initial guess.
+    data : array-like, default None
+        The measured data/right hand side. If None it is taken from setting.
     stepsize : float, optional
         The step length; must be chosen not too large. If omitted, it is guessed from the norm of
         the derivative at the initial guess.
     """
 
-    def __init__(self, setting, data, init, stepsize=None, norm_method = None):
+    def __init__(self, setting, init,data=None, stepsize=None, norm_method = None):
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="The linear Landweber requires the operator to be linear! Use the Landweber from non-linear module!"))
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         if init not in self.op.domain:

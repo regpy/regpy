@@ -27,10 +27,10 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like
-        The measured data/right hand side.
     init : array-like
         The initial guess.
+    data : array-like, default None
+        The measured data/right hand side. If None it is taken from setting.
     stepsize : float, optional
         The step length; must be chosen not too large. If omitted, it is guessed from the norm of
         the derivative at the initial guess. Alternatively, if backtracking is used, stepsize defines an
@@ -40,12 +40,17 @@ class Landweber(RegSolver):
         Wether or not to use backtracking for finding a sufficient step length. Default: True.
     """
 
-    def __init__(self, setting, data, init, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
+    def __init__(self, setting,init,data=None, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
         super().__init__(setting)
         if self.op.linear:
             self.log.warning("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear")
         if init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         self.rhs = data
         """The right hand side gets initialized with the measured data."""
         self.x = init
