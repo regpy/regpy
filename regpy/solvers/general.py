@@ -256,7 +256,7 @@ class Setting:
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
     or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
-    
+
     Parameters
     ----------
     op : regpy.operators.Operator
@@ -302,13 +302,16 @@ class Setting:
             self.penalty = self.penalty.shift(penalty_shift)
         else:
             self.penalty_shift = None
-        if not data is None:
-            self.data = data
-            self.data_fid = self.data_fid.shift(data)
-        else:
-            self.data = None
         self.regpar=regpar#The flags are set by setting the regularization parameter
         """The Regularization parameter"""
+        if(not self.data_fid.is_data_func and data is None):
+            self.log.warning("Setting does not contain any explicit data.")
+            self._data=None
+        if(self.data_fid.is_data_func):
+            self._data=self.data_fid.data#just update internal data, update of data functional not necessary
+        if(data is not None):
+            self.data = data #data and data fidelity functional are updated
+        
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
         if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
@@ -316,6 +319,23 @@ class Setting:
         self.primal_setting = primal_setting
         if primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self,new_data):
+        self.change_data(new_data=new_data)
+
+    def change_data(self,new_data):
+        if(new_data is None):
+            raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
+        if(self.data_fid.is_data_func):
+            self.log.warning("Existing data in data fidelity functional is overwritten.")
+        self.data_fid=self.data_fid.as_data_func(new_data)
+        self._data=new_data
+        self._set_flags()
 
 
     def _set_flags(self):
