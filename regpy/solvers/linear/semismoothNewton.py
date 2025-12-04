@@ -520,10 +520,10 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data: array-like
-        The right hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+    data: array-like, default None
+        The right hand side. If it is None the data is taken from setting.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50
@@ -533,13 +533,18 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     tol_fac_cg: float, default: 1e-6
         absolute tolerance for inner cg iteration is tol_fac_cg/sqrt(alpha)
     """
-    def __init__(self,setting, data, alphas, xref=None,max_Newton_iter=50,
+    def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
         if self.op.domain.dtype != float:
             raise TypeError(Errors.type_error("SemismoothNewtonAlphaGrid requires the domain to be real!"))
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         if xref is not None and xref not in self.op.domain:
