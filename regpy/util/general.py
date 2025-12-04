@@ -18,17 +18,30 @@ class Errors:
         return Errors._compose_message(title = "Generic Error", content = msg)
     
     @staticmethod
+    def failed_test(msg : str, obj : object | None = None, meth : str | None = None):
+        if obj is None:
+            if meth is None:
+                return Errors._compose_message(title = "Test Failed", content = msg)
+            else:
+                return Errors._compose_message(title = f"Test of method {meth} failed", content = msg)
+        else:
+            if meth is None:
+                return Errors._compose_message(title = f"Test of {obj} failed", content = msg)
+            else:
+                return Errors._compose_message(title = f"Test of method {meth} of {obj} failed", content = msg)
+    
+    @staticmethod
     def value_error(msg : str, obj : object | None = None, meth : str | None = None):
         if obj is None:
             if meth is None:
                 return Errors._compose_message(title = "Value Error", content = msg)
             else:
-                return Errors._compose_message(title = "Value Error in method {meth}", content = msg)
+                return Errors._compose_message(title = f"Value Error in method {meth}", content = msg)
         else:
             if meth is None:
-                return Errors._compose_message(title = "Value Error in {obj}", content = msg)
+                return Errors._compose_message(title = f"Value Error in {obj}", content = msg)
             else:
-                return Errors._compose_message(title = "Value Error in method {meth} of {obj}", content = msg)
+                return Errors._compose_message(title = f"Value Error in method {meth} of {obj}", content = msg)
     
     @staticmethod
     def type_error(msg : str, obj : object | None = None, meth : str | None = None):
@@ -36,12 +49,12 @@ class Errors:
             if meth is None:
                 return Errors._compose_message(title = "Type Error", content = msg)
             else:
-                return Errors._compose_message(title = "Type Error in method {meth}", content = msg)
+                return Errors._compose_message(title = f"Type Error in method {meth}", content = msg)
         else:
             if meth is None:
-                return Errors._compose_message(title = "Type Error in {obj}", content = msg)
+                return Errors._compose_message(title = f"Type Error in {obj}", content = msg)
             else:
-                return Errors._compose_message(title = "Type Error in method {meth} of {obj}", content = msg)
+                return Errors._compose_message(title = f"Type Error in method {meth} of {obj}", content = msg)
     
     @staticmethod
     def runtime_error(msg : str, obj : object | None = None, meth : str | None = None):
@@ -49,12 +62,12 @@ class Errors:
             if meth is None:
                 return Errors._compose_message(title = "Runtime Error", content = msg)
             else:
-                return Errors._compose_message(title = "Runtime Error in method {meth}", content = msg)
+                return Errors._compose_message(title = f"Runtime Error in method {meth}", content = msg)
         else:
             if meth is None:
-                return Errors._compose_message(title = "Runtime Error in {obj}", content = msg)
+                return Errors._compose_message(title = f"Runtime Error in {obj}", content = msg)
             else:
-                return Errors._compose_message(title = "Runtime Error in method {meth} of {obj}", content = msg)
+                return Errors._compose_message(title = f"Runtime Error in method {meth} of {obj}", content = msg)
 
 
     @staticmethod
