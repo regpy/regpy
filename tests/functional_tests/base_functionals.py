@@ -5,6 +5,8 @@ from regpy.operators import ImaginaryPart
 from regpy.functionals import *
 from regpy.functionals.base import * 
 from regpy.functionals.base import Conj
+from regpy.util import functional_tests as ft
+from regpy.hilbert import L2
 
 def test_initialization():
     """ Tests if it can initialize the Abstract functional instances with their most general registered spaces and it evaluates properly.
@@ -59,3 +61,17 @@ def test_operation():
     assert isinstance(func-5, VerticalShift)
     assert isinstance(func.conj, Conj)
 
+def test_squared_norm():
+    measure=np.arange(1,7).reshape(2,3)
+    vs=MeasureSpaceFcts(measure=measure,dtype=np.complex128)
+    func=SquaredNorm(L2(vs),a=2.0,b=3.0*vs.ones(),c=4.0)
+    assert np.allclose(func(vs.ones()),88.0)
+    ft.test_functional(func)
+    # measure2=np.arange(1,7).reshape(2,3)
+    # vs2=MeasureSpaceFcts(measure=measure2,dtype=np.complex128)
+    # func2=SquaredNorm(L2(vs2),a=2.0,shift=5.0*vs.ones())
+    # print(func2(6*vs.ones()))
+    # assert np.allclose(func(vs.ones()),21.0)
+    # ft.test_functional(func2)
+
+test_squared_norm()

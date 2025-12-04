@@ -960,11 +960,13 @@ class SquaredNorm(Functional):
             if not isinstance(c,(float,int)): raise ValueError(util.Errors.not_instance(c,float,add_info="for SquaredNorm `c` has to be a scalar!"))
             self.c = float(c)
         else:
+            if b is not None or c!=0:
+                raise ValueError(util.Errors.generic_message("If shift is given b and c cannot be set."))
             if shift in self.domain:
                 self.b = -self.a*shift
                 self.c = (self.a/2.) * self.h_domain.norm(shift)**2
             else:
-                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift no tin domain of functional {self}."))
+                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift not in domain of functional {self}."))
 
     def _eval(self, x):
         return (self.a/2.) * self.h_domain.norm(x)**2  + self.h_domain.inner(self.b,x) + self.c
