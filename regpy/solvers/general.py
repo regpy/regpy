@@ -256,11 +256,35 @@ class Setting:
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
     or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
+    
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The forward operator.
+    penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+        The penalty functional.
+    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+        The data misfit functional.
+    regpar: float [default: None]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data: op.co_domain [default: None]
+        If not None, the data in the data fidelity functional is replaced by data.
+    primal_setting: None or TikhonovRegularizationSetting [default:None]
+        Indicates whether or not a setting serves as primal setting. For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
+        This affects the duality relations and the duality gap. 
+    gap_threshold: float [default: 1e5]
+    logging_level: int [default: logging.INFO]
+        logging level
     """
+
+    
+    
     log = ClassLogger()
 
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data= None,
-                 logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
+    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data= None,primal_setting=None,gap_threshold = 1e5,
+                 logging_level = "INFO"):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self.op = op
