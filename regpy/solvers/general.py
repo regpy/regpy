@@ -543,9 +543,6 @@ class Setting:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
         return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
                self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
-
-
-
     
     ######Methods checking applicability
     @staticmethod
@@ -565,8 +562,6 @@ class Setting:
                 'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
-
-
     
     def evaluate_methods(self,method_names = None):
         """Evaluates which methods are applicable to the current Setting. 
