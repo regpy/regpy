@@ -1446,7 +1446,10 @@ class Composition(Operator):
                 ))
 
     def __repr__(self):
-        return util.make_repr(self, *self.ops)
+        if hasattr(self,"ops"):
+            return util.make_repr(self, *[type(op).__qualname__ for op in self.ops])
+        else:
+            return util.make_repr(self)
 
 
 class PartOfOperator(Operator):

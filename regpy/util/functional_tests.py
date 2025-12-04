@@ -415,7 +415,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         func.log.info("Passed Young inequality test!")
         return True
     else:
-        func.log.warning("Failed Young inequality test! err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}")
+        func.log.warning(f"Failed Young inequality test! err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}")
         return False
 
 def test_functional(func,u_s=None,sample_N=5,

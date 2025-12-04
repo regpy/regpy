@@ -1,111 +1,110 @@
 import numpy as np
 from scipy.sparse import csc_array
+import pytest
 
+from regpy.vecsps import TupleVector
 from regpy.vecsps.numpy import *
 from regpy.operators.numpy import *
 
-from .base_operator import op_basics_wrapper,op_evaluation_and_ot,collect_errors
+from .base_operator import op_basics_wrapper,op_evaluation_and_ot
 
 
+class TestMatrixMultiplication():
+    @pytest.mark.parametrize("matrix",[np.random.rand(3,5),np.random.rand(20,21),np.random.rand(20,21)+1j*np.random.rand(20,21)])
+    def test_on_random_matrix(self,matrix):
+        op_basics_wrapper(MatrixMultiplication, matrix, test_methods=True)
+        op = MatrixMultiplication(matrix)
+        op_evaluation_and_ot(op)
 
-def test_MatrixMultiplication():
-    errors = []
-    errors += op_basics_wrapper(MatrixMultiplication, np.random.rand(3,5), test_methods=True,domain= UniformGridFcts(5),codomain=UniformGridFcts(3))
+    def test_eval(self):
+        matrix = np.arange(4*7).reshape(4,7)
+        vec = np.sum(matrix,axis=1)
+        op = MatrixMultiplication(matrix=matrix)
+        assert vec == pytest.approx(op(op.domain.ones()))
     
-    op = MatrixMultiplication(np.random.rand(20,21),domain= UniformGridFcts(21),codomain=UniformGridFcts(20))
-
-    errors += op_evaluation_and_ot(op)
-
-    op = MatrixMultiplication(np.random.rand(20,21)+1j*np.random.rand(20,21))
-
-    errors += op_evaluation_and_ot(op)
-
-    collect_errors(MatrixMultiplication,errors)
-    
-def test_CholeskyInverse():
-    errors = []
+class TestCholeskyInverse():
     op_mat = MatrixMultiplication(np.array([[9, 3, 1, 5], [3, 7, 5, 1], [1, 5, 9, 2], [5, 1, 2, 6]]),domain= UniformGridFcts(4),codomain=UniformGridFcts(4))
-    errors += op_basics_wrapper(CholeskyInverse, op_mat, test_methods=True, inv_tol=1e-14)
     
-    op = CholeskyInverse(op_mat)
-
-    errors += op_evaluation_and_ot(op)
-
-    collect_errors(CholeskyInverse,errors)
+    def test_op_basic(self):
+        op_basics_wrapper(CholeskyInverse, self.op_mat, test_methods=True, inv_tol=1e-14)
     
-def test_SuperLUInverse():
-    errors = []
+    def test_ot_eval(self):
+        op = CholeskyInverse(self.op_mat)
+        op_evaluation_and_ot(op)
+    
+class TestSuperLUInverse():
     mat =  csc_array([[1,2,0,4], [1,0,0,1], [1,0,2,1], [2,2,1,0.]])
     op_mat = MatrixMultiplication(mat,domain= UniformGridFcts(4),codomain=UniformGridFcts(4))
-    errors += op_basics_wrapper(SuperLUInverse, op_mat, test_methods=True, inv_tol=1e-14)
-
-    op = SuperLUInverse(op_mat)
-
-    errors += op_evaluation_and_ot(op)
-
-    collect_errors(CholeskyInverse,errors)
     
-def test_Power():
+    def test_op_basic(self):
+        op_basics_wrapper(SuperLUInverse, self.op_mat, test_methods=True, inv_tol=1e-14)
+
+    def test_ot_eval(self):
+        op = SuperLUInverse(self.op_mat)
+        op_evaluation_and_ot(op)
+    
+class TestPower():
     errors = []
     vs = NumPyVectorSpace((2,4),dtype=complex)
-    errors += op_basics_wrapper(Power,3,vs,test_methods=True,integer=True)
-    errors += op_basics_wrapper(Power,1.0,vs,test_methods=True,integer=True)
-    errors += op_basics_wrapper(Power,1.5,vs,test_methods=True)
-    errors += op_basics_wrapper(Power,-1.5,vs,test_methods=True)
-
-    op = Power(1.5,vs)
-    x = (np.arange(8).reshape(2,4) + 1j*np.arange(8).reshape(2,4))**2
-    res = np.array([(-1+1j)*(2*i)*i**2 for i in range(8)]).reshape(2,4)
     
-    errors += op_evaluation_and_ot(op,x=x,res=res)
+    @pytest.mark.parametrize("power, kwargs", [(3,{"integer":True}),(1.0,{"integer":True}),(1.5,{}),(-1.5,{})])
+    def test_op_basic(self,power,kwargs):
+        op_basics_wrapper(Power,power,self.vs,test_methods=True,**kwargs)
 
-    op = Power(3.0,vs,integer=True)
-    x = np.arange(8).reshape(2,4) +1j*np.arange(8).reshape(2,4)
-    res = np.array([(-1+1j)*(2*i)*i**2 for i in range(8)]).reshape(2,4)
+    @pytest.mark.parametrize("power, kwargs, x, res", [
+        (1.5,{},(np.arange(8).reshape(2,4) + 1j*np.arange(8).reshape(2,4))**2,np.array([(-1+1j)*(2*i)*i**2 for i in range(8)]).reshape(2,4)),
+        (3.0,{"integer":True},np.arange(8).reshape(2,4) +1j*np.arange(8).reshape(2,4),np.array([(-1+1j)*(2*i)*i**2 for i in range(8)]).reshape(2,4))])
+    def test_ot_eval(self,power,kwargs,x,res):
+        op = Power(power,self.vs,**kwargs)
+        op_evaluation_and_ot(op,x=x,res=res)
+
+@pytest.mark.parametrize("vs",[ 
+        NumPyVectorSpace((2,4),dtype=complex),
+        NumPyVectorSpace((3,5))
+    ])
+class TestExponential():
+
+    def test_op_basic(self,vs):
+        op_basics_wrapper(Exponential,vs,test_methods=True)
+
+    def test_ot_eval(self,vs):
+        op=Exponential(domain=vs)
+        x=vs.randn()
+        res = np.exp(x)
+
+        op_evaluation_and_ot(op,x=x,res=res)
+
+@pytest.mark.parametrize("vs",[ 
+        (NumPyVectorSpace((2,4),dtype=complex),NumPyVectorSpace(3,dtype=complex),NumPyVectorSpace((5,2),dtype=complex)),
+        (NumPyVectorSpace((2,4)),NumPyVectorSpace(3),NumPyVectorSpace((5,2)))
+    ])
+class TestOuterProduct():
+
+    def test_op_basic(self,vs):
+        op_basics_wrapper(OuterProduct,*vs,test_methods=True)
+
+    def test_ot_eval(self,vs):
+        op=OuterProduct(*vs)
+        x=op.domain.randn()
+        res = op.codomain.product(*x)
+        op_evaluation_and_ot(op,x=x,res=res)
     
-    errors += op_evaluation_and_ot(op,x=x,res=res)
-
-    collect_errors(Power,errors)
-    
-def test_Exponential():
+@pytest.mark.parametrize("s,spaces",[
+    ("ijki,ji,il->ik",(UniformGridFcts(2,3,3,2,dtype=np.complex128),UniformGridFcts(3,2)) ), #non-linear
+    ("ijki,il->ji",(UniformGridFcts(2,3,3,2,dtype=np.complex128),)) #linear
+ ])
+class TestEinSum():
     errors = []
-    vs = NumPyVectorSpace((2,4),dtype=complex)
-    errors += op_basics_wrapper(Exponential,vs,test_methods=True)
-
-    op=Exponential(domain=vs)
-    x=vs.randn()
-    res = np.exp(x)
-
-    errors += op_evaluation_and_ot(op,x=x,res=res)
-
-    collect_errors(Exponential,errors)
-
-def test_OuterProduct():
-    errors = []
-    vs = (NumPyVectorSpace((2,4),dtype=complex),NumPyVectorSpace(3,dtype=complex),NumPyVectorSpace((5,2),dtype=complex))
-    op=OuterProduct(*vs)
-    x=op.domain.randn()
-    res = op.codomain.product(*x)
-    errors += op_evaluation_and_ot(op,x=x,res=res)
-    collect_errors(OuterProduct,errors)
-
-def test_EinSum():
-    errors = []
-    u1=UniformGridFcts(2,3,3,2,dtype=np.complex128)
-    u2=UniformGridFcts(3,2)
     tensors=(np.arange(12).reshape(2,6),)
-    #nonlinear example
-    s="ijki,ji,il->ik"
-    errors += op_basics_wrapper(EinSum,s,u1,u2,test_methods=True,tensors=tensors)
-    op=EinSum(s,u1,u2,tensors=tensors)
-    x=op.domain.randn()
-    res = np.einsum(s,*x,*tensors)
-    errors += op_evaluation_and_ot(op,x=x,res=res)
-    #linear example
-    s2="ijki,il->ji"
-    errors += op_basics_wrapper(EinSum,s2,u1,test_methods=True,tensors=tensors)
-    op2=EinSum(s2,u1,tensors=tensors)
-    x=op2.domain.randn()
-    res = np.einsum(s2,x,*tensors)
-    errors += op_evaluation_and_ot(op2,x=x,res=res)
-    collect_errors(EinSum,errors)
+
+    def test_op_basic(self,s,spaces):
+        op_basics_wrapper(EinSum,s,*spaces,test_methods=True,tensors=self.tensors)
+
+    def test_ot_eval(self,s, spaces):
+        op=EinSum(s,*spaces,tensors=self.tensors)
+        x=op.domain.randn()
+        if isinstance(x,TupleVector):
+            res = np.einsum(s,*x,*self.tensors)
+        else:
+            res = np.einsum(s,x,*self.tensors)
+        op_evaluation_and_ot(op,x=x,res=res)

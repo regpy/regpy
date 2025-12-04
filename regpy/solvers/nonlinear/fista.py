@@ -48,11 +48,12 @@ class FISTA(RegSolver):
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.zeros() if init is None else init
         
-        if data is not None:
-            self.data = data
-        else:
-            self.data = setting.data_fid_shift
-
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        self.data=data
         self.log.setLevel(logging_level)
         self.regpar = self.setting.regpar
         self.mu_penalty  = self.regpar * self.penalty.convexity_param

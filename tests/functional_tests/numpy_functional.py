@@ -1,6 +1,8 @@
 import numpy as np
 import logging
 
+import pytest
+
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
@@ -8,93 +10,140 @@ from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, Huber
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 
-
-def test_Lpp():
+@pytest.mark.parametrize("p,l,u", [(1.5, 0.1, 2.3), (1.5, -2.1, -1.2), (1.5, -1.2, 1.), (2., 0.1, 2.3), (2., -2.1, -1.2), (2., -1.2, 1.), (2.5, 0.1, 2.3), (2.5, -2.1, -1.2), (2.5, -1.2, 1.),])
+class TestLpp:
     dom = UniformGridFcts((-3.,3.,100))
-    for p in [1.5,2.,2.5]:
-        for (l,u) in [(0.1,2.3),(-2.1,-1.2),(-1.2,1.)]:
-            msg = f" Testing Lpp functionals for p={p}, l={l}, u={u}"
-            logging.info(msg)
-            print(msg)
-            ft.test_functional(Lpp(dom,p=p,constr_l=l,quad_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=False,msg=msg
-                               )
-            ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,lin_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2),msg=msg
-                               )
-            ft.test_functional(Lpp(dom,p=p,lin_taylor_l=l,constr_u=u),
-                               test_second_deriv=False,test_second_deriv_conj=False,msg=msg
-                               )
-            ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,quad_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2),msg=msg
-                               )
 
-def test_L1():
-    dom = NumPyVectorSpace((2,10)) 
-    x = np.linspace(-5,4.5,20).reshape(2,10)
-    func = L1(dom)
-    assert (func(x) == 50.0)
-    for tau in [0.1,1,2]:
-        assert (func.proximal(x,tau) == np.maximum(0, np.abs(x)-tau)*np.sign(x)).all()
-    ft.test_functional(func,test_second_deriv=False)
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
-    x = dom.ones()
-    func = L1(dom)
-    assert (func(x) == 21.0)
-    ft.test_functional(func) #u_s=[func.domain.rand() for _ in range(5)],
-                       #u_stars=[func.domain.rand() for _ in range(5)],
-                       #test_second_deriv=False)
+    def test_constr_l_quad_taylor_u(self, p, l, u):
+        ft.test_functional(Lpp(self.dom,p=p,constr_l=l,quad_taylor_u=u),
+                        test_second_deriv=(p>=2),test_second_deriv_conj=False
+                        )
+    
+    def test_quad_taylor_l_lin_taylor_u(self, p ,l , u):
+        ft.test_functional(Lpp(self.dom,p=p,quad_taylor_l=l,lin_taylor_u=u),
+                        test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                        )
+    
+    def test_lin_taylor_l_constr_u(self, p ,l , u):
+        ft.test_functional(Lpp(self.dom,p=p,lin_taylor_l=l,constr_u=u),
+                        test_second_deriv=False,test_second_deriv_conj=False
+                        )
+    def test_quad_taylor_l_quad_taylor_u(self, p ,l , u):
+        ft.test_functional(Lpp(self.dom,p=p,quad_taylor_l=l,quad_taylor_u=u),
+                        test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                        )
+
+def test_data_func():
+    dom = MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
+    
+    func = Lpp(dom,p=2.5,constr_l=-1.2,quad_taylor_u=1.)
+
+    data = dom.rand()
+    data_func = func.as_data_func(data)
+    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+
+    data_func.data = dom.ones()
+    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+
+    del data_func.data
+    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+
+    x = ft.sample_essential_domain(func)
+    assert data_func(x) == pytest.approx(func(x))
+
+
+@pytest.mark.parametrize("dom, x, val", [(NumPyVectorSpace((2,10)), np.linspace(-5,4.5,20).reshape(2,10), 50.0), 
+                                        (MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64)), np.ones((2,3), dtype=np.float64), 21.0)])
+class TestL1():
+    def test_evaluate(self,dom, x, val):
+        func = L1(dom)
+        assert func(x) == pytest.approx(val)
+
+    def test_proximal(self, dom,x,val):
+        func = L1(dom)
+        for tau in [0.1,1,2]:
+            assert (func.proximal(x,tau) == np.maximum(0, np.abs(x)-tau)*np.sign(x)).all()
+
+    def test_ft(self, dom,x,val):
+        ft.test_functional(L1(dom),test_second_deriv=False)
 
 def test_TV():
-     ugf = UniformGridFcts((-1,1,10),(-1,1,10))
-     func = TV(ugf)
-     func(ugf.rand())
-     func.proximal(ugf.rand(),1.)
+    ugf = UniformGridFcts((-1,1,10),(-1,1,10))
+    func = TV(ugf)
+    func(ugf.rand())
+    func.proximal(ugf.rand(),1.)
 
-def test_kullback_leibler():
-    dom=UniformGridFcts((-1,1,10),(-2,3,5))
-    F=KL(dom,w=dom.ones())
-    ft.test_functional(F)
-    
-    ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()))
-    ft.test_functional(F-2.)
+class TestKullbackLeibler():
+    dom = UniformGridFcts((-1,1,10),(-2,3,5))
+
+    def test_w_ones(self):
+        F=KL(self.dom,w=self.dom.ones())
+        ft.test_functional(F)
+        
+        ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()))
+        ft.test_functional(F-2.)
+
+    def test_quad_taylor(self):
+        w=1.+0.5*np.sin(self.dom.coords[0]*self.dom.coords[1])   
+        F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
+        ft.test_functional(F)
+        ft.test_functional(4.*F+LinearFunctional(F.domain.ones(),domain=F.domain))
+        ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=-F.domain.ones()))
+        
+    def test_lin_taylor_l(self):
+        F = KL(self.dom,w=4.*self.dom.ones(),lin_taylor_l=0.1,quad_taylor_u=2.5)
+        ft.test_functional(F)
+
+    def test_constr_l_lin_taylor_u(self):
+        F = KL(self.dom,w=self.dom.ones(),constr_l=0.3,lin_taylor_u=2.5)
+        ft.test_functional(F,test_second_deriv=False,test_second_deriv_conj=False)
+
+    def test_data(self):
+        data = self.dom.rand()
+        func = KL(self.dom,w=self.dom.ones())
+
+        data = self.dom.rand()
+        data_func = func.as_data_func(data)
+        ft.test_functional(data_func)
+
+        data_func.data = self.dom.ones()
+        ft.test_functional(data_func)
+
+        del data_func.data
+        ft.test_functional(data_func)
+
+        x = ft.sample_essential_domain(func)
+        assert data_func(x) == pytest.approx(func(x))
 
 
-    w=1.+0.5*np.sin(dom.coords[0]*dom.coords[1])   
-    F2 = KL(dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
-    ft.test_functional(F2)
-    ft.test_functional(4.*F2+LinearFunctional(F2.domain.ones(),domain=F2.domain))
-    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=-F2.domain.ones()))
-
-    F3 = KL(dom,w=4.*dom.ones(),lin_taylor_l=0.1,quad_taylor_u=2.5)
-    ft.test_functional(F3)
-
-    F4 = KL(dom,w=dom.ones(),constr_l=0.3,lin_taylor_u=2.5)
-    ft.test_functional(F4,test_second_deriv=False,test_second_deriv_conj=False)
-
-def test_relative_entropy():
+@pytest.mark.parametrize("kwargs", [{},{"lin_taylor_l" : 0.2}, {"constr_u":3.}])
+class TestRelativeEntropy():
     dom=UniformGridFcts((-5,7,4),(100,200,3))
-    F=RE(dom,w=dom.ones())
-    ft.test_functional(F)
 
-    F2 = RE(dom,w=dom.ones(),lin_taylor_l=0.2)
-    ft.test_functional(2.*F2,test_second_deriv=False)
-    ft.test_functional(F2+LinearFunctional(F2.domain.ones(),domain=F2.domain),test_second_deriv=False)
-    ft.test_functional(HorizontalShiftDilation(F2,dilation=3.,shift=F2.domain.ones()),test_second_deriv=False)
+    def test_ft(self,kwargs):
+        F=RE(self.dom,w=self.dom.ones(), **kwargs)
+        ft.test_functional(F)
 
-    F3 = RE(dom,w=dom.ones(),constr_u=3.)
-    ft.test_functional(F3)    
+    def test_shifted(self, kwargs):
+        F = RE(self.dom,w=self.dom.ones(),lin_taylor_l=0.2)
+        ft.test_functional(F+LinearFunctional(F.domain.ones(),domain=F.domain),test_second_deriv=False)
+        ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()),test_second_deriv=False)
 
-def test_huber():
+class TestHuber():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
     sigma=np.real(dom.ones())
     sigma[0,0]=4
     F=Hub(dom,sigma=sigma,eps=1e-10)
-    ft.test_functional(F)
 
-    ft.test_functional(HorizontalShiftDilation(F,dilation=3,shift=F.domain.ones()))
-    ft.test_functional(F-2.)
-    ft.test_functional(F+LinearFunctional(0.5*F.domain.ones(),domain=F.domain),
+    def test_ft(self):
+        ft.test_functional(self.F)
+
+    def test_shifted(self):
+        ft.test_functional(HorizontalShiftDilation(self.F,dilation=3,shift=self.dom.ones()))
+        ft.test_functional(self.F-2.)
+    
+    def test_LinearComb(self):
+        ft.test_functional(self.F+LinearFunctional(0.5*self.dom.ones(),domain=self.dom),
                        test_second_deriv=False,test_second_deriv_conj=False
                        )    
 
@@ -128,15 +177,21 @@ def test_Composed():
     func2 = Lpp(dom,p=1.5) * np.arange(1,11)
     ft.test_functional(func2,test_second_deriv=False)
 
-def test_VectorIntegralFunctional():
+class TestVectorIntegralFunctional():
     grid = UniformGridFcts((-1,1,10))
     N_v = 5
     vgrid = grid.vector_valued_space(N_v)
-    for p in  [1.5,2,4]:
-        ft.test_functional(LppL2(vgrid,p=p))
-    ft.test_functional(L1L2(vgrid)) 
-    for sigma in [1e-2,1e-1,1,10.]:
-        HuberL2 = VFunc(vgrid,scalar_func=Hub(sigma = sigma))
+
+    @pytest.mark.parametrize("p",[1.5,2,4])
+    def test_LppL2(self,p):
+        ft.test_functional(LppL2(self.vgrid,p=p))
+    
+    def test_L1L2(self):
+        ft.test_functional(L1L2(self.vgrid))
+
+    @pytest.mark.parametrize("sigma",[1e-2,1e-1,1.,10.])
+    def HuberL2(self,sigma):
+        HuberL2 = VFunc(self.vgrid,scalar_func=Hub(sigma = sigma))
         u_s = [ft.sample_vector_in_domain(HuberL2) for _ in range(5)]
         u_stars = [ft.sample_vector_in_domain(HuberL2.conj) for _ in range(5)]
         ft.test_functional(HuberL2, u_s = u_s, u_stars= u_stars,

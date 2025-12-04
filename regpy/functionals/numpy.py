@@ -9,7 +9,7 @@ from scipy.special import lambertw
 from regpy.operators import PtwMultiplication, PtwMatrixVectorMultiplication, PtwScalarMultiplication
 from regpy.vecsps.numpy import *
 from regpy.hilbert import L2
-from regpy.util import Errors
+from regpy.util import Errors, memoized_property
 
 from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed
 
@@ -1306,18 +1306,18 @@ class KullbackLeibler(IntegralFunctionalBase):
     w: domain 
         First argument of Kullback-Leibler divergence.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
-        see IntegralFunctional  
+        see IntegralFunctional
     """
 
     def __init__(self, domain, w,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                 quad_taylor_l=None, quad_taylor_u=None,
+                 quad_taylor_l=None, quad_taylor_u=None, data = None,
                  **kwargs):
         if not w in domain:
             raise ValueError(Errors.value_error('w not in domain.'))
         if np.min(w)<0:
             raise ValueError(Errors.value_error('w must be non-negative.'))
-        self.w = w.copy()
+        self._w = w.copy()
 
         if constr_u is not None and np.any(constr_u<np.inf):
             Lipschitz = np.inf
@@ -1342,6 +1342,37 @@ class KullbackLeibler(IntegralFunctionalBase):
                           quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
+        self.data = data
+
+    @memoized_property
+    def w(self):
+        if self.is_data_func:
+            return self._w + self.data
+        else:
+            return self._w
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self, new_data):
+        if new_data is None:
+            self.is_data_func = False
+            del self.w
+        elif new_data in self.domain:
+            self.is_data_func = True
+            self._data = new_data
+            del self.w
+        else:
+            raise ValueError(Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
+        
+    @data.deleter
+    def data(self):
+        if self.is_data_func:
+            del self._data
+            del self.w
+            self.is_data_func = False
 
     def _f(self, u,**kwargs):
         if 'w' in kwargs.keys():
@@ -1462,7 +1493,7 @@ class KullbackLeibler(IntegralFunctionalBase):
 
 
 class RelativeEntropy(IntegralFunctionalBase):
-    r"""Kullback-Leiber divergence define by
+    r"""Relative Entropy divergence define by
 
     .. math::
         F_w(u) = KL(u,w) = \int (u(x)\ln \frac{u(x)}{w(x)}) \mathrm{d}x
@@ -1470,9 +1501,9 @@ class RelativeEntropy(IntegralFunctionalBase):
     Parameters
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
-        Domain on which to define the Kullback-Leibler divergence
+        Domain on which to define the Relative Entropy divergence
     w: scalar or in domain [optional, default: 1]
-        second argument of the Kullback-Leibler diverengence; reference value if used as penalty functional
+        second argument of the Relative Entropy diverengence; reference value if used as penalty functional
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, scalar or in domain
         see IntegralFunctional  
     """

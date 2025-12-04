@@ -350,7 +350,8 @@ class Functional:
                  separable = False,
                  convex = True,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
-                 methods = set(), conj_methods = set()
+                 methods = set(), conj_methods = set(),
+                 is_data_func = False
                  ):
         if not isinstance(domain, vecsps.VectorSpaceBase):
             raise TypeError(f'domain must be an instance of VectorSpaceBase. Got {domain}')
@@ -397,6 +398,8 @@ class Functional:
             raise ValueError(f"Given methods set {methods} contains inadmissable elements.")
         else:
             self._conj_methods = conj_methods
+
+        self.is_data_func = is_data_func
 
     def __call__(self, x):
         if x not in self.domain:
@@ -655,6 +658,9 @@ class Functional:
         if proximal not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(proximal,self.domain,space_name="domain", add_info=f"The proximal of the conjugate of functional {self} did not return somthing the domain."+"\n\t"+f"xstar = {xstar}"))
         return proximal 
+    
+    def as_data_func(self,data):
+        return HorizontalShiftDilation(self, data = data)
 
     def shift(self,v):
         r"""Returns the functional \(x\mapsto F(x-v) )\ """
@@ -975,14 +981,14 @@ class SquaredNorm(Functional):
         In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift\|^2)\.
     """
 
-    def __init__(self, h_space, a=1., b=None,c=0.,shift=None):
+    def __init__(self, h_space, a=1., b=None,c=0.,shift=None, data = None):
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
                         convex = (a>=0),
                         convexity_param = a,
                         Lipschitz = a, 
                         methods = {'eval','subgradient','hessian','proximal','is_subgradient'},
-                        conj_methods= {'eval','subgradient','hessian','proximal','is_subgradient'}                        
+                        conj_methods= {'eval','subgradient','hessian','proximal','is_subgradient'}
                         )
         if not isinstance(a,(float,int)): raise ValueError(util.Errors.not_instance(a,float,add_info="for SquaredNorm `a` has to be a scalar!"))
         self.gram = self.h_domain.gram
@@ -991,28 +997,76 @@ class SquaredNorm(Functional):
         except NotImplementedError:
             self.gram_inv = None
             self.log.warning("The inverse of the gram operator is not implemented. This will lead to errors in the conjugate functionals.")
-        self.a=float(a)
+        self._a=float(a)
         if shift is None:
             if b is None:
                 if isinstance(self.domain,vecsps.NumPyVectorSpace):
-                    self.b = np.broadcast_to(np.zeros(()),self.domain.shape)
+                    self._b = np.broadcast_to(np.zeros(()),self.domain.shape)
                 else:
-                    self.b = self.domain.zeros()
+                    self._b = self.domain.zeros()
             elif b not in self.domain: 
                 raise ValueError(util.Errors.not_in_vecsp(b,self.domain,add_info=f"b no tin domain of functional {self}."))
             else:
-                self.b = b
+                self._b = b
             if not isinstance(c,(float,int)): raise ValueError(util.Errors.not_instance(c,float,add_info="for SquaredNorm `c` has to be a scalar!"))
-            self.c = float(c)
+            self._c = float(c)
         else:
+            if b is not None or c!=0:
+                raise ValueError(util.Errors.generic_message("If shift is given b and c cannot be set."))
             if shift in self.domain:
-                self.b = -self.a*shift
-                self.c = (self.a/2.) * self.h_domain.norm(shift)**2
+                self._b = -self.a*shift
+                self._c = (self.a/2.) * self.h_domain.norm(shift)**2
             else:
-                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift no tin domain of functional {self}."))
+                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift no tin domain of functional {self}.")) 
+        self.data = data
+        
+    @util.memoized_property
+    def a(self):
+        return self._a
+
+    @util.memoized_property
+    def b(self):
+        if self.is_data_func:
+            return self._b-self._a*self.data
+        else:
+            return self._b
+
+    @util.memoized_property
+    def c(self):
+        if self.is_data_func:
+            return self._c - self.h_domain.inner(self._b,self.data) + (self._a/2)* self.h_domain.norm(self.data)**2
+        else:
+            return self._c
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self, new_data):
+        if new_data is None:
+            self.is_data_func = False
+            del self.a; del self.b; del self.c
+        elif new_data in self.domain:
+            self.is_data_func = True
+            self._data = new_data
+            del self.a; del self.b; del self.c
+        else:
+            raise ValueError(util.Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
+        
+    @data.deleter
+    def data(self):
+        if self.is_data_func:
+            del self._data
+            del self.a; del self.b; del self.c
+            self.is_data_func = False
+
+    def as_data_func(self,data):
+        self.data=data
+        return self
 
     def _eval(self, x):
-        return (self.a/2.) * self.h_domain.norm(x)**2  + self.h_domain.inner(self.b,x) + self.c
+        return (self.a/2.) * self.h_domain.inner(x,x)  + self.h_domain.inner(self.b,x) + self.c
     
     def _subgradient(self, x):
         return self.gram(self.a*x+self.b)
@@ -1099,13 +1153,13 @@ class SquaredNorm(Functional):
                                )
 
     def __add__(self, other):
-        if isinstance(other, SquaredNorm):
+        if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
             return SquaredNorm(self.h_domain,
                                a = self.a+other.a,
                                b = self.b+other.b,
                                c = self.c+other.c 
                                )
-        elif isinstance(other,LinearFunctional):
+        elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
             return SquaredNorm(self.h_domain,
@@ -1122,18 +1176,21 @@ class SquaredNorm(Functional):
         return super().__add__(other)
 
     def __iadd__(self, other):
-        if isinstance(other, SquaredNorm):
-            self.a += other.a,
-            self.b += other.b,
-            self.c += other.c
+        if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
+            self._a += other.a,
+            self._b += other.b,
+            self._c += other.c
+            del self.a; del self.b; del self.c
             return self
-        elif isinstance(other,LinearFunctional):
+        elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
-            self.b += self.gram_inv(other.gradient),
+            self._b += self.gram_inv(other.gradient),
+            del self.b
             return self
         elif isscalar(other):
-            self.c += other 
+            self._c += other
+            del self.c
             return self
         return NotImplemented
 
@@ -1149,12 +1206,12 @@ class SquaredNorm(Functional):
 
     def __imul__(self, other):
         if isscalar(other):
-            self.a *=other
-            self.b *=other
-            self.c *=other
+            self._a *=other
+            self._b *=other
+            self._c *=other
+            del self.a; del self.b; del self.c
             return self
         return NotImplemented
-
 
 
 class LinearCombination(Functional):
@@ -1466,7 +1523,7 @@ class HorizontalShiftDilation(Functional):
     shift: self.domain or scalar or None [default: None]
         Shift vector. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
     """
-    def __init__(self, func, dilation =1., shift = None):
+    def __init__(self, func, dilation =1., shift = None, data = None):
         if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
             raise ValueError(util.Errors.value_error(f""" 
             The HorizontalShiftDilation only takes three arguments Functional, 
@@ -1481,10 +1538,24 @@ class HorizontalShiftDilation(Functional):
             if isinstance(func.domain, vecsps.NumPyVectorSpace):
                 shift = np.broadcast_to(shift,func.domain.shape)
             else:
-                shift = shift * func.domain.ones()                
+                shift = shift * func.domain.ones()
+        elif shift is not None and shift not in func.domain:
+            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="shift vector",space_name="domain of functional"))
+
+        self.func = func
+        self.dilation = dilation
+        self._shift = shift
+        if data is None:
+            self.is_data_func = False
+        elif data in func.domain:
+            self._data = data
+            self.is_data_func = True
+        else:
+            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
+
         if func.separable:
-            dom_u = func.dom_u/dilation if shift is None else func.dom_u/dilation + shift
-            dom_l = func.dom_l/dilation if shift is None else func.dom_l/dilation + shift
+            dom_u = func.dom_u/dilation if self.shift is None else func.dom_u/dilation + self.shift
+            dom_l = func.dom_l/dilation if self.shift is None else func.dom_l/dilation + self.shift
             conj_dom_u = func.conj_dom_u*dilation
             conj_dom_l = func.conj_dom_l*dilation
             if dilation<0:
@@ -1493,17 +1564,62 @@ class HorizontalShiftDilation(Functional):
         else:
             dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(func.domain, h_domain = func.h_domain, 
-                         linear = func.linear and shift is None,
+                         linear = func.linear and self.shift is None,
                          Lipschitz = func.Lipschitz * dilation**2,
                          convexity_param= func.convexity_param  * dilation**2,
                          separable = func.separable,
                          convex = func.convex,
                          dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u,
-                         methods = func.methods, conj_methods=func._conj_methods
+                         methods = func.methods, conj_methods=func._conj_methods,
+                         is_data_func = True
                          )
-        self.func = func
-        self.dilation = dilation
-        self.shift = shift
+        
+    @util.memoized_property
+    def shift(self):
+        if self.is_data_func:
+            if self._shift is None:
+                return self.data
+            else:
+                return self._shift + self.data
+        else:
+            if self._shift is None:
+                return None
+            else:
+                return self._shift
+        
+    def recompute_cutoff(self):
+        if self.func.separable:
+            if self.dilation > 0:
+                self.dom_u = self.func.dom_u/self.dilation if self.shift is None else self.func.dom_u/self.dilation + self.shift
+                self.dom_l = self.func.dom_l/self.dilation if self.shift is None else self.func.dom_l/self.dilation + self.shift
+            else:
+                self.dom_l = self.func.dom_u/self.dilation if self.shift is None else self.func.dom_u/self.dilation + self.shift
+                self.dom_u = self.func.dom_l/self.dilation if self.shift is None else self.func.dom_l/self.dilation + self.shift
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self, new_data):
+        if new_data is None:
+            self.is_data_func = False
+            del self._data
+        elif new_data in self.func.domain:
+            self.is_data_func = True
+            self._data = new_data
+        else:
+            raise ValueError(util.Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
+        del self.shift
+        self.recompute_cutoff()
+        
+    @data.deleter
+    def data(self):
+        if self.is_data_func:
+            del self._data
+            self.is_data_func = False
+        del self.shift
+        self.recompute_cutoff()
 
     def _eval(self, x,**kwargs):
         return self.func(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
@@ -1555,7 +1671,13 @@ class HorizontalShiftDilation(Functional):
 
     def _conj_proximal(self, xstar, tau,**proximal_par):
         gram = self.h_domain.gram
-        return self.dilation*self.func.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),
+        if self.shift is None:
+            return self.dilation*self.func.conj_proximal(xstar/self.dilation,
+                                                  tau/self.dilation**2,
+                                                  **proximal_par
+                                                  )
+        else:
+            return self.dilation*self.func.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),
                                                   tau/self.dilation**2,
                                                   **proximal_par
                                                   )
