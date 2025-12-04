@@ -152,7 +152,7 @@ class IntegralFunctionalBase(Functional):
         else:
             conj_dom_u = self.h_domain.gram(np.broadcast_to(conj_dom_u,domain.shape))
 
-        all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'is_subgradient'}
+        all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
 
         super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
                          separable=True,
@@ -1263,26 +1263,12 @@ class L1MeasureSpace(IntegralFunctionalBase):
         np.maximum(res,-1.,out=res)
         return res
 
-    def is_subgradient(self, vstar, x, eps=1e-10):
-        zeroind = (x==0)
-        if np.any(zeroind) and np.max(np.abs(vstar[zeroind]))>1:
-            return False
-        else:
-            vstar[zeroind]=0
-            return super().is_subgradient(vstar, x, eps)
-
     def _ptw_dist_subdiff(self, vstar, x):
         diff = self.subgradient(x)
         diff -= vstar
         zeroind = (x==0)
         diff[zeroind] = np.maximum(np.abs(vstar[zeroind])-self.measure[zeroind],0.)
         return diff
-
-    def _conj_is_subgradient(self, v, xstar,eps=1e-10):
-        if np.max(np.abs(xstar))>1.:
-            raise NotInEssentialDomainError
-        else: 
-            return v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
 
     def _conj_ptw_dist_subdiff(self, v, xstar):
         w = v.copy()
@@ -1797,20 +1783,6 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def _f_conj_prox(self,ustar,tau,**kwargs):
         return self.conjugate._f_prox(ustar,tau,**kwargs)
-
-    def is_subgradient(self, vstar, x, eps=1e-10):
-        grad = self.subgradient(x)
-        self._aux = np.abs(x)
-        if(not np.all(self._aux<=self.sigma)):
-            return False
-        if(not np.all(vstar[self.sigma==x]>=self.sigma)):
-            return False
-        if(not np.all(vstar[-self.sigma==x]<=-self.sigma)):
-            return False
-        ind = (self._aux<self.sigma)
-        if(np.linalg.norm(grad[ind]-vstar[ind]) <= eps*np.linalg.norm(grad[ind])):
-            return True
-        return False
     
     def _ptw_dist_subdiff(self, vstar, x):
         raise NotImplementedError
@@ -1871,10 +1843,6 @@ class QuadraticNonneg(IntegralFunctionalBase):
         res=ustar.copy()
         res[ustar>0]*=(1/(1+tau))
         return res
-    
-    def is_subgradient(self, vstar, x, eps=1e-10):
-        xnonneg = (x>=0)
-        return np.max(vstar[~xnonneg])<=0 and np.linalg.norm(x[xnonneg]-vstar[xnonneg]) <= eps*np.linalg.norm(x[xnonneg])
     
     def _ptw_dist_subdiff(self, vstar, x):
         raise NotImplementedError
@@ -2018,7 +1986,7 @@ class QuadraticPositiveSemidef(Functional):
         else:
             self.has_trace_constraint=False
         super().__init__(domain,Lipschitz=1.,convexity_param=1.,
-                         methods = {'eval','subgradient','hessian','is_subgradient','proximal'},
+                         methods = {'eval','subgradient','hessian','dist_subdiff','proximal'},
                          conj_methods = {'eval'},
                          **kwargs)
 
