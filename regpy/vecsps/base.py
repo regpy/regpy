@@ -535,9 +535,10 @@ class VectorSpaceBase:
         """
         if not isinstance(other, VectorSpaceBase):
             raise ValueError(Errors.not_instance(other,VectorSpaceBase,add_info="TO have a compatible vector space the other object has to be a vector space in RegPy."))
-        return (self.shape == other.shape and
-                self.is_complex == other.is_complex and
-                self.vec_type == other.vec_type)
+        return (self.vec_type == other.vec_type and 
+                self.shape == other.shape and
+                self.is_complex == other.is_complex
+                )
         
     def __iadd__(self, other):
         if isinstance(other, VectorSpaceBase):

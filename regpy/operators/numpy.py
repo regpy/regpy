@@ -691,6 +691,7 @@ class OuterProduct(Operator):
         super().__init__(domain, codomain, linear=False)
         self._adjoint_summation_strings=self._calc_adjoint_summation_strings()
         """List of strings for calculation of adjoint in einsum."""
+        self._consts = {*self._consts,"_p","_p_conj_flat"}
 
     def _calc_adjoint_summation_strings(self):
         li=[]

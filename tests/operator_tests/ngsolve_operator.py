@@ -4,19 +4,16 @@ from netgen.geom2d import unit_square
 from regpy.vecsps.ngsolve import *
 from regpy.operators.ngsolve import *
 
-from .base_operator import op_basics_wrapper,op_evaluation_and_ot,collect_errors
+from .base_operator import op_basics_wrapper,op_evaluation_and_ot
 
 
-def test_NgsOperator():
-    errors = []
+def test_basic_NgsOperator():
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
     vs = NgsVectorSpace(fes,bdr=bdr)
 
-    errors += op_basics_wrapper(NgsOperator,vs,vs)
-
-    collect_errors(NgsOperator,errors)
+    op_basics_wrapper(NgsOperator,vs,vs)
 
 def test_SecondOrderEllipticCoefficientPDE():
     #taken from diffusion example
@@ -49,7 +46,6 @@ def test_SecondOrderEllipticCoefficientPDE():
     bdr_val = codomain.from_ngs(bdr_gf)
 
     exact_solution_coeff = 0.5*ngs.exp(-4*(ngs.x-0.5)**2 +4*(ngs.y-0.5)**2)
-    exact_solution = domain.from_ngs( exact_solution_coeff )
     p = ngs.GridFunction(domain.fes)
     p.Set(exact_solution_coeff,definedon=domain.fes.mesh.Boundaries(domain.bdr))
     a_bdr_val = domain.from_ngs( p )
@@ -58,10 +54,6 @@ def test_SecondOrderEllipticCoefficientPDE():
         domain, codomain, bdr_val=bdr_val,a_bdr_val = a_bdr_val
     )
 
-    errors = []
+    op_basics_wrapper(diffusion,domain,codomain,test_methods=True,bdr_val=bdr_val,a_bdr_val = a_bdr_val)
 
-    # errors += op_basics_wrapper(diffusion,domain,codomain,test_methods=True,bdr_val=bdr_val,a_bdr_val = a_bdr_val)
-
-    errors += op_evaluation_and_ot(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-5, -8, -1)],adjoint_derivative=False)
-
-    collect_errors(SecondOrderEllipticCoefficientPDE,errors)
+    op_evaluation_and_ot(op,sample_N=5,tolerance=1e-10,steps=[10**k for k in range(-5, -8, -1)],adjoint_derivative=False)
