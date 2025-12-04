@@ -583,7 +583,7 @@ class Setting:
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
         if not "dist_subdiff" in self.penalty.methods or not "dist_subdiff" in self.data_fid.conj.methods:
-            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional.")
+            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
         return self.data_fid.conj.dist_subdiff(self.op(x),self.regpar*p,tol=tol), \
