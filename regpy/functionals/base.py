@@ -481,7 +481,22 @@ class Functional:
             relative accuracy for the test
         """
         xi = self.subgradient(x)
-        return self.domain.norm(vstar-xi)<=eps*(self.domain.norm(xi)+eps)
+        return self.domain.dual_space().norm(vstar-xi)<=eps*(self.domain.dual_space().norm(xi)+eps)
+
+    def dist_subdiff(self,vstar,x):
+        r"""Returns the distance of a vector \(v^*)\ to the subdifferential \(\partial F(x))\ at x with respect 
+        to the dual norm.
+        Needs to be re-implemented for functionals which are not Gateaux differentiable.
+
+        Parameters
+        ----------
+        vstar: in `self.domain`
+            Vector of which the distance is to be determined. 
+        x: in `self.domain`
+            Point at which the subdifferential is evaluated
+        """
+        xi = self.subgradient(x)
+        return self.h_domain.dual_space().norm(vstar-xi)
 
     def hessian(self, x,recursion_safeguard=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
@@ -538,6 +553,20 @@ class Functional:
         """
         xi = self.conj_subgradient(xstar)
         return self.domain.norm(v-xi)<=eps*(self.domain.norm(xi)+eps)
+
+    def _conj_dist_subdiff(self,v,xstar):
+        r"""Returns the distance of a vector \(v)\ to the subdifferential \(\partial F^*(x^*))\ at \(x^*)\.
+        Needs to be re-implemented for functionals whose conjugate is not Gateaux differentiable.
+
+        Parameters
+        ----------
+        v: in `self.domain`
+            Vector of which the distance is to be determined. 
+        x_star: in `self.domain`
+            Point at which the subdifferential is evaluated
+        """
+        xi = self.conj_subgradient(xstar)
+        return self.domain.norm(v-xi)        
 
     def conj_hessian(self,xstar, recursion_safeguard=False):
         r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
@@ -762,12 +791,18 @@ class Conj(Functional):
     def is_subgradient(self, v,x,eps = 1e-10):
         return self.func._conj_is_subgradient(v,x,eps)
 
+    def dist_subdiff(self, v,x):
+        return self.func._conj_dist_subdiff(v,x,)
+
     def _conj_subgradient(self, x):
         return self.func.subgradient(x)
 
     def _conj_is_subgradient(self, v,x,eps = 1e-10):
         return self.func.is_subgradient(v,x,eps)
 
+    def _conj_dist_subdiff(self, v,x):
+        return self.func.dist_subdiff(v,x)
+    
     def _hessian(self, x):
         return self.func.conj_hessian(x)
     
@@ -859,7 +894,16 @@ class LinearFunctional(Functional):
             raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
-        return self.domain.norm(xstar-self.gradient)<=eps*(self.domain.norm(self.gradient)+eps)
+        if xstar == self.gradient:
+            return True
+        else:
+            raise NotInEssentialDomainError('LinearFunctional.conj')        
+
+    def _conj_dist_subdiff(self,v,xstar):
+        if xstar == self.gradient:
+            return 0.
+        else:
+            raise NotInEssentialDomainError('LinearFunctional.conj')          
 
     def _proximal(self, x, tau,**proximal_par):
         return x-tau*self._gradient
@@ -934,6 +978,7 @@ class SquaredNorm(Functional):
     def __init__(self, h_space, a=1., b=None,c=0.,shift=None):
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
+                        convex = (a>=0),
                         convexity_param = a,
                         Lipschitz = a, 
                         methods = {'eval','subgradient','hessian','proximal','is_subgradient'},
@@ -1005,13 +1050,26 @@ class SquaredNorm(Functional):
         
     def _conj_is_subgradient(self,v,xstar,eps = 1e-10):
         if self.a==0:
-            xi=self.gram(self.b)
-            return self.domain.norm(xstar-xi)<=eps*(self.domain.norm(xi)+eps)
+            if xstar==self.gram(self.b):
+                return True 
+            else:
+                return NotInEssentialDomainError
         elif self.a <0:
             return False
         else: 
             return super()._conj_is_subgradient(v,xstar,eps)
-    
+
+    def _conj_dist_subdiff(self,v,xstar):
+        if self.a==0:
+            if xstar==self.gram(self.b):
+                return True 
+            else:
+                return NotInEssentialDomainError
+        elif self.a <0:
+            return RuntimeError("Can't evaluate conjugate and its subdifferential if a<0.")
+        else: 
+            return super()._conj_dist_subdiff(v,xstar)
+
     def _conj_hessian(self, xstar):
         if self.a>0:
             if self.gram_inv is None:
@@ -1214,6 +1272,15 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
 
+    def dist_subdiff(self, vstar, x,**kwargs):
+        if len(self.funcs) == 1 or self.linear_table.count(False)==0:
+            return super().dist_subdiff(vstar, x,**kwargs)
+        elif self.linear_table.count(False)==1:
+            j = self.linear_table.index(False)
+            return self.funcs[j].dist_subdiff((vstar-self.grad_sum)/self.coeffs[j],x,**kwargs)
+        else:
+            return NotImplementedError
+
     def _hessian(self, x,**kwargs):
         if self.linear_table.count(False)==1: 
             # separate implementation of this case to be able to use inverse of hessian
@@ -1274,7 +1341,18 @@ class LinearCombination(Functional):
             return self.funcs[j]._conj_is_subgradient(v,(xstar-self.grad_sum)/self.coeffs[j],eps)
         else:
             return NotImplementedError
-    
+
+    def _conj_dist_subdiff(self, v, xstar,**kwargs):
+        if len(self.funcs) == 1:
+            return self.funcs[0]._conj_dist_subdiff(v,xstar/self.coeffs[0],**kwargs)
+        elif self.linear_table.count(False)==0:
+            return self.domain.norm(xstar-self.grad_sum)
+        elif self.linear_table.count(False)==1:
+            j = self.linear_table.index(False)
+            return self.funcs[j]._conj_dist_subdiff(v,(xstar-self.grad_sum)/self.coeffs[j],**kwargs)
+        else:
+            return NotImplementedError
+
     def _conj_hessian(self, xstar,**kwargs):
         if not self.convex:
             raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
@@ -1347,7 +1425,10 @@ class VerticalShift(Functional):
 
     def is_subgradient(self, vstar,x,eps = 1e-10,**kwargs):
         return self.func.is_subgradient(vstar,x,eps,**kwargs)
-    
+
+    def dist_subdiff(self, vstar,x,**kwargs):
+        return self.func.dist_subdiff(vstar,x,**kwargs)    
+
     def _hessian(self, x,**kwargs):
         return self.func.hessian(x,**kwargs)
     
@@ -1362,6 +1443,9 @@ class VerticalShift(Functional):
 
     def _conj_is_subgradient(self, v,xstar,eps = 1e-10,**kwargs):
         return self.func.conj.is_subgradient(v,xstar,eps,**kwargs)
+
+    def _conj_dist_subdiff(self, v,xstar,**kwargs):
+        return self.func.conj.dist_subdiff(v,xstar,**kwargs)
 
     def _conj_hessian(self, xstar,**kwargs):
         return self.func.conj.hessian(xstar,**kwargs)
@@ -1430,6 +1514,9 @@ class HorizontalShiftDilation(Functional):
     def is_subgradient(self, vstar, x, eps= 1e-10,**kwargs):
         return self.func.is_subgradient(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),eps,**kwargs)
 
+    def dist_subdiff(self, vstar, x, **kwargs):
+        return self.func.dist_subdiff(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
+
     def _hessian(self, x,**kwargs):
         return self.dilation**2 * self.func._hessian(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
 
@@ -1456,6 +1543,12 @@ class HorizontalShiftDilation(Functional):
             return self.func._conj_is_subgradient(self.dilation *v, x_star/self.dilation, eps,**kwargs) 
         else:
             return self.func._conj_is_subgradient(self.dilation *(v - self.shift), x_star/self.dilation, eps,**kwargs)
+ 
+    def _conj_dist_subdiff(self,v,x_star,**kwargs):
+        if self.shift is None:
+            return self.func._conj_dist_subdiff(self.dilation *v, x_star/self.dilation, **kwargs) 
+        else:
+            return self.func._conj_dist_subdiff(self.dilation *(v - self.shift), x_star/self.dilation, **kwargs)
 
     def _conj_hessian(self,x_star,**kwargs):
         return self.dilation**(-2)*self.func._conj_hessian(x_star/self.dilation,**kwargs)
@@ -1624,6 +1717,9 @@ class FunctionalOnDirectSum(Functional):
     def is_subgradient(self,vstar, x, eps= 1e-10):
         return all([f_i.is_subgradient(vstar_i,x_i,eps) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
 
+    def dist_subdiff(self,vstar, x):
+        return sum([f_i.dist_subdiff(vstar_i,x_i) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
+
     def _hessian(self, x):
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
 
@@ -1642,6 +1738,9 @@ class FunctionalOnDirectSum(Functional):
 
     def _conj_is_subgradient(self,v, xstar, eps= 1e-10):
         return all([f_i.conj.is_subgradient(v_i,xstar_i,eps) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
+
+    def _conj_dist_subdiff(self,v, xstar):
+        return sum([f_i.conj.dist_subdiff(v_i,xstar_i) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
 
     def _conj_hessian(self, xstar):
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))

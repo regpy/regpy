@@ -180,7 +180,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         func.log.warning(f"Failed Moreaus identy with: err={err}, tolerance={tolerance}")
         return False
 
-def test_prox_optimality_cond(func,tau=1,u=None):
+def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
     r"""Numerically test validity of the optimality condition characterizing the prox operator: 
 
     .. math::
@@ -207,7 +207,7 @@ def test_prox_optimality_cond(func,tau=1,u=None):
         u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
     prox = func.proximal(u,tau)
     vec = func.h_domain.gram((u-prox)/tau)
-    if func.is_subgradient(vec,prox):
+    if func.dist_subdiff(vec,prox)<=tol:
         func.log.info("Passed optimality condition characterizing the prox operator")
         return True
     else:
@@ -362,14 +362,18 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     func.log.info("Passed Lipschitz test!")
     return True
 
-# def test_subgradient_and_conj(func,u=None,eps=1e-10):
-#     if(u is None):
-#         u=func.domain.randn()
-#     grad_u=func.subgradient(u)
-#     print(u)
-#     print(grad_u)
-#     print(np.abs(grad_u))
-#     assert func.conj_is_subgradient(u,grad_u,eps=eps)
+def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-10):
+    if(u is None):
+        if func.separable:
+            u=sample_essential_domain(func)
+        else:
+            u=func.domain.rand()
+    grad_u=func.subgradient(u)
+    if func.conj.dist_subdiff(u,grad_u)>tol:
+        func.log.warning(f"Failed subgradient_conj_subgradient test {func}.")
+        return False
+    func.log.info("Passed subgradient_conj_subgradient taest!")
+    return True
 
 def test_young_equality(func,u=None,tolerance=1e-10):
     r"""Numerically test validity of Young's equality for a given functional
@@ -469,6 +473,9 @@ def test_functional(func,u_s=None,sample_N=5,
         if {"eval","subgradient"} <= func.methods and "eval" in func.conj.methods:
             if not test_young_equality(func,u,tolerance=tolerance):
                 raise AssertionError(f"{func} failed Young equality!")
+        #if {"subgradient","is_subgradient"} <= func.methods and "subgradient" in func.conj.methods:
+        #    if not test_subgradient_conj_subgradient_dist_subdiff(func,u,tol=tolerance):
+        #        raise AssertionError(f"{func} failed subgradient_conj_subgradient test")
         if test_second_deriv:
             if {"subgradient","hessian"} <= func.methods:
                 if not test_second_derivative(func,u):

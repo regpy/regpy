@@ -435,6 +435,17 @@ class IntegralFunctionalBase(Functional):
             self._buf = self._f_deriv(v,**self.kwargs)*self.measure
         return self._buf.copy()
 
+    def dist_subdiff(self, vstar, x):
+        self._assert_essential_domain(x,msg='dist_subdiff')
+        diff = self._ptw_dist_subdiff(vstar/self.measure,x)*self.measure
+        ind = np.where(np.isclose(x,self.dom_u))
+        if np.any(ind):
+            diff[ind]=np.minimum(vstar[ind]-self.conj_taylor_u[ind],0.)
+        ind = np.where(np.isclose(x,self.dom_l))
+        if np.any(ind):
+            diff[ind]=np.maximum(vstar[ind]-self.conj_taylor_l[ind],0.)
+        return self.h_domain.dual_space().norm(diff)
+
     def _conj_subgradient(self, vstar):
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar,msg='_conj_subgradient')
@@ -462,7 +473,19 @@ class IntegralFunctionalBase(Functional):
         else:
             self._buf = self._f_conj_deriv(self._buf2,**self.kwargs)
         return self._buf.copy()
-    
+
+    def _conj_dist_subdiff(self, v, xstar):
+        self._assert_conj_essential_domain(xstar, msg='_conj_dist_subdiff')
+        diff = self._conj_ptw_dist_subdiff(v,xstar/self.measure)
+        ind = np.where(np.isclose(xstar, self.conj_dom_u))
+        if np.any(ind):
+            diff[ind]=np.minimum(v[ind]-self.taylor_u[ind],0.)
+        ind = np.where(np.isclose(xstar,self.conj_dom_l))
+        if np.any(ind):
+            diff[ind]=np.maximum(v[ind]-self.taylor_l[ind],0.)
+        res= self.h_domain.norm(diff)
+        return res
+
     def _hessian(self, v):
         if not self.everywhere_finite:
             self._assert_essential_domain(v,msg='_hessian')
@@ -584,6 +607,9 @@ class IntegralFunctionalBase(Functional):
     def _f_deriv(self,v,**kwargs):
         raise NotImplementedError
 
+    def _ptw_dist_subdiff(self,vstar,w,**kwargs):
+        return vstar-self._f_deriv(w,**kwargs)
+
     def _f_second_deriv(self,v,**kwargs):
         raise NotImplementedError
 
@@ -605,6 +631,9 @@ class IntegralFunctionalBase(Functional):
     
     def _f_conj_deriv(self,vstar,**kwargs):
         raise NotImplementedError
+
+    def _conj_ptw_dist_subdiff(self,v,wstar,**kwargs):
+        return v-self._f_conj_deriv(wstar,**kwargs)
 
     def _f_conj_second_deriv(self,vstar,**kwargs):
         raise NotImplementedError
@@ -1244,8 +1273,26 @@ class L1MeasureSpace(IntegralFunctionalBase):
             vstar[zeroind]=0
             return super().is_subgradient(vstar, x, eps)
 
-    def _conj_is_subgradient(self, v, xstar, eps=1e-10):
-        return np.max(np.abs(xstar)<=1) and v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
+    def _ptw_dist_subdiff(self, vstar, x):
+        diff = self._f_deriv(x)
+        diff -= vstar
+        zeroind = (x==0)
+        diff[zeroind] = np.maximum(np.abs(vstar[zeroind])-1.,0.)
+        return diff
+
+    def _conj_is_subgradient(self, v, xstar,eps=1e-10):
+        if np.max(np.abs(xstar))>1.:
+            raise NotInEssentialDomainError
+        else: 
+            return v[xstar==1]>=0 and v[xstar==-1]<=0 and v[np.abs(xstar)<1] ==0
+
+    def _conj_ptw_dist_subdiff(self, v, xstar):
+        w = v.copy()
+        ind = np.where(np.isclose(xstar,1.))
+        w[ind] = np.minimum(w[ind],0.)
+        ind = np.where(np.isclose(xstar,-1.))
+        w[ind] = np.maximum(w[ind],0.)
+        return w
 
 class KullbackLeibler(IntegralFunctionalBase):
     r"""Kullback-Leiber divergence defined by
@@ -1729,6 +1776,9 @@ class QuadraticIntv(IntegralFunctionalBase):
         if(np.linalg.norm(grad[ind]-vstar[ind]) <= eps*np.linalg.norm(grad[ind])):
             return True
         return False
+    
+    def _ptw_dist_subdiff(self, vstar, x):
+        raise NotImplementedError
 
 
 class QuadraticNonneg(IntegralFunctionalBase):
@@ -1788,6 +1838,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
         xnonneg = (x>=0)
         return np.max(vstar[~xnonneg])<=0 and np.linalg.norm(x[xnonneg]-vstar[xnonneg]) <= eps*np.linalg.norm(x[xnonneg])
     
+    def _ptw_dist_subdiff(self, vstar, x):
+        raise NotImplementedError
 
 class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
