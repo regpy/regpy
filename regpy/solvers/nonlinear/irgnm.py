@@ -4,6 +4,7 @@ from math import sqrt,isqrt
 import numpy as np
 
 from regpy.stoprules import CountIterations
+from regpy.util import Errors
 
 from ..general import Setting, RegSolver
 from ..linear.tikhonov import TikhonovCG
@@ -23,10 +24,10 @@ class IrgnmCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The initial regularization parameter. Must be positive.
+    data : array-like, default None
+        The measured data. If it is None it is taken from the setting.
+    regpar : float, default None
+        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
@@ -42,7 +43,7 @@ class IrgnmCG(RegSolver):
     """
 
     def __init__(
-               self, setting, data, regpar, regpar_step=2 / 3, 
+               self, setting, data=None, regpar=None, regpar_step=2 / 3, 
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
@@ -50,6 +51,15 @@ class IrgnmCG(RegSolver):
                 simplified_op = None
          ):
         super().__init__(setting)
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        if(regpar is None):
+            if(not setting.is_tikhonov):
+                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
+            regpar=setting.regpar
         self.data = data
         """The measured data."""
         if init is None:
@@ -118,10 +128,10 @@ class LevenbergMarquardt(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like
-        The measured data.
-    regpar : float
-        The initial regularization parameter. Must be positive.
+    data : array-like, default None
+        The measured data. If it is None it is taken from the setting.
+    regpar : float, default None
+        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
@@ -137,7 +147,7 @@ class LevenbergMarquardt(RegSolver):
     """
 
     def __init__(
-               self, setting, data, regpar, regpar_step=2 / 3, 
+               self, setting, data=None, regpar=None, regpar_step=2 / 3, 
                  init=None, 
                  cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
                 cgstop=1000, 
@@ -145,6 +155,15 @@ class LevenbergMarquardt(RegSolver):
                 simplified_op = None
          ):
         super().__init__(setting)
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        if(regpar is None):
+            if(not setting.is_tikhonov):
+                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
+            regpar=setting.regpar
         self.data = data
         """The measured data."""
         if init is None:
@@ -246,10 +265,10 @@ class IrgnmCGPrec(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
-    data : array-like
-        The measured data.
-    regpar : float
-        The initial regularization parameter. Must be positive.
+    data : array-like, default None
+        The measured data. If it is None it is taken from the setting.
+    regpar : float, default None
+        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
     init : array-like, optional
@@ -261,12 +280,21 @@ class IrgnmCGPrec(RegSolver):
     """
 
     def __init__(
-        self, setting, data, regpar, regpar_step=2 / 3, 
+        self, setting, data=None, regpar=None, regpar_step=2 / 3, 
         init=None, cg_pars=None,cgstop =None, precpars=None
         ):
         if(not isinstance(setting.op.domain,UniformGridFcts)):
             raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        if(regpar is None):
+            if(not setting.is_tikhonov):
+                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
+            regpar=setting.regpar
         self.data = data
         """The measured data."""
         if init is None:
