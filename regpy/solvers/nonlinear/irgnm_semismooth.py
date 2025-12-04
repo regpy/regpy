@@ -20,14 +20,14 @@ class IrgnmSemiSmooth(RegSolver):
     ----------
     setting : Setting
         Setting for regularization. 
-    data : array-like
-        Data for reconstruction. Must be in the operators codomain.
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
         upper constraint of the minimization. Must be smaller then `psi_minus`
-    regpar : np.number
-        Initial regularization parameter :math:`\alpha` 
+    data : array-like, default None
+        The measured data. Must be in the operators codomain. If it is None it is taken from the setting.
+    regpar : float, default None
+        Initial regularization parameter :math:`\alpha`. Must be positive. If it is None it is taken from the setting.
     regpar_step : np.number, optional
         Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
     init : array-like, optional
@@ -39,10 +39,19 @@ class IrgnmSemiSmooth(RegSolver):
     cg_pars : dict
         Dictionary of parameter to be given to the inner `TikhonovCG` solver. (Default: None) 
     """
-    def __init__(self, setting, data, psi_minus, psi_plus, regpar, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
+    def __init__(self, setting, psi_minus, psi_plus,data=None, regpar=None, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
         super().__init__(setting)
         if (psi_minus >= psi_plus):
             raise ValueError(Errors.value_error("The upper constraint is less or equal the lower constraint in IrgnmSemiSmooth. Given: "+"\n\t "+f"psi_minus = {psi_minus} "+"\t\n "+f"psi_plus = {psi_plus}"))
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        if(regpar is None):
+            if(not setting.is_tikhonov):
+                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
+            regpar=setting.regpar
         self.data=data
         """The measured data"""
         if init is None:

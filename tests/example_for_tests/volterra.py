@@ -56,7 +56,7 @@ def test_volterra():
 
     setting = Setting(op, Sobolev, L2)
 
-    solver = Landweber(setting, data, init, stepsize=0.01)
+    solver = Landweber(setting, init,data, stepsize=0.01)
     stoprule = (
         # Landweber is slow, so need to use large number of iterations
         rules.CountIterations(max_iterations=100000) +
@@ -85,7 +85,7 @@ def test_volterra():
         op=op, 
         penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 
-        data_fid_shift = data,
+        data = data,
         regpar = 0.01
     )
 

@@ -184,12 +184,12 @@ class DouglasRachford(RegSolver):
             raise ValueError(Errors.value_error('init_h must be in the domain of the operator!'))
         self.h = init_h
         if setting.is_tikhonov and setting.op.domain != setting.op.codomain:
-            if setting.data_fid_shift is None:
-                raise ValueError(Errors.value_error('If the regularization parameter is given, the data_fid_shift must be given!'))
+            if setting.data is None:
+                raise ValueError(Errors.value_error('If the regularization parameter is given, the data must be given!'))
             if not isinstance(self.data_fid,SquaredNorm):
                 raise ValueError(Errors.value_error('For setting with not matching domains the data_fid must be a SquaredNorm functional!'))
             self.log.info('Using Tikhonov regularization setting. The data fidelity term is reshifted and composed with the operator.')
-            self.data_fid_adjusted = setting.data_fid.shift(-setting.data_fid_shift) * (self.op - setting.data_fid_shift)
+            self.data_fid_adjusted = setting.data_fid.shift(-setting.data) * (self.op - setting.data)
         elif not setting.is_tikhonov and setting.op.domain != setting.op.codomain:
             raise ValueError(Errors.value_error('If no regularization parameter is given, the operator must be mapping from a space to itself!'))
         else:

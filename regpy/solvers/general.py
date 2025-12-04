@@ -256,11 +256,35 @@ class Setting:
     the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
     or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
     it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        The forward operator.
+    penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+        The penalty functional.
+    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+        The data misfit functional.
+    regpar: float [default: None]
+        regularization parameter
+    penalty_shift: op.domain [default: None]
+        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
+    data: op.co_domain [default: None]
+        If not None, the data in the data fidelity functional is replaced by data.
+    primal_setting: None or TikhonovRegularizationSetting [default:None]
+        Indicates whether or not a setting serves as primal setting. For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
+        This affects the duality relations and the duality gap. 
+    gap_threshold: float [default: 1e5]
+    logging_level: int [default: logging.INFO]
+        logging level
     """
+
+    
+    
     log = ClassLogger()
 
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
-                 logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
+    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data= None,primal_setting=None,gap_threshold = 1e5,
+                 logging_level = "INFO"):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self.op = op
@@ -278,13 +302,16 @@ class Setting:
             self.penalty = self.penalty.shift(penalty_shift)
         else:
             self.penalty_shift = None
-        if not data_fid_shift is None:
-            self.data_fid_shift = data_fid_shift
-            self.data_fid = self.data_fid.shift(data_fid_shift)
-        else:
-            self.data_fid_shift = None
         self.regpar=regpar#The flags are set by setting the regularization parameter
         """The Regularization parameter"""
+        if(not self.data_fid.is_data_func and data is None):
+            self.log.warning("Setting does not contain any explicit data.")
+            self._data=None
+        if(self.data_fid.is_data_func):
+            self._data=self.data_fid.data#just update internal data, update of data functional not necessary
+        if(data is not None):
+            self.data = data #data and data fidelity functional are updated
+        
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
         if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
@@ -292,6 +319,23 @@ class Setting:
         self.primal_setting = primal_setting
         if primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self,new_data):
+        self.change_data(new_data=new_data)
+
+    def change_data(self,new_data):
+        if(new_data is None):
+            raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
+        if(self.data_fid.is_data_func):
+            self.log.warning("Existing data in data fidelity functional is overwritten.")
+        self.data_fid=self.data_fid.as_data_func(new_data)
+        self._data=new_data
+        self._set_flags()
 
 
     def _set_flags(self):
@@ -519,11 +563,10 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
-    def is_saddle_point(self,x,p,tol):
-        r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
-        or equivalently (in case of strong duality)
-        - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
-        - if 
+    def violation_optimality_cond(self,x,p,tol):
+        r"""Checks to which degree \((x,p) )\ violates the optimailty conditions for being  a saddle point of 
+        \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        These optimality conditions are:
         .. math::
         Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
 
@@ -539,10 +582,12 @@ class Setting:
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
+        if not "dist_subdiff" in self.penalty.methods or not "dist_subdiff" in self.data_fid.conj.methods:
+            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
-        return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
-               self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
+        return self.data_fid.conj.dist_subdiff(self.op(x),self.regpar*p,tol=tol), \
+               self.penalty.dist_subdiff(-self.op.adjoint(p),x,tol=tol) 
     
     ######Methods checking applicability
     @staticmethod

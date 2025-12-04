@@ -13,18 +13,22 @@ class CGNE(RegSolver):
     ----------
     setting: Setting
        Regularization setting involving Hilbert space norms
-    data: array-like
-        Right hand side g
+    data: array-like default: None
+        Right hand side g. If it is None the data is taken from the setting.
     x0: array-like, default:None
         First iteration. zero() if None
     logging_level: default: logggin.INFO
         Controls amount of output
     """
-    def __init__(self, setting, data, x0 =None, logging_level = "INFO"):
+    def __init__(self, setting, data=None, x0 =None, logging_level = "INFO"):
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="CGNE requires the operator to be linear!"))
-        
+        if data is None:
+            if(setting.data is not None):
+                data=setting.data
+            else:
+                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         if x0 is not None and x0 not in self.op.domain:
