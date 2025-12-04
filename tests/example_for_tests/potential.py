@@ -8,6 +8,9 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import Setting
+import regpy.util as util
+
+util.set_rng_seed(15873098306879350073259142812684978477)
 
 from . import import_example_package
 

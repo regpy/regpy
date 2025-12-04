@@ -5,8 +5,9 @@ from regpy.vecsps.numpy import *
 from regpy.util import Errors
 
 from .base_vecsps import vecsps_basics,vector_basics
+from regpy.util import set_rng_seed
 
-random_seed = 28
+set_rng_seed(15873098306879350073259142812684978477)
 
 @pytest.mark.parametrize("shape, dtype",[
     ((2,4,3,7),float),
@@ -15,7 +16,7 @@ random_seed = 28
     ((2,4),complex)
 ])
 def test_NumPyVectorSpace(shape, dtype):
-    vecsps_basics(NumPyVectorSpace,test_methods=True,shape = shape, dtype = dtype, random_seed=random_seed)
+    vecsps_basics(NumPyVectorSpace,test_methods=True,shape = shape, dtype = dtype)
     
 class TestMeasureSpaceFcts():
     @pytest.mark.parametrize("measure, shape, dtype",[
@@ -25,11 +26,11 @@ class TestMeasureSpaceFcts():
         (None,(2,4),complex)
     ])
     def test_vs_basic(self,measure,shape,dtype):
-        vecsps_basics(MeasureSpaceFcts,test_methods=True, measure = measure,shape = shape, dtype = dtype,random_seed = random_seed)
+        vecsps_basics(MeasureSpaceFcts,test_methods=True, measure = measure,shape = shape, dtype = dtype)
 
     def test_equality(self):
-        m1=MeasureSpaceFcts(shape=(3,2),random_seed=random_seed)
-        m2=MeasureSpaceFcts(measure=3*np.ones((3,2)),random_seed=random_seed)
+        m1=MeasureSpaceFcts(shape=(3,2))
+        m2=MeasureSpaceFcts(measure=3*np.ones((3,2)))
         assert m1!=m2, Errors.failed_test(f"Two MeasureSpaceFcts that should not be equal are not.",MeasureSpaceFcts)
     
         m2.measure=1
@@ -46,14 +47,14 @@ class TestGridFcts():
         ([np.array([2,4,8]),np.array([-1,0,5,15])],False,float,'const',(1,(2,3)))
     ])
     def test_vs_basic(self,coords, use_cell_measure, dtype, boundary_ext, ext_const):
-        vecsps_basics(GridFcts,*coords,test_methods=True,use_cell_measure=use_cell_measure, dtype = dtype,boundary_ext = boundary_ext, ext_const=ext_const,random_seed=random_seed)
+        vecsps_basics(GridFcts,*coords,test_methods=True,use_cell_measure=use_cell_measure, dtype = dtype,boundary_ext = boundary_ext, ext_const=ext_const)
 
     @pytest.mark.parametrize("coords, use_cell_measure, measure_compare",[
         ([np.array([2,4,8]),np.array([-1,2,12,112])], False,1.0),
         ([np.array([2,4,8]),np.array([-1,0,5,15])], True,np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]]))
     ])
     def test_measure_comp(self,coords, use_cell_measure, measure_compare):
-        gf=GridFcts(*coords,use_cell_measure=use_cell_measure,random_seed=random_seed)
+        gf=GridFcts(*coords,use_cell_measure=use_cell_measure)
         assert gf.measure == pytest.approx(measure_compare), Errors.failed_test(f"Measure computation is wrong",GridFcts)
 
 class Test_UniformGridFcts():
@@ -65,17 +66,17 @@ class Test_UniformGridFcts():
         ([(-1,1,10),(-1,1,10),(-1,1,10)], float),
     ])
     def test_vs_basics(self,coords,dtype):
-        vecsps_basics(UniformGridFcts,*coords,test_methods=True, dtype = dtype,random_seed=random_seed)
+        vecsps_basics(UniformGridFcts,*coords,test_methods=True, dtype = dtype)
     
     @pytest.mark.parametrize("coords, measure_compare",[
         ([np.array([2,4,6]),np.array([-1,2,5,8])],6.),
     ])
     def test_measure_comp(self,coords, measure_compare):
-        gf=UniformGridFcts(*coords,random_seed=random_seed)
+        gf=UniformGridFcts(*coords)
         assert gf.measure == pytest.approx(measure_compare), Errors.failed_test(f"The volume element of {gf} with coords = {gf.coords} should be {measure_compare} but got {gf.volume_elem}.")
                                                                             
     def test_set_measure(self):
-        gf=UniformGridFcts(3,4,random_seed=random_seed)
+        gf=UniformGridFcts(3,4)
         gf.measure=3*np.ones((3,4))
         assert gf.volume_elem == pytest.approx(3), Errors.failed_test(f"Setting the new measure succeeded but either the volume_elem {gf.volume_elem} or the measure {gf.measure} is not equal to the new value 3.")
 

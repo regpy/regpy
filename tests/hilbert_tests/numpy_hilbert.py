@@ -4,6 +4,9 @@ from regpy.vecsps.numpy import *
 from regpy.operators.numpy import *
 from regpy.hilbert import *
 from regpy.hilbert.numpy import *
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
 
 from .base_hilbert import hilbert_basics,collect_errors
 

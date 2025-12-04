@@ -11,6 +11,10 @@ from regpy.solvers import Setting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
+import regpy.util as util
+
+util.set_rng_seed(15873098306879350073259142812684978477)
+
 
 from . import import_example_package
 

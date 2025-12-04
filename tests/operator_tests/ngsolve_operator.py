@@ -5,7 +5,9 @@ from regpy.vecsps.ngsolve import *
 from regpy.operators.ngsolve import *
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot
+from regpy.util import set_rng_seed
 
+set_rng_seed(15873098306879350073259142812684978477)
 
 def test_basic_NgsOperator():
     bdr = "left|top|right|bottom"

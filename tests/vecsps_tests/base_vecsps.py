@@ -1,12 +1,12 @@
 from random import random
-from math import isclose
 import pytest
 
 import numpy as np
 
 import regpy.vecsps.base as vs_base
+from regpy.util import set_rng_seed
 
-random_seed = 28
+set_rng_seed(15873098306879350073259142812684978477)
 
 def call_safe(obj, method_name, *args, **kwargs):
     """
@@ -118,7 +118,7 @@ def vector_basics(vs,*args, N = 5,**kwargs):
     
 
 def test_VecSpaceBase():
-    vecsps_basics(vs_base.VectorSpaceBase,None,0,random_seed = random_seed)
+    vecsps_basics(vs_base.VectorSpaceBase,None,0)
     
 def test_DirectSum():
-    vecsps_basics(vs_base.DirectSum,vs_base.VectorSpaceBase(None,0,random_seed=random_seed),vs_base.VectorSpaceBase(None,0,random_seed=random_seed*2))
+    vecsps_basics(vs_base.DirectSum,vs_base.VectorSpaceBase(None,0),vs_base.VectorSpaceBase(None,0))

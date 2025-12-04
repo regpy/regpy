@@ -4,8 +4,9 @@ import pytest
 from regpy.vecsps.curve import *
 
 from .base_vecsps import vecsps_basics,vector_basics
+from regpy.util import set_rng_seed
 
-random_seed = 28
+set_rng_seed(15873098306879350073259142812684978477)
 
 def ShapeCurves(name,n=20,der=3):
     cls = globals()[name](n,der)
@@ -31,7 +32,7 @@ def test_shapes(shape,der):
         ShapeCurves(shape,n=20,der=der)
   
 def test_GenTrigDiscr():
-    vecsps_basics(GenTrigDiscr,40,random_seed=random_seed)
+    vecsps_basics(GenTrigDiscr,40)
 
     vs = GenTrigDiscr(40)
     coeff = np.asarray([1,0.5,0.25,1,0.25,0.5])
@@ -46,8 +47,8 @@ def test_GenTrigDiscr():
     _ = vs.adjoint_der_normal
     
 def test_StarTrigDiscr():
-    vecsps_basics(StarTrigDiscr,40,random_seed=random_seed)
+    vecsps_basics(StarTrigDiscr,40)
 
-    vs = StarTrigDiscr(40,random_seed=random_seed)
+    vs = StarTrigDiscr(40)
     coeff = vs.sample(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
     _ = vs.eval_curve(coeffs=coeff)

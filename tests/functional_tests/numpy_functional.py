@@ -9,6 +9,10 @@ from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, Fu
 from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
+
 
 @pytest.mark.parametrize("p,l,u", [(1.5, 0.1, 2.3), (1.5, -2.1, -1.2), (1.5, -1.2, 1.), (2., 0.1, 2.3), (2., -2.1, -1.2), (2., -1.2, 1.), (2.5, 0.1, 2.3), (2.5, -2.1, -1.2), (2.5, -1.2, 1.),])
 class TestLpp:
