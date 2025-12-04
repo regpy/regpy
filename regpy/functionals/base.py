@@ -982,14 +982,14 @@ class SquaredNorm(Functional):
     @util.memoized_property
     def b(self):
         if self.is_data_func:
-            return self._b-self.a*self.data
+            return self._b-self._a*self.data
         else:
             return self._b
 
     @util.memoized_property
     def c(self):
         if self.is_data_func:
-            return self._c - self.h_domain.inner(self.b,self.data) + (self.a/2)* self.h_domain.norm(self.data)**2
+            return self._c - self.h_domain.inner(self._b,self.data) + (self._a/2)* self.h_domain.norm(self.data)**2
         else:
             return self._c
 
@@ -1015,6 +1015,10 @@ class SquaredNorm(Functional):
             del self._data
             del self.a; del self.b; del self.c
             self.is_data_func = False
+
+    def as_data_func(self,data):
+        self.data=data
+        return self
 
     def _eval(self, x):
         return (self.a/2.) * self.h_domain.inner(x,x)  + self.h_domain.inner(self.b,x) + self.c
