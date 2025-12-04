@@ -8,6 +8,8 @@ from regpy.functionals.base import Conj
 from regpy.util import functional_tests as ft
 from regpy.hilbert import L2
 
+import pytest
+
 def test_initialization():
     """ Tests if it can initialize the Abstract functional instances with their most general registered spaces and it evaluates properly.
     """
@@ -61,17 +63,42 @@ def test_operation():
     assert isinstance(func-5, VerticalShift)
     assert isinstance(func.conj, Conj)
 
-def test_squared_norm():
-    measure=np.arange(1,7).reshape(2,3)
-    vs=MeasureSpaceFcts(measure=measure,dtype=np.complex128)
+class TestSquaredNorm():
+    tol=1e-10
+    vs=MeasureSpaceFcts(measure=np.arange(1,7).reshape(2,3),dtype=np.complex128)
     func=SquaredNorm(L2(vs),a=2.0,b=3.0*vs.ones(),c=4.0)
-    assert np.allclose(func(vs.ones()),88.0)
-    ft.test_functional(func)
-    # measure2=np.arange(1,7).reshape(2,3)
-    # vs2=MeasureSpaceFcts(measure=measure2,dtype=np.complex128)
-    # func2=SquaredNorm(L2(vs2),a=2.0,shift=5.0*vs.ones())
-    # print(func2(6*vs.ones()))
-    # assert np.allclose(func(vs.ones()),21.0)
-    # ft.test_functional(func2)
+    func_shift=SquaredNorm(L2(vs),a=2.0,shift=5.0*vs.ones())
+    lin_func=LinearFunctional(vs.ones()*3,domain=vs,h_domain=L2(vs))
 
-test_squared_norm()
+    def test_evaluation_abc(self):
+        diff=np.abs(self.func(self.vs.ones())-88.0)
+        if(diff>self.tol):
+            raise AssertionError(f"Evaluation of squared norm failed. Difference to expected result is {diff}.")
+        
+    def test_ft_abc(self):
+        ft.test_functional(self.func)
+
+    def test_evaluation_shift(self):
+        diff=np.abs(self.func_shift(6*self.vs.ones())-21.0)
+        if(diff>self.tol):
+            raise AssertionError(f"Evaluation of squared norm failed. Difference to expected result is {diff}.")
+        
+    def test_ft_shift(self):
+        ft.test_functional(self.func_shift)
+
+    def test_sums(self):
+        sum1=self.func_shift+self.func
+        if not isinstance(sum1,SquaredNorm):
+            raise TypeError(f"Addition of compatible squared norms should yield squared norm  but yields {type(sum1)}")
+        sum2=self.func_shift+self.lin_func
+        if not isinstance(sum2,SquaredNorm):
+            raise TypeError(f"Sum of compatible squared norm and linear functional should yield {SquaredNorm}  but yields {type(sum2)}")
+        
+    def test_differences(self):
+        dif1=self.func_shift-self.func
+        if not isinstance(dif1,SquaredNorm):
+            raise TypeError(f"Difference of compatible squared norms should yield squared norm  but yields {type(dif1)}")
+        dif2=self.func_shift-self.lin_func
+        if not isinstance(dif2,SquaredNorm):
+            raise TypeError(f"Difference of compatible squared norm and linear functional should yield {SquaredNorm}  but yields {type(dif2)}")
+

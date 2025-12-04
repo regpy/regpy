@@ -1017,7 +1017,7 @@ class SquaredNorm(Functional):
             self.is_data_func = False
 
     def _eval(self, x):
-        return (self.a/2.) * self.h_domain.norm(x)**2  + self.h_domain.inner(self.b,x) + self.c
+        return (self.a/2.) * self.h_domain.inner(x,x)  + self.h_domain.inner(self.b,x) + self.c
     
     def _subgradient(self, x):
         return self.gram(self.a*x+self.b)
@@ -1091,13 +1091,13 @@ class SquaredNorm(Functional):
                                )
 
     def __add__(self, other):
-        if isinstance(other, SquaredNorm):
+        if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
             return SquaredNorm(self.h_domain,
                                a = self.a+other.a,
                                b = self.b+other.b,
                                c = self.c+other.c 
                                )
-        elif isinstance(other,LinearFunctional):
+        elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
             return SquaredNorm(self.h_domain,
@@ -1114,13 +1114,13 @@ class SquaredNorm(Functional):
         return super().__add__(other)
 
     def __iadd__(self, other):
-        if isinstance(other, SquaredNorm):
+        if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
             self._a += other.a,
             self._b += other.b,
             self._c += other.c
             del self.a; del self.b; del self.c
             return self
-        elif isinstance(other,LinearFunctional):
+        elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
             self._b += self.gram_inv(other.gradient),
