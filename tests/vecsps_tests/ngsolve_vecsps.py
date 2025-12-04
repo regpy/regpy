@@ -6,12 +6,13 @@ from netgen.geom2d import unit_square
 from regpy.vecsps.ngsolve import *
 from regpy.vecsps import DirectSum, NumPyVectorSpace
 
+random_seed = 28
 
 def test_NgsVectorSpace():
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes_domain = ngs.H1(mesh, order=6, dirichlet = bdr)
-    domain = NgsVectorSpace(fes_domain,bdr = bdr)
+    domain = NgsVectorSpace(fes_domain,bdr = bdr,random_seed=random_seed)
 
     # test basic methods
     one = domain.ones()
@@ -39,7 +40,7 @@ def test_NgsVectorSpace():
     
     #test complex spaces
     fes_domain = ngs.H1(mesh, order=6, dirichlet = bdr, complex= True)
-    domain = NgsVectorSpace(fes_domain,bdr = bdr)
+    domain = NgsVectorSpace(fes_domain,bdr = bdr,random_seed=random_seed)
 
     rand = domain.rand()
     _ = rand.real
@@ -47,7 +48,7 @@ def test_NgsVectorSpace():
 
     #test vector spaces
     fes_domain = ngs.VectorH1(mesh, order=3, dirichlet = bdr)
-    domain = NgsVectorSpace(fes_domain,bdr = bdr)
+    domain = NgsVectorSpace(fes_domain,bdr = bdr,random_seed=random_seed)
 
     rand = domain.randn()
     rand_real = rand.real
