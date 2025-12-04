@@ -288,14 +288,19 @@ class NgsVectorSpace(VectorSpaceBase):
        The wrapped NGSolve vector space.
     bdr : 
         Boundary of the NGSolve vector space.
+    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
+        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
+        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
+        numpy documentation.
     """
 
-    def __init__(self, fes, bdr=None):
+    def __init__(self, fes, bdr=None,
+                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
         if not isinstance(fes, ngs.FESpace):
             raise TypeError(Errors.not_instance(fes,ngs.FESpace))
         self.fes = fes
         self.bdr = bdr
-        super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex)
+        super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex, random_seed=random_seed)
         # Checks if FES is Vector valued and stores the dimension in self.codim
         from netgen.libngpy._meshing import NgException
         try:
@@ -348,15 +353,13 @@ class NgsVectorSpace(VectorSpaceBase):
     def empty(self):
         return self.zeros()
     
-    def rand(self,random_generator = None):
+    def rand(self,distribution = "uniform", **kwargs):
         if self._fes_util is None:
             raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
-        random_generator = random_generator or np.random.random_sample 
-        r = random_generator(self._fes_util.ndof)
+        r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
         if self.is_complex and not is_complex_dtype(r.dtype):
-            c = np.empty(self._fes_util.ndof, dtype=complex)
+            c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
             c.real = r
-            c.imag = random_generator(self._fes_util.ndof)
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
@@ -374,7 +377,7 @@ class NgsVectorSpace(VectorSpaceBase):
         self._gfu_util.Set(self.to_gf(x))
         if np.any(self._gfu_util.vec.FV().NumPy()<0):
             raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
-        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
+        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(self._draw_sample(distribution="poisson",lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
         self._gfu_fes.Set(self._gfu_util)
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
         return NgsBaseVector(self._gfu_fes.vec, make_copy = True)

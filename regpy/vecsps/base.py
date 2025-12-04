@@ -1,8 +1,8 @@
 from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
-from typing import List
-import types
+from typing import List, overload
+
 
 import numpy as np
 
@@ -245,23 +245,34 @@ class VectorSpaceBase:
         The general shape of the vectors.
     complex : boolean, optional
         Determines if the vectors have complex coefficients. Default, False.
-    type : object
+    type : {None,object}, optional
         A class, module or library that the vec_type belongs to and implements the 
         above methods. Default, None.
+    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
+        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
+        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
+        numpy documentation.
     """
 
     log = ClassLogger()
 
-    def __init__(self, vec_type : object, shape : tuple, complex : bool = False, type = None):
+    def __init__(self, 
+                 vec_type : object, 
+                 shape : tuple, 
+                 complex : bool = False, 
+                 type = None, 
+                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
         self.vec_type = vec_type
         """The vector type"""
         self.shape = (shape,) if isinstance(shape,int) else shape
         """The vector space's shape"""
         self.is_complex = complex
-        """Type of the vectors if different"""
         self.type = type 
-        """A dictionary containing modules kept extra in the copy"""        
+        """Type of the vectors if different"""
         self._no_pickle = {'type', 'vec_type'}
+        """A dictionary containing modules kept extra in the copy"""
+        self.random_generator = np.random.default_rng(random_seed)
+        """Initializes the random Generator to be used by the methods creating random vectors"""
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -294,23 +305,66 @@ class VectorSpaceBase:
         if self.type is None:
             raise NotImplementedError
         return self.type.empty(shape = self.shape)
-
-    def rand(self, rand=None):
-        """Return a random element of the space.
-
-        The random generator can be passed as argument. For complex dtypes, real and imaginary
-        parts are generated independently.
+    
+    def _draw_sample(self, distribution : str , size = None, **kwargs):
+        """Draws samples of the shape of the space from the given distribution. The distribution
+        has to be given as a string representing a method associated with a distribution of
+        the NumPy Generator.
 
         Parameters
         ----------
-        rand : callable, optional
-            The random function to use. Should accept the shape as a tuple and return a real
-            array of that shape. Numpy functions like `numpy.random.standard_normal` conform to
-            this. Default: uniform distribution on `[0, 1)` (`numpy.random.random_sample`).
+        distribution : str
+            Name of the distribution to be used.
+        size : None | int | tuple(int), optional
+            The size/shape that is passed to the distribution. Default: self.realsize
+        kwargs : dict
+            These keyword arguments are passed to the distribution sampler. Note that we have
+            `size = ` as an extra argument so it will be always handled.
+
+        Returns
+        -------
+        ndarray or scalar
+            A numpy array or scalar by default of the realsize of the space. Which can by 
+            the `fromflat` method be directly transformed into a vector of the space.
         """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.rand(shape = self.shape,random_generator=rand)
+        if size is None:
+            size = self.realsize
+        elif isinstance(size,int) and size != self.realsize:
+            self.log.warning(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
+        elif isinstance(size,tuple) and np.prod(size) != self.realsize:
+            self.log.warning(f"You are sampling on a size specified as an tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
+        try:
+            dist = getattr(self.random_generator,distribution)
+            return dist(size = size, **kwargs)
+        except AttributeError:
+            raise AttributeError(Errors.generic_message(f"The given distribution {distribution} is unknown to numpy maybe you misspelled, please check the documentation."))
+        except TypeError:
+            raise TypeError(Errors.type_error(f"The chosen distribution {distribution} might not have an argument size or one of your additional keyword arguments is unknown. Please, only use distributions listed in NumPy that have specified a size Argument."))
+
+    def rand(self, distribution = "uniform", **kwargs):
+        """Return a random vector of the vector space. Note, this might not correspond to a
+        random element seen in the Hilbert space. For that we refer to the random sampling in Hilbert 
+        spaces.
+
+        For complex vectors it generates, real and imaginary parts are generated independently.
+
+        The distribution for sampling the random numbers can be specified as a string and is then 
+        used by the `draw_sample` function and the on initiation created Generator to draw samples.
+
+        Parameters
+        ----------
+        distribution : string, optional
+            The method name of the distribution as an attribute of the NumPy Generator. Default : "uniform"
+        kwargs : dict, optional
+            Arguments that can be passed to the sampling method.
+        
+        Returns
+        -------
+        array_like
+            A vector in the space. The vector is created as a flat numpy array and then cast to the actual 
+            vector and type by the `fromflat` method
+        """
+        return self.fromflat(self._draw_sample(distribution=distribution))
     
     def poisson(self, x):
         """Return a poisson distributed vector given the distribution x.
@@ -318,13 +372,15 @@ class VectorSpaceBase:
         Parameters
         ----------
         x : self.vec_type
-            The distribution to be used.
+            The lamda to be used.
         """
-        if self.type is None:
-            raise NotImplementedError
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
-        return self.type.poisson(x)
+        return self.rand(distribution="poisson", lam = self.flatten(x))
+    
+    def randn(self):
+        """Like `rand`, but using a standard normal distribution."""
+        return self.rand(distribution="standard_normal")
     
     def vdot(self,x,y):
         r"""Return the vector dot product as defined for these vectors. Note
@@ -373,10 +429,6 @@ class VectorSpaceBase:
         if self.type is None:
             raise NotImplementedError
         return self.type.logical_xor(x,y) 
-
-    def randn(self):
-        """Like `rand`, but using a standard normal distribution."""
-        return self.rand(random_generator=np.random.standard_normal)
 
     def iter_basis(self):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
@@ -628,8 +680,8 @@ class DirectSum(VectorSpaceBase):
     def empty(self)-> TupleVector:
         return TupleVector([s.empty() for s in self.summands])
     
-    def rand(self,random_generator = None)-> TupleVector:
-        return TupleVector([s.rand(random_generator=random_generator) for s in self.summands])
+    def rand(self, distribution = "uniform", **kwargs)-> TupleVector:
+        return TupleVector([s.rand(distribution=distribution, **kwargs) for s in self.summands])
     
     def poisson(self,x)-> TupleVector:
         if x not in self:
