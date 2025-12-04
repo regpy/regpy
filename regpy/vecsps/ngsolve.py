@@ -288,19 +288,14 @@ class NgsVectorSpace(VectorSpaceBase):
        The wrapped NGSolve vector space.
     bdr : 
         Boundary of the NGSolve vector space.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
 
-    def __init__(self, fes, bdr=None,
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+    def __init__(self, fes, bdr=None):
         if not isinstance(fes, ngs.FESpace):
             raise TypeError(Errors.not_instance(fes,ngs.FESpace))
         self.fes = fes
         self.bdr = bdr
-        super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex, random_seed=random_seed)
+        super().__init__(vec_type=NgsBaseVector, shape=(fes.ndof,), complex=fes.is_complex)
         # Checks if FES is Vector valued and stores the dimension in self.codim
         from netgen.libngpy._meshing import NgException
         try:

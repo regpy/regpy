@@ -27,8 +27,8 @@ class NumPyVectorSpace(VectorSpaceBase):
         numpy documentation.
     """
 
-    def __init__(self, shape : tuple, dtype : type = float, random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
-        super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np, random_seed = random_seed)
+    def __init__(self, shape : tuple, dtype : type = float):
+        super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np)
         self.dtype = dtype
 
     def zeros(self):
@@ -228,17 +228,16 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         numpy documentation.
     """
     @overload
-    def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None) -> None: ...
+    def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...
 
     @overload
-    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None) -> None: ...
+    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...
 
     def __init__(self,
                  measure : np.ndarray | None = None, 
                  shape : Tuple[int] | int | None = None, 
                  shape_codomain : Tuple[int | None] | int = (), 
-                 dtype : type = float,
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None) -> None:
+                 dtype : type = float) -> None:
         if(not isinstance(measure,np.ndarray) and shape is None):
             raise ValueError(Errors._compose_message("Invalid Init",'Either measure or shape have to be set to determine shape of space.'))
         if shape is None:
@@ -253,7 +252,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             shape_codomain=(shape_codomain,)
         elif not isinstance(shape_codomain,tuple):
             raise ValueError(Errors._compose_message("Wrong Value",'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
-        super().__init__(shape = shape + shape_codomain, dtype = dtype, random_seed=random_seed)
+        super().__init__(shape = shape + shape_codomain, dtype = dtype)
         self.shape_domain = shape
         r"""The shape of the domain of the functions (`N`)."""
         self.shape_codomain = shape_codomain
@@ -385,10 +384,6 @@ class GridFcts(MeasureSpaceFcts):
         Defines extension of cells at edges of each axis. Can be set to a constant for all axes, one constant for each axis
         or one constant for the start and one for the end of each axis. Is only used in combination with `boundary_ext='const'`
         in which case it needs to be defined.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     
     Notes
     -----
@@ -401,8 +396,7 @@ class GridFcts(MeasureSpaceFcts):
                  dtype : type = float,
                  use_cell_measure : bool =True,
                  boundary_ext : str = 'sym',
-                 ext_const : None | float | tuple[float] = None,
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+                 ext_const : None | float | tuple[float] = None):
         axes = []
         extents=[]
         if axisdata and not coords:
@@ -435,14 +429,12 @@ class GridFcts(MeasureSpaceFcts):
             super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),
                              shape=self.coords[0].shape,
                              shape_codomain=shape_codomain, 
-                             dtype=dtype,
-                             random_seed= random_seed
+                             dtype=dtype
                              )
         else:
             super().__init__(shape=self.coords[0].shape, 
                              shape_codomain=shape_codomain, 
-                             dtype=dtype,
-                             random_seed= random_seed
+                             dtype=dtype
                              )
 
         if axisdata is not None:
@@ -544,26 +536,20 @@ class UniformGridFcts(GridFcts):
         passed as arguments to numpy.linspace, the right boundaries (second elements of the triples)
         are reduced such that the difference of the second and first elements represents 
         periodicity lengths.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
 
     def __init__(self, *coords, 
                  axisdata : None | tuple[np.ndarray] = None, 
                  shape_codomain : int | tuple[int] = (),  
                  dtype : type =float, 
-                 periodic : bool = False, 
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+                 periodic : bool = False):
         if periodic and all(isinstance(c,tuple) for c in coords):
             coords = tuple((l, (l+(n-1)*r)/n ,n) for (l,r,n) in coords)
         super().__init__(*coords, 
                          axisdata=axisdata,
                          shape_codomain=shape_codomain,
                          dtype=dtype,
-                         use_cell_measure=False,
-                         random_seed= random_seed
+                         use_cell_measure=False
                         )
         spacing = []
         for axis in self.axes:
@@ -604,15 +590,11 @@ class Prod(NumPyVectorSpace):
     flatten : bool, optional
         Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
         Default: False
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
+
     """
 
     def __init__(self, *factors, 
-                 flatten : bool = False,
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+                 flatten : bool = False):
         if any(not isinstance(s, VectorSpaceBase) for s in factors):
             raise TypeError(Errors.type_error("One of spaces is to factor is not a VectorSpace!"))
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
@@ -638,7 +620,7 @@ class Prod(NumPyVectorSpace):
         characters=tuple(chr(k) for k in range(ord('A'),ord('A')+len(self.factors)))
         self._prod_trafo_string=f"{','.join(characters)}->{''.join(characters)}"
         """String to compute the outer product in einsum."""
-        super().__init__(shape,dtype=dt,random_seed=random_seed)
+        super().__init__(shape,dtype=dt)
 
     def __eq__(self, other):
         return (

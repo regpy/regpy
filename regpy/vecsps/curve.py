@@ -400,17 +400,12 @@ class GenTrigDiscr(UniformGridFcts):
     ----------
     n : int
         Number of discretization points.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
-    def __init__(self, n,
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+    def __init__(self, n):
         if not isinstance(n, int,):
             raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigDiscr need n to be an integer!"))
         self.n = n
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False), random_seed=random_seed)
+        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def bd_eval(self, coeffs, nvals=None, nderivs=0):
         r"""Compute a curve for the given coefficients. All parameters will be passed to the
@@ -571,15 +566,11 @@ class StarTrigDiscr(UniformGridFcts):
     ----------
     n : int
         Number of discretization points.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
-    def __init__(self, n, random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+    def __init__(self, n):
         if not isinstance(n, int):
             raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigDiscr need n to be an integer!"))
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False),random_seed=random_seed)
+        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def eval_curve(self, coeffs, nvals=None, nderivs=0):
         """Compute a curve for the given coefficients. All parameters will be passed to the

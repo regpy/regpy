@@ -6,7 +6,7 @@ from typing import List, overload
 
 import numpy as np
 
-from regpy.util import ClassLogger,Errors,make_repr,memoized_property
+from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
 __all__ = ["TupleVector", "VectorSpaceBase", "DirectSum"]
 
@@ -248,10 +248,6 @@ class VectorSpaceBase:
     type : {None,object}, optional
         A class, module or library that the vec_type belongs to and implements the 
         above methods. Default, None.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
 
     log = ClassLogger()
@@ -260,8 +256,7 @@ class VectorSpaceBase:
                  vec_type : object, 
                  shape : tuple, 
                  complex : bool = False, 
-                 type = None, 
-                 random_seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+                 type = None):
         self.vec_type = vec_type
         """The vector type"""
         self.shape = (shape,) if isinstance(shape,int) else shape
@@ -271,8 +266,6 @@ class VectorSpaceBase:
         """Type of the vectors if different"""
         self._no_pickle = {'type', 'vec_type'}
         """A dictionary containing modules kept extra in the copy"""
-        self.random_generator = np.random.default_rng(random_seed)
-        """Initializes the random Generator to be used by the methods creating random vectors"""
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -306,6 +299,9 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.empty(shape = self.shape)
     
+    def set_rng_seed(self,seed):
+        set_rng_seed(seed)
+    
     def _draw_sample(self, distribution : str , size = None, **kwargs):
         """Draws samples of the shape of the space from the given distribution. The distribution
         has to be given as a string representing a method associated with a distribution of
@@ -330,11 +326,11 @@ class VectorSpaceBase:
         if size is None:
             size = self.realsize
         elif isinstance(size,int) and size != self.realsize:
-            self.log.warning(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
+            self.log.debug(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
         elif isinstance(size,tuple) and np.prod(size) != self.realsize:
-            self.log.warning(f"You are sampling on a size specified as an tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
+            self.log.debug(f"You are sampling on a size specified as an tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
         try:
-            dist = getattr(self.random_generator,distribution)
+            dist = getattr(get_rng(),distribution)
             return dist(size = size, **kwargs)
         except AttributeError:
             raise AttributeError(Errors.generic_message(f"The given distribution {distribution} is unknown to numpy maybe you misspelled, please check the documentation."))
