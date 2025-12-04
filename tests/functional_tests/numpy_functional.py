@@ -11,21 +11,22 @@ from regpy.util import functional_tests as ft
 
 def test_Lpp():
     dom = UniformGridFcts((-3.,3.,100))
-    x = np.linspace(-3.,3.,100)
     for p in [1.5,2.,2.5]:
         for (l,u) in [(0.1,2.3),(-2.1,-1.2),(-1.2,1.)]:
-            logging.info(f" Testing Lpp functionals for p={p}, l={l}, u={u}")
+            msg = f" Testing Lpp functionals for p={p}, l={l}, u={u}"
+            logging.info(msg)
+            print(msg)
             ft.test_functional(Lpp(dom,p=p,constr_l=l,quad_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=False
+                               test_second_deriv=(p>=2),test_second_deriv_conj=False,msg=msg
                                )
             ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,lin_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2),msg=msg
                                )
             ft.test_functional(Lpp(dom,p=p,lin_taylor_l=l,constr_u=u),
-                               test_second_deriv=False,test_second_deriv_conj=False
+                               test_second_deriv=False,test_second_deriv_conj=False,msg=msg
                                )
             ft.test_functional(Lpp(dom,p=p,quad_taylor_l=l,quad_taylor_u=u),
-                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
+                               test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2),msg=msg
                                )
 
 def test_L1():
@@ -140,6 +141,19 @@ def test_VectorIntegralFunctional():
         u_stars = [ft.sample_vector_in_domain(HuberL2.conj) for _ in range(5)]
         ft.test_functional(HuberL2, u_s = u_s, u_stars= u_stars,
                           test_second_deriv=False, test_second_deriv_conj=False)
+
+def test_L1_dist_subdiff():
+    # further tests of dist_subdiff in  test_subgradient_conj_subgradient_dist_subdiff in functional_tests
+    grid = UniformGridFcts((-0.5,0.5,10),periodic=True)
+    ran = grid.rand()
+    G = L1(grid).shift(ran)
+    if not np.isclose(G.dist_subdiff(2*grid.measure*grid.ones(),ran),1.):
+        raise RuntimeError('Distance to subdifferential should be 1.')
+    H = 3.+L1(grid).dilation(3.)
+    x = grid.zeros()
+    grad = 3*np.sign(np.linspace(-1,1,10))*grid.measure
+    if not np.isclose(H.dist_subdiff(grad,x),0.):
+        raise RuntimeError('3*sgn should be in the subdifferential of int |3t| dt.')
 
 def test_FunctionalOnDirectSum():
     grid1 = UniformGridFcts((0,1,10))

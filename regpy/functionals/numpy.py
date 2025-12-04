@@ -280,7 +280,6 @@ class IntegralFunctionalBase(Functional):
                 self.conj_dom_u[taylor_active_u] =  np.inf
                 self._if_constant_broadcast(self.conj_dom_u)
 
-
         if (self.constr_l_active or self.constr_u_active):
             self.Lipschitz=np.inf
         if (self.conj_constr_l_active or self.conj_constr_u_active):
@@ -437,13 +436,13 @@ class IntegralFunctionalBase(Functional):
 
     def dist_subdiff(self, vstar, x):
         self._assert_essential_domain(x,msg='dist_subdiff')
-        diff = self._ptw_dist_subdiff(vstar/self.measure,x)*self.measure
+        diff = self._ptw_dist_subdiff(vstar,x)
         ind = np.where(np.isclose(x,self.dom_u))
         if np.any(ind):
-            diff[ind]=np.minimum(vstar[ind]-self.conj_taylor_u[ind],0.)
+            diff[ind]=np.minimum(vstar[ind]-self._f_deriv(x[ind],mask =ind)*self.measure[ind],0.)
         ind = np.where(np.isclose(x,self.dom_l))
         if np.any(ind):
-            diff[ind]=np.maximum(vstar[ind]-self.conj_taylor_l[ind],0.)
+            diff[ind]=np.maximum(vstar[ind]-self._f_deriv(x[ind],mask =ind)*self.measure[ind],0.)
         return self.h_domain.dual_space().norm(diff)
 
     def _conj_subgradient(self, vstar):
@@ -476,15 +475,14 @@ class IntegralFunctionalBase(Functional):
 
     def _conj_dist_subdiff(self, v, xstar):
         self._assert_conj_essential_domain(xstar, msg='_conj_dist_subdiff')
-        diff = self._conj_ptw_dist_subdiff(v,xstar/self.measure)
+        diff = self._conj_ptw_dist_subdiff(v,xstar)
         ind = np.where(np.isclose(xstar, self.conj_dom_u))
         if np.any(ind):
-            diff[ind]=np.minimum(v[ind]-self.taylor_u[ind],0.)
+            diff[ind]=np.minimum(v[ind]-self._f_conj_deriv(xstar[ind]/self.measure[ind],mask =ind),0.)
         ind = np.where(np.isclose(xstar,self.conj_dom_l))
         if np.any(ind):
-            diff[ind]=np.maximum(v[ind]-self.taylor_l[ind],0.)
-        res= self.h_domain.norm(diff)
-        return res
+            diff[ind]=np.maximum(v[ind]-self._f_conj_deriv(xstar[ind]/self.measure[ind],mask =ind),0.)         
+        return self.h_domain.norm(diff)
 
     def _hessian(self, v):
         if not self.everywhere_finite:
@@ -608,7 +606,7 @@ class IntegralFunctionalBase(Functional):
         raise NotImplementedError
 
     def _ptw_dist_subdiff(self,vstar,w,**kwargs):
-        return vstar-self._f_deriv(w,**kwargs)
+        return vstar-self.subgradient(w,**kwargs)
 
     def _f_second_deriv(self,v,**kwargs):
         raise NotImplementedError
@@ -633,7 +631,7 @@ class IntegralFunctionalBase(Functional):
         raise NotImplementedError
 
     def _conj_ptw_dist_subdiff(self,v,wstar,**kwargs):
-        return v-self._f_conj_deriv(wstar,**kwargs)
+        return v-self.conj.subgradient(wstar,**kwargs)
 
     def _f_conj_second_deriv(self,vstar,**kwargs):
         raise NotImplementedError
@@ -1274,10 +1272,10 @@ class L1MeasureSpace(IntegralFunctionalBase):
             return super().is_subgradient(vstar, x, eps)
 
     def _ptw_dist_subdiff(self, vstar, x):
-        diff = self._f_deriv(x)
+        diff = self.subgradient(x)
         diff -= vstar
         zeroind = (x==0)
-        diff[zeroind] = np.maximum(np.abs(vstar[zeroind])-1.,0.)
+        diff[zeroind] = np.maximum(np.abs(vstar[zeroind])-self.measure[zeroind],0.)
         return diff
 
     def _conj_is_subgradient(self, v, xstar,eps=1e-10):
@@ -1288,9 +1286,9 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
     def _conj_ptw_dist_subdiff(self, v, xstar):
         w = v.copy()
-        ind = np.where(np.isclose(xstar,1.))
+        ind = np.where(np.isclose(xstar,self.measure))
         w[ind] = np.minimum(w[ind],0.)
-        ind = np.where(np.isclose(xstar,-1.))
+        ind = np.where(np.isclose(xstar,-self.measure))
         w[ind] = np.maximum(w[ind],0.)
         return w
 
@@ -1635,6 +1633,8 @@ class Huber(IntegralFunctionalBase):
         if as_primal:
             super().__init__(domain,Lipschitz=1.,
                              conj_dom_l=-self.sigma, conj_dom_u = self.sigma,
+                             methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
+                             conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},                             
                              **kwargs)
             self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
         else:
@@ -1723,12 +1723,16 @@ class QuadraticIntv(IntegralFunctionalBase):
             self.sigma = sigma 
             self.sigmaeps = self.sigma*(1+eps) if eps>0 else self.sigma            
         if as_primal:
-            super().__init__(domain,convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,**kwargs)
+            super().__init__(domain,convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,
+                             methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
+                             conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},                                  
+                             **kwargs)
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
         else:
             dual_domain = deepcopy(domain)
             dual_domain.measure = 1./domain.measure
-            super().__init__(dual_domain, convexity_param=1,**kwargs)
+            super().__init__(dual_domain, convexity_param=1,                                                     
+                         **kwargs)   
         self._aux = domain.zeros()
 
     def _f(self, u,**kwargs):
@@ -1796,7 +1800,10 @@ class QuadraticNonneg(IntegralFunctionalBase):
     """
 
     def  __init__(self, domain,**kwargs):
-        super().__init__(domain,convexity_param = 1.,dom_l=0.,**kwargs)
+        super().__init__(domain,convexity_param = 1.,dom_l=0.,
+                         methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
+                         conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
+                         **kwargs)
 
     def _f(self, u,**kwargs):
         res =  u*u
