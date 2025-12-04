@@ -259,7 +259,7 @@ class Setting:
     """
     log = ClassLogger()
 
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data_fid_shift= None,
+    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data= None,
                  logging_level = "INFO",primal_setting=None,gap_threshold = 1e5):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
@@ -278,11 +278,11 @@ class Setting:
             self.penalty = self.penalty.shift(penalty_shift)
         else:
             self.penalty_shift = None
-        if not data_fid_shift is None:
-            self.data_fid_shift = data_fid_shift
-            self.data_fid = self.data_fid.shift(data_fid_shift)
+        if not data is None:
+            self.data = data
+            self.data_fid = self.data_fid.shift(data)
         else:
-            self.data_fid_shift = None
+            self.data = None
         self.regpar=regpar#The flags are set by setting the regularization parameter
         """The Regularization parameter"""
         self.log.setLevel(logging_level)

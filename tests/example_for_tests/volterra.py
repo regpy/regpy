@@ -82,7 +82,7 @@ def test_volterra():
         op=op, 
         penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 
-        data_fid_shift = data,
+        data = data,
         regpar = 0.01
     )
 

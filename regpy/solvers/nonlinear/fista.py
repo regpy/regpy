@@ -51,7 +51,7 @@ class FISTA(RegSolver):
         if data is not None:
             self.data = data
         else:
-            self.data = setting.data_fid_shift
+            self.data = setting.data
 
         self.log.setLevel(logging_level)
         self.regpar = self.setting.regpar
