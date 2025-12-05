@@ -77,10 +77,10 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
                 SDfunc = func.func
             else: 
                 raise TypeError
-            if func.shift is None:
+            if SDfunc.shift_val is None:
                 funcs = (HorizontalShiftDilation(f, dilation=SDfunc.dilation) for f in SDfunc.func.funcs)
             else:
-                funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.func.funcs,func.domain.split(SDfunc.shift)))
+                funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.func.funcs,func.domain.split(SDfunc.shift_val)))
             if isinstance(func,Conj):
                 funcs = (f.conj for f in funcs)
         if eps_perturbation is None:

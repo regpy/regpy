@@ -1477,7 +1477,7 @@ class HorizontalShiftDilation(Functional):
 
         self.func = func
         self.dilation = dilation
-        self._shift = shift
+        self._shift_val = shift
         if data is None:
             self.is_data_func = False
         elif data in func.domain:
@@ -1487,8 +1487,8 @@ class HorizontalShiftDilation(Functional):
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
 
         if func.separable:
-            dom_u = func.dom_u/dilation if self.shift is None else func.dom_u/dilation + self.shift
-            dom_l = func.dom_l/dilation if self.shift is None else func.dom_l/dilation + self.shift
+            dom_u = func.dom_u/dilation if self.shift_val is None else func.dom_u/dilation + self.shift_val
+            dom_l = func.dom_l/dilation if self.shift_val is None else func.dom_l/dilation + self.shift_val
             conj_dom_u = func.conj_dom_u*dilation
             conj_dom_l = func.conj_dom_l*dilation
             if dilation<0:
@@ -1497,7 +1497,7 @@ class HorizontalShiftDilation(Functional):
         else:
             dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(func.domain, h_domain = func.h_domain, 
-                         linear = func.linear and self.shift is None,
+                         linear = func.linear and self.shift_val is None,
                          Lipschitz = func.Lipschitz * dilation**2,
                          convexity_param= func.convexity_param  * dilation**2,
                          separable = func.separable,
@@ -1508,26 +1508,26 @@ class HorizontalShiftDilation(Functional):
                          )
         
     @util.memoized_property
-    def shift(self):
+    def shift_val(self):
         if self.is_data_func:
-            if self._shift is None:
+            if self._shift_val is None:
                 return self.data
             else:
-                return self._shift + self.data
+                return self._shift_val + self.data
         else:
-            if self._shift is None:
+            if self._shift_val is None:
                 return None
             else:
-                return self._shift
+                return self._shift_val
         
     def recompute_cutoff(self):
         if self.func.separable:
             if self.dilation > 0:
-                self.dom_u = self.func.dom_u/self.dilation if self.shift is None else self.func.dom_u/self.dilation + self.shift
-                self.dom_l = self.func.dom_l/self.dilation if self.shift is None else self.func.dom_l/self.dilation + self.shift
+                self.dom_u = self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+                self.dom_l = self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
             else:
-                self.dom_l = self.func.dom_u/self.dilation if self.shift is None else self.func.dom_u/self.dilation + self.shift
-                self.dom_u = self.func.dom_l/self.dilation if self.shift is None else self.func.dom_l/self.dilation + self.shift
+                self.dom_l = self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+                self.dom_u = self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
 
     @property
     def data(self):
@@ -1543,7 +1543,7 @@ class HorizontalShiftDilation(Functional):
             self._data = new_data
         else:
             raise ValueError(util.Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
-        del self.shift
+        del self.shift_val
         self.recompute_cutoff()
         
     @data.deleter
@@ -1551,57 +1551,57 @@ class HorizontalShiftDilation(Functional):
         if self.is_data_func:
             del self._data
             self.is_data_func = False
-        del self.shift
+        del self.shift_val
         self.recompute_cutoff()
 
     def _eval(self, x,**kwargs):
-        return self.func(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
+        return self.func(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
          
     def _subgradient(self, x,**kwargs):
-        return self.dilation * self.func._subgradient(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
+        return self.dilation * self.func._subgradient(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
 
     def dist_subdiff(self, vstar, x, **kwargs):
-        return self.func.dist_subdiff(vstar/self.dilation, self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
+        return self.func.dist_subdiff(vstar/self.dilation, self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
 
     def _hessian(self, x,**kwargs):
-        return self.dilation**2 * self.func._hessian(self.dilation * (x if self.shift is None else x-self.shift),**kwargs)
+        return self.dilation**2 * self.func._hessian(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
 
     def _proximal(self, x, tau,**proximal_par):
-        if self.shift is None:
+        if self.shift_val is None:
             return              (1./self.dilation) * self.func.proximal(self.dilation*x,tau*self.dilation**2,**proximal_par)
         else:
-            return self.shift + (1./self.dilation) * self.func.proximal(self.dilation*(x-self.shift),tau*self.dilation**2,**proximal_par)
+            return self.shift_val + (1./self.dilation) * self.func.proximal(self.dilation*(x-self.shift_val),tau*self.dilation**2,**proximal_par)
     
     def _conj(self,x_star,**kwargs):
-        if self.shift is None:
+        if self.shift_val is None:
             return self.func._conj(x_star/self.dilation,**kwargs)             
         else:
-            return self.func._conj(x_star/self.dilation,**kwargs) + self.domain.vdot(x_star,self.shift).real
+            return self.func._conj(x_star/self.dilation,**kwargs) + self.domain.vdot(x_star,self.shift_val).real
 
     def _conj_subgradient(self,x_star,**kwargs):
-        if self.shift is None:
+        if self.shift_val is None:
             return self.func._conj_subgradient(x_star/self.dilation,**kwargs)/self.dilation             
         else:
-            return self.func._conj_subgradient(x_star/self.dilation,**kwargs)/self.dilation + self.shift
+            return self.func._conj_subgradient(x_star/self.dilation,**kwargs)/self.dilation + self.shift_val
  
     def _conj_dist_subdiff(self,v,x_star,**kwargs):
-        if self.shift is None:
+        if self.shift_val is None:
             return self.func._conj_dist_subdiff(self.dilation *v, x_star/self.dilation, **kwargs) 
         else:
-            return self.func._conj_dist_subdiff(self.dilation *(v - self.shift), x_star/self.dilation, **kwargs)
+            return self.func._conj_dist_subdiff(self.dilation *(v - self.shift_val), x_star/self.dilation, **kwargs)
 
     def _conj_hessian(self,x_star,**kwargs):
         return self.dilation**(-2)*self.func._conj_hessian(x_star/self.dilation,**kwargs)
 
     def _conj_proximal(self, xstar, tau,**proximal_par):
         gram = self.h_domain.gram
-        if self.shift is None:
+        if self.shift_val is None:
             return self.dilation*self.func.conj_proximal(xstar/self.dilation,
                                                   tau/self.dilation**2,
                                                   **proximal_par
                                                   )
         else:
-            return self.dilation*self.func.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift),
+            return self.dilation*self.func.conj_proximal(xstar/self.dilation-(tau/self.dilation)*gram(self.shift_val),
                                                   tau/self.dilation**2,
                                                   **proximal_par
                                                   )
