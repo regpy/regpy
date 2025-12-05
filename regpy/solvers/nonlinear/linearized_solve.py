@@ -9,7 +9,7 @@ class LinearizedSolve(RegSolver):
     r"""General method for iterated linearization of operator and subsequent solution of linearized problem. In each iteration, minimizes
 
     .. math::
-        S_{data-T(x_n)}(T'[x_n]h) + regpar_{n} \cdot R(h+x_n)
+        S_{data}(T'[x_n]h+T(x_n)) + regpar_{n} \cdot R(h+x_n)
 
     where :math:`T` is a Frechet-differentiable operator, using the given `inner_solver`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
@@ -43,17 +43,18 @@ class LinearizedSolve(RegSolver):
                  init=None, 
          ):
         super().__init__(setting)
-        self.data_fid_copy=copy(self.setting.data_fid)
         if data is None:
             if(setting.data is not None):
                 data=setting.data
             else:
                 raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
+        else:
+            setting.data=data#sets data in setting if there is no data
         if(regpar is None):
             if(not setting.is_tikhonov):
                 raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
             regpar=setting.regpar
-        self.data = data
+        self.data=data
         """The measured data."""
         if init is None:
             init = self.op.domain.zeros()
@@ -70,12 +71,13 @@ class LinearizedSolve(RegSolver):
         self.inner_solver_stoprule=inner_solver_stoprule
 
     def _next(self):
-        # Running inner solver
-        inner_setting=Setting(self.deriv,self.setting.penalty,self.data_fid_copy,data=self.data-self.y,regpar=self.regpar,penalty_shift=-self.x)
+        # Linearized setting
+        inner_setting=Setting(self.deriv,self.setting.penalty,self.data_fid.shift(data_shift=-self.y),regpar=self.regpar,penalty_shift=-self.x)        
         if(callable(self.inner_solver_stoprule)):
             inner_stoprule=self.inner_solver_stoprule(inner_setting)
         else:
             inner_stoprule=copy(self.inner_solver_stoprule)
+        # Running inner solver
         step, _ = self.inner_solver(inner_setting,**self.inner_solver_pars).run(stoprule=inner_stoprule)
         self.x += step
         self.y , self.deriv = self.op.linearize(self.x)
