@@ -11,7 +11,7 @@ __all__ = ["SignumFilter", "NgsL1", "NgsTV"]
 
 class SignumFilter(ngs.la.BaseMatrix):
     def __init__ (self, space, vec):
-        self.super(ngs.la.SymmetricGS, self).__init__()
+        super().__init__()
         self.gf = ngs.GridFunction(space)
         self.gf.vec.data = vec
         self.gf_out = ngs.GridFunction(space)
@@ -21,9 +21,9 @@ class SignumFilter(ngs.la.BaseMatrix):
         self.gf.vec.data = new_vec
     
     def Mult (self, x, y):
-        self.gf2.vec.data = x
-        self.gf_out.Interpolate(ngs.IfPos(self.gf,1,-1)*self.gf2)
-        y.data = self.gf.vec
+        self.gf_help.vec.data = x
+        self.gf_out.Interpolate(ngs.IfPos(self.gf,1,-1)*self.gf_help)
+        y.data = self.gf_out.vec
     
     def Height (self):
         return self.space.ndof
@@ -46,34 +46,27 @@ class NgsL1(Functional):
     def __init__(self, domain):
         assert isinstance(domain, NgsVectorSpace)
         self._gfu = ngs.GridFunction(domain.fes)
-        self._x_help = domain.zeros()
-        self._gfu_help = domain.to_gf(self._x_help)
-        if domain.codim > 1:
-            self._fes_util = ngs.VectorL2(domain.fes.mesh, order=0)
-        else:
-            self._fes_util = ngs.L2(domain.fes.mesh, order=0)
-        self._gfu_util = ngs.GridFunction(self._fes_util)
+        self._w_help = domain.empty()
+        self.sign = SignumFilter(domain.fes,self._gfu.vec)
         super().__init__(domain)
-        domain.to_gf
 
     def _eval(self, x):
         return ngs.Integrate( ngs.Norm(self.domain.to_gf(x)), self.domain.fes.mesh )
 
     def _subgradient(self, x):
-        self._gfu.vec.data = x.vec
-        self._gfu_help.Interpolate(ngs.IfPos(self._gfu,1,-1)*self._gfu)
-        return self._x_help
+        self.sign.Update(x.vec)
+        self._w_help.vec.data = self.sign * x.vec
+        return self._w_help.copy()
 
     def _hessian(self, x):
         raise NotImplementedError
 
-    def _proximal(self, x, tau): 
-        self._gfu.vec.data = x.vec
-        sign_x = ngs.IfPos(self._gfu,1,0)
-        t = sign_x*self._gfu-0.25
-        self._gfu_help.Interpolate(ngs.IfPos(t,1,0)*t*sign_x)
-        return self._x_help
-
+    def _proximal(self, x, tau):
+        self.sign.Update(x.vec)
+        self._gfu.vec.data = self.sign * x.vec
+        self._gfu.Interpolate(ngs.IfPos(self._gfu - tau,1,0)*(self._gfu - tau))
+        self._w_help.vec.data = self.sign * self._gfu.vec
+        return self._w_help.copy()
 
 class NgsTV(Functional):
     r"""Implementation of the total variation functional :math:`TV` on a given `NgsVectorSpace`. It is 
@@ -109,12 +102,6 @@ class NgsTV(Functional):
         for i in range(gradu.dim):
             tvnorm += ngs.Integrate( ngs.Norm(gradu[i]), self.domain.fes.mesh )
         return tvnorm
-
-    def _subgradient(self, x):
-        raise NotImplementedError
-
-    def _hessian(self, x):
-        raise NotImplementedError
 
     def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
         self._gfu.Set(0)
