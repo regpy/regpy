@@ -348,15 +348,13 @@ class NgsVectorSpace(VectorSpaceBase):
     def empty(self):
         return self.zeros()
     
-    def rand(self,random_generator = None):
+    def rand(self,distribution = "uniform", **kwargs):
         if self._fes_util is None:
             raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
-        random_generator = random_generator or np.random.random_sample 
-        r = random_generator(self._fes_util.ndof)
+        r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
         if self.is_complex and not is_complex_dtype(r.dtype):
-            c = np.empty(self._fes_util.ndof, dtype=complex)
+            c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
             c.real = r
-            c.imag = random_generator(self._fes_util.ndof)
             self._gfu_util.vec.FV().NumPy()[:] = c            
         else:
             self._gfu_util.vec.FV().NumPy()[:] = r
@@ -374,7 +372,7 @@ class NgsVectorSpace(VectorSpaceBase):
         self._gfu_util.Set(self.to_gf(x))
         if np.any(self._gfu_util.vec.FV().NumPy()<0):
             raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
-        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(np.random.poisson(lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
+        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(self._draw_sample(distribution="poisson",lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
         self._gfu_fes.Set(self._gfu_util)
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
         return NgsBaseVector(self._gfu_fes.vec, make_copy = True)

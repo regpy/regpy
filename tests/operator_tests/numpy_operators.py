@@ -7,7 +7,9 @@ from regpy.vecsps.numpy import *
 from regpy.operators.numpy import *
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot
+from regpy.util import set_rng_seed
 
+set_rng_seed(15873098306879350073259142812684978477)
 
 class TestMatrixMultiplication():
     @pytest.mark.parametrize("matrix",[np.random.rand(3,5),np.random.rand(20,21),np.random.rand(20,21)+1j*np.random.rand(20,21)])

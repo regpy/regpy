@@ -399,10 +399,10 @@ class GenTrigDiscr(UniformGridFcts):
     Parameters
     ----------
     n : int
-        Number of discretization points. 
+        Number of discretization points.
     """
     def __init__(self, n):
-        if not isinstance(n, int):
+        if not isinstance(n, int,):
             raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigDiscr need n to be an integer!"))
         self.n = n
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
@@ -565,7 +565,7 @@ class StarTrigDiscr(UniformGridFcts):
     Parameters
     ----------
     n : int
-        Number of discretization points. 
+        Number of discretization points.
     """
     def __init__(self, n):
         if not isinstance(n, int):

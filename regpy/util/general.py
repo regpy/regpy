@@ -3,6 +3,37 @@ from logging import getLogger
 
 import numpy as np
 
+
+_default_rng = np.random.default_rng()
+"""The default Random Generator to be used throughout RegPy
+    """
+
+def get_rng():
+    """Return the global Random Generator of RegPy.
+    
+    Returns
+    -------
+    Generator
+        The random generator.
+    """
+    return _default_rng
+
+def set_rng_seed(seed : None | int | np.random.SeedSequence | np.random.BitGenerator | np.random.Generator | np.random.RandomState = None):
+    """
+    Reset the global RNG seed using the provided seed for RegPy.
+
+    Parameters
+    ----------
+    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
+        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
+        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
+        numpy documentation.
+    """
+    global _default_rng
+    _default_rng = np.random.default_rng(seed)
+
+
+
 class Errors:
 
     @staticmethod

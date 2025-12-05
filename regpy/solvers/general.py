@@ -613,8 +613,6 @@ class Setting:
                 'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
-
-
     
     def evaluate_methods(self,method_names = None):
         """Evaluates which methods are applicable to the current Setting. 

@@ -3,6 +3,9 @@ from netgen.geom2d import unit_square
 
 from regpy.vecsps.ngsolve import *
 from regpy.hilbert.ngsolve import *
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
 
 from .base_hilbert import hilbert_basics,collect_errors
 

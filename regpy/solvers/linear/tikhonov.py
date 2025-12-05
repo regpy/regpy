@@ -74,13 +74,18 @@ class TikhonovCG(RegSolver):
         self.log.setLevel(logging_level)
         if data is None:
             if(setting.data is not None):
+                print("Data used")
                 data=setting.data
             else:
                 raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if isinstance(self.data_fid,SquaredNorm):
-            if xref is not None:        
-                self.log.warning('Ignoring given parameter xref')        
-            xref = (-1./self.penalty.a) * self.penalty.b
+        if xref is None and setting.penalty_shift is not None:
+            xref=setting.penalty_shift
+            print("Uses shift")
+        
+        # if isinstance(self.data_fid,SquaredNorm):#TODO fix/reinclude this
+        #     if xref is not None:        
+        #         self.log.warning('Ignoring given parameter xref')        
+        #     xref = (-1./self.penalty.a) * self.penalty.b
 
         if(setting.is_tikhonov):
             if regpar is not None:
@@ -126,10 +131,8 @@ class TikhonovCG(RegSolver):
 
         if preconditioner is None:
             self.preconditioner = Identity (self.h_domain.vecsp)
-            # self.full_penalty = Identity (self.h_domain.vecsp)
         else: 
             self.preconditioner = preconditioner
-            # self.full_penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
 
         self.g_res = self.op.adjoint(self.h_codomain.gram(data-self.y))
         """The gram matrix applied to the residual of the normal equation. 
