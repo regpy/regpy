@@ -366,6 +366,37 @@ class Monotonicity(StopRule):
         return change < 0
 
 
+class OptimalityCondStopping(StopRule):
+    def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
+        if not setting.is_tikhonov and setting.is_convex:
+            raise ValueError("For the optimality condition stopping rule the setting needs to be a convex and contain a regularization parameter!")
+        super().__init__()
+        self.setting = setting
+        if threshold is not None:
+            self.cutoff= threshold
+        else:
+            self.cutoff = cutoff
+        self.log.setLevel(logging_level)
+        self.history_dict["dSstar"] = []
+        self.history_dict["dR"] = []
+
+    def __repr__(self):
+        return 'OptimailtyCondStopping(cutoff={})'.format(
+            self.cutoff)
+
+    def _stop(self, x, y=None, p=None, Tsp = None):
+        if p is not None:
+            dSstar,dR = self.setting.violation_optimality_cond(x = x, Tx=y, p = p,Tsp=Tsp)
+        else:
+            dSstar,dR = self.setting.duality_gap(primal = x, Tx =y,
+                                                 p=self.setting.primal_to_dual(y,argumentIsOperatorImage=True),
+                                                 Tsp=Tsp)
+        self.history_dict["dStar"].append(dSstar)
+        self.history_dict["dR"].append(dR)
+        OptimalityCondStopping_stop = dSstar+dR<=self.cutoff
+        self.log.info('viol. opt. cond. {:.3e} + {:.3e} = {:.3d} , threshold  = {:.3e}'.format(dSstar,dR,dSstar+dR,self.cutoff))      
+        return OptimalityCondStopping_stop 
+    
 class DualityGapStopping(StopRule):
     def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
         if not setting.is_tikhonov and setting.is_convex:

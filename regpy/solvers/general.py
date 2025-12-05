@@ -563,13 +563,16 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
-    def violation_optimality_cond(self,x,p,tol):
-        r"""Checks to which degree \((x,p) )\ violates the optimailty conditions for being  a saddle point of 
+    def violation_optimality_cond(self,x,p,Tx=None,Tsp=None):
+        r"""Returns the degree to which a pair \((x,p))\ of a primal point \(x\) and a dual point \(p)\ 
+        violates the optimailty conditions for being a saddle point of 
         \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
         These optimality conditions are:
         .. math::
-        Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
+        Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(x).
 
+        This violation is measured by the distances of the left-hand sides to the respective 
+        subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
 
         Parameters
         ---------------------------
@@ -577,8 +580,6 @@ class Setting:
         Candidate solution of primal problem.
         p: self.op.codomain
         Candidate solution of dual problem.
-        tol: float [default: 1e-10]
-        Tolerance value
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
@@ -586,8 +587,10 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
-        return self.data_fid.conj.dist_subdiff(self.op(x),self.regpar*p,tol=tol), \
-               self.penalty.dist_subdiff(-self.op.adjoint(p),x,tol=tol) 
+        Tx = Tx if Tx is not None else self.op(x)
+        Tsp = Tsp if Tsp is not None else self.op.adjoint(p)
+        return self.data_fid.conj.dist_subdiff(Tx,self.regpar*p), \
+               self.penalty.dist_subdiff(-Tsp,x) 
 
 
 
