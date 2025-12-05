@@ -9,6 +9,10 @@ from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, Fu
 from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
+
 
 @pytest.mark.parametrize("p,l,u", [(1.5, 0.1, 2.3), (1.5, -2.1, -1.2), (1.5, -1.2, 1.), (2., 0.1, 2.3), (2., -2.1, -1.2), (2., -1.2, 1.), (2.5, 0.1, 2.3), (2.5, -2.1, -1.2), (2.5, -1.2, 1.),])
 class TestLpp:
@@ -196,6 +200,19 @@ class TestVectorIntegralFunctional():
         u_stars = [ft.sample_vector_in_domain(HuberL2.conj) for _ in range(5)]
         ft.test_functional(HuberL2, u_s = u_s, u_stars= u_stars,
                           test_second_deriv=False, test_second_deriv_conj=False)
+
+def test_L1_dist_subdiff():
+    # further tests of dist_subdiff in  test_subgradient_conj_subgradient_dist_subdiff in functional_tests
+    grid = UniformGridFcts((-0.5,0.5,10),periodic=True)
+    ran = grid.rand()
+    G = L1(grid).shift(ran)
+    if not np.isclose(G.dist_subdiff(2*grid.measure*grid.ones(),ran),1.):
+        raise RuntimeError('Distance to subdifferential should be 1.')
+    H = 3.+L1(grid).dilation(3.)
+    x = grid.zeros()
+    grad = 3*np.sign(np.linspace(-1,1,10))*grid.measure
+    if not np.isclose(H.dist_subdiff(grad,x),0.):
+        raise RuntimeError('3*sgn should be in the subdifferential of int |3t| dt.')
 
 def test_FunctionalOnDirectSum():
     grid1 = UniformGridFcts((0,1,10))

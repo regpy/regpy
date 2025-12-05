@@ -9,6 +9,9 @@ from regpy.hilbert import L2
 from regpy.solvers import Setting
 from regpy.solvers.nonlinear.irgnm import IrgnmCG
 import regpy.stoprules as rules
+import regpy.util as util
+
+util.set_rng_seed(15873098306879350073259142812684978477)
 
 from . import import_example_package
 

@@ -1,9 +1,12 @@
 import numpy as np
+import pytest
 
 from regpy.vecsps.curve import *
 
 from .base_vecsps import vecsps_basics,vector_basics
+from regpy.util import set_rng_seed
 
+set_rng_seed(15873098306879350073259142812684978477)
 
 def ShapeCurves(name,n=20,der=3):
     cls = globals()[name](n,der)
@@ -22,19 +25,14 @@ def ShapeCurves(name,n=20,der=3):
         return [f"While tying to excess the constructed curve and its derivatives an exception {e} was raised."]
     return []
 
-def test_shapes():
-    shapes = ["kite","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle"]
-    ders = {"kite": 3,"peanut":3,"round_rect":2,"apple":3,"three_lobes":3,"pinched_ellipse":3,"smoothed_rectangle":3,"nonsym_shape":3,"circle":3}
-    errors = []
-    for shape in shapes:
-        errors += ShapeCurves(shape,n=20,der=ders[shape])
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
-    
+@pytest.mark.parametrize("shape, der",[
+    ("kite",3),("peanut",3),("round_rect",2),("apple",3),("three_lobes",3),("pinched_ellipse",3),("smoothed_rectangle",3),("nonsym_shape",3),("circle",3)
+])
+def test_shapes(shape,der):
+        ShapeCurves(shape,n=20,der=der)
+  
 def test_GenTrigDiscr():
-    errors = []
-    errors += vecsps_basics(GenTrigDiscr,40)
+    vecsps_basics(GenTrigDiscr,40)
 
     vs = GenTrigDiscr(40)
     coeff = np.asarray([1,0.5,0.25,1,0.25,0.5])
@@ -49,8 +47,7 @@ def test_GenTrigDiscr():
     _ = vs.adjoint_der_normal
     
 def test_StarTrigDiscr():
-    errors = []
-    errors += vecsps_basics(StarTrigDiscr,40)
+    vecsps_basics(StarTrigDiscr,40)
 
     vs = StarTrigDiscr(40)
     coeff = vs.sample(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)

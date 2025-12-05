@@ -8,6 +8,9 @@ from regpy.operators.convolution import *
 from regpy.util import Errors
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
 
 class TestPaddingOperator():
 

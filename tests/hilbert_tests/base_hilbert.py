@@ -7,6 +7,10 @@ import numpy as np
 from regpy.vecsps import NumPyVectorSpace
 from regpy.operators import MatrixMultiplication
 from regpy.hilbert.base import *
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
+
 
 def collect_errors(cls,errors):
     if errors:

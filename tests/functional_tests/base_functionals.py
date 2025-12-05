@@ -1,14 +1,17 @@
 import numpy as np
+import pytest
 
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.operators import ImaginaryPart
 from regpy.functionals import *
 from regpy.functionals.base import * 
 from regpy.functionals.base import Conj
-from regpy.util import functional_tests as ft
 from regpy.hilbert import L2
+from regpy.util import functional_tests as ft
+from regpy.util import set_rng_seed
 
-import pytest
+set_rng_seed(15873098306879350073259142812684978477)
+
 
 def test_initialization():
     """ Tests if it can initialize the Abstract functional instances with their most general registered spaces and it evaluates properly.

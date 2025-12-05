@@ -4,6 +4,10 @@ from netgen.geom2d import unit_square
 from regpy.util import functional_tests as ft
 from regpy.vecsps.ngsolve import *
 from regpy.functionals.ngsolve import *
+from regpy.util import set_rng_seed
+
+set_rng_seed(15873098306879350073259142812684978477)
+
 
 # def test_NgsL1():
 #     bdr = "left|top|right|bottom"

@@ -1,91 +1,90 @@
 import numpy as np
+import pytest
 
 from regpy.vecsps.numpy import *
+from regpy.util import Errors
 
 from .base_vecsps import vecsps_basics,vector_basics
+from regpy.util import set_rng_seed
 
+set_rng_seed(15873098306879350073259142812684978477)
 
-def test_NumPyVectorSpace():
-    errors = []
-    errors += vecsps_basics(NumPyVectorSpace,test_methods=True,shape = (2,4), dtype = complex)
-    errors += vecsps_basics(NumPyVectorSpace,test_methods=True,shape = (2,4), dtype = float)
-    errors += vector_basics(NumPyVectorSpace,shape = (2,4),dtype = complex)
-    errors += vector_basics(NumPyVectorSpace,shape = (2,4),dtype = float)
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
+@pytest.mark.parametrize("shape, dtype",[
+    ((2,4,3,7),float),
+    ((2,4,3,7),complex),
+    ((2,4),float),
+    ((2,4),complex)
+])
+def test_NumPyVectorSpace(shape, dtype):
+    vecsps_basics(NumPyVectorSpace,test_methods=True,shape = shape, dtype = dtype)
     
-def test_MeasureSpaceFcts():
-    errors = []
-    errors += vecsps_basics(MeasureSpaceFcts,test_methods=True,shape = (2,4), dtype = complex)
-    errors += vecsps_basics(MeasureSpaceFcts,test_methods=True,shape = (2,4), dtype = float)
-    errors += vecsps_basics(MeasureSpaceFcts,measure=4,shape=(5,6,7))
+class TestMeasureSpaceFcts():
+    @pytest.mark.parametrize("measure, shape, dtype",[
+        (3,(2,4,3,7),float),
+        (1.6,(2,4,3,7),complex),
+        (None,(2,4),float),
+        (None,(2,4),complex)
+    ])
+    def test_vs_basic(self,measure,shape,dtype):
+        vecsps_basics(MeasureSpaceFcts,test_methods=True, measure = measure,shape = shape, dtype = dtype)
 
-    m1=MeasureSpaceFcts(shape=(3,2))
-    m2=MeasureSpaceFcts(measure=3*np.ones((3,2)))
-    if m1==m2:
-        errors.append("Two MeasureSpaceFcts that should not be equal are not.")
-    try:
+    def test_equality(self):
+        m1=MeasureSpaceFcts(shape=(3,2))
+        m2=MeasureSpaceFcts(measure=3*np.ones((3,2)))
+        assert m1!=m2, Errors.failed_test(f"Two MeasureSpaceFcts that should not be equal are not.",MeasureSpaceFcts)
+    
         m2.measure=1
-    except Exception as e:
-        errors.append(f"While trying to set the measure received exception {e}")
-    if m1!=m2:
-        errors.append("After setting the measure to constant one the two instances should be equal are but are not.")
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
+        assert m1==m2, Errors.failed_test("After setting the measure to constant one the two instances should be equal are but are not.",MeasureSpaceFcts)
  
-def test_GridFcts():
+class TestGridFcts():
     errors = []
-    errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,2,12,112]),test_methods=True,use_cell_measure=False, dtype = complex)
-    errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,2,12,112]),test_methods=True,use_cell_measure=False, dtype = float)
-    errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,0,5,15]),boundary_ext='zero')
-    errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,0,5,15]),boundary_ext='const',ext_const=10)
-    errors += vecsps_basics(GridFcts,np.array([2,4,8]),np.array([-1,0,5,15]),boundary_ext='const',ext_const=(1,(2,3)))
 
-    gf=GridFcts(np.array([2,4,8]),np.array([-1,2,12,112]),use_cell_measure=False)
-    if not np.allclose(gf.measure,1.0):
-        errors.append(f"Not using cell measure should create a constant one measure but got measure = {gf.measure}")
-    gf=GridFcts(np.array([2,4,8]),np.array([-1,0,5,15]))
-    if not np.array_equal(gf.measure,np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]])):
-        errors.append(f"The measure for a GridFcts with coords = {gf.coords} should be {np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]])} but got measure = {gf.measure}.")
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
+    @pytest.mark.parametrize("coords, use_cell_measure, dtype, boundary_ext, ext_const",[
+        ([np.array([2,4,8]),np.array([-1,2,12,112])],False, complex, 'sym', None),
+        ([np.array([2,4,8]),np.array([-1,2,12,112])],False, float, 'sym', None),
+        ([np.array([2,4,8]),np.array([-1,0,5,15])], False, float,'zero',None),
+        ([np.array([2,4,8]),np.array([-1,0,5,15])],False, float, 'const',10),
+        ([np.array([2,4,8]),np.array([-1,0,5,15])],False,float,'const',(1,(2,3)))
+    ])
+    def test_vs_basic(self,coords, use_cell_measure, dtype, boundary_ext, ext_const):
+        vecsps_basics(GridFcts,*coords,test_methods=True,use_cell_measure=use_cell_measure, dtype = dtype,boundary_ext = boundary_ext, ext_const=ext_const)
 
-def test_UniformGridFcts():
-    errors = []
-    errors += vecsps_basics(UniformGridFcts,np.array([2,4,6]),np.array([-1,2,5,8]),test_methods=True, dtype = complex)
-    errors += vecsps_basics(UniformGridFcts,np.array([2,4,6]),np.array([-1,2,5,8]),test_methods=True, dtype = float)
+    @pytest.mark.parametrize("coords, use_cell_measure, measure_compare",[
+        ([np.array([2,4,8]),np.array([-1,2,12,112])], False,1.0),
+        ([np.array([2,4,8]),np.array([-1,0,5,15])], True,np.array([[ 2,6,15,20],[3,9,22.5,30],[4,12,30,40]]))
+    ])
+    def test_measure_comp(self,coords, use_cell_measure, measure_compare):
+        gf=GridFcts(*coords,use_cell_measure=use_cell_measure)
+        assert gf.measure == pytest.approx(measure_compare), Errors.failed_test(f"Measure computation is wrong",GridFcts)
+
+class Test_UniformGridFcts():
+
+    @pytest.mark.parametrize("coords, dtype",[
+        ([np.array([2,4,6]),np.array([-1,2,5,8])], complex),
+        ([np.array([2,4,6]),np.array([-1,2,5,8])], float),
+        ([10,(-1,1,10)], complex),
+        ([(-1,1,10),(-1,1,10),(-1,1,10)], float),
+    ])
+    def test_vs_basics(self,coords,dtype):
+        vecsps_basics(UniformGridFcts,*coords,test_methods=True, dtype = dtype)
     
-    gf=UniformGridFcts(np.array([2,4,6]),np.array([-1,2,5,8]))
-    if gf.volume_elem!=6:
-        errors.append(f"The volume element of {gf} with coords = {gf.coords} should be 6 but got {gf.volume_elem}.")
-    try:
+    @pytest.mark.parametrize("coords, measure_compare",[
+        ([np.array([2,4,6]),np.array([-1,2,5,8])],6.),
+    ])
+    def test_measure_comp(self,coords, measure_compare):
+        gf=UniformGridFcts(*coords)
+        assert gf.measure == pytest.approx(measure_compare), Errors.failed_test(f"The volume element of {gf} with coords = {gf.coords} should be {measure_compare} but got {gf.volume_elem}.")
+                                                                            
+    def test_set_measure(self):
+        gf=UniformGridFcts(3,4)
         gf.measure=3*np.ones((3,4))
-        if gf.volume_elem!=3 or not np.allclose(gf.measure,3):
-            errors.append(f"Setting the new measure succeeded but either the volume_elem {gf.volume_elem} or the measure {gf.measure} is not equal to the new value 3.")
-    except Exception as e:
-        errors.append(f"Trying to redefine the measure to 3 of {gf} failed with exception {e}.")
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
+        assert gf.volume_elem == pytest.approx(3), Errors.failed_test(f"Setting the new measure succeeded but either the volume_elem {gf.volume_elem} or the measure {gf.measure} is not equal to the new value 3.")
 
 def test_Prod():
     gf1=MeasureSpaceFcts(np.array([[2.0,4.0,8.0],[10,12,14]]))
     gf2=MeasureSpaceFcts(np.array([1.0,3.0]))
-    errors = []
-    errors += vecsps_basics(Prod,gf1,gf2,test_methods=True)
+
+    vecsps_basics(Prod,gf1,gf2,test_methods=True)
     prod=Prod(gf1,gf2)
-    errors += vecsps_basics(Prod,prod,gf2,test_methods=True,flatten = True)
-    errors += vecsps_basics(Prod,prod,gf2,test_methods=True,flatten = False)
-    
-    if errors:
-        # Combine all errors and raise a single AssertionError
-        raise AssertionError("\n".join(errors))
-
-#     hprod=L2(prod)
-#     solution=np.array([[2.,6.],[ 4.,12.],[ 8.,24.],[10.,30.],[12.,36.],[14.,42.]])
-#     assert np.array_equal(hprod.gram._eval(np.ones((6,2))),solution)
-
-
+    vecsps_basics(Prod,prod,gf2,test_methods=True,flatten = True)
+    vecsps_basics(Prod,prod,gf2,test_methods=True,flatten = False)

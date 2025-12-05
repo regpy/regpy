@@ -180,7 +180,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         func.log.warning(f"Failed Moreaus identy with: err={err}, tolerance={tolerance}")
         return False
 
-def test_prox_optimality_cond(func,tau=1,u=None):
+def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
     r"""Numerically test validity of the optimality condition characterizing the prox operator: 
 
     .. math::
@@ -207,7 +207,7 @@ def test_prox_optimality_cond(func,tau=1,u=None):
         u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
     prox = func.proximal(u,tau)
     vec = func.h_domain.gram((u-prox)/tau)
-    if func.is_subgradient(vec,prox):
+    if func.dist_subdiff(vec,prox)<=tol:
         func.log.info("Passed optimality condition characterizing the prox operator")
         return True
     else:
@@ -362,14 +362,18 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     func.log.info("Passed Lipschitz test!")
     return True
 
-# def test_subgradient_and_conj(func,u=None,eps=1e-10):
-#     if(u is None):
-#         u=func.domain.randn()
-#     grad_u=func.subgradient(u)
-#     print(u)
-#     print(grad_u)
-#     print(np.abs(grad_u))
-#     assert func.conj_is_subgradient(u,grad_u,eps=eps)
+def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-6):
+    if(u is None):
+        if func.separable:
+            u=sample_essential_domain(func)
+        else:
+            u=func.domain.rand()
+    grad_u=func.subgradient(u)
+    if func.conj.dist_subdiff(u,grad_u)>tol:
+        func.log.warning(f"Failed subgradient_conj_subgradient test {func}: dist = {func.conj.dist_subdiff(u,grad_u)}, tol = {tol}")
+        return False
+    func.log.info("Passed subgradient_conj_subgradient_dist_subdiff test!")
+    return True
 
 def test_young_equality(func,u=None,tolerance=1e-10):
     r"""Numerically test validity of Young's equality for a given functional
@@ -418,7 +422,7 @@ def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
                     u_stars=None,sample_conj_N=5,
                     test_second_deriv = True, test_second_deriv_conj = True,
-                    tolerance=1e-10):
+                    tolerance=1e-10, msg=''):
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
     missing implementations are ignored.
 
@@ -462,21 +466,24 @@ def test_functional(func,u_s=None,sample_N=5,
         if "proximal" in func.methods and "proximal" in func.conj.methods:
             tau=uniform(tolerance,4)
             if not test_moreaus_identity(func,u,tau=tau,tolerance=tolerance):
-                raise AssertionError(f"{func} failed Moreaus identity!")        
+                raise AssertionError(f"{func} failed Moreaus identity!"+msg)        
         if {"eval","subgradient"} <= func.methods:
             if not test_subgradient(func,u):
-                raise AssertionError(f"{func} failed Subgradient Test!")
+                raise AssertionError(f"{func} failed Subgradient Test!"+msg)
         if {"eval","subgradient"} <= func.methods and "eval" in func.conj.methods:
             if not test_young_equality(func,u,tolerance=tolerance):
-                raise AssertionError(f"{func} failed Young equality!")
+                raise AssertionError(f"{func} failed Young equality!"+msg)
+        if {"subgradient"} <= func.methods and {"subgradient","is_subgradient"} <= func.conj.methods:
+            if not test_subgradient_conj_subgradient_dist_subdiff(func,u):
+                raise AssertionError(f"{func} failed subgradient_conj_subgradient_dist_subdiff test"+msg)
         if test_second_deriv:
             if {"subgradient","hessian"} <= func.methods:
                 if not test_second_derivative(func,u):
-                    raise AssertionError(f"{func} failed second derivative test!")
+                    raise AssertionError(f"{func} failed second derivative test!"+msg)
             if func.separable:
                 try:
                     if not test_Lipschitz_convexity(func):
-                        raise AssertionError(f"{func} failed Lipschitz convexity test!")
+                        raise AssertionError(f"{func} failed Lipschitz convexity test!"+msg)
                 except (NotImplementedError):
                     func.log.info('Lipschitz constant and convexity parameter could not be checked because of missing implementation.')
         func.log.info(f'All tests passed!')

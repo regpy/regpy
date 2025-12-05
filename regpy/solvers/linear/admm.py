@@ -233,7 +233,7 @@ class AMA(RegSolver):
     def _next(self):
         Tstar_p = self.op.adjoint(self.gramY(self.p))
         self.x = self.penalty.conj.subgradient(Tstar_p)
-        if not self.penalty.is_subgradient(Tstar_p,self.x):
+        if not self.penalty.dist_subdiff(Tstar_p,self.x)>1e-6:
             raise Warning('update f may not be correct')
         self.y = self.op(self.x)
         self.g = self.data_fid.proximal(self.y-(1./self.gamma)*self.p,1./self.gamma)

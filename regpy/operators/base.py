@@ -51,7 +51,7 @@ class _Revocable:
 
 
 class Operator:
-    r"""Base class for forward operators. Both linear and non-linear operators are handled. Operator
+    r"""Base class for (forward) operators. Both linear and non-linear operators are handled. Operator
     instances are callable, calling them with an array argument evaluates the operator.
 
     Subclasses implementing non-linear operators should implement the following methods:
@@ -82,7 +82,7 @@ class Operator:
 
      * In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
        operator around some point, so the value is almost always needed.
-     * Many expensive computations, e.g. assembling of finite element matrices, need to be carried
+     * Many expensive computations, e.g. assembly and factorization of finite element matrices, need to be carried
        out only once per linearization point, and can be shared between the operator and the
        derivative, so they should only be computed once (in `_eval`).
     
@@ -1305,7 +1305,7 @@ class Composition(Operator):
         self.ops = []
         """The list of composed operators."""
         self.d_eq_cd = []
-        """Stores the information if domain and codomain are equal to possible have in place evaluations."""
+        """Stores the information if domain and codomain are equal to possible have in-place evaluations."""
         for op in ops:
             if isinstance(op, Composition):
                 self.ops.extend(op.ops)

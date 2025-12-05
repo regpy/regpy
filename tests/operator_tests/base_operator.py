@@ -9,8 +9,9 @@ from scipy.sparse.linalg import LinearOperator
 from regpy.vecsps import NumPyVectorSpace, TupleVector
 import regpy.operators.base as op_base
 import regpy.util.operator_tests as ot
-from regpy.util import Errors
+from regpy.util import Errors, set_rng_seed
 
+set_rng_seed(15873098306879350073259142812684978477)
 
 def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
@@ -126,25 +127,33 @@ class TestSquaredModulus():
         op_evaluation_and_ot(op,x=x,res=res)
 
 class TestPow():
-    @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((4,3),np.complex128)])
+    @pytest.mark.parametrize("vs",[
+        NumPyVectorSpace((4,3)),NumPyVectorSpace((4,3),np.complex128)
+    ])
     def test_op_basic(self,vs):
         op_basics_wrapper(op_base.Pow, vs.identity, 3, test_methods=True)
     
-    @pytest.mark.parametrize("dom, factor, x, res",[(NumPyVectorSpace((2,2)), 2, np.array([[2,1],[1,1]]), np.array([[16,8],[8,8]])),
-                                    (NumPyVectorSpace((2,2),np.complex128), 1j, np.array([[2+1j,1.],[1.,1.]]) ,np.array([[1-2j,-1j],[-1j,-1j]]))])
+    @pytest.mark.parametrize("dom, factor, x, res",[
+        (NumPyVectorSpace((2,2)), 2, np.array([[2,1],[1,1]]), np.array([[16,8],[8,8]])),
+        (NumPyVectorSpace((2,2),np.complex128), 1j, np.array([[2+1j,1.],[1.,1.]]) ,np.array([[1-2j,-1j],[-1j,-1j]]))
+    ])
     def test_ot_eval(self, dom, factor, x, res):
         mult_op=op_base.PtwMultiplication(dom,factor=factor)
         op=op_base.Pow(mult_op,3)
         op_evaluation_and_ot(op,x=x,res=res)
     
 class TestPtwMultiplication():
-    @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((4,3),np.complex128)])
+    @pytest.mark.parametrize("vs",[
+        NumPyVectorSpace((4,3)),
+        NumPyVectorSpace((4,3),np.complex128)
+    ])
     def test_op_basic(self,vs):
         op_basics_wrapper(op_base.PtwMultiplication, vs, vs.randn(), test_methods=True,rel_tol_norm=1e-3)
     
     @pytest.mark.parametrize("dom, factor, x, res",[
         (NumPyVectorSpace((2,3)), np.array([[2,2,1],[4,1,1]]), np.array([[3,1,-1],[1,-4,1]]), np.array([[6,2,-1],[4,-4,1]])),
-        (NumPyVectorSpace((2,3),np.complex128), np.array([[1j,1.,2j],[-1j,1.,-3.]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[-1,4j,2j],[-3j,1j,-3]]))])
+        (NumPyVectorSpace((2,3),np.complex128), np.array([[1j,1.,2j],[-1j,1.,-3.]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[-1,4j,2j],[-3j,1j,-3]]))
+    ])
     def test_ot_eval(self, dom, factor, x, res):
         op = op_base.PtwMultiplication(dom,factor)
         op_evaluation_and_ot(op,x,res)
@@ -158,26 +167,34 @@ def test_LinearCombination():
     op_basics_wrapper(op_base.LinearCombination, (3.0,vs.identity), (-3,vs.identity*3), test_methods=True)
     
 class TestOuterShift():
-    @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((4,3),np.complex128)])
+    @pytest.mark.parametrize("vs",[
+        NumPyVectorSpace((4,3)),
+        NumPyVectorSpace((4,3),np.complex128)
+    ])
     def test_op_basic(self,vs):
         op_basics_wrapper(op_base.OuterShift, vs.identity, vs.randn(), test_methods=True)
 
     @pytest.mark.parametrize("dom, shift, x, res",[
         (NumPyVectorSpace((2,3)), np.array([[2,2,1],[4,1,1]]), np.array([[3,1,-1],[1,-4,1]]), np.array([[11,3,2],[5,17,2]])),
-        (NumPyVectorSpace((2,3),np.complex128), np.array([[1.,1.,2.],[-1.,1.,-3.]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[2,17,3],[8,2,-2]]))])
+        (NumPyVectorSpace((2,3),np.complex128), np.array([[1.,1.,2.],[-1.,1.,-3.]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[2,17,3],[8,2,-2]]))
+    ])
     def test_ot_eval(self, dom, shift, x, res):
         op_unshifted = op_base.SquaredModulus(domain=dom)
         op_shifted = op_base.OuterShift(op_unshifted,shift)
         op_evaluation_and_ot(op_shifted,x,res)
 
 class TestInnerShift():
-    @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((4,3),np.complex128)])
+    @pytest.mark.parametrize("vs",[
+        NumPyVectorSpace((4,3)),
+        NumPyVectorSpace((4,3),np.complex128)
+    ])
     def test_op_basic(self,vs):
         op_basics_wrapper(op_base.InnerShift, vs.identity, vs.randn(), test_methods=True)
 
     @pytest.mark.parametrize("dom, shift, x, res",[
         (NumPyVectorSpace((2,3)), np.array([[2,2,1],[4,1,1]]), np.array([[3,1,-1],[1,-4,1]]), np.array([[1.,1.,4.],[9.,25.,0.]])),
-        (NumPyVectorSpace((2,3),np.complex128), np.array([[1.,1j,2.],[-1j,1.,-3j]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[2,9,1],[10.,2.,10.]]))])
+        (NumPyVectorSpace((2,3),np.complex128), np.array([[1.,1j,2.],[-1j,1.,-3j]]), np.array([[1j,4j,1.],[3.,1j,1.]]) ,np.array([[2,9,1],[10.,2.,10.]]))
+    ])
     def test_ot_eval(self, dom, shift, x, res):
         op_unshifted = op_base.SquaredModulus(domain=dom)
         op_shifted = op_base.InnerShift(op_unshifted,shift)
@@ -186,13 +203,15 @@ class TestInnerShift():
 class TestCoordinateProjection():
     @pytest.mark.parametrize("vs, mask",[
         (NumPyVectorSpace((4,3)),(np.random.rand(12)>0.5).reshape((4,3))),
-        (NumPyVectorSpace((4,3),np.complex128), (np.random.rand(12)>0.5).reshape((4,3)))])
+        (NumPyVectorSpace((4,3),np.complex128), (np.random.rand(12)>0.5).reshape((4,3)))
+    ])
     def test_op_basic(self,vs,mask):
         op_basics_wrapper(op_base.CoordinateProjection, vs, mask, test_methods=True)
 
     @pytest.mark.parametrize("dom, mask, x, res",[
         (NumPyVectorSpace((2,2)), np.array([[1,0],[0,1]],dtype=bool), np.array([[2.,1.],[1.,1.]]), np.array([2,1])),
-        (NumPyVectorSpace((2,2),np.complex128), np.array([[1,0],[0,1]],dtype=bool), np.array([[2+1j,1j],[1j,1j]]) ,np.array([2+1j,1j]))])
+        (NumPyVectorSpace((2,2),np.complex128), np.array([[1,0],[0,1]],dtype=bool), np.array([[2+1j,1j],[1j,1j]]) ,np.array([2+1j,1j]))
+    ])
     def test_ot_eval(self, dom, mask, x, res):
         op=op_base.CoordinateProjection(dom,mask)
         op_evaluation_and_ot(op,x=x,res=res)
@@ -200,13 +219,15 @@ class TestCoordinateProjection():
 class TestCoordinateMask():
     @pytest.mark.parametrize("vs, mask",[
         (NumPyVectorSpace((4,3)),(np.random.rand(12)>0.5).reshape((4,3))),
-        (NumPyVectorSpace((4,3),np.complex128), (np.random.rand(12)>0.5).reshape((4,3)))])
+        (NumPyVectorSpace((4,3),np.complex128), (np.random.rand(12)>0.5).reshape((4,3)))
+    ])
     def test_op_basic(self,vs,mask):
         op_basics_wrapper(op_base.CoordinateMask, vs, mask, test_methods=True)
 
     @pytest.mark.parametrize("dom, mask, x, res",[
         (NumPyVectorSpace((2,2)), np.array([[1,0],[0,1]],dtype=bool), np.array([[2.,1.],[1.,1.]]), np.array([[2,0],[0,1]])),
-        (NumPyVectorSpace((2,2),np.complex128), np.array([[1,0],[0,1]],dtype=bool), np.array([[2+1j,1j],[1j,1j]]) ,np.array([[2+1j,0],[0,1j]]))])
+        (NumPyVectorSpace((2,2),np.complex128), np.array([[1,0],[0,1]],dtype=bool), np.array([[2+1j,1j],[1j,1j]]) ,np.array([[2+1j,0],[0,1j]]))
+    ])
     def test_ot_eval(self, dom, mask, x, res):
         op=op_base.CoordinateMask(dom,mask)
         op_evaluation_and_ot(op,x=x,res=res)
@@ -343,11 +364,9 @@ def test_MatrixOfOperators():
     op_evaluation_and_ot(op,x,res)
 
 @pytest.mark.parametrize("dtype, first_op, factor_1,factor_2, x, res",[
-    (float, op_base.Identity, 2, 3, 
-     np.arange(4).reshape((2,2)), 
+    (float, op_base.Identity, 2, 3, np.arange(4).reshape((2,2)), 
      TupleVector([np.arange(4).reshape((2,2)),np.array([2*i for i in range(4)]).reshape((2,2)),np.array([3*i for i in range(4)]).reshape((2,2))])),
-    (complex, op_base.SquaredModulus, 2j, 3, 
-     np.arange(4).reshape((2,2)) + 1j*np.arange(4).reshape((2,2)), 
+    (complex, op_base.SquaredModulus, 2j, 3, np.arange(4).reshape((2,2)) + 1j*np.arange(4).reshape((2,2)), 
      TupleVector([2*np.arange(4).reshape((2,2))**2,np.array([(-2+2j)*i for i in range(4)]).reshape((2,2)),np.array([(3+3j)*i for i in range(4)]).reshape((2,2))])),
 ])
 class TestVectorOfOperators():

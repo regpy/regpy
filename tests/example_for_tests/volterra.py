@@ -10,6 +10,9 @@ import regpy.stoprules as rules
 from regpy.solvers.linear.tikhonov import TikhonovCG
 from regpy.solvers.nonlinear.landweber import Landweber
 from regpy.solvers.nonlinear.fista import FISTA
+import regpy.util as util
+
+util.set_rng_seed(15873098306879350073259142812684978477)
 
 from . import import_example_package
 

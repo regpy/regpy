@@ -563,11 +563,10 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
-    def is_saddle_point(self,x,p,tol):
-        r"""Checks if \((x,p) )\ is a saddle point of \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
-        or equivalently (in case of strong duality)
-        - if x is a solution to the primal problem and p a solution of the dual problem (up to a given tolerance)
-        - if 
+    def violation_optimality_cond(self,x,p,tol):
+        r"""Checks to which degree \((x,p) )\ violates the optimailty conditions for being  a saddle point of 
+        \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        These optimality conditions are:
         .. math::
         Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
 
@@ -583,13 +582,12 @@ class Setting:
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
+        if not "dist_subdiff" in self.penalty.methods or not "dist_subdiff" in self.data_fid.conj.methods:
+            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
-        return self.data_fid.conj.is_subgradient(self.op(x),self.regpar*p,tol=tol) and \
-               self.penalty.is_subgradient(-self.op.adjoint(p),x,tol=tol) 
-
-
-
+        return self.data_fid.conj.dist_subdiff(self.op(x),self.regpar*p,tol=tol), \
+               self.penalty.dist_subdiff(-self.op.adjoint(p),x,tol=tol) 
     
     ######Methods checking applicability
     @staticmethod
@@ -609,8 +607,6 @@ class Setting:
                 'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
-
-
     
     def evaluate_methods(self,method_names = None):
         """Evaluates which methods are applicable to the current Setting. 
