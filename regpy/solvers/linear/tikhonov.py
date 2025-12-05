@@ -74,13 +74,12 @@ class TikhonovCG(RegSolver):
         self.log.setLevel(logging_level)
         if data is None:
             if(setting.data is not None):
-                print("Data used")
                 data=setting.data
             else:
                 raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         if xref is None and setting.penalty_shift is not None:
             xref=setting.penalty_shift
-            print("Uses shift")
+
         
         # if isinstance(self.data_fid,SquaredNorm):#TODO fix/reinclude this
         #     if xref is not None:        
