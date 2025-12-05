@@ -248,8 +248,8 @@ class OperatorGraph(Operator):
     def __init__(self, operators,edges,calc_exec_order=True):
         if not isinstance(operators,list) or any(not isinstance(op_i,Operator) for op_i in operators):
             raise TypeError(Errors.type_error("To construct an operator graph the operators need to be a list of proper RegPy operators"))
-        if not self._validate_edges_input(edges):
-            raise ValueError(Errors.value_error("The given edges do not follow the desired format of a list of ((input operator,[input indices]),(output operator,output index)). Was given: "+"\n\t"+f"edges = {edges}"))
+        # if not OperatorGraph._validate_edges_input(edges):
+            # raise ValueError(Errors.value_error("The given edges do not follow the desired format of a list of ((input operator,[input indices]),(output operator,output index)). Was given: "+"\n\t"+f"edges = {edges}"))
         self.node_dict={op:OperatorNode(op) for op in operators}
         self.edges=[]
         linear=all(op.linear for op in  self.node_dict.keys())
@@ -289,39 +289,40 @@ class OperatorGraph(Operator):
             self.operators=self.input_op+operators+self.output_op
         super().__init__(self.input_op.domain, self.output_op.codomain, linear)
 
-    def _validate_edges_input(edges):
-        """ Validates the input of edges determining if edges are a list of the format  
-        ((input operator,[input indices]),(output operator,output index)). 
+    # @staticmethod
+    # def _validate_edges_input(edges):
+    #     """ Validates the input of edges determining if edges are a list of the format  
+    #     ((input operator,[input indices]),(output operator,output index)). 
         
-        Parameters
-        ----------
-        edges : list of tuple
-            Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
+    #     Parameters
+    #     ----------
+    #     edges : list of tuple
+    #         Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
         
-        Returns
-        -------
-        boolean
-            Returns true if the given edge set has a valid structure.
-        """
-        # needs to be a list or tuple
-        if not isinstance(edges,(tuple,list)):
-            return False
-        # each entry needs and in and out 
-        elif any(not isinstance(e,tuple) or len(e)!=2 for e in edges):
-            return False
-        # each output needs to be (output operator,output index)
-        elif any(len(e[1])!=2 or 
-                 not isinstance(e[1][0],Operator) or 
-                 not isinstance(e[1][1],int) for e in edges):
-            return False
-        # each input needs to be (input operator,[input indices])
-        elif any(len(e[0])!=2 or 
-                 not isinstance(e[0][0],Operator) or 
-                 not isinstance(e[0][1],list) or 
-                 any(ind is not None or not isinstance(ind,int) for ind in e[0][1]) for e in edges):
-            return False
-        else:
-            return True
+    #     Returns
+    #     -------
+    #     boolean
+    #         Returns true if the given edge set has a valid structure.
+    #     """
+    #     # needs to be a list or tuple
+    #     if not isinstance(edges,(tuple,list)):
+    #         return False
+    #     # each entry needs and in and out 
+    #     elif any(not isinstance(e,tuple) or len(e)!=2 for e in edges):
+    #         return False
+    #     # each output needs to be (output operator,output index)
+    #     elif any(len(e[1])!=2 or 
+    #              not isinstance(e[1][0],Operator) or 
+    #              not isinstance(e[1][1],int) for e in edges):
+    #         return False
+    #     # each input needs to be (input operator,[input indices])
+    #     elif any(len(e[0])!=2 or 
+    #              not isinstance(e[0][0],Operator) or 
+    #              not isinstance(e[0][1],list) or 
+    #              any(ind is not None or not isinstance(ind,int) for ind in e[0][1]) for e in edges):
+    #         return False
+    #     else:
+    #         return True
 
     def _clean_edge_data(edge_data):
         """Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.
@@ -412,9 +413,14 @@ class OperatorGraph(Operator):
             current_node=self.node_dict[self.operators[i]]
             x_input=current_node.combine_input(data_dict)
             if(current_node.op.linear):
-                y=current_node.op._eval(x_input)
+                y=current_node.op(x_input)
+                # y=current_node.op._eval(x_input)
             else:
-                y=current_node.op._eval(x_input,differentiate=differentiate)
+                if(differentiate):
+                    y,current_node.deriv=current_node.op.linearize(x_input)
+                else:
+                    y=current_node.op(x_input)
+                # y=current_node.op._eval(x_input,differentiate=differentiate)
             data_dict.update({current_node:y})
         return data_dict[self.node_dict[self.output_op]]
     
@@ -424,9 +430,10 @@ class OperatorGraph(Operator):
             current_node=self.node_dict[self.operators[i]]
             x_input=current_node.combine_input(data_dict)
             if(current_node.op.linear):
-                y=current_node.op._eval(x_input)
+                y=current_node.op(x_input)
             else:
-                y=current_node.op._derivative(x_input)
+                y=current_node.deriv(x_input)
+                # y=current_node.op._derivative(x_input)
             data_dict.update({current_node:y})
         return data_dict[self.node_dict[self.output_op]]
     
@@ -435,7 +442,10 @@ class OperatorGraph(Operator):
         for i in range(1,len(self.operators)):
             current_node=self.node_dict[self.operators[len(self.operators)-1-i]]
             y_input=current_node.combine_output(data_dict)
-            x=current_node.op._adjoint(y_input)
+            if(current_node.op.linear):
+                x=current_node.op.adjoint(y_input)
+            else:
+                x=current_node.deriv.adjoint(y_input)
             data_dict.update({current_node:x})
         return data_dict[self.node_dict[self.input_op]]
 
