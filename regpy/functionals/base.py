@@ -644,9 +644,9 @@ class Functional:
     def as_data_func(self,data):
         return HorizontalShiftDilation(self, data = data)
 
-    def shift(self,v):
-        r"""Returns the functional \(x\mapsto F(x-v) )\ """
-        return HorizontalShiftDilation(self,shift=v)
+    def shift(self,v=None,data_shift=None):
+        r"""Returns the functional \(x\mapsto F(x-v-data) )\ """
+        return HorizontalShiftDilation(self,shift=v,data=data_shift)
     
     def dilation(self,a):
         r"""Returns the functional \(x\mapsto F(ax) )\ """
@@ -890,8 +890,11 @@ class LinearFunctional(Functional):
     def dilation(self, a):
         return LinearFunctional(a*self.gradient,domain=self.domain,h_domain=self.h_domain,gradient_in_dual_space=True)
     
-    def shift(self,v):
-        return self - self.domain.vdot(self._gradient,v).real
+    def shift(self,v=None,data_shift=None):
+        if(data_shift is None):
+            return self - self.domain.vdot(self._gradient,v).real
+        #Linear functional cannot be data functional at the moment
+        return HorizontalShiftDilation(self-self.domain.vdot(self._gradient,v).real,data=data_shift)
 
     def __add__(self, other):
         if isinstance(other,LinearFunctional):
@@ -948,7 +951,10 @@ class SquaredNorm(Functional):
         constant term
     shift: h_space.domain [default:None]
         If not None, then we must have b is None and c==0. 
-        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift\|^2)\.
+        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2)\.
+    data: h_space.domain [default:None]
+        If not None, then we must have b is None and c==0. 
+        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2)\.
     """
 
     def __init__(self, h_space, a=1., b=None,c=0.,shift=None, data = None):
@@ -975,7 +981,7 @@ class SquaredNorm(Functional):
                 else:
                     self._b = self.domain.zeros()
             elif b not in self.domain: 
-                raise ValueError(util.Errors.not_in_vecsp(b,self.domain,add_info=f"b no tin domain of functional {self}."))
+                raise ValueError(util.Errors.not_in_vecsp(b,self.domain,add_info=f"b not in domain of functional {self}."))
             else:
                 self._b = b
             if not isinstance(c,(float,int)): raise ValueError(util.Errors.not_instance(c,float,add_info="for SquaredNorm `c` has to be a scalar!"))
@@ -987,7 +993,7 @@ class SquaredNorm(Functional):
                 self._b = -self.a*shift
                 self._c = (self.a/2.) * self.h_domain.norm(shift)**2
             else:
-                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift no tin domain of functional {self}.")) 
+                raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift not in domain of functional {self}.")) 
         self.data = data
         
     @util.memoized_property
@@ -1104,11 +1110,19 @@ class SquaredNorm(Functional):
                                c = self.c 
                                )
 
-    def shift(self, v):
+    def shift(self, v=None,data_shift=None):
+        if(data_shift is not None):
+            if(data_shift not in self.domain):
+                raise ValueError(util.Errors.not_in_vecsp(data_shift,self.domain,vec_name="shift data vector",space_name="domain of functional"))
+            if(self.is_data_func):
+                data_shift+=self.data
+        if(v is None):
+            return SquaredNorm(self.h_domain,a = self.a,b = self.b,c = self.c,data=data_shift)
         return SquaredNorm(self.h_domain,
                                a = self.a,
                                b = self.b-self.a*v,
-                               c = self.c - self.h_domain.inner(self.b,v) + (self.a/2)* self.h_domain.norm(v)**2
+                               c = self.c - self.h_domain.inner(self.b,v) + (self.a/2)* self.h_domain.norm(v)**2,
+                               data=data_shift
                                )
 
     def __add__(self, other):
@@ -1460,13 +1474,13 @@ class HorizontalShiftDilation(Functional):
         if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
             raise ValueError(util.Errors.value_error(f""" 
             The HorizontalShiftDilation only takes three arguments Functional, 
-            dialation a scalar and shift that is either a scalar or a element in the domain of the functionals. 
+            dilation a scalar and shift that is either a scalar or a element in the domain of the functionals. 
             However, you gave:
                 func = {func},
-                dialation = {dilation}
+                dilation = {dilation}
                 shift = {shift}."""))
         if dilation==0.:
-            raise ValueError(util.Errors.value_error("dilation must not vanisch."))
+            raise ValueError(util.Errors.value_error("dilation must not vanish."))
         if np.isscalar(shift):
             if isinstance(func.domain, vecsps.NumPyVectorSpace):
                 shift = np.broadcast_to(shift,func.domain.shape)
@@ -1474,18 +1488,30 @@ class HorizontalShiftDilation(Functional):
                 shift = shift * func.domain.ones()
         elif shift is not None and shift not in func.domain:
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="shift vector",space_name="domain of functional"))
-
+        if data is not None and data not in func.domain:
+            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
+        if isinstance(func,HorizontalShiftDilation):
+            #prevents nested shifts
+            if(func.shift is not None):
+                if(shift is None):
+                    shift=(1/func.dilation)*func.shift
+                else:
+                    shift+=(1/func.dilation)*func.shift
+            if(func.is_data_func):
+                if(data is None):
+                    data=(1/func.dilation)*func.data
+                else:
+                    data+=(1/func.dilation)*func.data
+            dilation*=func.dilation
+            func=func.func
         self.func = func
         self.dilation = dilation
         self._shift_val = shift
         if data is None:
             self.is_data_func = False
-        elif data in func.domain:
+        else:
             self._data = data
             self.is_data_func = True
-        else:
-            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
-
         if func.separable:
             dom_u = func.dom_u/dilation if self.shift_val is None else func.dom_u/dilation + self.shift_val
             dom_l = func.dom_l/dilation if self.shift_val is None else func.dom_l/dilation + self.shift_val
