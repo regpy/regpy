@@ -1111,11 +1111,6 @@ class SquaredNorm(Functional):
                                )
 
     def shift(self, v=None,data_shift=None):
-        if(data_shift is not None):
-            if(data_shift not in self.domain):
-                raise ValueError(util.Errors.not_in_vecsp(data_shift,self.domain,vec_name="shift data vector",space_name="domain of functional"))
-            if(self.is_data_func):
-                data_shift+=self.data
         if(v is None):
             return SquaredNorm(self.h_domain,a = self.a,b = self.b,c = self.c,data=data_shift)
         return SquaredNorm(self.h_domain,
