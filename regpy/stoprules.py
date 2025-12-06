@@ -304,7 +304,7 @@ class RelativeChangeSol(StopRule):
         if not isinstance(cutoff,(int,float)):
             raise TypeError(Errors.type_error("The cutoff in the relative change of solution stopping should be real scalar!"))
         if cutoff<=0:
-            raise ValueError(Errors.value_error("The cutoff in the relative change of solution stopping needs to be bigger then zero!"))
+            raise ValueError(Errors.value_error("The cutoff in the relative change of solution stopping needs to be larger than zero!"))
         super().__init__()
         self.norm = norm
         self.cutoff = cutoff
@@ -367,15 +367,14 @@ class Monotonicity(StopRule):
 
 
 class OptimalityCondStopping(StopRule):
-    def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
+    def __init__(self, setting, max_iter=1000, logging_level = "INFO",cutoff = 0.):
         if not setting.is_tikhonov and setting.is_convex:
             raise ValueError("For the optimality condition stopping rule the setting needs to be a convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
-        if threshold is not None:
-            self.cutoff= threshold
-        else:
-            self.cutoff = cutoff
+        self.cutoff = cutoff
+        self.max_iter = max_iter
+        self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["dSstar"] = []
         self.history_dict["dR"] = []
@@ -393,26 +392,29 @@ class OptimalityCondStopping(StopRule):
                                                  Tsp=Tsp)
         self.history_dict["dStar"].append(dSstar)
         self.history_dict["dR"].append(dR)
-        OptimalityCondStopping_stop = dSstar+dR<=self.cutoff
-        self.log.info('viol. opt. cond. {:.3e} + {:.3e} = {:.3d} , threshold  = {:.3e}'.format(dSstar,dR,dSstar+dR,self.cutoff))      
-        return OptimalityCondStopping_stop 
+        self.iteration +=1
+        stop = (dSstar+dR<=self.cutoff) or (self.iteration>=self.max_iter)
+        self.log.info('{}/{}:  {:.3e} + {:.3e} = {:.3d}  {} {:.3e}'.format(self.iteration,self.max_iter,
+                                                                            dSstar,dR,dSstar+dR,
+                                                                            '<=' if stop else '>',
+                                                                            self.cutoff))      
+        return stop 
     
 class DualityGapStopping(StopRule):
-    def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
+    def __init__(self, setting,max_iter=1000, logging_level = "INFO",cutoff = 0.):
         if not setting.is_tikhonov and setting.is_convex:
-            raise ValueError("For the Duality gap stopping rule the setting needs to be a convex and contain a regularization parameter!")
+            raise ValueError("For the DualityGapStopping rule the setting needs to be convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
-        if threshold is not None:
-            self.cutoff= threshold
-        else:
-            self.cutoff = cutoff
+        self.max_iter = max_iter
+        self.cutoff = cutoff
+        self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["duality gap"] = []
 
     def __repr__(self):
         return 'DualityGapStopping(cutoff={})'.format(
-            self.cutoff)
+            self.cutoff,self.max_iter)
 
     def _stop(self, x, y=None, dual=None):
         if dual is not None:
@@ -422,6 +424,9 @@ class DualityGapStopping(StopRule):
         else:
             gap = self.setting.duality_gap(primal = x)
         self.history_dict["duality gap"].append(gap)
-        gap_stop = gap<=self.cutoff
-        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
-        return gap_stop 
+        self.iteration += 1
+        stop = gap<=self.cutoff or self.iteration>=self.max_iter
+        self.log.info('it. {}/{}:  {:.3e}  {} {:.3e}'.format(self.iteration,self.max_iter,gap,
+                                                                            '<=' if stop else '>',
+                                                                            self.cutoff))    
+        return stop 
