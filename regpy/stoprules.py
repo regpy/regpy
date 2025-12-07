@@ -417,12 +417,8 @@ class DualityGapStopping(StopRule):
             self.cutoff,self.max_iter)
 
     def _stop(self, x, y=None, dual=None):
-        if dual is not None:
-            gap = self.setting.duality_gap(primal = x, dual = dual)
-        elif y is not None:
-            gap = self.setting.duality_gap(primal = x,dual=self.setting.primal_to_dual(y,argumentIsOperatorImage=True))
-        else:
-            gap = self.setting.duality_gap(primal = x)
+        gap = self.setting.duality_gap(primal = [x,y], dual = dual)
+        
         self.history_dict["duality gap"].append(gap)
         self.iteration += 1
         stop = gap<=self.cutoff or self.iteration>=self.max_iter

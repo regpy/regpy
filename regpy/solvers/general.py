@@ -460,17 +460,15 @@ class Setting:
             logging_level=self.log.level
         )
 
-    def dual_to_primal(self,pstar,argumentIsOperatorImage = False, own= False):
+    def dual_to_primal(self,dual, own= False):
         r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
         If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
-        If :math:`\xi=T^*p` is already known, the option `argumentIsOperatorImage=True' can be used to pass :math:`\xi` as argument and avoid an operator evaluation.
                 
         Parameters
         ----------
-        pstar: self.op.codomain (or self.op.domain if argumentIsOperatorImage=True)
-            argument to be transformed
-        argumentIsOperatorImage: boolean [default: False]
-            See above.
+        dual: tuple of self.op.adjoint.domain and self.op.adjoint.codomain
+            tuple of dual variable p and T*p. Either p or T*p must not be None. If T*p is None, it will be 
+            computed. Otherwise, p will not be used.
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
@@ -479,30 +477,33 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of a dual primal mapping."))
         if(not self.is_convex):
             raise RuntimeError(Errors.generic_message("The setting has to be convex for the computation of a dual primal mapping."))
+        if not isinstance(dual,tuple) or len(dual)!=2:
+            raise TypeError(Errors.type_error("dual must be a tuple of (p,T*p)"))
+        if dual[0] is None and dual[1] is None:
+            raise ValueError(Errors.value_error("Either p or T*p must be given in dual tuple!"))
+        if dual[1] is None:
+            dual[1] = self.op.adjoint(dual[0])
+        if not dual[1] in self.op.adjoint.codomain:
+            raise TypeError(Errors.type_error("T*p not in codomain of adjoint operator!"))
         if self.primal_setting is None or own == True:
-            if argumentIsOperatorImage:
-                return self.penalty.conj.subgradient(pstar)
-            else:
-                return self.penalty.conj.subgradient(self.op.adjoint(pstar))
+            return self.penalty.conj.subgradient(dual[1])
         else:
-            return self.primal_setting.primal_to_dual(-self.regpar*pstar, argumentIsOperatorImage= argumentIsOperatorImage)
+            return self.primal_setting.primal_to_dual((None,-self.regpar*dual[1]))
             """Note that the dual variables of the dual problem differ by a factor -alpha_d from the primal variables of the primal problem.
             Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
             """
         
-    def primal_to_dual(self,x,argumentIsOperatorImage = False, own=False):
+    def primal_to_dual(self,primal, own=False):
         r"""
-        Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tx)` 
-        If :math:`x` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
-        yields a solution to the dual problem. If :math:`\y=Tx` is already known, 
-        the option `argumentIsOperatorImage=True' can be used to pass :math:`\y` as argument and avoid an operator evaluation.
+        Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tf)` 
+        If :math:`f` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
+        yields a solution to the dual problem. 
     
         Parameters
         ----------------------------
-        x: self.op.domain (or self.op.codomain if argumentIsOperatorImage=True)
-            argument to be transformed
-        argumentIsOperatorImage: boolean [default: False]
-            See above.
+        primal: tuple of self.op.domain and self.op.codomain
+            tuple of primal variable f and Tf. Either f or Tf must not be None. If Tf is None, it will be 
+            computed. Otherwise, x will not be used.
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
@@ -511,13 +512,62 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of a primal dual mapping."))
         if(not self.is_convex):
             raise RuntimeError(Errors.generic_message("The setting has to be convex for the computation of a primal dual mapping."))
+        if not isinstance(primal,tuple) or len(primal)!=2:
+            raise TypeError(Errors.type_error("primal must be a tuple of (f,Tf)"))
+        if primal[0] is None and primal[1] is None:
+            raise ValueError(Errors.value_error("Either f or Tf must be given in primal tuple!"))
+        if primal[1] is None:
+            primal[1]
+        if not primal[1] in self.op.codomain:
+            raise TypeError(Errors.type_error("Tf not in codomain of operator!"))
         if self.primal_setting is None or own==True:
-            if argumentIsOperatorImage:
-                return (-1./self.regpar) * self.data_fid.subgradient(x)
-            else:
-                return (-1./self.regpar) * self.data_fid.subgradient(self.op(x))
+            return (-1./self.regpar) * self.data_fid.subgradient(primal[1])
         else:
-            return self.primal_setting.dual_to_primal(x, argumentIsOperatorImage=argumentIsOperatorImage)
+            return self.primal_setting.dual_to_primal(primal)
+
+    def _complete_primal_dual_tuples(self,primal=None,dual=None):
+        r"""Completes either the primal or dual tuple by computing the missing operator application.
+        If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
+
+        Parameters
+        ----------
+        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+            tuple of primal variable f and Tf. If Tf is None, it will be computed.
+        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
+            tuple of dual variable p and T*p. If T*p is None, it will be computed. 
+
+        Returns
+        -------
+        tuple of tuples
+            Completed primal and dual tuples.
+        """
+        if primal is None and dual is None:
+            raise ValueError(Errors.value_error("Either a primal or dual tuple need to be given to complete both!"))
+        if primal is None:
+            if dual[1] is None:
+                p = dual[0]
+                Tsp = self.op.adjoint(p)
+                dual = (p,Tsp)
+            f = self.dual_to_primal(dual)
+            Tf = self.op(f)
+            primal = (f,Tf)
+        else:
+            f= primal[0]
+            if not f in self.op.domain:
+                raise TypeError(Errors.type_error("f not in domain of operator!"))
+            Tf = self.op(f) if primal[1] is None else primal[1]
+            primal = (f,Tf)
+        if dual is None:
+            p = self.primal_to_dual(primal)
+            Tsp = self.op.adjoint(p)
+            dual = (p,Tsp)
+        else:
+            p = dual[0]
+            if not p in self.op.adjoint.domain:
+                raise TypeError(Errors.type_error("p not in domain of adjoint operator!"))
+            Tsp = self.op.adjoint(p) if dual[1]is None else dual[1]
+            dual = (p,Tsp)
+        return primal,dual
 
     def duality_gap(self, primal=None, dual=None):
         r"""Computes the value of the duality gap 
@@ -527,30 +577,21 @@ class Setting:
 
         Parameters
         ----------
-        primal: setting.op.domain [default: None]
-            primal variable f
-        dual: setting.op.codomain [default: None]
-            dual variable p        
+        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+            tuple of primal variable f and Tf. If Tf is None, it will be computed.
+        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
+            tuple of dual variable p and T*p. If T*p is None, it will be computed.        
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
-        if primal is None and dual is None:
-            raise ValueError(Errors.value_error("Either a primal or dual vector need to be given to compute the duality gap!"))
-        if primal is None:
-            f = self.dual_to_primal(dual)
-        else:
-            f = primal
-        if dual is None:
-            p = self.primal_to_dual(primal)
-        else:
-            p = dual
+        (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
 
-        dat = 1./alpha * self.data_fid(self.op(f))
+        dat = 1./alpha * self.data_fid(Tf)
         pen = self.penalty(f)
-        ddat = self.penalty.conj(self.op.adjoint(p))
+        ddat = self.penalty.conj(Tsp)
         dpen = 1./alpha * self.data_fid.conj(-alpha*p)
         ares = ma.fabs(dat)+ma.fabs(pen)+ma.fabs(ddat)+ma.fabs(dpen) 
         if not ma.isfinite(ares):
@@ -563,23 +604,29 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
-    def violation_optimality_cond(self,x,p,Tx=None,Tsp=None):
-        r"""Returns the degree to which a pair \((x,p))\ of a primal point \(x\) and a dual point \(p)\ 
+    def violation_optimality_cond(self,primal=None,dual=None):
+        r"""Returns the degree to which a pair \((f,p))\ of a primal point \(f\) and a dual point \(p)\ 
         violates the optimailty conditions for being a saddle point of 
-        \(<Tx,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        \(<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
         These optimality conditions are:
         .. math::
-        Tx \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(x).
+        Tf \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
 
         This violation is measured by the distances of the left-hand sides to the respective 
         subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
 
         Parameters
         ---------------------------
-        x: self.op.domain
-        Candidate solution of primal problem.
-        p: self.op.codomain
-        Candidate solution of dual problem.
+        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+            tuple of primal variable f and Tf. If Tf is None, it will be computed.
+        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
+            tuple of dual variable p and T*p. If T*p is None, it will be computed. 
+        If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
+
+        Returns
+        -------
+        tuple of floats
+            Distances to the subdifferentials in the two optimality conditions.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
@@ -587,10 +634,11 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
-        Tx = Tx if Tx is not None else self.op(x)
-        Tsp = Tsp if Tsp is not None else self.op.adjoint(p)
-        return self.data_fid.conj.dist_subdiff(Tx,self.regpar*p), \
-               self.penalty.dist_subdiff(-Tsp,x) 
+
+        (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
+
+        return self.data_fid.conj.dist_subdiff(Tf,self.regpar*p), \
+               self.penalty.dist_subdiff(-Tsp,f) 
 
 
 
@@ -747,6 +795,6 @@ class Setting:
         
         if themethod['primal']==False:
             x_star,y_star = x,y
-            x = self.dual_to_primal(y_star,argumentIsOperatorImage=True)
+            x = self.dual_to_primal((x_star,y_star))
             y = self.op(x)
         return x,y

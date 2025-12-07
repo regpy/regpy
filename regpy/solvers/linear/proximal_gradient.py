@@ -53,6 +53,7 @@ class ForwardBackwardSplitting(RegSolver):
         self.log.setLevel(logging_level)
 
         self.y = self.op(self.x)
+        self._dual_variables_computed = False
 
     @staticmethod
     def check_applicability(setting, op_norm=None, op_lower_bound=0.):
@@ -78,21 +79,28 @@ class ForwardBackwardSplitting(RegSolver):
                 out['rate'] = -1
         return out, par
 
-        # try:
-        #     self.gap=self.setting.dualityGap(primal = self.x)
-        #     self.dualityGapWorks =True
-        # except NotImplementedError:
-        #     self.dualityGapWorks = False
-        
+    def _compute_dual(self): # for stopping rules and monitoring
+        if self._dual_variables_computed==False:
+            if not hasattr(self,"p"): # first iteration
+                self.p = self.op.adjoint.domain.zeros()
+            else:
+                self.p *= (-1./self.regpar)
+            if not hasattr(self,"Tp"): # first iteration
+                self.Tp = self.op.adjoint.codomain.zeros()
+            else:
+                self.Tp *= (-1./self.regpar)
+            self.dual=(self.p,self.Tp)
+            self._dual_variables_computed = True
+
     def _next(self):
-        self.x -= self.tau*self.h_domain.gram_inv(self.op.adjoint(self.data_fid.subgradient(self.y)))
+        self._dual_variables_computed = False
+        self.p = self.data_fid.subgradient(self.y)
+        self.Tp = self.op.adjoint(self.p)
+        self.x -= self.tau*self.h_domain.gram_inv(self.Tp)
         self.x = self.penalty.proximal(self.x, self.regpar*self.tau, **self.proximal_pars)
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
         self.y = self.op(self.x)
  
-        # if self.dualityGapWorks:
-        #     self.gap=self.setting.dualityGap(primal = self.x,dual=self.setting.primalToDual(self.y,argumentIsOperatorImage=True) )
-            
 class FISTA(RegSolver):
     r"""
     The generalized FISTA algorithm for minimization of Tikhonov functionals
@@ -160,6 +168,7 @@ class FISTA(RegSolver):
             self.compute_dual = compute_dual
         if self.compute_dual:
             self._compute_dual()
+        self._dual_variables_computed = False
         
     @staticmethod
     def check_applicability(setting,op_lower_bound=0.,op_norm=None):
@@ -187,9 +196,18 @@ class FISTA(RegSolver):
                 out['rate'] = -2
         return out, par
 
-    def _compute_dual(self):
-        self.dual=self.setting.primal_to_dual(self.y,argumentIsOperatorImage=True,own=True)
-
+    def _compute_dual(self): # for stopping rules and monitoring
+        if self._dual_variables_computed==False:
+            if not hasattr(self,"p"): # first iteration
+                self.p = self.op.adjoint.domain.zeros()
+            else:
+                self.p *= (-1./self.regpar)
+            if not hasattr(self,"Tp"): # first iteration
+                self.Tp = self.op.adjoint.codomain.zeros()
+            else:
+                self.Tp *= (-1./self.regpar)
+            self.dual=(self.p,self.Tp)
+            self._dual_variables_computed = True
 
     def _next(self):
         if self.mu == 0:
@@ -204,7 +222,10 @@ class FISTA(RegSolver):
         self.x_old = self.x
         self.t_old = self.t
 
-        grad = self.h_domain.gram_inv(self.op.adjoint(self.data_fid.subgradient(self.y) ))
+        self._dual_variables_computed = False
+        self.p = self.data_fid.subgradient(self.y)
+        self.Tp = self.op.adjoint(self.p)
+        grad = self.h_domain.gram_inv(self.Tp)
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y = self.op(self.x)
 
