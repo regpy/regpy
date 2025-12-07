@@ -25,7 +25,6 @@ from .irgnm_semismooth import *
 from .irgnm import *
 from .landweber import *
 from .newton import *
-from .linearized_solve import *
 
 __all__ = []
 
@@ -41,6 +40,4 @@ __all__ += mod_all
 from .landweber import __all__ as mod_all
 __all__ += mod_all
 from .newton import __all__ as mod_all
-__all__ += mod_all
-from .linearized_solve import __all__ as mod_all
 __all__ += mod_all

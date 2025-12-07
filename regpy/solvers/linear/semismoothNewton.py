@@ -291,10 +291,10 @@ def getPenaltyParamsFromFunctional(R,gram=None):
         return R.ub, R.lb, R.x0, 1.
     elif isinstance(R,HorizontalShiftDilation):
         ub,lb,x0,alpha = getPenaltyParamsFromFunctional(R.func,gram)
-        if R.shift is None:
+        if R.shift_val is None:
             shift = R.domain.zeros()
         else:
-            shift = R.shift
+            shift = R.shift_val
         if R.dilation >0:
             return shift + (1./R.dilation)*ub, shift + (1./R.dilation)*lb, shift+(1./R.dilation)*x0, alpha*R.dilation**2
         else:
@@ -336,7 +336,7 @@ def getPenaltyParamsFromConjFunctional(Rs,gram):
         if Rs.dilation != 1.:
             raise ValueError(Errors.value_error("Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional given as a HorizontalShiftDilation is only given for non dilation!!"))
         ub, lb, x0, alpha = getPenaltyParamsFromConjFunctional(Rs.func,gram)
-        return ub, lb, (x0 if Rs.shift is None else x0- (1./alpha)*Rs.shift), alpha
+        return ub, lb, (x0 if Rs.shift_val is None else x0- (1./alpha)*Rs.shift_val), alpha
     else:
         raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional.'))
 

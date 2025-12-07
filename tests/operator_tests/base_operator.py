@@ -8,6 +8,7 @@ from scipy.sparse.linalg import LinearOperator
 
 from regpy.vecsps import NumPyVectorSpace, TupleVector
 import regpy.operators.base as op_base
+from regpy.operators.graph_operator import OperatorGraph
 import regpy.util.operator_tests as ot
 from regpy.util import Errors, set_rng_seed
 
@@ -420,3 +421,34 @@ class TestProduct():
     def test_ot_eval(self,vs,x,res):
         op=op_base.Product(vs)
         op_evaluation_and_ot(op,x=x,res=res)
+
+class TestOperatorGraph():
+    u=NumPyVectorSpace((2,3))
+    v=NumPyVectorSpace((2,3))
+    w=NumPyVectorSpace((2,3))
+    A=op_base.Product(u+v+w)
+    B=op_base.Product(v+w)
+    C=op_base.SquaredModulus(u)
+    D=op_base.Product(u+v)
+    edges=[
+        ((None,[0]),(C,0)), # IN-->C
+        ((None,[1]),(B,0)), # IN-->B
+        ((None,[0]),(D,0)), # IN-->D
+        ((None,[2]),(D,1)), # IN-->D     
+        ((D,[0]),(B,1)),    # D-->B
+        ((C,[0]),(A,0)),    # C-->A
+        ((B,[0]),(A,1)),    # B-->A
+        ((D,[0]),(A,2)),    # D-->A
+        ((A,[0]),(None,0))  # A-->Out
+    ]
+
+    operators=[A,B,C,D]
+
+    def test_op_basic(self):
+        op_basics_wrapper(OperatorGraph,TestOperatorGraph.operators,TestOperatorGraph.edges,test_methods=True)
+
+    def test_ot_eval(self):
+        op=OperatorGraph(TestOperatorGraph.operators,TestOperatorGraph.edges)
+        x=op.domain.ones()
+        x[0]*=2
+        op_evaluation_and_ot(op,x=x,res=16*op.codomain.ones())

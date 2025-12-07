@@ -503,6 +503,8 @@ class NgsVectorSpace(VectorSpaceBase):
                     return NgsBaseVector(ngs_elem.vec,make_copy=True)
                 else:
                     return NgsBaseVector(ngs_elem.vec)
+        elif isinstance(ngs_elem,(ngs.BaseVector,ngs.la.DynamicVectorExpression)):
+            return NgsBaseVector(ngs_elem,make_copy=copy)
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return NgsBaseVector(self._gfu_fes.vec)
