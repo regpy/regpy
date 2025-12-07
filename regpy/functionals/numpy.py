@@ -1649,9 +1649,7 @@ class Huber(IntegralFunctionalBase):
             raise ValueError(Errors.value_error(f'sigma must be positive. min(sigma)={np.min(sigma)}',self))
         if as_primal:
             super().__init__(domain,Lipschitz=1.,
-                             conj_dom_l=-self.sigma, conj_dom_u = self.sigma,
-                             methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
-                             conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},                             
+                             conj_dom_l=-self.sigma, conj_dom_u = self.sigma,                             
                              **kwargs)
             self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
         else:
@@ -1740,10 +1738,7 @@ class QuadraticIntv(IntegralFunctionalBase):
             self.sigma = sigma 
             self.sigmaeps = self.sigma*(1+eps) if eps>0 else self.sigma            
         if as_primal:
-            super().__init__(domain,convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,
-                             methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
-                             conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},                                  
-                             **kwargs)
+            super().__init__(domain,convexity_param=1,dom_l=-self.sigmaeps,dom_u=self.sigmaeps,**kwargs)
             self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
         else:
             dual_domain = deepcopy(domain)
@@ -1785,7 +1780,13 @@ class QuadraticIntv(IntegralFunctionalBase):
         return self.conjugate._f_prox(ustar,tau,**kwargs)
     
     def _ptw_dist_subdiff(self, vstar, x):
-        raise NotImplementedError
+        diff = vstar.copy()
+        diff -= self.subgradient(x)
+        ubind = (x==self.sigma)
+        diff[ubind] = np.minimum(vstar[ubind] - self.sigma[ubind],0.)
+        lbind = (x==-self.sigma)
+        diff[lbind] = np.maximum(vstar[lbind] + self.sigma[lbind],0.)
+        return diff
 
 
 class QuadraticNonneg(IntegralFunctionalBase):
