@@ -607,10 +607,10 @@ class Setting:
     def violation_optimality_cond(self,primal=None,dual=None):
         r"""Returns the degree to which a pair \((f,p))\ of a primal point \(f\) and a dual point \(p)\ 
         violates the optimailty conditions for being a saddle point of 
-        \(<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(\alpha p) )\
+        \(-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) )\
         These optimality conditions are:
         .. math::
-        Tf \in \partial \mathcal{S}^*(\alpha p), \qquad -T^*p \in \partial \mathcal{R}(f).
+        Tf \in \partial \mathcal{S}^*(-\alpha p), \qquad T^*p \in \partial \mathcal{R}(f).
 
         This violation is measured by the distances of the left-hand sides to the respective 
         subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
@@ -637,8 +637,8 @@ class Setting:
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
 
-        return self.data_fid.conj.dist_subdiff(Tf,self.regpar*p), \
-               self.penalty.dist_subdiff(-Tsp,f) 
+        return self.data_fid.conj.dist_subdiff(Tf,(-self.regpar)*p), \
+               self.penalty.dist_subdiff(Tsp,f) 
 
 
 
@@ -785,7 +785,7 @@ class Setting:
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(method_name, DualityGapStopping(thesetting,cutoff = 0.1,
+            self.set_stopping_rule(method_name, DualityGapStopping(thesetting,tol = 0.1,
                                                                    max_iter=1000,
                                                                    logging_level=logging.INFO))
 
