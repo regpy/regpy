@@ -84,7 +84,6 @@ class PDHG(RegSolver):
                 self.pstar = setting.primal_to_dual(self.x)
             else:
                 self.pstar = init_codomain_star
-        self.dual = (self.pstar,self.Tpstar) 
         self.x_old = self.x
 
         out,par = PDHG.check_applicability(setting,op_norm=op_norm,tau=tau,sigma=sigma,theta=theta)
@@ -147,6 +146,10 @@ class PDHG(RegSolver):
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
+    def compute_dual(self):
+        self.primal = (self.x, self.y if  self.compute_y else self.op(self.x))
+        self.dual = (self.pstar,self.Tpstar)
+
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.Tpstar)
         self.x = self.penalty.proximal(primal_step, self.tau, self.proximal_pars_penalty)
@@ -163,7 +166,6 @@ class PDHG(RegSolver):
             self.tau *= self.theta
             self.sigma /= self.theta
         self.Tpstar = self.op.adjoint(self.pstar)
-        self.dual = (self.pstar,self.Tpstar)
 
 
  

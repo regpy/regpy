@@ -15,28 +15,36 @@ class StopRule:
     log = ClassLogger()
 
     def __init__(self):
-        self.x = None
-        """The current iterate. This is set by the solver when calling :meth:`stop`."""
-        self.y = None
-        """The operator value at the current iterate. This is set by the solver when calling :meth:`stop`. Can be `None` if not available."""
+        self.solver = None
+
         self.triggered = False
         """Whether the stopping rule decided to stop."""
         self.history_dict = {}
         """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
 
-    def stop(self, x, y=None,dual=None):
-        """Check whether to stop iterations.
 
-        Parameters
-        ----------
-        x : array
-            The current iterate.
-        y : array, optional
-            The operator value at the current iterate. Can be omitted if
-            unavailable, but some implementations may need it.
-        dual : array, optional
-            The iterate of the dual problem. Can be omitted if
-            unavailable, but some implementations may need it.
+    def _complete_init_with_solver(self,solver):
+        """Complete the initialisation of the stoprule by giving a solver. 
+        A Stopingrule might reimplement this if this if the _stop_method 
+        for exmaple
+        ``` 
+        if isinstance(solver,specific_solver):
+            self._stop = _specific_stop
+
+        Args:
+            solver (Solver): The solver the stopping rule applies to
+        """
+        if self.solver is not None:
+            self.log.warning("the solver was already set and is now overwritten")
+        self.solver = solver
+
+    def copy_and_reset(self):
+        """copy stoping rule and reset to the initial state
+        """
+        raise NotImplementedError
+
+    def stop(self):
+        """Check whether to stop iterations.
 
         Returns
         -------
@@ -45,12 +53,10 @@ class StopRule:
         """
         if self.triggered:
             return True
-        self.x = x
-        self.y = y
-        self.triggered = self._stop(x, y, dual)
+        self.triggered = self._stop()
         return self.triggered
 
-    def _stop(self, x, y=None,dual=None):
+    def _stop(self):
         """Check whether to stop iterations.
 
         This is an abstract method. Child classes should override it.
@@ -60,8 +66,7 @@ class StopRule:
 
         This method will not be called again after returning `True`.
 
-        Child classes that need `y` should raise :class:`MissingValueError` if
-        called with `y=None`.
+
         """
         raise NotImplementedError
 
@@ -120,21 +125,24 @@ class CombineRules(StopRule):
 
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
+    
+    def _complete_init_with_solver(self, solver):
+        self.solver = solver
+        for rule in self.rules:
+            rule._complete_init_with_solver(self.solver)
 
-    def _stop(self, x, y=None,dual=None):
+    def _stop(self):
         for rule in self.rules:
             try:
-                triggered = rule.stop(x, y, dual)
+                triggered = rule.stop()
             except MissingValueError:
-                if self.op is None or y is not None:
+                if self.op is None or self.solver.y is not None:
                     raise
-                y = self.op(x)
-                triggered = rule.stop(x, y, dual)
+                self.solver.y = self.op(self.solver.x)
+                triggered = rule.stop()
             if triggered:
                 self.log.info('Rule {} triggered.'.format(rule))
                 self.active_rule = rule
-                self.x = rule.x
-                self.y = rule.y
                 return True
         return False
 
@@ -164,7 +172,7 @@ class CountIterations(StopRule):
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
 
-    def _stop(self, x, y=None,dual=None):
+    def _stop(self):
         if self.while_type:
             self.iteration += 1
             if  self.iteration <= self.max_iterations:
@@ -196,7 +204,7 @@ class Discrepancy(StopRule):
     data : array
         The right hand side (noisy data).
     noiselevel : float
-        An estimate of the distance from the noisy data to the exact data.
+        An estimate of the dist        stoprule._complete_init_with_solver(self)ance from the noisy data to the exact data.
     tau : float, optional
         The multiplier; must be larger than 1. Defaults to 2.
     """
@@ -223,10 +231,10 @@ class Discrepancy(StopRule):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
 
-    def _stop(self, x, y=None,dual=None):
-        if y is None:
+    def _stop(self):
+        if self.solver.y is None:
             raise MissingValueError
-        residual = self.data - y
+        residual = self.data - self.solver.y
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
@@ -261,10 +269,10 @@ class MonotonicityRule(StopRule):
     def __repr__(self):
         return 'Monotonicty'
 
-    def _stop(self, x, y=None,dual=None):
-        if y is None:
+    def _stop(self):
+        if self.solver.y is None:
             raise MissingValueError
-        residual = self.norm(self.data - y)
+        residual = self.norm(self.data - self.solver.y)
         change = self.residual - residual
         self.history_dict["monotonicity"].append(change)
         self.history_dict["residual"].append(residual)
@@ -313,11 +321,11 @@ class RelativeChangeData(StopRule):
         return 'RelativeChangeData(tol={})'.format(
             self.tol)
 
-    def _stop(self, x, y=None,dual=None):
-        if y is None:
+    def _stop(self):
+        if self.solver.y is None:
             raise MissingValueError
-        change = self.norm(y - self.data_old)
-        self.data_old = y.copy()
+        change = self.norm(self.solver.y - self.data_old)
+        self.data_old = self.solver.y.copy()
         self.history_dict["relative change of y"].append(change)
         self.log.info('RelativeChangeData = {}, tol = {}'.format(
             change, self.tol))
@@ -360,9 +368,9 @@ class RelativeChangeSol(StopRule):
         return 'RelativeChangeSol(tol={})'.format(
             self.tol)
 
-    def _stop(self, x, y=None,dual=None):
-        change = self.norm(x - self.sol_old)
-        self.sol_old = x.copy()
+    def _stop(self,):
+        change = self.norm(self.solver.x - self.sol_old)
+        self.sol_old = self.solver.x.copy()
         self.history_dict["relative change of x"].append(change)
         self.log.info('RelativeChangeSol = {}, tol = {}'.format(
             change, self.tol))
@@ -387,8 +395,9 @@ class OptimalityCondStopping(StopRule):
         return 'OptimailtyCondStopping(tol={})'.format(
             self.tol)
 
-    def _stop(self, x, y=None, dual=None):
-        dSstar,dR = self.setting.violation_optimality_cond(primal = (x,y), dual = dual)
+    def _stop(self):
+        self.solver.compute_dual()
+        dSstar,dR = self.setting.violation_optimality_cond(self.solver.primal, self.solver.dual)
    
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
@@ -401,12 +410,8 @@ class OptimalityCondStopping(StopRule):
         return stop 
     
 class DualityGapStopping(StopRule):
-    def __init__(self, setting,max_iter=1000, logging_level = "INFO",tol = 0.):
-        if not setting.is_tikhonov and setting.is_convex:
-            raise ValueError("For the DualityGapStopping rule the setting needs to be convex and contain a regularization parameter!")
+    def __init__(self, tol = 0., logging_level = "INFO"):
         super().__init__()
-        self.setting = setting
-        self.max_iter = max_iter
         self.tol = tol
         self.iteration=0
         self.log.setLevel(logging_level)
@@ -414,15 +419,17 @@ class DualityGapStopping(StopRule):
 
     def __repr__(self):
         return 'DualityGapStopping(tol={})'.format(
-            self.tol,self.max_iter)
+            self.tol)
+    
+    def _complete_init_with_solver(self, solver):
+        if not solver.setting.is_tikhonov and  solver.setting.is_convex:
+            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
+        return super()._complete_init_with_solver(solver)
 
-    def _stop(self, x, y=None, dual=None):
-        gap = self.setting.duality_gap(primal = (x,y), dual = dual)
-
+    def _stop(self):
+        self.solver.compute_dual() # sets self.primal and self.dual to new Values
+        gap = self.solver.setting.duality_gap(primal = self.solver.primal, dual = self.solver.dual)
         self.history_dict["duality gap"].append(gap)
-        self.iteration += 1
-        stop = gap<=self.tol or self.iteration>=self.max_iter
-        self.log.info('it. {}/{}:  {:.3e}  {} {:.3e}'.format(self.iteration,self.max_iter,gap,
-                                                                            '<=' if gap<=self.tol else '>',
-                                                                            self.tol))    
+        stop = gap<=self.cutoff
+        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
         return stop 

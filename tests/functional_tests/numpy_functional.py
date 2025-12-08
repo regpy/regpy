@@ -6,7 +6,7 @@ import pytest
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
-from regpy.functionals.numpy import VectorIntegralFunctional, LppL2, L1L2, HuberL2
+from regpy.functionals.numpy import QuadraticBilateralConstraints, VectorIntegralFunctional, LppL2, L1L2, HuberL2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed
@@ -249,3 +249,4 @@ def test_hilbertnorm():
     l2 = L2(dom)
     func = HilbertNorm(l2)
     ft.test_functional(func)
+
