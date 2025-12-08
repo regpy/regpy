@@ -430,6 +430,6 @@ class DualityGapStopping(StopRule):
         self.solver.compute_dual() # sets self.primal and self.dual to new Values
         gap = self.solver.setting.duality_gap(primal = self.solver.primal, dual = self.solver.dual)
         self.history_dict["duality gap"].append(gap)
-        stop = gap<=self.cutoff
-        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
+        stop = gap<=self.tol
+        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.tol))      
         return stop 
