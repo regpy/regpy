@@ -785,7 +785,7 @@ class Setting:
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(method_name, DualityGapStopping(thesetting,tol = 0.1,logging_level=logging.INFO)
+            self.set_stopping_rule(method_name, DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
                                    +CountIterations(1000,logging_level=logging.INFO))
 
         
