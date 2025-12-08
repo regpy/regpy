@@ -39,8 +39,11 @@ class PDHG(RegSolver):
     sigma : float [default: 0]
         The parameter to compute the proximal operator of the data-fidelity term. Stepsize of the dual step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of tau
-    theta : float [default: 1]
+    theta : float [default: -1]
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
+        If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
+    op_norm : float [default: None]
+        The operator norm of the forward operator. If None, it is computed numerically.
     proximal_pars_data_fidelity_conjugate : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
     proximal_pars_penalty : dict, optional
@@ -50,7 +53,7 @@ class PDHG(RegSolver):
         so this may considerably increase computational costs. If False, None is returned for y_k. 
     """
     def __init__(self,  setting, init_domain=None, init_codomain_star=None, 
-                 tau = 0, sigma = 0, theta= 1, op_norm = None, 
+                 tau = 0, sigma = 0, theta= -1, op_norm = None, 
                  proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
                  compute_y = True, logging_level = "INFO"
                  ):
@@ -70,8 +73,10 @@ class PDHG(RegSolver):
             if init_codomain_star is None:
                 self.x = setting.op.domain.zeros()
                 self.pstar = setting.op.codomain.zeros()
+                self.Tpstar = setting.op.domain.zeros()
             else:
                 self.pstar = init_codomain_star
+                self.Tpstar = self.op.adjoint(self.pstar)
                 self.x = setting.dual_to_primal(self.pstar)
         else:
             self.x = init_domain
@@ -79,17 +84,17 @@ class PDHG(RegSolver):
                 self.pstar = setting.primal_to_dual(self.x)
             else:
                 self.pstar = init_codomain_star
-        self.dual = self.pstar
+        self.dual = (self.pstar,self.Tpstar) 
         self.x_old = self.x
-        self.compute_y = compute_y
-        self.y = self.op(self.x) if self.compute_y else None
 
-        out,par = PDHG.check_applicability(setting,op_norm=op_norm,tau=tau,sigma=sigma)
+        out,par = PDHG.check_applicability(setting,op_norm=op_norm,tau=tau,sigma=sigma,theta=theta)
         if out['applicable']:
             self.log.info(out['info'])
         else:
             raise ValueError('FDHG not applicable to this setting. '+out['info'])
         self.tau, self.sigma, self.theta, self.muR, self.muSstar = par['tau'], par['sigma'], par['theta'], par['muR'], par['muSstar']
+        self.compute_y = compute_y
+        self.y = self.op(self.x) if self.compute_y else None
 
         if tau<0 or sigma<0:
             raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))            
@@ -97,7 +102,7 @@ class PDHG(RegSolver):
         self.proximal_pars_penalty = proximal_pars_penalty
 
     @staticmethod
-    def check_applicability(setting,op_norm=None,tau=0,sigma=0):
+    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1):
         out = {'info':''}; par = {}
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
@@ -105,49 +110,60 @@ class PDHG(RegSolver):
             out['info'] += 'Missing prox of conjugate data functional.'
         out['applicable'] = out['info'] == ''
         if out['applicable']:
-            L = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm  
-            if tau==0 and sigma==0:
-                tau = 1/L
-                sigma = 1/L
-            elif tau==0 and sigma>0:
-                tau = 1./(L**2*sigma)
-            elif sigma==0 and tau>0:
-                sigma = 1./(L**2*tau)
-
-            muR = setting.penalty.convexity_param
-            muSstar = setting.regpar/setting.data_fid.Lipschitz
-            if muR>0:
-                if muSstar>0:
-                    mu = 2*ma.sqrt(muR * muSstar)/L
-                    tau = mu/(2.*muR)
-                    sigma = mu/(2.*muSstar)
-                    theta = 1./(1.+mu)
-                    out['rate']=(1.+theta)/(2.+mu)
-                    out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(muR,muSstar,L,out['rate'])
-                else:
-                    theta = 0.
-                    out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
-                    out['rate']=-2
-            else:
-                out['info']='Using unaccelerated version.'
+            if sigma>0 or tau>0 or theta>=0:
+                if sigma<=0 or tau<=0 or theta<0:
+                    raise ValueError(Errors.value_error("If one of tau,sigma,theta is user defined, all three have to be!"))
+                out['info'] += 'Using user defined parameters. '
                 out['rate']=np.nan
-                theta =0.
-            par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
+                par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':0,'muSstar':0}
+            else:
+                L = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm  
+                if tau==0 and sigma==0:
+                    tau = 1/L
+                    sigma = 1/L
+                elif tau==0 and sigma>0:
+                    tau = 1./(L**2*sigma)
+                elif sigma==0 and tau>0:
+                    sigma = 1./(L**2*tau)
+
+                muR = setting.penalty.convexity_param
+                muSstar = setting.regpar/setting.data_fid.Lipschitz
+                if muR>0:
+                    if muSstar>0:
+                        mu = 2*ma.sqrt(muR * muSstar)/L
+                        tau = mu/(2.*muR)
+                        sigma = mu/(2.*muSstar)
+                        theta = 1./(1.+mu)
+                        out['rate']=(1.+theta)/(2.+mu)
+                        out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(muR,muSstar,L,out['rate'])
+                    else:
+                        theta = 0.
+                        out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
+                        out['rate']=-2
+                else:
+                    out['info']='Using unaccelerated version.'
+                    out['rate']=np.nan
+                    theta =1.
+                par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
     def _next(self):
-        primal_step = self.x + self.tau * self.h_domain.gram_inv(self.op.adjoint(self.pstar))
+        primal_step = self.x + self.tau * self.h_domain.gram_inv(self.Tpstar)
         self.x = self.penalty.proximal(primal_step, self.tau, self.proximal_pars_penalty)
         self.y = self.op(self.x) if self.compute_y else None
 
-        dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
+        if self.theta==0. and self.compute_y:
+            dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.y)
+        else:         
+            dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
         self.pstar = (-1./self.regpar)*self.data_fid.conj.proximal(self.regpar*dual_step, self.regpar*self.sigma, self.proximal_pars_data_fidelity_conjugate)
         self.x_old = self.x        
         if self.muR>0 and self.muSstar==0:
             self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        self.dual = self.pstar
+        self.Tpstar = self.op.adjoint(self.pstar)
+        self.dual = (self.pstar,self.Tpstar)
 
 
  

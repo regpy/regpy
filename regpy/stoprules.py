@@ -177,6 +177,8 @@ class CountIterations(StopRule):
                 .format(self.iteration, self.max_iterations))
             self.iteration += 1
         return self.iteration > self.max_iterations
+    
+######### StopRules for determining regularization parameters or for regularization by early stopping #########
 
 class Discrepancy(StopRule):
     """Morozov's discrepancy principle.
@@ -215,7 +217,7 @@ class Discrepancy(StopRule):
         self.data = data
         self.noiselevel = noiselevel
         self.tau = tau
-        self.cutoff = self.tau
+        self.tol = self.tau
         self.history_dict["relative discrepancy"] = []
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
@@ -231,101 +233,9 @@ class Discrepancy(StopRule):
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
-
-class RelativeChangeData(StopRule):
-    """Stops if the relative change in the residual becomes small
-
-    Stops at the first iterate at which the difference between the old residual
-    and the new residual is smaller than a pre-determined cutoff::
-
-        ||y_k-y_{k+1}|| < delta
-
-    Parameters
-    ----------
-    norm : callable
-        The norm with respect to which the difference should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    cutoff : float
-        The cutoff value at which the iteration should be stopped
-    data : np array
-        The data array
-    """
-
-    def __init__(self, norm, data, cutoff):
-        if not callable(norm):
-            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable!"))
-        if not isinstance(cutoff,(int,float)):
-            raise TypeError(Errors.type_error("The cutoff in the relative change of data stopping should be real scalar!"))
-        if cutoff<=0:
-            raise ValueError(Errors.value_error("The cutoff in the relative change of data stopping needs to be bigger then zero!"))
-        super().__init__()
-        self.norm = norm
-        self.cutoff = cutoff
-        self.data_old = data
-        self.history_dict["relative change of y"] = []
-
-    def __repr__(self):
-        return 'RelativeChangeData(cutoff={})'.format(
-            self.cutoff)
-
-    def _stop(self, x, y=None,dual=None):
-        if y is None:
-            raise MissingValueError
-        change = self.norm(y - self.data_old)
-        self.data_old = y.copy()
-        self.history_dict["relative change of y"].append(change)
-        self.log.info('RelativeChangeData = {}, cutoff = {}'.format(
-            change, self.cutoff))
-        return change < self.cutoff
-
-
-class RelativeChangeSol(StopRule):
-    """Stops if the relative change in the solution space becomes small
-
-    Stops at the first iterate at which the difference between the old estimate
-    and the new estimate is smaller than a pre-determined cutoff::
-
-        ||y_k-y_{k+1}|| < cutoff
-
-    Parameters
-    ----------
-    norm : callable
-        The norm with respect to which the difference should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    cutoff : float
-        The cutoff value at which the iteration should be stopped
-    init : np array
-        initial guess
-    """
-
-    def __init__(self, norm, init, cutoff):
-        if not callable(norm):
-            raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
-        if not isinstance(cutoff,(int,float)):
-            raise TypeError(Errors.type_error("The cutoff in the relative change of solution stopping should be real scalar!"))
-        if cutoff<=0:
-            raise ValueError(Errors.value_error("The cutoff in the relative change of solution stopping needs to be bigger then zero!"))
-        super().__init__()
-        self.norm = norm
-        self.cutoff = cutoff
-        self.sol_old = init
-        self.history_dict["relative change of x"] = []
-
-    def __repr__(self):
-        return 'RelativeChangeSol(cutoff={})'.format(
-            self.cutoff)
-
-    def _stop(self, x, y=None,dual=None):
-        change = self.norm(x - self.sol_old)
-        self.sol_old = x.copy()
-        self.history_dict["relative change of x"].append(change)
-        self.log.info('RelativeChangeSol = {}, cutoff = {}'.format(
-            change, self.cutoff))
-        return change < self.cutoff
-
-
-class Monotonicity(StopRule):
-    """Stops if the residual is growing again.
+class MonotonicityRule(StopRule):
+    """"The rule stops at the first iterate at which the residual is growing again.   
+    (A heuristic rule that should only be applied for nonlinear problems.)
 
     Parameters
     ----------
@@ -365,32 +275,154 @@ class Monotonicity(StopRule):
         #    change))
         return change < 0
 
+########## General StopRules based on relative change of data or solution ##########
 
-class DualityGapStopping(StopRule):
-    def __init__(self, setting, threshold = None,max_iter=1000, logging_level = "INFO",cutoff = 0.):
+class RelativeChangeData(StopRule):
+    """Stops if the relative change in the residual becomes small
+
+    Stops at the first iterate at which the difference between the old residual
+    and the new residual is smaller than a pre-determined tol::
+
+        ||y_k-y_{k+1}|| < tol
+
+    Parameters
+    ----------
+    norm : callable
+        The norm with respect to which the difference should be measured.
+        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
+    tol : float
+        The tol value at which the iteration should be stopped
+    data : np array
+        The data array
+    """
+
+    def __init__(self, norm, data, tol):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable!"))
+        if not isinstance(tol,(int,float)):
+            raise TypeError(Errors.type_error("The tol in the relative change of data stopping should be real scalar!"))
+        if tol<=0:
+            raise ValueError(Errors.value_error("The tol in the relative change of data stopping needs to be bigger then zero!"))
+        super().__init__()
+        self.norm = norm
+        self.tol = tol
+        self.data_old = data
+        self.history_dict["relative change of y"] = []
+
+    def __repr__(self):
+        return 'RelativeChangeData(tol={})'.format(
+            self.tol)
+
+    def _stop(self, x, y=None,dual=None):
+        if y is None:
+            raise MissingValueError
+        change = self.norm(y - self.data_old)
+        self.data_old = y.copy()
+        self.history_dict["relative change of y"].append(change)
+        self.log.info('RelativeChangeData = {}, tol = {}'.format(
+            change, self.tol))
+        return change < self.tol
+
+
+class RelativeChangeSol(StopRule):
+    """Stops if the relative change in the solution space becomes small
+
+    Stops at the first iterate at which the difference between the old estimate
+    and the new estimate is smaller than a pre-determined tol::
+
+        ||y_k-y_{k+1}|| < tol
+
+    Parameters
+    ----------
+    norm : callable
+        The norm with respect to which the difference should be measured.
+        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
+    tol : float
+        The tol value at which the iteration should be stopped
+    init : np array
+        initial guess
+    """
+
+    def __init__(self, norm, init, tol):
+        if not callable(norm):
+            raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
+        if not isinstance(tol,(int,float)):
+            raise TypeError(Errors.type_error("The tol in the relative change of solution stopping should be real scalar!"))
+        if tol<=0:
+            raise ValueError(Errors.value_error("The tol in the relative change of solution stopping needs to be larger than zero!"))
+        super().__init__()
+        self.norm = norm
+        self.tol = tol
+        self.sol_old = init
+        self.history_dict["relative change of x"] = []
+
+    def __repr__(self):
+        return 'RelativeChangeSol(tol={})'.format(
+            self.tol)
+
+    def _stop(self, x, y=None,dual=None):
+        change = self.norm(x - self.sol_old)
+        self.sol_old = x.copy()
+        self.history_dict["relative change of x"].append(change)
+        self.log.info('RelativeChangeSol = {}, tol = {}'.format(
+            change, self.tol))
+        return change < self.tol
+
+######### StopRules for convex optimization problems #########
+
+class OptimalityCondStopping(StopRule):
+    def __init__(self, setting, max_iter=1000, logging_level = "INFO",tol = 0.):
         if not setting.is_tikhonov and setting.is_convex:
-            raise ValueError("For the Duality gap stopping rule the setting needs to be a convex and contain a regularization parameter!")
+            raise ValueError("For the optimality condition stopping rule the setting needs to be a convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
-        if threshold is not None:
-            self.cutoff= threshold
-        else:
-            self.cutoff = cutoff
+        self.tol = tol
+        self.max_iter = max_iter
+        self.iteration=0
+        self.log.setLevel(logging_level)
+        self.history_dict["dSstar"] = []
+        self.history_dict["dR"] = []
+
+    def __repr__(self):
+        return 'OptimailtyCondStopping(tol={})'.format(
+            self.tol)
+
+    def _stop(self, x, y=None, dual=None):
+        dSstar,dR = self.setting.violation_optimality_cond(primal = (x,y), dual = dual)
+   
+        self.history_dict["dSstar"].append(dSstar)
+        self.history_dict["dR"].append(dR)
+        self.iteration +=1
+        stop = (dSstar+dR<=self.tol) or (self.iteration>=self.max_iter)
+        self.log.info('{}/{}:  {:.3e} + {:.3e} = {:.3e}  {} {:.3e}'.format(self.iteration,self.max_iter,
+                                                                            dSstar,dR,dSstar+dR,
+                                                                            '<=' if dSstar+dR<=self.tol else '>',
+                                                                            self.tol))      
+        return stop 
+    
+class DualityGapStopping(StopRule):
+    def __init__(self, setting,max_iter=1000, logging_level = "INFO",tol = 0.):
+        if not setting.is_tikhonov and setting.is_convex:
+            raise ValueError("For the DualityGapStopping rule the setting needs to be convex and contain a regularization parameter!")
+        super().__init__()
+        self.setting = setting
+        self.max_iter = max_iter
+        self.tol = tol
+        self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["duality gap"] = []
 
     def __repr__(self):
-        return 'DualityGapStopping(cutoff={})'.format(
-            self.cutoff)
+        return 'DualityGapStopping(tol={})'.format(
+            self.tol,self.max_iter)
 
     def _stop(self, x, y=None, dual=None):
-        if dual is not None:
-            gap = self.setting.duality_gap(primal = x, dual = dual)
-        elif y is not None:
-            gap = self.setting.duality_gap(primal = x,dual=self.setting.primal_to_dual(y,argumentIsOperatorImage=True))
-        else:
-            gap = self.setting.duality_gap(primal = x)
+        gap = self.setting.duality_gap(primal = (x,y), dual = dual)
+
         self.history_dict["duality gap"].append(gap)
-        gap_stop = gap<=self.cutoff
-        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.cutoff))      
-        return gap_stop 
+        self.iteration += 1
+        stop = gap<=self.tol or self.iteration>=self.max_iter
+        self.log.info('it. {}/{}:  {:.3e}  {} {:.3e}'.format(self.iteration,self.max_iter,gap,
+                                                                            '<=' if gap<=self.tol else '>',
+                                                                            self.tol))    
+        return stop 
