@@ -1293,18 +1293,24 @@ class KullbackLeibler(IntegralFunctionalBase):
         First argument of Kullback-Leibler divergence.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
+    data: explcitly declared data if it is given, w is w+data if the prameter w is not given, w is just the data.
     """
 
-    def __init__(self, domain, w,
+    def __init__(self, domain, w=None,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                  quad_taylor_l=None, quad_taylor_u=None, data = None,
                  **kwargs):
+        if(w is None):
+            w=domain.zeros()
         if not w in domain:
             raise ValueError(Errors.value_error('w not in domain.'))
+        self._w=w.copy()
+        if(data is not None):
+            if(data not in domain):
+                raise ValueError(Errors.value_error('data not in domain.'))
+            w=self._w+data#update parameter w to set correct constants everywhere
         if np.min(w)<0:
             raise ValueError(Errors.value_error('w must be non-negative.'))
-        self._w = w.copy()
-
         if constr_u is not None and np.any(constr_u<np.inf):
             Lipschitz = np.inf
         elif quad_taylor_l is not None or lin_taylor_l is not None:
@@ -1329,6 +1335,7 @@ class KullbackLeibler(IntegralFunctionalBase):
                          **kwargs
                          )
         self.data = data
+        
 
     @memoized_property
     def w(self):
@@ -1343,6 +1350,7 @@ class KullbackLeibler(IntegralFunctionalBase):
     
     @data.setter
     def data(self, new_data):
+        self.log.warning("Setting new data outside of constructor currently does not update the convexity and Lipschitz constants.")
         if new_data is None:
             self.is_data_func = False
             del self.w
@@ -1359,6 +1367,12 @@ class KullbackLeibler(IntegralFunctionalBase):
             del self._data
             del self.w
             self.is_data_func = False
+
+    def as_data_func(self,data):
+        self.data=data
+        return self
+
+
 
     def _f(self, u,**kwargs):
         if 'w' in kwargs.keys():
