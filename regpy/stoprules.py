@@ -82,7 +82,7 @@ class NoneRule(StopRule):
     def __init__(self):
         super().__init__()
 
-    def _stop(self, x, y=None,dual=None):
+    def _stop(self):
         return False
 
 class CombineRules(StopRule):
