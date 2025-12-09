@@ -637,7 +637,8 @@ class Setting:
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
 
-        return self.data_fid.conj.dist_subdiff(Tf,(-self.regpar)*p), \
+        alpha = self.regpar
+        return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
                self.penalty.dist_subdiff(Tsp,f) 
 
 
