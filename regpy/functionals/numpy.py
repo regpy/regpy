@@ -1047,7 +1047,7 @@ class L1L2(VectorIntegralFunctional):
     """
     VectorIntegralFunctional with absolute value function as :math:`f_i`.
     """
-    def __init__(self, vdomain,sigma=1.):
+    def __init__(self, vdomain):
         sfunc = L1MeasureSpace(vdomain.scalar_space())
         super().__init__(vdomain, sfunc, Lipschitz=1.)
 
@@ -1371,8 +1371,6 @@ class KullbackLeibler(IntegralFunctionalBase):
     def as_data_func(self,data):
         self.data=data
         return self
-
-
 
     def _f(self, u,**kwargs):
         if 'w' in kwargs.keys():
@@ -2148,7 +2146,7 @@ class TVUniformGridFcts(Composed):
                          methods = {'eval','proximal'},conj_methods = {'proximal'})
 
     def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
-        """Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89–97, 2004) 
+        r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
         Parameters:
             x: np.array 
                 First argument of prox
