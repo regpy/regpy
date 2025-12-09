@@ -44,7 +44,6 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 - `FISTA` revision and choice of step-size by backtracking
 - `Landweber` Revised now backtracking for step-size choice available
-- `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `cumpute_dual` function to the class).
 - added a general `compute_dual` method to reg solver 
 - `FISTA` and `PDHG` have now a `compute_dual` method to set the dual variables
 
@@ -103,7 +102,6 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - new `regpy.operators.ngsolve.SecondOrderEllipticCoefficientPDE` class to define second order elliptic parameter identification problems using `ngsolve`
   - with example in `ngsolve` for diffusion problem
 - new linear solvers:
-  - alternating minimization algorithm (AMA), `AMA` in `linear.ADMM`
   - forward backward splitting for general functionals, `ForwardBackwardSplitting` in `linear.proximal_gradient`
   - FISTA method for general functionals, `FISTA` in `linear.proximal_gradient`
   - `Tikhonov` can work with as well `TikhonovRegularizationSetting`

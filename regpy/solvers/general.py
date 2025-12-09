@@ -648,7 +648,7 @@ class Setting:
     @staticmethod
     def _generate_full_solver_dictionary():
         '''This so far contains only linear solvers'''
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
         method_dict={
                 'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
                 'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
@@ -657,7 +657,6 @@ class Setting:
                 'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
                 'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
                 'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
-                'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
                 'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
                 'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
