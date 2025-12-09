@@ -50,6 +50,7 @@ class StopRule:
         """resets the stoprule to initial state
         (reset needs to be re-implemented in a stoprule if more parameters need to be reseted)
         """
+        self.solver = None
         self.triggered = False
         for key in self.history_dict.keys():
             self.history_dict[key] = []
