@@ -58,6 +58,8 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - The stop rules get now the solver they are applied in and get the things they need directly from the solver
 - the `DualityGapStopping` now uses the `compute_dual` to compute the dual only when needed for the stopping rule
 - introduced `history_dict` to the stopping rules in there the scalar values used by the stopping rule is saved.
+- The stop rule know can be  copied (`copy`) and be reseted to initial state (`reset`). this can be done in one to get a reseted copy (`copy_and_reset`)
+
 
 ### Deprecated: Features soon to be removed
 
