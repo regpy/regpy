@@ -1493,16 +1493,16 @@ class HorizontalShiftDilation(Functional):
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
         if isinstance(func,HorizontalShiftDilation):
             #prevents nested shifts
-            if(func.shift is not None):
+            if(func._shift_val is not None):
                 if(shift is None):
-                    shift=(1/func.dilation)*func.shift
+                    shift=(1/func.dilation)*func._shift_val
                 else:
-                    shift+=(1/func.dilation)*func.shift
+                    shift+=(1/func.dilation)*func._shift_val
             if(func.is_data_func):
                 if(data is None):
                     data=(1/func.dilation)*func.data
                 else:
-                    data+=(1/func.dilation)*func.data
+                    self.log.warning("The underlying functional for the HorizontalShiftDilation is already a HorizontalShiftDialtion functional with data. The provided data argument will used and the original ignored.")
             dilation*=func.dilation
             func=func.func
         self.func = func
@@ -1593,11 +1593,12 @@ class HorizontalShiftDilation(Functional):
         if self._shifted_data_fid:
             del self.func.data
             self._shifted_data_fid = False
+            self.is_data_func = False
         elif self.is_data_func:
             del self._data
             del self.shift_val
+            self.is_data_func = False
             self.recompute_cutoff()
-        self.is_data_func = False
 
     def _eval(self, x,**kwargs):
         return self.func(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
