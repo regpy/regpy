@@ -104,10 +104,8 @@ class Solver:
             The (x, y) pair of the current iteration, or the solution chosen by
             the stopping rule.
         """
-        self.check_for_duality_stoprule(stoprule)
-        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
-            self._compute_dual()
-        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
+        stoprule._complete_init_with_solver(self)
+        while not stoprule.stop() and self.next(): 
             yield self.x, self.y
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
  
@@ -130,12 +128,10 @@ class Solver:
             The (x, y) pair of the current iteration, or the solution chosen by
             the stopping rule.
         """
+        stoprule._complete_init_with_solver(self)
         self.next()
         yield self.x, self.y
-        self.check_for_duality_stoprule(stoprule)
-        if hasattr(self,"compute_dual") and self.compute_dual and hasattr(self,"_compute_dual"):
-            self._compute_dual()
-        while not stoprule.stop(self.x,self.y,getattr(self,"dual",None)) and self.next(): 
+        while not stoprule.stop() and self.next(): 
             yield self.x, self.y
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
@@ -152,13 +148,9 @@ class Solver:
             y = self.y
         return x, y
     
-    def check_for_duality_stoprule(self,stoprule) -> None:
-        if not hasattr(self,"compute_dual") or not self.compute_dual:
-            if isinstance(stoprule,DualityGapStopping):
-                self.compute_dual = True
-            elif isinstance(stoprule,CombineRules):
-                for rule in stoprule.rules:
-                    self.check_for_duality_stoprule(rule)
+
+
+    
 
 
 class RegSolver(Solver):
@@ -230,6 +222,14 @@ class RegSolver(Solver):
         if not isinstance(stoprule.active_rule, Discrepancy):
             self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
         return reco, reco_data
+    
+    def compute_dual(self):
+        """computes dual and primal components. This is a generic implementation that works for settings that are thikhonov.
+        This should be reimplemented if the solver can compute the variables more effectivly.
+        """
+        if not self.setting.is_tikhonov:
+            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting"))
+        self.primal,self.dual = self.setting._complete_primal_dual_tuples((self.x,self.y),self.dual)
 
         
 
@@ -637,7 +637,8 @@ class Setting:
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
 
-        return self.data_fid.conj.dist_subdiff(Tf,(-self.regpar)*p), \
+        alpha = self.regpar
+        return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
                self.penalty.dist_subdiff(Tsp,f) 
 
 
@@ -785,9 +786,8 @@ class Setting:
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(method_name, DualityGapStopping(thesetting,tol = 0.1,
-                                                                   max_iter=1000,
-                                                                   logging_level=logging.INFO))
+            self.set_stopping_rule(method_name, DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
+                                   +CountIterations(1000,logging_level=logging.INFO))
 
         
         solver = themethod['class'](thesetting,**kwargs)

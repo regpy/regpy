@@ -79,7 +79,7 @@ class ForwardBackwardSplitting(RegSolver):
                 out['rate'] = -1
         return out, par
 
-    def _compute_dual(self): # for stopping rules and monitoring
+    def compute_dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
             if not hasattr(self,"p"): # first iteration
                 self.p = self.op.adjoint.domain.zeros()
@@ -91,6 +91,7 @@ class ForwardBackwardSplitting(RegSolver):
                 self.Tp *= (-1./self.regpar)
             self.dual=(self.p,self.Tp)
             self._dual_variables_computed = True
+            self.primal = (self.x,self.y)
 
     def _next(self):
         self._dual_variables_computed = False
@@ -125,10 +126,8 @@ class FISTA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     logging_level: [default: logging.INFO]
         logging level
-    compute_dual: boolean [False]
-        sets if dual is computed, it is not directly necessary for the algorithm. The default is False
     """
-    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO",compute_dual = False):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("FISTA requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
@@ -164,10 +163,8 @@ class FISTA(RegSolver):
 
         self.x_old = self.x
             
-        if not hasattr(self,"compute_dual") or not self.compute_dual:
-            self.compute_dual = compute_dual
-        if self.compute_dual:
-            self._compute_dual()
+
+            
         self._dual_variables_computed = False
         
     @staticmethod
@@ -196,7 +193,7 @@ class FISTA(RegSolver):
                 out['rate'] = -2
         return out, par
 
-    def _compute_dual(self): # for stopping rules and monitoring
+    def compute_dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
             if not hasattr(self,"p"): # first iteration
                 self.p = self.op.adjoint.domain.zeros()
@@ -208,6 +205,7 @@ class FISTA(RegSolver):
                 self.Tp *= (-1./self.regpar)
             self.dual=(self.p,self.Tp)
             self._dual_variables_computed = True
+            self.primal = (self.x,self.y)
 
     def _next(self):
         if self.mu == 0:
@@ -229,5 +227,3 @@ class FISTA(RegSolver):
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
         self.y = self.op(self.x)
 
-        if self.compute_dual:
-            self._compute_dual()

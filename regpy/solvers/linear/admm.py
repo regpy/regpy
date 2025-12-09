@@ -176,12 +176,10 @@ class AMA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
     logging_level: [default: logging.INFO]
         logging level
-    compute_dual: boolean [False]
-        sets if dual is computed, it is not directly necessary for the algorithm. The default is False
     """
 
     def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 cg_pars = None,logging_level = "INFO",compute_dual = False):
+                 cg_pars = None,logging_level = "INFO"):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("AMA requires the setting to contain a regularization parameter!"))
         super().__init__(setting)
@@ -208,10 +206,7 @@ class AMA(RegSolver):
         self.gramY = self.h_codomain.gram
         """ The gram matrix of the image space"""
 
-        if not hasattr(self,"compute_dual") or not self.compute_dual:
-            self.compute_dual = compute_dual
-        if self.compute_dual:
-            self._compute_dual()
+
 
     def check_applicability(setting,op_norm=None):
         out = {'info': ''}; par = {}
@@ -227,8 +222,13 @@ class AMA(RegSolver):
             out['rate'] = -1
         return out, par
 
-    def _compute_dual(self):
-        self.dual = self.gramY(self.p)
+    def compute_dual(self):
+        """computes dual and primal components. This is a generic implementation that works for settings that are thikhonov.
+        This should be reimplemented if the solver can compute the variables more effectivly.
+        """
+        if not self.setting.is_tikhonov:
+            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting"))
+        self.primal,self.dual = self.setting._complete_primal_dual_tuples((self.x,self.y),(self.gramY(self.p),None))
 
     def _next(self):
         Tstar_p = self.op.adjoint(self.gramY(self.p))
@@ -239,5 +239,3 @@ class AMA(RegSolver):
         self.g = self.data_fid.proximal(self.y-(1./self.gamma)*self.p,1./self.gamma)
         self.p += self.gamma*(self.g - self.y) 
 
-        if self.compute_dual:
-            self._compute_dual()

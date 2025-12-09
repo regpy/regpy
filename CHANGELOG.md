@@ -42,12 +42,11 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 #### Changes to Solvers
 
-- `PDGH` introduced extra flag `compude_gap` that decides if the duality gap should be computed.
 - `FISTA` revision and choice of step-size by backtracking
 - `Landweber` Revised now backtracking for step-size choice available
-- `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `_cumpute_dual` function to the class).
-- `FISTA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`FISTA` computes the dual different then the default `_cumpute_dual` function to the class).
-- The base `Solver` class checks if the given stopping rule includes `DualityGapStopping`, if so the attribute `compute_dual` will be set to true. If the solver need to compute the dual the solver needs the function `_compute_dual`.
+- `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `cumpute_dual` function to the class).
+- added a general `compute_dual` method to reg solver 
+- `FISTA` and `PDHG` have now a `compute_dual` method to set the dual variables
 
 #### Changes in Utility
 
@@ -56,7 +55,8 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 #### Changes in stop rules
 
-- added the dual variable as an optional input the stopping rules to compute the duality gap in the `DualityGapStopping` stopping rule. The solver can implement efficient ways to compute the dual if they exist. Solvers can now have a flag to copute the dual variable if possible. if the solver gets a stopping rule that includes `DualityGapStopping` the flag is automatically set to True.
+- The stop rules get now the solver they are applied in and get the things they need directly from the solver
+- the `DualityGapStopping` now uses the `compute_dual` to compute the dual only when needed for the stopping rule
 - introduced `history_dict` to the stopping rules in there the scalar values used by the stopping rule is saved.
 
 ### Deprecated: Features soon to be removed
