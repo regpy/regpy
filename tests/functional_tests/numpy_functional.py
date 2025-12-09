@@ -250,3 +250,28 @@ def test_hilbertnorm():
     func = HilbertNorm(l2)
     ft.test_functional(func)
 
+def test_quadNonneg():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    func = QuadNonneg(dom)
+    ft.test_functional(func)
+    assert np.isclose(func(-6*dom.ones()),np.inf)
+    assert np.isclose(func(dom.ones()),10.5) 
+    
+def test_quadlow():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    func = QuadLow(dom,lb=-1)
+    ft.test_functional(func)
+    func = QuadLow(dom,lb=10,x0=-5)
+    assert np.isclose(func(dom.ones()*11),2688.0)
+    assert np.isclose(func(-6*dom.ones()),np.inf)
+    ft.test_functional(func)
+    
+
+def test_quadbil():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    func = QuadBil(dom,lb=-5,ub=3)
+    ft.test_functional(func)
+    func = QuadBil(dom,lb=9,ub=10,x0=0)
+    assert np.isclose(func(-6*dom.ones()),np.inf)
+    assert np.isclose(func(9*dom.ones()),850.5)
+    ft.test_functional(func)
