@@ -42,7 +42,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         return np.ones(shape = self.shape,dtype=self.dtype)
 
     def empty(self):
-        """Return an uninitalized element of the space.
+        """Return an uninitialized element of the space.
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
@@ -159,7 +159,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of complex a vector space after each
-        each array modefied in its place with a real one it returns the same vector with \(1i\)
+        each array modified in its place with a real one it returns the same vector with \(1i\)
         in its place.   
         """
         elm = self.zeros()
@@ -562,7 +562,7 @@ class UniformGridFcts(GridFcts):
         self.spacing = np.asarray(spacing)
         """The spacing along every axis, i.e. `axis[i+1] - axis[i]`"""
         self.volume_elem = np.prod(self.spacing)
-        """The volumen element, initialized as product of `spacing`"""
+        """The volume element, initialized as product of `spacing`"""
         self.measure = self.volume_elem
         """ Setting measure to be initialized by `volume_element`"""
     
