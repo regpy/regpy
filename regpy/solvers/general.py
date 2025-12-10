@@ -606,7 +606,7 @@ class Setting:
     
     def violation_optimality_cond(self,primal=None,dual=None):
         r"""Returns the degree to which a pair \((f,p))\ of a primal point \(f\) and a dual point \(p)\ 
-        violates the optimailty conditions for being a saddle point of 
+        violates the optimality conditions for being a saddle point of 
         \(-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) )\
         These optimality conditions are:
         .. math::
