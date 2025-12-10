@@ -49,7 +49,6 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 - `FISTA` revision and choice of step-size by backtracking
 - `Landweber` Revised now backtracking for step-size choice available
-- `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `cumpute_dual` function to the class).
 - added a general `compute_dual` method to reg solver 
 - `FISTA` and `PDHG` have now a `compute_dual` method to set the dual variables
 
@@ -76,6 +75,8 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - The stop rules get now the solver they are applied in and get the things they need directly from the solver
 - the `DualityGapStopping` now uses the `compute_dual` to compute the dual only when needed for the stopping rule
 - introduced `history_dict` to the stopping rules in there the scalar values used by the stopping rule is saved.
+- The stop rule know can be  copied (`copy`) and be reseted to initial state (`reset`). this can be done in one to get a reseted copy (`copy_and_reset`)
+
 
 ### Deprecated: Features soon to be removed
 
@@ -119,7 +120,6 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - new `regpy.operators.ngsolve.SecondOrderEllipticCoefficientPDE` class to define second order elliptic parameter identification problems using `ngsolve`
   - with example in `ngsolve` for diffusion problem
 - new linear solvers:
-  - alternating minimization algorithm (AMA), `AMA` in `linear.ADMM`
   - forward backward splitting for general functionals, `ForwardBackwardSplitting` in `linear.proximal_gradient`
   - FISTA method for general functionals, `FISTA` in `linear.proximal_gradient`
   - `Tikhonov` can work with as well `TikhonovRegularizationSetting`

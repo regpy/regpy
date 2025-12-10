@@ -37,23 +37,33 @@ class TestLpp:
                         test_second_deriv=(p>=2),test_second_deriv_conj=(p<=2)
                         )
 
-def test_data_func():
+class TestDataFunc():
     dom = MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
     
     func = Lpp(dom,p=2.5,constr_l=-1.2,quad_taylor_u=1.)
 
-    data = dom.rand()
-    data_func = func.as_data_func(data)
-    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+    @pytest.mark.parametrize("func", [
+        Lpp(dom,p=2.5,constr_l=-1.2,quad_taylor_u=1.), 
+        KL(dom,w=dom.ones()),    
+    ])
+    def test_data_func(self,func):
+        data = self.dom.rand()
+        data_func = func.as_data_func(data)
+        ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
 
-    data_func.data = dom.ones()
-    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+        data_func.data = self.dom.ones()
+        ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
 
-    del data_func.data
-    ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+        data_func_shifted = data_func.shift(self.dom.ones()*0.4)
+        ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+        x = ft.sample_essential_domain(self.func)
+        assert data_func_shifted(x) == pytest.approx(data_func(x-0.4))
 
-    x = ft.sample_essential_domain(func)
-    assert data_func(x) == pytest.approx(func(x))
+        del data_func.data
+        ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
+
+        x = ft.sample_essential_domain(self.func)
+        assert data_func(x) == pytest.approx(func(x))
 
 
 @pytest.mark.parametrize("dom, x, val", [(NumPyVectorSpace((2,10)), np.linspace(-5,4.5,20).reshape(2,10), 50.0), 

@@ -4,7 +4,7 @@ from regpy.util import Errors
 from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG
 
-__all__ = ["ADMM","AMA"]
+__all__ = ["ADMM"]
 
 class ADMM(RegSolver):
     r"""The ADMM method for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\. 
@@ -147,95 +147,4 @@ class ADMM(RegSolver):
             self.x = self.regularizedInverse(self.v2+self.p2 + self.gramXinv(self.op.adjoint(self.gramY(self.v1+self.p1))))
             self.y = self.op(self.x)
 
-
-class AMA(RegSolver):
-    r"""The alternating minimization algorithm (AMA) for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\ with \(R)\ strongly convex.
-    AMA solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. We choose
-
-    .. math::
-        T=A, B=-I, b=0, f=u, F=R and G=R 
-
-    In contrast to standard ADMM we neglected the quadratic term in the update formula for :math:`f=u` leading to the iteration
-    
-    .. math::
-       f^{l+1} &:= \argmin_f[R(f)-\langle T^*p^l,f\rangle]\; \\
-       g^{l+1} &:= \mathrm{prox}_{\gamma^{-1}S}(Tf^{l+1)-\gamma^{-1}p^l) \\
-       p^{l+1} &:= p^l + \gamma(T f^{l+1}-g^{l+1})
-
-    
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        The setting of the forward problem. Includes the penalty and data fidelity functionals.
-    init : dict [default: {}]
-        The initial guess. Relevant keys are g and p. If a key does not exist or if the value in None, 
-        the corresponding variable is initialized by zero. 
-    gamma : float [default: 1]
-        Augmentation to the Lagrangian. Must be strictly greater than zero. 
-    proximal_pars_data_fidelity : dict [default: {}]
-        Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
-    logging_level: [default: logging.INFO]
-        logging level
-    """
-
-    def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 cg_pars = None,logging_level = "INFO"):
-        if not setting.is_tikhonov:
-            raise ValueError(Errors.value_error("AMA requires the setting to contain a regularization parameter!"))
-        super().__init__(setting)
-        if not self.op.linear:
-            raise ValueError(Errors.not_linear_op(self.op,add_info="AMA requires the operator to be linear!"))
-        
-        self.log.setLevel(logging_level)
-
-        out, _ = AMA.check_applicability(setting)
-        if out['applicable']==False:
-            raise RuntimeError('AMA not applicable in this setting. '+out['info'])
-
-        self.setting = setting
-
-        self.g = init['g'] if 'g' in init and init['g'] is not None else self.op.codomain.zeros()
-        self.p = init['p'] if 'p' in init and init['p'] is not None else self.op.codomain.zeros()
- 
-        self.gamma = gamma
-        """ Augmentation parameter to Lagrangian. """
-        self.proximal_pars_data_fidelity = proximal_pars_data_fidelity
-        """ Prox parameters of data fidelity."""
-        self.proximal_pars_penalty = proximal_pars_penalty
-        """ Prox parameters of penalty."""
-        self.gramY = self.h_codomain.gram
-        """ The gram matrix of the image space"""
-
-
-
-    def check_applicability(setting,op_norm=None):
-        out = {'info': ''}; par = {}
-        if not 'proximal' in setting.penalty.methods:
-            out['info'] += 'Missing prox in penalty. '
-        if not setting.penalty.convexity_param>0:
-            out['info'] += 'Penalty functional not strongly convex. '
-        if not 'proximal' in setting.data_fid.methods:
-            out['info'] += 'Missing prox in data functional. '
-        out['applicable'] = out['info']==''
-        if out['applicable']:
-            out['info'] += 'Ergodic rate O(1/n).'
-            out['rate'] = -1
-        return out, par
-
-    def compute_dual(self):
-        """computes dual and primal components. This is a generic implementation that works for settings that are thikhonov.
-        This should be reimplemented if the solver can compute the variables more effectivly.
-        """
-        if not self.setting.is_tikhonov:
-            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting"))
-        self.primal,self.dual = self.setting._complete_primal_dual_tuples((self.x,self.y),(self.gramY(self.p),None))
-
-    def _next(self):
-        Tstar_p = self.op.adjoint(self.gramY(self.p))
-        self.x = self.penalty.conj.subgradient(Tstar_p)
-        if not self.penalty.dist_subdiff(Tstar_p,self.x)>1e-6:
-            raise Warning('update f may not be correct')
-        self.y = self.op(self.x)
-        self.g = self.data_fid.proximal(self.y-(1./self.gamma)*self.p,1./self.gamma)
-        self.p += self.gamma*(self.g - self.y) 
 

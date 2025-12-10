@@ -1493,25 +1493,32 @@ class HorizontalShiftDilation(Functional):
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
         if isinstance(func,HorizontalShiftDilation):
             #prevents nested shifts
-            if(func.shift is not None):
+            if(func._shift_val is not None):
                 if(shift is None):
-                    shift=(1/func.dilation)*func.shift
+                    shift=(1/func.dilation)*func._shift_val
                 else:
-                    shift+=(1/func.dilation)*func.shift
+                    shift+=(1/func.dilation)*func._shift_val
             if(func.is_data_func):
                 if(data is None):
                     data=(1/func.dilation)*func.data
                 else:
-                    data+=(1/func.dilation)*func.data
+                    self.log.warning("The underlying functional for the HorizontalShiftDilation is already a HorizontalShiftDialtion functional with data. The provided data argument will used and the original ignored.")
             dilation*=func.dilation
             func=func.func
         self.func = func
         self.dilation = dilation
         self._shift_val = shift
-        if data is None:
+        if self.func.is_data_func:
+            if data is not None:
+                self.log.warning("Both the underlying functional for the HorizontalShiftDilation is already a data functional. The provided data argument will be ignored.")
+            self._shifted_data_fid = True
+            self.is_data_func = True
+        elif data is None:
+            self._shifted_data_fid = False
             self.is_data_func = False
         else:
             self._data = data
+            self._shifted_data_fid = False
             self.is_data_func = True
         if func.separable:
             dom_u = func.dom_u/dilation if self.shift_val is None else func.dom_u/dilation + self.shift_val
@@ -1536,7 +1543,7 @@ class HorizontalShiftDilation(Functional):
         
     @util.memoized_property
     def shift_val(self):
-        if self.is_data_func:
+        if self.is_data_func and not self._shifted_data_fid:
             if self._shift_val is None:
                 return self.data
             else:
@@ -1558,28 +1565,40 @@ class HorizontalShiftDilation(Functional):
 
     @property
     def data(self):
-        return self._data
+        if self._shifted_data_fid:
+            return self.func.data
+        else:
+            return self._data
     
     @data.setter
     def data(self, new_data):
         if new_data is None:
-            self.is_data_func = False
-            del self._data
+            if self._shifted_data_fid:
+                del self.func.data
+            del self.data
         elif new_data in self.func.domain:
+            if self._shifted_data_fid:
+                self.func.data = new_data
+            else:
+                self._data = new_data
             self.is_data_func = True
-            self._data = new_data
         else:
             raise ValueError(util.Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
-        del self.shift_val
-        self.recompute_cutoff()
+        if not self._shifted_data_fid:
+            del self.shift_val
+            self.recompute_cutoff()
         
     @data.deleter
     def data(self):
-        if self.is_data_func:
-            del self._data
+        if self._shifted_data_fid:
+            del self.func.data
+            self._shifted_data_fid = False
             self.is_data_func = False
-        del self.shift_val
-        self.recompute_cutoff()
+        elif self.is_data_func:
+            del self._data
+            del self.shift_val
+            self.is_data_func = False
+            self.recompute_cutoff()
 
     def _eval(self, x,**kwargs):
         return self.func(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
