@@ -290,8 +290,8 @@ class AbstractComposed(AbstractFunctional):
 
 class Functional:
     r"""
-    Base class for implementation of functionals. Subsclasses should at least implement the 
-        `_eval` :  evaluating the funcitonal
+    Base class for implementation of functionals. Subclasses should at least implement the 
+        `_eval` :  evaluating the functional
     and 
         `_subgradient` or `_linearize` : returning a subgradient at `x`.
     
@@ -309,7 +309,7 @@ class Functional:
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpaceBase
-        The uncerlying vector space for the function space on which it is defined.
+        The underlying vector space for the function space on which it is defined.
     h_domain : regpy.hilbert.HilbertSpace (default: None)
         The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
         and the Lipschitz constant are defined with respect to this Hilbert space.
@@ -322,7 +322,7 @@ class Functional:
         If true, the functional should be the sum of functionals acting on only one component of the input vector.
         In this case, the parameters  
     dom_u, dom_l, conj_dom_u, conj_dom_l: self.domain [default:None]
-        should not be None, and they shoulspecify the essential domain of the functional by 
+        should not be None, and they should specify the essential domain of the functional by 
         :math:`\{x in domain: dom_l<=x<=dom_u}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
