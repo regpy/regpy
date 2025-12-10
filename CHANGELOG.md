@@ -125,7 +125,7 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
   - `Tikhonov` can work with as well `TikhonovRegularizationSetting`
 - utility functions to numerically test functionals for moreaus identity, subgradient, young equality
 - utility functions for test for operators
-- `vecsps.negsolve.NgsSpace` works now with general composed finite element systems
+- `vecsps.ngsolve.NgsSpace` works now with general composed finite element systems
 - `requirements.txt` include now explicitly the version dependence
 - added more tests
 
@@ -180,7 +180,7 @@ This version can be viewed as a initial version for future releases. It majorly 
   - added module for parallel computation of operators `regpy.operators.parallel_operators`
 - **Additions to the `regpy.functionals` and `regpy.vecsps`**
   - abstract functionals similar to abstract Hilbert Spaces
-    - provide the method `regpy.functionals.as_functional` that maps a Functional, HilberSpace or callable to a functional on an explicit vector space `regpy.vecsps.VectorSpace`.
+    - provide the method `regpy.functionals.as_functional` that maps a Functional, HilbertSpace or callable to a functional on an explicit vector space `regpy.vecsps.VectorSpace`.
   - new functionals
     - `IntegralFunctionalBase` for functionals defined via $v\mapsto \int_\Omega f(v(x),w(x))\mathrm{d}x $
     - derivatives of the `IntegralFunctionalBase` such as: `LppPower`, `L1MeasureSpace`, `KullbackLeibler`, `RelativeEntropy`, `Huber`, `QuadraticIntv`
@@ -192,7 +192,7 @@ This version can be viewed as a initial version for future releases. It majorly 
   - `TikhonovRegularizationSetting` as derivate of `RegularizationSetting` including a regularization parameter
     - offers a dual setting
 - **Additions to the `ngsolve` interface**
-  - the `ngsolve` interface has its own submoduls in each relevant path introducing
+  - the `ngsolve` interface has its own submodules in each relevant path introducing
     - Introducing new `regpy.functionals.ngsolve` and revising the `regpy.vecsps.nsovle` (originally `regpy.discrs.nsolve`), `regpy.operators.ngsolve` and `regpy.hilbert.ngsolve`
 - **Adding test using `pytest`**
   - added general unit tests and test on the examples
