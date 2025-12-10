@@ -318,9 +318,9 @@ class IrgnmCGPrec(RegSolver):
 
         if precpars is None:
             self.krylov_order = 6
-            """Order of krylov space in which the spetcral preconditioner is computed"""
+            """Order of krylov space in which the spectral preconditioner is computed"""
             self.number_eigenvalues = 4
-            """Spectral preonditioner computed only from the biggest eigenvalues """
+            """Spectral preconditioner computed only from the biggest eigenvalues """
         else: 
             self.krylov_order = precpars['krylov_order']
             self.number_eigenvalues = precpars['number_eigenvalues']

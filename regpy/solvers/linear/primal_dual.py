@@ -21,7 +21,7 @@ class PDHG(RegSolver):
     Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
 
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
-    the originial paper and most of the literature.
+    the original paper and most of the literature.
 
     Parameters
     ----------

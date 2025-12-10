@@ -60,7 +60,7 @@ class IrgnmSemiSmooth(RegSolver):
         """The initial guess."""
         self.x=self.init.copy()
         self.regpar=regpar
-        """The regularizaton parameter."""
+        """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         if cg_pars is None:
@@ -120,7 +120,7 @@ class IrgnmSemiSmooth(RegSolver):
         self.lam_plus[pos_mask] = z[pos_mask]
         self.lam_minus[~pos_mask] = -z[~pos_mask]
 
-        #sets where the upper constraint and the lower constarint are active
+        #sets where the upper constraint and the lower constraint are active
         self.active_plus=self.op.domain.IfPos(self.lam_plus+self.regpar*(self.x-self.psi_plus))
         self.active_minus=self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
 

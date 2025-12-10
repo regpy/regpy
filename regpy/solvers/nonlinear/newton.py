@@ -193,7 +193,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         be in setting.op.codomain.
     alphas: iterable object or tuple
         Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     psi_minus : scalar
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : scalar

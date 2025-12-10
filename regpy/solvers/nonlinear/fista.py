@@ -22,11 +22,11 @@ class FISTA(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
-    init : setting.op.domain [defaul: setting.op.domain.zeros()]
+    init : setting.op.domain [default: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: 10**16]
         Initial step size of minimization procedure. Has to be sufficiently large.
-    eta : float [defualt 0.8]
+    eta : float [default 0.8]
         Step size reduction constant.
     op_lower_bound : float [default: 0]
         lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\|`\.

@@ -68,7 +68,7 @@ class ADMM(RegSolver):
         
         self.log.setLevel(logging_level)
 
-        out, _ = ADMM.check_applicability(setting, regularizaedInverse=regularizedInverse)
+        out, _ = ADMM.check_applicability(setting, regularizedInverse=regularizedInverse)
         if out['applicable']==False and not out['info'] == 'No efficient regularized inverse seems to be available. ':
             raise RuntimeError('ADMM not applicable in this setting. '+out['info'])
 
@@ -114,13 +114,13 @@ class ADMM(RegSolver):
             self.x = self.regularizedInverse(self.v2+self.p2 + self.op.adjoint(self.v1+self.p1))
             self.y = self.op(self.x)
 
-    def check_applicability(setting, regularizaedInverse = None,op_norm=None):
+    def check_applicability(setting, regularizedInverse = None,op_norm=None):
         out = {'info': ''}; par = {}
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
         if not 'proximal' in setting.data_fid.methods:
             out['info'] += 'Missing prox in data fidelity functional. '
-        if regularizaedInverse is None and not \
+        if regularizedInverse is None and not \
             (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==()):
             out['info'] += 'No efficient regularized inverse seems to be available. '
         out['applicable'] = out['info']==''

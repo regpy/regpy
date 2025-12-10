@@ -63,7 +63,7 @@ class ForwardBackwardSplitting(RegSolver):
         if 'subgradient' not in setting.data_fid.methods:
             out['info']+='Missing gradient of data functional. '
         if setting.data_fid.Lipschitz==np.inf:
-            out['info']+='Gradient of data functional not Lischitz.'        
+            out['info']+='Gradient of data functional not Lipschitz.'        
         out['applicable'] = out['info']==''
         if out['applicable']: 
             op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
@@ -75,7 +75,7 @@ class ForwardBackwardSplitting(RegSolver):
             if out['rate']<1.:
                 out['info'] += "Expected linear convergence rate: {:.3e}.".format(out['rate'])
             else:
-                out['info'] += "Expected convergen rate O(1/n)."
+                out['info'] += "Expected convergence rate O(1/n)."
                 out['rate'] = -1
         return out, par
 
@@ -115,7 +115,7 @@ class FISTA(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
-    init : setting.op.domain [defaul: setting.op.domain.zeros()]
+    init : setting.op.domain [default: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
@@ -175,7 +175,7 @@ class FISTA(RegSolver):
         if 'subgradient' not in setting.data_fid.methods:
             out['info']+='Missing gradient of data functional. '
         if setting.data_fid.Lipschitz==np.inf:
-            out['info']+='Gradient of data functional not Lischitz.'        
+            out['info']+='Gradient of data functional not Lipschitz.'        
         out['applicable'] = out['info']==''
         if out['applicable']: 
             par = {}
@@ -189,7 +189,7 @@ class FISTA(RegSolver):
             if par['mu']>0:
                 out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.\nExpected linear convergence rate: {:.3e}.\n".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'],out['rate'])
             else:
-                out['info'] = "Expected convergen rate O(1/n^2)."
+                out['info'] = "Expected convergence rate O(1/n^2)."
                 out['rate'] = -2
         return out, par
 

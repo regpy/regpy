@@ -35,19 +35,19 @@ class TikhonovCG(RegSolver):
         and if setting is a Setting, then also regpar is ignored.
         If not None, then setting.penalty and setting.data_fid are ignored except for their Hilbert space structures. 
     regpar : float [default:None]
-        The regularization parameter. Must be positive. If None, then setting must be a TikhonovRegularizatioSetting. 
+        The regularization parameter. Must be positive. If None, then setting must be a Tikhonov. 
     xref: setting.op.domain [default: None]
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
     tol : float, default: None
-        The absoluted tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
+        The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is noiselevel/2*sqrt(regpar)
     reltolx: float, default: 10/sqrt(regpar)
         Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
-        The motivation for the default value is similar to that given for tol, assuming a resonable 
+        The motivation for the default value is similar to that given for tol, assuming a reasonable 
         signal-to-noise ratio for the Tikhonov minimizer. 
     reltoly: float, default: None
         Relative tolerance in codomain.
