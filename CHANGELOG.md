@@ -37,6 +37,11 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - Added `Sum` and `Product` which simply take the sum or product respectively of elements in a direct sum of identical summands
 - New submodule `operators.graph_operatos` implementing general graphs of operators
   - The new classes are `OperatorNode`, `Edge` and `OperatorGraph` representing nodes, edges and the entire graph respectively
+- Added `OuterProduct` operator
+- Added `EinSum` operator which has the same functionality as the corresponding numpy function and is capable of most multilinear algebra operations
+
+#### Additions to `regpy.solvers`
+- New nonlinear solver `IterativelyRegularizedNewton` which combines linearization of the nonlinear operator with a subsequent linear solver that can be chosen freely from the provided linear solvers
 
 ### Changed: Changes in existing functionality
 
@@ -47,6 +52,19 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `cumpute_dual` function to the class).
 - added a general `compute_dual` method to reg solver 
 - `FISTA` and `PDHG` have now a `compute_dual` method to set the dual variables
+
+#### Changes to Setting
+
+- `TikhonovRegularizationSetting` and `RegularizationSetting` have been combined and are replaced by `Setting` class which still has the same functionality as the previous subclasses. It can additionally extract and save data from data fidelity functionals and manage it
+
+#### Changes to functionals
+
+- data functionals are now identifiable via the flag `is_data_func` and can be generated using the `as_data_func` method
+- data functionals have an attribute data that contains its data
+- shift can now be done with additional data parameter to shift the data
+- Nested `HorizontalShift` functionals are now resolved to single `HorizontalShift` functionals
+
+
 
 #### Changes in Utility
 
