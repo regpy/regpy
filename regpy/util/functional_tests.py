@@ -174,10 +174,10 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     proxstar = func.conj.proximal(gram(u/tau),1/tau)
     err=func.domain.norm(u-prox-tau*gram.inverse(proxstar))
     if err < tolerance:
-        func.log.info(f"Passed Moreaus identy with: err={err}, tolerance={tolerance}")
+        func.log.info(f"Passed Moreaus identity with: err={err}, tolerance={tolerance}")
         return True
     else:
-        func.log.warning(f"Failed Moreaus identy with: err={err}, tolerance={tolerance}")
+        func.log.warning(f"Failed Moreaus identity with: err={err}, tolerance={tolerance}")
         return False
 
 def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
@@ -438,7 +438,7 @@ def test_functional(func,u_s=None,sample_N=5,
     sample_N : int, optional
         If u_s i None this is the number of randomly generated elements in u_s. Defaults to 5.
     test_conj : bool, optional
-        Determines wether the conjugate functional should be tested aswell. Defaluts to True.
+        Determines wether the conjugate functional should be tested aswell. Defaults to True.
     u_stars : list of any, optional
         Same as u_s but for conjugate functional. Defaults to None.
     sample_conj_N : int, optional
