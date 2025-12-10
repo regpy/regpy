@@ -14,7 +14,7 @@ functionality for linear combination, composition, projections and more. The oth
   Graph is and are used to define an Operator.
 - `bases_transform` provides a class `BasisTransform` that enables to define a transform from one vector 
   basis into another by specified coefficient matrix.
-- `ngsolve` module provides the base class for operators defined on `NgsVrctorSpace`/s instances given by
+- `ngsolve` module provides the base class for operators defined on `NgsVectorSpace`/s instances given by
   `NgsOperator`. Moreover it defines some basic operators to define forward operators by their PDE in
   NGSolve.
 - `parallel_operators` module provides a feature to evaluate vector of operators in parallel.

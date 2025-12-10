@@ -80,10 +80,10 @@ class NgsOperator(Operator):
         gf : ngs.GridFunction
             The grid functions on which to solve the solution will be put into these and they have to satisfy 
             the boundary condition that you want.
-        prec : BaseMatirx or class or Sting, default None
+        prec : BaseMatrix or class or Sting, default None
             preconditioner to be used with ngsolve.
         solver : class or None
-            A solver instance that is passed to the ngs.sovlers.BVP
+            A solver instance that is passed to the ngs.solvers.BVP
         kwargs : dict
             Dictionary of possible arguments that can be passed to the ngs.solvers.BVP
         """
