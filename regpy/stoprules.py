@@ -26,8 +26,8 @@ class StopRule:
 
     def _complete_init_with_solver(self,solver):
         """Complete the initialisation of the stoprule by giving a solver. 
-        A Stopingrule might reimplement this if this if the _stop_method 
-        for exmaple
+        A stoprule might reimplement this if this if the _stop_method 
+        for example
         ``` 
         if isinstance(solver,specific_solver):
             self._stop = _specific_stop
@@ -40,7 +40,7 @@ class StopRule:
         self.solver = solver
 
     def copy_and_reset(self):
-        """copy stoping rule and reset to the initial state
+        """copy stopping rule and reset to the initial state
         """
         rule = self.copy()
         rule.reset()
@@ -48,7 +48,7 @@ class StopRule:
     
     def reset(self):
         """resets the stoprule to initial state
-        (reset needs to be re-implemented in a stoprule if more parameters need to be reseted)
+        (reset needs to be re-implemented in a stoprule if more parameters need to be reset)
         """
         self.solver = None
         self.triggered = False
@@ -237,7 +237,7 @@ class Discrepancy(StopRule):
     data : array
         The right hand side (noisy data).
     noiselevel : float
-        An estimate of the dist        stoprule._complete_init_with_solver(self)ance from the noisy data to the exact data.
+        An estimate of the distance from the noisy data to the exact data.
     tau : float, optional
         The multiplier; must be larger than 1. Defaults to 2.
     """
@@ -303,7 +303,7 @@ class MonotonicityRule(StopRule):
 
 
     def __repr__(self):
-        return 'Monotonicty'
+        return 'Monotonicity'
 
     def _stop(self):
         if self.solver.y is None:
@@ -440,7 +440,7 @@ class OptimalityCondStopping(StopRule):
 
 
     def __repr__(self):
-        return 'OptimailtyCondStopping(tol={})'.format(
+        return 'OptimalityCondStopping(tol={})'.format(
             self.tol)
 
     def _stop(self):
