@@ -1,7 +1,7 @@
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsps import NgsVectorSpace
+from regpy.vecsps import NgsVectorSpace, NgsVectorSpaceWithInnerProduct
 from regpy.hilbert import HilbertSpace
 from regpy.operators import NgsMatrixMultiplication
 from regpy.util import memoized_property, Errors
@@ -16,11 +16,15 @@ class L2FESpace(HilbertSpace):
 
     @memoized_property
     def gram(self):
-        u, v = self.vecsp.fes.TnT()
-        form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
-        form += ngs.SymbolicBFI(u * v)
-        return NgsMatrixMultiplication(self.vecsp, form)
-
+        if isinstance(self.vecsp, NgsVectorSpace):
+            u, v = self.vecsp.fes.TnT()
+            form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
+            form += ngs.SymbolicBFI(u * v)
+            return NgsMatrixMultiplication(self.vecsp, form)
+        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            return self.vecsp.identity
+        else:
+            raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 class SobolevFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
@@ -35,7 +39,13 @@ class SobolevFESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(u * v + ngs.InnerProduct(ngs.Grad(u),ngs.Grad(v)))
-        return NgsMatrixMultiplication(self.vecsp, form)
+        if isinstance(self.vecsp, NgsVectorSpace):
+            return NgsMatrixMultiplication(self.vecsp, form)
+        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            form.Assemble()
+            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
+        else:
+            raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 
 class H10FESpace(HilbertSpace):
@@ -51,7 +61,13 @@ class H10FESpace(HilbertSpace):
         u, v = self.vecsp.fes.TnT()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
-        return NgsMatrixMultiplication(self.vecsp, form)
+        if isinstance(self.vecsp, NgsVectorSpace):
+            return NgsMatrixMultiplication(self.vecsp, form)
+        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            form.Assemble()
+            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
+        else:
+            raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 
 class L2BoundaryFESpace(HilbertSpace):
@@ -72,7 +88,13 @@ class L2BoundaryFESpace(HilbertSpace):
             u.Trace() * v.Trace(),
             definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return NgsMatrixMultiplication(self.vecsp, form)
+        if isinstance(self.vecsp, NgsVectorSpace):
+            return NgsMatrixMultiplication(self.vecsp, form)
+        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            form.Assemble()
+            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
+        else:
+            raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 
 class SobolevBoundaryFESpace(HilbertSpace):
@@ -93,6 +115,12 @@ class SobolevBoundaryFESpace(HilbertSpace):
             ngs.InnerProduct(u.Trace(),v.Trace()) + ngs.InnerProduct(u.Trace().Deriv(), v.Trace().Deriv()),
             definedon=self.vecsp.fes.mesh.Boundaries(self.vecsp.bdr)
         )
-        return NgsMatrixMultiplication(self.vecsp, form)
+        if isinstance(self.vecsp, NgsVectorSpace):
+            return NgsMatrixMultiplication(self.vecsp, form)
+        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            form.Assemble()
+            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
+        else:
+            raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 

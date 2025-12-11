@@ -7,7 +7,7 @@ and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` a
 respectively. 
 """
 
-__all__ = ['NgsBaseVector','NgsVectorSpace']
+__all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
@@ -509,3 +509,68 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return NgsBaseVector(self._gfu_fes.vec,make_copy = True)
 
+
+class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
+    r"""A vector space wrapping an `ngsolve.FESpace`. That defines the inner Product 
+    to include the mass matrix allowing to have easier adjoint operators.
+
+    Parameters
+    ----------
+    fes : ngsolve.FESpace
+       The wrapped NGSolve vector space.
+    bdr : 
+        Boundary of the NGSolve vector space.
+    """
+
+    def __init__(self, fes, bdr=None, **kwargs):
+        if not isinstance(fes, (ngs.L2,ngs.H1,ngs.VectorH1)):
+            raise ValueError("The given FES is neither an H1 nor VectorH1 space of ngsolve")
+        
+        super().__init__(fes,bdr=bdr)
+        if "definedon" in kwargs:
+            self._definedon = kwargs["definedon"]
+        else:
+            self._definedon = None
+
+        if "bonus_intorder" in kwargs:
+            self._bonus_intorder = kwargs["bonus_intorder"]
+        else:
+            self._bonus_intorder = 0
+
+        self.mass = self.compute_mass()
+        self.mass_vec = self.empty().vec.CreateVector()
+        self._no_pickle = {*self._no_pickle,"mass"}
+
+    def vdot(self, x, y):
+        self.mass_vec.data = self.mass * x.vec
+        return ngs.InnerProduct(self.mass_vec, y.vec)
+    
+    @property
+    def bonus_intorder(self):
+        return self._bonus_intorder
+    
+    @bonus_intorder.setter
+    def bonus_intorder(self, value):
+        self._bonus_intorder = value
+        self.mass = self.compute_mass()
+
+    @bonus_intorder.deleter
+    def bonus_intorder(self):
+        self._bonus_intorder = 0
+        self.mass = self.compute_mass()
+
+    @property
+    def definedon(self):
+        return self._definedon
+    
+    @definedon.setter
+    def definedon(self, value):
+        self._definedon = value
+        self.mass = self.compute_mass()
+    
+    def compute_mass(self):
+        u, v = self.fes.TnT()
+        mass_bf = ngs.BilinearForm(self.fes)
+        mass_bf += u*v*ngs.dx(definedon = self.definedon, bonus_intorder = self.bonus_intorder)
+        mass_bf.Assemble()
+        return mass_bf.mat
