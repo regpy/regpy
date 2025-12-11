@@ -507,5 +507,5 @@ class NgsVectorSpace(VectorSpaceBase):
             return NgsBaseVector(ngs_elem,make_copy=copy)
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
-            return NgsBaseVector(self._gfu_fes.vec,make_copy = copy)
+            return NgsBaseVector(self._gfu_fes.vec,make_copy = True)
 
