@@ -1,5 +1,6 @@
 import ngsolve as ngs
 from netgen.geom2d import unit_square
+import pytest
 
 from regpy.vecsps.ngsolve import *
 from regpy.hilbert.ngsolve import *
@@ -9,71 +10,83 @@ set_rng_seed(15873098306879350073259142812684978477)
 
 from .base_hilbert import hilbert_basics,collect_errors
 
-def test_L2FESpace():
+class TestL2FESpace():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
-    vs = NgsVectorSpace(fes,bdr=bdr)
 
-    l2 = L2FESpace(vs)
+    @pytest.mark.parametrize("vs",[
+        NgsVectorSpace(fes,bdr=bdr),
+        NgsVectorSpaceWithInnerProduct(fes,bdr=bdr)
+    ])
+    def test_general(self,vs):
+        l2 = L2FESpace(vs)
 
-    errors += hilbert_basics(l2,test_methods=True)
+        self.errors += hilbert_basics(l2,test_methods=True)
 
-    collect_errors(L2FESpace,errors)
+        collect_errors(L2FESpace,self.errors)
 
-def test_SobolevFESpace():
+class TestSobolevFESpace():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
-    vs = NgsVectorSpace(fes,bdr=bdr)
 
-    l2 = SobolevFESpace(vs)
-    print(l2._no_pickle)
+    @pytest.mark.parametrize("vs,tol",[
+        (NgsVectorSpace(fes,bdr=bdr),1e-10),
+        (NgsVectorSpaceWithInnerProduct(fes,bdr=bdr),1e-2)
+    ])
+    def test_general(self,vs,tol):
+        sob = SobolevFESpace(vs)
+    
+        self.errors += hilbert_basics(sob,test_methods=True,tol=tol)
 
-    errors += hilbert_basics(l2,test_methods=True)
+        collect_errors(SobolevFESpace,self.errors)
 
-    collect_errors(SobolevFESpace,errors)
-
-def test_H10FESpace():
+class TestH10FESpace():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
-    vs = NgsVectorSpace(fes,bdr=bdr)
+    
+    @pytest.mark.parametrize("vs,tol",[
+        (NgsVectorSpace(fes,bdr=bdr),1e-10),
+        (NgsVectorSpaceWithInnerProduct(fes,bdr=bdr),1e-2)
+    ])
+    def test_general(self,vs,tol):
+        h10 = H10FESpace(vs)
+        self.errors += hilbert_basics(h10,test_methods=True,tol=tol)
+        collect_errors(H10FESpace,self.errors)
 
-    l2 = H10FESpace(vs)
-    print(l2._no_pickle)
-
-    errors += hilbert_basics(l2,test_methods=True)
-
-    collect_errors(H10FESpace,errors)
-
-def test_L2BoundaryFESpace():
+class TestL2BoundaryFESpace():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
-    vs = NgsVectorSpace(fes,bdr=bdr)
+    
+    @pytest.mark.parametrize("vs",[
+        NgsVectorSpace(fes,bdr=bdr),
+        NgsVectorSpaceWithInnerProduct(fes,bdr=bdr)
+    ])
+    def test_general(self,vs):
+        l2b = L2BoundaryFESpace(vs)
+        self.errors += hilbert_basics(l2b,test_methods=True)
+        collect_errors(L2BoundaryFESpace,self.errors)
 
-    l2 = L2BoundaryFESpace(vs)
-    print(l2._no_pickle)
-
-    errors += hilbert_basics(l2,test_methods=True)
-
-    collect_errors(L2BoundaryFESpace,errors)
-
-def test_SobolevBoundaryFESpace():
+class TestSobolevBoundaryFESpace():
     errors = []
     bdr = "left|top|right|bottom"
     mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.2))
     fes = ngs.H1(mesh, order=6, dirichlet = bdr)
-    vs = NgsVectorSpace(fes,bdr=bdr)
 
-    l2 = SobolevBoundaryFESpace(vs)
-    print(l2._no_pickle)
+    @pytest.mark.parametrize("vs",[
+        NgsVectorSpace(fes,bdr=bdr),
+        NgsVectorSpaceWithInnerProduct(fes,bdr=bdr)
+    ])
+    def test_general(self,vs):
+        sobb = SobolevBoundaryFESpace(vs)
+    
+        self.errors += hilbert_basics(sobb,test_methods=True)
 
-    errors += hilbert_basics(l2,test_methods=True)
-
-    collect_errors(SobolevBoundaryFESpace,errors)
+        collect_errors(SobolevBoundaryFESpace,self.errors)
