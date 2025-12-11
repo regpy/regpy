@@ -34,7 +34,7 @@ class Landweber(RegSolver):
     stepsize : float, optional
         The step length; must be chosen not too large. If omitted, it is guessed from the norm of
         the derivative at the initial guess. Alternatively, if backtracking is used, stepsize defines an
-        initial guess for the step length which has to be sufficently large. If omitted the initial step
+        initial guess for the step length which has to be sufficiently large. If omitted the initial step
         length will be 10**16.
     backtracking : boolean, optional
         Wether or not to use backtracking for finding a sufficient step length. Default: True.

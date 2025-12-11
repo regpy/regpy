@@ -96,7 +96,7 @@ class OperatorAsWorker(mp.Process):
 
 def check_running(conns,conn_m):
     r"""
-    Function that runs in seperate watcher process and checks if main process is alive.
+    Function that runs in separate watcher process and checks if main process is alive.
     Terminates subprocesses after 10 seconds if main process is killed.
 
     Parameters
@@ -138,7 +138,7 @@ class ParallelInterface:
     MAX_SUBPROCESSES=128
     """maximal number of subprocesses until warning is raised"""
     parallel_instances=[WeakValueDictionary()]
-    """list of dictionaries containig weak references to subprocesses. Used internally for terminating subprocesses."""
+    """list of dictionaries containing weak references to subprocesses. Used internally for terminating subprocesses."""
     _min_id_inst=0
     _id_manager=0
 
@@ -188,7 +188,7 @@ class ParallelInterface:
 
     def add_manager():
         r"""
-        Adds a new manager section and returns the correcponding manager id.
+        Adds a new manager section and returns the corresponding manager id.
         """
         ParallelInterface.parallel_instances.append(WeakValueDictionary())
         ParallelInterface._id_manager+=1
@@ -206,7 +206,7 @@ class ParallelInterface:
         ParallelInterface.parallel_instances[ParallelInterface._id_manager][ParallelInterface._min_id_inst]=self
         ParallelInterface._min_id_inst+=1
         self.running=True
-        """Flag which indicates if subprocsses of this object are still running"""
+        """Flag which indicates if subprocesses of this object are still running"""
         ParallelInterface.warn_subprocess_count()
         #Setup watcher process
         conn_m, conn_w = mp.Pipe()
@@ -253,7 +253,7 @@ class ParallelInterface:
             argument send to all subprocesses. Defaults to None.
         args_specific : list, optional
             List of arguments where args_specific[j] is send to subprocess j.
-            Defaulst to [].
+            Defaults to [].
         """
         if(not self.running):
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")

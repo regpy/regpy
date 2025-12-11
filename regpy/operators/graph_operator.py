@@ -241,7 +241,7 @@ class OperatorGraph(Operator):
         The underlying operators
     edges : list of tuple
         Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
-    calc_exex_order : bool, optional
+    calc_exec_order : bool, optional
         If True the order of calculations of the operators is computed. Else it is assumed to be the order in which
         the operators are given. Defaults to True.
     """

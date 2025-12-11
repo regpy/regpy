@@ -179,7 +179,7 @@ class SemismoothNewton_bilateral(RegSolver):
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
         self.x[self.active_minus]=self.psi_minus[self.active_minus]
 
-        # Lagrange parameters are 0 where the corresponing constraints are not active. 
+        # Lagrange parameters are 0 where the corresponding constraints are not active. 
         self.lam_plus[self.inactive]=0
         self.lam_plus[self.active_minus]=0
         self.lam_minus[self.inactive]=0
@@ -272,7 +272,7 @@ def isQuadraticConj(func):
 
 def getPenaltyParamsFromFunctional(R,gram=None):
     r"""
-    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
 
     .. math::
         R(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if l_b\leq x\leq u_b\\
@@ -306,7 +306,7 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     
 def getPenaltyParamsFromConjFunctional(Rs,gram):
     r"""
-    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpah` from a functional 
+    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
 
     .. math::
         R^*(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub \\
@@ -367,7 +367,7 @@ class SemismoothNewton_nonneg(RegSolver):
     lambda0: array-like, default: None
         Initial guess for Lagrange parameter
     cg_pars: dictionary, default: None
-        Parameters of CG method for minimizing Tikhnonov functional on inactive set in each SS Newton step.
+        Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
     TOL: float, default: 0
         Tolerance for absolute error in standard l^2-norm for a-posteriori duality gap error estimate given by 
          :math:`\|x-xtrue\|_2^2 \leq \|[T^*p-xref]_+-x\|^2 - 2 <[T^*p-xref]_-,x> \leq TOL^2`  where :math:`p =-(Tx-data)/regpar`
@@ -468,7 +468,7 @@ class SemismoothNewton_nonneg(RegSolver):
         # On the active sets the solution takes the values of the constraints.
         self.x[self.active]=0
 
-        # Lagrange parameters are 0 where the corresponing constraints are not active. 
+        # Lagrange parameters are 0 where the corresponding constraints are not active. 
         self.lam[self.inactive]=0
 
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
@@ -514,14 +514,14 @@ class SemismoothNewton_nonneg(RegSolver):
             self.converge()
 
 class SemismoothNewtonAlphaGrid(RegSolver):
-    r"""Class runnning Tikhononv regularization with bound constraints on a grid of different regularization parameters.
+    r"""Class running Tikhonov regularization with bound constraints on a grid of different regularization parameters.
 
     Parameters
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     data: array-like, default None
         The right hand side. If it is None the data is taken from setting.
     xref: array-like, default None

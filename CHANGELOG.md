@@ -37,6 +37,11 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - Added `Sum` and `Product` which simply take the sum or product respectively of elements in a direct sum of identical summands
 - New submodule `operators.graph_operatos` implementing general graphs of operators
   - The new classes are `OperatorNode`, `Edge` and `OperatorGraph` representing nodes, edges and the entire graph respectively
+- Added `OuterProduct` operator
+- Added `EinSum` operator which has the same functionality as the corresponding numpy function and is capable of most multilinear algebra operations
+
+#### Additions to `regpy.solvers`
+- New nonlinear solver `IterativelyRegularizedNewton` which combines linearization of the nonlinear operator with a subsequent linear solver that can be chosen freely from the provided linear solvers
 
 ### Changed: Changes in existing functionality
 
@@ -44,9 +49,21 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 
 - `FISTA` revision and choice of step-size by backtracking
 - `Landweber` Revised now backtracking for step-size choice available
-- `AMA` introduced extra flag `compute_dual` that decides if the dual parameter needs to be computed (`AMA` has a more efficient way to compute the dual ten the default added `cumpute_dual` function to the class).
 - added a general `compute_dual` method to reg solver 
 - `FISTA` and `PDHG` have now a `compute_dual` method to set the dual variables
+
+#### Changes to Setting
+
+- `TikhonovRegularizationSetting` and `RegularizationSetting` have been combined and are replaced by `Setting` class which still has the same functionality as the previous subclasses. It can additionally extract and save data from data fidelity functionals and manage it
+
+#### Changes to functionals
+
+- data functionals are now identifiable via the flag `is_data_func` and can be generated using the `as_data_func` method
+- data functionals have an attribute data that contains its data
+- shift can now be done with additional data parameter to shift the data
+- Nested `HorizontalShift` functionals are now resolved to single `HorizontalShift` functionals
+
+
 
 #### Changes in Utility
 
@@ -58,6 +75,8 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - The stop rules get now the solver they are applied in and get the things they need directly from the solver
 - the `DualityGapStopping` now uses the `compute_dual` to compute the dual only when needed for the stopping rule
 - introduced `history_dict` to the stopping rules in there the scalar values used by the stopping rule is saved.
+- The stop rule know can be  copied (`copy`) and be reseted to initial state (`reset`). this can be done in one to get a reseted copy (`copy_and_reset`)
+
 
 ### Deprecated: Features soon to be removed
 
@@ -101,13 +120,12 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - new `regpy.operators.ngsolve.SecondOrderEllipticCoefficientPDE` class to define second order elliptic parameter identification problems using `ngsolve`
   - with example in `ngsolve` for diffusion problem
 - new linear solvers:
-  - alternating minimization algorithm (AMA), `AMA` in `linear.ADMM`
   - forward backward splitting for general functionals, `ForwardBackwardSplitting` in `linear.proximal_gradient`
   - FISTA method for general functionals, `FISTA` in `linear.proximal_gradient`
   - `Tikhonov` can work with as well `TikhonovRegularizationSetting`
 - utility functions to numerically test functionals for moreaus identity, subgradient, young equality
 - utility functions for test for operators
-- `vecsps.negsolve.NgsSpace` works now with general composed finite element systems
+- `vecsps.ngsolve.NgsSpace` works now with general composed finite element systems
 - `requirements.txt` include now explicitly the version dependence
 - added more tests
 
@@ -162,7 +180,7 @@ This version can be viewed as a initial version for future releases. It majorly 
   - added module for parallel computation of operators `regpy.operators.parallel_operators`
 - **Additions to the `regpy.functionals` and `regpy.vecsps`**
   - abstract functionals similar to abstract Hilbert Spaces
-    - provide the method `regpy.functionals.as_functional` that maps a Functional, HilberSpace or callable to a functional on an explicit vector space `regpy.vecsps.VectorSpace`.
+    - provide the method `regpy.functionals.as_functional` that maps a Functional, HilbertSpace or callable to a functional on an explicit vector space `regpy.vecsps.VectorSpace`.
   - new functionals
     - `IntegralFunctionalBase` for functionals defined via $v\mapsto \int_\Omega f(v(x),w(x))\mathrm{d}x $
     - derivatives of the `IntegralFunctionalBase` such as: `LppPower`, `L1MeasureSpace`, `KullbackLeibler`, `RelativeEntropy`, `Huber`, `QuadraticIntv`
@@ -174,7 +192,7 @@ This version can be viewed as a initial version for future releases. It majorly 
   - `TikhonovRegularizationSetting` as derivate of `RegularizationSetting` including a regularization parameter
     - offers a dual setting
 - **Additions to the `ngsolve` interface**
-  - the `ngsolve` interface has its own submoduls in each relevant path introducing
+  - the `ngsolve` interface has its own submodules in each relevant path introducing
     - Introducing new `regpy.functionals.ngsolve` and revising the `regpy.vecsps.nsovle` (originally `regpy.discrs.nsolve`), `regpy.operators.ngsolve` and `regpy.hilbert.ngsolve`
 - **Adding test using `pytest`**
   - added general unit tests and test on the examples

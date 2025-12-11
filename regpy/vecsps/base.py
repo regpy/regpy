@@ -293,7 +293,7 @@ class VectorSpaceBase:
         return self.type.ones(shape = self.shape)
 
     def empty(self):
-        """Return an uninitalized element of the space.
+        """Return an uninitialized element of the space.
         """
         if self.type is None:
             raise NotImplementedError
@@ -368,7 +368,7 @@ class VectorSpaceBase:
         Parameters
         ----------
         x : self.vec_type
-            The lamda to be used.
+            The lambda to be used.
         """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
@@ -430,7 +430,7 @@ class VectorSpaceBase:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array should returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of a complex vector space after each
-        each array modefied in its place with a real one it should return the same vector with \(1i\)
+        each array modified in its place with a real one it should return the same vector with \(1i\)
         in its place.
         """
         raise NotImplementedError

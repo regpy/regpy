@@ -1,3 +1,4 @@
+from copy import deepcopy
 from regpy.util import ClassLogger, Errors
 from regpy.operators import Operator
 
@@ -25,8 +26,8 @@ class StopRule:
 
     def _complete_init_with_solver(self,solver):
         """Complete the initialisation of the stoprule by giving a solver. 
-        A Stopingrule might reimplement this if this if the _stop_method 
-        for exmaple
+        A stoprule might reimplement this if this if the _stop_method 
+        for example
         ``` 
         if isinstance(solver,specific_solver):
             self._stop = _specific_stop
@@ -39,9 +40,26 @@ class StopRule:
         self.solver = solver
 
     def copy_and_reset(self):
-        """copy stoping rule and reset to the initial state
+        """copy stopping rule and reset to the initial state
         """
-        raise NotImplementedError
+        rule = self.copy()
+        rule.reset()
+        return rule
+    
+    def reset(self):
+        """resets the stoprule to initial state
+        (reset needs to be re-implemented in a stoprule if more parameters need to be reset)
+        """
+        self.solver = None
+        self.triggered = False
+        for key in self.history_dict.keys():
+            self.history_dict[key] = []
+
+    def copy(self):
+        return deepcopy(self)
+
+    
+
 
     def stop(self):
         """Check whether to stop iterations.
@@ -55,6 +73,7 @@ class StopRule:
             return True
         self.triggered = self._stop()
         return self.triggered
+    
 
     def _stop(self):
         """Check whether to stop iterations.
@@ -122,9 +141,18 @@ class CombineRules(StopRule):
         r"""
         The rule that triggered the stop condition, or `None` if no rule has triggered yet.
         """
+        
+
 
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
+    
+    def reset(self):
+        self.active_rule = None
+        self.triggered = False
+        self.history_dict.clear()
+        for rule in self.rules:
+            rule.reset()
     
     def _complete_init_with_solver(self, solver):
         self.solver = solver
@@ -169,8 +197,13 @@ class CountIterations(StopRule):
         self.while_type = while_type
         self.log.setLevel(logging_level)
 
+
     def __repr__(self):
         return 'CountIterations(max_iterations={})'.format(self.max_iterations)
+    
+    def reset(self):
+        super().reset()
+        self.iteration = 0
 
     def _stop(self):
         if self.while_type:
@@ -204,7 +237,7 @@ class Discrepancy(StopRule):
     data : array
         The right hand side (noisy data).
     noiselevel : float
-        An estimate of the dist        stoprule._complete_init_with_solver(self)ance from the noisy data to the exact data.
+        An estimate of the distance from the noisy data to the exact data.
     tau : float, optional
         The multiplier; must be larger than 1. Defaults to 2.
     """
@@ -227,6 +260,7 @@ class Discrepancy(StopRule):
         self.tau = tau
         self.tol = self.tau
         self.history_dict["relative discrepancy"] = []
+
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
@@ -266,8 +300,10 @@ class MonotonicityRule(StopRule):
         self.history_dict["monotonicity"] = []
         self.history_dict["residual"] = []
 
+
+
     def __repr__(self):
-        return 'Monotonicty'
+        return 'Monotonicity'
 
     def _stop(self):
         if self.solver.y is None:
@@ -314,8 +350,15 @@ class RelativeChangeData(StopRule):
         super().__init__()
         self.norm = norm
         self.tol = tol
-        self.data_old = data
+        self.data_old = data.copy()
+        self.initial_data = data
         self.history_dict["relative change of y"] = []
+
+    
+    def reset(self):
+        super().reset()
+        self.data_old = self.initial_data
+        
 
     def __repr__(self):
         return 'RelativeChangeData(tol={})'.format(
@@ -361,12 +404,18 @@ class RelativeChangeSol(StopRule):
         super().__init__()
         self.norm = norm
         self.tol = tol
-        self.sol_old = init
+        self.sol_old = init.copy()
+        self.sol_init = init
         self.history_dict["relative change of x"] = []
+
 
     def __repr__(self):
         return 'RelativeChangeSol(tol={})'.format(
             self.tol)
+    
+    def reset(self):
+        super().reset()
+        self.sol_old = self.sol_init
 
     def _stop(self,):
         change = self.norm(self.solver.x - self.sol_old)
@@ -379,31 +428,28 @@ class RelativeChangeSol(StopRule):
 ######### StopRules for convex optimization problems #########
 
 class OptimalityCondStopping(StopRule):
-    def __init__(self, setting, max_iter=1000, logging_level = "INFO",tol = 0.):
+    def __init__(self, setting, logging_level = "INFO",tol = 0.):
         if not setting.is_tikhonov and setting.is_convex:
             raise ValueError("For the optimality condition stopping rule the setting needs to be a convex and contain a regularization parameter!")
         super().__init__()
         self.setting = setting
         self.tol = tol
-        self.max_iter = max_iter
-        self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["dSstar"] = []
         self.history_dict["dR"] = []
 
+
     def __repr__(self):
-        return 'OptimailtyCondStopping(tol={})'.format(
+        return 'OptimalityCondStopping(tol={})'.format(
             self.tol)
 
     def _stop(self):
         self.solver.compute_dual()
         dSstar,dR = self.setting.violation_optimality_cond(self.solver.primal, self.solver.dual)
-   
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
-        self.iteration +=1
-        stop = (dSstar+dR<=self.tol) or (self.iteration>=self.max_iter)
-        self.log.info('{}/{}:  {:.3e} + {:.3e} = {:.3e}  {} {:.3e}'.format(self.iteration,self.max_iter,
+        stop = (dSstar+dR<=self.tol)
+        self.log.info('{:.3e} + {:.3e} = {:.3e}  {} {:.3e}'.format(
                                                                             dSstar,dR,dSstar+dR,
                                                                             '<=' if dSstar+dR<=self.tol else '>',
                                                                             self.tol))      
@@ -416,6 +462,7 @@ class DualityGapStopping(StopRule):
         self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["duality gap"] = []
+
 
     def __repr__(self):
         return 'DualityGapStopping(tol={})'.format(

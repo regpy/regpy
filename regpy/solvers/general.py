@@ -224,8 +224,8 @@ class RegSolver(Solver):
         return reco, reco_data
     
     def compute_dual(self):
-        """computes dual and primal components. This is a generic implementation that works for settings that are thikhonov.
-        This should be reimplemented if the solver can compute the variables more effectivly.
+        """computes dual and primal components. This is a generic implementation that works for settings that are tikhonov.
+        This should be reimplemented if the solver can compute the variables more effectively.
         """
         if not self.setting.is_tikhonov:
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting"))
@@ -344,7 +344,7 @@ class Setting:
         self.is_convex=self.op.linear and self.penalty.convex and self.data_fid.convex
         """True if the operator is linear"""
         self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
-        """Ture if penalty and data fidelity are both squared norms"""
+        """True if penalty and data fidelity are both squared norms"""
 
     @property
     def regpar(self):
@@ -606,7 +606,7 @@ class Setting:
     
     def violation_optimality_cond(self,primal=None,dual=None):
         r"""Returns the degree to which a pair \((f,p))\ of a primal point \(f\) and a dual point \(p)\ 
-        violates the optimailty conditions for being a saddle point of 
+        violates the optimality conditions for being a saddle point of 
         \(-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) )\
         These optimality conditions are:
         .. math::
@@ -648,7 +648,7 @@ class Setting:
     @staticmethod
     def _generate_full_solver_dictionary():
         '''This so far contains only linear solvers'''
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,AMA,SemismoothNewton_bilateral,TikhonovCG
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
         method_dict={
                 'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
                 'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
@@ -656,8 +656,7 @@ class Setting:
                 'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
                 'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
                 'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
-                'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Mulpliers' },
-                'AMA': {'class':AMA, 'primal': True, 'full': 'Alternating Minimization Algorithm'},   
+                'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
                 'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
                 'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }

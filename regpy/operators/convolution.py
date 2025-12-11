@@ -164,7 +164,7 @@ class ConvolutionOperator(Composition):
         The case where kernel_matrix_shape is not None treats the situation that the convolution kernel k is matrix-value 
         with shape kernel_matrix_shape. 
         In this case, the input space is assumed to be vector-valued with values of shape (kernel_matrix_shape[1],),
-        If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimnesional. 
+        If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimensional. 
         
                     
     Methods: 
@@ -172,9 +172,9 @@ class ConvolutionOperator(Composition):
         Input: A scalar function :math:`phi`.
         Output: The functional calculus of the convolution operator at :math:`phi`, :math:`f\mapsto F^*(F(\vaphi(k))F(f))`
     composition:
-        Input: Another convolution operator L with kenel l
+        Input: Another convolution operator L with kernel l
         Output: The composition K L, a convolution operator with Fourier multiplier :math:`F(k)*F(l)`
-        Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implmented in Composition), 
+        Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implemented in Composition), 
         but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
     conv_inverse:
         Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)`
@@ -216,7 +216,7 @@ class ConvolutionOperator(Composition):
         self.stackaxes = np.array(list(set(np.arange(grid.ndim_domain)) - set(self.convolution_axes)))
 
         if not callable(fourier_multiplier) and  not isinstance(fourier_multiplier,np.ndarray):
-            raise TypeError(Errors.type_error('fourier_mupltiplier must be callable or a numpy array'))
+            raise TypeError(Errors.type_error('fourier_multiplier must be callable or a numpy array'))
         if not pad_amount is None:
             if isinstance(pad_amount,int):
                 self.pad_amount =np.array([(pad_amount if i in self.convolution_axes else 0) for i in np.arange(grid.ndim)])
@@ -226,7 +226,7 @@ class ConvolutionOperator(Composition):
                 except:
                     raise TypeError(Errors.type_error('pad_amount must be None, integer or convertible to a numpy array.') )
                 if not len(self.stackaxes) == 0 and not np.all(pad_amount[self.stackaxes]==0):
-                    raise ValueError(Errors.value_error(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convlution axes are {self.stackaxes}'))
+                    raise ValueError(Errors.value_error(f'pad_amount should be 0 for non-convolution axes. Got {pad_amount}. Non-convolution axes are {self.stackaxes}'))
                 else:
                     self.pad_amount = pad_amount
         if not Fourier_truncation_amount is None:
@@ -381,7 +381,7 @@ class ConvolutionOperator(Composition):
         return (np.all(p['pad_amount']==q['pad_amount']) 
                 and p['pad_value'] == q['pad_value']
                 and ((p['Fourier_truncation_amount'] is None and q['Fourier_truncation_amount'] is None)
-                    or np.all(p['Fourier_truncation_amonnt']==q['Fourier_truncation_amount']))
+                    or np.all(p['Fourier_truncation_amount']==q['Fourier_truncation_amount']))
                 and np.all(p['convolution_axes']==q['convolution_axes'])
                 and (p['kernel_matrix_shape']==q['kernel_matrix_shape'] or ignore_kernel_matrix_shape)
         ) 

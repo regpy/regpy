@@ -322,7 +322,7 @@ class FourierTransform(Operator):
         if centered or (not domain.is_complex and domain.ndim_domain==1):
             codomain = UniformGridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain)
         else:
-            # In non-centered case, the frequencies are not ascencing, so using GridFcts here is slightly questionable.
+            # In non-centered case, the frequencies are not ascending, so using GridFcts here is slightly questionable.
             codomain = GridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain,use_cell_measure=False)
         super().__init__(domain, codomain, linear=True)
         self.centered = centered

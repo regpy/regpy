@@ -17,7 +17,7 @@ class CGNE(RegSolver):
         Right hand side g. If it is None the data is taken from the setting.
     x0: array-like, default:None
         First iteration. zero() if None
-    logging_level: default: logggin.INFO
+    logging_level: default: logging.INFO
         Controls amount of output
     """
     def __init__(self, setting, data=None, x0 =None, logging_level = "INFO"):

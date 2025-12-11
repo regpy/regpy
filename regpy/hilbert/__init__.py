@@ -72,7 +72,7 @@ def componentwise(dispatcher, cls=DirectSum):
     ----------
     dispatcher : callable
         The callable, most likely an `AbstractSpace`, to be applied in each component
-        vector space to construct the `HilberSpace` instances.
+        vector space to construct the `HilbertSpace` instances.
     cls : callable, optional
         The callable, most likely a `HilbertSpace` subclass, to combine the individual
         `HilbertSpace` instances. Will be called with all spaces as arguments. Default: `DirectSum`.
@@ -125,4 +125,4 @@ def _register_spaces():
         L2Boundary.register(NgsVectorSpace, L2BoundaryFESpace)
         SobolevBoundary.register(NgsVectorSpace,SobolevBoundaryFESpace)
     except :
-        logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")
+        logging.info("'Ngsolve' appears to be not installed not registering the respective functionals.")
