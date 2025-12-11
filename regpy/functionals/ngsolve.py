@@ -1,8 +1,11 @@
 '''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsVectorSpace`. 
 '''
+from math import inf
+
 import ngsolve as ngs
 
-from regpy.hilbert import L2
+from regpy.util import Errors
+from regpy.operators import NgsGradOP
 from regpy.vecsps.ngsolve import NgsVectorSpace
 
 from .base import Functional
@@ -44,7 +47,10 @@ class NgsL1(Functional):
         The underlying `ngsolve` space. 
     """
     def __init__(self, domain):
-        assert isinstance(domain, NgsVectorSpace)
+        if not isinstance(domain, NgsVectorSpace):
+            raise TypeError(Errors.not_instance(domain, NgsVectorSpace,"AN NgsL1 functional is only defined on an NgsVectorSpace."))
+        if domain.codim != 1:
+            raise ValueError(Errors.value_error("NgsL1 is only implemented for scalar valued spaces.",self))
         self._gfu = ngs.GridFunction(domain.fes)
         self._w_help = domain.empty()
         self.sign = SignumFilter(domain.fes,self._gfu.vec)
@@ -82,18 +88,21 @@ class NgsTV(Functional):
         The Hilbert space wrt which the proximal gets computed. 
     """
 
-    def __init__(self, domain, h_domain=L2):
-        assert isinstance(domain, NgsVectorSpace)
-        assert domain.codim == 1, "TV is not implemented for vector valued spaces." 
-        super().__init__(domain,h_domain=h_domain)
+    def __init__(self, domain):
+        if not isinstance(domain, NgsVectorSpace):
+            raise TypeError(Errors.not_instance(domain, NgsVectorSpace,"AN NgsL1 functional is only defined on an NgsVectorSpace."))
+        if domain.codim != 1:
+            raise ValueError(Errors.value_error("NgsL1 is only implemented for scalar valued spaces.",self))
+        if isinstance(domain.fes,ngs.H1):
+            self.vec_fes = ngs.VectorH1(domain.fes.mesh, dirichlet=domain.bdr if domain.bdr is not None else "", order=domain.fes.globalorder)
+        elif isinstance(domain.fes,ngs.L2):
+            self.vec_fes = ngs.VectorL2(domain.fes.mesh, order=domain.fes.globalorder, dirichlet=domain.bdr if domain.bdr is not None else "")
+        else:
+            raise ValueError(Errors.value_error("NgsTV is only implemented for H1 or L2 finite element spaces.",self))
+        super().__init__(domain)
         self._gfu = ngs.GridFunction(self.domain.fes)
-        self._gfu.Set(0)
-        self._p = ngs.grad(self._gfu)
-        self._gfu_update = ngs.GridFunction(self.domain.fes)
-        self._x_out = domain.zeros()
-        self._gfu_out = domain.to_gf(self._x_out)
-        self._gfu_div = ngs.GridFunction(self.domain.fes)
-        self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
+
+        self._grad_op = NgsGradOP(self.domain)
 
     def _eval(self, x):
         self._gfu.vec.data = x.vec
@@ -103,43 +112,38 @@ class NgsTV(Functional):
             tvnorm += ngs.Integrate( ngs.Norm(gradu[i]), self.domain.fes.mesh )
         return tvnorm
 
-    def _proximal(self, x, tau, stepsize=0.1, maxiter=10):
-        self._gfu.Set(0)
-        self._p = ngs.grad(self._gfu)
-        self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
-        
-        self._gfu.vec.data = x.vec
-        for i in range(maxiter):
-            self._gfu_update.Set( self._gfu_div - self._gfu/tau )
-            update= stepsize * ngs.grad( self._gfu_update )
-            #Calculate |update|
-            self._p = (self._p + update) / tuple([1+ngs.Norm(update[i]) for i in range(update.dim)])
-            self._gfu_div.vec.data = self.ngsdivergence(self._p, self.domain.fes)
-        self._gfu_out.Set(self._gfu - tau*self._gfu_div)
-        return self._x_out 
-
-    def ngsdivergence(self, p, fes):
-        r"""Computes the divergence of a vector field 'p' on a FES 'fes'. gradp is a list of ngsolve CoefficientFunctions
-        p=(p_x, p_y, p_z, ...). The return value is the coefficient array of the GridFunction holding the divergence.
-        
-        Parameters
-        ----------
-        p : vector field
-            Vector field on a FES 'fes' for which to compute the divergence.
-        fes : ngsolve fes
-            Underlying FES.
-
-            Returns
-            -------
-            array
-                Values of the divergence of the given vector `p`
+    def _proximal(self, x, tau, stepsize=0.0002, maxiter=1000,tol=0.001):
+        r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
+        Parameters:
+            x: np.array 
+                First argument of prox
+            tau: float >=0
+                Second (scaling) argument of prox
+            stepsize: float [optional, default: 0.0002]
+                The stepsize. Convergence is guaranteed for values <=0.125.
+            maxiter: int [optional: default: 1000]
+                Maximum number of iterations
+            tol: float>=0 [optional, default: 0.01]
+                Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
+                iteratives differ by less than tol in the maximum norm. 
         """
-        gfu_in = ngs.GridFunction(fes)
-        gfu_out = ngs.GridFunction(fes)
-        vec_out = gfu_in.vec.CreateVector()
-        for i in range(p.dim):
-            gfu_in.Set(p[i])
-            coeff = ngs.grad(gfu_in)[i]
-            gfu_out.Set(coeff)
-            vec_out.data += gfu_out.vec
-        return vec_out
+        grad_u = self._grad_op.codomain.empty()
+        grad_u_last = self._grad_op.codomain.empty()
+        diff_last = inf
+        for i in range(maxiter):
+            _gfu_help = -self._grad_op.adjoint(grad_u)-x/tau
+            update = self._grad_op.codomain.to_gf(stepsize*self._grad_op(_gfu_help))
+            vec_norm = ngs.sqrt(sum(ngs.InnerProduct(g,g) for g in update))
+            grad_u = self._grad_op.codomain.from_ngs((self._grad_op.codomain.to_gf(grad_u) + update)/(1.0 + vec_norm))
+            diff = max(ngs.Integrate(ngs.Norm(g),self.domain.fes.mesh) for g in self._grad_op.codomain.to_gf(grad_u-grad_u_last))
+            if diff<tol and i>0:
+                self.log.info(f'TV proximal Chambolle terminated after {i} iterations, diff={diff}.')
+                break
+            elif diff>diff_last:
+                self.log.info(f'TV proximal Chambolle increasing residual, stopping after {i+1} iterations.')
+                grad_u.vec.data = grad_u_last.vec
+                break
+            else:
+                diff_last = diff
+                grad_u_last.vec.data = grad_u.vec
+        return x+tau*self._grad_op.adjoint(grad_u)

@@ -10,7 +10,7 @@ from regpy.util import Errors
 
 from .base import Operator
 
-__all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoefficientPDE", "SolveSystem", "LinearForm", "LinearFormGrad"]
+__all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoefficientPDE", "SolveSystem", "LinearForm", "LinearFormGrad", "NgsGradOP"]
 
 class NgsOperator(Operator):
     r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
@@ -236,7 +236,9 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             a : NgsBaseVector, 
             differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
-        self.gf_a.vec.data = ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(a.vec) + self.a_bdr
+        self.gf_a.vec.data = a.vec
+        ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.gf_a.vec)
+        self.gf_a.vec.data += self.a_bdr
         
         self.bf_mat.Assemble()
         self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
@@ -452,6 +454,33 @@ class BilinearForm(NgsOperator):
         self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse()*argument.conj().vec
         return self._x.conj().copy()
 
+
+class NgsGradOP(NgsOperator):
+    def __init__(self,domain):
+        if domain.bdr is None:
+            raise ValueError("GradOP requires a Direchlet boundary condition to be set on the domain space.")
+        if isinstance(domain.fes,(ngs.H1,ngs.L2)):
+            vec_fes = ngs.HDiv(domain.fes.mesh, order=domain.fes.globalorder, dirichlet=domain.bdr)
+        else:
+            raise ValueError("NgsTV is only implemented for H1 or L2 finite element spaces.",self)
+        
+        codomain = NgsVectorSpace(vec_fes,bdr=domain.bdr)
+        codomain.codim = 2
+        super().__init__(domain,codomain,linear=True)
+
+        self._gf = ngs.GridFunction(domain.fes)
+        self._gf_out = ngs.GridFunction(vec_fes)
+
+    def _eval(self,x):
+        self._gf.vec.data = x.vec
+        self._gf_out.Set(ngs.grad(self._gf))
+        return self.codomain.from_ngs(self._gf_out.vec,copy=True)
+    
+    def _adjoint(self, y):
+        self._gf_out.vec.data = y.vec
+        self._gf.Interpolate(ngs.div(self._gf_out))
+        return self.domain.from_ngs(-self._gf.vec,copy=True)
+        
 
 class Coefficient(NgsOperator):
     r"""Diffusion and reaction coefficient problem
