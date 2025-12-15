@@ -142,11 +142,11 @@ class Solver:
         """
         for x, y in self.while_(stoprule):
             pass
-        if not 'x' in locals() or not 'y' in locals(): 
-            # This happens if the stopping criterion is satisfied for the initial guess.
-            x = self.x
-            y = self.y
-        return x, y
+        #f not 'x' in locals(): 
+        #    # This happens if the stopping criterion is satisfied for the initial guess.
+        #    x = self.x
+        #    y = self.y
+        return stoprule.best_iterate()
     
 
 
@@ -304,7 +304,7 @@ class Setting:
             self.penalty_shift = None
         self.regpar=regpar#The flags are set by setting the regularization parameter
         """The Regularization parameter"""
-        if(not self.data_fid.is_data_func and data is None):
+        if(not self.data_fid.is_data_func and data is None and primal_setting is None):
             self.log.warning("Setting does not contain any explicit data.")
             self._data=None
         if(self.data_fid.is_data_func):
@@ -663,7 +663,7 @@ class Setting:
         return method_dict
     
     def evaluate_methods(self,method_names = None):
-        """Evaluates which methods are applicable to the current Setting. 
+        """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
         Parameters:
@@ -761,7 +761,7 @@ class Setting:
             return self._methods[method_name]['stoprule']   
 
     def run(self,method_name = None,**kwargs):
-        """Runs a given method to minimize the Tikhonov functional.
+        """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
         Parameters:
         method_name: string or None [default: None] 
@@ -771,7 +771,7 @@ class Setting:
             Arguments to be passed to the method.
 
         Returns:
-            x,y: x is the minimizer of the Tikhonov functional and y its value under the operator.         
+            x,y: x is the minimizer of the appproximate solution and y its value under the operator.         
         """
         if method_name is None:
             method_name = self.select_best_method()
