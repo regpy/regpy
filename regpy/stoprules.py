@@ -1,6 +1,5 @@
 from copy import deepcopy
 from regpy.util import ClassLogger, Errors
-from regpy.operators import Operator
 import numpy as np
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
@@ -124,23 +123,17 @@ class CombineRules(StopRule):
         the operator is used to compute it.
     """
 
-    def __init__(self, rules, op=None):
+    def __init__(self, rules):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
-        if op is not None and not isinstance(op,Operator):
-            raise TypeError(Errors.type_error("The operator that is passed to the combined rules needs to be either None or an Operator!"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
         """
-        self.op = op
-        r""":class:`~regpy.operators.Operator` or `None`
-        The forward operator.
-        """
         self.history_dict = {}
         r"""Dictionary of the convergence histories of the rules."""
         for rule in rules:
-            if type(rule) is type(self) and hasattr(rule,"op") and rule.op is self.op:
+            if type(rule) is type(self) and hasattr(rule,"solver") and rule.solver is self.solver:
                 self.rules.extend(rule.rules)
             else:
                 self.rules.append(rule)
@@ -177,9 +170,9 @@ class CombineRules(StopRule):
             try:
                 rule_triggered = rule.stop()
             except MissingValueError:
-                if self.op is None or self.solver.y is not None:
-                    raise
-                self.solver.y = self.op(self.solver.x)
+                if self.solver is None or (self.solver is not None and self.solver.op is None): 
+                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
+                self.solver.y = self.solver.op(self.solver.x)
                 rule_triggered = rule.stop()
             if rule_triggered:
                 self.log_info += 'Rule {} triggered.'.format(rule)
