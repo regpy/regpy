@@ -1,14 +1,17 @@
+import traceback
+
 import numpy as np
 import pytest
 
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
-from regpy.operators import ImaginaryPart
+from regpy.operators import ImaginaryPart, PtwMultiplication
 from regpy.functionals import *
 from regpy.functionals.base import * 
 from regpy.functionals.base import Conj
+from regpy.functionals.numpy import LppPower
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
-from regpy.util import set_rng_seed
+from regpy.util import set_rng_seed, Errors
 
 set_rng_seed(15873098306879350073259142812684978477)
 
@@ -108,3 +111,39 @@ class TestSquaredNorm():
         res=data_func(2*self.vs.ones())
         assert res==pytest.approx(88.0), f"Evaluation of squared norm failed. Difference to expected result is {res-88.0}."
 
+def test_AbstractSpace():
+    try:
+        ab_sp = AbstractFunctional("TestSpace")
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"Trying to create a new Abstract space failed with exception {e} from: {tb}",AbstractFunctional,meth="Creation"))
+    vs = MeasureSpaceFcts(shape=(4,2),dtype=complex)
+    try:
+        ab_sp.register(MeasureSpaceFcts,LppPower)
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"Trying to register space failed with exception {e} from: {tb}",AbstractFunctional,meth="register"))
+    try:
+        sp = ab_sp(vs)
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"Trying to evaluate on the registered space failed with exception {e} from: {tb}",AbstractFunctional,meth="evaluation"))
+    try:
+        ab_scalar_mul = 8.0 * ab_sp
+        _ = ab_scalar_mul(vs)
+        ab_scalar_rmul = ab_sp * 1.0
+        _ = ab_scalar_rmul(vs)
+        ab_scalar_truediv = ab_sp / 4.5
+        _ = ab_scalar_truediv(vs)
+        ab_sum = ab_sp + ab_sp
+        _ = ab_sum(vs)
+        ab_vertical_shift = ab_sp + 10.5
+        _ = ab_vertical_shift(vs)
+        ab_neg = -ab_sp
+        _ = ab_neg(vs)
+        ab_combination = ab_sp * PtwMultiplication(vs,vs.ones()*4.0)
+        _ = ab_combination(vs)
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"Trying to evaluate on the registered space failed with exception {e} from: {tb}",AbstractFunctional,meth="evaluation"))
+        
