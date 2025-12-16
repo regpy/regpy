@@ -146,9 +146,11 @@ class PDHG(RegSolver):
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
-    def compute_dual(self):
-        self.primal = (self.x, self.y if  self.compute_y else self.op(self.x))
-        self.dual = (self.pstar,self.Tpstar)
+    def primal(self):
+        return (self.x, self.y if  self.compute_y else self.op(self.x))
+
+    def dual(self):
+        return (self.pstar,self.Tpstar)
 
     def _next(self):
         primal_step = self.x + self.tau * self.h_domain.gram_inv(self.Tpstar)

@@ -1,6 +1,6 @@
 from copy import deepcopy
 from regpy.util import ClassLogger, Errors
-from regpy.operators import Operator
+import numpy as np
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
 
@@ -22,7 +22,9 @@ class StopRule:
         """Whether the stopping rule decided to stop."""
         self.history_dict = {}
         """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
-
+        self.is_main_rule = True
+        r"""Whether this is the main stopping rule of the solver or a sub-rule used for example in a combined rule."""
+        self.log.setLevel("INFO")
 
     def _complete_init_with_solver(self,solver):
         """Complete the initialisation of the stoprule by giving a solver. 
@@ -52,6 +54,11 @@ class StopRule:
         """
         self.solver = None
         self.triggered = False
+        if hasattr(self,"x"):
+            del self.x
+        if hasattr(self,"y"):
+            del self.y
+
         for key in self.history_dict.keys():
             self.history_dict[key] = []
 
@@ -69,11 +76,41 @@ class StopRule:
         bool
             `True` if iterations should be stopped.
         """
-        if self.triggered:
-            return True
-        self.triggered = self._stop()
-        return self.triggered
-    
+        should_stop = self._stop()
+        if should_stop and self.is_main_rule:
+            self.trigger()
+        return should_stop
+
+    def trigger(self):
+        """Force the stopping rule to trigger at the current iterate.
+
+        This sets the :attr:`triggered` attribute to `True` and stores
+        the current iterate in :attr:`x` and :attr:`y`.
+        """
+        self.triggered = True
+        self.x = self.solver.x
+        self.y = self.solver.y if hasattr(self.solver,"y") else None
+
+    def best_iterate(self):
+        """Return the best iterate according to this stopping rule. 
+        By default, this is the last iterate computed before the stopping rule triggered.
+
+        However, since iterative methods for ill-posed problmes typically exhibit a semi-convergent behavior, the best iterate is not necessarily the last one computed before the stopping rule triggered. 
+
+        Returns
+        -------
+        x : array
+            The best solution found.
+        y : array
+            The image of the best solution under the operator.
+        """
+        if not self.triggered:
+            raise RuntimeError(Errors.generic_message("The stopping rule has not triggered yet, so no best iterate is available!"))
+        if not hasattr(self,"x"):
+            raise RuntimeError(Errors.generic_message("The stopping rule did not store self.x when triggered! Please re-implement the best_iterate method of the stopping rule!"))
+        if not hasattr(self,"y"):
+            self.y = None
+        return self.x, self.y
 
     def _stop(self):
         """Check whether to stop iterations.
@@ -92,6 +129,11 @@ class StopRule:
     def __add__(self, other):
         return CombineRules([self, other])
 
+    def __or__(self, other):
+        return CombineRules([self, other])
+
+    def __and__(self, other):
+        return AndCombineRules([self, other])
 
 class NoneRule(StopRule):
     """Default stop rule that will never stop an iteration. The rule should not be used in normal setting
@@ -100,12 +142,16 @@ class NoneRule(StopRule):
 
     def __init__(self):
         super().__init__()
+        self.triggered = True
 
     def _stop(self):
         return False
+    
+    def best_iterate(self):
+        return self.solver.x, self.solver.y if hasattr(self.solver,"y") else None
 
 class CombineRules(StopRule):
-    """Combine several stopping rules into one.
+    """Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
 
     The resulting rule triggers when any of the given rules triggers and
     delegates selecting the solution to the active rule.
@@ -114,35 +160,29 @@ class CombineRules(StopRule):
     ----------
     rules : list of :class:`StopRule`
         The rules to be combined.
-    op : :class:`~regpy.operators.Operator`, optional
-        If any rule needs the operator value and none is given to :meth:`stop`,
-        the operator is used to compute it.
     """
 
-    def __init__(self, rules, op=None):
+    def __init__(self, rules):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
-        if op is not None and not isinstance(op,Operator):
-            raise TypeError(Errors.type_error("The operator that is passed to the combined rules needs to be either None or an Operator!"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
         """
-        self.op = op
-        r""":class:`~regpy.operators.Operator` or `None`
-        The forward operator.
-        """
+        self.history_dict = {}
+        r"""Dictionary of the convergence histories of the rules."""
         for rule in rules:
-            if type(rule) is type(self) and hasattr(rule,"op") and rule.op is self.op:
+            if type(rule) is type(self) and hasattr(rule,"solver") and rule.solver is self.solver:
                 self.rules.extend(rule.rules)
             else:
                 self.rules.append(rule)
+            self.history_dict.update(rule.history_dict)
+            rule.is_main_rule = False
+        
         self.active_rule = None
         r"""
         The rule that triggered the stop condition, or `None` if no rule has triggered yet.
         """
-        
-
 
     def __repr__(self):
         return 'CombineRules({})'.format(self.rules)
@@ -153,6 +193,7 @@ class CombineRules(StopRule):
         self.history_dict.clear()
         for rule in self.rules:
             rule.reset()
+            self.history_dict.update(rule.history_dict) 
     
     def _complete_init_with_solver(self, solver):
         self.solver = solver
@@ -160,20 +201,116 @@ class CombineRules(StopRule):
             rule._complete_init_with_solver(self.solver)
 
     def _stop(self):
+        triggered =False
+        self.log_info = ''
         for rule in self.rules:
             try:
-                triggered = rule.stop()
+                rule_triggered = rule.stop()
             except MissingValueError:
-                if self.op is None or self.solver.y is not None:
-                    raise
-                self.solver.y = self.op(self.solver.x)
-                triggered = rule.stop()
-            if triggered:
-                self.log.info('Rule {} triggered.'.format(rule))
+                if self.solver is None or (self.solver is not None and self.solver.op is None): 
+                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
+                self.solver.y = self.solver.op(self.solver.x)
+                rule_triggered = rule.stop()
+            if rule_triggered:
+                self.log_info += 'Rule {} triggered.'.format(rule)
                 self.active_rule = rule
-                return True
-        return False
+                self.active_rule.trigger()
+                triggered = True
+            else:
+                self.log_info = ''
+        log_infos_rules = ''
+        for rule in self.rules:
+            log_infos_rules += rule.log_info + ' | '
+        log_infos_rules = log_infos_rules[:-3]
+        if self.is_main_rule:
+            self.log.info(log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info)
+        else:
+            self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
+        return triggered
+    
+    def best_iterate(self):
+        if self.active_rule is None:
+            raise RuntimeError(Errors.generic_message("No sub-rule has triggered yet, so no best iterate is available!"))
+        return self.active_rule.best_iterate()
 
+class AndCombineRules(StopRule):
+    """Combine several stopping rules into one that stops if all of the rules stop.
+
+    The resulting rule triggers when all of the given rules trigger. 
+    It delegates selecting the solution to the first rule.
+
+    Parameters
+    ----------
+    rules : list of :class:`StopRule`
+        The rules to be combined.
+    """
+
+    def __init__(self, rules):
+        if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
+        super().__init__()
+        self.rules = []
+        r"""List of :class:`StopRule` the combined rules.
+        """
+        self.history_dict = {}
+        r"""Dictionary of the convergence histories of the rules."""
+        for rule in rules:
+            if type(rule) is type(self) and hasattr(rule,"solver") and rule.solver is self.solver:
+                self.rules.extend(rule.rules)
+            else:
+                self.rules.append(rule)
+            self.history_dict.update(rule.history_dict)
+            rule.is_main_rule = False
+
+    def __repr__(self):
+        return 'AndCombineRules({})'.format(self.rules)
+    
+    def reset(self):
+        self.active_rule = None
+        self.triggered = False
+        self.history_dict.clear()
+        for rule in self.rules:
+            rule.reset()
+            self.history_dict.update(rule.history_dict) 
+    
+    def _complete_init_with_solver(self, solver):
+        self.solver = solver
+        for rule in self.rules:
+            rule._complete_init_with_solver(self.solver)
+
+    def _stop(self):
+        triggered =True
+        self.log_info = ''
+        for rule in self.rules:
+            try:
+                rule_triggered = rule.stop()
+            except MissingValueError:
+                if self.solver is None or (self.solver is not None and self.solver.op is None): 
+                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
+                self.solver.y = self.solver.op(self.solver.x)
+                rule_triggered = rule.stop()
+            if not rule_triggered:
+                triggered = False
+            else:
+                self.log_info = ''
+        if triggered:
+            self.log_info += 'All rules triggered.'
+            self.triggered = True
+            self.rules[0].trigger() # first rule decides best iterate
+        log_infos_rules = ''
+        for rule in self.rules:
+            log_infos_rules += rule.log_info + ' & '
+        log_infos_rules = log_infos_rules[:-3]
+        if self.is_main_rule:
+            self.log.info(log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info)
+        else:
+            self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
+        return triggered
+    
+    def best_iterate(self):
+        if not self.triggered:
+            raise RuntimeError(Errors.generic_message("The combined stopping rule has not triggered yet, so no best iterate is available!"))
+        return self.rules[0].best_iterate()
 
 class CountIterations(StopRule):
     """Stopping rule based on number of iterations.
@@ -207,17 +344,16 @@ class CountIterations(StopRule):
 
     def _stop(self):
         if self.while_type:
+            triggered = self.iteration >= self.max_iterations
+            self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
             self.iteration += 1
-            if  self.iteration <= self.max_iterations:
-                self.log.info(
-                    'iteration = {} / {}'
-                    .format(self.iteration, self.max_iterations))
         else:
-            self.log.info(
-                'iteration = {} / {}'
-                .format(self.iteration, self.max_iterations))
             self.iteration += 1
-        return self.iteration > self.max_iterations
+            triggered = self.iteration >= self.max_iterations
+            self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
+        if self.is_main_rule:
+            self.log.info(self.log_info)
+        return triggered
     
 ######### StopRules for determining regularization parameters or for regularization by early stopping #########
 
@@ -252,7 +388,7 @@ class Discrepancy(StopRule):
         if not isinstance(tau,(int,float)):
             raise TypeError(Errors.type_error("The multiplier in the discrepancy principle should be real scalar!"))
         if tau<=1:
-            raise ValueError(Errors.value_error("The multiplier in the discrepancy principle needs to be bigger then one!"))
+            self.log.warning("The multiplier in the discrepancy principle should be bigger than one!")
         super().__init__()
         self.norm = norm
         self.data = data
@@ -275,49 +411,6 @@ class Discrepancy(StopRule):
         self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
         return rel < self.tau
 
-class MonotonicityRule(StopRule):
-    """"The rule stops at the first iterate at which the residual is growing again.   
-    (A heuristic rule that should only be applied for nonlinear problems.)
-
-    Parameters
-    ----------
-    norm : callable
-        The norm with respect to which the difference should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    data : np array
-        The data array
-    init_data : np array
-        initial guess in data space
-    """
-
-    def __init__(self, norm, data, init_data):
-        if not callable(norm):
-            raise TypeError(Errors.type_error("The norm in the monotonicity stopping needs to be a callable!"))
-        super().__init__()
-        self.norm = norm
-        self.data = data
-        self.residual = self.norm(self.data - init_data)
-        self.history_dict["monotonicity"] = []
-        self.history_dict["residual"] = []
-
-
-
-    def __repr__(self):
-        return 'Monotonicity'
-
-    def _stop(self):
-        if self.solver.y is None:
-            raise MissingValueError
-        residual = self.norm(self.data - self.solver.y)
-        change = self.residual - residual
-        self.history_dict["monotonicity"].append(change)
-        self.history_dict["residual"].append(residual)
-        self.residual = residual
-        self.log.info('Monotonicity = {}, residual = {}'.format(
-            change, residual))
-        #self.log.info('Monotonicity = {}'.format(
-        #    change))
-        return change < 0
 
 ########## General StopRules based on relative change of data or solution ##########
 
@@ -331,35 +424,36 @@ class RelativeChangeData(StopRule):
 
     Parameters
     ----------
-    norm : callable
+    norm : callable [default=None]
         The norm with respect to which the difference should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    tol : float
+        In the default case this is the `norm` method of some :class:`~self.solver.op.codomain`.
+    tol : float [default=0.]
         The tol value at which the iteration should be stopped
-    data : np array
-        The data array
+        norm : callable
     """
 
-    def __init__(self, norm, data, tol):
-        if not callable(norm):
-            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable!"))
+    def __init__(self, norm=None, tol=0.):
+        if not callable(norm) and not norm is None:
+            raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable or None!"))
         if not isinstance(tol,(int,float)):
             raise TypeError(Errors.type_error("The tol in the relative change of data stopping should be real scalar!"))
-        if tol<=0:
-            raise ValueError(Errors.value_error("The tol in the relative change of data stopping needs to be bigger then zero!"))
+        if tol<0:
+            raise ValueError(Errors.value_error("The tol in the relative change of data stopping needs to be bigger or equal to zero!"))
         super().__init__()
         self.norm = norm
         self.tol = tol
-        self.data_old = data.copy()
-        self.initial_data = data
+        self.data_old = None
         self.history_dict["relative change of y"] = []
 
-    
+    def _complete_init_with_solver(self, solver):
+        if self.norm is None:
+            self.norm = solver.op.codomain.norm
+        return super()._complete_init_with_solver(solver)   
+
     def reset(self):
         super().reset()
-        self.data_old = self.initial_data
+        self.data_old = None
         
-
     def __repr__(self):
         return 'RelativeChangeData(tol={})'.format(
             self.tol)
@@ -367,11 +461,18 @@ class RelativeChangeData(StopRule):
     def _stop(self):
         if self.solver.y is None:
             raise MissingValueError
+        if self.data_old is None:   
+            self.data_old = self.solver.y.copy()
+            self.log_info = 'First iteration, no change computed.'
+            if self.is_main_rule:
+                self.log.info(self.log_info)
+            return False
         change = self.norm(self.solver.y - self.data_old)
         self.data_old = self.solver.y.copy()
         self.history_dict["relative change of y"].append(change)
-        self.log.info('RelativeChangeData = {}, tol = {}'.format(
-            change, self.tol))
+        self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol)
+        if self.is_main_rule:
+            self.log.info(self.log_info)
         return change < self.tol
 
 
@@ -381,33 +482,34 @@ class RelativeChangeSol(StopRule):
     Stops at the first iterate at which the difference between the old estimate
     and the new estimate is smaller than a pre-determined tol::
 
-        ||y_k-y_{k+1}|| < tol
+        ||x_k-x_{k+1}|| < tol
 
     Parameters
     ----------
-    norm : callable
+    norm : callable [default=None]
         The norm with respect to which the difference should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    tol : float
+        In the default case this is the `norm` method of some :class:`~self.solver.op.domain`.
+    tol : float [default=0.]
         The tol value at which the iteration should be stopped
-    init : np array
-        initial guess
     """
 
-    def __init__(self, norm, init, tol):
-        if not callable(norm):
+    def __init__(self, norm=None, tol=0.):
+        if not callable(norm) and not norm is None:
             raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
         if not isinstance(tol,(int,float)):
             raise TypeError(Errors.type_error("The tol in the relative change of solution stopping should be real scalar!"))
-        if tol<=0:
-            raise ValueError(Errors.value_error("The tol in the relative change of solution stopping needs to be larger than zero!"))
+        if tol<0:
+            raise ValueError(Errors.value_error("The tol in the relative change of solution stopping needs to be larger or equal to zero!"))
         super().__init__()
         self.norm = norm
         self.tol = tol
-        self.sol_old = init.copy()
-        self.sol_init = init
+        self.sol_old = None
         self.history_dict["relative change of x"] = []
 
+    def _complete_init_with_solver(self, solver):
+        if self.norm is None:
+            self.norm = solver.op.domain.norm
+        return super()._complete_init_with_solver(solver)   
 
     def __repr__(self):
         return 'RelativeChangeSol(tol={})'.format(
@@ -415,54 +517,80 @@ class RelativeChangeSol(StopRule):
     
     def reset(self):
         super().reset()
-        self.sol_old = self.sol_init
+        self.sol_old = None
 
     def _stop(self,):
+        if self.sol_old is None:   
+            self.sol_old = self.solver.x.copy()
+            self.log_info = 'First iteration, no change computed.'
+            if self.is_main_rule:
+                self.log.info(self.log_info)
+            return False
         change = self.norm(self.solver.x - self.sol_old)
         self.sol_old = self.solver.x.copy()
         self.history_dict["relative change of x"].append(change)
-        self.log.info('RelativeChangeSol = {}, tol = {}'.format(
-            change, self.tol))
+        self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol)
+        if self.is_main_rule:
+            self.log.info(self.log_info)
         return change < self.tol
 
 ######### StopRules for convex optimization problems #########
 
 class OptimalityCondStopping(StopRule):
-    def __init__(self, setting, logging_level = "INFO",tol = 0.):
-        if not setting.is_tikhonov and setting.is_convex:
-            raise ValueError("For the optimality condition stopping rule the setting needs to be a convex and contain a regularization parameter!")
+    def __init__(self, logging_level = "INFO",tol = 0.):
+        """Stopping rule based on optimality condition violation.
+        
+        Parameters
+        ----------
+        tol : float [default=0.]
+            The tolerance for the duality gap.
+        logging_level : str
+            The logging level for the stopping rule.
+        """
         super().__init__()
-        self.setting = setting
         self.tol = tol
         self.log.setLevel(logging_level)
         self.history_dict["dSstar"] = []
         self.history_dict["dR"] = []
 
-
     def __repr__(self):
         return 'OptimalityCondStopping(tol={})'.format(
             self.tol)
 
+    def _complete_init_with_solver(self, solver):
+        if not solver.setting.is_tikhonov and  solver.setting.is_convex:
+            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
+        return super()._complete_init_with_solver(solver)
+
     def _stop(self):
-        self.solver.compute_dual()
-        dSstar,dR = self.setting.violation_optimality_cond(self.solver.primal, self.solver.dual)
+        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
+        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+        if primal is None or dual is None:
+            raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))
+        dSstar,dR = self.solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
         stop = (dSstar+dR<=self.tol)
-        self.log.info('{:.3e} + {:.3e} = {:.3e}  {} {:.3e}'.format(
-                                                                            dSstar,dR,dSstar+dR,
-                                                                            '<=' if dSstar+dR<=self.tol else '>',
-                                                                            self.tol))      
+        self.log_info = '{:.1e} + {:.1e} = {:.2e}  <= {:.1e}'.format(dSstar,dR,dSstar+dR,self.tol)
+        if self.is_main_rule:
+            self.log.info(self.log_info)    
         return stop 
     
 class DualityGapStopping(StopRule):
-    def __init__(self, tol = 0., logging_level = "INFO"):
+    """Stopping rule based on duality gap.
+
+    Parameters
+    ----------
+    tol : float [default=0.]
+        The tolerance for the duality gap.
+    logging_level : str
+        The logging level for the stopping rule.
+    """    
+    def __init__(self, tol = 0, logging_level = "INFO"):
         super().__init__()
         self.tol = tol
-        self.iteration=0
         self.log.setLevel(logging_level)
         self.history_dict["duality gap"] = []
-
 
     def __repr__(self):
         return 'DualityGapStopping(tol={})'.format(
@@ -474,9 +602,17 @@ class DualityGapStopping(StopRule):
         return super()._complete_init_with_solver(solver)
 
     def _stop(self):
-        self.solver.compute_dual() # sets self.primal and self.dual to new Values
-        gap = self.solver.setting.duality_gap(primal = self.solver.primal, dual = self.solver.dual)
+        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
+        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+        if primal is None and dual is None:
+            raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
+        gap = self.solver.setting.duality_gap(primal = primal, dual = dual)
         self.history_dict["duality gap"].append(gap)
-        stop = gap<=self.tol
-        self.log.info('duality gap={:.3e}, threshold  = {:.3e}'.format(gap,self.tol))      
+        stop = (gap<=self.tol) or (gap == np.nan)
+        if gap==np.nan:
+            self.log_info = 'duality gap is NaN'
+        else:
+            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap,self.tol)
+        if self.is_main_rule:
+            self.log.info(self.log_info)    
         return stop 

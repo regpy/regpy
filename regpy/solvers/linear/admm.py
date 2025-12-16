@@ -129,6 +129,13 @@ class ADMM(RegSolver):
             out['rate'] = -1
         return out, par
 
+    def primal(self):
+        return (self.x, self.y)
+
+#    def dual(self):
+#        p = self.setting.primal_to_dual(self.primal)
+#        return p,self.op.adjoint(p)
+
     def _next(self):
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)
         self.v2 = self.penalty.proximal(self.x-self.p2, 1/self.gamma, self.proximal_pars_penalty)
