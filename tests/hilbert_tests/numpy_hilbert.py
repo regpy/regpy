@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from regpy.vecsps.numpy import *
 from regpy.operators.numpy import *
@@ -8,69 +9,49 @@ from regpy.util import set_rng_seed
 
 set_rng_seed(15873098306879350073259142812684978477)
 
-from .base_hilbert import hilbert_basics,collect_errors
+from .base_hilbert import hilbert_basics
 
-def test_L2MeasureSpaceFcts():
-    errors = []
-
-    vs = MeasureSpaceFcts(np.arange(1,9).reshape(2,4))
+@pytest.mark.parametrize("vs", [ 
+    MeasureSpaceFcts(np.arange(1,9).reshape(2,4)),
+    MeasureSpaceFcts(measure=np.arange(1,9).reshape(2,4),dtype=complex)
+])
+def test_L2MeasureSpaceFcts(vs):
     l2 = L2MeasureSpaceFcts(vs)
-    
-    errors += hilbert_basics(l2,test_methods=True)
+    hilbert_basics(l2,test_methods=True)
 
-    vs = MeasureSpaceFcts(measure=np.arange(1,9).reshape(2,4),dtype=complex)
-    l2 = L2MeasureSpaceFcts(vs,weights=np.random.rand(8).reshape(2,4))
-    
-    errors += hilbert_basics(l2,test_methods=True)
-
-    collect_errors(L2MeasureSpaceFcts,errors)
-
-def test_L2UniformGridFcts():
-    errors = []
-
-    vs = UniformGridFcts(4,2)
+@pytest.mark.parametrize("vs", [ 
+    UniformGridFcts(4,2),
+    UniformGridFcts(4,2,dtype=complex)
+])
+def test_L2UniformGridFcts(vs):
     l2 = L2UniformGridFcts(vs)
-    
-    errors += hilbert_basics(l2,test_methods=True)
+    hilbert_basics(l2,test_methods=True)
 
-    vs = UniformGridFcts(4,2,dtype=complex)
-    l2 = L2UniformGridFcts(vs,weights=np.random.rand(8).reshape(4,2))
-    
-    errors += hilbert_basics(l2,test_methods=True)
-
-    collect_errors(L2UniformGridFcts,errors)
-
-def test_SobolevUniformGridFcts():
-    errors = []
-
-    vs = UniformGridFcts(4,2)
+@pytest.mark.parametrize("vs", [ 
+    UniformGridFcts(4,2),
+    UniformGridFcts(4,2,dtype=complex)
+])
+def test_SobolevUniformGridFcts(vs):
     sob = SobolevUniformGridFcts(vs)
-    
-    errors += hilbert_basics(sob,test_methods=True)
+    hilbert_basics(sob,test_methods=True)
 
-    vs = UniformGridFcts(4,2,dtype=complex)
-    sob = SobolevUniformGridFcts(vs,index = 2.5)
-    
-    errors += hilbert_basics(sob,test_methods=True)
-
-    collect_errors(SobolevUniformGridFcts,errors)
-
-def test_HmDomain():
+class TestHmDomain():
     errors = []
 
-    vs = UniformGridFcts(10,6)
-    mask = np.zeros((10,6))
-    mask[:,0] = 1
-    mask[:,-1] = 1
+    mask_1 = np.zeros((10,6))
+    mask_1[:,0] = 1
+    mask_1[:,-1] = 1
+    mask_2 = np.zeros((4,2))
+    mask_2[:,0] = 1
+    mask_2[:,-1] = 1
 
-    hm = HmDomain(vs,mask=mask,index=2)
-    
-    errors += hilbert_basics(hm,test_methods=True)
-
-    vs = UniformGridFcts(4,2,dtype=complex)
-
-    hm = HmDomain(vs)
-    
-    errors += hilbert_basics(hm,test_methods=True)
-
-    collect_errors(HmDomain,errors)
+    @pytest.mark.parametrize("vs,mask,h",[ 
+        (UniformGridFcts(10,6),mask_1,"normalized"),
+        (UniformGridFcts(4,2,dtype=complex),None,"normalized"),
+        (UniformGridFcts(4,2,dtype=complex),mask_2,"normalized"),
+        (UniformGridFcts(10,6),mask_1,"physical"),
+        (UniformGridFcts(4,2,dtype=complex),None,"physical"),
+    ])
+    def test_basics(self,vs,mask,h):
+        hm = HmDomain(vs,mask=mask,h=h,index=2)
+        hilbert_basics(hm,test_methods=True)

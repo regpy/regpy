@@ -1,6 +1,6 @@
 '''Special NGSolve functionals defined on the `regpy.vecsps.ngsolve.NgsVectorSpace`. 
 '''
-from math import inf
+from math import inf, sqrt
 
 import ngsolve as ngs
 
@@ -54,7 +54,7 @@ class NgsL1(Functional):
         self._gfu = ngs.GridFunction(domain.fes)
         self._w_help = domain.empty()
         self.sign = SignumFilter(domain.fes,self._gfu.vec)
-        super().__init__(domain)
+        super().__init__(domain,methods={'eval','subgradient','proximal'})
 
     def _eval(self, x):
         return ngs.Integrate( ngs.Norm(self.domain.to_gf(x)), self.domain.fes.mesh )
@@ -63,9 +63,6 @@ class NgsL1(Functional):
         self.sign.Update(x.vec)
         self._w_help.vec.data = self.sign * x.vec
         return self._w_help.copy()
-
-    def _hessian(self, x):
-        raise NotImplementedError
 
     def _proximal(self, x, tau):
         self.sign.Update(x.vec)
@@ -99,7 +96,7 @@ class NgsTV(Functional):
             self.vec_fes = ngs.VectorL2(domain.fes.mesh, order=domain.fes.globalorder, dirichlet=domain.bdr if domain.bdr is not None else "")
         else:
             raise ValueError(Errors.value_error("NgsTV is only implemented for H1 or L2 finite element spaces.",self))
-        super().__init__(domain)
+        super().__init__(domain,methods={"eval","proximal"})
         self._gfu = ngs.GridFunction(self.domain.fes)
 
         self._grad_op = NgsGradOP(self.domain)
@@ -109,8 +106,8 @@ class NgsTV(Functional):
         gradu = ngs.grad(self._gfu)
         tvnorm = 0
         for i in range(gradu.dim):
-            tvnorm += ngs.Integrate( ngs.Norm(gradu[i]), self.domain.fes.mesh )
-        return tvnorm
+            tvnorm += ngs.InnerProduct(gradu[i],gradu[i])
+        return sqrt(ngs.Integrate(tvnorm, self.domain.fes.mesh))
 
     def _proximal(self, x, tau, stepsize=0.0002, maxiter=1000,tol=0.001):
         r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 

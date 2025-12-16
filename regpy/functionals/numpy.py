@@ -1032,13 +1032,16 @@ class LppL2(VectorIntegralFunctional):
     """
     VectorIntegralFunctional with :math:`f_i(x):=(1/p)|x|^p`.
 
-    Parameters:
+    Parameters
+    ----------
+    vdomain : MeasureSpaceFcts
+        A vector valued measure space.
     p: float (default: 2.)
         exponent of the L^p-norm. 
     """
     def __init__(self, vdomain,p=2.):
         sfunc = LppPower(vdomain.scalar_space(),p=p)
-        super().__init__(vdomain, sfunc, 
+        super().__init__(vdomain, scalar_func=sfunc, 
                          Lipschitz=1. if p== 2 else np.inf,
                          convexity_param=1. if p==2 else 0.
                          )
@@ -1046,22 +1049,32 @@ class LppL2(VectorIntegralFunctional):
 class L1L2(VectorIntegralFunctional):
     """
     VectorIntegralFunctional with absolute value function as :math:`f_i`.
+
+    Parameters
+    ----------
+    vdomain : MeasureSpaceFcts
+        A vector valued measure space.
+    conj_tol : float
+        A tolarance introduced into L1 functional that allows also numbers slighly bigger then 1.0 in the conjugate.
     """
-    def __init__(self, vdomain):
-        sfunc = L1MeasureSpace(vdomain.scalar_space())
-        super().__init__(vdomain, sfunc, Lipschitz=1.)
+    def __init__(self, vdomain, conj_tol = 1e-16):
+        sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
+        super().__init__(vdomain, scalar_func= sfunc, Lipschitz=1.)
 
 class HuberL2(VectorIntegralFunctional):
     """
     VectorIntegralFunctional with Huber functional as :math:`f_i`.
 
-    Parameters:
+    Parameters
+    ----------
+    vdomain : MeasureSpaceFcts
+        A vector valued measure space.
     sigma: float (default: 1.)
         Parameter in Huber functional
     """
     def __init__(self, vdomain,sigma=1.):
         sfunc = Huber(vdomain.scalar_space(),sigma)
-        super().__init__(vdomain, sfunc, Lipschitz=1.)
+        super().__init__(vdomain, scalar_func=sfunc, Lipschitz=1.)
 
 class LppPower(IntegralFunctionalBase):
     r"""
@@ -1207,11 +1220,14 @@ class L1MeasureSpace(IntegralFunctionalBase):
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the generic L1.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
-        see IntegralFunctional          
+        see IntegralFunctional
+    conj_tol : float
+        A tolerance in the coputation of the conjugate allowing a slight deviation above from 1.0. Defaults: 1e-16
     """
     def __init__(self, domain,
                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None,**kwargs):
+                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-16,**kwargs):
+        self.conj_tol = conj_tol
         super().__init__(domain,conj_dom_u=1.,conj_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
@@ -1243,7 +1259,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
     def _f_conj(self, v_star,**kwargs):
         res = np.abs(v_star)    
-        ind = (res>1)
+        ind = (res>1+self.conj_tol)
         res *= 0.
         res[ind]= inf
         return res

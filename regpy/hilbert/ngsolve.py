@@ -16,20 +16,22 @@ class L2FESpace(HilbertSpace):
 
     @memoized_property
     def gram(self):
-        if isinstance(self.vecsp, NgsVectorSpace):
+        if isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
+            return self.vecsp.identity
+        elif isinstance(self.vecsp, NgsVectorSpace):
             u, v = self.vecsp.fes.TnT()
             form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
             form += ngs.SymbolicBFI(u * v)
             return NgsMatrixMultiplication(self.vecsp, form)
-        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
-            return self.vecsp.identity
         else:
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 class SobolevFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
-        if not isinstance(vecsp, NgsVectorSpace):
+        if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
+            raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
+        elif not isinstance(vecsp, NgsVectorSpace):
             raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         super().__init__(vecsp=vecsp)
         self._no_pickle = {*self._no_pickle,"__memoized_SobolevFESpace.gram","__memoized_HilbertSpace.norm_functional"}
@@ -41,9 +43,6 @@ class SobolevFESpace(HilbertSpace):
         form += ngs.SymbolicBFI(u * v + ngs.InnerProduct(ngs.Grad(u),ngs.Grad(v)))
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
-        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
-            form.Assemble()
-            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
         else:
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
@@ -51,7 +50,9 @@ class SobolevFESpace(HilbertSpace):
 class H10FESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
-        if not isinstance(vecsp, NgsVectorSpace):
+        if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
+            raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
+        elif not isinstance(vecsp, NgsVectorSpace):
             raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         super().__init__(vecsp=vecsp)
         self._no_pickle = {*self._no_pickle,"__memoized_H10FESpace.gram","__memoized_HilbertSpace.norm_functional"}
@@ -63,9 +64,6 @@ class H10FESpace(HilbertSpace):
         form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
-        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
-            form.Assemble()
-            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
         else:
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
@@ -73,7 +71,9 @@ class H10FESpace(HilbertSpace):
 class L2BoundaryFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
-        if not isinstance(vecsp, NgsVectorSpace):
+        if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
+            raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
+        elif not isinstance(vecsp, NgsVectorSpace):
             raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         if vecsp.bdr is None:
             raise ValueError(Errors.value_error("To use L2BoundaryFESpace on an NgsVectorSpace the vector space needs to define a boundary and it cannot be None."))
@@ -90,9 +90,6 @@ class L2BoundaryFESpace(HilbertSpace):
         )
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
-        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
-            form.Assemble()
-            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
         else:
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
@@ -100,7 +97,9 @@ class L2BoundaryFESpace(HilbertSpace):
 class SobolevBoundaryFESpace(HilbertSpace):
     r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`."""
     def __init__(self, vecsp):
-        if not isinstance(vecsp, NgsVectorSpace):
+        if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
+            raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
+        elif not isinstance(vecsp, NgsVectorSpace):
             raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         if vecsp.bdr is None:
             raise ValueError(Errors.value_error("To use SobolevBoundaryFESpace on an NgsVectorSpace the vector space needs to define a boundary and it cannot be None."))
@@ -117,10 +116,5 @@ class SobolevBoundaryFESpace(HilbertSpace):
         )
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
-        elif isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
-            form.Assemble()
-            return NgsMatrixMultiplication(self.vecsp, form.mat @ self.vecsp.mass.Inverse())
         else:
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
-
-

@@ -130,13 +130,29 @@ class NgsMatrixMultiplication(NgsOperator):
         """The inverse as a `Matrix` instance."""
         if self._inverse is not None:
             return self._inverse
+        elif isinstance(self.mat,ngs.la.ProductMatrix):
+            raise NotImplementedError(Errors.generic_message(f"The inverse of a product ngsolve matrix is None. You have to figure out the inverse your self."))
         else:
             self._inverse = NgsMatrixMultiplication(
                 self.domain,
-                self.mat.Inverse(freedofs=self.domain.fes.FreeDofs())
+                self.mat.Inverse()
             )
             self._inverse._inverse = self
             return self._inverse
+    
+    @inverse.setter
+    def inverse(self, inv):
+        if inv is None:
+            self._inverse = None
+            self.log.info("Setting the inverse of the operator {} to None".format(self))
+        elif not isinstance(inv, Operator):
+            raise TypeError(Errors.not_instance(
+                inv,
+                Operator,
+                "The inverse has to be an Operator instance."
+                ))
+        self.log.info("Setting the inverse of the operator {} to {} overwriting the old {}.".format(self,inv,self._inverse))
+        self._inverse = inv
         
 class SecondOrderEllipticCoefficientPDE(NgsOperator):
     r"""Provides a general setup for the forward problems mapping PDE coefficients to their solutions.

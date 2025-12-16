@@ -52,7 +52,7 @@ class AbstractFunctionalBase:
         return (1 / other) * self
 
     def __add__(self, other):
-        if isinstance(other, Functional):
+        if isinstance(other, AbstractFunctional):
             return AbstractLinearCombination(self, other)
         elif isscalar(other):
             return AbstractVerticalShift(self, other)
@@ -203,10 +203,11 @@ class AbstractLinearCombination(AbstractFunctional):
             self.funcs.append(func)
 
     def __call__(self,vecsp, **kwargs):
-        if kwargs is not None:
-            raise ValueError(util.Errors.value_error("""An AbstractLinearCombination of functionals cannot process generic keyword arguments. Please modify the specific 
-                                                     AbstractFunctional by either editing it before of modifying it by calling the item. 
-                                                     That is for example to modify the k-th functional use CombinedFunctional[k](arg = ...)."""))
+        if kwargs is not None and len(kwargs) != 0:
+            raise ValueError(util.Errors.value_error("""
+    An AbstractLinearCombination of functionals cannot process generic keyword arguments. Please modify the specific 
+    AbstractFunctional by either editing it before of modifying it by calling the item. 
+    That is for example to modify the k-th functional use CombinedFunctional[k](arg = ...)."""))
         if not isinstance(vecsp,vecsps.VectorSpaceBase):
             raise ValueError(util.Errors.not_instance(vecsp,vecsps.VectorSpaceBase))
         return LinearCombination(
@@ -236,7 +237,7 @@ class AbstractVerticalShift(AbstractFunctional):
         and one offset that is a scalar. However, you gave:
             func = {func},
             offset = {offset}."""))
-        super().__init__(func.domain)
+        super().__init__(func.name)
         self.func = func
         """Functional to be offset.
         """
@@ -386,7 +387,7 @@ class Functional:
             if conj_dom_l is not None  and isinstance(conj_dom_l,np.ndarray) \
                 and conj_dom_u is not None and isinstance(conj_dom_u, np.ndarray) \
                 and np.any(conj_dom_l>conj_dom_u):
-                raise ValueError('conj_dom_l must be smaller or equal conj_dom_u.')
+                raise ValueError(util.Errors.value_error(f'conj_dom_l must be smaller or equal conj_dom_u. Was given conj_dom_l = {conj_dom_l} and conj_dom_u = {conj_dom_u}',self,"__init__"))
         self.dom_l, self.dom_u, self.conj_dom_l, self.conj_dom_u = dom_l, dom_u, conj_dom_l, conj_dom_u
         """vectors indicating the essential domain of the functional and its conjugate"""
 
@@ -1239,15 +1240,23 @@ class LinearCombination(Functional):
         conj_dom_l, conj_dom_u = None, None
         if separable:
             if len(self.funcs) == 1:
-                conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
-                conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
+                if self.coeffs[0]>0:
+                    conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
+                    conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
+                else:
+                    conj_dom_u = self.funcs[0].conj_dom_l * self.coeffs[0]
+                    conj_dom_l = self.funcs[0].conj_dom_u * self.coeffs[0]
             elif self.linear_table.count(False)==0:
                 conj_dom_l = self.grad_sum
                 conj_dom_u = self.grad_sum 
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
-                conj_dom_l = self.funcs[j].conj_dom_l*self.coeffs[j] + self.grad_sum
-                conj_dom_u = self.funcs[j].conj_dom_u*self.coeffs[j] + self.grad_sum
+                conj_dom_l = self.funcs[0].domain.zeros()
+                conj_dom_u = self.funcs[0].domain.zeros()
+                conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] if self.coeffs[j] >0 else self.funcs[j].conj_dom_u*self.coeffs[j]
+                conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j] if self.coeffs[j] >0 else self.funcs[j].conj_dom_l*self.coeffs[j]
+                conj_dom_l += self.grad_sum
+                conj_dom_u += self.grad_sum
 
         methods = set.intersection(*[func.methods for func in self.funcs])
         conj_computable = (len(self.funcs) == 1) or (self.linear_table.count(False)==0) or (self.linear_table.count(False)==1)
@@ -1261,7 +1270,7 @@ class LinearCombination(Functional):
         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
         Lipschitz -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
         convexity_param = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        convexity_param += sum(coeff*fun.Lipschitz_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
+        convexity_param += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
         super().__init__(domain, linear = all(self.linear_table),
                          Lipschitz = Lipschitz if all_convex else np.inf,
                          convexity_param = convexity_param if (convexity_param>=0 and all_convex) else 0.,

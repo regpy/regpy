@@ -22,10 +22,6 @@ from regpy.util import is_complex_dtype, Errors, ClassLogger
 
 from .base import VectorSpaceBase
 
-def _override_vector(vec : ngs.BaseVector, gf : ngs.GridFunction) -> None:
-    gf.vec.data = vec
-    vec = gf.vec
-    return None
 
 @dataclass 
 class NgsBaseVector:
@@ -72,9 +68,12 @@ class NgsBaseVector:
             self.log.debug("To make a conjugate of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
-        z = self.vec.CreateVector()
-        z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
-        return NgsBaseVector(z,)
+        if self.is_complex_dtype:
+            z = self.vec.CreateVector()
+            z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
+            return NgsBaseVector(z,)
+        else:
+            return self.copy()
     
     @property
     def real(self, convert2real_vec = True):
@@ -102,13 +101,16 @@ class NgsBaseVector:
         if self.is_complex_dtype:
             if convert2real_vec:
                 z = ngs.la.BaseVector(size = self.size)
+                z.FV().NumPy()[:] = 0
                 z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
                 return NgsBaseVector(z)
             else:
                 z = self.vec.CreateVector()
                 z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
-                return NgsBaseVector(z) 
-        return NgsBaseVector(self.vec.CreateVector())
+                return NgsBaseVector(z)
+        z = self.vec.CreateVector()
+        z.FV().NumPy()[:] = 0
+        return NgsBaseVector(z)
     
     def to_imag(self):
         if self.is_complex:
@@ -366,16 +368,23 @@ class NgsVectorSpace(VectorSpaceBase):
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
         return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
     
-    def poisson(self,x, n = 1):
-        if self.is_complex:
+    def poisson(self,x, n = 1, tol = 3e-15):
+        if x.is_complex:
             raise NotImplemented(Errors.generic_message(f"Poisson sampling for the NgsVectorSpace {self} is not defined since it is complex."))
-        self._gfu_util.Set(self.to_gf(x))
-        if np.any(self._gfu_util.vec.FV().NumPy()<0):
-            raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
-        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(self._draw_sample(distribution="poisson",lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
-        self._gfu_fes.Set(self._gfu_util)
-        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+        if self.is_complex:
+            vs = self.real_space()
+            return vs.poisson(x,n=n,tol=tol)
+        else:
+            self._gfu_util.Set(self.to_gf(x))
+            np_util = self._gfu_util.vec.FV().NumPy()
+            m = np.logical_and(-tol<np_util,np_util<0)
+            np_util[m] = 0
+            if np.any(np_util<0):
+                raise ValueError(Errors.value_error(f"Not all values in {np_util} are positive. Cannot compute poisson vector!"))
+            np_util[:] =  np.sum(self._draw_sample(distribution="poisson",lam = np_util, size = (n,self._fes_util.ndof)),axis = 0)/n
+            self._gfu_fes.Set(self._gfu_util)
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
 
     def __contains__(self,x):
         if not isinstance(x,NgsBaseVector):
@@ -388,7 +397,7 @@ class NgsVectorSpace(VectorSpaceBase):
             return True
         
     def vdot(self, x, y):
-        return ngs.InnerProduct(x.vec,y.vec)
+        return ngs.InnerProduct(y.vec,x.vec)
 
     def complex_space(self):
         if self.is_complex:
@@ -543,7 +552,7 @@ class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
 
     def vdot(self, x, y):
         self.mass_vec.data = self.mass * x.vec
-        return ngs.InnerProduct(self.mass_vec, y.vec)
+        return ngs.InnerProduct(y.vec,self.mass_vec)
     
     @property
     def bonus_intorder(self):

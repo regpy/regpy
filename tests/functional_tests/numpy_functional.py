@@ -66,8 +66,9 @@ class TestDataFunc():
         assert data_func(x) == pytest.approx(func(x))
 
 
-@pytest.mark.parametrize("dom, x, val", [(NumPyVectorSpace((2,10)), np.linspace(-5,4.5,20).reshape(2,10), 50.0), 
-                                        (MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64)), np.ones((2,3), dtype=np.float64), 21.0)])
+@pytest.mark.parametrize("dom, x, val", [
+    (NumPyVectorSpace((2,10)), np.linspace(-5,4.5,20).reshape(2,10), 50.0), 
+    (MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64)), np.ones((2,3), dtype=np.float64), 21.0)])
 class TestL1():
     def test_evaluate(self,dom, x, val):
         func = L1(dom)
@@ -201,7 +202,10 @@ class TestVectorIntegralFunctional():
         ft.test_functional(LppL2(self.vgrid,p=p))
     
     def test_L1L2(self):
-        ft.test_functional(L1L2(self.vgrid))
+        VS = L1L2(self.vgrid, conj_tol=1e-15)
+        u_s = [ft.sample_vector_in_domain(VS) for _ in range(5)]
+        u_stars = [ft.sample_vector_in_domain(VS.conj, dist = 1e-6) for _ in range(5)]
+        ft.test_functional(VS,u_s = u_s, u_stars= u_stars,test_second_deriv=False)
 
     @pytest.mark.parametrize("sigma",[1e-2,1e-1,1.,10.])
     def HuberL2(self,sigma):
