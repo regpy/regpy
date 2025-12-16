@@ -132,7 +132,7 @@ def sample_vector_in_domain(func, dist = 1e-10):
     u /= np.max(norm(x = u, axis = v_axes))
     if dom_u < np.inf and dom_l > 0:
         return u * (dom_u - dom_l) + dom_l
-    if dom_u < np.inf:
+    elif dom_u < np.inf:
         return u * dom_u
     else:
         return u        
