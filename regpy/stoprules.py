@@ -602,9 +602,9 @@ class DualityGapStopping(StopRule):
         self.solver.compute_dual() # sets self.primal and self.dual to new Values
         gap = self.solver.setting.duality_gap(primal = self.solver.primal, dual = self.solver.dual)
         self.history_dict["duality gap"].append(gap)
-        stop = (gap<=self.tol) or (gap == np.inf)
-        if gap==np.inf:
-            self.log_info = 'duality gap: inf'
+        stop = (gap<=self.tol) or (gap == np.nan)
+        if gap==np.nan:
+            self.log_info = 'duality gap is NaN'
         else:
             self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap,self.tol)
         if self.is_main_rule:

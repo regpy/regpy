@@ -756,7 +756,7 @@ class Setting:
         if not method_name in self._methods.keys():
             raise ValueError(f"{method_name} is unknown method key.")
         if 'stoprule' not in self._methods[method_name]:
-            raise RuntimeError(f'Method {method_name} has not StopRule.')
+            raise RuntimeError(f'Method {method_name} has no StopRule.')
         else:
             return self._methods[method_name]['stoprule']   
 
