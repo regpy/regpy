@@ -43,8 +43,8 @@ class BasisTransform(Operator):
             raise ValueError(Errors.value_error(f"The number of bases vectors need to match the domain vector dimension and codomain vector dimension. "+"\n\t" +f"len(bases) = { len(bases)}"+"\n\t"+f"eval_domain.ndim = {eval_domain.ndim} "+"\n\t"+f"coef_domain.ndim = {coef_domain.ndim}."))
         if len(bases) > 26:
             raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
-        if coef_domain.dtype != dtype or eval_domain.dtype != dtype:
-            raise ValueError(Errors.value_error("The dtypes of the different domains have to be identical with the given dtype."))
+        if not np.issubdtype(dtype,coef_domain.dtype) or not np.issubdtype(dtype,eval_domain.dtype):
+            raise ValueError(Errors.value_error(f"The dtypes of the different domains have to be identical with the given dtype. coef.dtype = {coef_domain.dtype}, eval.dtype = {eval_domain.dtype}, and dtype = {dtype}"))
         if any(basis.shape[0] != int(eval.size) for (basis,eval) in zip(bases,eval_domain)):
             raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[0] for basis in bases)}"+"\n\t"+f"eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
         if any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
@@ -72,7 +72,7 @@ class BasisTransform(Operator):
     def _adjoint(self, G):
         ## separate 1-D and 2-D because of performance
         if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
-            return self.bases[0].H @ G
+            return self.bases[0].T.conj() @ G
         elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
             return np.linalg.multi_dot([self.bases[0].conj().T, G, self.bases[1].conj()])
         else:
@@ -81,7 +81,7 @@ class BasisTransform(Operator):
             return np.einsum(self.sumrule,G,*self.bases,optimize=self.einsum_path)
 
 
-def chebyshev_basis(coef_nr,eval_domain,dtype=float):
+def chebyshev_basis(coef_nr,eval_domain):
     r"""Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -117,9 +117,9 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
             pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return BasisTransform(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases)
 
-def legendre_basis(coef_nr,eval_domain,dtype=float):
+def legendre_basis(coef_nr,eval_domain):
     r"""Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -156,7 +156,7 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
             pol = np.polynomial.legendre.Legendre(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return BasisTransform(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases)
 
 def bspline_basis(k,t,dim=1,add_points=10):
     r"""Implements a B-Spline basis in an arbitrary Dimension (given by dim)
