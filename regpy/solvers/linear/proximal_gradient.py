@@ -79,7 +79,10 @@ class ForwardBackwardSplitting(RegSolver):
                 out['rate'] = -1
         return out, par
 
-    def compute_dual(self): # for stopping rules and monitoring
+    def primal(self): # for stopping rules and monitoring
+        return (self.x,self.y)
+
+    def dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
             if not hasattr(self,"p"): # first iteration
                 self.p = self.op.adjoint.domain.zeros()
@@ -89,9 +92,9 @@ class ForwardBackwardSplitting(RegSolver):
                 self.Tp = self.op.adjoint.codomain.zeros()
             else:
                 self.Tp *= (-1./self.regpar)
-            self.dual=(self.p,self.Tp)
             self._dual_variables_computed = True
-            self.primal = (self.x,self.y)
+        return (self.p,self.Tp)
+
 
     def _next(self):
         self._dual_variables_computed = False
@@ -162,9 +165,7 @@ class FISTA(RegSolver):
         self.t_old = 0
 
         self.x_old = self.x
-            
 
-            
         self._dual_variables_computed = False
         
     @staticmethod
@@ -193,7 +194,10 @@ class FISTA(RegSolver):
                 out['rate'] = -2
         return out, par
 
-    def compute_dual(self): # for stopping rules and monitoring
+    def primal(self): # for stopping rules and monitoring
+        return (self.x,self.y)
+    
+    def dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
             if not hasattr(self,"p"): # first iteration
                 self.p = self.op.adjoint.domain.zeros()
@@ -203,9 +207,8 @@ class FISTA(RegSolver):
                 self.Tp = self.op.adjoint.codomain.zeros()
             else:
                 self.Tp *= (-1./self.regpar)
-            self.dual=(self.p,self.Tp)
             self._dual_variables_computed = True
-            self.primal = (self.x,self.y)
+        return (self.p,self.Tp)
 
     def _next(self):
         if self.mu == 0:

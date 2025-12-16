@@ -563,8 +563,11 @@ class OptimalityCondStopping(StopRule):
         return super()._complete_init_with_solver(solver)
 
     def _stop(self):
-        self.solver.compute_dual()
-        dSstar,dR = self.solver.setting.violation_optimality_cond(self.solver.primal, self.solver.dual)
+        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
+        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+        if primal is None or dual is None:
+            raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))
+        dSstar,dR = self.solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
         stop = (dSstar+dR<=self.tol)
@@ -599,8 +602,11 @@ class DualityGapStopping(StopRule):
         return super()._complete_init_with_solver(solver)
 
     def _stop(self):
-        self.solver.compute_dual() # sets self.primal and self.dual to new Values
-        gap = self.solver.setting.duality_gap(primal = self.solver.primal, dual = self.solver.dual)
+        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
+        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+        if primal is None and dual is None:
+            raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
+        gap = self.solver.setting.duality_gap(primal = primal, dual = dual)
         self.history_dict["duality gap"].append(gap)
         stop = (gap<=self.tol) or (gap == np.nan)
         if gap==np.nan:
