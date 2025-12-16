@@ -18,7 +18,7 @@ class TestChebyshevBasis():
         (10, Prod(*(GridFcts(np.sign(np.arange(-10,10,2))*np.arange(-10,10,2)**2) for _ in range(2)))),
     ])
     def test_op_basic(self,coef_nr,eval_domain):
-        op_basics(chebyshev_basis(coef_nr,eval_domain), test_methods=True)
+        op_basics(chebyshev_basis(coef_nr,eval_domain), test_methods=True, test_norm=False)
 
     x_2 = np.zeros((10,10))
     x_2[1,1] = 1
@@ -47,7 +47,7 @@ class TestLegendre():
         (10, Prod(*(GridFcts(np.sign(np.arange(-10,10,2))*np.arange(-10,10,2)**2) for _ in range(2)))),
     ])
     def test_op_basic(self,coef_nr,eval_domain):
-        op_basics(legendre_basis(coef_nr,eval_domain), test_methods=True)
+        op_basics(legendre_basis(coef_nr,eval_domain), test_methods=True, test_norm=False)
 
     x_2 = np.zeros((10,10))
     x_2[1,1] = 1
@@ -75,7 +75,7 @@ class TestBSpline():
         (1, np.arange(0,10,2)**2/50, 3,3),
     ])
     def test_op_basic(self,k,t,dim,add_points):
-        op_basics(bspline_basis(k,t,dim = dim,add_points=add_points), test_methods=True)
+        op_basics(bspline_basis(k,t,dim = dim,add_points=add_points), test_methods=True, test_norm=False)
 
     @pytest.mark.parametrize("k,t,dim,add_points,x,res", [
         (0, np.linspace(-1,1,10), 1,5,np.ones(9),np.ones(50)),

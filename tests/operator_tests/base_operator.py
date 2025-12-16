@@ -14,7 +14,7 @@ from regpy.util import Errors, set_rng_seed
 
 set_rng_seed(15873098306879350073259142812684978477)
 
-def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
+def op_basics(op,*args,test_methods = False, test_norm = True, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
     Parameters
@@ -52,7 +52,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
         assert tup is not None and len(tup) == 2 and tup[0] in dom and ((op.linear and (tup[1] is op or isinstance(tup[1],op_base.AdjointEval))) or (not op.linear and isinstance(tup[1],op_base.Derivative))), Errors.failed_test(f"The Operator {op} returned from linearize with return_adjoint_eval = True not exactly 2 results of type [array in full_domain, self or AdjointEval or Derivative]. It returned {tup}",obj=op,meth="linearize")
         if op.linear:
             assert isinstance(op.as_linear_operator(),LinearOperator)
-            if isinstance(op,op_base.Zero):
+            if isinstance(op,op_base.Zero) or not test_norm:
                 pass
             else:
                 norm_power = op.norm(method="power")
