@@ -1293,7 +1293,8 @@ class KullbackLeibler(IntegralFunctionalBase):
         First argument of Kullback-Leibler divergence.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
-    data: explcitly declared data if it is given, w is w+data if the prameter w is not given, w is just the data.
+    data: explcitly declared data. 
+        If data is given, then w is w+data; if the parameter w is not given, then w is just the data.
     """
 
     def __init__(self, domain, w=None,
@@ -1302,9 +1303,12 @@ class KullbackLeibler(IntegralFunctionalBase):
                  **kwargs):
         if(w is None):
             w=domain.zeros()
-        if not w in domain:
-            raise ValueError(Errors.value_error('w not in domain.'))
-        self._w=w.copy()
+        if not w in domain and not isinstance(w, (int,float,np.floating,np.integer)):
+            raise ValueError(Errors.value_error('w not in domain and not scalar.'))
+        if w in domain:
+            self._w=w.copy()
+        else:
+            self._w= np.broadcast_to(w,domain.shape).copy()
         if(data is not None):
             if(data not in domain):
                 raise ValueError(Errors.value_error('data not in domain.'))
@@ -1350,7 +1354,7 @@ class KullbackLeibler(IntegralFunctionalBase):
     
     @data.setter
     def data(self, new_data):
-        self.log.warning("Setting new data outside of constructor currently does not update the convexity and Lipschitz constants.")
+        self.log.warning("Setting new data outside of constructor currently does not update the convexity and Lipschitz constants and taylor or constraint parameters.")
         if new_data is None:
             self.is_data_func = False
             del self.w
@@ -1550,12 +1554,11 @@ class RelativeEntropy(IntegralFunctionalBase):
         # memory efficient implementation of 
         # res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/wm[ind_upos])
         np.divide(u,wm, out= res)
-        with np.errstate(invalid='ignore', divide='ignore'):    
-            np.log(res,out=res)
+        np.log(res,out=res,where=res>0)
         res *= u
         # end
         res[u<0] = np.inf
-        res[u==0] = 0.
+        # res[u==0] = 0. # this is already the case due to initialization with zeros
         return res    
    
     def _f_deriv(self, u,**kwargs):
@@ -1574,9 +1577,9 @@ class RelativeEntropy(IntegralFunctionalBase):
     def _f_prox(self, v, tau, **kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
         
-        thres = np.log(np.finfo(v.dtype).max)
+        thres = np.log(np.finfo(v.dtype).max)-np.maximum(0.,np.log(1./tau))-np.maximum(0.,np.log(np.max(wm)))-1.
         v_mod = (v<=thres*tau) 
-        # For v>=thres*tau an overflow occurs in the exponential (for standard doubles thres ~ 710). 
+        # For v>=thres*tau an overflow occurs in the exponential (for standard doubles thres ~ 710) or in the subsequent multiplication and division.
         # For such values we use an approximation via linearization (= one Newon step) instead of the exact formula in terms of the Lambert-w function. 
         
         # memory efficient implementation of 
