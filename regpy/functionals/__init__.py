@@ -8,9 +8,6 @@ from .numpy import *
 
 __all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm", "VFunc"]
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
 
 L1 = AbstractFunctional('L1')
 Lpp = AbstractFunctional('Lpp')

@@ -25,10 +25,6 @@ affects iteration over a basis as well as functions returning the dimension or f
 
 import logging
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
-
 from .base import *
 from .numpy import *
 from .curve import *

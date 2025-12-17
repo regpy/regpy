@@ -21,18 +21,14 @@ functionality for linear combination, composition, projections and more. The oth
 
 All classes and modules that are provided by each submodules can be imported by simply typing:
 
-```
+.. code-block::python
+
     from regpy.operators import *
-```
 
 Note that the operators of the `ngsolve` submodule are only imported given the fact that you have installed ngsolve.
 """
 
 import logging
-
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
 
 from .base import *
 from .numpy import * 

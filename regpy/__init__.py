@@ -37,13 +37,6 @@ We provide different installation methods, such installation using `pip`, listed
 - `matplotlib` (for some of the examples)
 - [`sphinx`](https://www.sphinx-doc.org/en/master/) (for generating the documentation) further requirements in `doc/sphinx/requirements.txt`
 """
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
-
 from regpy import util, stoprules, vecsps, operators, functionals, hilbert, solvers
 
 __all__ = ["util","stoprules","vecsps","operators","functionals","hilbert","solvers"]

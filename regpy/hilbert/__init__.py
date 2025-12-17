@@ -11,10 +11,6 @@ from regpy.operators import Operator
 from .base import *
 from .numpy import *
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
-
 __all__ = ["L2", "Sobolev","Hm","Hm0","L2Boundary","SobolevBoundary"]
 
 def as_hilbert_space(h, vecsp):
