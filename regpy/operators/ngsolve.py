@@ -3,6 +3,7 @@ r"""PDE forward operators using NGSolve
 import types 
 
 import ngsolve as ngs
+from pyngcore.pyngcore import BitArray
 import numpy as np
 
 from regpy.vecsps.ngsolve import NgsVectorSpace,NgsBaseVector
@@ -232,8 +233,8 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
 
         self.bf_mat = ngs.BilinearForm(self.codomain.fes)
         self.bf_mat += self._bf(self.gf_a,self.u,self.v) 
-        if self._bf_0() is not None:
-            self.bf_mat += self._bf_0()
+        if self._bf_0(self.u,self.v) is not None:
+            self.bf_mat += self._bf_0(self.u,self.v)
         
         self.first = True
         self.adj_first = True
@@ -301,9 +302,16 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         """
         raise NotImplementedError
     
-    def _bf_0(self) -> ngs.comp.BilinearForm | types.NoneType:
+    def _bf_0(self, u : ngs.fem.CoefficientFunction, v : ngs.fem.CoefficientFunction) -> ngs.comp.BilinearForm | types.NoneType:
         r"""Implementation of :math:`b_0` as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
         overwritten with subclasses.  
+
+        Parameters
+        ----------
+        u : ngsolve.comp.ProxyFunction
+            Trial functions for PDE
+        v : ngsolve.comp.ProxyFunction
+            Test functions for PDE
 
         Returns
         -------
@@ -676,38 +684,51 @@ class ProjectToBoundary(NgsOperator):
 
     def __init__(self, 
             domain: NgsVectorSpace, 
-            codomain: NgsVectorSpace | types.NoneType = None) -> None:
+            codomain: NgsVectorSpace | types.NoneType = None,
+            bdr : types.NoneType | ngs.comp.Region | str | BitArray = None) -> None:
         codomain = codomain or domain
         self.same_domain = codomain == domain
         super().__init__(domain, codomain)
         self.linear=True
-        self.bdr = codomain.bdr
-        
+        if bdr is None:
+            if codomain.bdr is None:
+                raise ValueError(Errors.value_error(f"Either bdr is given or codomain has a specified boundary by regular expression!"))
+            self.bdr = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(codomain.bdr))
+        elif isinstance(bdr,ngs.comp.Region):
+            self.bdr = self.codomain.fes.GetDofs(bdr)
+        elif isinstance(bdr,str):
+            self.bdr = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(bdr))
+        elif isinstance(bdr, BitArray):
+            self.bdr = bdr
+        else:
+            raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression or a BitArray. You gave bdr = {bdr}."))
+        self.projector = ngs.Projector(self.bdr, range=True)
+        self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
+        self.gfu_domain = ngs.GridFunction(self.domain.fes)
+
     def _eval(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
             _x_eval = x.copy()
-            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(_x_eval.vec)
+            self.projector.Project(_x_eval.vec)
             return _x_eval
         else:
-            gfu_codomain=ngs.GridFunction(self.codomain.fes)
-            gfu_domain=ngs.GridFunction(self.domain.fes)
-            gfu_domain.vec.data = x.vec
-            gfu_codomain.Set(gfu_domain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-        return NgsBaseVector(gfu_codomain.vec)
+            self.gfu_domain.vec.data = x.vec
+            self.gfu_codomain.Set(self.gfu_domain)
+            self.projector.Project(self.gfu_codomain.vec)
+            return NgsBaseVector(self.gfu_codomain.vec, make_copy=True)
 
     def _adjoint(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
             _x_eval = x.copy()
-            ngs.Projector(~self.domain.fes.FreeDofs(), range=True).Project(_x_eval.vec)
+            self.projector.Project(_x_eval.vec)
             return _x_eval
         else:
-            gfu_codomain=ngs.GridFunction(self.codomain.fes)
-            gfu_domain=ngs.GridFunction(self.domain.fes)
-            gfu_codomain.vec.data = x.vec
-            gfu_domain.Set(gfu_codomain, definedon=self.codomain.fes.mesh.Boundaries(self.bdr))
-            return NgsBaseVector(gfu_codomain.vec)
+            self.gfu_codomain.vec.data = x.vec
+            self.gfu_domain.Set(self.gfu_codomain)
+            self.projector.Project(self.gfu_codomain.vec)
+            return NgsBaseVector(self.gfu_codomain.vec, make_copy=True)
    
 
 class EIT(NgsOperator):
