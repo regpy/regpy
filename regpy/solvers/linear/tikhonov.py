@@ -79,13 +79,7 @@ class TikhonovCG(RegSolver):
                 raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
         if xref is None and setting.penalty_shift is not None:
             xref=setting.penalty_shift
-
-        
-        # if isinstance(self.data_fid,SquaredNorm):#TODO fix/reinclude this
-        #     if xref is not None:        
-        #         self.log.warning('Ignoring given parameter xref')        
-        #     xref = (-1./self.penalty.a) * self.penalty.b
-
+            
         if(setting.is_tikhonov):
             if regpar is not None:
                 self.log.warning('Ignoring given value of regularization parameter')
