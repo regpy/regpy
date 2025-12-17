@@ -1,6 +1,5 @@
-from math import isclose
+from math import  sqrt
 from copy import deepcopy
-import traceback
 
 import pytest
 import numpy as np
@@ -159,9 +158,19 @@ class TestPtwMultiplication():
         op = op_base.PtwMultiplication(dom,factor)
         op_evaluation_and_ot(op,x,res)
  
-def test_Composition():
-    vs = NumPyVectorSpace((4,3))
-    op_basics_wrapper(op_base.Composition, vs.identity, vs.identity*4, test_methods=True)
+class TestComposition():
+    def test_basics(self):
+        vs = NumPyVectorSpace((4,3))
+        op_basics_wrapper(op_base.Composition, vs.identity, vs.identity*4, test_methods=True)
+
+    def test_evaluation(self):
+        vs_c = NumPyVectorSpace((2,2),dtype=complex)
+        vs_r = vs_c.real_space()
+        factor = np.array([[2,2],[1,2]])
+        x = np.array([[-1+1j,2],[1-1j,3+4j]])
+        res = np.array([[4,8],[2    ,50]])
+        op = op_base.PtwMultiplication(vs_r,factor=factor) * op_base.SquaredModulus(vs_c)
+        op_evaluation_and_ot(op,x=x,res=res)
 
 def test_LinearCombination():
     vs = NumPyVectorSpace((4,3))
