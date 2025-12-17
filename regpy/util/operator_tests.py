@@ -1,6 +1,5 @@
 from random import uniform
 
-
 def test_linearity(op, tolerance=1e-10):
     r"""Numerically tests if operator is linear.
 

@@ -1,7 +1,7 @@
 r"""Finite element vector spaces using NGSolve
 
 This module implements a `regpy.vecsps.VectorSpaceBase` instance for NGSolve spaces. This gives the basic
-interface to use FES spaces defined in `ngsolve` to be used as `VectorSpaceBases`in `regpy`.  
+interface to use FES spaces defined in `ngsolve` to be used as `regpy.vecsps.VectorSpaceBase`/s in `regpy`.  
 Operators are using such spaces are implemented in the `regpy.operators.ngsolve` module. Hilbert spaces 
 and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` and `regpy.functionals.ngsolve`
 respectively. 
@@ -400,11 +400,25 @@ class NgsVectorSpace(VectorSpaceBase):
         return ngs.InnerProduct(y.vec,x.vec)
 
     def complex_space(self):
+        """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
+
+        Returns
+        -------
+        regpy.vecsps.NgsVectorSpace
+            The complex space corresponding to this vector space.
+        """
         if self.is_complex:
             return copy(self)
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
     def real_space(self):
+        """Compute the corresponding real vector space by creating a real fes from the input of the old one.
+
+        Returns
+        -------
+        regpy.vecsps.NgsVectorSpace
+            The real space corresponding to this vector space.
+        """
         if not self.is_complex:
             return copy(self)
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,dirichlet=self.bdr,complex=False),bdr=self.bdr)

@@ -1,9 +1,9 @@
 import ngsolve as ngs
 import numpy as np
 
-from regpy.vecsps import NgsVectorSpace, NgsVectorSpaceWithInnerProduct
+from regpy.vecsps.ngsolve import NgsVectorSpace, NgsVectorSpaceWithInnerProduct
 from regpy.hilbert import HilbertSpace
-from regpy.operators import NgsMatrixMultiplication
+from regpy.operators.ngsolve import NgsMatrixMultiplication
 from regpy.util import memoized_property, Errors
 
 class L2FESpace(HilbertSpace):

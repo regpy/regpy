@@ -125,7 +125,7 @@ class ConvolutionOperator(Composition):
     The implementation is based on the Fourier convolution formula 
 
     .. math::
-        Kf = F^*(F(k)* F(f))
+        Kf = F^\ast(F(k)^\ast F(f))
 
     with the Fourier transform f. 
     If grid is a real vector space, the convolution kernel k must be real-valued --  
@@ -167,26 +167,30 @@ class ConvolutionOperator(Composition):
         If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimensional. 
         
                     
-    Methods: 
-    functional_calculus: 
-        Input: A scalar function :math:`phi`.
-        Output: The functional calculus of the convolution operator at :math:`phi`, :math:`f\mapsto F^*(F(\vaphi(k))F(f))`
-    composition:
-        Input: Another convolution operator L with kernel l
-        Output: The composition K L, a convolution operator with Fourier multiplier :math:`F(k)*F(l)`
-        Note: If zero-padding or Fourier truncation are used, this is not the composition K*L (implemented in Composition), 
-        but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
-    conv_inverse:
-        Output: Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)`
-        Note:  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
-        but an approximation of the inverse of the underlying convolution operators in R^d. 
-    conv_adjoint:
-        Output: Adjoint operator as a convolution operator with Fourier multiplier given by the pointwise Hermitian matrices
+    Notes
+    ----- 
+    **functional_calculus:** 
+    *Input:* A scalar function :math:`phi`.
+    *Output:* The functional calculus of the convolution operator at :math:`phi`, :math:`f\mapsto F^*(F(\vaphi(k))F(f))`
+    
+    **composition:**
+    *Input:* Another convolution operator L with kernel l
+    *Output:* The composition K L, a convolution operator with Fourier multiplier :math:`F(k)*F(l)`
+    *Note:* If zero-padding or Fourier truncation are used, this is not the composition K*L (implemented in Composition), 
+    but it is a valid and faster approximation of the composition of the underlying convolution operators in R^d.
+    
+    **conv_inverse:**
+    *Output:* Inverse operator, the convolution operator with Fourier multiplier :math:`F(1/k)`
+    *Note:*  If zero-padding or Fourier truncation are used, this is not the exact inverse, 
+    but an approximation of the inverse of the underlying convolution operators in R^d. 
+    
+    **conv_adjoint:**
+    Output: Adjoint operator as a convolution operator with Fourier multiplier given by the pointwise Hermitian matrices
         
-    Linear combinations: 
-    ::math::
-
-        \alpha * K + \beta * L
+    **Linear combinations:**
+    
+    .. math::
+         \alpha * K + \beta * L
 
     with scalars :math:`\alpha,\beta` yield convolution operators (implemented by only two Fourier transforms)
     """
@@ -321,6 +325,25 @@ class ConvolutionOperator(Composition):
         return self._otf
 
     def functional_calculus(self,f):
+        """Implements functional calculus for the convolution operator.
+
+        Parameters
+        ----------
+        f : callable
+            The function implemented as a callable
+
+        Returns
+        -------
+        regpy.operators.ConvolutionOperator
+            The convolution operator by taking functional calculus of the Fourier multiplier.
+
+        Raises
+        ------
+        TypeError
+            If not f is not a callable
+        NotImplementedError
+            If the kernel_matrix is not empty
+        """
         if not callable(f):
             raise TypeError(Errors.type_error("To use functional calculus of need to be a callable!",self,"functional_calculus"))
         if not self.kernel_matrix_shape is None:
@@ -430,9 +453,18 @@ class Laplacian(ConvolutionOperator):
     The second derivatives are computed with respect to the coordinates of the given grid. 
     If vector-valued spaces, this is the vector-Laplacian.
 
-    Parameters:
-    grid: UniformGridFcts
-    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts
+        The Grid.
+    pad_amount
+        See Convolution Operator.
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator
     """
     def __init__(self,grid, pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
@@ -453,10 +485,19 @@ class Laplacian(ConvolutionOperator):
 def gradient(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
     """Gradient operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.   
-    Parameters:
-    grid: UniformGridFcts
+    
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts
        The codomain shape of grid is ignored. The codomain of the gradient operator is vector-valued with shape (grid.ndim_domain,), and the domain has codomain shape (1,).  
-    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    pad_amount
+        See Convolution Operator. 
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator.
     """
     grad = ConvolutionOperator(grid.vector_valued_space((1,)) if grid.shape_codomain==() else grid,
                                lambda *x : 2j*np.pi* np.stack(list(y[...,np.newaxis] for y in x),axis=-2),
@@ -469,10 +510,19 @@ def gradient(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,co
 def divergence(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
     """Divergence operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.
-    Parameters:
-    grid: UniformGridFcts
+    
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts
          The codomain of grid is ignored. The domain of the divergence operator is vector-valued with shape (grid.ndim_domain,), and the codomain has codomain shape (1,).
-    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    pad_amount
+        See Convolution Operator.
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator.
     """
     grad = gradient(grid.vector_valued_space(1),pad_amount=pad_amount,pad_value=pad_value,
                                 Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
@@ -481,10 +531,19 @@ def divergence(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,
 def curl(grid,pad_amount=None,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
     """Curl operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.
-    Parameters:
-    grid: UniformGridFcts
+    
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts
          grid must be three-dimensional. The codomain of grid is ignored. The domain and the codomain of the curl operator are both vector-valued with shape (3,). 
-    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    pad_amount 
+        See Convolution Operator.
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator.
     """
     if not ((convolution_axes is None and len(grid.shape_domain)==3) or (convolution_axes is not None and len(convolution_axes)==3)):
         raise ValueError(Errors.value_error('grid must be three-dimensional'))
@@ -507,11 +566,20 @@ def _curl_in_FD(Dx,Dy,Dz):
 
 class PeriodicShift(ConvolutionOperator):
     """Periodic shift operator on a given uniform grid, implemented as convolution operator. 
-    Parameters:
-    grid: UniformGridFcts 
+    
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts 
     shift: array or tuple of length grid.ndim_domain
        Amount by which grid functions are shifted (in units of grid)
-    pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    pad_amount
+        See Convolution Operator.
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator.
     """
     def __init__(self,grid, shift,pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
@@ -524,11 +592,20 @@ class PeriodicShift(ConvolutionOperator):
 def GaussianBlur(grid,sigma=1.,pad_amount=None,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
     """Convolution with a Gaussian kernel
-    Parameters: 
-        grid: UniformGridFcts 
-        sigma: scalar, default:1 
-           width of the Gaussian kernel
-        pad_amount, pad_value, Fourier_truncation_amount, and convolution_axes as in ConvolutionOperator
+    
+    Parameters
+    ----------
+    grid: regpy.vecsps.UniformGridFcts 
+    sigma: scalar, default:1 
+        width of the Gaussian kernel
+    pad_amount
+        See Convolution Operator.
+    pad_value
+        See Convolution Operator.
+    Fourier_truncation_amount
+        See Convolution Operator.
+    convolution_axes
+        See Convolution Operator.
     """
     if not np.isscalar(sigma):
         raise TypeError(Errors.type_error("To define a Gaussian blur the width of the gaussian kernel has to be a scalar!"))
@@ -562,7 +639,7 @@ def FresnelPropagator(grid,fresnel_number, pad_amount=None,pad_value=0.,
     r"""Time evolution operator over the unit a interval for the Schrödinger equation
     
     .. math::
-    \frac{\partial u}{\partial t} = \frac{i}{4\pi F} \Delta u
+        \frac{\partial u}{\partial t} = \frac{i}{4\pi F} \Delta u
     
     i.e.  :math:`u(t=0,\cdot)\mapsto u(t=1,\cdot)`.
 

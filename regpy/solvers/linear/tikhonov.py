@@ -55,8 +55,8 @@ class TikhonovCG(RegSolver):
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
-    preconditioner : Preconditioner such that the iteration is done on .. math::
-        \Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2
+    preconditioner : Preconditioner such that the iteration is done on 
+        :math:`\Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2`
         The iterates (self.x) still solve the original equation without preconditioner.
     """
 
@@ -269,7 +269,7 @@ class GeometricSequence:
     Sequence defined recursively by
     
     .. math::
-        \alpha_0 &= \alpha_0 
+        \alpha_0 &= \alpha_0 \\
         \alpha_{n+1} &= q*\alpha_n
     """    
     def __init__(self, alpha0,q):

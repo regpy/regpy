@@ -13,7 +13,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
     space) without any additional structure.
 
-    VectorSpaceBases can be added, producing `DirectSum` instances.
+    `regpy.vecsps.VectorSpaceBase`s can be added, producing `DirectSum` instances.
 
     Parameters
     ----------
@@ -103,7 +103,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -117,7 +117,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -127,6 +127,18 @@ class NumPyVectorSpace(VectorSpaceBase):
         return other
     
     def masked_space(self, mask):
+        """Gives a masked space given a mask.
+
+        Parameters
+        ----------
+        mask : np.ndarray
+            mask for masking the vector space can be anything broadcastable to the shape of the vector space
+        
+        Returns
+        -------
+        regpy.vecsps.NumPyVectorSpace
+            The masked Space depending on the vector space.
+        """
         mask = np.broadcast_to(mask, self.shape)
         if mask.dtype != bool:
             raise TypeError(Errors.type_error(f"The dtype of a mask need to be boolean! was given "+"\n\t"+f"mask = {mask}"))
@@ -585,7 +597,7 @@ class Prod(NumPyVectorSpace):
 
     Parameters
     ----------
-    *factors : tuple of VectorSpaceBase instances
+    *factors : tuple of regpy.vecsps.VectorSpaceBase instances
         The vector spaces to be factored.
     flatten : bool, optional
         Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.

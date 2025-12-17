@@ -18,7 +18,7 @@ class IrgnmSemiSmooth(RegSolver):
     
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         Setting for regularization. 
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`

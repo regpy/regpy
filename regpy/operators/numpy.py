@@ -422,7 +422,7 @@ class PtwMatrixVectorMultiplication(Operator):
 
     Parameters
     ----------
-    domain : MeasureSpaceFcts
+    domain : regpy.vecsps.MeasureSpaceFcts
         The input grid function.
     matrixfct : np.ndarray
         The matrix-valued function to multiply with the vector-valued function.  
@@ -467,7 +467,7 @@ class PtwScalarMultiplication(Operator):
 
     Parameters
     ----------
-    domain : MeasureSpaceFcts
+    domain : regpy.vecsps.MeasureSpaceFcts
         The input grid function.
     scalarfct : np.ndarray
         The scalar valued function to multiply with the vector-valued function.
@@ -510,7 +510,7 @@ class PtwScalarDivision(Operator):
 
     Parameters
     ----------
-    domain : MeasureSpaceFcts
+    domain : regpy.vecsps.MeasureSpaceFcts
         The input grid function.
     scalarfct : np.ndarray
         The scalar valued function to divide by.
@@ -550,12 +550,12 @@ class PtwScalarDivision(Operator):
         return True
 
 class AddSingletonVectorDimension(Operator):
-    """Operater that adds a singleton dimension as codimension in MeasureSpaceFcts. 
+    """Operater that adds a singleton dimension as codimension in `regpy.vecsps.MeasureSpaceFcts`. 
     Wrapper to np.reshape(...,1).
 
     Parameters
     ----------
-    grid: MeasureSpaceFcts    
+    grid: regpy.vecsps.MeasureSpaceFcts    
     """
     def __init__(self, domain):
         if not isinstance(domain, MeasureSpaceFcts):
@@ -580,12 +580,14 @@ class AddSingletonVectorDimension(Operator):
         return True   
 
 class ForwardFDGradient(Operator):
-    """ Forward finite difference gradient on  UniformGridFcts. The codomain are is a vector-valued UniformGridFcts space.
-    Parameters:
-        domain: UniformGridFcts
-            The grid on which the gradient (with respect to the given coordinates) is defined.
-        boundary_condition: Either 'Neum' or 'Diri' or 'per' (default: 'Neum')
-            Boundary condition on the 'left' boundaries. The strings stand for Neumann, Dirichlet, and periodic, respectively
+    """ Forward finite difference gradient on  `regpy.vecsps.UniformGridFcts`. The codomain are is a vector-valued `regpy.vecsps.UniformGridFcts` space.
+    
+    Parameters
+    ----------
+    domain: regpy.vecsps.UniformGridFcts
+        The grid on which the gradient (with respect to the given coordinates) is defined.
+    boundary_condition: Either 'Neum' or 'Diri' or 'per' (default: 'Neum')
+        Boundary condition on the 'left' boundaries. The strings stand for Neumann, Dirichlet, and periodic, respectively
     """
     def __init__(self, domain,boundary_condition = 'Neum'):
         if not isinstance(domain,UniformGridFcts):

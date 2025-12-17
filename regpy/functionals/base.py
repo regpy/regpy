@@ -304,7 +304,7 @@ class Functional:
 
     They can also be multiplied by scalars or vector of their respective `domain`or multiplied by 
     `regpy.operators.Operator`. This leads to a functional that is composed with the operator
-    :math:`F\circ O` where :math:`F` is the functional and \(O)\ some operator. Multiplying by a scalar
+    :math:`F\circ O` where :math:`F` is the functional and :math:`O` some operator. Multiplying by a scalar
     results in a composition with the `PtwMultiplication` operator.
 
     Parameters
@@ -448,7 +448,7 @@ class Functional:
         return y, grad
 
     def subgradient(self, x):
-        r"""Returns a subgradient \(\xi)\ of the functional at `x` characterized by
+        r"""Returns a subgradient :math:`\xi` of the functional at `x` characterized by
 
         .. math::
             F(y) \geq  F(x) + vdot(\xi,y-x) for all y  
@@ -463,7 +463,7 @@ class Functional:
         Returns
         -------
         grad : in self.domain
-            subgradient of \(F)\ at \(x)\.        
+            subgradient of :math:`F` at :math:`x`.        
         """
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to compute subgradient of {self} on the given vector."))
@@ -476,7 +476,7 @@ class Functional:
         return grad
     
     def dist_subdiff(self,vstar,x):
-        r"""Returns the distance of a vector \(v^*)\ to the subdifferential \(\partial F(x))\ at x with respect 
+        r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
         to the dual norm.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
 
@@ -541,7 +541,7 @@ class Functional:
         return grad
 
     def _conj_dist_subdiff(self,v,xstar):
-        r"""Returns the distance of a vector \(v)\ to the subdifferential \(\partial F^*(x^*))\ at \(x^*)\.
+        r"""Returns the distance of a vector :math:`v` to the subdifferential :math:`\partial F^*(x^*)` at :math:`x^*`.
         Needs to be re-implemented for functionals whose conjugate is not Gateaux differentiable.
 
         Parameters
@@ -646,11 +646,11 @@ class Functional:
         return HorizontalShiftDilation(self, data = data)
 
     def shift(self,v=None,data_shift=None):
-        r"""Returns the functional \(x\mapsto F(x-v-data) )\ """
+        r"""Returns the functional :math:`x\mapsto F(x-v-data)` """
         return HorizontalShiftDilation(self,shift=v,data=data_shift)
     
     def dilation(self,a):
-        r"""Returns the functional \(x\mapsto F(ax) )\ """
+        r"""Returns the functional :math:`x\mapsto F(ax)` """
         return HorizontalShiftDilation(self,dilation=a)
 
     def _eval(self, x):
@@ -825,12 +825,12 @@ class LinearFunctional(Functional):
     gradient: domain
         The gradient of the linear functional. :math:`a=gradient` if gradient_in_dual_space == True
     domain: regpy.vecsps.VectorSpaceBase, optional
-        The VectorSpaceBase on which the functional is defined
+        The `regpy.vecsps.VectorSpaceBase` on which the functional is defined
     h_domain: regpy.hilbert.HilbertSpace (default: `L2(domain)`)
         Hilbert space for proximity operator
     gradient_in_dual_space: bool (default: False)
         If false, the argument gradient is considered as an element of the primal space, 
-        and :math:`a = h_domain.gram(gradient).`.
+        and :math:`a = h_domain.gram(gradient)`.
     """
     def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
         if domain is None and isinstance(gradient,np.ndarray):
@@ -952,10 +952,10 @@ class SquaredNorm(Functional):
         constant term
     shift: h_space.domain [default:None]
         If not None, then we must have b is None and c==0. 
-        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2)\.
+        In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     data: h_space.domain [default:None]
         If not None, then we must have b is None and c==0. 
-        In this case the functional is initialized as \(\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2)\.
+        In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     """
 
     def __init__(self, h_space, a=1., b=None,c=0.,shift=None, data = None):
@@ -1469,7 +1469,7 @@ class VerticalShift(Functional):
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional :math:`F`, i.e. replaces 
-    :math:`F(x)` by \(F(dilation(x-shift)))
+    :math:`F(x)` by :math:`F(dilation(x-shift))`
     
     Parameters
     ----------
@@ -1873,7 +1873,7 @@ def as_functional(func, vecsp):
     ----------
     func : Functional or HilbertSapce or regpy.operators.Operator or callable
         Functional or object from which to construct the Functional.
-    vecsp : VectorSpaceBase
+    vecsp : regpy.vecsps.VectorSpaceBase
         Underlying vector space for the functional. 
 
     Returns

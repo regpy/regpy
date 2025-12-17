@@ -200,11 +200,15 @@ class Edge:
     def pass_backward(self,y):
         """Passes and transforms data backwards through the edge.
 
-        Parameters:
-            y (_type_): element of the part of the domain of the operator of the output node.
+        Parameters
+        ----------
+        y : array-like 
+            element of the part of the domain of the operator of the output node.
 
-        Returns:
-            list: list where each entry corresponds to that part of the codomain of the operator of the input node.
+        Returns
+        -------
+        list
+            List where each entry corresponds to that part of the codomain of the operator of the input node.
         """ 
         if(self.end_node.N_in>1):
             y=self.end_node.op.domain.split(y)[self.end_index]
@@ -328,18 +332,26 @@ class OperatorGraph(Operator):
         """Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.
         Additionally sorts edge data into incoming, middle and outgoing.
 
-        Parameters:
-            edge_data (list): list of edge data in format specified in constructor
+        Parameters
+        ----------
+        edge_data : list 
+            List of edge data in format specified in constructor
 
-        Raises:
-            ValueError: if multiple different edges are assigned to same input of operator
+        Raises
+        ------
+        ValueError
+            if multiple different edges are assigned to same input of operator
 
-        Returns:
-            ed_in (list):  list of data for incoming edges
+        Returns
+        -------
+        ed_in (list)
+            list of data for incoming edges
 
-            ed_middle (list): list of data for middle edges
+        ed_middle (list)
+            list of data for middle edges
 
-            ed_out (list): list of data for outgoing edges 
+        ed_out (list)
+            list of data for outgoing edges 
         """        
         ed_dict={}
         ed_in=[]
@@ -363,12 +375,15 @@ class OperatorGraph(Operator):
     def _compute_domain(self,ed_in):
         """Computes domain of the whole operator by extracting and combining the domains from the input edge data
 
-        Parameter:
-            ed_in (list of tuple): List of input edge data
+        Parameters
+        ----------
+        ed_in : list of tuple 
+            List of input edge data
 
-
-        Returns:
-            vecsps.VectorSpace: domain of the operator
+        Returns
+        -------
+        vecsps.VectorSpace
+            domain of the operator
         """        
         space_dict={}
         for ed in ed_in:
@@ -384,11 +399,15 @@ class OperatorGraph(Operator):
     def _calc_exec_order(self):
         """Computes execution order using a topological sort.
 
-        Raises:
-            ValueError: If the graph has cycles or start and end are not connected.
+        Raises
+        ------
+        ValueError
+            If the graph has cycles or start and end are not connected.
 
-        Returns:
-            list: List of ordered operators
+        Returns
+        -------
+        list
+            List of ordered operators
         """        
         in_sets={op:self.node_dict[op].get_in_nodes() for op in self.node_dict.keys()}
         out_sets={op:self.node_dict[op].get_out_nodes() for op in self.node_dict.keys()}

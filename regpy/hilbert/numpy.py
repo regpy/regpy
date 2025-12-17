@@ -14,7 +14,7 @@ class L2MeasureSpaceFcts(HilbertSpace):
     
     Parameters
     ----------
-    vecsp : MeasureSpaceFcts
+    vecsp : regpy.vecsps.MeasureSpaceFcts
         Underlying discretization
     weights : array-like
         Weight in the norm.
@@ -61,7 +61,7 @@ class SobolevUniformGridFcts(HilbertSpace):
 
     Parameters
     ----------
-    vecsp : UniformGridFcts
+    vecsp : regpy.vecsps.UniformGridFcts
         Grid on which to define the Sobolev space.
     index : float, optional
         Sobolev index, Defaults: 1
@@ -98,7 +98,7 @@ class SobolevUniformGridFcts(HilbertSpace):
         return ft.adjoint * mul * ft
 
 class HmDomain(HilbertSpace):
-    r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `UniformGridFcts` grid.
+    r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `regpy.vecsps.UniformGridFcts` grid.
     :math:`D` is characterized by a binary or integer-valued mask: `D={mask==1}`.
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
@@ -114,7 +114,7 @@ class HmDomain(HilbertSpace):
 
     Parameters
     ----------
-    vecsp : UniformGridFcts
+    vecsp : regpy.vecsps.UniformGridFcts
         Underlying grid functions.
     mask : array-type
         Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 

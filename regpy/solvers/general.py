@@ -449,7 +449,7 @@ class Setting:
         r"""Yields the setting of the dual optimization problem
 
         .. math::
-           \mathcal{R}^*(\T^*p) + \frac{1}{\alpha}\mathcal{S}^*(- \alpha p) = \min!
+           \mathcal{R}^\ast(T^\ast p) + \frac{1}{\alpha}\mathcal{S}^\ast(- \alpha p) = \min!
 
         """
         if(not self.is_tikhonov):
@@ -579,14 +579,14 @@ class Setting:
         r"""Computes the value of the duality gap 
         
         .. math::
-            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^*(-\alpha p) - \mathcal{R}^*(T^*p)
+            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
 
         Parameters
         ----------
         primal: tuple of setting.op.domain and setting.op.codomain [default: None]
-            tuple of primal variable f and Tf. If Tf is None, it will be computed.
+            tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
         dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
-            tuple of dual variable p and T*p. If T*p is None, it will be computed.        
+            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
@@ -611,12 +611,13 @@ class Setting:
         return res
     
     def violation_optimality_cond(self,primal=None,dual=None):
-        r"""Returns the degree to which a pair \((f,p))\ of a primal point \(f\) and a dual point \(p)\ 
+        r"""Returns the degree to which a pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
         violates the optimality conditions for being a saddle point of 
-        \(-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) )\
+        :math:`-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) `
         These optimality conditions are:
+
         .. math::
-        Tf \in \partial \mathcal{S}^*(-\alpha p), \qquad T^*p \in \partial \mathcal{R}(f).
+            Tf \in \partial \mathcal{S}^\ast(-\alpha p), \qquad T^\ast p \in \partial \mathcal{R}(f).
 
         This violation is measured by the distances of the left-hand sides to the respective 
         subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
@@ -624,9 +625,9 @@ class Setting:
         Parameters
         ---------------------------
         primal: tuple of setting.op.domain and setting.op.codomain [default: None]
-            tuple of primal variable f and Tf. If Tf is None, it will be computed.
+            tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
         dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
-            tuple of dual variable p and T*p. If T*p is None, it will be computed. 
+            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed. 
         If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
 
         Returns
@@ -672,7 +673,8 @@ class Setting:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
-        Parameters:
+        Parameters
+        ----------
         method_names: List of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
@@ -738,7 +740,9 @@ class Setting:
 
     def set_stopping_rule(self,method_name,rule):
         """Sets a StopRule for an optimization method.
-        Parameters:
+        
+        Parameters
+        ----------
         method_name: string 
             key of the method
         rule: StopRule
@@ -753,10 +757,14 @@ class Setting:
     def get_stopping_rule(self,method_name):
         """Retrieves a stopping rule that has run an optimization method 
         (e.g. to view statistics or (intermediate) solutions)
-        Parameters:
+        
+        Parameters
+        ----------
         method_name: string
             Key of the method
-        Returns:
+        
+        Returns
+        -------
         StopRule
         """
         if not method_name in self._methods.keys():
@@ -769,14 +777,16 @@ class Setting:
     def run(self,method_name = None,**kwargs):
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
-        Parameters:
+        Parameters
+        ----------
         method_name: string or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
         **kwargs: dict
             Arguments to be passed to the method.
 
-        Returns:
+        Returns
+        -------
             x,y: x is the minimizer of the appproximate solution and y its value under the operator.         
         """
         if method_name is None:

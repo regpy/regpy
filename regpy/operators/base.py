@@ -333,7 +333,7 @@ class Operator:
     def adjoint_eval(self):
         r"""This is only available for linear operators, it is the composition of adjoint and 
         eval as a `regpy.operators.AdjointEval` instance. Will only be computed on
-         demand and saved for subsequent invocations.
+        demand and saved for subsequent invocations.
 
         Returns
         -------
@@ -2702,7 +2702,8 @@ class SplitRealImag(VectorOfOperators):
     """Splits a complex vector into its real and imaginary part. 
     Implemented as VectorOfOperators of RealPart and ImaginaryPart.
 
-    Parameters:
+    Parameters
+    ----------
     domain: regpy.vecsps.VectorSpaceBase
     """
     def __init__(self, domain):

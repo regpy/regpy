@@ -11,7 +11,7 @@ class CGNE(RegSolver):
 
     Parameters
     ----------
-    setting: Setting
+    setting: regpy.solvers.Setting
        Regularization setting involving Hilbert space norms
     data: array-like default: None
         Right hand side g. If it is None the data is taken from the setting.

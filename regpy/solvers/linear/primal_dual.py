@@ -4,21 +4,21 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, Setting
+from ..general import RegSolver
 
 __all__ = ["PDHG","DouglasRachford"]
 
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
-    For \(\theta=0)\ this is the Arrow-Hurwicz-Uzawa algorithm.
+    For :math:`\theta=0` this is the Arrow-Hurwicz-Uzawa algorithm.
 
-    Solves the minimization problem: \(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f))\
+    Solves the minimization problem: :math:`\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f)`
     by solving the saddle-point problem: 
     
     .. math::
         \inf_f \sup_p [ - \langle Tf,p\rangle + \mathcal{R}(f)- \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) ].
 
-    Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
+    Here :math:`\mathcal{S}_{g^{\delta}}^\ast` denotes the Fenchel conjugate functional.
 
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
     the original paper and most of the literature.
@@ -168,10 +168,6 @@ class PDHG(RegSolver):
             self.tau *= self.theta
             self.sigma /= self.theta
         self.Tpstar = self.op.adjoint(self.pstar)
-
-
- 
-
 
 
 class DouglasRachford(RegSolver):

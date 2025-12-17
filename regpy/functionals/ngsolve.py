@@ -5,7 +5,7 @@ from math import inf, sqrt
 import ngsolve as ngs
 
 from regpy.util import Errors
-from regpy.operators import NgsGradOP
+from regpy.operators.ngsolve import NgsGradOP
 from regpy.vecsps.ngsolve import NgsVectorSpace
 
 from .base import Functional
@@ -110,19 +110,21 @@ class NgsTV(Functional):
         return sqrt(ngs.Integrate(tvnorm, self.domain.fes.mesh))
 
     def _proximal(self, x, tau, stepsize=0.0002, maxiter=1000,tol=0.001):
-        r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
-        Parameters:
-            x: np.array 
-                First argument of prox
-            tau: float >=0
-                Second (scaling) argument of prox
-            stepsize: float [optional, default: 0.0002]
-                The stepsize. Convergence is guaranteed for values <=0.125.
-            maxiter: int [optional: default: 1000]
-                Maximum number of iterations
-            tol: float>=0 [optional, default: 0.01]
-                Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
-                iteratives differ by less than tol in the maximum norm. 
+        r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004)
+
+        Parameters
+        ----------
+        x: np.array 
+            First argument of prox
+        tau: float >=0
+            Second (scaling) argument of prox
+        stepsize: float [optional, default: 0.0002]
+            The stepsize. Convergence is guaranteed for values <=0.125.
+        maxiter: int [optional: default: 1000]
+            Maximum number of iterations
+        tol: float>=0 [optional, default: 0.01]
+            Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
+            iteratives differ by less than tol in the maximum norm. 
         """
         grad_u = self._grad_op.codomain.empty()
         grad_u_last = self._grad_op.codomain.empty()

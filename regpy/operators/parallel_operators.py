@@ -54,8 +54,10 @@ class OperatorAsWorker(mp.Process):
         'eval_nodiff': returns adjoint
         'break': ends process
 
-        Raises:
-            TypeError: Error is raised if unknown command is received
+        Raises
+        ------
+        TypeError
+            Error is raised if unknown command is received
         """
         terminate=False
         while not terminate:

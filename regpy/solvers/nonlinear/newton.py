@@ -16,7 +16,7 @@ class NewtonCG(RegSolver):
     .. math::
         T(x) = y,
 
-    where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
+    where :math:`T` is a Frechet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
 
@@ -26,7 +26,7 @@ class NewtonCG(RegSolver):
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
@@ -113,7 +113,7 @@ class NewtonCGFrozen(RegSolver):
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
@@ -181,12 +181,12 @@ class NewtonCGFrozen(RegSolver):
 
 
 class NewtonSemiSmoothFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
+    r"""The frozen Newton-CG method. Like Newton-CG adds constraints :math:`\psi_+` and :math:`\psi_-` and efficiently
     only updates the parts needed to be updated. 
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The data from which to recover. Initializes the rhs y of the equation to be solved. Must 
@@ -301,7 +301,7 @@ class IterativelyRegularizedNewton(RegSolver):
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     inner_solver : Solver class
         Solver class used for the solution of the linearized problem.

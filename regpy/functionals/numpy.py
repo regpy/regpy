@@ -6,10 +6,10 @@ import numpy as np
 from scipy.linalg import ishermitian
 from scipy.special import lambertw
 
-from regpy.operators import PtwMultiplication, PtwMatrixVectorMultiplication, PtwScalarMultiplication
-from regpy.vecsps.numpy import *
-from regpy.hilbert import L2
 from regpy.util import Errors, memoized_property
+from regpy.vecsps.numpy import *
+import regpy.operators as rop
+from regpy.hilbert import L2
 
 from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed
 
@@ -21,20 +21,20 @@ class IntegralFunctionalBase(Functional):
     This class provides a general framework for integral functionals of the type
     
     .. math::
-        F\colon X \to \mathbb{R}
-        v\mapsto \Int_\Omega f(v(x),x)\mathrm{d}x
+        F\colon X &\to \mathbb{R} \\
+        v&\mapsto \int_\Omega f(v(x),x)\mathrm{d}x
 
     with :math:`f\colon \mathbb{R}^2\to \mathbb{R})`. 
 
     Subclasses defining explicit functionals of this type have to implement
-     * `_f` evaluation the function \(f)\
-     * `_f_deriv` the derivative \(\partial_v f)\
-     * `_f_second_deriv' the second derivative \(\partial f^2/\partial v^2)\ (often not needed!)
-     * `_f_prox` giving the proximal function \(\mathrm{prox}_{\tau f(.,x)})\ for each \(x\in\Omega)\
-     * `_f_conj` evaluation the Fenchel conjugate function \(f^*(v^*,x))\
-     * `_f_conj_deriv` the derivative \(\partial_{v^*}f*)\
-     * `_f_conj_second_deriv' the second derivative \(\partial f*^2/\partial v_*^2)\ (often not needed!)
-     * `_f_conj_prox` giving the proximal  function \(\mathrm{prox}_{\tau f^*(\cdot,x)})\     
+     * `_f` evaluation the function :math:`f`
+     * `_f_deriv` the derivative :math:`\partial_v f`
+     * `_f_second_deriv' the second derivative :math:`\partial f^2/\partial v^2` (often not needed!)
+     * `_f_prox` giving the proximal function :math:`\mathrm{prox}_{\tau f(.,x)}` for each :math:`x\in\Omega`
+     * `_f_conj` evaluation the Fenchel conjugate function :math:`f^*(v^*,x)`
+     * `_f_conj_deriv` the derivative :math:`\partial_{v^*}f*`
+     * `_f_conj_second_deriv' the second derivative :math:`\partial f*^2/\partial v_*^2` (often not needed!)
+     * `_f_conj_prox` giving the proximal  function :math:`\mathrm{prox}_{\tau f^*(\cdot,x)}`     
     
     since 
 
@@ -50,28 +50,28 @@ class IntegralFunctionalBase(Functional):
     Parameters
     ----------
     domain : `regpy.vecsps.MeasureSpaceFcts`
-        Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
-    dom_l,dom_u : float or np.ndarray [default: -np.inf and np.inf, rsp.]
-        lower and upper bound on the essential domain of f (the interval on which f is finite)
-        If dom_l or dom_u are finite, f should be finite at these points (possibly very large if f tends to infinity there) 
-        If the domain depends on the point x and/or arguments in **kwargs, this should be a numpy array.
+        Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
+    dom_l,dom_u : float or np.ndarray, default: -np.inf, np.inf
+        lower and upper bound on the essential domain of :math:`f` (the interval on which :math:`f` is finite)
+        If dom_l or dom_u are finite, :math:`f` should be finite at these points (possibly very large if :math:`f` tends to infinity there) 
+        If the domain depends on the point `x` and/or arguments in `**kwargs`, this should be a numpy array.
     conj_dom_l,conj_dom_u : float or np.ndarray [default: -np.inf and np.inf, rsp.]
-        lower and upper bound on the essential domain of the conjugate of f (the interval on on which f^* is finite)    
+        lower and upper bound on the essential domain of the conjugate of :math:`f` (the interval on on which the conjugate :math:`f^*` is finite)    
         (as vector in primal space)
     constr_u: None or float or np.ndarray [default: None]
-        If not None, an upper constraint is imposed, i.e. f(v,x) is replaced by a function that takes the value np.inf 
-        if v>contr_u(x).
+        If not None, an upper constraint is imposed, i.e. :math:`f(v,x)` is replaced by a function that takes the value `np.inf` 
+        if `v>contr_u(x)`.
     constr_l: None or float or np.ndarray [default: None]
-        As constr_u, but for a lower constraint. 
+        As `constr_u`, but for a lower constraint. 
     lin_taylor_u: None or float or np.ndarray [default: None]
-        If not None, f(v,x) is replaced by its first order Taylor expansion 
-        \( f(r(x),x) + (v-r(x)) \partial_v f(r(x),x) )\ if \(x>r(x):=lin_taylor_u(x) )\
+        If not None, :math:`f(v,x)` is replaced by its first order Taylor expansion 
+        :math: `f(r(x),x) + (v-r(x)) \partial_v f(r(x),x) ` if :math:`x>r(x):=lin_taylor_u(x)`
     lin_taylor_l: None or float or np.ndarray [default: None]
-        Analogous to right linearization, but for small values of v.
+        Analogous to right linearization, but for small values of :math:`v`.
     quad_taylor_u: None or float or np.ndarray [default: None]
         Analogous to lin_taylor_u, but with a quadratic Taylor expansion
     quad_taylor_l: None or float or np.ndarray [default: None]
-        Analogous to quad_taylor_u, but for small values of v
+        Analogous to quad_taylor_u, but for small values of :math:`v`
     methods, conj_methods = set of strings or None [default: None]
         Names of the methods implemented by an IntegralFunctionalBase instance (see Functional!).
         In the default case all methods are indicated as being implemented. 
@@ -506,7 +506,7 @@ class IntegralFunctionalBase(Functional):
         else:
             self._buf =  self._f_second_deriv(v,**self.kwargs)
         self._buf *= self.measure
-        return PtwMultiplication(self.domain,self._buf.copy())
+        return rop.PtwMultiplication(self.domain,self._buf.copy())
 
     def _conj_hessian(self, vstar):
         if not self.conj_everywhere_finite:
@@ -531,7 +531,7 @@ class IntegralFunctionalBase(Functional):
         else:
             self._buf = self._f_conj_second_deriv(self._buf2,**self.kwargs)
         self._buf /= self.measure
-        return PtwMultiplication(self.domain, self._buf.copy())
+        return rop.PtwMultiplication(self.domain, self._buf.copy())
     
     def _proximal(self, v, tau,mask=None):
         if mask is None:
@@ -854,9 +854,9 @@ class IntegralFunctionalBase(Functional):
     
 class VectorIntegralFunctional(Functional):
     r"""
-    Implements a vector-valued integral functional \(v\mapsto \sum_i f_i(\|v(x)\|)dx\) on some domain in `MeasureSpaceFcts`
-    as a functional. Here, \(f_i\) are scalar functions on the real line that are assumed to be even and convex, 
-    and \(\|\cdot\|\) some norm on the vector values. 
+    Implements a vector-valued integral functional :math:`v\mapsto \sum_i f_i(\|v(x)\|)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts`
+    as a functional. Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
+    and :math:`\|\cdot\|` some norm on the vector values. 
 
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
     as tuple and returning the norm values. By default, the Euclidean norm is used.  
@@ -864,24 +864,24 @@ class VectorIntegralFunctional(Functional):
     Parameters
     ----------
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
-        Domain of vector-valued functions on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+        Domain of vector-valued functions on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
     scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
-        Scalar separable functional to be used as (even!) functions \(f_i\).
+        Scalar separable functional to be used as (even!) functions :math:`f_i`.
         Either provides a specific separable Functional  
-        or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with p=2. 
+        or a AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with `p=2`. 
     scalar_func_args : dict, optional
-        Additional arguments for the scalar_func if needed (e.g. 'p' for Lpp).
+        Additional arguments for the scalar_func if needed (e.g. 'p' for `Lpp`).
     vector_norm_p : int or float, optional
-        This is the exponent in the norm of the vectors given by a p norm :math:`(|x_1|^p+\dots+|x_n|^p)^{1/p}}`. 
-        By default, the Euclidean norm is used with p=2.
+        This is the exponent in the norm of the vectors given by a :math:`p` norm :math:`(|x_1|^p+\dots+|x_n|^p)^{1/p}}`. 
+        By default, the Euclidean norm is used with :math:`p=2`.
     Lipschitz, convexity_param: float (default: np.inf and 0., respectively)
-        For the Euclidean norm as inner norm, \(Hess f_i(\|v\| )\) has two eigenvalues: \(f_i''(\|v\|) \)
-        and \(f_i'(\|v\|)/\|v\| \). Using this fact, analytic expression may be computed for 
+        For the Euclidean norm as inner norm, :math:`Hess f_i(\|v\| )` has two eigenvalues: :math:`f_i''(\|v\|) `
+        and :math:`f_i'(\|v\|)/\|v\|`. Using this fact, analytic expression may be computed for 
         Lipschitz = supremum of all possible EV and for convexity_param = infimum of all EV may be 
-        computed for specific \(f_i\) and passed as arguments to accelerate optimization methods.  
+        computed for specific :math:`f_i` and passed as arguments to accelerate optimization methods.  
     """    
 
-    def __init__(self, vdomain, hdomain = None, scalar_func = None, scalar_func_args=None, 
+    def __init__(self, vdomain, scalar_func = None, scalar_func_args=None, 
                  vector_norm_p=2,
                  Lipschitz =np.inf, convexity_param = 0.,
                  methods = None, conj_methods = None
@@ -994,13 +994,13 @@ class VectorIntegralFunctional(Functional):
         # v tends to 0, so we can use this a places where ||v|| vanishes.
         fpp = np.expand_dims(fpp,self._vaxes)
         fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
-        scal_mult = PtwScalarMultiplication(self.domain,fp)
-        proj = PtwMatrixVectorMultiplication(self.vdomain,
+        scal_mult =rop.PtwScalarMultiplication(self.domain,fp)
+        proj = rop.PtwMatrixVectorMultiplication(self.vdomain,
                                              np.expand_dims(self._vbuf,axis=-2).copy()
                                              )
         # actually just a pointwise multiplication, but implemented multiplication with a 1x1 matrix 
         # to avoid conversions to scalar functions
-        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+        ptw_mult = rop.PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
                                                  np.expand_dims(fpp-fp,axis=-2)
                                                 )
 
@@ -1018,11 +1018,11 @@ class VectorIntegralFunctional(Functional):
         # see comments for hessian!
         fpp = np.expand_dims(fpp,self._vaxes)
         fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
-        scal_mult = PtwScalarMultiplication(self.domain,fp)
-        proj = PtwMatrixVectorMultiplication(self.vdomain,
+        scal_mult = rop.PtwScalarMultiplication(self.domain,fp)
+        proj = rop.PtwMatrixVectorMultiplication(self.vdomain,
                                              np.expand_dims(self._vbuf,axis=-2).copy()
                                              )
-        ptw_mult = PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
+        ptw_mult = rop.PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
                                                  np.expand_dims(fpp-fp,axis=-2)
                                                 )
 
@@ -1034,10 +1034,10 @@ class LppL2(VectorIntegralFunctional):
 
     Parameters
     ----------
-    vdomain : MeasureSpaceFcts
+    vdomain : `regpy.vecsps.MeasureSpaceFcts`
         A vector valued measure space.
     p: float (default: 2.)
-        exponent of the L^p-norm. 
+        exponent of the :math:`L^p` norm. 
     """
     def __init__(self, vdomain,p=2.):
         sfunc = LppPower(vdomain.scalar_space(),p=p)
@@ -1052,10 +1052,10 @@ class L1L2(VectorIntegralFunctional):
 
     Parameters
     ----------
-    vdomain : MeasureSpaceFcts
+    vdomain : `regpy.vecsps.MeasureSpaceFcts`
         A vector valued measure space.
     conj_tol : float
-        A tolarance introduced into L1 functional that allows also numbers slighly bigger then 1.0 in the conjugate.
+        A tolarance introduced into `L1` functional that allows also numbers slighly bigger then 1.0 in the conjugate.
     """
     def __init__(self, vdomain, conj_tol = 1e-16):
         sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
@@ -1067,9 +1067,9 @@ class HuberL2(VectorIntegralFunctional):
 
     Parameters
     ----------
-    vdomain : MeasureSpaceFcts
+    vdomain : `regpy.vecsps.MeasureSpaceFcts`
         A vector valued measure space.
-    sigma: float (default: 1.)
+    sigma: float, default: 1.
         Parameter in Huber functional
     """
     def __init__(self, vdomain,sigma=1.):
@@ -1078,13 +1078,13 @@ class HuberL2(VectorIntegralFunctional):
 
 class LppPower(IntegralFunctionalBase):
     r"""
-    Implements the norm power functional \(v\mapsto \frac{1}{p} \|v\|_{L^p}^p$-power on some domain in `MeasureSpaceFcts`
-    as an integral functional. This corresponds to the function \(f(v):=\frac{1}{p}|v|^p)\.
+    Implements the norm power functional :math:`v\mapsto \frac{1}{p} \|v\|_{L^p}^p` power on some domain in `regpy.vecsps.MeasureSpaceFcts`
+    as an integral functional. This corresponds to the function :math:`f(v):=\frac{1}{p}|v|^p`.
 
     Parameters
     ----------
     domain : `regpy.vecsps.MeasureSpaceFcts`
-        Domain on which it is defined. Needs some Measure therefore a MeasureSpaceFcts
+        Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
     p: float >1 [option]
         exponent
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
@@ -1649,8 +1649,8 @@ class Huber(IntegralFunctionalBase):
     r"""Huber functional 
 
     .. math::
-        F(x) = 1/2 |x|^2                if  |x|\leq \sigma
-        F(x) = \sigma |x|-\sigma^2/2    if  |x|>\sigma
+        F(x) = 1/2 |x|^2                &\quadif  |x|\leq \sigma \\
+        F(x) = \sigma |x|-\sigma^2/2    &\quadif  |x|>\sigma
 
 
     Parameters 
@@ -1737,8 +1737,8 @@ class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
 
     .. math::
-        F(x) = 1/2 |x|^2    if |x|\leq \sigma(x)
-        F(x) = \infty    if |x|>\sigma(x)
+        F(x) = 1/2 |x|^2    &\quadif |x|\leq \sigma(x) \\
+        F(x) = \infty    &\quadif |x|>\sigma(x)
 
 
     Parameters
@@ -1824,8 +1824,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
     r"""Functional 
 
     .. math::
-        F(x) = 1/2 |x|^2    if x\geq 0
-        F(x) = \infty       if  x<0
+        F(x) = 1/2 |x|^2    &\quadif x\geq 0 \\
+        F(x) = \infty       &\quadif  x<0
 
     Parameters
     ----------
@@ -1883,8 +1883,8 @@ class QuadraticBilateralConstraints(LinearCombination):
     r""" Returns `Functional` defined by 
 
     .. math::
-        F(x) = \frac{\alpha}{2}\|x-x0\|^2  if lb\leq x\leq ub
-        F(x) = np.inf else
+        F(x) = \frac{\alpha}{2}\|x-x_0\|^2  &\quadif lb\leq x\leq ub \\
+        F(x) = np.inf &\quadelse
 
 
     Parameters
@@ -1946,13 +1946,14 @@ class QuadraticBilateralConstraints(LinearCombination):
 def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
     r""" Returns `Functional` defined by 
 
-    \[F(x) = \frac{a}{2}\|x-x0\|^2  if lb\leq x
-     F(x) = np.inf else
+    .. math::
+        F(x) = \frac{a}{2}\|x-x_0\|^2 &\quad\text{if } lb\leq x \\
+        F(x) =  \inf  &\quad\text{else }
 
 
     Parameters
     ----------
-    domain: `vecsps.MeasureSpaceFcts`
+    domain: regpy.vecsps.MeasureSpaceFcts
         domain on which the functional is defined
     lb: domain or float [default: None]
         lower bound (zero in the default case)
@@ -1986,8 +1987,8 @@ class QuadraticPositiveSemidef(Functional):
     r"""Functional 
 
     .. math::
-        F(x) = 1/2 ||x||_{HS}^2    \text{if } x\geq 0 \text{ and (optional) } tr(x)=c
-        F(x) = \infty       \text{else}
+        F(x) = 1/2 ||x||_{HS}^2    &\quad\text{if } x\geq 0 \text{ and (optional) } tr(x)=c \\
+        F(x) = \infty       &\quad\text{else}
 
     Here x is a quadratic matrix and HS is the Hilbert-Schmidt norm. Conjugate functional
     and prox are only correct for hermitian inputs.
@@ -2166,19 +2167,20 @@ class TVUniformGridFcts(Composed):
 
     def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
         r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
-        Parameters:
-            x: np.array 
-                First argument of prox
-            tau: float >=0
-                Second (scaling) argument of prox
-            stepsize_safety: float [optional, default: 2.]
-                Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
-                best results are optained for stepsize_safety =2.
-            maxiter: int [optional: default: 1000]
-                Maximum number of iterations
-            tol: float>=0 [optional, default: 0.01]
-                Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
-                iteratives differ by less than tol in the maxium norm. 
+        Parameters
+        ----------
+        x: np.array 
+            First argument of prox
+        tau: float >=0
+            Second (scaling) argument of prox
+        stepsize_safety: float [optional, default: 2.]
+            Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
+            best results are optained for stepsize_safety =2.
+        maxiter: int [optional: default: 1000]
+            Maximum number of iterations
+        tol: float>=0 [optional, default: 0.01]
+            Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
+            iteratives differ by less than tol in the maxium norm. 
         """
         if self.beta!=0.:
             raise ValueError("Chambolle's method only works for beta=0.")

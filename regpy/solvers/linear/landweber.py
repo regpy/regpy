@@ -16,7 +16,7 @@ class Landweber(RegSolver):
     .. math::
         \Vert T(x) - g^\delta\Vert^2,
 
-    where \(\Vert\cdot\Vert)\ is the Hilbert space norm in the codomain, and gradients are computed with
+    where :math:`\Vert\cdot\Vert` is the Hilbert space norm in the codomain, and gradients are computed with
     respect to the Hilbert space structure on the domain.
 
     The number of iterations is effectively the regularization parameter and needs to be picked

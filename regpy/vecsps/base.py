@@ -223,6 +223,7 @@ class VectorSpaceBase:
 
     The type if given can be used to implement the methods with the same name
     given each can deal with the following input the following methods:
+
      - zeros(shape : tuple)
      - ones(shape : tuple)
      - empty(shape : tuple)
@@ -502,7 +503,7 @@ class VectorSpaceBase:
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The complex space corresponding to this vector space.
         """
         raise NotImplementedError
@@ -512,7 +513,7 @@ class VectorSpaceBase:
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The real space corresponding to this vector space.
         """
         raise NotImplementedError
@@ -527,7 +528,7 @@ class VectorSpaceBase:
         
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The masked Space depending on the vector space.
         """
         raise NotImplementedError
@@ -579,7 +580,7 @@ class VectorSpaceBase:
         Raise
         -----
         ValueError
-            If other is not a VectorSpaceBase.
+            If other is not a `regpy.vecsps.VectorSpaceBase`.
         """
         if not isinstance(other, VectorSpaceBase):
             raise ValueError(Errors.not_instance(other,VectorSpaceBase,add_info="TO have a compatible vector space the other object has to be a vector space in RegPy."))
@@ -624,7 +625,7 @@ class DirectSum(VectorSpaceBase):
     Elements of the direct sum will always be 1d real arrays.
 
     Note that constructing DirectSum instances can be done more comfortably simply by adding
-    `VectorSpaceBase` instances. However, for generic code, when it's not known whether the summands
+    `regpy.vecsps.VectorSpaceBase` instances. However, for generic code, when it's not known whether the summands
     are themselves direct sums, it's better to avoid the `+` overload due the `flatten` parameter
     (see below), since otherwise the number of summands is not fixed.
 
@@ -633,7 +634,7 @@ class DirectSum(VectorSpaceBase):
 
     Parameters
     ----------
-    *summands : tuple of VectorSpaceBase instances
+    *summands : tuple(regpy.vecsps.VectorSpaceBase)
         The vector spaces to be summed.
     flatten : bool, optional
         Whether summands that are themselves `DirectSum`s should be merged into this instance. If

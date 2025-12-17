@@ -2,11 +2,7 @@ from random import uniform
 
 import numpy as np
 
-from regpy.util import Errors
-from regpy.functionals import IntegralFunctionalBase, Functional
-from regpy.functionals.base import Conj, NotTwiceDifferentiableError, FunctionalOnDirectSum, HorizontalShiftDilation
-from regpy.functionals.numpy import VectorIntegralFunctional
-from regpy.vecsps import MeasureSpaceFcts, DirectSum
+from .general import Errors
 
 def sample_essential_domain(func,u=None,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
@@ -20,11 +16,13 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     eps_perturbation: float or None [default: None]
         If not None, an additional vector h is returned  
         
-    Result
-    ------
-    An element u of func.domain
-    If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
+    Returns
+    -------
+    array-like
+        An element u of func.domain
+        If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
+    from regpy.vecsps import MeasureSpaceFcts, DirectSum
     if not func.separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if isinstance(func.domain,MeasureSpaceFcts):
@@ -64,6 +62,7 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
         else:
             return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
     elif isinstance(func.domain, DirectSum):
+        from regpy.functionals.base import Conj, FunctionalOnDirectSum, HorizontalShiftDilation
         if not isinstance(func, (FunctionalOnDirectSum,Conj,HorizontalShiftDilation)):
             raise TypeError(Errors.type_error(f"domain of type {func.domain}, but functional of type {type(func)},{func}."))
         if isinstance(func, FunctionalOnDirectSum):
@@ -107,12 +106,11 @@ def sample_vector_in_domain(func, dist = 1e-10):
 
     Returns
     -------
-    array_like
+    array-like
         A vector in the domain satisfying the norm constraints.
 
     """
-    if not isinstance(func,VectorIntegralFunctional) and (isinstance(func,Conj) and not isinstance(func.func,VectorIntegralFunctional)):
-        raise ValueError(Errors.value_error("func has to be an instance of VectorIntegralFunctional"))
+    from regpy.functionals.base import Conj
     if isinstance(func,Conj):
         v_axes = func.func._vaxes
         norm = func.func.vector_norm
@@ -162,8 +160,6 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if(u is None):
         if func.separable:
             u=sample_essential_domain(func)
@@ -200,8 +196,6 @@ def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if u is None:
         numel = np.prod(func.domain.shape)
         u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
@@ -242,8 +236,6 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing subgradient is only supported to Functionals"))
     if (not func.separable):
         if u is None:
             u=func.domain.randn()
@@ -268,20 +260,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
         return False
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
-
-
-    """     if u is None :
-        if func.separable:
-            u=sample_essential_domain(func)
-        else:
-            u=func.domain.randn()
-    if h is None:
-        h = - func.subgradient(u)
-        if func.separable:
-            h[u+eps*h>=func.dom_u] *= -1.
-            h[u+eps*h<=func.dom_l] *= -1.
-            h[u+eps*h>=func.dom_u] = 0.
-            h[u+eps*h<=func.dom_l] = 0.
+    """Tests the second derivative of the functional.
 
     Parameters
     ----------
@@ -303,8 +282,6 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing second derivative is only supported to Functionals"))
     if func.separable:
         u,h = sample_essential_domain(func,eps_perturbation=eps)
     else:
@@ -338,8 +315,7 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
+    from regpy.vecsps import MeasureSpaceFcts
     if not func.separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if u is None :
@@ -399,8 +375,6 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
     if(u is None):
         if func.separable:
             u=sample_essential_domain(func)

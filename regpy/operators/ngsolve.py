@@ -914,7 +914,7 @@ class ReactionNeumann(NgsOperator):
     Derivative:
 
     .. math::
-        -div(grad(v))+s*v = -h*u (=:f) \\
+        -div(grad(v))+s^\ast v = -h^\ast u (=:f) \\
         dv/dn = 0 
 
     Der: :math:`F'[s]: h \mapsto trace(v)`

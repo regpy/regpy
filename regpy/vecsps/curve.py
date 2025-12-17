@@ -1,7 +1,8 @@
 import numpy as np
 
 from regpy.util import Errors
-from regpy.vecsps import UniformGridFcts
+
+from .numpy import UniformGridFcts
 
 __all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
 
