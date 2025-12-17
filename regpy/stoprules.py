@@ -423,7 +423,7 @@ class Discrepancy(StopRule):
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
-        self.log_info ='relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau)
+        self.log_info = 'rel. discrep. = {:3.2f}< {:1.2f}'.format(rel, self.tau)
         if self.is_main_rule:
             self.log.info(self.log_info)
         return rel < self.tau
