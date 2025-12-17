@@ -144,7 +144,7 @@ def test_adjoint_eval(op, tolerance=1e-10):
         op.log.warning(f'AdjointEval test failed: err = {err}')
         return False
 
-def test_derivative(op, steps=None,ret_sequence=False):
+def test_derivative(op, steps=None,ret_sequence=False,x=None):
     r"""Numerically test derivative of operator.
 
     Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
@@ -157,6 +157,8 @@ def test_derivative(op, steps=None,ret_sequence=False):
     steps : float, optional
         The used steps. Defaults to
         [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
+    x: domain of op or None [default none]
+        The point at which the derivative is tested. Chosen randomly if None.
 
     Returns
     ------
@@ -165,7 +167,8 @@ def test_derivative(op, steps=None,ret_sequence=False):
     """
     if steps is None:
         steps = [10**k for k in range(-1, -8, -1)]
-    x = op.domain.randn()
+    if x is None:
+        x = op.domain.randn()
     y, deriv = op.linearize(x)
     h = op.domain.rand()
     normh = op.domain.norm(h)
