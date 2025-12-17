@@ -65,9 +65,6 @@ class StopRule:
     def copy(self):
         return deepcopy(self)
 
-    
-
-
     def stop(self):
         """Check whether to stop iterations.
 
@@ -95,17 +92,33 @@ class StopRule:
         """Return the best iterate according to this stopping rule. 
         By default, this is the last iterate computed before the stopping rule triggered.
 
-        However, since iterative methods for ill-posed problmes typically exhibit a semi-convergent behavior, the best iterate is not necessarily the last one computed before the stopping rule triggered. 
+        However, since iterative methods for ill-posed problems typically exhibit a semi-convergent behaviour, the best iterate is not necessarily the last one computed before the stopping rule triggered. 
 
         Returns
         -------
+        If the connected solver converges or the stop rule was triggered:
         x : array
             The best solution found.
         y : array
             The image of the best solution under the operator.
+        
+        or 
+        
+        None
+            If neither the solver converged nor the stop rule was triggered. 
+
+        Raise
+        -----
+        RuntimeError
+            Whenever the solver converged or the stop rule was triggered but the stop rule does not have an `x`
+            attribute.
         """
-        if not self.triggered:
-            raise RuntimeError(Errors.generic_message("The stopping rule has not triggered yet, so no best iterate is available!"))
+        if self.solver is not None and self.solver.is_converged():
+            self.x = self.solver.x
+            self.y = self.solver.y if hasattr(self.solver,"y") else None
+        elif not self.triggered:
+            self.log.warning("The stopping rule has not triggered yet and the solver has not converged, so no best iterate is available!")
+            return None
         if not hasattr(self,"x"):
             raise RuntimeError(Errors.generic_message("The stopping rule did not store self.x when triggered! Please re-implement the best_iterate method of the stopping rule!"))
         if not hasattr(self,"y"):
@@ -230,7 +243,8 @@ class CombineRules(StopRule):
     
     def best_iterate(self):
         if self.active_rule is None:
-            raise RuntimeError(Errors.generic_message("No sub-rule has triggered yet, so no best iterate is available!"))
+            self.log("No sub-rule has triggered yet, so no best iterate is available!")
+            return None
         return self.active_rule.best_iterate()
 
 class AndCombineRules(StopRule):
@@ -309,7 +323,8 @@ class AndCombineRules(StopRule):
     
     def best_iterate(self):
         if not self.triggered:
-            raise RuntimeError(Errors.generic_message("The combined stopping rule has not triggered yet, so no best iterate is available!"))
+            self.log.warning("The combined stopping rule has not triggered yet, so no best iterate is available!")
+            return None
         return self.rules[0].best_iterate()
 
 class CountIterations(StopRule):
@@ -408,7 +423,9 @@ class Discrepancy(StopRule):
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
-        self.log.info('relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau))
+        self.log_info ='relative discrepancy = {:3.2f}, tolerance = {:1.2f}'.format(rel, self.tau)
+        if self.is_main_rule:
+            self.log.info(self.log_info)
         return rel < self.tau
 
 

@@ -52,6 +52,9 @@ class Solver:
         """
         self.__converged = True
 
+    def is_converged(self):
+        return self.__converged
+
     def next(self):
         r"""Perform a single iteration.
 
@@ -146,6 +149,9 @@ class Solver:
         #    # This happens if the stopping criterion is satisfied for the initial guess.
         #    x = self.x
         #    y = self.y
+        if stoprule.best_iterate() is None:
+            self.log.info(f"Could not find a bet iterate with stop rule {stoprule}!")
+            return x, y
         return stoprule.best_iterate()
     
 
