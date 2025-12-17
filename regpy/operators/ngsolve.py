@@ -136,7 +136,7 @@ class NgsMatrixMultiplication(NgsOperator):
         else:
             self._inverse = NgsMatrixMultiplication(
                 self.domain,
-                self.mat.Inverse()
+                self.mat.Inverse(freedofs=self.domain.fes.FreeDofs())
             )
             self._inverse._inverse = self
             return self._inverse
