@@ -31,10 +31,10 @@ def ShapeCurves(name,n=20,der=3):
 def test_shapes(shape,der):
         ShapeCurves(shape,n=20,der=der)
   
-def test_GenTrigDiscr():
-    vecsps_basics(GenTrigDiscr,40)
+def test_GenTrigSpc():
+    vecsps_basics(GenTrigSpc,40)
 
-    vs = GenTrigDiscr(40)
+    vs = GenTrigSpc(40)
     coeff = np.asarray([1,0.5,0.25,1,0.25,0.5])
     _ = vs.bd_eval(coeffs=coeff,nvals=40,nderivs=3)
     _ = vs.z
@@ -47,8 +47,8 @@ def test_GenTrigDiscr():
     _ = vs.adjoint_der_normal
     
 def test_StarTrigDiscr():
-    vecsps_basics(StarTrigDiscr,40)
+    vecsps_basics(StarTrigRadialFcts,40)
 
-    vs = StarTrigDiscr(40)
+    vs = StarTrigRadialFcts(40)
     coeff = vs.sample(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
     _ = vs.eval_curve(coeffs=coeff)

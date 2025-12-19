@@ -29,7 +29,7 @@ from .base import *
 from .numpy import *
 from .curve import *
 
-__all__ = ["TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
+__all__ = ["TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 try:
     from .ngsolve import *

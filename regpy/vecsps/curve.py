@@ -4,7 +4,7 @@ from regpy.util import Errors
 
 from .numpy import UniformGridFcts
 
-__all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigDiscr","GenTrig","StarTrigDiscr","StarTrigCurve"]
+__all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 class GenCurve:
     r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
@@ -393,43 +393,36 @@ class circle(StarCurve):
             return np.zeros_like(self.t)
 
 
-class GenTrigDiscr(UniformGridFcts):
-    r"""Class for the `VectorSpaceBase` instance of `GenTrig` instances. It provides method `bd_eval` which 
-    gives evaluates a curve `GenTrig` by name.  
+class GenTrigSpc(UniformGridFcts):
+    r"""Class for the `VectorSpaceBase` instance of `GenTrig` instances. 
+    It is a space of vector-valued trigonometric polynomials. 
+    The class provides method `bd_eval` which generates a curve `GenTrig` from a given coefficient (or sample) vector.  
 
     Parameters
     ----------
     n : int
-        Number of discretization points.
+        Number of coefficients of each of the cartesian components.
     """
     def __init__(self, n):
-        if not isinstance(n, int,):
-            raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigDiscr need n to be an integer!"))
+        if not isinstance(n, int,) or n<=0:
+            raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigSpc need n to be a positive integer!"))
         self.n = n
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
+        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False),shape_codomain=(2,))
 
-    def bd_eval(self, coeffs, nvals=None, nderivs=0):
+    def bd_eval(self, samples, nvals=None, nderivs=0):
         r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
         Parameters
         ----------
-        coeffs : array-like
-            Coefficients for which to evaluate the curve
+        samples : array-like
+            samples from which to generate the curve
         nvals : int 
-            Number of points to evaluate on
+            Number of points to evaluate the parameterization on
         nderivs : int
             Number of derivatives to compute 
         """
-        gentrig=GenTrig(coeffs, nvals, nderivs)
-        self.z=gentrig.z
-        self.zpabs=gentrig.zpabs
-        self.zp=gentrig.zp
-        self.zpp=gentrig.zpp
-        self.zppp=gentrig.zppp
-        self.normal=gentrig.normal
-        self.der_normal=gentrig.der_normal
-        self.adjoint_der_normal=gentrig.adjoint_der_normal
+        gentrig=GenTrig(samples, nvals, nderivs)
         
         return gentrig
     
@@ -440,85 +433,74 @@ class GenTrig:
     .. math::
         z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
 
-     where z_1 and z_2 are trigonometric polynomials with N coefficient.
-     Here N must be even, so the highest order monomial is cos(t*N/2),
-     but sin(t*N/2) does not occur.
+     where z_1 and z_2 are real trigonometric polynomials with N coefficients.
      z and its derivatives are sampled at n equidistant points.
-     Application of the Gramian matrix and its inverse w.r.t. the
-     Sobolev norm ||z||_{H^s} are implemented.
      
      Parameters
      ----------
-     coeffs : array-like
-        Coefficients for which to evaluate the curve
+     samples : array-like
+        Equidistant (in parameter space!) samples of the cartesian components of the parameterization of the curve 
      nvals : int 
-        Number of points to evaluate on
+        Number of points at which to evaluate the curve
      nderivs : int
         Number of derivatives to compute 
      """
 
-    def __init__(self, coeffs, nvals, nderivs):
-        self.coeff = coeffs
+    def __init__(self, samples, nvals, nderivs):
+        self.samples = samples
         """Coefficients of the trigonometric polynomials""" 
         self.nvals = nvals
         self.nderivs = nderivs
         
         """Evaluates the first der derivatives of the parametrization of
-        the curve on n equidistant time points"""
+        the curve on n equidistant points"""
         
-        N = int(len(self.coeff)/2)
-        val = self.coeff[N:2*N]
-        val1 = self.coeff[0:N]
+        N = self.samples.shape[0]
 
-        coeffhat = np.append(trig_interpolate(val1, self.nvals), \
-                             trig_interpolate(val, self.nvals)).reshape(2, self.nvals)
-        self.z = np.append(np.real(np.fft.ifft(np.fft.fftshift(coeffhat[0,:]))), \
-            np.real(np.fft.ifft(np.fft.fftshift(coeffhat[1,:])))).reshape(2, coeffhat[0,:].shape[0])
+        coeffhat = np.vstack(trig_interpolate(samples[:,0], self.nvals), \
+                             trig_interpolate(samples[:,1], self.nvals)).T
+        self.z = np.vstack(np.real(np.fft.ifft(np.fft.fftshift(coeffhat[0,:]))), \
+                           np.real(np.fft.ifft(np.fft.fftshift(coeffhat[1,:]))))
         
         if self.nderivs>=1:
             """Array indices"""
-            self.zp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[1,:])))).reshape(2, coeffhat[0,:].shape[0])
+            self.zp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[1,:]))))
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             """Outer normal vector"""
-            self.normal = np.append(self.zp[1,:], -self.zp[0,:]).reshape(2, self.zp[0, :].shape[0])
+            self.normal = np.vstack(self.zp[1,:], -self.zp[0,:])
 
         if self.nderivs>=2:
             """Array indices"""
-            self.zpp = np.append(np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
-
+            self.zpp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:]))))
         if self.nderivs>=3:
-            self.zppp = np.append(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:])))).reshape(2, coeffhat[0, :].shape[0])
+            self.zppp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:]))))
         
         if self.nderivs>3:
             raise ValueError('only derivatives up to order 3 implemented')
 
     def der_normal(self, h):
-        N = int(len(h)/2)
+        N = h.shape[1]
         n = self.z.shape[1]
 
         if N == n:
-            hn = np.array([h[0:n],\
-                           h[n:2*n]])
+            hn = h
 
         else:
-            val = h[N:2*N]
-            val1 = h[0:N]  
-
-            h_hat = np.array([trig_interpolate(val1, n),\
-                     trig_interpolate(val, n)])
+            h_hat = np.array([trig_interpolate(h[0,:], n),\
+                              trig_interpolate(h[1,:], n)])
 
             hn = np.array([np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))),\
-                np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))])
+                           np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))])
 
         der=np.sum(hn*self.normal,0)/self.zpabs
         return der
 
     def adjoint_der_normal(self, g):
 
-        N = int(len(self.coeff)/2)
+        N = self.coeff.shape[1]
         n = int(len(g))
         
         adj_n=np.array([g/self.zpabs,g/self.zpabs])*self.normal
@@ -527,11 +509,8 @@ class GenTrig:
             adj = np.array([adj_n[0,:],\
                              adj_n[1,:].transpose()])
         else:
-            val = adj_n[0, :]
-            val1 = adj_n[1,:]
-            adj_hat = np.array([trig_interpolate(val, N), \
-                       trig_interpolate(val1, N)])*n/N
-            
+            adj_hat = np.array([trig_interpolate(adj_n[0, :], N), \
+                                trig_interpolate(adj_n[1,:], N)])*n/N
             adj_hat=adj_hat.T 
          
             adj = np.append(np.array([np.fft.ifft(np.fft.fftshift(adj_hat[:,0]))]),\
@@ -559,18 +538,22 @@ class GenTrig:
         
         return pts
 
-class StarTrigDiscr(UniformGridFcts):
-    r"""Class for the `VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
-    method `eval_curve` which gives a curve `StarTrigCurve`.  
+class StarTrigRadialFcts(UniformGridFcts):
+    r"""Class for VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
+    the method `eval_curve` which gives a curve `StarTrigCurve`.  
+
+    The space consists of star-shaped curves with radial functions given by real trigonometric 
+    polynomials of some maximal degree. These trigonometric polynomials are determined by their values on 
+    an equidistant grid. 
 
     Parameters
     ----------
     n : int
-        Number of discretization points.
+        Dimension of the space of trigonometric polynomials 
     """
     def __init__(self, n):
-        if not isinstance(n, int):
-            raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigDiscr need n to be an integer!"))
+        if not isinstance(n, int) or n<=0:
+            raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigD need n to be a positive integer!"))
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
 
     def eval_curve(self, coeffs, nvals=None, nderivs=0):
@@ -611,12 +594,12 @@ class StarTrigCurve:
         How many derivatives to compute. At most 3 derivatives are implemented.
     """
 
-    def __init__(self, vecsp, coeffs, nvals=None, nderivs=0):
+    def __init__(self, vecsp, values, nvals=None, nderivs=0):
         if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
             raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
         self.vecsp = vecsp
         """The vector space."""
-        self.coeffs = coeffs
+        self.values = values
         """The coefficients."""
         self.nvals = nvals or self.vecsp.size
         """The number of computed values."""
@@ -625,7 +608,7 @@ class StarTrigCurve:
 
         self._frqs = 1j*np.arange(self.vecsp.size // 2 + 1)
         self.radius = (self.nvals / self.vecsp.size) * np.fft.irfft(
-            (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis])*np.fft.rfft(coeffs),
+            (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis])*np.fft.rfft(values),
             self.nvals,
             axis=1
         )
