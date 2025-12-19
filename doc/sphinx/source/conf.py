@@ -5,12 +5,13 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from regpy._version import version_tuple
 
 project = 'RegPy'
 copyright = '2024, Thorsten Hohage'
 author = 'Thorsten Hohage'
-version = '0.4'
-release = '0.4.1'
+version = f"{version_tuple[0]}.{version_tuple[1]}"
+release = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
