@@ -11,7 +11,7 @@ from regpy.util import Errors
 
 from .base import Operator
 
-__all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoefficientPDE", "SolveSystem", "LinearForm", "LinearFormGrad", "NgsGradOP"]
+__all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoefficientPDE", "SolveSystem", "LinearForm", "LinearFormGrad", "NgsGradOP", "ProjectToBoundary"]
 
 class NgsOperator(Operator):
     r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
@@ -377,6 +377,8 @@ class SolveSystem(NgsOperator):
         
         self.f_adj = ngs.LinearForm(self.domain.fes)
         self.f_adj += self.gfu_adj * v * ngs.dx
+
+        self._consts = {*self._consts, "bf", "prec", "f", "f_adj"}
         
     def _eval(self, 
             argument : NgsBaseVector) -> NgsBaseVector:
@@ -390,7 +392,7 @@ class SolveSystem(NgsOperator):
     
     def _adjoint(self, 
             argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse()*argument.vec
+        self.gfu_adj.vec.data=self.bf.mat.Inverse(freedofs = self.domain.fes.FreeDofs()).T*argument.vec
         self.f_adj.Assemble()
         return NgsBaseVector(self.f_adj.vec,make_copy=True)
         
@@ -405,13 +407,14 @@ class LinearForm(NgsOperator):
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += self.gfu * v * ngs.dx
-        self._y = NgsBaseVector(self.f.vec)
+
+        self._consts = {*self._consts, "f"}
         
     def _eval(self, 
             argument : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
-        return self._y.copy()
+        return NgsBaseVector(self.f.vec,make_copy=True)
     
     def _adjoint(self, 
             argument : NgsBaseVector) -> NgsBaseVector:
@@ -436,6 +439,8 @@ class LinearFormGrad(NgsOperator):
         self.f_adj = ngs.LinearForm(self.domain.fes)
         self.f_adj += self.gfu_adj * ngs.grad(self.gfu_eval) * ngs.grad(v) * ngs.dx
         self._x = NgsBaseVector(self.f_adj.vec)
+
+        self._consts = {*self._consts, "f", "f_adj"}
         
     def _eval(self,
         argument : NgsBaseVector) -> NgsBaseVector:
@@ -467,209 +472,105 @@ class BilinearForm(NgsOperator):
         
         self.f_eval = ngs.LinearForm(self.domain.fes)
         self.f_adj  = ngs.LinearForm(self.domain.fes)
+        self._consts = {*self._consts, "bf","f_eval", "f_adj"}
         
     def _eval(self, 
         argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu.vec.data=self.bf.mat.Inverse()*argument.vec
+        self.gfu.vec.data=self.bf.mat.Inverse(freedofs = self.domain.fes.FreeDofs())*argument.vec
         return self._y.copy()
     
     def _adjoint(self, 
         argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse()*argument.conj().vec
+        self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse(freedofs = self.domain.fes.FreeDofs())*argument.vec
         return self._x.conj().copy()
 
 
 class NgsGradOP(NgsOperator):
+    r"""Gradient operator (bilinear-form based)
+
+    This operator implements a *weak* gradient that is constructed to be exactly
+    adjoint (in the sense of :mod:`regpy`) to its divergence operator.  It is **not**
+    computed using :func:`ngs.grad` directly.
+
+    Parameter
+    ---------
+    domain : NgsVectorSpace
+
+    Notes
+    -----
+
+    - This operator does **not** compute the pointwise gradient.
+    - Deviations near the boundary are expected.
+    - Intended for variational formulations (e.g. regularization, weak Laplacians,
+    adjoint-based optimization), not for visualization.
+
+
+    Mathematical definition
+    -----------------------
+
+    Let :math:`U_h` be the scalar finite element space and :math:`W_h` the vector
+    finite element space. The operator :math:`\mathrm{Grad}_h : U_h \to W_h` is
+    defined by
+
+    .. math::
+
+        \langle \mathrm{Grad}_h u, w \rangle_{L^2}
+        =
+        \int_\Omega \nabla u \cdot w \, dx
+        \qquad \forall w \in W_h.
+
+    Thus, :math:`\mathrm{Grad}_h u` is the :math:`L^2`-projection of the pointwise
+    gradient :math:`\nabla u` into the space :math:`W_h \subset H(\mathrm{div})`.
+
+    Implementation
+    --------------
+
+    The bilinear form
+
+    .. math::
+
+        b(u, w) = \int_\Omega \nabla u \cdot w \, dx
+
+    is assembled as a matrix :math:`B`. The operator is applied as
+    :math:`\mathrm{Grad}_h u = B u`, and its adjoint is given by :math:`B^T`,
+    which guarantees exact adjointness with respect to the Euclidean inner product
+    used by :mod:`regpy`.
+
+    Boundary conditions
+    -------------------
+
+    Boundary conditions are encoded in the choice of finite element spaces
+    (e.g. Dirichlet conditions on :math:`u` or vanishing normal trace on
+    :math:`w`). Under these assumptions, boundary terms vanish automatically and
+    no explicit boundary integrals are added.
+
+
+    """
+
     def __init__(self,domain):
-        if domain.bdr is None:
-            raise ValueError("GradOP requires a Direchlet boundary condition to be set on the domain space.")
         if isinstance(domain.fes,(ngs.H1,ngs.L2)):
             vec_fes = ngs.HDiv(domain.fes.mesh, order=domain.fes.globalorder, dirichlet=domain.bdr)
         else:
             raise ValueError("NgsTV is only implemented for H1 or L2 finite element spaces.",self)
-        
-        codomain = NgsVectorSpace(vec_fes,bdr=domain.bdr)
-        codomain.codim = 2
-        super().__init__(domain,codomain,linear=True)
 
-        self._gf = ngs.GridFunction(domain.fes)
-        self._gf_out = ngs.GridFunction(vec_fes)
+        codomain = NgsVectorSpace(vec_fes, bdr=domain.bdr)
+        super().__init__(domain, codomain, linear=True)
 
-    def _eval(self,x):
-        self._gf.vec.data = x.vec
-        self._gf_out.Set(ngs.grad(self._gf))
-        return self.codomain.from_ngs(self._gf_out.vec,copy=True)
-    
+        u, v = domain.fes.TnT()
+        w, z = codomain.fes.TnT()
+
+        self.bf = ngs.BilinearForm(domain.fes, codomain.fes)
+        self.bf += ngs.SymbolicBFI(ngs.grad(u) * z)
+        self.bf.Assemble()
+
+        self._consts = {*self._consts, "bf"}
+
+
+    def _eval(self, x):
+        return self.codomain.from_ngs(self.bf.mat * x.vec, copy=True)
+
     def _adjoint(self, y):
-        self._gf_out.vec.data = y.vec
-        self._gf.Interpolate(ngs.div(self._gf_out))
-        return self.domain.from_ngs(-self._gf.vec,copy=True)
-        
-
-class Coefficient(NgsOperator):
-    r"""Diffusion and reaction coefficient problem
-    
-    Identification of a diffusion coefficient:
-    
-    PDE: -div(a grad u)=rhs       in Omega
-         u = 0            on dOmega
-
-    Evaluate: 
-        F: a \mapsto u
-    Derivative:
-        -div (a grad v)=div (h grad u) in Omega
-        v = 0                        on dOmega
-
-    Der: F'[u]: h \mapsto v
-
-    Adjoint:
-        div (a grad w)=q  in Omega
-        w=0              on dOmega
-
-    Adj: F'[s]^*: q \mapsto -grad(u) grad(w)
-    
-    
-    
-    
-    Identification of a reaction coefficient:
-    
-    PDE: -Delta u +c u=f       in Omega
-         u = 0            on dOmega
-
-    Evaluate: 
-        F: c \mapsto u
-        
-    Derivative:
-        -Delta v + c v=-h u in Omega
-        v = 0                        on dOmega
-
-    Der: F'[u]: h \mapsto v
-
-    Adjoint:
-        -Delta w+c w=q  in Omega
-        w=0              on dOmega
-
-    Adj: F'[s]^*: q \mapsto -u^* w    
-    """
-    def __init__(
-        self, 
-        domain : NgsVectorSpace, 
-        rhs : ngs.fem.CoefficientFunction, 
-        bc: ngs.fem.CoefficientFunction | types.NoneType=None, 
-        codomain : NgsVectorSpace | types.NoneType = None,
-        diffusion : bool = False, 
-        reaction : bool = True
-    ) -> None:
-        assert diffusion or reaction
-        assert (diffusion and reaction) is False
-        codomain = codomain or domain
-        #Need to know the boundary to calculate Dirichlet bdr condition
-        assert codomain.bdr is not None
-
-        self.rhs = rhs
-        super().__init__(domain, codomain)
-
-        self.diffusion = diffusion
-        self.reaction = reaction
-        self.dim = domain.fes.mesh.dim
-
-        bc = bc or 0
-
-        # Define mesh and finite element space
-        self.fes_domain = domain.fes
-        self.fes_codomain = codomain.fes
-
-        # grid functions for later use
-        self.gfu_eval = ngs.GridFunction(self.fes_codomain)  # solution, return value of _eval
-        self._y = NgsBaseVector(self.gfu_eval.vec)
-        self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # return value of derivative
-        self._y_deriv = NgsBaseVector(self.gfu_deriv.vec)
-        self.gfu_adjoint = ngs.GridFunction(self.fes_domain)  # grid function for returning values in adjoint
-        self._x = NgsBaseVector(self.gfu_adjoint.vec)
-
-        self.gfu_bf = ngs.GridFunction(self.fes_domain) # grid function for defining integrator (bilinearform)
-        self.gfu_lf = ngs.GridFunction(self.fes_codomain)  # grid function for defining right hand side (Linearform)
-
-        self.gfu_inner_adj = ngs.GridFunction(self.fes_codomain) #computations in adjoint
-        self.gfu_inner_deriv = ngs.GridFunction(self.fes_domain) #inner computations in derivative
-
-        #Test and Trial Function
-        u, v = self.fes_codomain.TnT()
-
-        # Define Bilinearform, will be assembled later
-        self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
-        if self.diffusion:
-            self.a += ngs.grad(u) * ngs.grad(v) * self.gfu_bf * ngs.dx
-        elif self.reaction:
-            self.a += (ngs.grad(u) * ngs.grad(v) + u * v * self.gfu_bf) * ngs.dx
-
-        # Define Linearform, will be assembled later
-        self.f = ngs.LinearForm(self.fes_codomain)
-        self.f += self.gfu_lf * v * ngs.dx
-        # Assemble Linearform
-        self.gfu_lf.Set(self.rhs)
-        self._x_lf = NgsBaseVector(self.gfu_lf.vec)
-        self.f.Assemble()
-
-        if self.reaction:
-            self.lf=LinearForm(self.codomain)
-            
-        self.gfu_eval.Set(bc, definedon=self.fes_codomain.mesh.Boundaries(codomain.bdr))
-
-        #Initialize Preconditioner for solving the Dirichlet problems
-        self.prec = ngs.Preconditioner(self.a, 'local')
-
-        #Initialize homogenous Dirichlet problems for derivative and adjoint
-        self.gfu_inner_adj.Set(0)
-        self.gfu_inner_deriv.Set(0)
-
-    def _eval(self, 
-        diff : NgsBaseVector, 
-        differentiate : bool = False) -> NgsBaseVector:
-        # Assemble Bilinearform
-        self.gfu_bf.vec.data = diff.vec
-        self.a.Assemble()
-        if differentiate:
-            self.bf=BilinearForm(self.codomain, self.a)
-
-        # Solve system
-        self._solve_dirichlet_problem(self.a, self.f, self.gfu_eval, self.prec)
-        if differentiate and self.diffusion:
-            self.lf=LinearFormGrad(self.codomain, self.gfu_eval)
-        return self._y.copy()
-
-    def _derivative(self, 
-        argument : NgsBaseVector) -> NgsBaseVector:
-        # Bilinearform already defined from _eval
-
-        # Translate arguments in Coefficient Function and interpolate to codomain
-        self.gfu_inner_deriv.vec.data = argument.vec
-        
-        if self.diffusion:
-            self.gfu_deriv.Set(self.gfu_inner_deriv)
-            return (self.bf*self.lf)(self._x_lf)
-
-        elif self.reaction:
-            self.gfu_deriv.Set(-self.gfu_inner_deriv * self.gfu_eval)
-            return (self.bf*self.lf)(self._y_deriv)
-        else:
-            raise ValueError("Neither diffusion nor reaction was selected to be True")
-
-    def _adjoint(self, 
-        argument : NgsBaseVector) -> NgsBaseVector:
-        if self.reaction:
-            self.gfu_inner_adj.vec.data=self.lf._adjoint(self.bf._adjoint(argument)).vec
-            self.gfu_adjoint.Set( -self.gfu_eval * self.gfu_inner_adj )
-            return self._x
-        
-        elif self.diffusion:
-            self.gfu_inner_adj.vec.data=self.lf._adjoint(self.bf._adjoint(argument)).vec
-            self.gfu_adjoint.Set( self.gfu_inner_adj )
-            return self._x
-        else:
-            raise ValueError("Neither diffusion nor reaction was selected to be True")
-
-
+        return self.domain.from_ngs(self.bf.mat.T * y.vec, copy=True)
 
 class ProjectToBoundary(NgsOperator):
     """Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
@@ -693,348 +594,51 @@ class ProjectToBoundary(NgsOperator):
         if bdr is None:
             if codomain.bdr is None:
                 raise ValueError(Errors.value_error(f"Either bdr is given or codomain has a specified boundary by regular expression!"))
-            self.bdr = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(codomain.bdr))
+            self.bdr_codomain = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(codomain.bdr))
+            self.bdr_domain = self.domain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(codomain.bdr))
         elif isinstance(bdr,ngs.comp.Region):
-            self.bdr = self.codomain.fes.GetDofs(bdr)
+            self.bdr_codomain = self.codomain.fes.GetDofs(bdr)
+            self.bdr_domain = self.domain.fes.GetDofs(bdr)
         elif isinstance(bdr,str):
-            self.bdr = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(bdr))
+            self.bdr_codomain = self.codomain.fes.GetDofs(self.codomain.fes.mesh.Boundaries(bdr))
+            self.bdr_domain = self.domain.fes.GetDofs(self.domain.fes.mesh.Boundaries(bdr))
         elif isinstance(bdr, BitArray):
-            self.bdr = bdr
+            self.bdr_domain = bdr
+            self.bdr_codomain = bdr
+            if not self.same_domain:
+                raise ValueError(Errors.value_error(f"Cannot use BitArray as bdr when domain and codomain are not identical!"))
         else:
             raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression or a BitArray. You gave bdr = {bdr}."))
-        self.projector = ngs.Projector(self.bdr, range=True)
+        self.projector_domain = ngs.Projector(self.bdr_domain, range=True)
+        self.projector_codomain = ngs.Projector(self.bdr_codomain, range=True)
         self.gfu_codomain = ngs.GridFunction(self.codomain.fes)
         self.gfu_domain = ngs.GridFunction(self.domain.fes)
+
+        self._consts = {*self._consts, "bdr_domain","bdr_codomain","projector_domain","projector_codomain"}
+
 
     def _eval(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
             _x_eval = x.copy()
-            self.projector.Project(_x_eval.vec)
+            self.projector_codomain.Project(_x_eval.vec)
             return _x_eval
         else:
             self.gfu_domain.vec.data = x.vec
             self.gfu_codomain.Set(self.gfu_domain)
-            self.projector.Project(self.gfu_codomain.vec)
+            self.projector_codomain.Project(self.gfu_codomain.vec)
             return NgsBaseVector(self.gfu_codomain.vec, make_copy=True)
 
     def _adjoint(self, 
         x : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
             _x_eval = x.copy()
-            self.projector.Project(_x_eval.vec)
+            self.projector_domain.Project(_x_eval.vec)
             return _x_eval
         else:
             self.gfu_codomain.vec.data = x.vec
             self.gfu_domain.Set(self.gfu_codomain)
-            self.projector.Project(self.gfu_codomain.vec)
-            return NgsBaseVector(self.gfu_codomain.vec, make_copy=True)
+            self.projector_domain.Project(self.gfu_domain.vec)
+            return NgsBaseVector(self.gfu_domain.vec, make_copy=True)
    
-
-class EIT(NgsOperator):
-    r"""Electrical Impedance Tomography Problem
-    PDE:
-
-    .. math::
-        -\textrm{div}(s \nabla u)+\alpha u&=0 \;\text{ in } \Omega \\
-        s \frac{\textrm{d}u}{\textrm{d}n} &= g \;\text{ on } \partial\Omega
-
-    Evaluate: :math:`F\colon s \mapsto \mathrm{tr}(u)`
-
-    Derivative:
-
-    .. math::
-        -\textrm{div}(s \nabla v)+\alpha v&=\textrm{div}(h \nabla u) (=:f) \\
-        s \frac{\textrm{d}v}{\textrm{d}n} &= 0 +(-h\frac{\textrm{d}u}{\textrm{d}n} \;\text{ [second term often omitted] } 
-
-
-    Der: :math:`F'[s]\colon h \mapsto \textrm{tr}(v)`
-
-    Adjoint
-
-    .. math::
-        -\textrm{div}(s \nabla w)+\alpha w&=0 \\
-         s \frac{\textrm{d}w}{\textrm{d}n} &= q 
-
-    
-    Adj: :math:`F'[s]^*\colon q \mapsto -\nabla(u) \nabla(w)`
-
-    Proof
-
-    .. math::
-        (F'h, q)&=\int_{\partial\Omega} [\textrm{tr}(v) q] \\
-        &= \int_{\partial\Omega} [\textrm{tr}(v) s \frac{\textrm{d}w}{\textrm{d}n}] \\
-        &= \int_{\Omega} [\textrm{div}(v s \nabla w )]
-
-    Note :math:`\textrm{div}(s \nabla w) = \alpha*w`, thus above equation shows
-
-    .. math::
-        (F'h, q) &= (s \nabla v, \nabla w)+\alpha (v, w) \\
-        &= \int_\Omega [\textrm{div}( s \nabla v w)] +(-\textrm{div} (s \nabla v)), w)+\alpha (v, w) \\
-        &= \int_{\partial\Omega} [s dv/dn \textrm{tr}(w)]+(f, w) \\
-        &= (f, w)-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
-        &= (h, -\nabla u \nabla w) + \int_\Omega [\textrm{div}(h \nabla u w)]-\int_{\partial\Omega} [\textrm{tr}(w) h \frac{\textrm{d}u}{\textrm{d}n}] \\
-
-    The last two terms are the same! It follows: :math:`(F'h, q) = (h, -\nabla u \nabla w)`. Hence:
-    Adjoint: :math:`q \mapsto -\nabla u \nabla w`
-    """
-
-    def __init__(self, domain, g, codomain=None, alpha=0.01):
-        codomain = codomain or domain
-        #Need to know the boundary to calculate Neumann bdr condition
-        assert codomain.bdr is not None
-        super().__init__(domain, codomain)
-        self.g = g
-        self.nr_bc = len(self.g)
-
-        self.fes_domain = domain.fes
-        self.fes_codomain = codomain.fes
-
-        #FES and Grid Function for reading in values
-        self.fes_in = ngs.H1(self.fes_codomain.mesh, order=1)
-        self.gfu_in = ngs.GridFunction(self.fes_in)
-
-        # grid functions for later use
-        self.gfu_eval = ngs.GridFunction(self.fes_codomain)  # solution, return value of _eval
-        self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # grid function return value of derivative
-        self.gfu_adjoint = ngs.GridFunction(self.fes_domain) #grid function return value of adjoint
-        
-        self.gfu_bf = ngs.GridFunction(self.fes_codomain) # grid function for defining integrator (bilinearform)
-        self.gfu_lf = ngs.GridFunction(self.fes_codomain)  # grid function for defining right hand side (linearform), f
-        self.gfu_b = ngs.GridFunction(self.fes_codomain)
-
-        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_codomain)  # grid function for inner computations in adjoint
-
-        self.Number = ngs.NumberSpace(self.fes_codomain.mesh)
-        #r, s = self.Number.TnT()
-
-        u, v = self.fes_codomain.TnT()
-
-        # Define Bilinearform, will be assembled later
-        self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
-        self.a += (ngs.grad(u) * ngs.grad(v) * self.gfu_bf+alpha*u*v) * ngs.dx
-
-        #Additional condition: The integral along the boundary vanishes
-        #self.a += ngs.SymbolicBFI(u * s + v * r, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-        #self.fes1 = ngs.H1(self.fes_codomain.mesh, order=4, definedon=self.fes_codomain.mesh.Boundaries("cyc"))
-
-        # Define Linearform for evaluation, will be assembled later       
-        self.b = ngs.LinearForm(self.fes_codomain)
-        self.b += self.gfu_b*v*ngs.ds(codomain.bdr)
-
-        # Define Linearform for derivative, will be assembled later
-        self.f_deriv = ngs.LinearForm(self.fes_codomain)
-        self.f_deriv += -self.gfu_lf * ngs.grad(self.gfu_eval) * ngs.grad(v) * ngs.dx
-
-        # Initialize preconditioner for solving the Dirichlet problems by ngs.solvers.BVP
-        self.prec = ngs.Preconditioner(self.a, 'direct')
-    #Weak formulation:
-    #0=int_Omega [-div(s grad u) v + alpha u v]=-int_dOmega [s du/dn trace(v)]+int_Omega [s grad u grad v + alpha u v]
-    #Hence: int_Omega [s grad u grad v + alpha u v] = int_dOmega [g trace(v)]
-    #Left term: Bilinearform self.a
-    #Righ term: Linearform self.b
-    def _eval(self, diff, differentiate=False):
-        # Assemble Bilinearform
-        self._read_in(diff, self.gfu_bf)
-        self.a.Assemble()
-
-        # Assemble Linearform, boundary term
-        toret = []
-        for i in range(self.nr_bc):
-            self.gfu_b.Set(self.g[i])
-            self.b.Assemble()
-
-        # Solve system
-            if i == 0:
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
-            else: 
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
-
-            toret.append(self.gfu_eval.vec.FV().NumPy()[:].copy())
-
-        return np.array(toret).flatten()
-
-#Weak Formulation:
-#0 = int_Omega [-div(s grad v) w + alpha v w]-int_Omega [div (h grad u) w]
-#=-int_dOmega [s dv/dn trace(w)] + int_Omega [s grad v grad w + alpha v w]-int_dOmega [h du/dn trace(w)]+int_Omega [h grad u grad w]
-#=int_Omega [s grad v grad w + alpha v w]+int_Omega [h grad u grad w]
-#Hence: int_Omega [s grad v grad w + alpha v w] = int_Omega [-h grad u grad w]
-#Left Term: Bilinearform self.a, already defined in _eval
-#Right Term: Linearform f_deriv
-    def _derivative(self, h, **kwargs):
-        # Bilinearform already defined from _eval
-
-        # Assemble Linearform
-        toret = []
-        for i in range(self.nr_bc):
-            self._read_in(h[i], self.gfu_lf)
-            self.f_deriv.Assemble()
-
-            self.gfu_deriv.Set(0)
-            self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
-
-            toret.append(self.gfu_deriv.vec.FV().NumPy()[:].copy())
-
-        return np.array(toret).flatten()
-
-#Same problem as in _eval
-    def _adjoint(self, argument):
-        # Bilinearform already defined from _eval
-
-        # Definition of Linearform
-        # But it only needs to be defined on boundary
-        if self.nr_bc==1:
-            argument_tuple = [argument]
-        else:
-            argument_tuple = self.codomain.split(argument)
-        toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
-        for i in range(self.nr_bc):
-            self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
-            self.b.Assemble()
-
-            self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
-
-            self.gfu_adjoint.Set(-ngs.grad(self.gfu_inner_adjoint) * ngs.grad(self.gfu_eval))
-
-            toret += self.gfu_adjoint.vec.FV().NumPy().copy()
-
-        return toret
-
-
-class ReactionNeumann(NgsOperator):
-    r"""
-    Estimation of the reaction coefficient from boundary value measurements
-
-    PDE: :math:`-div(grad(u)) + s*u = 0 in Omega`
-
-    .. math:: 
-        du/dn = g on dOmega
-
-    Evaluate: :math:`F: s \mapsto trace(u)`
-    Derivative:
-
-    .. math::
-        -div(grad(v))+s^\ast v = -h^\ast u (=:f) \\
-        dv/dn = 0 
-
-    Der: :math:`F'[s]: h \mapsto trace(v)`
-
-    Adjoint: 
-
-    .. math::
-        -div(grad(w))+s*w = 0 \\
-        dw/dn = q
-    
-    Adj: :math:`F'[s]^*: q \mapsto -u*w`
-
-    proof:
-    (F'h, q) = int_dOmega [trace(v) q] = int_dOmega [trace(v) dw/dn] = int_Omega [div(v grad w)] 
-    = int_Omega [grad v grad w] + int_Omega [v div( grad w)] = int_Omega [div(w grad v)] - int_Omega [div(grad v) w] + int_Omega [v div (grad w)]
-    = int_dOmega [trace(w) dv/dn] - int_Omega [h u w] - int_Omega [s v w] + int_Omega [v s w]
-    Note that dv/dn=0 on dOmega. Hence:
-    (F'h, q) = -int_Omega[h u w] = (h, -u w)
-    """
-    def __init__(self, domain, g, codomain=None):
-        codomain = codomain or domain
-        #Need to know the boundary to calculate Neumann bdr condition
-        assert codomain.bdr is not None
-        super().__init__(domain, codomain)
-        self.g = g
-        self.nr_bc = len(self.g)
-
-        self.fes_domain = domain.fes
-        self.fes_codomain = codomain.fes
-
-        # grid functions for later use
-        self.gfu_eval = ngs.GridFunction(self.fes_codomain)  # solution, return value of _eval
-        self.gfu_deriv = ngs.GridFunction(self.fes_codomain)  # grid function: return value of derivative
-        self.gfu_adjoint = ngs.GridFunction(self.fes_domain)  # grid function: return value of adjoint
-
-        self.gfu_bf = ngs.GridFunction(self.fes_codomain)  # grid function for defining integrator of bilinearform
-        self.gfu_lf = ngs.GridFunction(self.fes_domain) # grid function for defining linearform
-        self.gfu_b = ngs.GridFunction(self.fes_codomain)  # grid function for defining the boundary term
-
-        self.gfu_inner_adjoint = ngs.GridFunction(self.fes_codomain)  # grid function for inner computation in adjoint
-
-        #Test and Trial Function
-        u, v = self.fes_codomain.TnT()
-
-        # Define Bilinearform, will be assembled later
-        self.a = ngs.BilinearForm(self.fes_codomain, symmetric=True)
-        self.a += (ngs.grad(u) * ngs.grad(v) + u * v * self.gfu_bf) * ngs.dx
-
-        # Boundary term
-        self.b = ngs.LinearForm(self.fes_codomain)
-        self.b += -self.gfu_b * v.Trace() * ngs.ds(codomain.bdr)
-
-        # Linearform (only appears in derivative)
-        self.f_deriv = ngs.LinearForm(self.fes_codomain)
-        self.f_deriv += -self.gfu_lf * self.gfu_eval * v * ngs.dx
-
-        # Initialize preconditioner for solving the Dirichlet problems by ngs.solvers.BVP
-        self.prec = ngs.Preconditioner(self.a, 'direct')
-
-
-    def _eval(self, diff, differentiate=False):
-        # Assemble Bilinearform
-        self._read_in(diff, self.gfu_bf)
-        self.a.Assemble()
-
-        # Assemble Linearform of boundary term
-        toret = []
-        for i in range(self.nr_bc):
-            self.gfu_b.Set(self.g[i])
-            self.b.Assemble()
-
-        # Solve system
-            if i == 0:
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
-            else:
-                self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_eval, prec=self.prec)
-
-            toret.append(self.gfu_eval.vec.FV().NumPy()[:].copy())
-
-        return np.array(toret).flatten()
-
-    def _derivative(self, h):
-        # Bilinearform already defined from _eval
-
-        # Assemble Linearform of derivative
-        toret = []
-        for i in range(self.nr_bc):
-            self._read_in(h, self.gfu_lf)
-            self.f_deriv.Assemble()
-
-            # Solve system
-            self._solve_dirichlet_problem(bf=self.a, lf=self.f_deriv, gf=self.gfu_deriv, prec=self.prec)
-
-            toret.append(self.gfu_deriv.vec.FV().NumPy()[:].copy())
-
-        return np.array(toret).flatten()
-
-    def _adjoint(self, argument):
-        # Bilinearform already defined from _eval
-
-        # Definition of Linearform
-        # But it only needs to be defined on boundary
-        if self.nr_bc==1:
-            argument_tuple = [argument]
-        else:
-            argument_tuple = self.codomain.split(argument)
-        toret = np.zeros(np.size(self.gfu_adjoint.vec.FV().NumPy()))
-        for i in range(self.nr_bc):
-            self.gfu_b.vec.FV().NumPy()[:] = argument_tuple[i]
-            self.b.Assemble()
-
-        # Solve system
-            self._solve_dirichlet_problem(bf=self.a, lf=self.b, gf=self.gfu_inner_adjoint, prec=self.prec)
-
-            self.gfu_adjoint.Set(self.gfu_inner_adjoint * self.gfu_eval)
-        
-            toret+=self.gfu_adjoint.vec.FV().NumPy().copy()
-
-        return toret
-
-
-
 
