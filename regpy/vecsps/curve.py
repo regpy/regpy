@@ -580,11 +580,11 @@ class StarTrigRadialFcts(UniformGridFcts):
 
 class StarTrigCurve: 
     r"""A class representing star shaped 2d curves with radial function parametrized in a
-    trigonometric basis. Should usually be instantiated via `StarTrigDiscr.eval_curve`.
+    trigonometric basis. Should usually be instantiated via `StarTrigRadialFcts.eval_curve`.
 
     Parameters
     ----------
-    vecsp : StarTrigDiscr
+    vecsp : StarTrigRadialFcts
         The underlying vector space.
     coeffs : array-like
         The coefficient array of the radial function.

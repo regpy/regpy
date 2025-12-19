@@ -39,7 +39,7 @@ def test_GenTrigSpc():
     _ = vs.bd_eval(samples=samples,nvals=40,nderivs=3)
 
     
-def test_StarTrigDiscr():
+def test_StarTrigRadialFcts():
     vecsps_basics(StarTrigRadialFcts,40)
 
     vs = StarTrigRadialFcts(40)
