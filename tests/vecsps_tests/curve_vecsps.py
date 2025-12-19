@@ -35,16 +35,9 @@ def test_GenTrigSpc():
     vecsps_basics(GenTrigSpc,40)
 
     vs = GenTrigSpc(40)
-    coeff = np.asarray([1,0.5,0.25,1,0.25,0.5])
-    _ = vs.bd_eval(coeffs=coeff,nvals=40,nderivs=3)
-    _ = vs.z
-    _ = vs.zp
-    _ = vs.zpp
-    _ = vs.zppp
-    _ = vs.zpabs
-    _ = vs.normal
-    _ = vs.der_normal
-    _ = vs.adjoint_der_normal
+    samples = np.asarray([[1.,0.,0.25],[1,0.25,0.5]])
+    _ = vs.bd_eval(samples=samples,nvals=40,nderivs=3)
+
     
 def test_StarTrigDiscr():
     vecsps_basics(StarTrigRadialFcts,40)

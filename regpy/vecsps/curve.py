@@ -447,36 +447,37 @@ class GenTrig:
      """
 
     def __init__(self, samples, nvals, nderivs):
+        if len(samples.shape)!=2 or not np.issubdtype(samples.dtype,np.floating):
+            raise ValueError('samples must be a 2xN array of real numbers')
         self.samples = samples
-        """Coefficients of the trigonometric polynomials""" 
+        """Equidistant samples of the trigonometric polynomials""" 
+        N = self.samples.shape[1]
         self.nvals = nvals
         self.nderivs = nderivs
         
         """Evaluates the first der derivatives of the parametrization of
         the curve on n equidistant points"""
-        
-        N = self.samples.shape[0]
 
-        coeffhat = np.vstack(trig_interpolate(samples[:,0], self.nvals), \
-                             trig_interpolate(samples[:,1], self.nvals)).T
-        self.z = np.vstack(np.real(np.fft.ifft(np.fft.fftshift(coeffhat[0,:]))), \
-                           np.real(np.fft.ifft(np.fft.fftshift(coeffhat[1,:]))))
+        coeffhat = np.vstack((trig_interpolate(samples[0,:], self.nvals), \
+                             trig_interpolate(samples[1,:], self.nvals)))
+        self.z = np.vstack((np.real(np.fft.ifft(np.fft.fftshift(coeffhat[0,:]))), \
+                           np.real(np.fft.ifft(np.fft.fftshift(coeffhat[1,:])))))
         
         if self.nderivs>=1:
             """Array indices"""
-            self.zp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[1,:]))))
+            self.zp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[1,:])))))
             self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
             """Outer normal vector"""
-            self.normal = np.vstack(self.zp[1,:], -self.zp[0,:])
+            self.normal = np.vstack((self.zp[1,:], -self.zp[0,:]))
 
         if self.nderivs>=2:
             """Array indices"""
-            self.zpp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:]))))
+            self.zpp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[1,:])))))
         if self.nderivs>=3:
-            self.zppp = np.vstack(np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:]))))
+            self.zppp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[0,:]))), \
+                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[1,:])))))
         
         if self.nderivs>3:
             raise ValueError('only derivatives up to order 3 implemented')
