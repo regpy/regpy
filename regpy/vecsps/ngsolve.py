@@ -16,6 +16,9 @@ from warnings import warn
 
 import ngsolve as ngs
 import numpy as np
+from scipy.sparse.linalg import splu
+from scipy.sparse.linalg import solve as spsolve
+from scipy.sparse import csc_matrix, diags
 from pyngcore.pyngcore import BitArray
 
 from regpy.util import is_complex_dtype, Errors, ClassLogger
@@ -340,6 +343,7 @@ class NgsVectorSpace(VectorSpaceBase):
         self._gfu_fes = ngs.GridFunction(self.fes)
         self._help_x = NgsBaseVector(self._gfu_fes.vec)
         self._no_pickle = {*self._no_pickle,"fes"}
+        self.mass_matrix_cholesky = None
 
     def zeros(self):
         vec = self._gfu_fes.vec.CreateVector()
@@ -358,32 +362,32 @@ class NgsVectorSpace(VectorSpaceBase):
     def empty(self):
         return self.zeros()
     
-    def rand(self,distribution = "uniform", **kwargs):
-        if self._fes_util is None:
-            raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
-        r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-        if self.is_complex and not is_complex_dtype(r.dtype):
-            c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-            c.real = r
-            self._gfu_util.vec.FV().NumPy()[:] = c            
-        else:
-            self._gfu_util.vec.FV().NumPy()[:] = r
+    def rand(self,distribution = "uniform", mass_matrix_weighting = True, **kwargs):
+        # Computes random samples in the fes via
+        # mass matrix half power scaling
+        # This is based on the isometric isomorphism
+        # M^{-1/2}: R^n (Euclidean space) -> FEM (n dofs)
+        # Can be disabled by setting mass_matrix_weighting to False,
+        # but this does not create e.g. correct normal distributions
+        
+        def draw():
+            samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+            if self.is_complex and not is_complex_dtype(samp.dtype):
+                samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+            if mass_matrix_weighting:
+                self.create_mass_matrix_cholesky()
+                samp = spsolve(self.mass_matrix_cholesky, samp)
+
         if self.codim == 1:
-            self._gfu_fes.Set(self._gfu_util)
+            self._gfu_fes.vec.FV().NumPy()[:] = draw()
         elif self.product_space:
-            for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
-                gfu_i.Set(gfu_util_i)
+            for gfu_i in self._gfu_fes.components:
+                self._gfu_i.vec.FV().NumPy()[:] = draw()
         else:
-            v = [self._gfu_util,]
+            v = [self._gfu,]
             for _ in range(self.codim-1):
-                gf = copy(self._gfu_util)
-                r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                if self.is_complex and not is_complex_dtype(r.dtype):
-                    c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                    c.real = r
-                    gf.vec.FV().NumPy()[:] = c            
-                else:
-                    gf.vec.FV().NumPy()[:] = r
+                gf = copy(self._gfu)
+                gf.vec.FV().NumPy()[:] = draw()
                 v.append(gf)
             self._gfu_fes.Set(tuple(v))
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
@@ -552,7 +556,53 @@ class NgsVectorSpace(VectorSpaceBase):
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return NgsBaseVector(self._gfu_fes.vec,make_copy = True)
+            
+    def create_mass_matrix_cholesky(self):
+        # Builds the cholesky decomposition
+        # mass = LL^T
+        # The output factor self.mass_matrix_cholesky corresponds to L (not L^T)
+        # Warning: Current method is a hack based on scipy spLU. However,
+        # correct implementation would require access to scikit.sparse.cholmod.
+        if self.mass_matrix_cholesky is not None:
+            return
+        mass = BilinearForm(self.fes)
+        u, v = self.fes.TnT()
+        mass += u * v * dx
+        mass.Assemble()
+        mass = mass.mat
+        rows,cols,vals = mass.COO()
+        mass = csc_matrix((vals, (rows, cols)), shape=(mass.height, mass.width))
+        
+        """
+        Computes sparse lower triangular B such that A ≈ B @ B.T
+        using standard scipy.sparse.linalg.splu with pivoting disabled.
+        """
+        # 1. Force LU decomposition without pivoting
+        # 'NATURAL' = No column permutations
+        # diag_pivot_thresh=0 = No row permutations
+        try:
+            lu = splu(csc_matrix(mass), permc_spec='NATURAL', diag_pivot_thresh=0, 
+                      options={'SymmetricMode': True})
+        except RuntimeError:
+            raise ValueError("Matrix is singular or not SPD enough for non-pivoted LU.")
 
+        # 2. Check if permutations were actually avoided (crucial safety check)
+        n = mass.shape[0]
+        if not (np.array_equal(lu.perm_r, np.arange(n)) and 
+                np.array_equal(lu.perm_c, np.arange(n))):
+            raise ValueError("SPLU forced permutations. Matrix is likely not well-conditioned enough.")
+
+        # 3. Construct B = L * sqrt(D)
+        # splu returns L with unit diagonal. The actual pivots are on U's diagonal.
+        d = lu.U.diagonal()
+        
+        if np.any(d <= 0):
+            raise ValueError("Matrix is not positive definite (negative or zero pivot found).")
+            
+        # Scale columns of L by sqrt(d)
+        # Efficient sparse multiplication: B = L @ diag(sqrt(d))
+        scale_matrix = diags(np.sqrt(d))
+        self.mass_matrix_cholesky = lu.L @ scale_matrix
 
 class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
     r"""A vector space wrapping an `ngsolve.FESpace`. That defines the inner Product 
