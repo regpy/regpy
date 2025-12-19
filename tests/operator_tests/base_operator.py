@@ -93,11 +93,12 @@ def op_basics(op,*args,test_methods = False, test_norm = True, rel_tol_norm = 1e
 def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     op_basics(OP(*args,**kwargs),*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm, inv_tol=inv_tol,**kwargs)
 
-def op_evaluation_and_ot(op,x=None,res=None,tol=1e-10,**kwargs):
+def op_evaluation_and_ot(op,x=None,res=None,rel_tol=1e-6, tol=1e-10,**kwargs):
+    print(kwargs)
+    ot.test_operator(op,**kwargs)
     if x is not None or res is not None:
         diff = op.codomain.norm(op(x)-res)
-        assert diff == pytest.approx(0.,rel=tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
-    ot.test_operator(op,**kwargs)
+        assert diff == pytest.approx(0.,rel=rel_tol,abs = tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
 
 @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((2,2),np.complex128)])
 class TestIdentity():
