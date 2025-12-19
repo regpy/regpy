@@ -321,8 +321,16 @@ class NgsVectorSpace(VectorSpaceBase):
                     else:
                         l_fes.append(ngs.L2(self.fes.mesh, order=0, dim = f.dim, complex = self.is_complex))
                 self._fes_util = ngs.ProductSpace(*l_fes)
+            self.product_space = True
         except NgException:
-            self.codim = 1
+            gf = ngs.GridFunction(fes)
+            if len(gf.dims) == 0:
+                self.codim = 1
+            elif len(gf.dims) == 1:
+                self.codim = gf.dims[0]
+            else:
+                raise ValueError(Errors.value_error(f"Currently we cannot deal with matrix valued fems."))
+            self.product_space = False
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
         except ValueError:
             self.log.warning("Tried to initialize with a product space of product spaces, which are not VectorH1, VectorL2 or VectorValued. Thus fes_util is not available and thus random generator will not work!")
@@ -362,9 +370,22 @@ class NgsVectorSpace(VectorSpaceBase):
             self._gfu_util.vec.FV().NumPy()[:] = r
         if self.codim == 1:
             self._gfu_fes.Set(self._gfu_util)
-        else:
+        elif self.product_space:
             for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
                 gfu_i.Set(gfu_util_i)
+        else:
+            v = [self._gfu_util,]
+            for _ in range(self.codim-1):
+                gf = copy(self._gfu_util)
+                r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                if self.is_complex and not is_complex_dtype(r.dtype):
+                    c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                    c.real = r
+                    gf.vec.FV().NumPy()[:] = c            
+                else:
+                    gf.vec.FV().NumPy()[:] = r
+                v.append(gf)
+            self._gfu_fes.Set(tuple(v))
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
         return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
     
