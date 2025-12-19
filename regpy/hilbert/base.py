@@ -1,6 +1,5 @@
 from copy import copy,deepcopy
 from math import sqrt
-import logging
 
 import numpy as np
 
@@ -10,9 +9,6 @@ from regpy.operators import CholeskyInverse,PtwMultiplication, Operator
 from regpy.operators import DirectSum as DirectSumOp
 from regpy.operators.bases_transform import BasisTransform
 
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-)
 
 __all__ = ["HilbertSpace","HilbertPullBack","GramHilbertSpace","DirectSum","TensorProd","L2Generic","AbstractSpace"]
 

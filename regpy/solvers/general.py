@@ -151,7 +151,7 @@ class Solver:
         #    y = self.y
         if stoprule.best_iterate() is None:
             self.log.info(f"Could not find a bet iterate with stop rule {stoprule}!")
-            return x, y
+            return self.x, self.y
         return stoprule.best_iterate()
     
 

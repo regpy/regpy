@@ -243,7 +243,7 @@ class CombineRules(StopRule):
     
     def best_iterate(self):
         if self.active_rule is None:
-            self.log("No sub-rule has triggered yet, so no best iterate is available!")
+            self.log.warning("No sub-rule has triggered yet, so no best iterate is available!")
             return None
         return self.active_rule.best_iterate()
 

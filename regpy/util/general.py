@@ -188,14 +188,15 @@ class ClassLogger:
             logger = getLogger(f"{owner.__qualname__}")
             logger.setLevel(INFO)
 
-            if not logger.handlers:
-                handler = StreamHandler()
-                handler.setFormatter(
-                    Formatter(
-                        "%(asctime)s %(levelname)-8s %(name)-20s :: %(message)s"
-                    )
+            if logger.handlers:
+                logger.handlers = []
+            handler = StreamHandler()
+            handler.setFormatter(
+                Formatter(
+                    "%(asctime)s %(levelname)-8s %(name)-20s :: %(message)s"
                 )
-                logger.addHandler(handler)
+            )
+            logger.addHandler(handler)
             owner._log = logger
         return logger
 
