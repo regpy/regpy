@@ -502,7 +502,7 @@ class NgsGradOP(NgsOperator):
     - This operator does **not** compute the pointwise gradient.
     - Deviations near the boundary are expected.
     - Intended for variational formulations (e.g. regularization, weak Laplacians,
-    adjoint-based optimization), not for visualization.
+      adjoint-based optimization), not for visualization.
 
 
     Mathematical definition

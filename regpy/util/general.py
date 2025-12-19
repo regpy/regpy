@@ -1,5 +1,5 @@
 from functools import wraps
-from logging import getLogger, INFO, StreamHandler, Formatter
+from logging import getLogger, INFO, StreamHandler, Formatter, WARNING
 
 import numpy as np
 
@@ -186,7 +186,7 @@ class ClassLogger:
         if logger is None:
             # Otherwise build a default logger for the class
             logger = getLogger(f"{owner.__qualname__}")
-            logger.setLevel(INFO)
+            logger.setLevel(WARNING)
 
             if logger.handlers:
                 logger.handlers = []
