@@ -15,7 +15,7 @@ class StopRule:
 
     log = ClassLogger()
 
-    def __init__(self):
+    def __init__(self, logging_level = "WARNING"):
         self.solver = None
 
         self.triggered = False
@@ -24,7 +24,7 @@ class StopRule:
         """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
         self.is_main_rule = True
         r"""Whether this is the main stopping rule of the solver or a sub-rule used for example in a combined rule."""
-        self.log.setLevel("INFO")
+        self.log.setLevel(logging_level)
 
     def _complete_init_with_solver(self,solver):
         """Complete the initialisation of the stoprule by giving a solver. 
@@ -338,7 +338,7 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
+    def __init__(self, max_iterations, while_type = True,logging_level= "WARNING"):
         if not isinstance(max_iterations,int):
             raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
         if max_iterations<0:
@@ -554,7 +554,7 @@ class RelativeChangeSol(StopRule):
 ######### StopRules for convex optimization problems #########
 
 class OptimalityCondStopping(StopRule):
-    def __init__(self, logging_level = "INFO",tol = 0.):
+    def __init__(self, logging_level = "WARNING",tol = 0.):
         """Stopping rule based on optimality condition violation.
         
         Parameters
@@ -603,7 +603,7 @@ class DualityGapStopping(StopRule):
     logging_level : str
         The logging level for the stopping rule.
     """    
-    def __init__(self, tol = 0, logging_level = "INFO"):
+    def __init__(self, tol = 0, logging_level = "WARNING"):
         super().__init__()
         self.tol = tol
         self.log.setLevel(logging_level)
