@@ -210,7 +210,7 @@ def test_adjoint_derivative(op, tolerance=1e-10):
         return False
 
     
-def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=False):
+def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=False,x_s = None):
     """Numerically tests if operator is computed correctly.
 
     Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
@@ -221,6 +221,8 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=Fa
     ----------
     op : regpy.operators.Operator
         The operator.
+    sample_N : int
+        Number of runs for each test.
     tolerance : float, optional
         The maximum allowed difference between the results. Defaults to 1e-10.
     steps : list of float, optional
@@ -228,6 +230,8 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=Fa
         Defaults to [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
     adjoint_derivative : bool, optional
         If true the adjoint_derivative is also checked. Defaults to False.
+    x_s : list or tuple
+        List or tuple of sample_N elements of which to test the derivative.
 
     Raises
     ------
@@ -256,11 +260,20 @@ def test_operator(op,sample_N=5,tolerance=1e-10,steps=None,adjoint_derivative=Fa
                 raise AssertionError('Adjoint derivative test failed for affine linear operator.')
     else:
         op.log.info('Testing non-linear operator for exactness of linearization and derivative.')
-        for _ in range(sample_N):
-            if not test_derivative(op, steps):
+        if x_s is None:
+            x_s = [op.domain.rand() for _ in range(sample_N)]
+        elif isinstance(x_s,list): 
+            if len(x_s) < sample_N:
+                sample_N = len(x_s)
+                op.log.info(f'You tried to test for sample_n = {sample_N} but gave only {len(x_s)} x_s. Only testing on the x_s')
+            pass
+        else:
+            x_s = [x_s]
+            sample_N = 1
+        for k in range(sample_N):
+            if not test_derivative(op, steps = steps,x = x_s[k]):
                 raise AssertionError('Derivative test failed for non-linear operator.')
-            x = op.domain.rand()
-            _, deriv = op.linearize(x)
+            _, deriv = op.linearize(x_s[k])
             try:
                 test_operator(deriv,sample_N=sample_N,tolerance=tolerance)
             except AssertionError:
