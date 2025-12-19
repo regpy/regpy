@@ -17,7 +17,7 @@ from warnings import warn
 import ngsolve as ngs
 import numpy as np
 from scipy.sparse.linalg import splu
-from scipy.sparse.linalg import solve as spsolve
+from scipy.sparse.linalg import spsolve
 from scipy.sparse import csc_matrix, diags
 from pyngcore.pyngcore import BitArray
 
@@ -362,36 +362,68 @@ class NgsVectorSpace(VectorSpaceBase):
     def empty(self):
         return self.zeros()
     
-    def rand(self,distribution = "uniform", mass_matrix_weighting = True, **kwargs):
-        # Computes random samples in the fes via
-        # mass matrix half power scaling
-        # This is based on the isometric isomorphism
-        # M^{-1/2}: R^n (Euclidean space) -> FEM (n dofs)
-        # Can be disabled by setting mass_matrix_weighting to False,
-        # but this does not create e.g. correct normal distributions
-        
-        def draw():
-            samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-            if self.is_complex and not is_complex_dtype(samp.dtype):
-                samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-            if mass_matrix_weighting:
-                self.create_mass_matrix_cholesky()
-                samp = spsolve(self.mass_matrix_cholesky, samp)
+    def rand(self,distribution = "uniform", use_space_sampling = False, mass_matrix_weighting = True, **kwargs):
+        if use_space_sampling:
+            # Computes random samples in the fes via
+            # mass matrix half power scaling
+            # This is based on the isometric isomorphism
+            # M^{-1/2}: R^n (Euclidean space) -> FEM (n dofs)
+            # Can be disabled by setting mass_matrix_weighting to False,
+            # but this does not create e.g. correct normal distributions
+            
+            def draw():
+                samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                if self.is_complex and not is_complex_dtype(samp.dtype):
+                    samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                if mass_matrix_weighting:
+                    self.create_mass_matrix_cholesky()
+                    samp = spsolve(self.mass_matrix_cholesky, samp)
 
-        if self.codim == 1:
-            self._gfu_fes.vec.FV().NumPy()[:] = draw()
-        elif self.product_space:
-            for gfu_i in self._gfu_fes.components:
-                self._gfu_i.vec.FV().NumPy()[:] = draw()
+            if self.codim == 1:
+                self._gfu_fes.vec.FV().NumPy()[:] = draw()
+            elif self.product_space:
+                for gfu_i in self._gfu_fes.components:
+                    self._gfu_i.vec.FV().NumPy()[:] = draw()
+            else:
+                v = [self._gfu,]
+                for _ in range(self.codim-1):
+                    gf = copy(self._gfu)
+                    gf.vec.FV().NumPy()[:] = draw()
+                    v.append(gf)
+                self._gfu_fes.Set(tuple(v))
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
         else:
-            v = [self._gfu,]
-            for _ in range(self.codim-1):
-                gf = copy(self._gfu)
-                gf.vec.FV().NumPy()[:] = draw()
-                v.append(gf)
-            self._gfu_fes.Set(tuple(v))
-        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+            if self._fes_util is None:
+                raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
+            r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+            if self.is_complex and not is_complex_dtype(r.dtype):
+                c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                c.real = r
+                self._gfu_util.vec.FV().NumPy()[:] = c            
+            else:
+                self._gfu_util.vec.FV().NumPy()[:] = r
+            if self.codim == 1:
+                self._gfu_fes.Set(self._gfu_util)
+            elif self.product_space:
+                for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
+                    gfu_i.Set(gfu_util_i)
+            else:
+                v = [self._gfu_util,]
+                for _ in range(self.codim-1):
+                    gf = copy(self._gfu_util)
+                    r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                    if self.is_complex and not is_complex_dtype(r.dtype):
+                        c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                        c.real = r
+                        gf.vec.FV().NumPy()[:] = c            
+                    else:
+                        gf.vec.FV().NumPy()[:] = r
+                    v.append(gf)
+                self._gfu_fes.Set(tuple(v))
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+
     
     def poisson(self,x, n = 1, tol = 3e-15):
         if x.is_complex:
@@ -565,9 +597,9 @@ class NgsVectorSpace(VectorSpaceBase):
         # correct implementation would require access to scikit.sparse.cholmod.
         if self.mass_matrix_cholesky is not None:
             return
-        mass = BilinearForm(self.fes)
+        mass = ngs.BilinearForm(self.fes)
         u, v = self.fes.TnT()
-        mass += u * v * dx
+        mass += u * v * ngs.dx
         mass.Assemble()
         mass = mass.mat
         rows,cols,vals = mass.COO()
