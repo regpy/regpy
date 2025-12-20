@@ -20,11 +20,13 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 ### Fixed: Bugs that were fixed
 -->
 
-## [Unreleased]
+## [1.0.0]
 
 ### Added
 
 - More test
+- custom Error massages
+- Random generator is now associated to the Vector spaces and can be globally seeded with a utility function in util
 
 #### Additions to `regpy.operators`
 
@@ -39,11 +41,30 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
   - The new classes are `OperatorNode`, `Edge` and `OperatorGraph` representing nodes, edges and the entire graph respectively
 - Added `OuterProduct` operator
 - Added `EinSum` operator which has the same functionality as the corresponding numpy function and is capable of most multilinear algebra operations
+- Added new ngsolve operator `NgsGradOP`
 
 #### Additions to `regpy.solvers`
+
 - New nonlinear solver `IterativelyRegularizedNewton` which combines linearization of the nonlinear operator with a subsequent linear solver that can be chosen freely from the provided linear solvers
 
+#### Addtions to `regpy.vecsps`
+
+- new ngsolve space `NgsVectorSpaceWithInnerProduct` that includes a mass Matrix into its inner product to allow for easier definition of operators. Note, that only the `L2` Hilbert space supports it.
+
+#### Introducing Ducktyping
+
+- vectors are now not limited to numpy vectors. All operations in general library are not numpy specific thus allowing general vectors.
+- As vectors we can consider at its core anything that can be linearly added and supports scalar multiplication and division
+- This is now used to define `TupleVectors` that are vectors of the `DirectSum` vector space and also in the ngsolve interface that is build around a custom wrapper `NgsBaseVector` adding some additional functionality and behaviour to the `BaseVector` of ngsolve
+
 ### Changed: Changes in existing functionality
+
+- splitting core modules up into `base` or `general` submodules and specific interface modules such as numpy or ngsolve
+
+#### Changes to Operators
+
+- Amended old NgsSolve Operators `ProjectToBoundary`, `SolveSystem`, `LinearForm`, `LinearFormGrad`
+- Moved matrix Multiplication in ngsolve to operators and renamed it
 
 #### Changes to Solvers
 
@@ -63,12 +84,11 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - shift can now be done with additional data parameter to shift the data
 - Nested `HorizontalShift` functionals are now resolved to single `HorizontalShift` functionals
 
-
-
 #### Changes in Utility
 
 - `operator_tests`, Changed functionality from asserts to actual logged information in warnings
 - introduced test for affine linearity
+- memoized properties like `gram` or `inverse` can be deleted now
 
 #### Changes in stop rules
 
@@ -77,12 +97,15 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - introduced `history_dict` to the stopping rules in there the scalar values used by the stopping rule is saved.
 - The stop rule know can be  copied (`copy`) and be reseted to initial state (`reset`). this can be done in one to get a reseted copy (`copy_and_reset`)
 
+### Deprecated
 
-### Deprecated: Features soon to be removed
+### Removed
 
-### Removed: Features removed in this version
+- Removed old ngsolve operators
+- `MonotonicityRule`
+- `AMA` which was not properly working
 
-### Fixed:
+### Fixed
 
 - `IRGNM` revision previously the computed and used Krylov basis was not working
 
