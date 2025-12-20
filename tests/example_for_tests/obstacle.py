@@ -16,7 +16,7 @@ from . import import_example_package
 
 import_example_package("./examples/obstacle/")
 
-from dirichlet_op import DirichletOp, create_synthetic_data
+from dirichlet_op import DirichletOp
 
 
 def test_obstacle():
@@ -34,7 +34,7 @@ def test_obstacle():
     setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
 
     #Exact data
-    farfield, _ = create_synthetic_data(op, apple(64,der=3))
+    farfield, _ = op.create_synthetic_data(apple,N_ieq_synth=96)
 
     # Gaussian data 
     noiselevel=0.01
@@ -44,8 +44,8 @@ def test_obstacle():
 
     #Initial guess
     t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
-    init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
-    init = init.flatten()
+    init = 0.45*np.vstack((np.cos(t), np.sin(t))).T
+
 
     solver = NewtonCG(
         setting, data, init = init,
