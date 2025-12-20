@@ -456,7 +456,7 @@ class TikhonovCGOnlyDomain(RegSolver):
     setting : regpy.solvers.Setting
         The setting of the forward problem.
     backprop_data : setting.op.domain [default: None]
-        The back propagated measured data given by :math:`T^\ast g^\delta`. Note that you have to incorporate the 
+        The back propagated measured data given by :math:`T^{\ast} g^{\delta}`. Note that you have to incorporate the 
         appropriate Gram matrix of the codomain in this back propagation!
     regpar : float [default:None]
         The regularization parameter. Must be positive. If None, then setting must not contain it. 
@@ -507,7 +507,7 @@ class TikhonovCGOnlyDomain(RegSolver):
         if backprop_data not in setting.op.domain:
             raise ValueError(Errors.value_error("The back propagated data backprop_data must be an element of setting.op.domain"))
         self.backprop_data = backprop_data
-        """The back propagated data :math:`T^\ast g^\delta`."""
+        """The back propagated data :math:`T^{\ast} g^{obs}`."""
 
         if regpar is None:
             if not setting.is_tikhonov:
