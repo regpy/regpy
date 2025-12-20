@@ -35,7 +35,7 @@ def test_GenTrigSpc():
     vecsps_basics(GenTrigSpc,40)
 
     vs = GenTrigSpc(40)
-    samples = np.asarray([[1.,0.,0.25],[1,0.25,0.5]])
+    samples = np.asarray([[1.,0.],[0.25,1],[0.25,0.5]])
     _ = vs.bd_eval(samples=samples,nvals=40,nderivs=3)
 
     

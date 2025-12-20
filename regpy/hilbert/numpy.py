@@ -74,7 +74,7 @@ class SobolevUniformGridFcts(HilbertSpace):
         super().__init__(vecsp)
         self.index = index
         if axes is None:
-            axes = range(vecsp.ndim)
+            axes = range(len(vecsp.shape_domain))
         self.axes = list(axes)
 
     def __eq__(self, other):
@@ -88,14 +88,8 @@ class SobolevUniformGridFcts(HilbertSpace):
 
     @memoized_property
     def gram(self):
-        ft = FourierTransform(self.vecsp, axes=self.axes)
-        mul = PtwMultiplication(
-            ft.codomain,
-            self.vecsp.volume_elem * (
-                1 +  ft.codomain.coord_distances(axes=self.axes)**2
-            )**self.index
-        )
-        return ft.adjoint * mul * ft
+        from regpy.operators.convolution import BesselPotential        
+        return BesselPotential(self.vecsp,2*self.index,convolution_axes=self.axes)
 
 class HmDomain(HilbertSpace):
     r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `regpy.vecsps.UniformGridFcts` grid.

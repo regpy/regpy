@@ -98,10 +98,16 @@ class TestDifferentialOperators():
 
     def test_compatibility(self):
         grad =  gradient(self.grid.vector_valued_space(1),pad_amount=self.pad_amount)
-        div = divergence(self.grid.vector_valued_space(2),pad_amount=self.pad_amount)  
-        Lap = Laplacian(self.grid,pad_amount=self.pad_amount)
+        div = divergence(self.grid.vector_valued_space(2),pad_amount=self.pad_amount) 
         div_grad = div.composition(grad)
+        Lap = Laplacian(self.grid,pad_amount=self.pad_amount,kernel_matrix_shape=(1,1))
         assert np.allclose(Lap.fourier_multiplier,div_grad.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to div_grad composition is not close!",meth="Differential Operators")
+
+        Lap_scal = Laplacian(self.grid,pad_amount=self.pad_amount)
+        Dxsq = Derivative(self.grid,order=(2,0),pad_amount=self.pad_amount) 
+        Dysq = Derivative(self.grid,order=(0,2),pad_amount=self.pad_amount)         
+        Lap_as_sum = Dxsq+Dysq
+        assert np.allclose(Lap_scal.fourier_multiplier,Lap_as_sum.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to sum of second derivative operators is not close!",meth="Differential Operators")
 
     @pytest.mark.parametrize("op, vs, pad_amount",[ 
         (gradient,grid.vector_valued_space(1),[2,0]),
@@ -125,7 +131,8 @@ class TestDifferentialOperators():
         grad = gradient(grid3D.vector_valued_space(1),pad_amount=pad_amount)   
         curlop = curl(grid3D.vector_valued_space(3),pad_amount=pad_amount)
         div = divergence(grid3D.vector_valued_space(3),pad_amount=pad_amount)
-        Lap3D = Laplacian(grid3D.vector_valued_space(3),pad_amount=pad_amount)
+        Lap3D = Laplacian(grid3D.vector_valued_space(3),pad_amount=pad_amount,kernel_matrix_shape=(3,3))
+    
 
         curl_grad =  curlop.composition(grad)
         assert norm(curl_grad.fourier_multiplier)==0
