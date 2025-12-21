@@ -1,5 +1,4 @@
 import numpy as np
-
 from regpy.util import Errors
 
 from .numpy import UniformGridFcts
@@ -402,14 +401,17 @@ class GenTrigSpc(UniformGridFcts):
     ----------
     n : int
         Number of coefficients of each of the cartesian components.
+    nvals: int
+        Number of points to evaluate the parameterization on
     """
-    def __init__(self, n):
+    def __init__(self, n,nvals):
         if not isinstance(n, int,) or n<=0:
             raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigSpc need n to be a positive integer!"))
         self.n = n
+        self.nvals = nvals
         super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False),shape_codomain=(2,))
 
-    def bd_eval(self, samples, nvals=None, nderivs=0):
+    def coeff2curve(self, samples, nderivs=0):
         r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
@@ -417,18 +419,39 @@ class GenTrigSpc(UniformGridFcts):
         ----------
         samples : array-like
             samples from which to generate the curve
-        nvals : int 
-            Number of points to evaluate the parameterization on
         nderivs : int
             Number of derivatives to compute 
         """
-        gentrig=GenTrig(samples, nvals, nderivs)
+        gentrig=GenTrig(samples, self, nderivs)
         
         return gentrig
-    
+
+    def param_derivative(self,u):
+        """
+        Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2\pi] \to \mathbb{C}`,
+        which are given by their values at self.nval equidistant point on :math:`[0,2\pi]` 
+        
+        Parameters:
+        u: np.ndarray
+            two-dimnensional complex array with first dimension self.nval 
+        """
+        from regpy.operators.convolution import Derivative        
+        
+        if not isinstance(u, np.ndarray) or not np.issubdtype(u.dtype,complex):
+            raise TypeError(Errors.type_error('u must be complex np.ndarray.'))
+        if not len(u.shape) in (1,2) or not u.shape[0]==self.nvals:
+            raise ValueError(Errors.value_error(f'u must have two dimensions, the first one equal to self.nvals. Given shape: {u.shape}. nvals: {self.nvals}'))
+                
+        if not hasattr(self,'_complexBlockDerivative') or (self._complexBlockDerivative.domain.shape!=u.shape):
+            der_domain = UniformGridFcts((0.,2*np.pi,self.nvals), periodic=True,dtype=complex,
+                                         shape_codomain=(u.shape[1],) if len(u.shape) ==2 else () 
+                                         )
+            self._complexBlockDerivative = Derivative(der_domain,(1,))
+        return self._complexBlockDerivative(u)
+
 class GenTrig:
     r"""The class GenTrig describes boundaries of domains in R^2 which are
-    parameterized by
+    parameterized by 
 
     .. math::
         z(t) = [z_1(t), z_2(t)]      0<=t<=2pi
@@ -440,20 +463,23 @@ class GenTrig:
      ----------
      samples : array-like
         Equidistant (in parameter space!) samples of the cartesian components of the parameterization of the curve 
-     nvals : int 
-        Number of points at which to evaluate the curve
+     spc : regpy.vecspc.curve.GenTrigSpc 
+        Underlying curve space
      nderivs : int
         Number of derivatives to compute 
      """
 
-    def __init__(self, samples, nvals, nderivs):
+    def __init__(self, samples, spc, nderivs):
         if len(samples.shape)!=2 or not np.issubdtype(samples.dtype,np.floating):
             raise ValueError(Errors.value_error(f'samples must be a 2xN array of real numbers. Got shape {samples.shape} of type {samples.dtype}.'))
         self.samples = samples
         """Equidistant samples of the trigonometric polynomials""" 
         N = self.samples.shape[1]
-        self.nvals = nvals
+        self.nvals = spc.nvals
         self.nderivs = nderivs
+        if not isinstance(spc,GenTrigSpc):
+            raise TypeError(Errors.type_error('spc must be a GenTrigSpc'))
+        self.spc = spc
         
         """Evaluates the first der derivatives of the parametrization of
         the curve on n equidistant points"""
@@ -516,11 +542,14 @@ class GenTrig:
             
         return adj.T.real
         
+
     def arc_length_der(self, h):
-            n = int(len(self.zpabs))
-            dhds = np.fft.ifft(np.fft.fftshift((1j*np.linspace(-n/2, n/2-1, n)).transpose()*trig_interpolate(
-                h, n)))/self.zpabs.transpose()
-            return dhds
+        if len(h.shape)==1:
+            return self.spc.param_derivative(h) / self.zpabs
+        elif len(h.shape)==2:
+            return self.spc.param_derivative(h) / self.zpabs[:,np.newaxis]
+        else:
+            raise ValueError(Errors.value_error('shape of h must have length 1 or 2.'))
 
     def coeff_to_curve(self, coeff, n):
         N = int(len(coeff)/2)
