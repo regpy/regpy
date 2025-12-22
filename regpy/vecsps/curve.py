@@ -6,10 +6,10 @@ from .numpy import UniformGridFcts
 __all__ = ["GenCurve","kite","StarCurve","peanut","round_rect","apple","three_lobes","pinched_ellipse","smoothed_rectangle","nonsym_shape","circle","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 class GenCurve:
-    r"""Base class for Parameterized smooth closed curve in :math:`R^2` 
-    without self-crossing parametrization by function :math:`z(t)`\, 
-    :math:`0\leq t\leq 2*\pi` (counter-clockwise). Note :math:`z(t)` must return two 
-    values :math:`[x(t),y(t)]`\.
+    r"""Base class for parameterized smooth, non self-intersecting, closed curves in :math:`R^2`. 
+    The parametrization is given by a function :math:`z(t)`\, 
+    :math:`0\leq t\leq 2*\pi` and should be counter-clockwise (for the correct orientation of the normal 
+    vector). Note that :math:`z(t)` must return two values :math:`[x(t),y(t)]`\.
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -74,14 +74,14 @@ class GenCurve:
     def n(self,n_new):
         if not isinstance(n_new,int) or n_new <= 0:
             raise ValueError(Errors.value_error("The number of discretization points of the GenCurve needs to be a positive integer!"))
-        self.t = 2*np.pi*np.linspace(0, n_new-1, n_new)/n_new
+        self.t = np.linspace(0, 2*np.pi, n_new,endpoint=False)
         self._n = n_new
         for i in range(0,self.der+1):
             self._z[i]= self(i)
 
     @property
     def z(self):
-        """Values of z(t) at equidistant grid"""
+        """Values of z(t) at equidistant grid of self.n points."""
         if self.der >= 0:
             return self._z[0]
         else:
@@ -89,7 +89,7 @@ class GenCurve:
     
     @property
     def zp(self):
-        """Values of z(t) its first derivatives at equidistant grid"""
+        """Values of z(t) its first derivatives at equidistant grid of self.n points."""
         if self.der >= 1:
             return self._z[1]
         else:
@@ -97,6 +97,7 @@ class GenCurve:
     
     @property
     def zpabs(self):
+        """Absolute values |z'(t)| at equidistant grid of self.n points."""
         if self.zp is not None:
             return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
     @property
@@ -106,7 +107,7 @@ class GenCurve:
         
     @property
     def zpp(self):
-        """Values of z(t) its second derivatives at equidistant grid"""
+        """Values of z(t) its second derivatives at equidistant grid of self.n points."""
         if self.der >= 2:
             return self._z[2]
         else:
@@ -114,38 +115,11 @@ class GenCurve:
 
     @property
     def zppp(self):
-        """Values of z(t) its third derivatives at equidistant grid"""
+        """Values of z(t) its third derivatives at equidistant grid of self.n points."""
         if self.der >= 3:
             return self._z[3]
         else:
             raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.der >=3 please change that!",self,"zppp"))
-
-
-class kite(GenCurve):
-    r"""Subclass of the `GenCurve` that gives a kite form. 
-
-    Parameters
-    ----------
-    n : int
-        number of evaluation points on the parameterized curve.
-    der : int, optional
-        Number of derivatives to initially compute. Default: 0
-    """
-    def __init__(self, n, der = 0):
-        super().__init__("kite",n,der=der)
-
-    def _call(self, der=0):
-        if der==0:
-            return np.append(np.cos(self.t)+0.65*np.cos(2*self.t)-0.65,   1.5*np.sin(self.t)).reshape(2, self.n)
-        elif der==1:
-            return np.append(-np.sin(self.t)-1.3*np.sin(2*self.t)    ,    1.5*np.cos(self.t)).reshape(2, self.n)
-        elif der==2:
-            return np.append(-np.cos(self.t)-2.6*np.cos(2*self.t)    ,   -1.5*np.sin(self.t)).reshape(2, self.n)
-        elif der==3:
-            return np.append(np.sin(self.t)+5.2*np.sin(2*self.t)     ,   -1.5*np.cos(self.t)).reshape(2, self.n)
-        else:
-            raise ValueError('derivative not implemented')
-
 
 class StarCurve(GenCurve):
     r"""Base class for radial curve in :math:`R^2` 
@@ -208,12 +182,41 @@ class StarCurve(GenCurve):
     def normal(self):
         r"""Outer normal vector(not normalized)"""
         if self.zp is not None:
-            return np.append(self.zp[1,:], -self.zp[0,:]).reshape((2, self.n))
+            return np.vstack((self.zp[1,:], -self.zp[0,:]))
 
     def radial(self, n):
-        t=2*np.pi*np.linspace(0, n-1, n)/n
+        t=np.linspace(0, 2*np.pi, n,endpoint=False)
         rad = eval(self.name)(t, 0)
         return rad
+    
+################################ special GenCurves and StarCurves ####################################
+
+class kite(GenCurve):
+    r"""Subclass of the `GenCurve` that gives a kite form. 
+
+    Parameters
+    ----------
+    n : int
+        number of evaluation points on the parameterized curve.
+    der : int, optional
+        Number of derivatives to initially compute. Default: 0
+    """
+    def __init__(self, n, der = 0):
+        super().__init__("kite",n,der=der)
+
+    def _call(self, der=0):
+        if der==0:
+            return np.vstack((np.cos(self.t)+0.65*np.cos(2*self.t)-0.65,   1.5*np.sin(self.t)))
+        elif der==1:
+            return np.vstack((-np.sin(self.t)-1.3*np.sin(2*self.t)    ,    1.5*np.cos(self.t)))
+        elif der==2:
+            return np.vstack((-np.cos(self.t)-2.6*np.cos(2*self.t)    ,   -1.5*np.sin(self.t)))
+        elif der==3:
+            return np.vstack((np.sin(self.t)+5.2*np.sin(2*self.t)     ,   -1.5*np.cos(self.t)))
+        else:
+            raise ValueError('derivative not implemented')
+
+
 
 class peanut(StarCurve):
     
@@ -392,6 +395,9 @@ class circle(StarCurve):
             return np.zeros_like(self.t)
 
 
+
+######################### parameterized curves ##############################
+
 class GenTrigSpc(UniformGridFcts):
     r"""Class for the `VectorSpaceBase` instance of `GenTrig` instances. 
     It is a space of vector-valued trigonometric polynomials. 
@@ -449,7 +455,7 @@ class GenTrigSpc(UniformGridFcts):
             self._complexBlockDerivative = Derivative(der_domain,(1,))
         return self._complexBlockDerivative(u)
 
-class GenTrig:
+class GenTrig(GenCurve):
     r"""The class GenTrig describes boundaries of domains in R^2 which are
     parameterized by 
 
@@ -474,39 +480,17 @@ class GenTrig:
             raise ValueError(Errors.value_error(f'samples must be a 2xN array of real numbers. Got shape {samples.shape} of type {samples.dtype}.'))
         self.samples = samples
         """Equidistant samples of the trigonometric polynomials""" 
-        N = self.samples.shape[1]
-        self.nvals = spc.nvals
-        self.nderivs = nderivs
         if not isinstance(spc,GenTrigSpc):
             raise TypeError(Errors.type_error('spc must be a GenTrigSpc'))
         self.spc = spc
+        self.coeffhat = np.vstack((trig_interpolate(samples[:,0], spc.nvals), \
+                                   trig_interpolate(samples[:,1], spc.nvals))).T
+        self._freq = 1j*np.linspace(-spc.nvals/2, spc.nvals/2-1, spc.nvals)
+        super().__init__("GenTrig",spc.nvals,der=nderivs) 
         
-        """Evaluates the first der derivatives of the parametrization of
-        the curve on n equidistant points"""
-
-        coeffhat = np.vstack((trig_interpolate(samples[:,0], self.nvals), \
-                             trig_interpolate(samples[:,1], self.nvals))).T
-        self.z = np.vstack((np.real(np.fft.ifft(np.fft.fftshift(coeffhat[:,0]))), \
-                           np.real(np.fft.ifft(np.fft.fftshift(coeffhat[:,1])))))
-        
-        if self.nderivs>=1:
-            """Array indices"""
-            self.zp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[:,0]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))*coeffhat[:,1])))))
-            self.zpabs = np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
-            """Outer normal vector"""
-            self.normal = np.vstack((self.zp[1,:], -self.zp[0,:]))
-
-        if self.nderivs>=2:
-            """Array indices"""
-            self.zpp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift( (1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[:,0]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**2 * coeffhat[:,1])))))
-        if self.nderivs>=3:
-            self.zppp = np.vstack((np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[:,0]))), \
-                np.real(np.fft.ifft(np.fft.fftshift((1j*np.linspace(-self.nvals/2, self.nvals/2-1, self.nvals))**3 * coeffhat[:,1])))))
-        
-        if self.nderivs>3:
-            raise ValueError('only derivatives up to order 3 implemented')
+    def _call(self,der=0):
+        return np.vstack((np.real(np.fft.ifft(np.fft.fftshift(self._freq**der *self.coeffhat[:,0]))), \
+                np.real(np.fft.ifft(np.fft.fftshift(self._freq**der * self.coeffhat[:,1])))))
 
     def der_normal(self, h):
         N = h.shape[1]
@@ -550,20 +534,6 @@ class GenTrig:
             return self.spc.param_derivative(h) / self.zpabs[:,np.newaxis]
         else:
             raise ValueError(Errors.value_error('shape of h must have length 1 or 2.'))
-
-    def coeff_to_curve(self, coeff, n):
-        N = int(len(coeff)/2)
-
-        val = coeff[N:2*N]
-        val1 = coeff[0:N]
-        
-        coeffhat = np.array([trig_interpolate(val1, N),\
-                    trig_interpolate(val, N)])
-        
-        pts = np.array([np.real(np.fft.ifft(np.fft.fftshift(coeffhat[:,0]))), \
-            np.real(np.fft.ifft(np.fft.fftshift(coeffhat[:,1])))])
-        
-        return pts
 
 class StarTrigRadialFcts(UniformGridFcts):
     r"""Class for VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
