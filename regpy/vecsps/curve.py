@@ -9,7 +9,7 @@ class GenCurve:
     r"""Base class for parameterized smooth, non self-intersecting, closed curves in :math:`R^2`. 
     The parametrization is given by a function :math:`z(t)`\, 
     :math:`0\leq t\leq 2*\pi` and should be counter-clockwise (for the correct orientation of the normal 
-    vector). Note that :math:`z(t)` must return two values :math:`[x(t),y(t)]`\.
+    vector). Note that :math:`z(t)` must return two _call_samples :math:`[x(t),y(t)]`\.
 
     Subclasses should implement `_call` with the optional argument `der` 
     to determine which derivative to compute.
@@ -29,16 +29,16 @@ class GenCurve:
         number of derivatives to initially compute.
     """
     
-    def __init__(self, name, n, der = 0):
+    def __init__(self, name, n,nderivs = 0):
         self.name=name
         "Name of the true curve function"
         
         self._z = []
         """List of all evaluations of z(t) and its derivatives. """
-        self._der = -1
+        self._nderivs = -1
 
         self.n = n
-        self.der = der 
+        self.nderivs = nderivs 
 
 
 
@@ -52,18 +52,18 @@ class GenCurve:
         raise NotImplementedError
     
     @property
-    def der(self):
+    def nderivs(self):
         """number of derivatives to compute"""
-        return self._der
+        return self._nderivs
 
-    @der.setter
-    def der(self,der_new):
-        if not isinstance(der_new,int) or der_new >3:
+    @nderivs.setter
+    def nderivs(self,nderivs_new):
+        if not isinstance(nderivs_new,int) or nderivs_new >3:
             raise ValueError(Errors.value_error("The number of derivatives needs to be an integer between 0 and 3!"))
-        if self.der < der_new:
-            for i in range(self.der+1,der_new+1):
+        if self.nderivs < nderivs_new:
+            for i in range(self.nderivs+1,nderivs_new+1):
                 self._z.append(self(i))
-                self._der += 1
+                self._nderivs += 1
 
     @property    
     def n(self):
@@ -76,28 +76,28 @@ class GenCurve:
             raise ValueError(Errors.value_error("The number of discretization points of the GenCurve needs to be a positive integer!"))
         self.t = np.linspace(0, 2*np.pi, n_new,endpoint=False)
         self._n = n_new
-        for i in range(0,self.der+1):
+        for i in range(0,self.nderivs+1):
             self._z[i]= self(i)
 
     @property
     def z(self):
         """Values of z(t) at equidistant grid of self.n points."""
-        if self.der >= 0:
+        if self.nderivs >= 0:
             return self._z[0]
         else:
-            raise RuntimeError(Errors.runtime_error("To return the evaluation the self.der >=0 please change that!",self,"z"))
+            raise RuntimeError(Errors.runtime_error("To return the evaluation the self.nderivs >=0 please change that!",self,"z"))
     
     @property
     def zp(self):
         """Values of z(t) its first derivatives at equidistant grid of self.n points."""
-        if self.der >= 1:
+        if self.nderivs >= 1:
             return self._z[1]
         else:
-            raise RuntimeError(Errors.runtime_error("To return the evaluation of the first derivative the self.der >=1 please change that!",self,"zp"))
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the first derivative the self.nderivs >=1 please change that!",self,"zp"))
     
     @property
     def zpabs(self):
-        """Absolute values |z'(t)| at equidistant grid of self.n points."""
+        """Absolute _call_samples |z'(t)| at equidistant grid of self.n points."""
         if self.zp is not None:
             return np.sqrt(self.zp[0,:]**2 + self.zp[1,:]**2)
     @property
@@ -108,50 +108,50 @@ class GenCurve:
     @property
     def zpp(self):
         """Values of z(t) its second derivatives at equidistant grid of self.n points."""
-        if self.der >= 2:
+        if self.nderivs >= 2:
             return self._z[2]
         else:
-            raise RuntimeError(Errors.runtime_error("To return the evaluation of the second derivative the self.der >=2 please change that!",self,"zpp"))
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the second derivative the self.nderivs >=2 please change that!",self,"zpp"))
 
     @property
     def zppp(self):
         """Values of z(t) its third derivatives at equidistant grid of self.n points."""
-        if self.der >= 3:
+        if self.nderivs >= 3:
             return self._z[3]
         else:
-            raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.der >=3 please change that!",self,"zppp"))
+            raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.nderivs >=3 please change that!",self,"zppp"))
 
 class StarCurve(GenCurve):
-    r"""Base class for radial curve in :math:`R^2` 
+    r"""Base class for star-shaped curve (w.r.t the origin) in :math:`R^2`, 
     parameterized by 
 
     .. math::
-        z(t) = q(t)*[cos(t);sin(t)] 0<=t<=2pi
+        z(t) = radial(t)*[cos(t);sin(t)] 0<=t<=2pi
 
-    with a positive, :math:`2\pi`\-periodic function :math:`q`\. 
+    with a positive, :math:`2\pi`\-periodic function :math:`radial`\. 
 
-    Subclasses should implement `_call` with the optional argument `der` 
+    Subclasses should implement `radial` with the optional argument `der` 
     to determine which derivative to compute.
 
     After initializing the curve additional derivatives can be computed by 
-    resetting the `der` property. The number of evaluation points can also be 
+    resetting the `nderivs` property. The number of evaluation points can also be 
     reset by setting the 'n` property with some new number resulting in a recompute
     of all the evaluations. 
 
     Parameters
     ----------
     name : str 
-        name of the curves
+        name of the curve
     n : int 
         number of discretization point
-    der : int, optional
+    nderivs : int, optional
         number of derivatives to initially compute.
     """
-    def __init__(self, name, n, der = 0):
-        super().__init__(name,n,der=der)
+    def __init__(self, name, n, nderivs = 0):
+        super().__init__(name,n,nderivs=nderivs)
 
     def __call__(self,der=0):
-        res = self._call(der=der)
+        res = self.radial(der=der)
         if res.ndim != 1:
             raise RuntimeError(Errors.runtime_error(f"Calling the StarCurve {self} did not construct a array of one dimension!"))
         if der == 0:
@@ -170,7 +170,7 @@ class StarCurve(GenCurve):
             return np.array([res*cost ,res*sint]) + 3*np.array([[0,-1],[1,0]])@self.zpp + 3 * self.zp + np.array([[0,1],[-1,0]])@self.z
         return res
     
-    def _call(self,der=0):
+    def radial(self,der=0):
         raise NotImplementedError
     
     @property
@@ -198,11 +198,11 @@ class kite(GenCurve):
     ----------
     n : int
         number of evaluation points on the parameterized curve.
-    der : int, optional
+    nderivs : int, optional
         Number of derivatives to initially compute. Default: 0
     """
-    def __init__(self, n, der = 0):
-        super().__init__("kite",n,der=der)
+    def __init__(self, n, nderivs = 0):
+        super().__init__("kite",n,nderivs=nderivs)
 
     def _call(self, der=0):
         if der==0:
@@ -220,10 +220,10 @@ class kite(GenCurve):
 
 class peanut(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("peanut",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("peanut",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         if der==0:
@@ -240,10 +240,10 @@ class peanut(StarCurve):
 
 class round_rect(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("round_rect",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("round_rect",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         co = 2/3
         cost = np.cos(self.t)
         sint = np.sin(self.t)
@@ -267,10 +267,10 @@ class round_rect(StarCurve):
 
 class apple(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("apple",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("apple",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         cos2t = np.cos(2*self.t)
@@ -295,10 +295,10 @@ class apple(StarCurve):
 
 class three_lobes(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("three_lobes",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("three_lobes",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         cos3t = np.cos(3*self.t)
@@ -317,10 +317,10 @@ class three_lobes(StarCurve):
 
 class pinched_ellipse(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("pinched_ellipse",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("pinched_ellipse",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         if der==0:
@@ -337,10 +337,10 @@ class pinched_ellipse(StarCurve):
 
 class smoothed_rectangle(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("smoothed_rectangle",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("smoothed_rectangle",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         if der==0:
@@ -363,10 +363,10 @@ class smoothed_rectangle(StarCurve):
 
 class nonsym_shape(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("nonsym_shape",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("nonsym_shape",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         cost = np.cos(self.t)
         sint = np.sin(self.t)
         if der==0:
@@ -385,10 +385,10 @@ class nonsym_shape(StarCurve):
 
 class circle(StarCurve):
     
-    def __init__(self,n,der=0):
-        super().__init__("circle",n,der=der)
+    def __init__(self,n,nderivs=0):
+        super().__init__("circle",n,nderivs=nderivs)
 
-    def _call(self,der):
+    def radial(self,der):
         if der==0:
             return np.ones_like(self.t)
         else:
@@ -405,37 +405,41 @@ class GenTrigSpc(UniformGridFcts):
 
     Parameters
     ----------
-    n : int
+    n_sample : int
         Number of coefficients of each of the cartesian components.
-    nvals: int
+    n: int
         Number of points to evaluate the parameterization on
     """
-    def __init__(self, n,nvals):
-        if not isinstance(n, int,) or n<=0:
+    def __init__(self, n_sample,n):
+        if not isinstance(n_sample, int,) or n_sample<=0:
             raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigSpc need n to be a positive integer!"))
+        self.n_sample = n_sample
         self.n = n
-        self.nvals = nvals
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False),shape_codomain=(2,))
+        super().__init__(np.linspace(0, 2*np.pi, n_sample, endpoint=False),shape_codomain=(2,))
 
-    def coeff2curve(self, samples, nderivs=0):
+    def coeff2curve(self, coeff, nderivs=0):
         r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
         Parameters
         ----------
-        samples : array-like
+        coeff : array-like
             samples from which to generate the curve
         nderivs : int
             Number of derivatives to compute 
         """
-        gentrig=GenTrig(samples, self, nderivs)
+        gentrig=GenTrig(coeff, self, nderivs)
         
         return gentrig
+    
+    def circle(self, radius =1.,nderivs=0):
+        t = np.linspace(0, 2*np.pi,self.n_sample,endpoint=False)
+        return GenTrig(radius*np.vstack((np.cos(t), np.sin(t))).T,self,nderivs=0)
 
     def param_derivative(self,u):
         """
         Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2\pi] \to \mathbb{C}`,
-        which are given by their values at self.nval equidistant point on :math:`[0,2\pi]` 
+        which are given by their radial_samples at self.nval equidistant point on :math:`[0,2\pi]` 
         
         Parameters:
         u: np.ndarray
@@ -445,11 +449,11 @@ class GenTrigSpc(UniformGridFcts):
         
         if not isinstance(u, np.ndarray) or not np.issubdtype(u.dtype,complex):
             raise TypeError(Errors.type_error('u must be complex np.ndarray.'))
-        if not len(u.shape) in (1,2) or not u.shape[0]==self.nvals:
-            raise ValueError(Errors.value_error(f'u must have two dimensions, the first one equal to self.nvals. Given shape: {u.shape}. nvals: {self.nvals}'))
+        if not len(u.shape) in (1,2) or not u.shape[0]==self.n:
+            raise ValueError(Errors.value_error(f'u must have two dimensions, the first one equal to self.n. Given shape: {u.shape}. n: {self.n}'))
                 
         if not hasattr(self,'_complexBlockDerivative') or (self._complexBlockDerivative.domain.shape!=u.shape):
-            der_domain = UniformGridFcts((0.,2*np.pi,self.nvals), periodic=True,dtype=complex,
+            der_domain = UniformGridFcts((0.,2*np.pi,self.n), periodic=True,dtype=complex,
                                          shape_codomain=(u.shape[1],) if len(u.shape) ==2 else () 
                                          )
             self._complexBlockDerivative = Derivative(der_domain,(1,))
@@ -467,7 +471,7 @@ class GenTrig(GenCurve):
      
      Parameters
      ----------
-     samples : array-like
+     coeff : np.ndarray
         Equidistant (in parameter space!) samples of the cartesian components of the parameterization of the curve 
      spc : regpy.vecspc.curve.GenTrigSpc 
         Underlying curve space
@@ -475,52 +479,67 @@ class GenTrig(GenCurve):
         Number of derivatives to compute 
      """
 
-    def __init__(self, samples, spc, nderivs):
-        if len(samples.shape)!=2 or not np.issubdtype(samples.dtype,np.floating):
-            raise ValueError(Errors.value_error(f'samples must be a 2xN array of real numbers. Got shape {samples.shape} of type {samples.dtype}.'))
-        self.samples = samples
+    def __init__(self, coeff, spc, nderivs):
+        if len(coeff.shape)!=2 or not np.issubdtype(coeff.dtype,np.floating):
+            raise ValueError(Errors.value_error(f'coeff must be a 2xN array of real numbers. Got shape {coeff.shape} of type {coeff.dtype}.'))
+        self.coeff = coeff
         """Equidistant samples of the trigonometric polynomials""" 
         if not isinstance(spc,GenTrigSpc):
             raise TypeError(Errors.type_error('spc must be a GenTrigSpc'))
         self.spc = spc
-        self.coeffhat = np.vstack((trig_interpolate(samples[:,0], spc.nvals), \
-                                   trig_interpolate(samples[:,1], spc.nvals))).T
-        self._freq = 1j*np.linspace(-spc.nvals/2, spc.nvals/2-1, spc.nvals)
-        super().__init__("GenTrig",spc.nvals,der=nderivs) 
+        self.coeffhat = np.vstack((trig_interpolate(coeff[:,0], spc.n), \
+                                   trig_interpolate(coeff[:,1], spc.n))).T
+        self._freq = 1j*np.linspace(-spc.n/2, spc.n/2-1, spc.n)
+        super().__init__("GenTrig",spc.n,nderivs=nderivs) 
         
     def _call(self,der=0):
         return np.vstack((np.real(np.fft.ifft(np.fft.fftshift(self._freq**der *self.coeffhat[:,0]))), \
                 np.real(np.fft.ifft(np.fft.fftshift(self._freq**der * self.coeffhat[:,1])))))
 
     def der_normal(self, h):
-        N = h.shape[1]
-        n = self.z.shape[1]
+        """ If h is a perturbation of the self.sample, this function returns the normal component 
+        of the resulting perturbation of self.z
 
-        if N == n:
+        Parameters:
+        -------
+        h: np.ndarray
+            perturbation of self.z_sample
+        """
+        
+        if h not in self.spc:
+            raise ValueError(Errors.not_in_vecsp(h,self.spc))
+        n = self.spc.n
+
+        if self.spc.n_sample == n:
             hn = h
-
         else:
             h_hat = np.array([trig_interpolate(h[:,0], n),\
                               trig_interpolate(h[:,1], n)])
-
             hn = np.array([np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))),\
                            np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))])
 
-        der=np.sum(hn*self.normal,0)/self.zpabs
-        return der
+        return np.sum(hn*self.normal,0)/self.zpabs
 
     def adjoint_der_normal(self, g):
+        """ adjoint of the linear mapping der_normal
 
-        N = self.samples.shape[0]
-        n = int(len(g))
-        
+        Paraameters:
+        -----------------
+        g: np.nd_array
+        """
+        n = self.spc.n
+        n_sample = self.spc.n_sample    
+
+        if not isinstance(g,np.ndarray) or not g.shape == (n,):
+            raise ValueError('g must be a vector of length self.n.')
+
         adj_n=np.array([g/self.zpabs,g/self.zpabs])*self.normal
     
-        if N == n:
+        if n_sample == n:
             adj = adj_n.T
         else:
-            adj_hat = np.array([trig_interpolate(adj_n[0,:], N), \
-                                trig_interpolate(adj_n[1,:], N)])*n/N        
+            adj_hat = np.array([trig_interpolate(adj_n[0,:], n_sample), \
+                                trig_interpolate(adj_n[1,:], n_sample)])*n/n_sample        
             adj = np.array([np.fft.ifft(np.fft.fftshift(adj_hat[0,:])),\
                             np.fft.ifft(np.fft.fftshift(adj_hat[1,:]))])
             
@@ -540,126 +559,106 @@ class StarTrigRadialFcts(UniformGridFcts):
     the method `eval_curve` which gives a curve `StarTrigCurve`.  
 
     The space consists of star-shaped curves with radial functions given by real trigonometric 
-    polynomials of some maximal degree. These trigonometric polynomials are determined by their values on 
+    polynomials of some maximal degree. These trigonometric polynomials are determined by their radial_samples on 
     an equidistant grid. 
 
     Parameters
     ----------
-    n : int
+    dim : int
         Dimension of the space of trigonometric polynomials 
+    n: int
+        number of points on the curves
     """
-    def __init__(self, n):
+    def __init__(self, dim,n):
+        if not isinstance(dim, int) or dim<=0:
+            raise TypeError(Errors.not_instance(dim,int,add_info="StarTrigRadialFcts need dim to be a positive integer!"))
         if not isinstance(n, int) or n<=0:
-            raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigD need n to be a positive integer!"))
-        super().__init__(np.linspace(0, 2*np.pi, n, endpoint=False))
+            raise TypeError(Errors.not_instance(n,int,add_info="The StarTrigRadialFcts need n to be a positive integer!"))        
+        self.n = n
+        self.dim = dim
+        super().__init__(np.linspace(0, 2*np.pi, dim, endpoint=False))
 
-    def eval_curve(self, coeffs, nvals=None, nderivs=0):
+    def coeff2curve(self, coeff, nderivs=0):
         """Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `StarTrigCurve`.
         
         Parameters
         ----------
-        coeffs : array-like
-            Coefficients for which to evaluate the curve
-        nvals : int, optional
-            Number of points to evaluate on, Defaults : None
+        coeff : np.ndararray
+            sample of the radial function at self.dim equidistant points
         nderivs : int, optional
             Number of derivatives to compute , Defaults : 0
         """
-        return StarTrigCurve(self, coeffs, nvals, nderivs)
+        return StarTrigCurve(self, coeff,  nderivs)
 
-    def sample(self, f):
-        return np.asarray(
-            np.broadcast_to(f(np.linspace(0, 2*np.pi, self.size, endpoint=False)), self.shape),
-            dtype=self.dtype
-        )
+    def radialfct2curve(self, f,nderivs=0):
+        coeff = f(np.linspace(0, 2*np.pi, self.dim, endpoint=False))
+        return StarTrigCurve(self, coeff,  nderivs)
+    
+    def circle(self, radius=1.,nderivs=0):
+        return StarTrigCurve(self, radius*self.ones(),nderivs)
 
-class StarTrigCurve: 
+class StarTrigCurve(StarCurve): 
     r"""A class representing star shaped 2d curves with radial function parametrized in a
-    trigonometric basis. Should usually be instantiated via `StarTrigRadialFcts.eval_curve`.
+    trigonometric basis. Should usually be instantiated via `StarTrigRadialFcts.coeff2curve`.
 
     Parameters
     ----------
     vecsp : StarTrigRadialFcts
         The underlying vector space.
-    coeffs : array-like
-        The coefficient array of the radial function.
-    nvals : int, optional
-        How many points on the curve to compute. The points will be at equispaced angles in
-        `[0, 2pi)`. If omitted, the number of points will match the number of `coeffs`.
+    coeff : array-like
+        The samples of the radial function.
     nderivs : int, optional
         How many derivatives to compute. At most 3 derivatives are implemented.
     """
 
-    def __init__(self, vecsp, values, nvals=None, nderivs=0):
+    def __init__(self, vecsp, coeff, nderivs=0):
         if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
             raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
         self.vecsp = vecsp
         """The vector space."""
-        self.values = values
+        self.coeff = coeff
         """The coefficients."""
-        self.nvals = nvals or self.vecsp.size
-        """The number of computed values."""
-        self.nderivs = nderivs
-        """The number of computed derivatives."""
+        self.dim = len(coeff)
 
-        self._frqs = 1j*np.arange(self.vecsp.size // 2 + 1)
-        self.radius = (self.nvals / self.vecsp.size) * np.fft.irfft(
-            (self._frqs ** np.arange(self.nderivs + 1)[:, np.newaxis])*np.fft.rfft(values),
-            self.nvals,
+        self._frqs = 1j*np.arange(self.dim // 2 + 1)
+        self._radial = (self.vecsp.n / self.dim) * np.fft.irfft(
+            (self._frqs ** np.arange(nderivs + 1)[:, np.newaxis])*np.fft.rfft(coeff),
+            self.vecsp.n,
             axis=1
         )
-        """The values of the radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
+        """Sampled radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
+        super().__init__('StarTrigCurve',self.vecsp.n,nderivs)
 
-        t = np.linspace(0, 2 * np.pi, self.nvals, endpoint=False)
-        cost = np.cos(t)
-        sint = np.sin(t)
-
-        self.curve = np.zeros((self.nderivs + 1, 2, self.nvals))
-        """The points on the curve and its derivatives, shaped `(nderivs + 1, 2, nvals)`."""
-
-        binom = np.ones(self.nderivs + 1, dtype=int)
-        for n in range(self.nderivs + 1):
-            binom[1:n] += binom[:n-1]
-            aux = binom[:n+1, np.newaxis] * self.radius[n::-1]
-            even = np.sum(aux[::4], axis=0) - np.sum(aux[2::4], axis=0)
-            odd = np.sum(aux[1::4], axis=0) - np.sum(aux[3::4], axis=0)
-            self.curve[n, 0] = even * cost - odd * sint
-            self.curve[n, 1] = even * sint + odd * cost
-
-        if self.nderivs == 0:
-            return
-
-        self.normal = np.stack([self.curve[1, 1], -self.curve[1, 1]])
-        """The (unnormalized) outer normal vector as `(2, nvals)` array. Its norm identical to that
-        of the tangent vector `curve[1]`."""
-        self.tangent_norm = np.linalg.norm(self.normal, axis=0)
-        """The absolute values of the tangent and normal vectors as `(nvals,)` array."""
+    def radial(self,der=0):
+        if der>self._radial.shape[0]:
+            return RuntimeError(f'Value of der {der} greater than self.nderivs {self.nderivs}. Initialize with larger value of nderivs!')
+        return self._radial[der,:]
 
     def derivative(self, h):
-        return (self.nvals / self.vecsp.size) * np.fft.irfft(
-            np.fft.rfft(h), self.nvals
+        return (self.n / self.dim) * np.fft.irfft(
+            np.fft.rfft(h), self.n
         )
 
     def adjoint(self, g):
-        return (self.nvals / self.vecsp.size) * adjoint_rfft(
-            adjoint_irfft(g, self.vecsp.size // 2 + 1),
-            self.vecsp.size
+        return (self.n / self.dim) * adjoint_rfft(
+            adjoint_irfft(g, len(self.coeff) // 2 + 1),
+            self.dim
         )
 
     def der_normal(self, h):
-        return (self.radius[0] / self.tangent_norm) * self.derivative(h)
+        return (self._radial[0,:] / self.zabs) * self.derivative(h)
 
     def adjoint_der_normal(self, g):
-        return self.adjoint((self.radius[0] / self.tangent_norm)*g)
+        return self.adjoint((self._radial[0,:] / self.zabs)*g)
 
     def arc_length_der(self, h):
-        return (self.nvals / self.vecsp.size) * np.fft.irfft(
-            self._frqs * np.fft.rfft(h), self.nvals
-        ) / self.tangent_norm
+        return (self.n / len(self.coeff)) * np.fft.irfft(
+            self._frqs * np.fft.rfft(h), self.n
+        ) / self.zpabs
 
 def trig_interpolate(val, n):
-    """Computes `n` Fourier coeffients to the point values given by `val`
+    """Computes `n` Fourier coeffients to the point radial_samples given by `val`
     such that `ifft(fftshift(coeffs))` is an interpolation of `val`."""
     n_val = len(val)
     coeff_val = np.fft.fft(val)
