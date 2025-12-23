@@ -28,7 +28,12 @@ class GenCurve:
     der : int, optional
         number of derivatives to initially compute.
     """
-    
+
+    BlockDerivative = None
+    """ class variable of type regpy.operator.convolution.Derivative to compute derivatives of (possibly several) 
+    complex value periodic functions on :math:`[0,2\pi]` sampled at n equidistant points
+    """
+
     def __init__(self, name, n,nderivs = 0):
         self.name=name
         "Name of the true curve function"
@@ -120,6 +125,38 @@ class GenCurve:
             return self._z[3]
         else:
             raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.nderivs >=3 please change that!",self,"zppp"))
+
+    def param_derivative(self,u):
+        """
+        Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2\pi] \to \mathbb{C}`,
+        which are given by their radial_samples at self.nval equidistant point on :math:`[0,2\pi]` 
+        
+        Parameters:
+        u: np.ndarray
+            two-dimnensional complex array with first dimension self.nval 
+        """
+        from regpy.operators.convolution import Derivative        
+        
+        if not isinstance(u,np.ndarray) or not np.issubdtype(u.dtype,complex):
+            raise TypeError(Errors.type_error('u must be a complex ndarray'))
+        if not len(u.shape) in (1,2) or not u.shape[0]==self.n:
+            raise ValueError(Errors.value_error(f'u must have two dimensions, the first one equal to self.n. Given shape: {u.shape}. n: {self.n}'))
+                
+        if GenCurve.BlockDerivative is None or  (GenCurve.BlockDerivative.domain.shape!=u.shape):
+            der_domain = UniformGridFcts((0.,2*np.pi,self.n), periodic=True,dtype=complex,
+                                         shape_codomain=(u.shape[1],) if len(u.shape) ==2 else () 
+                                         )
+            GenCurve.BlockDerivative = Derivative(der_domain,(1,))
+        return GenCurve.BlockDerivative(u)
+
+
+    def arc_length_der(self, h):
+        if len(h.shape)==1:
+            return self.param_derivative(h) / self.zpabs
+        elif len(h.shape)==2:
+            return self.param_derivative(h) / self.zpabs[:,np.newaxis]
+        else:
+            raise ValueError(Errors.value_error('shape of h must have length 1 or 2.'))
 
 class StarCurve(GenCurve):
     r"""Base class for star-shaped curve (w.r.t the origin) in :math:`R^2`, 
@@ -436,29 +473,6 @@ class GenTrigSpc(UniformGridFcts):
         t = np.linspace(0, 2*np.pi,self.n_sample,endpoint=False)
         return GenTrig(radius*np.vstack((np.cos(t), np.sin(t))).T,self,nderivs=0)
 
-    def param_derivative(self,u):
-        """
-        Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2\pi] \to \mathbb{C}`,
-        which are given by their radial_samples at self.nval equidistant point on :math:`[0,2\pi]` 
-        
-        Parameters:
-        u: np.ndarray
-            two-dimnensional complex array with first dimension self.nval 
-        """
-        from regpy.operators.convolution import Derivative        
-        
-        if not isinstance(u, np.ndarray) or not np.issubdtype(u.dtype,complex):
-            raise TypeError(Errors.type_error('u must be complex np.ndarray.'))
-        if not len(u.shape) in (1,2) or not u.shape[0]==self.n:
-            raise ValueError(Errors.value_error(f'u must have two dimensions, the first one equal to self.n. Given shape: {u.shape}. n: {self.n}'))
-                
-        if not hasattr(self,'_complexBlockDerivative') or (self._complexBlockDerivative.domain.shape!=u.shape):
-            der_domain = UniformGridFcts((0.,2*np.pi,self.n), periodic=True,dtype=complex,
-                                         shape_codomain=(u.shape[1],) if len(u.shape) ==2 else () 
-                                         )
-            self._complexBlockDerivative = Derivative(der_domain,(1,))
-        return self._complexBlockDerivative(u)
-
 class GenTrig(GenCurve):
     r"""The class GenTrig describes boundaries of domains in R^2 which are
     parameterized by 
@@ -545,14 +559,6 @@ class GenTrig(GenCurve):
             
         return adj.T.real
         
-
-    def arc_length_der(self, h):
-        if len(h.shape)==1:
-            return self.spc.param_derivative(h) / self.zpabs
-        elif len(h.shape)==2:
-            return self.spc.param_derivative(h) / self.zpabs[:,np.newaxis]
-        else:
-            raise ValueError(Errors.value_error('shape of h must have length 1 or 2.'))
 
 class StarTrigRadialFcts(UniformGridFcts):
     r"""Class for VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
@@ -647,15 +653,15 @@ class StarTrigCurve(StarCurve):
         )
 
     def der_normal(self, h):
-        return (self._radial[0,:] / self.zabs) * self.derivative(h)
+        return (self._radial[0,:] / self.zpabs) * self.derivative(h)
 
     def adjoint_der_normal(self, g):
-        return self.adjoint((self._radial[0,:] / self.zabs)*g)
+        return self.adjoint((self._radial[0,:] / self.zpabs)*g)
 
-    def arc_length_der(self, h):
-        return (self.n / len(self.coeff)) * np.fft.irfft(
-            self._frqs * np.fft.rfft(h), self.n
-        ) / self.zpabs
+#     def arc_length_der(self, h):
+#        return (self.n / len(self.coeff)) * np.fft.irfft(
+#            self._frqs * np.fft.rfft(h), self.n
+#        ) / self.zpabs
 
 def trig_interpolate(val, n):
     """Computes `n` Fourier coeffients to the point radial_samples given by `val`
