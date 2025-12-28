@@ -20,7 +20,8 @@ class L2MeasureSpaceFcts(HilbertSpace):
         Weight in the norm.
     """
 
-    def __init__(self, vecsp, weights=None):
+    def __init__(self, vecsp:vecsps.MeasureSpaceFcts, 
+                 weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.MeasureSpaceFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or an derivative of it."))
         super().__init__(vecsp)
@@ -42,7 +43,7 @@ class L2UniformGridFcts(HilbertSpace):
     element.
     """
 
-    def __init__(self, vecsp, weights=None):
+    def __init__(self, vecsp:vecsps.UniformGridFcts, weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
         super().__init__(vecsp)
@@ -68,7 +69,10 @@ class SobolevUniformGridFcts(HilbertSpace):
     axes : list, optional
         List of axes for which to compute in default all axes, Defaults: None
     """
-    def __init__(self, vecsp, index=1, axes=None):
+    def __init__(self, 
+                 vecsp:L2UniformGridFcts, 
+                 index:float=1., 
+                 axes:list[int]|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
         super().__init__(vecsp)
@@ -129,13 +133,13 @@ class HmDomain(HilbertSpace):
     """
 
     def __init__(self,
-                vecsp, 
+                vecsp:vecsps.UniformGridFcts, 
                 mask = None,
-                h='normalized',
-                index=1,
+                h:str='normalized',
+                index:int=1,
                 weight=None,
-                ext_bd_cond = 'Neum',
-                alpha = 1,
+                ext_bd_cond:str = 'Neum',
+                alpha:float = 1.,
                 dtype = float):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"The underlying vecsp has to be of type UniformGridFcts"))
