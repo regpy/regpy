@@ -18,7 +18,6 @@ import_example_package("./examples/obstacle/")
 
 from dirichlet_op import DirichletOp
 
-
 def test_obstacle():
     logging.basicConfig(
         level=logging.INFO,
@@ -28,13 +27,13 @@ def test_obstacle():
     #Forward operator
     op = DirichletOp(
         kappa = 3,
-        N_inc = 4
+        inc_waves = 4
     )
 
-    setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
+    setting = Setting(op=op, penalty=Sobolev(index=1.6), data_fid=L2)
 
     #Exact data
-    farfield, _ = op.create_synthetic_data(apple,N_ieq_synth=96)
+    farfield, _ = op.create_synthetic_data(apple)
 
     # Gaussian data 
     noiselevel=0.01
@@ -43,12 +42,11 @@ def test_obstacle():
     data = farfield+noise
 
     #Initial guess
-    t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
-    init = 0.45*np.vstack((np.cos(t), np.sin(t))).T
+    init = op.domain.circle(radius = 0.45)    
 
 
     solver = NewtonCG(
-        setting, data, init = init,
+        setting, data, init = init.coeff,
             cgmaxit=50, rho=0.8
     )
 

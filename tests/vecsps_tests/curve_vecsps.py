@@ -32,16 +32,16 @@ def test_shapes(shape,der):
         ShapeCurves(shape,n=20,der=der)
   
 def test_GenTrigSpc():
-    vecsps_basics(GenTrigSpc,40)
+    vecsps_basics(GenTrigSpc,10,n=50)
 
-    vs = GenTrigSpc(40)
+    vs = GenTrigSpc(3,n=40)
     samples = np.asarray([[1.,0.],[0.25,1],[0.25,0.5]])
-    _ = vs.bd_eval(samples=samples,nvals=40,nderivs=3)
+    _ = vs.coeff2curve(coeff=samples,nderivs=3)
 
     
 def test_StarTrigRadialFcts():
-    vecsps_basics(StarTrigRadialFcts,40)
+    vecsps_basics(StarTrigRadialFcts,40,n=50)
 
-    vs = StarTrigRadialFcts(40)
-    coeff = vs.sample(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
-    _ = vs.eval_curve(coeffs=coeff)
+    vs = StarTrigRadialFcts(40,n=40)
+    curve = vs.radialfct2curve(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
+    _ = vs.coeff2curve(coeff=curve.radial())

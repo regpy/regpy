@@ -652,7 +652,7 @@ class StarTrigRadialFcts(UniformGridFcts,ParameterizedCurveSpc):
             raise ValueError(Errors.value_error("The number of discretization points  needs to be a positive integer!"))
         self._n = n_new
 
-    def coeff2curve(self, coeff, nderivs=0):
+    def coeff2curve(self, coeff, nderivs=1):
         """Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `StarTrigCurve`.
         
@@ -667,11 +667,11 @@ class StarTrigRadialFcts(UniformGridFcts,ParameterizedCurveSpc):
             raise RuntimeError('self.n has not been set, yet.')
         return StarTrigCurve(self, coeff,  nderivs)
 
-    def radialfct2curve(self, f,nderivs=0):
+    def radialfct2curve(self, f,nderivs=1):
         coeff = f(np.linspace(0, 2*np.pi, self.dim, endpoint=False))
         return StarTrigCurve(self, coeff,  nderivs)
     
-    def circle(self, radius=1.,nderivs=0):
+    def circle(self, radius=1.,nderivs=1):
         return StarTrigCurve(self, radius*self.ones(),nderivs)
 
 class StarTrigCurve(StarCurve,ParameterizedCurve): 
@@ -688,9 +688,26 @@ class StarTrigCurve(StarCurve,ParameterizedCurve):
         How many derivatives to compute. At most 3 derivatives are implemented.
     """
 
-    def __init__(self, vecsp, coeff, nderivs=0):
-        from regpy.operators import Operator
-        class der_normal_StarTrigCurve(Operator):
+    def __init__(self, vecsp, coeff, nderivs=1):
+        from regpy.operators import Operator, PtwMultiplication
+        class derivative_radial(Operator):
+            """ Linear `regpy.operators.Operator' implement coeff->self.radial[0,:]
+            """
+            def __init__(self, curve):
+                super().__init__(domain=curve.vecsp, 
+                                 codomain =  UniformGridFcts((0.,2*np.pi,curve.n), periodic=True,dtype=float),
+                                 linear=True)
+                self.curve =curve
+
+            def _eval(self, h):
+                return  (self.curve.n / self.curve.dim) * np.fft.irfft(np.fft.rfft(h), self.curve.n)
+            def _adjoint(self, g):
+                return (self.curve.n / self.curve.dim) * adjoint_rfft(
+                    adjoint_irfft(g, len(self.curve.coeff) // 2 + 1),
+                    self.curve.dim
+                )
+
+        """class der_normal_StarTrigCurve(Operator):
             def __init__(self, curve):
                 super().__init__(domain=curve.vecsp, 
                                  codomain =  UniformGridFcts((0.,2*np.pi,curve.n), periodic=True,dtype=float),
@@ -707,6 +724,7 @@ class StarTrigCurve(StarCurve,ParameterizedCurve):
                     adjoint_irfft(aux, len(self.curve.coeff) // 2 + 1),
                     self.curve.dim
                 )
+        """
             
         if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
             raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
@@ -722,7 +740,11 @@ class StarTrigCurve(StarCurve,ParameterizedCurve):
         )
         """Sampled radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
         StarCurve.__init__(self,name='StarTrigCurve',n=self.vecsp.n,nderivs=nderivs)
-        ParameterizedCurve.__init__(self,coeff=coeff,der_normal=der_normal_StarTrigCurve(self))
+        self.derivative_radial = derivative_radial(self)        
+        ParameterizedCurve.__init__(self,coeff=coeff,
+                                    der_normal=PtwMultiplication(self.derivative_radial.codomain,self._radial[0,:] / self.zpabs) \
+                                        * self.derivative_radial
+                                    )
 
     def radial(self,der=0):
         if der>self._radial.shape[0]:
