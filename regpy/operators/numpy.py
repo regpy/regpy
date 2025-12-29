@@ -31,9 +31,11 @@ class MatrixMultiplication(Operator):
         The underlying vector space. If not given a `regpy.vecsps.VectorSpaceBase` with same number of elements as
         matrix columns is used. Defaults to None.
     codomain : regpy.vecsps.NumPyVectorSpace, optional
-        The underlying vector space. If not given a `regpy.vecsps.VectorSpaceBase` with same number of elements as
+        The underlying vector space. If not given, a `regpy.vecsps.VectorSpaceBase` with same number of elements as
         matrix rows is used. Defaults to None.
-
+    dtype: type or None, optional
+        Data type. 
+        
     Notes
     -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
@@ -42,7 +44,12 @@ class MatrixMultiplication(Operator):
     codomains may also be used.
     """
 
-    def __init__(self, matrix, inverse=None, domain=None, codomain=None,dtype=None):
+    def __init__(self, 
+                 matrix:np.ndarray|csc_matrix|csc_array, 
+                 inverse=None, 
+                 domain:NumPyVectorSpace|None=None, 
+                 codomain:NumPyVectorSpace|None=None,
+                 dtype=None):
         if not isinstance(matrix,(np.ndarray,csc_matrix,csc_array)):
             try:
                 self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
@@ -123,7 +130,10 @@ class CholeskyInverse(Operator):
     matrix : array-like, optional
         If a matrix of `op` is already available, it can be passed in to avoid recomputation.
     """
-    def __init__(self, op, matrix=None):
+    def __init__(self,
+                op:Operator,
+                matrix: np.ndarray | None =None
+                ):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="For a CholeskyInverse the operator need to be a RegPy operator!"))
         if not op.linear:
@@ -180,7 +190,7 @@ class SuperLUInverse(Operator):
         op : MatrixMultiplication
             The operator to be inverted.   
     """
-    def __init__(self,op):
+    def __init__(self,op:MatrixMultiplication):
         if not isinstance(op,MatrixMultiplication):
             raise TypeError(Errors.not_instance(op,Operator,add_info="For a SuperLUInverse the operator need to be a RegPy MatrixMultiplication!"))
         if not isinstance(op.matrix,(csc_matrix,csc_array)):
@@ -218,13 +228,18 @@ class Power(Operator):
 
     Parameters
     ----------
-    power : float
-        The exponent.
+    power : float or int
+        The exponent. If the flag integer is True, then power has to be a nonnegative integer. 
+        In this case the result is computed by multiplications (based on values for power=2**n, n=1,2, ... ). 
     domain : regpy.vecsps.NumPyVectorSpace
         The underlying vector space
+    integer: bool, optiomal
     """
 
-    def __init__(self, power, domain, integer = False):
+    def __init__(self, 
+                 power:float|int, 
+                 domain:NumPyVectorSpace, 
+                 integer:bool = False):
         if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Power operator needs to be a NumPyVectorSpace!"))
         self.integer = integer
@@ -278,7 +293,7 @@ class Exponential(Operator):
         The underlying vector space.
     """
 
-    def __init__(self, domain):
+    def __init__(self, domain:NumPyVectorSpace):
         if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain, NumPyVectorSpace, add_info="Domain of a Exponential operator needs to be a NumPyVectorSpace!"))
         super().__init__(domain, domain)
@@ -312,7 +327,7 @@ class FourierTransform(Operator):
         Axes over which to compute the Fourier transform. Only domain axes are allowed. 
         If not given, all domain axes are used. Defaults to None.
     """
-    def __init__(self, domain, centered=False, axes=None):
+    def __init__(self, domain:UniformGridFcts, centered:bool=False, axes:list[int]|None=None):
         if not isinstance(domain,UniformGridFcts):
             raise TypeError(Errors.not_instance(domain, UniformGridFcts, add_info="Domain of a FourierTransform operator needs to be a UniformGridFcts!"))
         self.is_complex = domain.is_complex
@@ -336,13 +351,13 @@ class FourierTransform(Operator):
         else:
             y = spfft.rfftn(x, axes=self.axes, norm='ortho') # type: ignore
         if self.centered:
-            return spfft.fftshift(y, axes=self.axes)
+            return spfft.fftshift(y, axes=self.axes if self.is_complex else self.axes[:-1])
         else:
             return y
 
     def _adjoint(self, y):
         if self.centered:
-            y = spfft.ifftshift(y, axes=self.axes)
+            y = spfft.ifftshift(y, axes=self.axes if self.is_complex else self.axes[:-1])
         if self.is_complex:
             x = spfft.ifftn(y, axes=self.axes, norm='ortho')
         else:
