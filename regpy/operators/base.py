@@ -365,7 +365,7 @@ class Operator:
         if self._detect_loop[0]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user has to define it!"
+                "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[0] = True
         out = self.codomain.zeros()
@@ -1305,7 +1305,7 @@ class Composition(Operator):
         self.ops = []
         """The list of composed operators."""
         self.d_eq_cd = []
-        """Stores the information if domain and codomain are equal to possible have in-place evaluations."""
+        """Stores the information if domain and codomain are equal to possibly have in-place evaluations."""
         for op in ops:
             if isinstance(op, Composition):
                 self.ops.extend(op.ops)
@@ -1365,7 +1365,7 @@ class Composition(Operator):
     
     def _iadjoint_eval(self, x, out, **kwargs):
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
         if self.linear:
             x = self.ops[-1](x)
             for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
@@ -1386,7 +1386,7 @@ class Composition(Operator):
             x, deriv = self.ops[-1].linearize(x)
             self._derivs.append(deriv)
             for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
-                if d_eq_cd and not first:
+                if d_eq_cd:
                     x, deriv = op.linearize(x, out = x)
                 else:
                     x, deriv = op.linearize(x)
