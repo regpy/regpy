@@ -15,7 +15,6 @@ set_rng_seed(15873098306879350073259142812684978477)
 class TestPaddingOperator():
 
     @pytest.mark.parametrize("vs, pad_amount",[ 
-        (UniformGridFcts(3,3),None),
         (UniformGridFcts(3,3),[2,3]),
         (UniformGridFcts(2,3,dtype=complex),2)
     ])
@@ -23,7 +22,7 @@ class TestPaddingOperator():
         op_basics_wrapper(PaddingOperator,vs,test_methods=True, pad_amount = pad_amount)
 
     @pytest.mark.parametrize("vs, pad_amount, x, res",[ 
-        (UniformGridFcts(3,3),None, np.ones((3,3)),np.ones((3,3))),
+        (UniformGridFcts(3,3),0, np.ones((3,3)),np.ones((3,3))),
         (UniformGridFcts(2,2),[1,2], np.ones((2,2)), np.asarray([[0,0,0,0,0,0],[0,0,1.,1.,0,0],[0,0,1.,1.,0,0],[0,0,0,0,0,0]])),
         (UniformGridFcts(2,3,dtype=complex),2,np.ones((2,3))*1j, np.asarray([[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,1j,1j,1j,0,0],[0,0,1j,1j,1j,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]]))
     ])
@@ -88,24 +87,30 @@ class TestDifferentialOperators():
     grid = UniformGridFcts((-pi,pi,10), (-pi,pi,9),dtype=float,shape_codomain=(1,))
     pad_amount = [2,0]
 
-    @pytest.mark.parametrize("op, vs, pad_amount",[ 
-        (gradient,grid.vector_valued_space(1),[2,0]),
-        (divergence,grid.vector_valued_space(2),[2,0]),
-        (Laplacian,grid.scalar_space(),[2,0]),
+    @pytest.mark.parametrize("op, vs, pad_amount,Fourier_truncation_amount",[ 
+        (gradient,grid.vector_valued_space(1),[2,0],[-2,2]),
+        (divergence,grid.vector_valued_space(2),[2,0],None),
+        (Laplacian,grid.scalar_space(),[2,0],2),
     ])
-    def test_op_basic(self, op, vs, pad_amount):
-        op_basics_wrapper(op,vs,pad_amount=pad_amount)
+    def test_op_basic(self, op, vs, pad_amount,Fourier_truncation_amount):
+        op_basics_wrapper(op,vs,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
 
-    def test_compatibility(self):
-        grad =  gradient(self.grid.vector_valued_space(1),pad_amount=self.pad_amount)
-        div = divergence(self.grid.vector_valued_space(2),pad_amount=self.pad_amount) 
+    @pytest.mark.parametrize("grid, pad_amount,Fourier_truncation_amount",[
+        (grid,[0,2],0),
+        (grid.complex_space(),[0,2],0),
+        (grid,2,[-2,2]),
+        (grid.complex_space(),2,[-2,2])
+    ])
+    def test_compatibility(self,grid,pad_amount,Fourier_truncation_amount):
+        grad =  gradient(grid.vector_valued_space(1),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
+        div = divergence(grid.vector_valued_space(2),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount) 
         div_grad = div.composition(grad)
-        Lap = Laplacian(self.grid,pad_amount=self.pad_amount,kernel_matrix_shape=(1,1))
+        Lap = Laplacian(grid,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount,kernel_matrix_shape=(1,1))
         assert np.allclose(Lap.fourier_multiplier,div_grad.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to div_grad composition is not close!",meth="Differential Operators")
 
-        Lap_scal = Laplacian(self.grid,pad_amount=self.pad_amount)
-        Dxsq = Derivative(self.grid,order=(2,0),pad_amount=self.pad_amount) 
-        Dysq = Derivative(self.grid,order=(0,2),pad_amount=self.pad_amount)         
+        Lap_scal = Laplacian(grid,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
+        Dxsq = Derivative(grid,order=(2,0),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount) 
+        Dysq = Derivative(grid,order=(0,2),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)         
         Lap_as_sum = Dxsq+Dysq
         assert np.allclose(Lap_scal.fourier_multiplier,Lap_as_sum.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to sum of second derivative operators is not close!",meth="Differential Operators")
 
@@ -120,9 +125,9 @@ class TestDifferentialOperators():
     # test identities curl grad = 0,  div curl = 0, and \Delta = grad div - curl curl
     # different implementations of convolution operators with and without padding 
     @pytest.mark.parametrize("type,pad_amount",[ 
-        (float,None),
+        (float,0),
         (float,[2,0,3]),
-        (complex,None),
+        (complex,0),
         (complex,[2,0,3]),
     ])
     def test_identies(self,type,pad_amount):
