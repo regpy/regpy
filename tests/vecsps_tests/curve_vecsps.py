@@ -34,8 +34,8 @@ def test_shapes(shape,der):
 def test_GenTrigSpc():
     vecsps_basics(GenTrigSpc,10,n=50)
 
-    vs = GenTrigSpc(3,n=40)
-    samples = np.asarray([[1.,0.],[0.25,1],[0.25,0.5]])
+    vs = GenTrigSpc(4,n=40)
+    samples = np.asarray([[1.,0.],[0.25,1],[0.25,0.5],[1.,1.]])
     _ = vs.coeff2curve(coeff=samples,nderivs=3)
 
     

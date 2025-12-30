@@ -521,8 +521,8 @@ class Derivative(ConvolutionOperator):
     """
     def __init__(self,grid, order, pad_amount=0,pad_value=0.,
                  Fourier_truncation_amount=None,convolution_axes=None):
-        if not (isinstance(order,tuple) and len(order)==grid.ndim_domain and all(isinstance(val,int) for val in order)):
-            raise ValueError(Errors.value_error('order must be a d tuple of ints'))
+        if not (isinstance(order,tuple) and (len(order)==grid.ndim_domain if convolution_axes is None else len(convolution_axes)) and all(isinstance(val,int) for val in order)):
+            raise ValueError(Errors.value_error(f'order must be a d tuple of ints. Got {order}.'))
         super().__init__(grid,
                             lambda *x : prod((2j*np.pi*y)**k for y,k in zip(x,order)),
                             pad_amount=pad_amount,pad_value=pad_value,

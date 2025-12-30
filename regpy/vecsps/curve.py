@@ -1,4 +1,5 @@
 import numpy as np
+from collections.abc import Callable
 from regpy.util import Errors
 
 from .numpy import UniformGridFcts,NumPyVectorSpace
@@ -502,72 +503,35 @@ class GenTrig(GenCurve,ParameterizedCurve):
 
     def __init__(self, coeff:np.ndarray, spc:ParameterizedCurveSpc, nderivs:int=0):
         from regpy.operators import Operator
-        class der_normal_GenTrig(Operator):
+        class NormalComponent(Operator):
+            """Operator which computes the normal component of a vector field on the curve
+            """
             def __init__(self,curve):
-                super().__init__(domain=curve.spc, 
+                super().__init__(domain= UniformGridFcts((0,2*np.pi,curve.n), periodic=True, dtype=float,shape_codomain=(2,)), 
                                 codomain= UniformGridFcts((0.,2*np.pi,curve.n), periodic=True,dtype=float),
                                 linear=True
                                 )
                 self.curve = curve
 
             def _eval(self, h):
-                """ If h is a perturbation of the self.sample, this function returns the normal component 
-                of the resulting perturbation of self.z
-
-                Parameters:
-                -------
-                h: np.ndarray
-                    perturbation of self.z_sample
-                """
-                
-                n = self.domain.n
-
-                if self.domain.n_sample == n:
-                    hn = h.T
-                else:
-                    h_hat = np.array([trig_interpolate(h[:,0], n),\
-                                    trig_interpolate(h[:,1], n)])
-                    hn = np.vstack((np.real(np.fft.ifft(np.fft.fftshift(h_hat[0,:]))),\
-                                np.real(np.fft.ifft(np.fft.fftshift(h_hat[1,:])))))
-
-                return np.sum(hn*self.curve.normal,0)/self.curve.zpabs
+                return np.sum(h.T*self.curve.normal,0)/self.curve.zpabs
 
             def _adjoint(self, g):
-                """ adjoint of the linear mapping der_normal
-
-                Paraameters:
-                -----------------
-                g: np.nd_array
-                """
-                n = self.domain.n
-                n_sample = self.domain.n_sample    
-
-                adj_n=(g/self.curve.zpabs)[np.newaxis,:]*self.curve.normal
-            
-                if n_sample == n:
-                    adj = adj_n
-                else:
-                    adj_hat = np.array([trig_interpolate(adj_n[0,:], n_sample), \
-                                        trig_interpolate(adj_n[1,:], n_sample)])*n/n_sample        
-                    adj = np.vstack((np.fft.ifft(np.fft.fftshift(adj_hat[0,:])),\
-                                    np.fft.ifft(np.fft.fftshift(adj_hat[1,:]))))
-                    
-                return adj.T.real
+                return ((g/self.curve.zpabs)[np.newaxis,:]*self.curve.normal).T
 
         if len(coeff.shape)!=2 or not np.issubdtype(coeff.dtype,np.floating):
             raise ValueError(Errors.value_error(f'coeff must be a 2xN array of real numbers. Got shape {coeff.shape} of type {coeff.dtype}.'))
         if not isinstance(spc,GenTrigSpc):
             raise TypeError(Errors.type_error('spc must be a GenTrigSpc'))
         self.spc = spc
-        self.coeffhat = np.vstack((trig_interpolate(coeff[:,0], spc.n), \
-                                   trig_interpolate(coeff[:,1], spc.n))).T
-        self._freq = 1j*np.linspace(-spc.n/2, spc.n/2-1, spc.n)
+        self.coeff = coeff
         GenCurve.__init__(self,name="GenTrig",n=spc.n,nderivs=nderivs)
-        ParameterizedCurve.__init__(self,coeff=coeff,der_normal =der_normal_GenTrig(self)) 
+        ParameterizedCurve.__init__(self,
+                                    coeff=coeff,
+                                    der_normal = NormalComponent(self) * spc.der_op(0)) 
         
     def _call(self,der=0):
-        return np.vstack((np.real(np.fft.ifft(np.fft.fftshift(self._freq**der *self.coeffhat[:,0]))), \
-                np.real(np.fft.ifft(np.fft.fftshift(self._freq**der * self.coeffhat[:,1])))))
+        return self.spc.der_op(der)(self.coeff).T
 
 
 class GenTrigSpc(UniformGridFcts,ParameterizedCurveSpc):
@@ -582,12 +546,14 @@ class GenTrigSpc(UniformGridFcts,ParameterizedCurveSpc):
     n: int
         Number of points to evaluate the parameterization on
     """
-    def __init__(self, n_sample:int, n:int=0):
+    def __init__(self, n_sample:int, n:int|None=None):  
         if not isinstance(n_sample, int,) or n_sample<=0:
             raise TypeError(Errors.not_instance(n,int,add_info="The GenTrigSpc need n to be a positive integer!"))
         self.n_sample = n_sample
-        self.n = n
+        if n is None:
+            n= n_sample 
         super().__init__(np.linspace(0, 2*np.pi, n_sample, endpoint=False),shape_codomain=(2,))
+        self.n = n
 
     @property    
     def n(self)->int:
@@ -595,12 +561,24 @@ class GenTrigSpc(UniformGridFcts,ParameterizedCurveSpc):
         return self._n
     
     @n.setter
-    def n(self,n_new):
+    def n(self,n_new:int):
+        from regpy.operators.convolution import Derivative  
         if not isinstance(n_new,int) or n_new < 0:
             raise ValueError(Errors.value_error("The number of discretization points of the GenTrigSpace needs to be a positive integer!"))
+        if (self.n_sample-n_new)%2!=0:
+            raise ValueError(Errors.value_error(f"n_sample-n must be even. Got {n_new} and {self.n_sample}"))
         self._n = n_new
+        self._der_ops = [Derivative(self,(order,),Fourier_truncation_amount=(self.n_sample-n_new)//2) for order in range(1)]
 
-    def coeff2curve(self, coeff, nderivs=0)->GenTrig:
+    def der_op(self,order:int):
+        """ Returns the order's derivative operator on a vector-valued space of codomain shape 2, which also performs a Fourier interpolation from a grid of size n_sample to a grid of size n. 
+        """
+        from regpy.operators.convolution import Derivative         
+        if order>=len(self._der_ops):
+            self._der_ops += [Derivative(self,(order,),Fourier_truncation_amount=(self.n_sample-self.n)//2) for order in range(len(self._der_ops),order+1)]
+        return self._der_ops[order]
+
+    def coeff2curve(self, coeff:np.ndarray, nderivs:int=0)->GenTrig:
         r"""Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `GenTrig`.
         
@@ -619,6 +597,46 @@ class GenTrigSpc(UniformGridFcts,ParameterizedCurveSpc):
         t = np.linspace(0, 2*np.pi,self.n_sample,endpoint=False)
         return GenTrig(radius*np.vstack((np.cos(t), np.sin(t))).T,self,nderivs=0)        
 
+class StarTrigCurve(StarCurve,ParameterizedCurve): 
+    r"""A class representing star shaped 2d curves with radial function parametrized in a
+    trigonometric basis. Should usually be instantiated via `StarTrigRadialFcts.coeff2curve`.
+
+    Parameters
+    ----------
+    vecsp : StarTrigRadialFcts
+        The underlying vector space.
+    coeff : array-like
+        The samples of the radial function.
+    nderivs : int, optional
+        How many derivatives to compute. At most 3 derivatives are implemented.
+    """
+
+    def __init__(self, vecsp, coeff:np.ndarray, nderivs:int=1):
+        from regpy.operators import PtwMultiplication
+            
+        if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
+            raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
+        self.vecsp = vecsp
+        """The StarTrigFcts vector space."""
+        #self.dim = len(coeff)
+
+        self.coeff = coeff
+        self._radial = np.asanyarray([vecsp.der_op(order)(coeff) for order in range(nderivs+1)])
+        """Sampled radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
+        StarCurve.__init__(self,name='StarTrigCurve',n=self.vecsp.n,nderivs=nderivs)      
+        mult = PtwMultiplication(UniformGridFcts((0,2*np.pi,self.n),periodic=True),
+                                 self._radial[0,:] / self.zpabs
+                                 ) 
+        ParameterizedCurve.__init__(self,coeff = coeff,
+                                    der_normal = mult * vecsp.der_op(0)
+                                    )
+
+    def radial(self,der:int=0):
+        if der>self._radial.shape[0]:
+            return RuntimeError(f'Value of der {der} greater than self.nderivs {self.nderivs}. Initialize with larger value of nderivs!')
+        return self._radial[der,:]
+
+
 class StarTrigRadialFcts(UniformGridFcts,ParameterizedCurveSpc):
     r"""Class for VectorSpaceBase` instance of `StarTrigCurve` instances. It provides 
     the method `eval_curve` which gives a curve `StarTrigCurve`.  
@@ -634,25 +652,35 @@ class StarTrigRadialFcts(UniformGridFcts,ParameterizedCurveSpc):
     n: int
         number of points on the curves
     """
-    def __init__(self, dim,n=0):
+    def __init__(self, dim:int,n:int|None=None):
         if not isinstance(dim, int) or dim<=0:
             raise TypeError(Errors.not_instance(dim,int,add_info="StarTrigRadialFcts need dim to be a positive integer!"))      
-        self.n = n
-        self.dim = dim
         super().__init__(np.linspace(0, 2*np.pi, dim, endpoint=False))
+        self.dim = dim
+        self.n = n if n is not None else dim
 
     @property    
-    def n(self):
+    def n(self)->int:
         """number of evaluation points"""
         return self._n
     
     @n.setter
-    def n(self,n_new):
+    def n(self,n_new:int):
+        from regpy.operators.convolution import Derivative
         if not isinstance(n_new,int) or n_new < 0:
             raise ValueError(Errors.value_error("The number of discretization points  needs to be a positive integer!"))
+        self._der_ops = [Derivative(self,(order,),Fourier_truncation_amount=(self.dim-n_new)//2) for order in range(1)]        
         self._n = n_new
 
-    def coeff2curve(self, coeff, nderivs=1):
+    def der_op(self,order:int):
+        """ Returns the order's derivative operator, which also performs a Fourier interpolation from a grid of size n_sample to a grid of size n. 
+        """
+        from regpy.operators.convolution import Derivative         
+        if order>=len(self._der_ops):
+            self._der_ops += [Derivative(self,(order,),Fourier_truncation_amount=(self.dim-self.n)//2) for order in range(len(self._der_ops),order+1)]
+        return self._der_ops[order]
+
+    def coeff2curve(self, coeff:np.ndarray, nderivs:int=1)->StarTrigCurve:
         """Compute a curve for the given coefficients. All parameters will be passed to the
         constructor of `StarTrigCurve`.
         
@@ -667,180 +695,10 @@ class StarTrigRadialFcts(UniformGridFcts,ParameterizedCurveSpc):
             raise RuntimeError('self.n has not been set, yet.')
         return StarTrigCurve(self, coeff,  nderivs)
 
-    def radialfct2curve(self, f,nderivs=1):
+    def radialfct2curve(self, f:Callable[[np.floating],np.floating],nderivs:int=1):
         coeff = f(np.linspace(0, 2*np.pi, self.dim, endpoint=False))
         return StarTrigCurve(self, coeff,  nderivs)
     
-    def circle(self, radius=1.,nderivs=1):
-        return StarTrigCurve(self, radius*self.ones(),nderivs)
-
-class StarTrigCurve(StarCurve,ParameterizedCurve): 
-    r"""A class representing star shaped 2d curves with radial function parametrized in a
-    trigonometric basis. Should usually be instantiated via `StarTrigRadialFcts.coeff2curve`.
-
-    Parameters
-    ----------
-    vecsp : StarTrigRadialFcts
-        The underlying vector space.
-    coeff : array-like
-        The samples of the radial function.
-    nderivs : int, optional
-        How many derivatives to compute. At most 3 derivatives are implemented.
-    """
-
-    def __init__(self, vecsp, coeff, nderivs=1):
-        from regpy.operators import Operator, PtwMultiplication
-        class derivative_radial(Operator):
-            """ Linear `regpy.operators.Operator' implement coeff->self.radial[0,:]
-            """
-            def __init__(self, curve):
-                super().__init__(domain=curve.vecsp, 
-                                 codomain =  UniformGridFcts((0.,2*np.pi,curve.n), periodic=True,dtype=float),
-                                 linear=True)
-                self.curve =curve
-
-            def _eval(self, h):
-                return  (self.curve.n / self.curve.dim) * np.fft.irfft(np.fft.rfft(h), self.curve.n)
-            def _adjoint(self, g):
-                return (self.curve.n / self.curve.dim) * adjoint_rfft(
-                    adjoint_irfft(g, len(self.curve.coeff) // 2 + 1),
-                    self.curve.dim
-                )
-
-        """class der_normal_StarTrigCurve(Operator):
-            def __init__(self, curve):
-                super().__init__(domain=curve.vecsp, 
-                                 codomain =  UniformGridFcts((0.,2*np.pi,curve.n), periodic=True,dtype=float),
-                                 linear=True)
-                self.curve =curve
-
-            def _eval(self, h):
-                der = (self.curve.n / self.curve.dim) * np.fft.irfft(np.fft.rfft(h), self.curve.n)
-                return (self.curve._radial[0,:] / self.curve.zpabs) *  der
-
-            def _adjoint(self, g):
-                aux = (self.curve._radial[0,:] / self.curve.zpabs)*g
-                return (self.curve.n / self.curve.dim) * adjoint_rfft(
-                    adjoint_irfft(aux, len(self.curve.coeff) // 2 + 1),
-                    self.curve.dim
-                )
-        """
-            
-        if not isinstance(nderivs, int) or nderivs <0 or nderivs >3:
-            raise ValueError(Errors.value_error(f"The number of derivative in StarTrigCurve needs to be an integer between 0 and 3"))
-        self.vecsp = vecsp
-        """The vector space."""
-        self.dim = len(coeff)
-
-        self._frqs = 1j*np.arange(self.dim // 2 + 1)
-        self._radial = (self.vecsp.n / self.dim) * np.fft.irfft(
-            (self._frqs ** np.arange(nderivs + 1)[:, np.newaxis])*np.fft.rfft(coeff),
-            self.vecsp.n,
-            axis=1
-        )
-        """Sampled radial function and its derivatives, shaped `(nderivs + 1, nvals)`."""
-        StarCurve.__init__(self,name='StarTrigCurve',n=self.vecsp.n,nderivs=nderivs)
-        self.derivative_radial = derivative_radial(self)        
-        ParameterizedCurve.__init__(self,coeff=coeff,
-                                    der_normal=PtwMultiplication(self.derivative_radial.codomain,self._radial[0,:] / self.zpabs) \
-                                        * self.derivative_radial
-                                    )
-
-    def radial(self,der=0):
-        if der>self._radial.shape[0]:
-            return RuntimeError(f'Value of der {der} greater than self.nderivs {self.nderivs}. Initialize with larger value of nderivs!')
-        return self._radial[der,:]
-
-
-
-def trig_interpolate(val, n):
-    """Computes `n` Fourier coeffients to the point radial_samples given by `val`
-    such that `ifft(fftshift(coeffs))` is an interpolation of `val`."""
-    n_val = len(val)
-    coeff_val = np.fft.fft(val)
-    if n == n_val:
-        return np.fft.ifftshift(coeff_val)
-    elif n > n_val:
-        coeffs = np.zeros(n, dtype=complex)
-        coeffs[:n_val // 2] = coeff_val[:n_val // 2]
-        coeffs[-(n_val // 2) - n_val % 2 + 1:] = coeff_val[-(n_val // 2) -n_val % 2 + 1:]
-        coeffs[n_val // 2] = 0.5 * coeff_val[n_val // 2]
-        coeffs[-(n_val // 2) - n_val % 2] = 0.5 * coeff_val[n_val // 2]
-        return n / n_val * np.fft.ifftshift(coeffs)
-    else:
-        coeffs = np.zeros(n, dtype=complex)
-        coeffs[:n // 2] = coeff_val[:n // 2]
-        coeffs[-(n // 2) - n % 2 + 1:] = coeff_val[-(n // 2)- n % 2 + 1:]
-        coeffs[n // 2] = 0.5 * (coeff_val[n // 2] + coeff_val[-(n // 2) - n % 2])
-        return n / n_val * np.fft.ifftshift(coeffs)
-
-def adjoint_rfft(y, size, n=None):
-   
-    if n is None:
-        n = size
-    if n // 2 + 1 != y.size:
-        raise ValueError(Errors.value_error(f"The size of y, y.size = {y.size}, for the adjoint_rfft is not n//2+1 where n = {n}"))
-
-    result = np.fft.irfft(y, n)
-    result *= n / 2
-    result += y[0].real / 2
-    if n % 2 == 0:
-        aux = y[-1].real / 2
-        result[::2] += aux
-        result[1::2] -= aux
-
-    if n == size:
-        return result
-    elif size < n:
-        return result[:size]
-    else:
-        aux = np.zeros(size, dtype=result.dtype)
-        aux[:n] = result
-        return aux
-
-def adjoint_irfft(y, size=None):
-    r"""Compute the adjoint of `numpy.fft.irfft`\. More concretely, the adjoint of
-
-    .. math::
-        x \mapsto \mathrm{irfft}(x, n)
-
-    is
-
-    .. math::
-        y \mapsto \mathrm{adjoint_irfft}(y, x.size)
-
-    Since the size of `x` can not be determined from `y`\, it needs to be given explicitly. The
-    parameter `n`, however, is determined as the output size of `irfft`\, so it does not not need to
-    be specified for the adjoint.
-
-    Parameters
-    ----------
-    y : array-like
-        The input array.
-    size : int, optional
-        The size of the output, i.e. the size of the original input to `irfft`. If omitted,
-        `x.size // 2 + 1` will be used, i.e. we assume the `irfft` is inverse to a plain `rfft(x)`,
-        without additional padding or truncation.
-
-    Returns
-    -------
-    array of shape (size,)
-    """
-
-    if size is None:
-        size = y.size // 2 + 1
-    
-    result = np.fft.rfft(y)
-    result[0] -= np.sum(y) / 2
-    if y.size % 2 == 0:
-        result[-1] -= (np.sum(y[::2]) - np.sum(y[1::2])) / 2
-    result *= 2 / y.size
-   
-    if size == result.size:
-        return result
-    elif size < result.size:
-        return result[:size]
-    else:
-        aux = np.zeros(size, dtype=result.dtype)
-        aux[:result.size] = result
-        return aux
+    def circle(self, radius:float=1.,nderivs:int=1)->StarTrigCurve:
+        return StarTrigCurve(self, radius*self.ones(),nderivs
+                             )
