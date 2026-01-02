@@ -26,7 +26,7 @@ def ShapeCurves(name,n=20,der=3):
     return []
 
 @pytest.mark.parametrize("shape, der",[
-    ("kite",3),("peanut",3),("round_rect",2),("apple",3),("three_lobes",3),("pinched_ellipse",3),("smoothed_rectangle",3),("nonsym_shape",3),("circle",3)
+    ("Kite",3),("Peanut",3),("Round_rect",2),("Apple",3),("Three_lobes",3),("Pinched_ellipse",3),("Smoothed_rectangle",3),("Nonsym_shape",3),("Circle",3)
 ])
 def test_shapes(shape,der):
         ShapeCurves(shape,n=20,der=der)

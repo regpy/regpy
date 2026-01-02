@@ -7,7 +7,7 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import Setting
-from regpy.vecsps.curve import apple
+from regpy.vecsps.curve import Apple
 import regpy.util as util
 
 util.set_rng_seed(15873098306879350073259142812684978477)
@@ -33,7 +33,7 @@ def test_obstacle():
     setting = Setting(op=op, penalty=Sobolev(index=1.6), data_fid=L2)
 
     #Exact data
-    farfield, _ = op.create_synthetic_data(apple)
+    farfield, _ = op.create_synthetic_data(Apple)
 
     # Gaussian data 
     noiselevel=0.01
