@@ -1,15 +1,14 @@
 import math as ma
 import numpy as np
-from scipy.sparse.linalg import eigsh
-
+from typing import Callable, Self
 
 from regpy.util import ClassLogger, Errors
 from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
+from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
-from regpy.functionals import SquaredNorm, QuadraticLowerBound, QuadraticNonneg, QuadraticBilateralConstraints
+from regpy.functionals import Functional,SquaredNorm, QuadraticLowerBound, QuadraticNonneg, QuadraticBilateralConstraints
 from regpy.stoprules import StopRule,NoneRule,DualityGapStopping,CombineRules,CountIterations
-from numpy import inf
 import logging
 
 class Solver:
@@ -277,8 +276,11 @@ class Setting:
         If not None, the penalty functional is replaced by penalty(. - penalty_shift).
     data: op.co_domain [default: None]
         If not None, the data in the data fidelity functional is replaced by data.
-    primal_setting: None or TikhonovRegularizationSetting [default:None]
-        Indicates whether or not a setting serves as primal setting. For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
+    primal_setting: None or Setting [default:None]
+        This attribute is only relevant for convex Tikhonov regularization settings 
+        (self.is_convex == True and self.is_tikhonov == True). In this case it 
+        indicates whether or not a setting serves as primal setting. 
+        For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
         This affects the duality relations and the duality gap. 
     gap_threshold: float [default: 1e5]
     logging_level: int [default: logging.INFO]
@@ -289,7 +291,15 @@ class Setting:
     
     log = ClassLogger()
 
-    def __init__(self, op, penalty, data_fid,regpar=None,penalty_shift= None, data= None,primal_setting=None,gap_threshold = 1e5,
+    def __init__(self, 
+                 op: Operator, 
+                 penalty: Functional|HilbertSpace|Callable, 
+                 data_fid:Functional|HilbertSpace|Callable,
+                 regpar:float|None=None,
+                 penalty_shift= None, 
+                 data= None, exact_data = None, 
+                 primal_setting:Self|None =None,
+                 gap_threshold = 1e5,
                  logging_level = "INFO"):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
@@ -309,14 +319,19 @@ class Setting:
         else:
             self.penalty_shift = None
         self.regpar=regpar#The flags are set by setting the regularization parameter
-        """The Regularization parameter"""
+        """The regularization parameter"""
         if(not self.data_fid.is_data_func and data is None and primal_setting is None):
-            self.log.warning("Setting does not contain any explicit data.")
+            if exact_data is None:
+                self.log.warning("Setting does not contain any explicit data.")
             self._data=None
         if(self.data_fid.is_data_func):
             self._data=self.data_fid.data#just update internal data, update of data functional not necessary
         if(data is not None):
             self.data = data #data and data fidelity functional are updated
+        if exact_data is not None:
+            if not exact_data in op.codomain:
+                raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
+            self._exact_data = exact_data
         
         self.log.setLevel(logging_level)
         self.gap_threshold = gap_threshold
@@ -368,6 +383,35 @@ class Setting:
         self._set_flags()
 
     ######General convenience methods
+    def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None):
+        """ generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
+        
+        Parameters:
+        -----------
+        relative_noise_level: float | None: optional
+        absolute_noise_level: float | None: optional
+            Exactly one of these two parameters must be given as a positive float. 
+        """
+        #TODO: Add an optional parameter white_noise_level once we can generically generate white noise
+        if relative_noise_level is None and absolute_noise_level is None:
+            raise ValueError(Errors.value_error("Either relative or absolute noise level must be given."))
+        if relative_noise_level is not None and absolute_noise_level is not None:
+            raise ValueError(Errors.value_error("Your cannot provide both relative or absolute noise level!"))
+        if relative_noise_level is not None and not isinstance(relative_noise_level,float) and not relative_noise_level>0:
+            raise ValueError(Errors.value_error("ralative_noise_level must be a positive float.")) 
+        if absolute_noise_level is not None and not isinstance(absolute_noise_level,float) and not absolute_noise_level>0:
+            raise ValueError(Errors.value_error("absolute_noise_level must be a positive float.")) 
+        if not hasattr(self,'_exact_data'):
+            raise RuntimeError(Errors.runtime_error('No exact data has been provided at initialization of the setting.'))
+        if self.data is not None:
+            self.log.warning("Overwriting given data!")
+        noise = self.op.codomain.randn()
+        if relative_noise_level is not None:
+            noise *= relative_noise_level*self.h_codomain.norm(self._exact_data)/self.h_codomain.norm(noise)
+        else:
+            noise *= absolute_noise_level/self.h_codomain.norm(noise)
+        self.data = self._exact_data + noise 
+
     def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
         r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
         is the true matrix adjoint. That is 
