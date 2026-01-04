@@ -3,6 +3,7 @@ from copy import deepcopy,copy
 
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
+from regpy.operators import Operator
 
 from ..general import RegSolver, Setting
 from ..linear import SemismoothNewton_bilateral
@@ -40,7 +41,11 @@ class NewtonCG(RegSolver):
         Simplified operator to be used for the derivative. (Default: None)
     """
 
-    def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
+    def __init__(self, 
+                 setting:Setting, 
+                 data=None, 
+                 init=None, 
+                 cgmaxit:int=50, rho:float=0.8, simplified_op:Operator = None):
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -119,15 +124,19 @@ class NewtonCGFrozen(RegSolver):
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : number, optional
+    cgmaxit : int, optional
         Maximal number of inner CG iterations. (Default: 50)
-    rho : number, optional
+    rho : float, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     """
-    def __init__(self, setting, data, init = None, cgmaxit=50, rho=0.8):
+    def __init__(self, setting:Setting, 
+                 data = None, init = None, 
+                 cgmaxit:int=50, rho:float=0.8):
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data is None:
+            data = setting.data
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.data = data

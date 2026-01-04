@@ -1,5 +1,6 @@
 from copy import deepcopy
 from regpy.util import ClassLogger, Errors
+from typing import Callable
 import numpy as np
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
@@ -15,7 +16,7 @@ class StopRule:
 
     log = ClassLogger()
 
-    def __init__(self, logging_level = "WARNING"):
+    def __init__(self, logging_level = "INFO"):
         self.solver = None
 
         self.triggered = False
@@ -338,7 +339,7 @@ class CountIterations(StopRule):
         The number of iterations after which to stop.
     """
 
-    def __init__(self, max_iterations, while_type = True,logging_level= "WARNING"):
+    def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
         if not isinstance(max_iterations,int):
             raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
         if max_iterations<0:
@@ -382,35 +383,83 @@ class Discrepancy(StopRule):
 
     Parameters
     ----------
-    norm : callable
-        The norm with respect to which the discrepancy should be measured.
-        Usually this will be the `norm` method of some :class:`~regpy.spaces.Space`.
-    data : array
-        The right hand side (noisy data).
     noiselevel : float
         An estimate of the distance from the noisy data to the exact data.
+    setting: Setting| None, optional
+        setting, default: None. In the default case, data and norm must be given.  
+    data : array or None, optional
+        The right hand side (noisy data) or None (default). 
+        In the default case, setting.data is used.   
+    norm : callable or None, optional
+        The norm with respect to which the discrepancy should be measured or None (default).
+        In the default case, setting.h_codomain.norm is used.            
     tau : float, optional
         The multiplier; must be larger than 1. Defaults to 2.
+    noise_level_is_relative: bool, optional
+        Indicates whether the given noiselevel is a relative or absolute noise level. Defaults to False
     """
-
-    def __init__(self, norm, data, noiselevel, tau=2):
-        if not callable(norm):
-            raise TypeError(Errors.type_error("The norm in the discrepancy principle needs to be a callable!"))
-        if not isinstance(noiselevel,(int,float)):
-            raise TypeError(Errors.type_error("The noise level in the discrepancy principle should be real scalar!"))
+    #def __init__(self, 
+    #             noiselevel:float, 
+    #             tau:float=2.,
+    #             setting =None,
+    #             data=None,
+    #             norm: Callable|None =None,
+    #             noise_level_is_relative:bool=False
+    #            ):
+    def __init__(self,*args,**kwargs):
+        defaults = {'tau':2.,'setting':None,'data':None,'norm':None,'noise_level_is_relative':False}
+        if len(args)==3: 
+            self.log.warning('Initialization of Discrepancy with three positional arguments (norm, data, noise_level) deprecated. Use one positional argument (noiselevel) and specifiy norm and data via a keyword argument setting!')
+            norm,data,noiselevel = args
+            p = {**defaults, **kwargs}
+            tau,noise_level_is_relative,setting = p['tau'],p['noise_level_is_relative'],p['setting']
+        elif len(args)==2:
+            self.log.warning('Initialization of Discrepancy with two positional arguments (norm, data) deprecated. Use one positional argument (noiselevel) and specifiy norm and data via a keyword argument setting!')
+            norm,data = args
+            p = {**defaults, **kwargs}
+            tau,noise_level_is_relative,setting,noiselevel = p['tau'],p['noise_level_is_relative'],p['setting'],p['noiselevel']          
+        elif len(args)==1:
+            noiselevel = args[0]
+            p = {**defaults, **kwargs}
+            tau,noise_level_is_relative,setting,norm,data = p['tau'],p['noise_level_is_relative'],p['setting'],p['norm'],p['data']
+        else:
+            raise ValueError(Errors.value_error('Discrepancy must have either two (deprecated) or one (recommended) positional arguments.'))
+        from regpy.solvers import Setting
+        if not isinstance(noise_level_is_relative,bool):
+            raise TypeError(Errors.type_error("noise_level_is_relative must be boolean."))
+        if not isinstance(noiselevel,(int,float)):  
+            raise TypeError(Errors.type_error(f"The noise level in the discrepancy principle should be real scalar! Got {noiselevel}"))
         if noiselevel<=0:
-            raise ValueError(Errors.value_error("The noise level in the discrepancy principle needs to be bigger then zero!"))
+            raise ValueError(Errors.value_error(f"The noise level in the discrepancy principle needs to be bigger then zero! Got {noiselevel}"))
         if not isinstance(tau,(int,float)):
-            raise TypeError(Errors.type_error("The multiplier in the discrepancy principle should be real scalar!"))
+            raise TypeError(Errors.type_error(f"The multiplier in the discrepancy principle should be real scalar! Got {tau}."))
         if tau<=1:
             self.log.warning("The multiplier in the discrepancy principle should be bigger than one!")
+        if norm is not None:
+            if not callable(norm):
+                raise TypeError(Errors.type_error(f"The norm in the discrepancy principle needs to be a callable! Got {norm}."))
+            self.norm = norm
+        else:
+            if setting is None:
+                raise ValueError(Errors.value_error('If setting is not provided, then norm must be provided.')) 
+            self.norm = setting.h_codomain.norm
         super().__init__()
-        self.norm = norm
-        self.data = data
-        self.noiselevel = noiselevel
+        if data is not None:
+            self.data = data
+        else:
+            if setting is None or setting.data is None:
+                raise ValueError(Errors.value_error('If setting is not provided or setting has no data, then data must be provided.'))
+            else:
+                self.data = setting.data
+            
+        if noise_level_is_relative:
+            self.noiselevel = noiselevel*self.norm(self.data)
+        else:
+            self.noiselevel = noiselevel
         self.tau = tau
         self.tol = self.tau
         self.history_dict["relative discrepancy"] = []
+
 
     def __repr__(self):
         return 'Discrepancy(noiselevel={}, tau={})'.format(
@@ -423,7 +472,7 @@ class Discrepancy(StopRule):
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
-        self.log_info = 'rel. discrep. = {:3.2f}< {:1.2f}'.format(rel, self.tau)
+        self.log_info = 'discr./noiselevel = {:3.2f}< {:1.2f}'.format(rel, self.tau)
         if self.is_main_rule:
             self.log.info(self.log_info)
         return rel < self.tau
@@ -554,7 +603,7 @@ class RelativeChangeSol(StopRule):
 ######### StopRules for convex optimization problems #########
 
 class OptimalityCondStopping(StopRule):
-    def __init__(self, logging_level = "WARNING",tol = 0.):
+    def __init__(self, logging_level = "INFO",tol = 0.):
         """Stopping rule based on optimality condition violation.
         
         Parameters
@@ -603,7 +652,7 @@ class DualityGapStopping(StopRule):
     logging_level : str
         The logging level for the stopping rule.
     """    
-    def __init__(self, tol = 0, logging_level = "WARNING"):
+    def __init__(self, tol = 0, logging_level = "INFO"):
         super().__init__()
         self.tol = tol
         self.log.setLevel(logging_level)
