@@ -183,21 +183,17 @@ class StarCurve(GenCurve):
 
     def __call__(self,der:int=0)->np.ndarray:
         res = self.radial(der=der)
+        cost = np.cos(self.t)
+        sint = np.sin(self.t)
         if res.ndim != 1:
-            raise RuntimeError(Errors.runtime_error(f"Calling the StarCurve {self} did not construct a array of one dimension!"))
+            raise RuntimeError(Errors.runtime_error(f"Calling radial of StarCurve {self} did not construct a array of one dimension!"))
         if der == 0:
-            return np.array([res*np.cos(self.t),res*np.sin(self.t)])
-        elif der == 1:
-            cost = np.cos(self.t)
-            sint = np.sin(self.t)
+            return np.array([res*cost,res*sint])
+        elif der == 1:            
             return np.array([res*cost,res*sint]) + np.array([[0,-1],[1,0]])@self.z
         elif der == 2:
-            cost = np.cos(self.t)
-            sint = np.sin(self.t)
             return np.array([res*cost, res*sint]) + 2*np.array([[0,-1],[1,0]])@self.zp + self.z
         elif der == 3:
-            cost = np.cos(self.t)
-            sint = np.cos(self.t)
             return np.array([res*cost ,res*sint]) + 3*np.array([[0,-1],[1,0]])@self.zpp + 3 * self.zp + np.array([[0,1],[-1,0]])@self.z
         return res
     
@@ -653,7 +649,7 @@ class GenTrigSpc(UniformGridFcts,ParameterizedCurveSpc):
     
     def circle(self, radius:float =1.,nderivs:int=0)->GenTrig:
         t = np.linspace(0, 2*np.pi,self.n_sample,endpoint=False)
-        return GenTrig(radius*np.vstack((np.cos(t), np.sin(t))).T,self,nderivs=0)        
+        return GenTrig(radius*np.vstack((np.cos(t), np.sin(t))).T,self,nderivs=nderivs)        
 
 class StarTrigCurve(StarCurve,ParameterizedCurve): 
     r"""A class representing star shaped 2d curves with radial function parametrized in a
