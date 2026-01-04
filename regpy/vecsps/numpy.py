@@ -463,7 +463,7 @@ class GridFcts(MeasureSpaceFcts):
 
     def _calc_cell_measure(axes,boundary_ext,ext_const=None):
         if len(axes)> 26:
-            raise ValueError(Errors.value_error(f"Computing the cell measure is only supported for less then 26 axes you have {len(axes)} axes."))
+            raise ValueError(Errors.value_error(f"Computing the cell measure is only supported for less than 26 axes. You have {len(axes)} axes."))
         ext_axes=[]
         if(boundary_ext=="sym"):
             ext_axes=[np.pad(v,(1,1),mode='reflect',reflect_type='odd') for v in axes]
@@ -484,6 +484,7 @@ class GridFcts(MeasureSpaceFcts):
                 else:
                     raise ValueError(Errors.value_error(f"The extending constants need to be a tuple of a tuple (left_bnd_val,right_bnd_val) for left and right boundary values or a scalar both_bnd_val for both sides. You defined the {i}-th value by ext_const = {ext_const[i]}"))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        ax_widths=[np.array([1.]) if len(aw)==1 and aw[0]==0. else aw for aw in ax_widths]#avoid all zero weights if there are axes of length 1
         ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         prod_string=','.join([chr(k) for k in range(ord('A'),ord('A')+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
