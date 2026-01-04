@@ -344,7 +344,16 @@ class ConvolutionOperator(Composition):
                 self._otf = fourier_multiplier(*self._frqs[freq_slice])
             else:
                 self._otf = fourier_multiplier
-            fac = np.sqrt(np.prod(trunc_op.codomain.shape)/np.prod(trunc_op.domain.shape))
+            shape_out,shape_in = list(trunc_op.codomain.shape), list(trunc_op.domain.shape)
+            if np.issubdtype(grid.dtype,np.floating):
+                last_conv_axis = self.convolution_axes[-1]
+                if grid.shape[last_conv_axis]%2==0:
+                    shape_out[last_conv_axis] = 2*(shape_out[last_conv_axis]-1)
+                    shape_in[last_conv_axis] = 2*(shape_in[last_conv_axis]-1)
+                else:
+                    shape_out[-1] = 2*shape_out[-1]-1
+                    shape_in[-1] = 2*shape_in[-1]-1
+            fac = np.sqrt(np.prod(shape_out)/np.prod(shape_in))
             if self.kernel_matrix_shape is None:
                 multiplier = PtwMultiplication(trunc_op.codomain, np.broadcast_to(fac*self._otf,trunc_op.codomain.shape))
             else:
