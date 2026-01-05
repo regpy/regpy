@@ -480,33 +480,34 @@ class Discrepancy(StopRule):
 class LCurve(StopRule):
     """L Curve method.
 
- 
+    Computes ||x|| and ||y-data|| for all available parameters
+    and returns as best iterate that x where the curve (||x||,||y-data||) 
+    has maximal curvature
 
     Parameters
     ----------
-    noiselevel : float
-        An estimate of the distance from the noisy data to the exact data.
-    setting: Setting| None, optional
-        setting, default: None. In the default case, data and norm must be given.  
-    data : array or None, optional
-        The right hand side (noisy data) or None (default). 
-        In the default case, setting.data is used.   
-    norm : callable or None, optional
-        The norm with respect to which the discrepancy should be measured or None (default).
-        In the default case, setting.h_codomain.norm is used.            
-    tau : float, optional
-        The multiplier; must be larger than 1. Defaults to 2.
-    noise_level_is_relative: bool, optional
-        Indicates whether the given noiselevel is a relative or absolute noise level. Defaults to False
+    setting: Setting
+    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+    max_iter: int
+        Maximal number of regularization parameters considered
     """
     def __init__(self, 
                  setting,
+                 alphas,
                  max_iter:int=1000
                 ):
         from regpy.solvers import Setting
+        from regpy.solvers.linear import GeometricSequence
+        from itertools import islice
         super().__init__()
         self.data = setting.data
         self.norm = setting.h_codomain.norm    
+        if isinstance(alphas,tuple) and len(alphas)==2:
+            alph = GeometricSequence(alphas[0],alphas[1])
+            self.alphas = list(islice(alph,max_iter))
+        else:
+            self.alphas = alphas
         self.history_dict["residual"] = []
         self.history_dict["norm"] = []        
         self.recos=[]
@@ -530,7 +531,31 @@ class LCurve(StopRule):
         return self.it >= self.max_iter
 
     def best_iterate(self):
-        return self.recos[1]
+        res = self.history_dict["residual"]
+        nrm = self.history_dict["norm"]
+        xi = np.log(res)
+        eta = np.log(nrm)
+        dxi = np.gradient(xi,self.alphas)
+        d2xi = np.gradient(dxi,self.alphas)
+        deta = np.gradient(eta,self.alphas)
+        d2eta = np.gradient(deta,self.alphas)
+        kappa = (d2xi*deta - dxi*d2eta)/(dxi**2 + deta**2)**(3/2)
+        idx = np.argmax(kappa)        
+
+        import matplotlib.pyplot as plt
+        plt.loglog(res,nrm)
+        plt.xlabel("Norm of residual")
+        plt.ylabel("Norm of reconstruction")
+        plt.plot(res[idx], nrm[idx], "rx", markersize=12)
+        plt.show()       
+        plt.plot(self.alphas,kappa)
+        plt.show()
+        
+        print(self.alphas)
+        print(nrm)
+        print(idx)
+        
+        return self.recos[idx]
 
 ########## General StopRules based on relative change of data or solution ##########
 
