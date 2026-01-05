@@ -1,6 +1,6 @@
 import math as ma
 import numpy as np
-from typing import Callable, Self
+from typing import Callable
 
 from regpy.util import ClassLogger, Errors
 from regpy.util.operator_tests import test_derivative
@@ -297,7 +297,7 @@ class Setting:
                  regpar:float|None=None,
                  penalty_shift= None, 
                  data= None, exact_data = None, 
-                 primal_setting:Self|None =None,
+                 primal_setting =None,
                  gap_threshold = 1e5,
                  logging_level = "INFO"):
         if not isinstance(op,Operator):
