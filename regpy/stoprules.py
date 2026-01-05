@@ -480,35 +480,30 @@ class Discrepancy(StopRule):
 class LCurve(StopRule):
     """L Curve method.
 
- 
+    Computes ||x|| and ||y-data|| for all available parameters
+    and returns as best iterate that x where the curve (||x||,||y-data||) 
+    has maximal curvature
 
     Parameters
     ----------
-    noiselevel : float
-        An estimate of the distance from the noisy data to the exact data.
-    setting: Setting| None, optional
-        setting, default: None. In the default case, data and norm must be given.  
-    data : array or None, optional
-        The right hand side (noisy data) or None (default). 
-        In the default case, setting.data is used.   
-    norm : callable or None, optional
-        The norm with respect to which the discrepancy should be measured or None (default).
-        In the default case, setting.h_codomain.norm is used.            
-    tau : float, optional
-        The multiplier; must be larger than 1. Defaults to 2.
-    noise_level_is_relative: bool, optional
-        Indicates whether the given noiselevel is a relative or absolute noise level. Defaults to False
+    setting: Setting
+    solver: The solver used for computing the reconstructions x
+    max_iter: int
+        Maximal number of regularization parameters considered
     """
     def __init__(self, 
                  setting,
+                 solver,
                  max_iter:int=1000
                 ):
         from regpy.solvers import Setting
         super().__init__()
         self.data = setting.data
-        self.norm = setting.h_codomain.norm    
+        self.norm = setting.h_codomain.norm
+        self.solver = solver
         self.history_dict["residual"] = []
-        self.history_dict["norm"] = []        
+        self.history_dict["norm"] = []
+        self.history_dict["alphas"] = []
         self.recos=[]
         self.max_iter = max_iter
         self.it =0
@@ -523,16 +518,85 @@ class LCurve(StopRule):
         if self.solver.x is None:
             raise MissingValueError     
         residual = self.data - self.solver.y
-        discrepancy = self.norm(residual)
-        self.history_dict["residual"].append(discrepancy)
-        sol_norm = self.norm(self.solver.x)
-        self.history_dict["norm"].append(sol_norm)     
+        norm_res = self.norm(residual)
+        norm_x = self.norm(self.solver.x)
+        self.history_dict["residual"].append(norm_res)
+        self.history_dict["norm"].append(norm_x)     
+        self.history_dict["alphas"].append(self.solver.alpha)
         self.recos.append(self.solver.x.copy())
-        self.log_info = 'res {:.3e},norm {:.3e}'.format(discrepancy,sol_norm)
-        return False
+        self.log_info = 'res {:.3e},norm {:.3e}'.format(norm_res,norm_x)
+        return self.it >= self.max_iter
+   
+    def best_stopping_index(self):
+        res = self.history_dict["residual"]
+        norm_x = self.history_dict["norm"]
+        alphas = self.history_dict["alphas"]
+        xi = np.log(res)
+        eta = np.log(norm_x)
+        dxi = np.gradient(xi,alphas)
+        d2xi = np.gradient(dxi,alphas)
+        deta = np.gradient(eta,alphas)
+        d2eta = np.gradient(deta,alphas)
+        kappa = (d2xi*deta - dxi*d2eta)/(dxi**2 + deta**2)**(3/2)
+        return np.argmax(kappa)
+        
+    def best_iterate(self):
+        return self.recos[self.best_stopping_index()]
+
+class QuasiOpt(StopRule):
+    """Quasi-optimality principle.
+
+    Computes x for all available parameters
+    and returns as best iterate that x_{k+1} where the ||x_{k+1} - x_{k}|| 
+    is minimal
+
+    Parameters
+    ----------
+    setting: Setting
+    solver: The solver used for computing the reconstructions x
+    max_iter: int
+        Maximal number of regularization parameters considered
+    """
+    def __init__(self, 
+                 setting,
+                 solver,
+                 max_iter:int=1000
+                ):
+        from regpy.solvers import Setting
+        super().__init__()
+        self.data = setting.data
+        self.norm = setting.h_codomain.norm
+        self.history_dict["norm_diff"] = []
+        self.history_dict["alphas"] = []
+        self.recos=[]
+        self.max_iter = max_iter
+        self.it =0
+
+    def __repr__(self):
+        return 'Quasi optimality'
+
+    def _stop(self):
+        self.it +=1
+        if self.solver.y is None:
+            raise MissingValueError
+        if self.solver.x is None:
+            raise MissingValueError
+        if self.it > 1:
+            norm_diff = self.norm(self.solver.x-self.recos[-1])
+        else:
+            norm_diff = 0
+        self.history_dict["norm_diff"].append(norm_diff)
+        self.history_dict["alphas"].append(self.solver.alpha)
+        self.recos.append(self.solver.x.copy())
+        self.log_info = 'norm_diff {:.3e}'.format(norm_diff)
+        return self.it >= self.max_iter
+    
+    def best_stopping_index(self):
+        norm_diff = self.history_dict["norm_diff"]
+        return np.argmin(norm_diff[1:])+1
 
     def best_iterate(self):
-        return self.recos[1]
+        return self.recos[self.best_stopping_index()]
 
 class Oracle(StopRule):
     """Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.

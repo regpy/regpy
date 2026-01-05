@@ -7,7 +7,7 @@ from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, Setting
 
-__all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov"]
+__all__ = ["TikhonovCG","TikhonovAlphaGrid","NonstationaryIteratedTikhonov","GeometricSequence"]
 
 class TikhonovCG(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
@@ -340,6 +340,7 @@ class TikhonovAlphaGrid(RegSolver):
             alpha = next(self._alphas)
         except StopIteration:
             return self.converge()
+        self.alpha = alpha
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")
