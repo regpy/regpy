@@ -167,8 +167,8 @@ class NoneRule(StopRule):
 class CombineRules(StopRule):
     """Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
 
-    The resulting rule triggers when any of the given rules triggers and
-    delegates selecting the solution to the active rule.
+    The resulting rule triggers when any of the given rules triggers.
+    The first rule is responsible for selecting the best solution.
 
     Parameters
     ----------
@@ -243,10 +243,10 @@ class CombineRules(StopRule):
         return triggered
     
     def best_iterate(self):
-        if self.active_rule is None:
-            self.log.warning("No sub-rule has triggered yet, so no best iterate is available!")
-            return None
-        return self.active_rule.best_iterate()
+        if not self.triggered:
+            self.log.warning("The combined stopping rule has not triggered yet, so no best iterate is available!")
+            return None        
+        return self.rules[0].best_iterate()
 
 class AndCombineRules(StopRule):
     """Combine several stopping rules into one that stops if all of the rules stop.
@@ -526,9 +526,11 @@ class LCurve(StopRule):
         residual = self.data - self.solver.y
         discrepancy = self.norm(residual)
         self.history_dict["residual"].append(discrepancy)
-        self.history_dict["norm"].append(self.norm(self.solver.x))     
+        sol_norm = self.norm(self.solver.x)
+        self.history_dict["norm"].append(sol_norm)     
         self.recos.append(self.solver.x.copy())
-        return self.it >= self.max_iter
+        self.log_info = 'res {:.3e},norm {:.3e}'.format(discrepancy,sol_norm)
+        return False
 
     def best_iterate(self):
         res = self.history_dict["residual"]
@@ -556,6 +558,57 @@ class LCurve(StopRule):
         print(idx)
         
         return self.recos[idx]
+
+class Oracle(StopRule):
+    """Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
+    Useful for testing purposes and monitoring when the exact solution is known.
+
+
+    Parameters
+    ----------
+    setting: Setting| None, optional
+        setting, default: None. In the default case, data and norm must be given.  
+    distance_function : callable, optional
+        The distance function to measure the distance between the current iterate and the exact solution. 
+        distance_function(x, exact_solution) -> float
+        Defaults to None, in which case the norm of the operator's domain is applied to x-exact_solution.
+    """
+    def __init__(self, 
+                 setting,
+                 exact_solution=None,
+                 distance_function:Callable = None
+                ):
+        from regpy.solvers import Setting
+        super().__init__()
+        self.data = setting.data
+        self.history_dict["error"] = []        
+        self.recos=[]
+        if not hasattr(setting,'exact_solution') and exact_solution is None:  
+            raise ValueError(Errors.value_error('Oracle stopping rule needs the exact solution to be provided in the setting!'))
+        if exact_solution is not None:
+            setting.exact_solution = exact_solution
+        if distance_function is None:
+            self.dist = lambda x:setting.op.domain.norm(x - setting.exact_solution)
+        else:
+            self.dist = lambda x:distance_function(x, setting.exact_solution)
+
+    def __repr__(self):
+        return 'Oracle'
+
+    def _stop(self):
+        if self.solver.x is None:
+            raise MissingValueError     
+        error = self.dist(self.solver.x)
+        self.history_dict["error"].append(error)
+        self.recos.append(self.solver.x.copy())
+        self.log_info = 'error {:.3e}'.format(error)
+        return False
+
+    def best_stopping_index(self):
+        return np.argmin(self.history_dict["error"])
+
+    def best_iterate(self):
+        return self.recos[self.best_stopping_index()]
 
 ########## General StopRules based on relative change of data or solution ##########
 
