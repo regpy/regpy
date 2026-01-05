@@ -37,6 +37,15 @@ class L2MeasureSpaceFcts(HilbertSpace):
         else:
             return PtwMultiplication(self.vecsp, self.weights*self.vecsp.measure)
 
+    @memoized_property
+    def cholesky(self):
+        if self.weights is None:
+            if np.all(self.vecsp.measure==1):
+                return self.vecsp.identity
+            else:
+                return PtwMultiplication(self.vecsp,np.sqrt(self.vecsp.measure))
+        else:
+            return PtwMultiplication(self.vecsp, np.sqrt(self.weights*self.vecsp.measure))
 
 class L2UniformGridFcts(HilbertSpace):
     r"""`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
@@ -56,6 +65,12 @@ class L2UniformGridFcts(HilbertSpace):
         else:
             return self.vecsp.volume_elem * PtwMultiplication(self.vecsp, self.weights)
 
+    @memoized_property
+    def cholesky(self):
+        if self.weights is None:
+            return np.sqrt(self.vecsp.volume_elem) * self.vecsp.identity
+        else:
+            return np.sqrt(self.vecsp.volume_elem) * PtwMultiplication(self.vecsp, np.sqrt(self.weights))
 
 class SobolevUniformGridFcts(HilbertSpace):
     r"""`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
@@ -94,6 +109,11 @@ class SobolevUniformGridFcts(HilbertSpace):
     def gram(self):
         from regpy.operators.convolution import BesselPotential        
         return BesselPotential(self.vecsp,2*self.index,convolution_axes=self.axes)
+
+    @memoized_property
+    def cholesky(self):
+        from regpy.operators.convolution import BesselPotential        
+        return BesselPotential(self.vecsp,self.index,convolution_axes=self.axes)
 
 class HmDomain(HilbertSpace):
     r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `regpy.vecsps.UniformGridFcts` grid.
@@ -259,3 +279,16 @@ class HmDomain(HilbertSpace):
         gram = self.proj.adjoint * mat * self.proj
         gram.inverse = self.proj.adjoint * mat.inverse * self.proj
         return gram
+    
+    @memoized_property
+    def cholesky(self):
+        if self.index %2 ==0:
+            half_index = self.index//2
+            mat = Pow(
+                MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),
+                half_index
+                )
+            chol = self.proj.adjoint * mat * self.proj
+            return chol
+        else:
+            raise NotImplementedError("Cholesky factorization is only implemented for even indices so far.")   

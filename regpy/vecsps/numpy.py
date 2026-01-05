@@ -4,7 +4,7 @@ from typing import *
 
 import numpy as np
 
-from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform
+from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
 from .base import VectorSpaceBase
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
@@ -21,7 +21,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         The shape of the arrays representing elements of this vector space.
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
+    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
         The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
         to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
         numpy documentation.
@@ -46,7 +46,9 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
-    def rand(self, distribution = "uniform", **kwargs):
+    def rand(self, distribution = "uniform", seed = None,**kwargs):
+        if seed is not None:
+            set_rng_seed(seed)
         r = self._draw_sample(distribution=distribution,size = self.shape, **kwargs)
         if not np.can_cast(r.dtype, self.dtype):
             raise ValueError(Errors.value_error(
@@ -59,10 +61,10 @@ class NumPyVectorSpace(VectorSpaceBase):
         else:
             return np.asarray(r, dtype=self.dtype)
 
-    def poisson(self, x):
+    def poisson(self, x,seed = None,**kwargs):
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
-        return self.rand(distribution="poisson", lam = x)
+        return self.rand(distribution="poisson", lam = x,seed=seed, **kwargs)
     
     def __contains__(self, x):
         if not super().__contains__(x):
@@ -234,10 +236,6 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. The shape of the measure has to be shape+(1,)*len(shape_codomain)
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
     @overload
     def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...

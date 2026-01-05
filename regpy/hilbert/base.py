@@ -54,19 +54,26 @@ class HilbertSpace:
         return result
 
     @property
-    def gram(self):
+    def gram(self)->Operator:
         """The gram matrix as an `regpy.operators.Operator` instance."""
         raise NotImplementedError
 
     @property
-    def gram_inv(self):
+    def gram_inv(self)->Operator:
         r"""The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
         to be implemented if the `gram` property does not return an invertible operator (i.e. one
         that implements `regpy.operators.Operator.inverse`).
         """
         return self.gram.inverse
-
-    def inner(self, x, y):
+    
+    @property
+    def cholesky(self)->Operator:   
+        r"""The factor L in a Cholesky-type factorization gram = L L^* of the gram matrix as an `regpy.operators.Operator` instance. L does not need to be lower triangular: It may, e.g., also be the square root of the gram matrix, or it could even be defined on a different vector space.
+        This is not requied for most regularization methods, but it is needed, e.g., for generating white Gaussian noise in the Hilbert space.
+        """
+        raise NotImplementedError
+    
+    def inner(self, x, y)->float:
         r"""Compute the inner product between to elements.
 
         This is a convenience wrapper around `gram`.

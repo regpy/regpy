@@ -303,7 +303,7 @@ class VectorSpaceBase:
     def set_rng_seed(self,seed):
         set_rng_seed(seed)
     
-    def _draw_sample(self, distribution : str , size = None, **kwargs):
+    def _draw_sample(self, distribution : str , size = None, seed=None,**kwargs):
         """Draws samples of the shape of the space from the given distribution. The distribution
         has to be given as a string representing a method associated with a distribution of
         the NumPy Generator.
@@ -330,6 +330,8 @@ class VectorSpaceBase:
             self.log.debug(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
         elif isinstance(size,tuple) and np.prod(size) != self.realsize:
             self.log.debug(f"You are sampling on a size specified as an tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
+        if seed is not None:
+            set_rng_seed(seed)
         try:
             dist = getattr(get_rng(),distribution)
             return dist(size = size, **kwargs)
@@ -363,7 +365,7 @@ class VectorSpaceBase:
         """
         return self.fromflat(self._draw_sample(distribution=distribution))
     
-    def poisson(self, x):
+    def poisson(self, x,**kwargs):
         """Return a poisson distributed vector given the distribution x.
 
         Parameters
@@ -373,11 +375,11 @@ class VectorSpaceBase:
         """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
-        return self.rand(distribution="poisson", lam = self.flatten(x))
+        return self.rand(distribution="poisson", lam = self.flatten(x), **kwargs)
     
-    def randn(self):
+    def randn(self,**kwargs):
         """Like `rand`, but using a standard normal distribution."""
-        return self.rand(distribution="standard_normal")
+        return self.rand(distribution="standard_normal", **kwargs)
     
     def vdot(self,x,y):
         r"""Return the vector dot product as defined for these vectors. Note
