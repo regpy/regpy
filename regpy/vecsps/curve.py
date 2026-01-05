@@ -506,8 +506,8 @@ class ParameterizedCurve():
     these derivatives are compositions of a discretization of the continuous derivative on curve space 
     and the operator `self.der_normal`.
     """
-    from regpy.operators import Operator
-    def __init__(self,coeff:np.ndarray,der_normal:Operator,**kwargs):
+    def __init__(self,coeff:np.ndarray,der_normal,**kwargs):
+        from regpy.operators import Operator
         if not coeff in der_normal.domain:
             raise ValueError(Errors.not_a_vecsp(coeff,der_normal.domain))
         if not isinstance(der_normal.domain,ParameterizedCurveSpc):

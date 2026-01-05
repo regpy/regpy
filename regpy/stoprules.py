@@ -3,7 +3,7 @@ from regpy.util import ClassLogger, Errors
 from typing import Callable
 import numpy as np
 
-__all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping"]
+__all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping","LCurve","OptimalityCondStopping","CombineRules","AndCombineRules","NoneRule"]
 
 class MissingValueError(Exception):
     pass
@@ -477,6 +477,60 @@ class Discrepancy(StopRule):
             self.log.info(self.log_info)
         return rel < self.tau
 
+class LCurve(StopRule):
+    """L Curve method.
+
+ 
+
+    Parameters
+    ----------
+    noiselevel : float
+        An estimate of the distance from the noisy data to the exact data.
+    setting: Setting| None, optional
+        setting, default: None. In the default case, data and norm must be given.  
+    data : array or None, optional
+        The right hand side (noisy data) or None (default). 
+        In the default case, setting.data is used.   
+    norm : callable or None, optional
+        The norm with respect to which the discrepancy should be measured or None (default).
+        In the default case, setting.h_codomain.norm is used.            
+    tau : float, optional
+        The multiplier; must be larger than 1. Defaults to 2.
+    noise_level_is_relative: bool, optional
+        Indicates whether the given noiselevel is a relative or absolute noise level. Defaults to False
+    """
+    def __init__(self, 
+                 setting,
+                 max_iter:int=1000
+                ):
+        from regpy.solvers import Setting
+        super().__init__()
+        self.data = setting.data
+        self.norm = setting.h_codomain.norm    
+        self.history_dict["residual"] = []
+        self.history_dict["norm"] = []        
+        self.recos=[]
+        self.max_iter = max_iter
+        self.it =0
+
+    def __repr__(self):
+        return 'L Curve'
+
+    def _stop(self):
+        self.it +=1
+        if self.solver.y is None:
+            raise MissingValueError
+        if self.solver.x is None:
+            raise MissingValueError     
+        residual = self.data - self.solver.y
+        discrepancy = self.norm(residual)
+        self.history_dict["residual"].append(discrepancy)
+        self.history_dict["norm"].append(self.norm(self.solver.x))     
+        self.recos.append(self.solver.x.copy())
+        return self.it >= self.max_iter
+
+    def best_iterate(self):
+        return self.recos[1]
 
 ########## General StopRules based on relative change of data or solution ##########
 
