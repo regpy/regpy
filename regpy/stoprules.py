@@ -582,13 +582,18 @@ class QuasiOpt(StopRule):
         if self.solver.x is None:
             raise MissingValueError
         if self.it > 1:
-            self.history_dict["norm_diff"].append(self.norm(self.solver.x-self.recos[-1]))
+            norm_diff = self.norm(self.solver.x-self.recos[-1])
+        else:
+            norm_diff = 0
+        self.history_dict["norm_diff"].append(norm_diff)
         self.history_dict["alphas"].append(self.solver.alpha)
         self.recos.append(self.solver.x.copy())
+        self.log_info = 'norm_diff {:.3e}'.format(norm_diff)
         return self.it >= self.max_iter
     
     def best_stopping_index(self):
-        return np.argmin(self.history_dict["norm_diff"])+1
+        norm_diff = self.history_dict["norm_diff"]
+        return np.argmin(norm_diff[1:])+1
 
     def best_iterate(self):
         return self.recos[self.best_stopping_index()]
