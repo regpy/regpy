@@ -3,7 +3,7 @@ from scipy.sparse import csc_matrix
 
 from regpy import vecsps
 from regpy.util import memoized_property,Errors
-from regpy.operators import PtwMultiplication,Pow,MatrixMultiplication,FourierTransform,CoordinateProjection
+from regpy.operators import Operator,PtwMultiplication,Pow,MatrixMultiplication,FourierTransform,CoordinateProjection
 
 from .base import HilbertSpace
 
@@ -28,7 +28,7 @@ class L2MeasureSpaceFcts(HilbertSpace):
         self.weights = weights
 
     @memoized_property
-    def gram(self):
+    def gram(self)-> PtwMultiplication:
         if self.weights is None:
             if np.all(self.vecsp.measure==1):
                 return self.vecsp.identity
@@ -50,7 +50,7 @@ class L2UniformGridFcts(HilbertSpace):
         self.weights = weights
 
     @memoized_property
-    def gram(self):
+    def gram(self)-> PtwMultiplication:
         if self.weights is None:
             return self.vecsp.volume_elem * self.vecsp.identity
         else:
@@ -91,7 +91,7 @@ class SobolevUniformGridFcts(HilbertSpace):
             return NotImplemented
 
     @memoized_property
-    def gram(self):
+    def gram(self)-> Operator:
         from regpy.operators.convolution import BesselPotential        
         return BesselPotential(self.vecsp,2*self.index,convolution_axes=self.axes)
 
@@ -200,7 +200,7 @@ class HmDomain(HilbertSpace):
         else:
             raise ValueError(Errors.value_error("weight has to have the same shape as the vector space or be None",self))
 
-    def I_minus_Delta(self):
+    def I_minus_Delta(self)-> csc_matrix:
         r"""
         I_minus_Delta is the sparse form of the sum of the `alpha*identity` and the negative Laplacian on the domain D 
         defined by masking with `mask`.
@@ -251,7 +251,7 @@ class HmDomain(HilbertSpace):
         return csc_matrix((s, (i,j)),(N,N))
 
     @memoized_property
-    def gram(self):
+    def gram(self)-> Operator:
         mat = Pow(
             MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),
             self.index
