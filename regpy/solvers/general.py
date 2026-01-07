@@ -351,12 +351,12 @@ class Setting:
     def change_data(self,new_data):
         if(new_data is None):
             raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
-        if(self.data_fid.is_data_func):
-            self.log.warning("Existing data in data fidelity functional is overwritten.")
-        self.data_fid=self.data_fid.as_data_func(new_data)
-        self._data=new_data
-        self._set_flags()
-
+        if not hasattr(self,"_data") or not new_data is self._data:
+            if(self.data_fid.is_data_func):
+                self.log.warning("Existing data in data fidelity functional is overwritten.")
+            self.data_fid=self.data_fid.as_data_func(new_data)
+            self._data=new_data
+            self._set_flags()
 
     def _set_flags(self):
         self.is_tikhonov=(self.regpar is not None)
@@ -482,6 +482,8 @@ class Setting:
             _, deriv = self.op.linearize(self.op.domain.randn())
             return test_adjoint(deriv, tolerance=tolerance)
 
+
+
     def check_deriv(self,steps=None):
         r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
         provided derivative in the operator ,if it is a non-linear operator. It computes for 
@@ -530,6 +532,54 @@ class Setting:
         else:
             _ , deriv = self.op.linearize(y)
             return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
+
+    def get_or_update_data(self, new_data=None,update:bool=True):
+        r""" Updates the data stored in the setting or gets these data of they are not provided.
+
+        Parameters
+        ----------
+        update: bool
+            If True, the initial guess stored in the setting is updated to new_init.
+        new_init : op.domain
+            New initial guess in the domain of the operator.
+        """
+        if new_data is not None:
+            if update:
+                if self.data is not None and new_data is not None and not self.data is new_data:
+                    self.log.warning("Overwriting existing data in setting!")
+                    self.data = new_data
+            return new_data
+        else:
+            if self.data is None:
+                raise RuntimeError(Errors.runtime_error("Data has been provided either explicitly as an argument of the method or in the setting!"))
+            return self.data
+
+    def get_or_update_initial_guess(self, new_init=None,update:bool=True):
+        r""" Updates the initial guess stored in the setting or gets the initial guess if it is not provided.
+
+        Parameters
+        ----------
+        update: bool
+            If True, the initial guess stored in the setting is updated to new_init.
+        new_init : op.domain
+            New initial guess in the domain of the operator.
+        """
+        if new_init is not None:
+            if not new_init in self.op.domain:
+                raise TypeError(Errors.not_in_vecsp(new_init,self.op.domain,vec_name="initial guess",space_name="domain"))
+            if update:
+                if hasattr(self,'init') and not self.init is new_init:
+                    self.log.warning("Overwriting existing initial guess in setting!")
+                self.init = new_init.copy()
+            return new_init
+        else:
+            if hasattr(self,'init'):
+                toret = self.init.copy()
+            else:
+                toret = self.op.domain.zeros()
+                if update:
+                    self.init = toret.copy()
+            return toret
 
     ######Methods exploiting duality
     def get_dual_setting(self):

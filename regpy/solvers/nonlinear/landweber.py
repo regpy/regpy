@@ -27,8 +27,8 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    init : array-like
-        The initial guess.
+    init : array-like, optional
+        The initial guess and starting point of the iteration. If None (default), it is taken from setting.
     data : array-like, default None
         The measured data/right hand side. If None it is taken from setting.
     stepsize : float, optional
@@ -40,20 +40,14 @@ class Landweber(RegSolver):
         Wether or not to use backtracking for finding a sufficient step length. Default: True.
     """
 
-    def __init__(self, setting,init,data=None, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos"):
+    def __init__(self, setting,init=None,data=None, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos",update_setting = True):
         super().__init__(setting)
         if self.op.linear:
             self.log.warning("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear")
-        if init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        self.rhs = data
+        self.x = setting.get_or_update_initial_guess(init, update_setting)
+        self.rhs = setting.get_or_update_data(data, update_setting)
         """The right hand side gets initialized with the measured data."""
-        self.x = init
+                
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv
         """The derivative at the current iterate."""
@@ -98,7 +92,6 @@ class Landweber(RegSolver):
         else:
             self.x -= self.stepsize * self.h_domain.gram_inv(self._update)
         self.y, self.deriv = self.op.linearize(self.x)
-
 
         if self.log.isEnabledFor(20): # INFO=20
             if self.backtracking:

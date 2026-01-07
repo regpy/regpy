@@ -25,6 +25,7 @@ from .irgnm_semismooth import *
 from .irgnm import *
 from .landweber import *
 from .newton import *
+from .gen_tikhonov import *
 
 __all__ = []
 

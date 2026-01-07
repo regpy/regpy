@@ -101,7 +101,7 @@ class PDHG(RegSolver):
         self.proximal_pars_penalty = proximal_pars_penalty
 
     @staticmethod
-    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1):
+    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1)->tuple[dict,dict]:
         out = {'info':''}; par = {}
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
