@@ -499,6 +499,7 @@ class LCurve(StopRule):
         from regpy.solvers import Setting
         super().__init__()
         self.data = setting.data
+        self.setting = setting
         self.norm = setting.h_codomain.norm
         self.solver = solver
         self.history_dict["residual"] = []
@@ -522,7 +523,7 @@ class LCurve(StopRule):
         norm_x = self.norm(self.solver.x)
         self.history_dict["residual"].append(norm_res)
         self.history_dict["norm"].append(norm_x)     
-        self.history_dict["alphas"].append(self.solver.alpha)
+        self.history_dict["alphas"].append(self.setting.regpar)
         self.recos.append(self.solver.x.copy())
         self.log_info = 'res {:.3e},norm {:.3e}'.format(norm_res,norm_x)
         return self.it >= self.max_iter
