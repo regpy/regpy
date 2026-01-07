@@ -85,8 +85,9 @@ class TikhonovCG(RegSolver):
             raise ValueError(Errors.value_error("The regularization parameter must be None or positive!",obj=regpar))
         if regpar is not None:  
             if setting.is_tikhonov and regpar !=  par['regpar']:
-                self.log.warning('Overwriting the value of the regularization parameter in Tikhonov functional by the given value!')
-                self.regpar = regpar * (self.data_fid.a/self.penalty.a)
+                self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar* (self.data_fid.a/self.penalty.a):.2e}!")
+                setting.regpar = regpar* (self.data_fid.a/self.penalty.a)
+                self.regpar = regpar 
         else:
             if setting.is_tikhonov:
                 regpar = par['regpar']
@@ -275,38 +276,6 @@ class TikhonovCG(RegSolver):
             out['rate'] = np.nan
         return out,par
 
-class GeometricSequence:
-    r"""Iterator generating a geometric sequence
-    
-    Parameters
-    ----------
-    alpha0 : float
-        :math:`\alpha_0` the initial regularization parameter 
-    q : float
-        Rate of the geometric sequence
-
-    Notes
-    ----- 
-    Sequence defined recursively by
-    
-    .. math::
-        \alpha_0 &= \alpha_0 \\
-        \alpha_{n+1} &= q*\alpha_n
-    """    
-    def __init__(self, alpha0,q):
-        self.alpha = alpha0
-        self.alpha0 = alpha0
-        self.q = q
-
-    def __iter__(self):
-        self.alpha = self.alpha0
-        return self
-
-    def __next__(self):
-        result = self.alpha
-        self.alpha = self.alpha*self.q
-        return result
-
 class TikhonovAlphaGrid(RegSolver):
     r"""Class runnning Tikhonov regularization on a grid of different regularization parameters.
     This allows to choose the regularization parameter by some stopping rule. 
@@ -334,7 +303,8 @@ class TikhonovAlphaGrid(RegSolver):
     Further keyword arguments for TikhonovCG can be given. 
     """
     def __init__(self,setting:Setting, data, alphas, xref=None,max_CG_iter=1000,
-                 delta=None,tol_fac:float=0.5, logging_level:str= "INFO"):
+                 delta=None,tol_fac:float=0.5, logging_level    :str= "INFO"):
+        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence        
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))

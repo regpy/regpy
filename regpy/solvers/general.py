@@ -185,8 +185,6 @@ class RegSolver(Solver):
 
     def __init__(self,setting,x=None,y=None):
         if not isinstance(setting,Setting):
-            print(setting)
-            print(setting.__dict__)
             raise TypeError(Errors.not_instance(setting,Setting))
         self.op=setting.op
         """The operator."""
@@ -405,8 +403,6 @@ class Setting:
             raise ValueError(Errors.value_error("absolute_noise_level must be a positive float.")) 
         if not hasattr(self,'_exact_data'):
             raise RuntimeError(Errors.runtime_error('No exact data has been provided at initialization of the setting.'))
-        if self.data is not None:
-            self.log.warning("Overwriting given data!")
         noise = self.op.codomain.randn()
         if relative_noise_level is not None:
             noise *= relative_noise_level*self.h_codomain.norm(self._exact_data)/self.h_codomain.norm(noise)
@@ -504,10 +500,9 @@ class Setting:
         """
         if new_data is not None:
             if update:
-                if self.data is not None and (isinstance(self.data,np.ndarray) and isinstance(new_data,np.ndarray) and self.data.shape == new_data.shape and not np.allclose(self.data,new_data)):
-                    self.log.warning(f'difference old and new data: {np.linalg.norm(self.data-new_data)}')
+                if self.data is not None and new_data is not None and not self.data is new_data:
                     self.log.warning("Overwriting existing data in setting!")
-                self.data = new_data
+                    self.data = new_data
             return new_data
         else:
             if self.data is None:

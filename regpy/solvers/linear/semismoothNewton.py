@@ -9,8 +9,7 @@ from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLower
 from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, Setting
-from .tikhonov import TikhonovCG,GeometricSequence
-
+from .tikhonov import TikhonovCG
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
 class SemismoothNewton_bilateral(RegSolver):
@@ -535,6 +534,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     """
     def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
+        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
