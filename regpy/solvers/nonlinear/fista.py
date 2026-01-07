@@ -36,24 +36,19 @@ class FISTA(RegSolver):
     logging_level: [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init= None, tau = 10**16, eta = 0.8, op_lower_bound = 0, 
-                 proximal_pars=None,logging_level= "INFO",
-                 data=None, without_codomain_vectors=False):
+    def __init__(self, setting:Setting, init= None, tau:float = 10**16, eta:float = 0.8, op_lower_bound:float= 0., 
+                 proximal_pars:dict|None=None,logging_level:str= "INFO",
+                 data=None, without_codomain_vectors:bool=False,
+                 update_setting:bool=True
+                ):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("FISTA requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
+        self.x = setting.get_or_update_initial_guess(init, update_setting)
+        """The initial guess."""
+        self.data = setting.get_or_update_data(data, update_setting)
         if self.op.linear:
             self.log.warning("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear")
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        self.x = self.op.domain.zeros() if init is None else init
-        
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        self.data=data
         self.log.setLevel(logging_level)
         self.regpar = self.setting.regpar
         self.mu_penalty  = self.regpar * self.penalty.convexity_param

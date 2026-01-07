@@ -5,6 +5,7 @@ import numpy as np
 
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
+from regpy.operators import Operator
 
 from ..general import Setting, RegSolver
 from ..linear.tikhonov import TikhonovCG
@@ -26,8 +27,8 @@ class IrgnmCG(RegSolver):
         The setting of the forward problem.
     data : array-like, default None
         The measured data. If it is None it is taken from the setting.
-    regpar : float, default None
-        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
+    regpar : float, optional
+        The initial regularization parameter. Must be positive. 
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
     init : array-like, optional
@@ -43,29 +44,21 @@ class IrgnmCG(RegSolver):
     """
 
     def __init__(
-               self, setting, data=None, regpar=None, regpar_step=2 / 3, 
-                 init=None, 
-                 cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
-                cgstop=1000, 
-                inner_it_logging_level = "WARNING", 
-                simplified_op = None
+                self, setting:Setting, data=None, regpar:float=1., regpar_step:float=2 / 3, 
+                init=None, 
+                cg_pars:dict={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
+                cgstop:int=1000, 
+                inner_it_logging_level:str = "WARNING", 
+                simplified_op:Operator = None,
+                update_setting:bool= True
          ):
         super().__init__(setting)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if(regpar is None):
-            if(not setting.is_tikhonov):
-                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
-            regpar=setting.regpar
-        self.data = data
-        """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        self.init = init
+        self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
+        self.data = setting.get_or_update_data(data, update_setting)
+        """The measured data."""                
+        if not (isinstance(regpar,(float,int)) and regpar>0):
+            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
@@ -90,14 +83,18 @@ class IrgnmCG(RegSolver):
         else:
             stoprule = CountIterations(2**15)
         # Disable info logging, but don't override log level for all CountIterations instances.
-        stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel("INFO")
+        #stoprule.log = self.log.getChild('CountIterations')
+        stoprule.log.setLevel(self.inner_it_logging_level)
         # Running Tikhonov solver
+        inner_setting = Setting(self.deriv, 
+                                penalty=self.h_domain, 
+                                data_fid = self.h_codomain,
+                                data = self.data - self.y,
+                                penalty_shift=self.init - self.x,
+                                regpar=self.regpar
+                                )
         step, _ = TikhonovCG(
-            setting=Setting(self.deriv, self.h_domain, self.h_codomain),
-            data=self.data - self.y,
-            regpar=self.regpar,
-            xref=self.init - self.x,
+            setting=inner_setting,
             **self.cg_pars,
             logging_level = self.inner_it_logging_level
         ).run(stoprule=stoprule)
@@ -147,29 +144,21 @@ class LevenbergMarquardt(RegSolver):
     """
 
     def __init__(
-               self, setting, data=None, regpar=None, regpar_step=2 / 3, 
+               self, setting:Setting, data=None, regpar:float=1., regpar_step:float=2 / 3, 
                  init=None, 
-                 cg_pars={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
-                cgstop=1000, 
-                inner_it_logging_level = "WARNING", 
-                simplified_op = None
+                 cg_pars:dict={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
+                cgstop:int=1000, 
+                inner_it_logging_level:str = "WARNING", 
+                simplified_op:Operator|None = None,
+                update_setting:bool = True
          ):
         super().__init__(setting)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if(regpar is None):
-            if(not setting.is_tikhonov):
-                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
-            regpar=setting.regpar
-        self.data = data
-        """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        self.init = init
+        self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
+        self.data = setting.get_or_update_data(data, update_setting)
+        """The measured data."""  
+        if not isinstance(regpar,(float,int)) and float>0:
+            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.x = copy(self.init)
         if simplified_op:
             self.simplified_op = simplified_op
@@ -267,12 +256,12 @@ class IrgnmCGPrec(RegSolver):
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
     data : array-like, default None
         The measured data. If it is None it is taken from the setting.
-    regpar : float, default None
-        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
+    regpar : float, optional
+        The initial regularization parameter. Must be positive. Defaults to 1.
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
     init : array-like, optional
-        The initial guess. Default: the zero array.
+        The initial guess. Defaults to None, in this case it is taken from the setting.
     cg_pars : dict
         Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     precpars : dict
@@ -280,28 +269,18 @@ class IrgnmCGPrec(RegSolver):
     """
 
     def __init__(
-        self, setting, data=None, regpar=None, regpar_step=2 / 3, 
-        init=None, cg_pars=None,cgstop =None, precpars=None
+        self, setting:Setting, data=None, regpar:float=1., regpar_step=2 / 3, 
+        init=None, cg_pars:dict=None,cgstop:dict =None, precpars:dict=None,update_setting:bool=True
         ):
         if(not isinstance(setting.op.domain,UniformGridFcts)):
             raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if(regpar is None):
-            if(not setting.is_tikhonov):
-                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
-            regpar=setting.regpar
-        self.data = data
-        """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        self.init = init
+        self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
-        self.x = copy(self.init)
+        self.data = setting.get_or_update_data(data, update_setting)
+        """The measured data."""  
+        if not isinstance(regpar,(float,int)) and regpar>0:
+            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularization parameter."""

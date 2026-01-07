@@ -1,4 +1,5 @@
 from math import sqrt,inf
+import numpy as np
 
 from regpy.util import Errors
 from regpy.functionals.base import SquaredNorm
@@ -29,14 +30,11 @@ class TikhonovCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : setting.op.codomain [default: None]
-        The measured data. 
-        If None, then setting must have SquaredNorm as data fidelity and penalty term. In this case xref is ignored, 
-        and if setting is a Setting, then also regpar is ignored.
-        If not None, then setting.penalty and setting.data_fid are ignored except for their Hilbert space structures. 
-    regpar : float [default:None]
+    data : setting.op.codomain, optional
+        The measured data. Default None means that the data from setting is used.
+    regpar : float, optional
         The regularization parameter. Must be positive. If None, then setting must be a Tikhonov. 
-    xref: setting.op.domain [default: None]
+    xref: setting.op.domain, optional
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
@@ -54,47 +52,58 @@ class TikhonovCG(RegSolver):
     all_tol_criteria: bool (default: True)
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
-    krylov_basis : Compute orthonormal basis vectors of the Krylov subspaces while running CG solver
+    krylov_basis : list or None, optional 
+        Defaults to None. Otherwise, an orthonormal basies of the Krylov subspace is computed while running CG solver
     preconditioner : Preconditioner such that the iteration is done on 
         :math:`\Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2`
         The iterates (self.x) still solve the original equation without preconditioner.
     """
 
     def __init__(
-        self, setting, data=None, regpar=None, xref=None, 
-        x0 =None, 
-        tol=None, reltolx=None, reltoly=None, 
-        all_tol_criteria = True,
-        krylov_basis=None, preconditioner=None,
-        logging_level = "INFO"
-        ):
+                self, setting:Setting, 
+                data=None, 
+                regpar:float|None=None, 
+                xref=None, 
+                x0 =None, 
+                tol:float|None=None, reltolx:float|None=None, reltoly:float|None=None, 
+                all_tol_criteria:bool = True,
+                krylov_basis:list|None=None, 
+                preconditioner:Operator|None=None,
+                logging_level:str = "INFO",
+                update_setting:bool = True
+                ):
         super().__init__(setting)
-        if not self.op.linear:
-            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovCG in as a linear solver requires the operator to be linear!"))
+        out,par = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(Errors.not_applicable_solver("TikhonovCG",out['info']))
         self.log.setLevel(logging_level)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if xref is None and setting.penalty_shift is not None:
-            xref=setting.penalty_shift
-            
-        if(setting.is_tikhonov):
-            if regpar is not None:
-                self.log.warning('Ignoring given value of regularization parameter')
-            regpar = (self.penalty.a/self.data_fid.a) * self.regpar
+        self.x0 =   setting.get_or_update_initial_guess(x0, update_setting)
+        """The zero-th CG iterate."""
+        data = setting.get_or_update_data(data, update_setting)
+   
+        if regpar is not None and not (isinstance(regpar,(float,int)) and regpar >0):
+            raise ValueError(Errors.value_error("The regularization parameter must be None or positive!",obj=regpar))
+        if regpar is not None:  
+            if setting.is_tikhonov and regpar !=  par['regpar']:
+                self.log.warning('Overwriting the value of the regularization parameter in Tikhonov functional by the given value!')
+                self.regpar = regpar * (self.data_fid.a/self.penalty.a)
         else:
-            if regpar is None:
-                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the Regularization parameter needs to be specified in TIkhonovCG!"))
-            regpar *= self.penalty.a/self.data_fid.a
-
+            if setting.is_tikhonov:
+                regpar = par['regpar']
+            else:
+                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the regularization parameter needs to be specified in TIkhonovCG!"))
         self.regpar = regpar
         """The regularization parameter."""
-        #self.log.debug('rel. tolerances: {} in domain, {} in codomain, {} reduction residual'.format(reltolx,reltoly,tol))
-        self.x0 = x0
-        """The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
-
+        
+        if xref is None:
+            xref=(-1./self.penalty.a)*setting.penalty.b
+        elif update_setting:
+            if isinstance(xref,np.ndarray) and not np.allclose(setting.penalty.b, -self.penalty.a*xref):
+                self.log.warning('Overwriting the reference vector in the penalty term of the Tikhonov functional by the given value!')
+            xref = xref.copy()
+        else:
+            if isinstance(xref,np.ndarray) and not np.allclose(setting.penalty.b, -self.penalty.a*xref):
+                raise ValueError(Errors.value_error("The reference given by xref is not consistent with the penalty in the setting! Ignoring the setting.penalty!"))
         self.tol = tol
         """The absolute tolerance in the domain."""
         self.reltolx = reltolx
@@ -104,20 +113,19 @@ class TikhonovCG(RegSolver):
         if tol is None  and reltolx is None and reltoly is None:
             self.reltolx = 10./sqrt(regpar)
 
-        if x0 is not None:
-            self.x = x0.copy()
-            """The current iterate."""
-            self.y = self.op(self.x)
-            """The image of the current iterate under the operator."""
-        else:
-            self.x = self.op.domain.zeros()
-            self.y = self.op.codomain.zeros()
+        self.x = self.x0.copy()
+        """The current iterate."""
+        self.y = self.op(self.x)
+        """The image of the current iterate under the operator."""
 
         if self.reltolx is not None:
             self.sq_norm_x = 0
         if self.reltoly is not None:
             self.g_y = self.h_codomain.gram(self.y)
             self.norm_y = self.op.codomain.vdot(self.y,self.g_y)
+            if self.norm_y==0:
+                self.log.warning("The initial guess is mapped to zero by the operator, relative tolerance in codomain cannot be used!")
+                self.norm_y=1
             if self.x0 is not None:
                 self.y0 = self.y
                 self.g_y0 = self.g_y
@@ -246,7 +254,26 @@ class TikhonovCG(RegSolver):
         else:
             self.g_dir=self.h_domain.gram(self.dir)
         
-
+    @staticmethod
+    def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
+        out = {'info':''}; par = {}
+        if not  isinstance(setting.penalty, SquaredNorm) and setting.penalty.convex:
+            out['info'] += 'Penalty term is not positively quadratic.'
+        if not isinstance(setting.data_fid, SquaredNorm) and setting.data_fid.convex:
+            out['info'] += 'Data fidelity term is not positively quadratic. '
+        if not setting.op.linear:
+            out['info'] += 'Operator is not linear.'
+        out['applicable'] = out['info'] == ''
+        if out['applicable'] and setting.is_tikhonov:
+            par['regpar'] = setting.regpar*setting.penalty.a / setting.data_fid.a
+            if op_norm is not None:
+                cond = op_norm**2 / (op_norm**2 + par['regpar'])
+                out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
+            else:
+                out['rate'] = np.nan
+        else:
+            out['rate'] = np.nan
+        return out,par
 
 class GeometricSequence:
     r"""Iterator generating a geometric sequence
@@ -306,8 +333,8 @@ class TikhonovAlphaGrid(RegSolver):
     -----
     Further keyword arguments for TikhonovCG can be given. 
     """
-    def __init__(self,setting, data, alphas, xref=None,max_CG_iter=1000,
-                 delta=None,tol_fac=0.5, logging_level= "INFO"):
+    def __init__(self,setting:Setting, data, alphas, xref=None,max_CG_iter=1000,
+                 delta=None,tol_fac:float=0.5, logging_level:str= "INFO"):
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
@@ -486,13 +513,14 @@ class TikhonovCGOnlyDomain(RegSolver):
     """
 
     def __init__(
-        self, setting, backprop_data, regpar=None, xref=None, 
-        x0 =None, 
-        tol=None, reltolx=None, reltoly=None, 
+        self, setting:Setting, backprop_data, 
+        regpar=None, xref=None, x0 =None, 
+        tol:float|None=None, reltolx:float|None=None, reltoly:float|None=None, 
         all_tol_criteria = True,
-        krylov_basis=None, 
-        preconditioner=None,
-        logging_level = "INFO"
+        krylov_basis: list|None =None, 
+        preconditioner:Operator|None=None,
+        logging_level:bool = "INFO",
+        update_setting:bool=True
         ):
         try:
             self.log.setLevel(logging_level)        
@@ -518,17 +546,10 @@ class TikhonovCGOnlyDomain(RegSolver):
         else:
             raise ValueError(Errors.value_error("regpar must be a positive float or None"))
         
-        if x0 is not None:
-            if x0 in setting.op.domain:
-                self.x = x0.copy()
-                """The current iterate."""
-                self.x0 = x0
-                """The zero-th CG iterate. x0=Null corresponds to xref=zeros()"""
-            else:
-                raise ValueError(Errors.value_error("The starting value x0 must be an element of setting.op.domain"))
-        else:
-            self.x = self.op.domain.zeros()
-            self.x0 = self.op.domain.zeros()
+        self.x0 = setting.get_or_update_initial_guess(x0, update_setting)
+        """The zero-th CG iterate."""
+        self.x = self.x0.copy()
+        """The current iterate."""
 
         self.y = None
         """The image of the current iterate under the operator. Is always None, since we never compute it."""
