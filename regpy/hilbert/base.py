@@ -4,6 +4,7 @@ from math import sqrt
 import numpy as np
 
 from regpy import vecsps
+from regpy.vecsps import VectorSpaceBase
 from regpy.util import Errors, memoized_property, ClassLogger
 from regpy.operators import CholeskyInverse,PtwMultiplication, Operator
 from regpy.operators import DirectSum as DirectSumOp
@@ -35,7 +36,7 @@ class HilbertSpace:
 
     log = ClassLogger()
 
-    def __init__(self, vecsp):
+    def __init__(self, vecsp:VectorSpaceBase):
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
             raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are only defined on vector spaces defined on subsidies of the RegPy VectorSpaceBase"))
         self.vecsp = vecsp
@@ -108,7 +109,7 @@ class HilbertSpace:
         return sqrt(self.inner(x, x))
 
     @memoized_property
-    def norm_functional(self):
+    def norm_functional(self)->float:
         r"""The squared norm functional as a `regpy.functionals.Functional` instance.
         """
         from regpy.functionals import HilbertNorm
@@ -160,7 +161,7 @@ class GramHilbertSpace(HilbertSpace):
     gram_inv: operator, default =None
         Inverse of the Gram matrix    
     """
-    def __init__(self, gram, gram_inv=None):
+    def __init__(self, gram:Operator, gram_inv:Operator=None):
         if not isinstance(gram,Operator):
             raise TypeError(Errors.not_instance(gram,Operator,"To define a GramHilbertSpace the gram operator has to be a proper RegPy operator."))
         if gram.domain != gram.codomain:
@@ -211,7 +212,7 @@ class HilbertPullBack(HilbertSpace):
         - None: no inverse will be implemented.
     """
 
-    def __init__(self, space, op, inverse=None):
+    def __init__(self, space:HilbertSpace, op:Operator, inverse:Operator=None):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,"To define a HilbertPullBack the operator has to be a proper RegPy operator."))
         if not op.linear:
@@ -237,11 +238,11 @@ class HilbertPullBack(HilbertSpace):
             self.inverse = CholeskyInverse(self.gram)
 
     @memoized_property
-    def gram(self):
+    def gram(self)->Operator:
         return self.op.adjoint * self.space.gram * self.op
 
     @property
-    def gram_inv(self):
+    def gram_inv(self)->Operator:
         if self.inverse:
             return self.inverse
         raise NotImplementedError
@@ -273,7 +274,7 @@ class DirectSum(HilbertSpace):
         return a vecsps.DirectSum instance. Default: vecsps.DirectSum.
     """
 
-    def __init__(self, *args, flatten=False, vecsp=None):
+    def __init__(self, *args, flatten:bool=False, vecsp:VectorSpaceBase=None):
         self.summands = []
         self.weights = []
         for arg in args:
@@ -319,7 +320,7 @@ class DirectSum(HilbertSpace):
             return NotImplemented
 
     @memoized_property
-    def gram(self):
+    def gram(self)->Operator:
         ops = []
         for w, s in zip(self.weights, self.summands):
             if w == 1:
@@ -376,7 +377,7 @@ class TensorProd(HilbertSpace):
         return a vecsps.Prod instance. Default: vecsps.Prod.
     """
 
-    def __init__(self, *args, flatten=False, vecsp=None):
+    def __init__(self, *args, flatten:bool=False, vecsp:VectorSpaceBase=None):
         self.factors = []
         self.weights = []
         for arg in args:
@@ -425,7 +426,7 @@ class TensorProd(HilbertSpace):
             return NotImplemented
 
     @memoized_property
-    def gram(self):
+    def gram(self)->Operator:
         bases = []
         domains = []
         for w, s in zip(self.weights, self.factors):

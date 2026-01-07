@@ -7,6 +7,10 @@ import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps, hilbert
+from regpy.operators import Operator
+from regpy.vecsps import VectorSpaceBase
+from regpy.hilbert import HilbertSpace
+
 
 __all__ = ["as_functional","AbstractFunctional","Functional","LinearFunctional","LinearCombination","Composed","SquaredNorm","VerticalShift","HorizontalShiftDilation","FunctionalOnDirectSum"]
 
@@ -351,7 +355,7 @@ class Functional:
                  separable = False,
                  convex = True,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
-                 methods = set(), conj_methods = set(),
+                 methods:set[str]|None = set(), conj_methods:set[str]|None = set(),
                  is_data_func = False
                  ):
         if not isinstance(domain, vecsps.VectorSpaceBase):
@@ -490,7 +494,7 @@ class Functional:
         xi = self.subgradient(x)
         return self.h_domain.dual_space().norm(vstar-xi)
 
-    def hessian(self, x,recursion_safeguard=False):
+    def hessian(self, x,recursion_safeguard:bool=False):
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
         functionals `domain` to it self. It is defined by 
 
@@ -750,7 +754,7 @@ class Conj(Functional):
     `Functional.conj` property of a functional.
     """
 
-    def __init__(self, func):
+    def __init__(self, func:Functional):
         self.func = func
         if not func.convex:
             self.log.warning("Taking conjugate of a non-convex functional. The biconjugate will not coincide with the primal functional.")
@@ -786,10 +790,10 @@ class Conj(Functional):
     def _conj_dist_subdiff(self, v,x):
         return self.func.dist_subdiff(v,x)
     
-    def _hessian(self, x):
+    def _hessian(self, x)-> operators.Operator:
         return self.func.conj_hessian(x)
     
-    def _conj_hessian(self, x):
+    def _conj_hessian(self, x)-> operators.Operator:
         return self.func.hessian(x)
     
     def _proximal(self, x,tau,**proximal_par):
@@ -799,7 +803,7 @@ class Conj(Functional):
         return self.func.proximal(x,tau,**proximal_par)    
 
     @property
-    def conj(self):
+    def conj(self)-> Functional:
         return self.func
     
     @property
@@ -832,7 +836,7 @@ class LinearFunctional(Functional):
         If false, the argument gradient is considered as an element of the primal space, 
         and :math:`a = h_domain.gram(gradient)`.
     """
-    def __init__(self,gradient,domain=None,h_domain = None,gradient_in_dual_space = False):
+    def __init__(self,gradient,domain:vecsps.VectorSpaceBase=None,h_domain:hilbert.HilbertSpace = None,gradient_in_dual_space = False):
         if domain is None and isinstance(gradient,np.ndarray):
             domain = vecsps.NumPyVectorSpace(shape=gradient.shape,dtype=float)
         elif gradient not in domain:
@@ -864,7 +868,7 @@ class LinearFunctional(Functional):
     def _subgradient(self,x):
         return self._gradient.copy()
 
-    def _hessian(self, x):
+    def _hessian(self, x)-> operators.Operator:
         return operators.Zero(self.domain)
 
     def _conj(self,x_star):
@@ -958,7 +962,7 @@ class SquaredNorm(Functional):
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     """
 
-    def __init__(self, h_space, a=1., b=None,c=0.,shift=None, data = None):
+    def __init__(self, h_space, a:float=1., b=None,c:float=0.,shift=None, data = None):
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
                         convex = (a>=0),
@@ -998,7 +1002,7 @@ class SquaredNorm(Functional):
         self.data = data
         
     @util.memoized_property
-    def a(self):
+    def a(self)->float:
         return self._a
 
     @util.memoized_property
@@ -1009,7 +1013,7 @@ class SquaredNorm(Functional):
             return self._b
 
     @util.memoized_property
-    def c(self):
+    def c(self)->float:
         if self.is_data_func:
             return self._c - self.h_domain.inner(self._b,self.data) + (self._a/2)* self.h_domain.norm(self.data)**2
         else:
@@ -1048,7 +1052,7 @@ class SquaredNorm(Functional):
     def _subgradient(self, x):
         return self.gram(self.a*x+self.b)
     
-    def _hessian(self,x):
+    def _hessian(self,x)-> operators.Operator:
         return self.a * self.gram
     
     def _proximal(self,z, tau, **proximal_par):
@@ -1090,7 +1094,7 @@ class SquaredNorm(Functional):
         else: 
             return super()._conj_dist_subdiff(v,xstar)
 
-    def _conj_hessian(self, xstar):
+    def _conj_hessian(self, xstar)-> operators.Operator:
         if self.a>0:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate hessian functional.")
@@ -1312,7 +1316,7 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
 
-    def _hessian(self, x,**kwargs):
+    def _hessian(self, x,**kwargs)-> operators.Operator:
         if self.linear_table.count(False)==1: 
             # separate implementation of this case to be able to use inverse of hessian
             j = self.linear_table.index(False)
@@ -1373,7 +1377,7 @@ class LinearCombination(Functional):
         else:
             return NotImplementedError
 
-    def _conj_hessian(self, xstar,**kwargs):
+    def _conj_hessian(self, xstar,**kwargs)-> operators.Operator:
         if not self.convex:
             raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
         if len(self.funcs) == 1:
@@ -1434,7 +1438,7 @@ class VerticalShift(Functional):
         """Offset added to the evaluation of the functional.
         """
 
-    def _eval(self, x,**kwargs):
+    def _eval(self, x,**kwargs)-> float:
         return self.func(x,**kwargs) + self.offset
 
     def _linearize(self, x,**kwargs):
@@ -1446,13 +1450,13 @@ class VerticalShift(Functional):
     def dist_subdiff(self, vstar,x,**kwargs):
         return self.func.dist_subdiff(vstar,x,**kwargs)    
 
-    def _hessian(self, x,**kwargs):
+    def _hessian(self, x,**kwargs)-> operators.Operator:
         return self.func.hessian(x,**kwargs)
     
     def _proximal(self, x, tau,**proximal_par):
         return self.func.proximal(x, tau,**proximal_par)
 
-    def _conj(self,x,**kwargs):
+    def _conj(self,x,**kwargs)-> float:
         return self.func.conj(x,**kwargs) - self.offset
     
     def _conj_subgradient(self, xstar,**kwargs):
@@ -1461,7 +1465,7 @@ class VerticalShift(Functional):
     def _conj_dist_subdiff(self, v,xstar,**kwargs):
         return self.func.conj.dist_subdiff(v,xstar,**kwargs)
 
-    def _conj_hessian(self, xstar,**kwargs):
+    def _conj_hessian(self, xstar,**kwargs)-> operators.Operator:
         return self.func.conj.hessian(xstar,**kwargs)
 
     def _conj_proximal(self, x, tau,**proximal_par):
@@ -1480,7 +1484,7 @@ class HorizontalShiftDilation(Functional):
     shift: self.domain or scalar or None [default: None]
         Shift vector. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
     """
-    def __init__(self, func, dilation =1., shift = None, data = None):
+    def __init__(self, func, dilation:float =1., shift = None, data = None):
         if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
             raise ValueError(util.Errors.value_error(f""" 
             The HorizontalShiftDilation only takes three arguments Functional, 
@@ -1682,8 +1686,12 @@ class Composed(Functional):
     norm_kwargs : dict
         possible arguments passed to the operator norm computation.
     """
-    def __init__(self, func, op, op_norm = inf, op_lower_bound = 0, compute_op_norm = False, norm_kwargs = {},
-                 methods = None,conj_methods=None):
+    def __init__(self, func:Functional, 
+                 op:operators.Operator, 
+                 op_norm :float= inf, 
+                 op_lower_bound:float = 0, 
+                 compute_op_norm:bool = False, norm_kwargs:dict = {},
+                 methods:set[str]|None = None,conj_methods:set[str]|None=None):
         if not isinstance(func, Functional):
             raise TypeError(util.Errors.not_instance(func,Functional))
         if not isinstance(op,operators.Operator):
@@ -1778,7 +1786,7 @@ class FunctionalOnDirectSum(Functional):
     domain : regpy.vecsps.DirectSum
         Domain on which the combined functional is defined. 
     """
-    def __init__(self, funcs,domain=None):
+    def __init__(self, funcs:list[Functional],domain:vecsps.DirectSum|None=None):
         if not isinstance(funcs,(list,tuple)) or any([not isinstance(f_i, Functional) for f_i in funcs]):
             raise TypeError(util.Errors.generic_message(f"To setup a FunctionalOnDirectSum the functionals have to be provided as a list or tuple of functionals."))
         if domain is not None:
@@ -1809,7 +1817,7 @@ class FunctionalOnDirectSum(Functional):
                         methods=methods,conj_methods=conj_methods 
                         )
 
-    def _eval(self, x): 
+    def _eval(self, x)->float: 
         return np.sum([f_i(x_i) for f_i,x_i in zip(self.funcs,x)])
 
     def _subgradient(self, x):
@@ -1818,7 +1826,7 @@ class FunctionalOnDirectSum(Functional):
     def dist_subdiff(self,vstar, x):
         return sum([f_i.dist_subdiff(vstar_i,x_i) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
 
-    def _hessian(self, x):
+    def _hessian(self, x)-> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
 
     def _proximal(self, x, tau,proximal_par_list = None):
@@ -1828,7 +1836,7 @@ class FunctionalOnDirectSum(Functional):
             raise ValueError(util.Errors.generic_message("The proximal parameters in FuncitonalOnDirectSum have to be either a list of dictionaries of same length or None!"))
         return self.domain.join(*[f_i.proximal(x_i,tau, proximal_par_i) for f_i,x_i,proximal_par_i in zip(self.funcs,x,proximal_par_list)])
 
-    def _conj(self, xstar):
+    def _conj(self, xstar)->float:
         return sum([f_i.conj(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
 
     def _conj_subgradient(self, xstar):
@@ -1837,7 +1845,7 @@ class FunctionalOnDirectSum(Functional):
     def _conj_dist_subdiff(self,v, xstar):
         return sum([f_i.conj.dist_subdiff(v_i,xstar_i) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
 
-    def _conj_hessian(self, xstar):
+    def _conj_hessian(self, xstar)-> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))
 
     def _conj_proximal(self, xstar, tau,proximal_par_list = None):
@@ -1862,7 +1870,7 @@ class FunctionalOnDirectSum(Functional):
             raise NotImplementedError(f"Recursive multiplication of other={other} with self={self} is not defined.")
 
 
-def as_functional(func, vecsp):
+def as_functional(func:HilbertSpace|Operator|Functional, vecsp:VectorSpaceBase)-> Functional:
     r"""Convert `func` to Functional instance on vecsp.
 
     - If func is a `HilbertSpace` then it generated the `SquaredNorm`.

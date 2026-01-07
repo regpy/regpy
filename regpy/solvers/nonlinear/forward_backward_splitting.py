@@ -24,15 +24,15 @@ class ForwardBackwardSplitting(RegSolver):
     logging_level: int [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
+    def __init__(self, setting, init=None, data = None, tau = None, proximal_pars = {}, logging_level = "INFO",update_setting = True):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
         if self.op.linear:
             self.log.warning("Using non-linear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear")
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        self.x = self.op.domain.zeros() if init is None else init
+        self.x = setting.get_or_update_initial_guess(init, update_setting)
+        setting.get_or_update_data(data, update_setting)
+        """The right hand side gets initialized with the measured data."""
         self.y, self.deriv = self.op.linearize(self.x)
         self.tau = 1/self.deriv.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
         """The step size parameter"""
