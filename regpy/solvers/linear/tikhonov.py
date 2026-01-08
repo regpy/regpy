@@ -253,7 +253,10 @@ class TikhonovCG(RegSolver):
             self.g_dir += self.g_res
         else:
             self.g_dir=self.hessR(self.dir)
-        
+    
+    def primal(self):
+        return (self.x,self.y)
+
     @staticmethod
     def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
         out = {'info':''}; par = {}

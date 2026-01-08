@@ -570,7 +570,7 @@ class Setting:
             return new_data
         else:
             if self.data is None:
-                raise RuntimeError(Errors.runtime_error("Data has been provided either explicitly as an argument of the method or in the setting!"))
+                self.log.warning("No data has been provided either explicitly or as an argument of the method or in the setting!")
             return self.data
 
     def get_or_update_initial_guess(self, new_init=None,update:bool=True):
@@ -917,7 +917,7 @@ class Setting:
         for method_name in method_names:
             if method_name not in self._methods.keys():
                 raise ValueError(f"{method_name} is unknown method key.")
-            self._methods[method_name]['stoprule'] = rule
+            self._methods[method_name]['stoprule'] = rule.copy_and_reset()
 
     def get_stopping_rule(self,method_name):
         """Retrieves a stopping rule that has run an optimization method 

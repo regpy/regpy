@@ -803,7 +803,7 @@ class OptimalityCondStopping(StopRule):
     def _stop(self):
         primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
         dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
-        if primal is None or dual is None:
+        if primal is None and dual is None:
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))
         dSstar,dR = self.solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
