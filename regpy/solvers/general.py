@@ -238,49 +238,53 @@ class RegSolver(Solver):
         
 
 class Setting:
-    r"""A *setting* for an inverse problem, used by solvers. A
-    setting always consists at least of
+    r"""A *setting* for an inverse problem, used by solvers. A setting always consists at least of
 
-    - a forward operator,
-    - a penalty functional with an associated Hilbert space structure to measure the error, and
-    - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
+    - a forward operator :math:`F`,
+    - a penalty functional :math:`\mathcal{R}` with an associated Hilbert space structure to measure the error, and
+    - a data fidelity functional :math:`\mathcal{S}_{g^{\delta}}` with an associated Hilbert space structure to measure the data misfit.
 
-    If a regularization parameter is given this is the setting for the minimization problem 
+    If a regularization parameter :math:`alpha` is given, this is the setting for the minimization problem 
 
     .. math::
-        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(F(f)) + \mathcal{R}(f) = \min!
 
-    If the operator is linear and both functionals are convex this is, more generally, the setting of Rockafellar-Fenchel duality, 
-    which involves a rich and algorithmically useful mathematical structure. In this case, the dual setting 
+    If the operator is linear and both functionals are convex, this is the setting of Rockafellar-Fenchel duality 
+    --- a rich and algorithmically useful mathematical structure. In this case, the dual setting 
     and primal-dual optimality conditions are provided. 
+   
     This class is mostly a container that keeps all of this data in one place and makes sure that all initializations are 
     done correctly.
 
-    It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
-    the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
-    it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
+    The meaning of a "solver" is quite different in the case where a regularization parameter is given and in the case where it is not given. 
+    In the first case, a solver is a minimization algorithm. In the seond case, a solver can be a wrapper applying solvers of the first kind
+    for different regularization parameter, driven by a parameter selection rule as `StopRule`.
+    Other solvers of the second kind are iterative mimimization method based 
+    on the penalty and data fidelity term such as a Newton-type (which also uase solvers of the first kind as inner iterations) or radient methods. Since iterative methods exhibit semiconvergent behavior in the presence of ill-posedness, early stopping by an appropriate `StopRule` is 
+    again essential.  
 
     Parameters
     ----------
     op : regpy.operators.Operator
-        The forward operator.
+        The forward operator :math:`F`.
     penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The penalty functional.
+        The penalty functional  :math:`\mathcal{R}`.
+        If a Hilbert space is given, the squared Hilbert norm (class `regyp.functionals.SquaredNorm`) is used as penalty functional. 
+        If an `AbstractFunctional`, or more generally any callable is given instead of a `regpy.functionals.Functional`, it is called on the operator's domain to construct a concrete `Functional` instance.
     data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The data misfit functional.
-    regpar: float [default: None]
-        regularization parameter
-    penalty_shift: op.domain [default: None]
-        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
-    data: op.co_domain [default: None]
-        If not None, the data in the data fidelity functional is replaced by data.
-    primal_setting: None or Setting [default:None]
-        This attribute is only relevant for convex Tikhonov regularization settings 
-        (self.is_convex == True and self.is_tikhonov == True). In this case it 
-        indicates whether or not a setting serves as primal setting. 
-        For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
-        This affects the duality relations and the duality gap. 
+        The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
+        The cases of Hilbert space and callable instances are treated in analogy to penalty. 
+    regpar: float or None, optional
+        regularization parameter  :math:`alpha`.
+    penalty_shift: op.domain or None, optional
+        If not None, the penalty functional  :math:`\mathcal{R}` is replaced by  :math:`\mathcal{R}(. - penalty_shift)`. Defaults to None
+    data: array-like or None, optionals
+        If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
+        belong to op.codomain). Defaults to None
+    exact_data: op.codomain | None, optional 
+        A setting may also be initialized with exact data. Once the setting is instantiated, convenience methods 
+        such add add_Gaussian_noise() or generate_Poisson_data() can be used to generate synthetic noisy data. 
+        Before this happens, exact_data will not have any effect.
     logging_level: int [default: logging.INFO]
         logging level
     """
@@ -295,9 +299,11 @@ class Setting:
                  data_fid:Functional|HilbertSpace|Callable,
                  regpar:float|None=None,
                  penalty_shift= None, 
-                 data= None, exact_data = None, 
-                 primal_setting =None,
-                 logging_level = "INFO"):
+                 data= None, 
+                 exact_data = None, 
+                 logging_level = "INFO",
+                 _primal_setting =None # intended only for internal use in get_dual_setting()
+                 ):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
@@ -307,7 +313,7 @@ class Setting:
         else:
             self._penalty = as_functional(penalty, op.domain)
         self.regpar=regpar#The flags are set by setting the regularization parameter
-        if(not self.data_fid.is_data_func and data is None and primal_setting is None):
+        if(not self.data_fid.is_data_func and data is None and _primal_setting is None):
             if exact_data is None:
                 self.log.warning("Setting does not contain any explicit data.")
             self._data=None
@@ -319,12 +325,12 @@ class Setting:
             if not exact_data in op.codomain:
                 raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
             self._exact_data = exact_data
-        
+
         self.log.setLevel(logging_level)
-        if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
+        if _primal_setting is not None and not (_primal_setting.is_convex and _primal_setting.is_tikhonov):
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
-        self._primal_setting = primal_setting
-        if primal_setting is None and self.is_convex and self.is_tikhonov:
+        self._primal_setting = _primal_setting
+        if _primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
 
     @property
@@ -397,7 +403,7 @@ class Setting:
 
     ######General convenience methods
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
-        """ generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
+        r""" generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
         
         Parameters:
         -----------
@@ -445,7 +451,7 @@ class Setting:
         self.data = self._exact_data + noise 
 
     def generate_Poisson_data(self,expected_nr_counts=None,seed=None):
-        """ generates Poisson data using self.codomain.poisson (which must have been provided at initialization of the setting), and sets data to this.
+        r""" generates Poisson data using self.codomain.poisson (which must have been provided at initialization of the setting), and sets data to this.
         
         Parameters:
         -----------
@@ -613,7 +619,7 @@ class Setting:
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
-            primal_setting = self,
+            _primal_setting = self,
             logging_level=self.log.level
         )
 
@@ -809,6 +815,7 @@ class Setting:
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
         method_dict={
                 'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
+                'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
                 'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
                 'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
                 'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
