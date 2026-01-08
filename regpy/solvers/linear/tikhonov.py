@@ -260,9 +260,9 @@ class TikhonovCG(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
         out = {'info':''}; par = {}
-        if not  setting.penalty.quadratic and setting.penalty.convex:
+        if not  setting.penalty.is_quadratic and setting.penalty.is_convex:
             out['info'] += 'Penalty term is not convex quadratic.'
-        if not setting.data_fid.quadratic and setting.data_fid.convex:
+        if not setting.data_fid.is_quadratic and setting.data_fid.is_convex:
             out['info'] += 'Data fidelity term is not convex quadratic. '
         if not setting.op.linear:
             out['info'] += 'Operator is not linear.'

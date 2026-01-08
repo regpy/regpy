@@ -10,7 +10,7 @@ from regpy import operators, util, vecsps, hilbert
 from regpy.operators import Operator
 from regpy.vecsps import VectorSpaceBase
 from regpy.hilbert import HilbertSpace
-
+from regpy.util import Errors
 
 __all__ = ["as_functional","AbstractFunctional","Functional","LinearFunctional","LinearCombination","Composed","SquaredNorm","VerticalShift","HorizontalShiftDilation","FunctionalOnDirectSum"]
 
@@ -319,16 +319,16 @@ class Functional:
         The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
         and the Lipschitz constant are defined with respect to this Hilbert space.
         In the default case `L2(domain)` is used.
-    convex: bool [default: True]
+    is_convex: bool [default: True]
         If true, the functional should be convex.   
-    linear: bool [default: False]
+    is_linear: bool [default: False]
         If true, the functional should be linear.
-    quadratic: bool [default: False]
+    is_quadratic: bool [default: False]
         If true, the functional should be quadratic. 
-    conj_quadratic: bool or None [default: None]
+    conj_is_quadratic: bool or None [default: None]
         The corresponding boolean attribute indicates if the conjugate functional is quadratic.
-        If None, the same value as quadratic will be used.  
-    separable: bool [default: False]
+        If None, the same value as is_quadratic will be used.  
+    is_separable: bool [default: False]
         If true, the functional should be the sum of functionals acting on only one component of the input vector.
         In this case, the parameters  
     dom_u, dom_l, conj_dom_u, conj_dom_l: self.domain [default:None]
@@ -358,11 +358,11 @@ class Functional:
     def __init__(self, 
                  domain:VectorSpaceBase, 
                  h_domain:HilbertSpace=None, 
-                 linear:bool = False,
-                 quadratic:bool = False,  
-                 conj_quadratic:bool|None = None,               
-                 separable:bool = False,
-                 convex:bool = True,
+                 is_linear:bool = False,
+                 is_quadratic:bool = False,  
+                 conj_is_quadratic:bool|None = None,               
+                 is_separable:bool = False,
+                 is_convex:bool = True,
                  convexity_param:float=0.,
                  Lipschitz:float = inf,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
@@ -385,23 +385,29 @@ class Functional:
         self.Lipschitz = np.float64(Lipschitz)
         """Lipschitz continuity constant of the gradient."""
 
-        if not isinstance(linear,(bool, np.bool_)):
-            raise TypeError(f'linear must be boolean. Got {linear}.')
-        self.linear = linear
+        if not isinstance(is_linear,(bool, np.bool_)):
+            raise TypeError(Errors.type_error('is_linear must be boolean.',is_linear))
+        self.is_linear = is_linear
         """boolean indicating if the functional is linear"""
-        self.quadratic = quadratic
+        if not isinstance(is_quadratic,(bool, np.bool_)):
+            raise TypeError(Errors.type_error('is_quadratic must be boolean.',is_quadratic))
+        self.is_quadratic = is_quadratic
         """boolean indicating if the functional is quadratic"""
-        self.conj_quadratic = quadratic if conj_quadratic is None else conj_quadratic
+        if not isinstance(conj_is_quadratic,(bool, np.bool_,type(None))):
+            raise TypeError(Errors.type_error('conj_is_quadratic must be boolean or None.',conj_is_quadratic))
+        self.conj_is_quadratic = is_quadratic if conj_is_quadratic is None else conj_is_quadratic
         """boolean indicating if the conjugate functional is quadratic"""
-        if not isinstance(separable,(bool, np.bool_)):
-            raise TypeError(f'separable must be boolean. Got {separable}.')
-        self.separable = separable
+        if not isinstance(is_separable,(bool, np.bool_)):
+            raise TypeError(Errors.type_error('is_separable must be boolean.',is_separable))
+        self.is_separable = is_separable
         """boolean indicating if the functional is separable."""
-        self.convex = convex
+        if not isinstance(is_convex,(bool, np.bool_)):
+            raise TypeError(Errors.type_error('is_convex must be boolean.',is_convex))
+        self.is_convex = is_convex
         """boolean indicating if the functional is convex."""
 
 
-        if self.separable:
+        if self.is_separable:
             if isinstance(dom_l,np.ndarray) and isinstance(dom_u,np.ndarray) and np.any(dom_l>dom_u):
                 raise ValueError('dom_l must be smaller or equal to dom_u.')
             if conj_dom_l is not None  and isinstance(conj_dom_l,np.ndarray) \
@@ -772,19 +778,19 @@ class Conj(Functional):
 
     def __init__(self, func:Functional):
         self.func = func
-        if not func.convex:
+        if not func.is_convex:
             self.log.warning("Taking conjugate of a non-convex functional. The biconjugate will not coincide with the primal functional.")
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
                          Lipschitz = 1/func.convexity_param if func.convexity_param>0 else inf,
                          convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf,
-                         separable = func.separable,
-                         convex = True,
-                         quadratic = func.conj_quadratic,
-                         dom_u = func.conj_dom_u if func.separable else None, 
-                         dom_l = func.conj_dom_l if func.separable else None, 
-                         conj_dom_u = func.dom_u if func.separable else None,  
-                         conj_dom_l = func.dom_l if func.separable else None 
+                         is_separable = func.is_separable,
+                         is_convex = True,
+                         is_quadratic = func.conj_is_quadratic,
+                         dom_u = func.conj_dom_u if func.is_separable else None, 
+                         dom_l = func.conj_dom_l if func.is_separable else None, 
+                         conj_dom_u = func.dom_u if func.is_separable else None,  
+                         conj_dom_l = func.dom_l if func.is_separable else None 
                          )         
 
     def _eval(self,x):
@@ -867,10 +873,10 @@ class LinearFunctional(Functional):
         else:
             self._gradient = h_domain.gram(gradient)
         super().__init__(domain=domain,h_domain=h_domain,
-                         linear=True, quadratic=True, conj_quadratic=False,
+                         is_linear=True, is_quadratic=True, conj_is_quadratic=False,
                          Lipschitz = 0,
-                         separable=True,
-                         convex = True,
+                         is_separable=True,
+                         is_convex = True,
                          dom_l=np.broadcast_to(-inf,domain.shape), dom_u = np.broadcast_to(inf,domain.shape),
                          conj_dom_l = self._gradient, conj_dom_u = self._gradient,
                          methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
@@ -983,9 +989,9 @@ class SquaredNorm(Functional):
 
     def __init__(self, h_space, a:float=1., b=None,c:float=0.,shift=None, data = None):
         super().__init__(h_space.vecsp,h_domain=h_space, 
-                        linear = (a==0 and shift is None and c==0),
-                        quadratic = True, conj_quadratic= (a>0), 
-                        convex = (a>=0),
+                        is_linear = (a==0 and shift is None and c==0),
+                        is_quadratic = True, conj_is_quadratic= (a>0), 
+                        is_convex = (a>=0),
                         convexity_param = a,
                         Lipschitz = a, 
                         methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
@@ -1248,7 +1254,7 @@ class LinearCombination(Functional):
         for func, coeff in coeff_for_func.items():
             self.coeffs.append(coeff)
             self.funcs.append(func)
-            self.linear_table.append(func.linear or coeff==0)        
+            self.linear_table.append(func.is_linear or coeff==0)        
 
         domains = [func.domain for func in self.funcs if func.domain]
         domain = domains[0]
@@ -1256,13 +1262,13 @@ class LinearCombination(Functional):
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
             self.grad_sum = self.funcs[0].domain.zeros()
-            for coeff,func,linear in zip(self.coeffs,self.funcs,self.linear_table):
-                if linear:
+            for coeff,func,is_linear in zip(self.coeffs,self.funcs,self.linear_table):
+                if is_linear:
                     self.grad_sum += coeff * func.gradient
 
-        separable = np.all([F.separable for F in self.funcs])
+        is_separable = np.all([F.is_separable for F in self.funcs])
         conj_dom_l, conj_dom_u = None, None
-        if separable:
+        if is_separable:
             if len(self.funcs) == 1:
                 if self.coeffs[0]>0:
                     conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
@@ -1290,21 +1296,21 @@ class LinearCombination(Functional):
             conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
         else: 
             conj_methods = set()
-        all_convex = all([func.convex for func in self.funcs])
-        all_quadratic = all([func.quadratic for func in self.funcs])
+        all_convex = all([func.is_convex for func in self.funcs])
+        all_quadratic = all([func.is_quadratic for func in self.funcs])
         Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
         Lipschitz -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
         convexity_param = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
         convexity_param += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        super().__init__(domain, linear = all(self.linear_table),
-                         quadratic = all_quadratic, 
-                         conj_quadratic = (all_quadratic and (convexity_param>0)),
+        super().__init__(domain, is_linear = all(self.linear_table),
+                         is_quadratic = all_quadratic, 
+                         conj_is_quadratic = (all_quadratic and (convexity_param>0)),
                          Lipschitz = Lipschitz if all_convex else np.inf,
                          convexity_param = convexity_param if (convexity_param>=0 and all_convex) else 0.,
-                         convex =  all_convex and convexity_param>=0,
-                         separable=separable,
-                         dom_l = np.max([F.dom_l for F in self.funcs]) if separable else None,
-                         dom_u = np.min([F.dom_u for F in self.funcs]) if separable else None,
+                         is_convex =  all_convex and convexity_param>=0,
+                         is_separable=is_separable,
+                         dom_l = np.max([F.dom_l for F in self.funcs]) if is_separable else None,
+                         dom_u = np.min([F.dom_u for F in self.funcs]) if is_separable else None,
                          conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
                          methods = methods, conj_methods = conj_methods
                          )
@@ -1361,7 +1367,7 @@ class LinearCombination(Functional):
             return NotImplementedError
     
     def _conj(self, xstar,**kwargs):
-        if not self.convex:
+        if not self.is_convex:
             raise RuntimeError('conj of non-convex LinearCombination not implemented.')
         if len(self.funcs) == 1:
             return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0],**kwargs)
@@ -1374,7 +1380,7 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _conj_subgradient(self, xstar,**kwargs):
-        if not self.convex:
+        if not self.is_convex:
             raise RuntimeError('conj.subgradient of non-convex linear combination not implemented.')        
         if len(self.funcs) == 1:
             return self.funcs[0]._conj_subgradient(xstar/self.coeffs[0],**kwargs)
@@ -1401,7 +1407,7 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _conj_hessian(self, xstar,**kwargs)-> operators.Operator:
-        if not self.convex:
+        if not self.is_convex:
             raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
         if len(self.funcs) == 1:
             return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0],**kwargs)
@@ -1414,7 +1420,7 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     def _conj_proximal(self, xstar,tau,**kwargs):
-        if not self.convex:
+        if not self.is_convex:
             raise RuntimeError('conj.proximal of non-convex linear combination not implemented.')
         if len(self.funcs) == 1:
             return self.coeffs[0]*self.funcs[0]._conj_proximal((1./self.coeffs[0])*xstar,tau/self.coeffs[0],**kwargs)
@@ -1444,12 +1450,12 @@ class VerticalShift(Functional):
                 func = {func},
                 offset = {offset}."""))
         super().__init__(func.domain, 
-                         linear = False,
-                         quadratic = func.quadratic, 
+                         is_linear = False,
+                         is_quadratic = func.is_quadratic, 
                          convexity_param= func. convexity_param,
                          Lipschitz = func.Lipschitz,
-                         separable = func.separable,
-                         convex = func.convex,
+                         is_separable = func.is_separable,
+                         is_convex = func.is_convex,
                          dom_l = func.dom_l, 
                          dom_u = func.dom_u, 
                          conj_dom_l = func.conj_dom_l, 
@@ -1558,7 +1564,7 @@ class HorizontalShiftDilation(Functional):
             self._data = data
             self._shifted_data_fid = False
             self.is_data_func = True
-        if func.separable:
+        if func.is_separable:
             dom_u = func.dom_u/dilation if self.shift_val is None else func.dom_u/dilation + self.shift_val
             dom_l = func.dom_l/dilation if self.shift_val is None else func.dom_l/dilation + self.shift_val
             conj_dom_u = func.conj_dom_u*dilation
@@ -1569,12 +1575,12 @@ class HorizontalShiftDilation(Functional):
         else:
             dom_u, dom_l, conj_dom_u, conj_dom_l = None, None, None, None
         super().__init__(func.domain, h_domain = func.h_domain, 
-                         linear = func.linear and self.shift_val is None,
+                         is_linear = func.is_linear and self.shift_val is None,
                          Lipschitz = func.Lipschitz * dilation**2,
                          convexity_param= func.convexity_param  * dilation**2,
-                         separable = func.separable,
-                         convex = func.convex,
-                         quadratic = func.quadratic,
+                         is_separable = func.is_separable,
+                         is_convex = func.is_convex,
+                         is_quadratic = func.is_quadratic,
                          dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u,
                          methods = func.methods, conj_methods=func._conj_methods,
                          is_data_func = (shift is not None)
@@ -1594,7 +1600,7 @@ class HorizontalShiftDilation(Functional):
                 return self._shift_val
         
     def recompute_cutoff(self):
-        if self.func.separable:
+        if self.func.is_separable:
             if self.dilation > 0:
                 self.dom_u = self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
                 self.dom_l = self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
@@ -1733,12 +1739,12 @@ class Composed(Functional):
                 conj_methods = set()
 
         super().__init__(op.domain,
-                         linear = func.linear and  op.linear,
-                         quadratic = func.quadratic and op.linear,
-                         conj_quadratic = func.quadratic and op.linear  and  func.convexity_param * op_lower_bound**2>0, 
+                         is_linear = func.is_linear and  op.linear,
+                         is_quadratic = func.is_quadratic and op.linear,
+                         conj_is_quadratic = func.is_quadratic and op.linear  and  func.convexity_param * op_lower_bound**2>0, 
                          convexity_param= func.convexity_param * op_lower_bound**2,
                          Lipschitz= func.Lipschitz * op_norm**2,
-                         convex = func.convex and op.linear, 
+                         is_convex = func.is_convex and op.linear, 
                          methods = {'eval','subgradient','hessian'} if methods is None else methods,
                          conj_methods = conj_methods
                          )
@@ -1828,22 +1834,22 @@ class FunctionalOnDirectSum(Functional):
         self.funcs = list(funcs)
         """List of the functionals on each summand of the direct sum domain.
         """
-        separable = all([func.separable for func in funcs])
-        convex = all([func.convex for func in funcs])
-        dom_l = domain.join(*[func.dom_l for func in funcs]) if separable else None
-        dom_u = domain.join(*[func.dom_u for func in funcs]) if separable else None
-        conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]) if separable else None
-        conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]) if separable else None
+        is_separable = all([func.is_separable for func in funcs])
+        is_convex = all([func.is_convex for func in funcs])
+        dom_l = domain.join(*[func.dom_l for func in funcs]) if is_separable else None
+        dom_u = domain.join(*[func.dom_u for func in funcs]) if is_separable else None
+        conj_dom_l = domain.join(*[func.conj_dom_l for func in funcs]) if is_separable else None
+        conj_dom_u = domain.join(*[func.conj_dom_u for func in funcs]) if is_separable else None
         methods = set.intersection(*[func.methods for func in funcs])
         conj_methods = set.intersection(*[func.conj.methods for func in funcs])
         super().__init__(domain, 
-                        linear = all([func.linear for func in funcs]),
-                        quadratic = all([func.quadratic for func in funcs]),
-                        conj_quadratic = all([func.conj_quadratic for func in funcs]),
+                        is_linear = all([func.is_linear for func in funcs]),
+                        is_quadratic = all([func.is_quadratic for func in funcs]),
+                        conj_is_quadratic = all([func.conj_is_quadratic for func in funcs]),
                         convexity_param = min([func.convexity_param for func in funcs]),
                         Lipschitz = max([func.Lipschitz for func in funcs]),
-                        separable = separable,
-                        convex = convex,
+                        is_separable = is_separable,
+                        is_convex = is_convex,
                         dom_l = dom_l, dom_u = dom_u, conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
                         methods=methods,conj_methods=conj_methods 
                         )

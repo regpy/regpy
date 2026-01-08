@@ -379,7 +379,7 @@ class Setting:
     def _set_flags(self):
         self.is_tikhonov=(self.regpar is not None)
         """True if a regularization parameter is set"""
-        self.is_convex=self.op.linear and self.penalty.convex and self.data_fid.convex
+        self.is_convex=self.op.linear and self.penalty.is_convex and self.data_fid.is_convex
         """True if the operator is linear"""
         self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
         """True if penalty and data fidelity are both squared norms"""

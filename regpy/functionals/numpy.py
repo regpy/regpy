@@ -155,7 +155,7 @@ class IntegralFunctionalBase(Functional):
         all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
 
         super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
-                         separable=True,
+                         is_separable=True,
                          dom_l = dom_l if dom_l in domain else np.broadcast_to(dom_l,domain.shape),
                          dom_u = dom_u if dom_u in domain else np.broadcast_to(dom_u,domain.shape),
                          conj_dom_l = conj_dom_l if conj_dom_l in domain else np.broadcast_to(conj_dom_l,domain.shape), 
@@ -896,7 +896,7 @@ class VectorIntegralFunctional(Functional):
             scalar_func = scalar_func(self.sdomain, **self.scalar_func_args)
         elif scalar_func is None:
             scalar_func = LppPower(self.sdomain, p=2., **self.scalar_func_args)
-        if not scalar_func.separable or scalar_func.domain!=self.sdomain:
+        if not scalar_func.is_separable or scalar_func.domain!=self.sdomain:
             raise ValueError(Errors.value_error(f'{scalar_func} need to be a callable giving a separable functional or already a separable functional with sdomain as domain.'))
         else:
             self.scalar_func = scalar_func
@@ -918,7 +918,7 @@ class VectorIntegralFunctional(Functional):
         super().__init__(vdomain, L2(vecsp=vdomain), 
                          convexity_param = convexity_param, 
                          Lipschitz = Lipschitz, 
-                         separable= False, linear= False,
+                         is_separable= False, is_linear= False,
                          methods = methods, conj_methods = conj_methods)
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
@@ -1132,7 +1132,7 @@ class LppPower(IntegralFunctionalBase):
             Lipschitz = 1. if constr_l is None and constr_u is None else np.inf
 
         super().__init__(domain, 
-                         quadratic = (p==2.),
+                         is_quadratic = (p==2.),
                          convexity_param=convexity_param,
                          Lipschitz = Lipschitz,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
