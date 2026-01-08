@@ -281,7 +281,6 @@ class Setting:
         indicates whether or not a setting serves as primal setting. 
         For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
         This affects the duality relations and the duality gap. 
-    gap_threshold: float [default: 1e5]
     logging_level: int [default: logging.INFO]
         logging level
     """
@@ -298,27 +297,16 @@ class Setting:
                  penalty_shift= None, 
                  data= None, exact_data = None, 
                  primal_setting =None,
-                 gap_threshold = 1e5,
                  logging_level = "INFO"):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
-        self.op = op
-        """The operator."""
-        self.penalty = as_functional(penalty, op.domain)
-        """The penalty functional."""
-        self.data_fid = as_functional(data_fid, op.codomain)
-        """The data fidelity functional."""
-        self.h_domain = self.penalty.h_domain
-        """The Hilbert space associated to penalty functional"""
-        self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
-        """The Hilbert space associated to data fidelity functional"""
+        self._op = op
+        self._data_fid = as_functional(data_fid, op.codomain)
         if not penalty_shift is None:
-            self.penalty_shift = penalty_shift
-            self.penalty = self.penalty.shift(penalty_shift)
+            self._penalty = as_functional(penalty, op.domain).shift(penalty_shift)
         else:
-            self.penalty_shift = None
+            self._penalty = as_functional(penalty, op.domain)
         self.regpar=regpar#The flags are set by setting the regularization parameter
-        """The regularization parameter"""
         if(not self.data_fid.is_data_func and data is None and primal_setting is None):
             if exact_data is None:
                 self.log.warning("Setting does not contain any explicit data.")
@@ -333,12 +321,37 @@ class Setting:
             self._exact_data = exact_data
         
         self.log.setLevel(logging_level)
-        self.gap_threshold = gap_threshold
         if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
-        self.primal_setting = primal_setting
+        self._primal_setting = primal_setting
         if primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
+
+    @property
+    def op(self):
+        r"""The operator."""
+        return self._op
+    
+    @property
+    def penalty(self):
+        r"""The penalty functional."""        
+        return self._penalty
+
+    @property
+    def data_fid(self):
+        r"""The data fidelity functional."""
+        return self._data_fid
+
+    @property
+    def h_domain(self):
+        r"""The Hilbert space associated to penalty functional"""
+        return self.penalty.h_domain
+
+    @property   
+    def h_codomain(self):
+        r"""The Hilbert space associated to data fidelity functional"""
+        return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
+
 
     @property
     def data(self):
@@ -354,7 +367,7 @@ class Setting:
         if not hasattr(self,"_data") or not new_data is self._data:
             if(self.data_fid.is_data_func):
                 self.log.warning("Existing data in data fidelity functional is overwritten.")
-            self.data_fid=self.data_fid.as_data_func(new_data)
+            self._data_fid=self.data_fid.as_data_func(new_data)
             self._data=new_data
             self._set_flags()
 
@@ -368,6 +381,7 @@ class Setting:
 
     @property
     def regpar(self):
+        r"""The regularization parameter"""
         return self._regpar
 
     @regpar.setter
@@ -628,10 +642,10 @@ class Setting:
             dual[1] = self.op.adjoint(dual[0])
         if not dual[1] in self.op.adjoint.codomain:
             raise TypeError(Errors.type_error("T*p not in codomain of adjoint operator!"))
-        if self.primal_setting is None or own == True:
+        if self._primal_setting is None or own == True:
             return self.penalty.conj.subgradient(dual[1])
         else:
-            return self.primal_setting.primal_to_dual((None,-self.regpar*dual[1]))
+            return self._primal_setting.primal_to_dual((None,-self.regpar*dual[1]))
             """Note that the dual variables of the dual problem differ by a factor -alpha_d from the primal variables of the primal problem.
             Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
             """
@@ -663,10 +677,10 @@ class Setting:
             primal[1]
         if not primal[1] in self.op.codomain:
             raise TypeError(Errors.type_error("Tf not in codomain of operator!"))
-        if self.primal_setting is None or own==True:
+        if self._primal_setting is None or own==True:
             return (-1./self.regpar) * self.data_fid.subgradient(primal[1])
         else:
-            return self.primal_setting.dual_to_primal(primal)
+            return self._primal_setting.dual_to_primal(primal)
 
     def _complete_primal_dual_tuples(self,primal=None,dual=None):
         r"""Completes either the primal or dual tuple by computing the missing operator application.
@@ -743,7 +757,7 @@ class Setting:
         res = dat+pen+ddat+dpen
         if ares/res>1e10:
             self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-        elif ares/res>self.gap_threshold:
+        elif ares/res>1e5:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
@@ -794,6 +808,7 @@ class Setting:
         '''This so far contains only linear solvers'''
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
         method_dict={
+                'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
                 'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
                 'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
                 'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
@@ -815,7 +830,7 @@ class Setting:
         method_names: List of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
-        if not (self.primal_setting is None and self.is_convex and self.is_tikhonov):
+        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
             raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for convex settings with regularization parameter."))
         if method_names is None:
             method_names = self._methods.keys()
@@ -840,7 +855,7 @@ class Setting:
     def applicable_methods(self):
         """Yields subdictionary of the methods that can be applied to the given Tikhonov functional.
         """
-        if not (self.primal_setting is None and self.is_convex and self.is_tikhonov):
+        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
             raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for primal convex settings with regularization parameter."))
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
@@ -875,7 +890,9 @@ class Setting:
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
-    def set_stopping_rule(self,method_name,rule):
+    def set_stopping_rule(self,
+                          rule:StopRule,
+                          method_names:list[str]|None=None):
         """Sets a StopRule for an optimization method.
         
         Parameters
@@ -887,9 +904,14 @@ class Setting:
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
-        if method_name not in self._methods.keys():
-            raise ValueError(f"{method_name} is unknown method key.")
-        self._methods[method_name]['stoprule'] = rule
+        if method_names is None:
+            method_names = list(self.applicable_methods())
+        if not isinstance(method_names,list) and all([isinstance(method_name,str) for method_name in method_names]):
+            raise ValueError(Errors.value_error('method_names must be list of strings',method_names))
+        for method_name in method_names:
+            if method_name not in self._methods.keys():
+                raise ValueError(f"{method_name} is unknown method key.")
+            self._methods[method_name]['stoprule'] = rule
 
     def get_stopping_rule(self,method_name):
         """Retrieves a stopping rule that has run an optimization method 
@@ -938,8 +960,9 @@ class Setting:
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(method_name, DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
-                                   +CountIterations(1000,logging_level=logging.INFO))
+            self.set_stopping_rule(DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
+                                   +CountIterations(1000,logging_level=logging.INFO),
+                                   method_names=[method_name])
 
         
         solver = themethod['class'](thesetting,**kwargs)
