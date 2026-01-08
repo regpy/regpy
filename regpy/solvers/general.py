@@ -346,8 +346,7 @@ class Setting:
     @property
     def data_fid(self):
         r"""The data fidelity functional."""
-        return self._data_fid
-
+        return self._data_fid 
     @property
     def h_domain(self):
         r"""The Hilbert space associated to penalty functional"""
@@ -361,7 +360,7 @@ class Setting:
 
     @property
     def data(self):
-        return self._data
+        return self._data if hasattr(self,'_data') else None
     
     @data.setter
     def data(self,new_data):
@@ -565,7 +564,7 @@ class Setting:
         """
         if new_data is not None:
             if update:
-                if self.data is not None and new_data is not None and not self.data is new_data:
+                if self.data is not new_data:
                     self.log.warning("Overwriting existing data in setting!")
                     self.data = new_data
             return new_data

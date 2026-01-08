@@ -79,14 +79,14 @@ class TikhonovCG(RegSolver):
         self.log.setLevel(logging_level)
         self.x0 =   setting.get_or_update_initial_guess(x0, update_setting)
         """The zero-th CG iterate."""
-        data = setting.get_or_update_data(data, update_setting)
+        setting.get_or_update_data(data, update_setting)
    
         if regpar is not None and not (isinstance(regpar,(float,int)) and regpar >0):
             raise ValueError(Errors.value_error("The regularization parameter must be None or positive!",obj=regpar))
         if regpar is not None:  
             if setting.is_tikhonov and regpar !=  par['regpar']:
-                self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar* (self.data_fid.a/self.penalty.a):.2e}!")
-                setting.regpar = regpar* (self.data_fid.a/self.penalty.a)
+                self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar:.2e}!")
+                setting.regpar = regpar
                 self.regpar = regpar 
         else:
             if setting.is_tikhonov:
@@ -95,16 +95,13 @@ class TikhonovCG(RegSolver):
                 raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the regularization parameter needs to be specified in TIkhonovCG!"))
         self.regpar = regpar
         """The regularization parameter."""
-        
-        if xref is None:
-            xref=(-1./self.penalty.a)*setting.penalty.b
-        elif update_setting:
-            if isinstance(xref,np.ndarray) and not np.allclose(setting.penalty.b, -self.penalty.a*xref):
-                self.log.warning('Overwriting the reference vector in the penalty term of the Tikhonov functional by the given value!')
-            xref = xref.copy()
+
+        self.hessR = self.penalty.hessian(self.x0)        
+        if xref is not None:
+            self.log.warning("Providing xref as an argument to the CG solver is deprecated. Please provide it via the setting. Results may not be consistent!")
         else:
-            if isinstance(xref,np.ndarray) and not np.allclose(setting.penalty.b, -self.penalty.a*xref):
-                raise ValueError(Errors.value_error("The reference given by xref is not consistent with the penalty in the setting! Ignoring the setting.penalty!"))
+            xref = -self.hessR.inverse(self.penalty.subgradient(self.op.domain.zeros()))
+
         self.tol = tol
         """The absolute tolerance in the domain."""
         self.reltolx = reltolx
@@ -118,11 +115,13 @@ class TikhonovCG(RegSolver):
         """The current iterate."""
         self.y = self.op(self.x)
         """The image of the current iterate under the operator."""
+        self.hessS = self.data_fid.hessian(self.y)
+        data = -self.hessS.inverse(self.data_fid.subgradient(self.op.codomain.zeros()))
 
         if self.reltolx is not None:
             self.sq_norm_x = 0
         if self.reltoly is not None:
-            self.g_y = self.h_codomain.gram(self.y)
+            self.g_y = self.hessS(self.y)
             self.norm_y = self.op.codomain.vdot(self.y,self.g_y)
             if self.norm_y==0:
                 self.log.warning("The initial guess is mapped to zero by the operator, relative tolerance in codomain cannot be used!")
@@ -136,16 +135,16 @@ class TikhonovCG(RegSolver):
         else: 
             self.preconditioner = preconditioner
 
-        self.g_res = self.op.adjoint(self.h_codomain.gram(data-self.y))
+        self.g_res = self.op.adjoint(self.hessS(data-self.y))
         """The gram matrix applied to the residual of the normal equation. 
         g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         if xref is not None:
-            self.g_res += self.regpar *self.h_domain.gram(xref-self.x)
+            self.g_res += self.regpar *self.hessR(xref-self.x)
         elif x0 is not None:
-            self.g_res -= self.regpar * self.h_domain.gram(self.x)
+            self.g_res -= self.regpar * self.hessR(self.x)
         self.g_res=self.preconditioner.adjoint(self.g_res)
-        res = self.h_domain.gram_inv(self.g_res)
+        res = self.hessR.inverse(self.g_res)
         """The residual of the normal equation."""
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
         """The squared norm of the residual."""
@@ -154,7 +153,7 @@ class TikhonovCG(RegSolver):
         if(isinstance(self.preconditioner,Identity)):
             self.g_dir = self.g_res.copy()
         else:
-            self.g_dir = self.h_domain.gram(self.dir)
+            self.g_dir = self.hessR(self.dir)
         """The Gram matrix applied to the direction of descent."""
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
@@ -174,7 +173,7 @@ class TikhonovCG(RegSolver):
 
     def _next(self):
         Tdir = self.op(self.dir)
-        g_Tdir = self.h_codomain.gram(Tdir)
+        g_Tdir = self.hessS(Tdir)
         alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.g_dir, self.dir)).real
         if alpha_pre == 0:
             raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
@@ -196,7 +195,7 @@ class TikhonovCG(RegSolver):
                 self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
 
         self.g_res -= stepsize * self.preconditioner.adjoint(self.op.adjoint(g_Tdir)+self.regpar*self.g_dir)
-        res = self.h_domain.gram_inv(self.g_res)
+        res = self.hessR.inverse(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
@@ -253,22 +252,26 @@ class TikhonovCG(RegSolver):
             self.g_dir *= beta
             self.g_dir += self.g_res
         else:
-            self.g_dir=self.h_domain.gram(self.dir)
+            self.g_dir=self.hessR(self.dir)
         
     @staticmethod
     def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
         out = {'info':''}; par = {}
-        if not  isinstance(setting.penalty, SquaredNorm) and setting.penalty.convex:
-            out['info'] += 'Penalty term is not positively quadratic.'
-        if not isinstance(setting.data_fid, SquaredNorm) and setting.data_fid.convex:
-            out['info'] += 'Data fidelity term is not positively quadratic. '
+        if not  setting.penalty.quadratic and setting.penalty.convex:
+            out['info'] += 'Penalty term is not convex quadratic.'
+        if not setting.data_fid.quadratic and setting.data_fid.convex:
+            out['info'] += 'Data fidelity term is not convex quadratic. '
         if not setting.op.linear:
             out['info'] += 'Operator is not linear.'
         out['applicable'] = out['info'] == ''
         if out['applicable'] and setting.is_tikhonov:
-            par['regpar'] = setting.regpar*setting.penalty.a / setting.data_fid.a
+            if hasattr(setting.penalty,'a') and hasattr(setting.data_fid,'a'):
+                par['regpar'] = setting.regpar*setting.penalty.a / setting.data_fid.a
+            else:
+                par['regpar'] = setting.regpar
             if op_norm is not None:
-                cond = (op_norm**2 + par['regpar'])/par['regpar']
+                conv_param = par['regpar']*setting.penalty.convexity_param
+                cond = (op_norm**2*setting.data_fid.Lipschitz + conv_param)/conv_param
                 out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
             else:
                 out['rate'] = np.nan
@@ -516,11 +519,12 @@ class TikhonovCGOnlyDomain(RegSolver):
             self.regpar = regpar
         else:
             raise ValueError(Errors.value_error("regpar must be a positive float or None"))
-        
+
         self.x0 = setting.get_or_update_initial_guess(x0, update_setting)
         """The zero-th CG iterate."""
         self.x = self.x0.copy()
         """The current iterate."""
+        self.hessR = self.penalty.hessian(self.x)
 
         self.y = None
         """The image of the current iterate under the operator. Is always None, since we never compute it."""
@@ -536,7 +540,7 @@ class TikhonovCGOnlyDomain(RegSolver):
             self.penalty = self.h_domain.vecsp.identity
         elif isinstance(preconditioner, Operator) and preconditioner.domain == self.h_domain.vecsp and preconditioner.codomain == self.h_domain.vecsp: 
             self.preconditioner = preconditioner
-            self.penalty = self.preconditioner * self.h_domain.gram * self.preconditioner * self.h_domain.gram_inv
+            self.penalty = self.preconditioner * self.hessR * self.preconditioner * self.hessR.inverse
         else:
             raise TypeError("preconditioner must be an Operator from setting.h_domain.vecsp to setting.h_domain.vecsp")
 
@@ -545,11 +549,11 @@ class TikhonovCGOnlyDomain(RegSolver):
         g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
         """
         if xref is not None:
-            self.g_res += self.regpar *self.preconditioner( self.h_domain.gram(xref-self.x) )
+            self.g_res += self.regpar *self.preconditioner( self.hessR(xref-self.x) )
         elif x0 is not None:
-            self.g_res -= self.regpar *self.preconditioner( self.h_domain.gram(self.x) )
+            self.g_res -= self.regpar *self.preconditioner( self.hessR(self.x) )
 
-        res = self.h_domain.gram_inv(self.g_res)
+        res = self.hessR.inverse(self.g_res)
         """The residual of the normal equation."""
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
         """The squared norm of the residual."""
@@ -600,7 +604,7 @@ class TikhonovCGOnlyDomain(RegSolver):
                 self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
 
         self.g_res -= stepsize * (self.preconditioner( TastGTdir )+ self.regpar * self.penalty (self.g_dir) )
-        res = self.h_domain.gram_inv(self.g_res)
+        res = self.hessR.inverse(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
         self.sq_norm_res = self.op.domain.vdot(self.g_res, res).real
