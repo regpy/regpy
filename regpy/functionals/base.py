@@ -1551,7 +1551,7 @@ class HorizontalShiftDilation(Functional):
                          convex = func.convex,
                          dom_l=dom_l, dom_u=dom_u, conj_dom_l=conj_dom_l, conj_dom_u= conj_dom_u,
                          methods = func.methods, conj_methods=func._conj_methods,
-                         is_data_func = True
+                         is_data_func = (shift is not None)
                          )
         
     @util.memoized_property
