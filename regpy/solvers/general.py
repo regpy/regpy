@@ -238,50 +238,53 @@ class RegSolver(Solver):
         
 
 class Setting:
-    r"""A *setting* for an inverse problem, used by solvers. A
-    setting always consists at least of
+    r"""A *setting* for an inverse problem, used by solvers. A setting always consists at least of
 
-    - a forward operator,
-    - a penalty functional with an associated Hilbert space structure to measure the error, and
-    - a data fidelity functional with an associated Hilbert space structure to measure the data misfit.
+    - a forward operator :math:`F`,
+    - a penalty functional :math:`\mathcal{R}` with an associated Hilbert space structure to measure the error, and
+    - a data fidelity functional :math:`\mathcal{S}_{g^{\delta}}` with an associated Hilbert space structure to measure the data misfit.
 
-    If a regularization parameter is given this is the setting for the minimization problem 
+    If a regularization parameter :math:`alpha` is given, this is the setting for the minimization problem 
 
     .. math::
-        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) = \min!
+        \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(F(f)) + \mathcal{R}(f) = \min!
 
-    If the operator is linear and both functionals are convex this is, more generally, the setting of Rockafellar-Fenchel duality, 
-    which involves a rich and algorithmically useful mathematical structure. In this case, the dual setting 
+    If the operator is linear and both functionals are convex, this is the setting of Rockafellar-Fenchel duality 
+    --- a rich and algorithmically useful mathematical structure. In this case, the dual setting 
     and primal-dual optimality conditions are provided. 
+   
     This class is mostly a container that keeps all of this data in one place and makes sure that all initializations are 
     done correctly.
 
-    It also handles the case when the specified data fidelity or penalty is a Hilbert space which constructs 
-    the associated squared Hilbert norm functionals. It also handles cases when `regpy.hilbert.AbstractSpace` 
-    or `AbstractFunctional`\s (or actually any callable) instead of a `regpy.functionals.Functional`, calling 
-    it on the operator's domain or codomain to construct the concrete `Functional`'s instances.
+    The meaning of a "solver" is quite different in the case where a regularization parameter is given and in the case where it is not given. 
+    In the first case, a solver is a minimization algorithm. In the seond case, a solver can be a wrapper applying solvers of the first kind
+    for different regularization parameter, driven by a parameter selection rule as `StopRule`.
+    Other solvers of the second kind are iterative mimimization method based 
+    on the penalty and data fidelity term such as a Newton-type (which also uase solvers of the first kind as inner iterations) or radient methods. Since iterative methods exhibit semiconvergent behavior in the presence of ill-posedness, early stopping by an appropriate `StopRule` is 
+    again essential.  
 
     Parameters
     ----------
     op : regpy.operators.Operator
-        The forward operator.
+        The forward operator :math:`F`.
     penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The penalty functional.
+        The penalty functional  :math:`\mathcal{R}`.
+        If a Hilbert space is given, the squared Hilbert norm (class `regyp.functionals.SquaredNorm`) is used as penalty functional. 
+        If an `AbstractFunctional`, or more generally any callable is given instead of a `regpy.functionals.Functional`, it is called on the operator's domain to construct a concrete `Functional` instance.
     data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
-        The data misfit functional.
-    regpar: float [default: None]
-        regularization parameter
-    penalty_shift: op.domain [default: None]
-        If not None, the penalty functional is replaced by penalty(. - penalty_shift).
-    data: op.co_domain [default: None]
-        If not None, the data in the data fidelity functional is replaced by data.
-    primal_setting: None or Setting [default:None]
-        This attribute is only relevant for convex Tikhonov regularization settings 
-        (self.is_convex == True and self.is_tikhonov == True). In this case it 
-        indicates whether or not a setting serves as primal setting. 
-        For a primal setting, primal_setting is None, for a dual setting it is the primal setting. 
-        This affects the duality relations and the duality gap. 
-    gap_threshold: float [default: 1e5]
+        The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
+        The cases of Hilbert space and callable instances are treated in analogy to penalty. 
+    regpar: float or None, optional
+        regularization parameter  :math:`alpha`.
+    penalty_shift: op.domain or None, optional
+        If not None, the penalty functional  :math:`\mathcal{R}` is replaced by  :math:`\mathcal{R}(. - penalty_shift)`. Defaults to None
+    data: array-like or None, optionals
+        If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
+        belong to op.codomain). Defaults to None
+    exact_data: op.codomain | None, optional 
+        A setting may also be initialized with exact data. Once the setting is instantiated, convenience methods 
+        such add add_Gaussian_noise() or generate_Poisson_data() can be used to generate synthetic noisy data. 
+        Before this happens, exact_data will not have any effect.
     logging_level: int [default: logging.INFO]
         logging level
     """
@@ -296,30 +299,21 @@ class Setting:
                  data_fid:Functional|HilbertSpace|Callable,
                  regpar:float|None=None,
                  penalty_shift= None, 
-                 data= None, exact_data = None, 
-                 primal_setting =None,
-                 gap_threshold = 1e5,
-                 logging_level = "INFO"):
+                 data= None, 
+                 exact_data = None, 
+                 logging_level = "INFO",
+                 _primal_setting =None # intended only for internal use in get_dual_setting()
+                 ):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
-        self.op = op
-        """The operator."""
-        self.penalty = as_functional(penalty, op.domain)
-        """The penalty functional."""
-        self.data_fid = as_functional(data_fid, op.codomain)
-        """The data fidelity functional."""
-        self.h_domain = self.penalty.h_domain
-        """The Hilbert space associated to penalty functional"""
-        self.h_codomain =  self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
-        """The Hilbert space associated to data fidelity functional"""
+        self._op = op
+        self._data_fid = as_functional(data_fid, op.codomain)
         if not penalty_shift is None:
-            self.penalty_shift = penalty_shift
-            self.penalty = self.penalty.shift(penalty_shift)
+            self._penalty = as_functional(penalty, op.domain).shift(penalty_shift)
         else:
-            self.penalty_shift = None
+            self._penalty = as_functional(penalty, op.domain)
         self.regpar=regpar#The flags are set by setting the regularization parameter
-        """The regularization parameter"""
-        if(not self.data_fid.is_data_func and data is None and primal_setting is None):
+        if(not self.data_fid.is_data_func and data is None and _primal_setting is None):
             if exact_data is None:
                 self.log.warning("Setting does not contain any explicit data.")
             self._data=None
@@ -331,14 +325,39 @@ class Setting:
             if not exact_data in op.codomain:
                 raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
             self._exact_data = exact_data
-        
+
         self.log.setLevel(logging_level)
-        self.gap_threshold = gap_threshold
-        if primal_setting is not None and not (primal_setting.is_convex and primal_setting.is_tikhonov):
+        if _primal_setting is not None and not (_primal_setting.is_convex and _primal_setting.is_tikhonov):
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
-        self.primal_setting = primal_setting
-        if primal_setting is None and self.is_convex and self.is_tikhonov:
+        self._primal_setting = _primal_setting
+        if _primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
+
+    @property
+    def op(self):
+        r"""The operator."""
+        return self._op
+    
+    @property
+    def penalty(self):
+        r"""The penalty functional."""        
+        return self._penalty
+
+    @property
+    def data_fid(self):
+        r"""The data fidelity functional."""
+        return self._data_fid
+
+    @property
+    def h_domain(self):
+        r"""The Hilbert space associated to penalty functional"""
+        return self.penalty.h_domain
+
+    @property   
+    def h_codomain(self):
+        r"""The Hilbert space associated to data fidelity functional"""
+        return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
+
 
     @property
     def data(self):
@@ -354,7 +373,7 @@ class Setting:
         if not hasattr(self,"_data") or not new_data is self._data:
             if(self.data_fid.is_data_func):
                 self.log.warning("Existing data in data fidelity functional is overwritten.")
-            self.data_fid=self.data_fid.as_data_func(new_data)
+            self._data_fid=self.data_fid.as_data_func(new_data)
             self._data=new_data
             self._set_flags()
 
@@ -368,6 +387,7 @@ class Setting:
 
     @property
     def regpar(self):
+        r"""The regularization parameter"""
         return self._regpar
 
     @regpar.setter
@@ -383,7 +403,7 @@ class Setting:
 
     ######General convenience methods
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
-        """ generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
+        r""" generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
         
         Parameters:
         -----------
@@ -431,7 +451,7 @@ class Setting:
         self.data = self._exact_data + noise 
 
     def generate_Poisson_data(self,expected_nr_counts=None,seed=None):
-        """ generates Poisson data using self.codomain.poisson (which must have been provided at initialization of the setting), and sets data to this.
+        r""" generates Poisson data using self.codomain.poisson (which must have been provided at initialization of the setting), and sets data to this.
         
         Parameters:
         -----------
@@ -599,7 +619,7 @@ class Setting:
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
-            primal_setting = self,
+            _primal_setting = self,
             logging_level=self.log.level
         )
 
@@ -628,10 +648,10 @@ class Setting:
             dual[1] = self.op.adjoint(dual[0])
         if not dual[1] in self.op.adjoint.codomain:
             raise TypeError(Errors.type_error("T*p not in codomain of adjoint operator!"))
-        if self.primal_setting is None or own == True:
+        if self._primal_setting is None or own == True:
             return self.penalty.conj.subgradient(dual[1])
         else:
-            return self.primal_setting.primal_to_dual((None,-self.regpar*dual[1]))
+            return self._primal_setting.primal_to_dual((None,-self.regpar*dual[1]))
             """Note that the dual variables of the dual problem differ by a factor -alpha_d from the primal variables of the primal problem.
             Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
             """
@@ -663,10 +683,10 @@ class Setting:
             primal[1]
         if not primal[1] in self.op.codomain:
             raise TypeError(Errors.type_error("Tf not in codomain of operator!"))
-        if self.primal_setting is None or own==True:
+        if self._primal_setting is None or own==True:
             return (-1./self.regpar) * self.data_fid.subgradient(primal[1])
         else:
-            return self.primal_setting.dual_to_primal(primal)
+            return self._primal_setting.dual_to_primal(primal)
 
     def _complete_primal_dual_tuples(self,primal=None,dual=None):
         r"""Completes either the primal or dual tuple by computing the missing operator application.
@@ -743,7 +763,7 @@ class Setting:
         res = dat+pen+ddat+dpen
         if ares/res>1e10:
             self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-        elif ares/res>self.gap_threshold:
+        elif ares/res>1e5:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
         return res
     
@@ -794,6 +814,8 @@ class Setting:
         '''This so far contains only linear solvers'''
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
         method_dict={
+                'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
+                'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
                 'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
                 'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
                 'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
@@ -815,7 +837,7 @@ class Setting:
         method_names: List of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
-        if not (self.primal_setting is None and self.is_convex and self.is_tikhonov):
+        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
             raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for convex settings with regularization parameter."))
         if method_names is None:
             method_names = self._methods.keys()
@@ -840,7 +862,7 @@ class Setting:
     def applicable_methods(self):
         """Yields subdictionary of the methods that can be applied to the given Tikhonov functional.
         """
-        if not (self.primal_setting is None and self.is_convex and self.is_tikhonov):
+        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
             raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for primal convex settings with regularization parameter."))
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
@@ -875,7 +897,9 @@ class Setting:
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
-    def set_stopping_rule(self,method_name,rule):
+    def set_stopping_rule(self,
+                          rule:StopRule,
+                          method_names:list[str]|None=None):
         """Sets a StopRule for an optimization method.
         
         Parameters
@@ -887,9 +911,14 @@ class Setting:
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
-        if method_name not in self._methods.keys():
-            raise ValueError(f"{method_name} is unknown method key.")
-        self._methods[method_name]['stoprule'] = rule
+        if method_names is None:
+            method_names = list(self.applicable_methods())
+        if not isinstance(method_names,list) and all([isinstance(method_name,str) for method_name in method_names]):
+            raise ValueError(Errors.value_error('method_names must be list of strings',method_names))
+        for method_name in method_names:
+            if method_name not in self._methods.keys():
+                raise ValueError(f"{method_name} is unknown method key.")
+            self._methods[method_name]['stoprule'] = rule
 
     def get_stopping_rule(self,method_name):
         """Retrieves a stopping rule that has run an optimization method 
@@ -938,8 +967,9 @@ class Setting:
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(method_name, DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
-                                   +CountIterations(1000,logging_level=logging.INFO))
+            self.set_stopping_rule(DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
+                                   +CountIterations(1000,logging_level=logging.INFO),
+                                   method_names=[method_name])
 
         
         solver = themethod['class'](thesetting,**kwargs)

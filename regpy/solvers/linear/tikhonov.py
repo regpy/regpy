@@ -269,7 +269,7 @@ class TikhonovCG(RegSolver):
         if out['applicable'] and setting.is_tikhonov:
             par['regpar'] = setting.regpar*setting.penalty.a / setting.data_fid.a
             if op_norm is not None:
-                cond = op_norm**2 / (op_norm**2 + par['regpar'])
+                cond = (op_norm**2 + par['regpar'])/par['regpar']
                 out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
             else:
                 out['rate'] = np.nan
