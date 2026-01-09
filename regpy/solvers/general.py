@@ -346,8 +346,7 @@ class Setting:
     @property
     def data_fid(self):
         r"""The data fidelity functional."""
-        return self._data_fid
-
+        return self._data_fid 
     @property
     def h_domain(self):
         r"""The Hilbert space associated to penalty functional"""
@@ -361,7 +360,7 @@ class Setting:
 
     @property
     def data(self):
-        return self._data
+        return self._data if hasattr(self,'_data') else None
     
     @data.setter
     def data(self,new_data):
@@ -565,13 +564,13 @@ class Setting:
         """
         if new_data is not None:
             if update:
-                if self.data is not None and new_data is not None and not self.data is new_data:
+                if self.data is not new_data:
                     self.log.warning("Overwriting existing data in setting!")
                     self.data = new_data
             return new_data
         else:
             if self.data is None:
-                raise RuntimeError(Errors.runtime_error("Data has been provided either explicitly as an argument of the method or in the setting!"))
+                self.log.warning("No data has been provided either explicitly or as an argument of the method or in the setting!")
             return self.data
 
     def get_or_update_initial_guess(self, new_init=None,update:bool=True):
@@ -918,7 +917,7 @@ class Setting:
         for method_name in method_names:
             if method_name not in self._methods.keys():
                 raise ValueError(f"{method_name} is unknown method key.")
-            self._methods[method_name]['stoprule'] = rule
+            self._methods[method_name]['stoprule'] = rule.copy_and_reset()
 
     def get_stopping_rule(self,method_name):
         """Retrieves a stopping rule that has run an optimization method 

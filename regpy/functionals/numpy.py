@@ -1132,6 +1132,7 @@ class LppPower(IntegralFunctionalBase):
             Lipschitz = 1. if constr_l is None and constr_u is None else np.inf
 
         super().__init__(domain, 
+                         quadratic = (p==2.),
                          convexity_param=convexity_param,
                          Lipschitz = Lipschitz,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
