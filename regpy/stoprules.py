@@ -9,7 +9,7 @@ class MissingValueError(Exception):
     pass
 
 class StopRule:
-    """Abstract base class for stopping rules.
+    r"""Abstract base class for stopping rules.
 
     The attributes :attr:`x` and :attr:`y` are set to the current iterate from the solver. The method :meth:`stop` then checks whether the stopping rule should trigger using the private method :meth:`_stop_`. If it does, then the attribute :attr:`triggered` is set to true and the method :meth:`stop` returns `True`. Note that a later call to :meth:`stop` will not evaluate the rule again since the attribute :attr:`triggered` is set to `True`. 
     """
@@ -150,7 +150,7 @@ class StopRule:
         return AndCombineRules([self, other])
 
 class NoneRule(StopRule):
-    """Default stop rule that will never stop an iteration. The rule should not be used in normal setting
+    r"""Default stop rule that will never stop an iteration. The rule should not be used in normal setting
     it provides a default for the solvers that would stop by triggering their converged statement. 
     """
 
@@ -165,7 +165,7 @@ class NoneRule(StopRule):
         return self.solver.x, self.solver.y if hasattr(self.solver,"y") else None
 
 class CombineRules(StopRule):
-    """Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
+    r"""Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
 
     The resulting rule triggers when any of the given rules triggers.
     The first rule is responsible for selecting the best solution.
@@ -176,7 +176,7 @@ class CombineRules(StopRule):
         The rules to be combined.
     """
 
-    def __init__(self, rules):
+    def __init__(self, rules:list[StopRule]):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
         super().__init__()
@@ -229,6 +229,8 @@ class CombineRules(StopRule):
                 self.log_info += 'Rule {} triggered.'.format(rule)
                 self.active_rule = rule
                 self.active_rule.trigger()
+                self.triggered = True
+                self.x, self.y  =self.active_rule.x, self.active_rule.y                
                 triggered = True
             else:
                 self.log_info = ''
@@ -241,15 +243,9 @@ class CombineRules(StopRule):
         else:
             self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
         return triggered
-    
-    def best_iterate(self):
-        if not self.triggered:
-            self.log.warning("The combined stopping rule has not triggered yet, so no best iterate is available!")
-            return None        
-        return self.rules[0].best_iterate()
 
 class AndCombineRules(StopRule):
-    """Combine several stopping rules into one that stops if all of the rules stop.
+    r"""Combine several stopping rules into one that stops if all of the rules stop.
 
     The resulting rule triggers when all of the given rules trigger. 
     It delegates selecting the solution to the first rule.
@@ -260,7 +256,7 @@ class AndCombineRules(StopRule):
         The rules to be combined.
     """
 
-    def __init__(self, rules):
+    def __init__(self, rules:list[StopRule]):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
         super().__init__()
@@ -312,6 +308,7 @@ class AndCombineRules(StopRule):
             self.log_info += 'All rules triggered.'
             self.triggered = True
             self.rules[0].trigger() # first rule decides best iterate
+            self.x, self.y = self.rules[0].x, self.rules[0].y
         log_infos_rules = ''
         for rule in self.rules:
             log_infos_rules += rule.log_info + ' & '
@@ -322,14 +319,9 @@ class AndCombineRules(StopRule):
             self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
         return triggered
     
-    def best_iterate(self):
-        if not self.triggered:
-            self.log.warning("The combined stopping rule has not triggered yet, so no best iterate is available!")
-            return None
-        return self.rules[0].best_iterate()
 
 class CountIterations(StopRule):
-    """Stopping rule based on number of iterations.
+    r"""Stopping rule based on number of iterations.
 
     Each call to :attr:`stop` increments the iteration count by 1.
 
@@ -374,7 +366,7 @@ class CountIterations(StopRule):
 ######### StopRules for determining regularization parameters or for regularization by early stopping #########
 
 class Discrepancy(StopRule):
-    """Morozov's discrepancy principle.
+    r"""Morozov's discrepancy principle.
 
     Stops at the first iterate at which the residual is smaller than a
     pre-determined multiple of the noise level::
@@ -478,7 +470,7 @@ class Discrepancy(StopRule):
         return rel < self.tau
 
 class LCurve(StopRule):
-    """L Curve method.
+    r"""L Curve method.
 
     Computes ||x|| and ||y-data|| for all available parameters
     and returns as best iterate that x where the curve (||x||,||y-data||) 
@@ -545,7 +537,7 @@ class LCurve(StopRule):
         return self.recos[self.best_stopping_index()]
 
 class QuasiOpt(StopRule):
-    """Quasi-optimality principle.
+    r"""Quasi-optimality principle.
 
     Computes x for all available parameters
     and returns as best iterate that x_{k+1} where the ||x_{k+1} - x_{k}|| 
@@ -600,7 +592,7 @@ class QuasiOpt(StopRule):
         return self.recos[self.best_stopping_index()]
 
 class Oracle(StopRule):
-    """Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
+    r"""Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
     Useful for testing purposes and monitoring when the exact solution is known.
 
 
@@ -653,7 +645,7 @@ class Oracle(StopRule):
 ########## General StopRules based on relative change of data or solution ##########
 
 class RelativeChangeData(StopRule):
-    """Stops if the relative change in the residual becomes small
+    r"""Stops if the relative change in the residual becomes small
 
     Stops at the first iterate at which the difference between the old residual
     and the new residual is smaller than a pre-determined tol::
@@ -686,7 +678,7 @@ class RelativeChangeData(StopRule):
     def _complete_init_with_solver(self, solver):
         if self.norm is None:
             self.norm = solver.op.codomain.norm
-        return super()._complete_init_with_solver(solver)   
+        super()._complete_init_with_solver(solver)   
 
     def reset(self):
         super().reset()
@@ -715,7 +707,7 @@ class RelativeChangeData(StopRule):
 
 
 class RelativeChangeSol(StopRule):
-    """Stops if the relative change in the solution space becomes small
+    r"""Stops if the relative change in the solution space becomes small
 
     Stops at the first iterate at which the difference between the old estimate
     and the new estimate is smaller than a pre-determined tol::
@@ -747,7 +739,7 @@ class RelativeChangeSol(StopRule):
     def _complete_init_with_solver(self, solver):
         if self.norm is None:
             self.norm = solver.op.domain.norm
-        return super()._complete_init_with_solver(solver)   
+        super()._complete_init_with_solver(solver)   
 
     def __repr__(self):
         return 'RelativeChangeSol(tol={})'.format(
@@ -776,7 +768,7 @@ class RelativeChangeSol(StopRule):
 
 class OptimalityCondStopping(StopRule):
     def __init__(self, logging_level = "INFO",tol = 0.):
-        """Stopping rule based on optimality condition violation.
+        r"""Stopping rule based on optimality condition violation.
         
         Parameters
         ----------
@@ -798,7 +790,7 @@ class OptimalityCondStopping(StopRule):
     def _complete_init_with_solver(self, solver):
         if not solver.setting.is_tikhonov and  solver.setting.is_convex:
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
-        return super()._complete_init_with_solver(solver)
+        super()._complete_init_with_solver(solver)
 
     def _stop(self):
         primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
@@ -815,7 +807,7 @@ class OptimalityCondStopping(StopRule):
         return stop 
     
 class DualityGapStopping(StopRule):
-    """Stopping rule based on duality gap.
+    r"""Stopping rule based on duality gap.
 
     Parameters
     ----------
@@ -837,7 +829,7 @@ class DualityGapStopping(StopRule):
     def _complete_init_with_solver(self, solver):
         if not solver.setting.is_tikhonov and  solver.setting.is_convex:
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
-        return super()._complete_init_with_solver(solver)
+        super()._complete_init_with_solver(solver)
 
     def _stop(self):
         primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None

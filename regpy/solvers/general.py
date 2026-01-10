@@ -139,8 +139,7 @@ class Solver:
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=NoneRule()):
-        r"""Run the solver with the given stopping rule. This method simply runs the generator
-        `regpy.solvers.Solver.while_` and returns the final `(x, y)` pair.
+        r"""Run the solver with the given stopping rule. 
         """
         for x, y in self.while_(stoprule):
             if not 'x' in locals(): 
@@ -148,7 +147,7 @@ class Solver:
                 x = self.x
                 y = self.y
         if stoprule.best_iterate() is None:
-            self.log.info(f"Could not find a bet iterate with stop rule {stoprule}!")
+            self.log.info(f"Could not find a best iterate with stop rule {stoprule}!")
             return self.x, self.y
         return stoprule.best_iterate()
     

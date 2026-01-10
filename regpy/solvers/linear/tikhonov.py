@@ -29,25 +29,30 @@ class TikhonovCG(RegSolver):
     Parameters
     ----------
     setting : regpy.solvers.Setting
-        The setting of the forward problem.
+        The setting of the forward problem. Must have quadratic penalty and data fidelity terms. 
     data : setting.op.codomain, optional
         The measured data. Default None means that the data from setting is used.
-    regpar : float, optional
-        The regularization parameter. Must be positive. If None, then setting must be a Tikhonov. 
-    xref: setting.op.domain, optional
-        Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: setting.op.domain  [default: None]
-        Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
-    tol : float, default: None
+    regpar : float|None, optional
+        The regularization parameter. Must a positive of None. 
+        If None, then the regularization parameter is taken from the setting, which must be Tikhonov. 
+    xref: setting.op.domain  or None, optional
+        Reference value in the Tikhonov functional. If None, it is taken from the setting. 
+    update_setting: bool, optional
+        Flag wheather or not values for data, regpar, and xref that are provided explicitly should be updated in the setting.
+        If the setting does not have a regularization parameter, no regularization parameter will be set in the setting. 
+        Defaults to True.
+    x0: setting.op.domain or None, optional
+        Starting value of the CG iteration. If None (default), setting.op.domain.zeros() is used as starting value. 
+    tol : float or None, default: None
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is noiselevel/2*sqrt(regpar)
-    reltolx: float, default: 10/sqrt(regpar)
+    reltolx: float or None, default: 1e-2
         Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
         The motivation for the default value is similar to that given for tol, assuming a reasonable 
         signal-to-noise ratio for the Tikhonov minimizer. 
-    reltoly: float, default: None
+    reltoly: float or None, default: None
         Relative tolerance in codomain.
     all_tol_criteria: bool (default: True)
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
@@ -57,7 +62,133 @@ class TikhonovCG(RegSolver):
     preconditioner : Preconditioner such that the iteration is done on 
         :math:`\Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2`
         The iterates (self.x) still solve the original equation without preconditioner.
+    x_exact: setting.op.domain or None, optional
+    y_exact: setting.op.codomain or None, optional
+        These parameters are intended for monitoring convergence of the CG iteration and the performance of the stopping rules. 
+        If not None (default), they should be (an approximation of) the exact minimizer of the Tikhonov functional and its image 
+        under setting.op. In this case, the internal stopping rules track the errors in the domain and/or codomain.
     """
+    from regpy.stoprules import StopRule
+    class KappaTrackAndMinIt(StopRule):
+        """Stopping rule which tracks the value of kappa and ensures a minimum number of iterations 
+         if a Krylov basis must be computed."""
+        def __init__(self,min_it=0,logging_level="INFO"):
+            super().__init__(logging_level)        
+            self.history_dict["kappa"] = []
+            self.min_it = min_it
+            self.it = 0
+
+        def __repr__(self):
+            return 'KappaTrackAndMinIt({})'.format(self.min_it)
+
+        def _stop(self):
+            kappa = self.solver.kappa
+            self.history_dict["kappa"].append(kappa)
+            self.log_info = 'kappa:{:1.1e}'.format(kappa)
+            self.it+=1
+            return (self.it>=self.min_it)
+
+    class RelTolXStop(StopRule):
+        """Stopping rule based on relative error in the domain of the operator."""
+        def __init__(self, tol:float = 0.,logging_level="INFO",x_exact=None):
+            super().__init__(logging_level)
+            self.x_exact= x_exact
+            self.tol, self.tolexpr = tol,  tol/(1.+tol)
+            self.history_dict["rel_err_x"] = []
+            if x_exact is not None:
+                self.history_dict["rel_err_x_true"] = []
+
+        def __repr__(self):
+            return 'RelTolXStop({})'.format(self.tol)
+        
+        def _complete_init_with_solver(self, solver):
+            super()._complete_init_with_solver(solver)
+            self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+            self.x0 = None if self.sq_norm_x == 0. else self.solver.x.copy()
+
+        def _stop(self):     
+            if self.x0 is None:
+                self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+            else:
+                self.sq_norm_x = self.solver.h_domain.norm(self.solver.x-self.x0)**2
+
+            if self.sq_norm_x == 0.:
+                valx = 2*self.tolexpr
+                self.log_info = 'rel X:--(x=0)!'
+            else:
+                valx = sqrt(self.solver.sq_norm_res / self.sq_norm_x / self.solver.kappa) / self.solver.regpar
+                self.log_info = 'rel X:{:1.1e}>={:1.1e} '.format(valx,self.tolexpr)
+            self.history_dict["rel_err_x"].append(valx)
+            if self.x_exact is not None:
+                self.history_dict["rel_err_x_true"].append(self.solver.setting.h_domain.norm(self.x_exact-self.solver.x)/np.sqrt(self.sq_norm_x))
+            return valx < self.tolexpr
+                         
+    class RelTolYStop(StopRule):
+        """Stopping rule based on relative error in the domain of the operator.
+        """        
+        def __init__(self, tol:float = 0.,logging_level="INFO",y_exact=None):
+            super().__init__(logging_level)
+            self.tol, self.tolexpr = tol,  tol/(1.+tol)
+            self.y_exact = y_exact
+            self.history_dict["rel_err_y"] = []
+            if y_exact is not None:
+                self.history_dict["rel_err_y_true"] = []
+            self.first_step=True
+
+        def __repr__(self):
+            return 'RelTolYStop({})'.format(self.tol)
+
+        def _complete_init_with_solver(self, solver):
+            super()._complete_init_with_solver(solver)
+            self.g_y = self.solver.hessS(self.solver.y)
+            self.norm_y = self.solver.op.codomain.vdot(self.solver.y,self.g_y)
+            if self.norm_y!=0:
+                self.y0 = self.solver.y
+                self.g_y0 = self.g_y
+            else:
+                self.g_y0 = None
+        
+        def _stop(self):
+            if self.first_step:
+                self.first_step = False
+            else:
+                self.g_y += self.solver.stepsize * self.solver.g_Tdir
+                if self.g_y0 is None:
+                    self.norm_y = self.solver.op.codomain.vdot(self.g_y, self.solver.y).real
+                else: 
+                    self.norm_y = self.solver.op.codomain.vdot(self.g_y-self.g_y0, self.solver.y-self.y0).real
+            if self.norm_y==0:
+                valy = 2*self.tolexpr
+                self.log_info="rel Y:--(y=0) "    
+            else:
+                valy = sqrt(self.solver.sq_norm_res / self.norm_y / self.solver.kappa / self.solver.regpar)
+                self.log_info="rel Y:{:1.1e}>={:1.1e} ".format(valy,self.tolexpr)                
+            self.history_dict["rel_err_y"].append(valy)
+            if self.y_exact is not None:
+                self.history_dict["rel_err_y_true"].append(self.solver.setting.h_codomain.norm(self.y_exact-self.solver.y)/self.norm_y)
+            return  valy < self.tolexpr     
+
+    class TolStop(StopRule):
+        """Stopping rule based on absolute tolerance
+        """
+        def __init__(self, tol:float = 0.,logging_level="INFO",x_exact=None):
+            super().__init__(logging_level)
+            self.tol=tol
+            self.x_exact = x_exact
+            self.history_dict["abs_err"] = []
+            if self.x_exact is not None:
+                self.history_dict["abs_err_true"] = []
+
+        def __repr__(self):
+            return 'TolStop({})'.format(self.tol)
+
+        def _stop(self):
+            val = sqrt(self.solver.sq_norm_res / self.solver.kappa)/ self.solver.regpar  
+            self.history_dict["abs_err"].append(val)
+            if self.x_exact is not None:
+                self.history_dict["abs_err_true"].append(self.solver.setting.h_domain.norm(self.x_exact-self.solver.x))
+            self.log_info="abs X:{:1.1e}>={:1.1e}".format(val,self.tol)
+            return val<self.tol
 
     def __init__(
                 self, setting:Setting, 
@@ -65,29 +196,35 @@ class TikhonovCG(RegSolver):
                 regpar:float|None=None, 
                 xref=None, 
                 x0 =None, 
-                tol:float|None=None, reltolx:float|None=None, reltoly:float|None=None, 
+                tol:float|None=None, reltolx:float|None=1e-2, reltoly:float|None=None, 
                 all_tol_criteria:bool = True,
+                max_it:int = 1000,
                 krylov_basis:list|None=None, 
                 preconditioner:Operator|None=None,
                 logging_level:str = "INFO",
-                update_setting:bool = True
+                update_setting:bool = True,
+                x_exact= None, 
+                y_exact= None
                 ):
         super().__init__(setting)
+        self.tol, self.reltolx, self.reltoly = tol, reltolx, reltoly
+        self.all_tol_criteria, self.max_it, self.logging_level = all_tol_criteria, max_it, logging_level
         out,par = self.check_applicability(setting)
         if not out['applicable']:
             raise ValueError(Errors.not_applicable_solver("TikhonovCG",out['info']))
         self.log.setLevel(logging_level)
-        self.x0 =   setting.get_or_update_initial_guess(x0, update_setting)
+        self.x =   setting.get_or_update_initial_guess(x0, update_setting)
         """The zero-th CG iterate."""
         setting.get_or_update_data(data, update_setting)
    
         if regpar is not None and not (isinstance(regpar,(float,int)) and regpar >0):
             raise ValueError(Errors.value_error("The regularization parameter must be None or positive!",obj=regpar))
         if regpar is not None:  
-            if setting.is_tikhonov and regpar !=  par['regpar']:
-                self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar:.2e}!")
-                setting.regpar = regpar
-                self.regpar = regpar 
+            self.regpar = regpar 
+            if update_setting:
+                if setting.is_tikhonov and regpar !=  par['regpar']:
+                    self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar:.2e}!")
+                    setting.regpar = regpar   
         else:
             if setting.is_tikhonov:
                 regpar = par['regpar']
@@ -96,39 +233,15 @@ class TikhonovCG(RegSolver):
         self.regpar = regpar
         """The regularization parameter."""
 
-        self.hessR = self.penalty.hessian(self.x0)        
+        self.hessR = self.penalty.hessian(self.x)        
         if xref is not None:
             self.log.warning("Providing xref as an argument to the CG solver is deprecated. Please provide it via the setting. Results may not be consistent!")
         else:
             xref = -self.hessR.inverse(self.penalty.subgradient(self.op.domain.zeros()))
-
-        self.tol = tol
-        """The absolute tolerance in the domain."""
-        self.reltolx = reltolx
-        """The relative tolerance in the domain."""
-        self.reltoly = reltoly
-        """The relative tolerance in the codomain."""
-        if tol is None  and reltolx is None and reltoly is None:
-            self.reltolx = 10./sqrt(regpar)
-
-        self.x = self.x0.copy()
-        """The current iterate."""
         self.y = self.op(self.x)
         """The image of the current iterate under the operator."""
         self.hessS = self.data_fid.hessian(self.y)
         data = -self.hessS.inverse(self.data_fid.subgradient(self.op.codomain.zeros()))
-
-        if self.reltolx is not None:
-            self.sq_norm_x = 0
-        if self.reltoly is not None:
-            self.g_y = self.hessS(self.y)
-            self.norm_y = self.op.codomain.vdot(self.y,self.g_y)
-            if self.norm_y==0:
-                self.log.warning("The initial guess is mapped to zero by the operator, relative tolerance in codomain cannot be used!")
-                self.norm_y=1
-            if self.x0 is not None:
-                self.y0 = self.y
-                self.g_y0 = self.g_y
 
         if preconditioner is None:
             self.preconditioner = Identity (self.h_domain.vecsp)
@@ -158,11 +271,13 @@ class TikhonovCG(RegSolver):
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
         Used for error estimation."""
-        self.all_tol_criteria = all_tol_criteria
-        if self.all_tol_criteria:
-            self.isconverged = {'tol': self.tol is None, 'reltolx': self.reltolx is None, 'reltoly': self.reltoly is None}
-        else:
-            self.isconverged = {'tol': self.tol is not None, 'reltolx': self.reltolx is not None, 'reltoly': self.reltoly is not None}
+
+        if x_exact is not None and x_exact not in setting.op.domain:
+            raise TypeError(Errors.type_error("x_exact must be None or in op.domain.",x_exact))
+        self.x_exact = x_exact    
+        if y_exact is not None and y_exact not in setting.op.codomain:
+            raise TypeError(Errors.type_error("y_exact must be None or in op.codomain.",y_exact))
+        self.y_exact = y_exact    
 
         self.krylov_basis=krylov_basis
         if self.krylov_basis is not None: 
@@ -170,31 +285,18 @@ class TikhonovCG(RegSolver):
             self.krylov_basis[self.iteration_number, :] = res / sqrt(self.sq_norm_res)
         """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
-
     def _next(self):
         Tdir = self.op(self.dir)
-        g_Tdir = self.hessS(Tdir)
-        alpha_pre = (self.op.codomain.vdot(g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.g_dir, self.dir)).real
+        self.g_Tdir = self.hessS(Tdir)
+        alpha_pre = (self.op.codomain.vdot(self.g_Tdir, Tdir) + self.regpar * self.op.domain.vdot(self.g_dir, self.dir)).real
         if alpha_pre == 0:
             raise RuntimeError(f"The update scaling failed it would be nan in iteration {self.iteration_step_nr}.")
-        stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
+        self.stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
-        self.x += stepsize * self.dir
-        if self.reltolx is not None:
-            if self.x0 is None:
-                self.sq_norm_x = self.h_domain.inner(self.x,self.x)
-            else:
-                self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
+        self.x += self.stepsize * self.dir
+        self.y += self.stepsize * Tdir
 
-        self.y += stepsize * Tdir
-        if self.reltoly is not None:
-            self.g_y += stepsize * g_Tdir
-            if self.x0 is None:
-                self.norm_y = self.op.codomain.vdot(self.g_y, self.y).real
-            else: 
-                self.norm_y = self.op.codomain.vdot(self.g_y-self.g_y0, self.y-self.y0).real
-
-        self.g_res -= stepsize * self.preconditioner.adjoint(self.op.adjoint(g_Tdir)+self.regpar*self.g_dir)
+        self.g_res -= self.stepsize * self.preconditioner.adjoint(self.op.adjoint(self.g_Tdir)+self.regpar*self.g_dir)
         res = self.hessR.inverse(self.g_res)
 
         sq_norm_res_old = self.sq_norm_res
@@ -208,44 +310,6 @@ class TikhonovCG(RegSolver):
 
         self.kappa = 1 + beta * self.kappa
 
-        if self.krylov_basis is None or self.iteration_number > self.krylov_basis.shape[0]:
-            """If Krylov subspace basis is computed, then stop the iteration only if the number of iterations exceeds the order of the Krylov space"""
-            
-            tol_report = 'it.{} kappa={} err/Tol '.format(self.iteration_step_nr,self.kappa)
-            if self.reltolx is not None:
-                valx = sqrt(self.sq_norm_res / self.sq_norm_x / self.kappa) / self.regpar
-                tol_report = tol_report+'rel X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
-                if valx < self.reltolx / (1 + self.reltolx):
-                    self.isconverged['reltolx'] = True
-                else:
-                    self.isconverged['reltolx'] = False
-
-            if self.reltoly is not None:
-                valy = sqrt(self.sq_norm_res / self.norm_y / self.kappa / self.regpar)
-                tol_report = tol_report+"rel Y:{:1.1e}/{:1.1e} ".format(valy,self.reltoly / (1 + self.reltoly))
-                if valy < self.reltoly / (1 + self.reltoly):
-                    self.isconverged['reltoly'] = True
-                else:
-                    self.isconverged['reltoly'] = False    
-
-            if self.tol is not None:
-                val = sqrt(self.sq_norm_res / self.kappa)/ self.regpar  
-                tol_report = tol_report+"abs X: {:1.1e}/{:1.1e}".format(val,self.tol)
-                if val < self.tol:
-                   self.isconverged['tol'] = True
-                else:
-                    self.isconverged['tol'] = False
-
-            if self.all_tol_criteria:
-                converged = self.isconverged['tol'] and self.isconverged['reltolx'] and self.isconverged['reltoly']
-            else:
-                converged = self.isconverged['tol'] or self.isconverged['reltolx'] or self.isconverged['reltoly']
-            if converged:
-                self.log.info(tol_report)
-                return self.converge()
-            else:
-                self.log.debug(tol_report)
-
         self.dir *= beta
         self.dir += self.preconditioner(res)
         if(isinstance(self.preconditioner,Identity)):
@@ -253,7 +317,53 @@ class TikhonovCG(RegSolver):
             self.g_dir += self.g_res
         else:
             self.g_dir=self.hessR(self.dir)
-    
+
+    def get_stoprule(self,other_stuprule=None):
+        """ Constructs the internal StopRule defined by the parameters of the constructor
+        """
+        from regpy.stoprules import AndCombineRules,CombineRules, CountIterations             
+        stoprule_list = []
+        if self.tol is not None:
+            self.tol_stop = TikhonovCG.TolStop(self.tol,logging_level=self.logging_level,x_exact= self.x_exact)
+            stoprule_list.append(self.tol_stop)
+        if self.reltolx is not None:
+            self.reltolx_stop = TikhonovCG.RelTolXStop(self.reltolx,logging_level=self.logging_level,x_exact= self.x_exact)
+            stoprule_list.append(self.reltolx_stop)
+        if self.reltoly is not None:
+            self.reltoly_stop = TikhonovCG.RelTolYStop(self.reltoly,logging_level=self.logging_level,y_exact= self.y_exact)
+            stoprule_list.append(self.reltoly_stop)
+        if self.tol is None  and self.reltolx is None and self.reltoly is None:
+            self.reltolx_stop = TikhonovCG.RelTolXStop(10./sqrt(self.regpar),logging_level=self.logging_level)
+            stoprule_list.append(self.reltolx_stop)
+        combined_rule = AndCombineRules(stoprule_list) if self.all_tol_criteria else CombineRules(stoprule_list)
+        self.kappa_track = TikhonovCG.KappaTrackAndMinIt(self.krylov_basis.shape[0] if self.krylov_basis else 0, 
+                                                    logging_level= self.logging_level)
+        return CountIterations(self.max_it) + (combined_rule & self.kappa_track) + other_stuprule if other_stuprule else \
+               CountIterations(self.max_it) + (combined_rule & self.kappa_track) 
+
+    def run(self, stoprule=None):
+        """ Runs the method with the stoprule specified by the parameters of the constructor.
+
+        Parameters:
+        stoprule: StopRule, optional
+            Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
+        """
+        self.stoprule = self.get_stoprule(other_stuprule=stoprule)
+        return super().run(stoprule=self.stoprule)
+        
+    def get_convergence_histories(self):
+        """ Yields the stoprule specified by the parameters of the constructor
+        """
+        hist = self.kappa_track.history_dict.copy()
+        if hasattr(self,'tol_stop'):
+            hist.update(self.tol_stop.history_dict)
+        if hasattr(self,'reltolx_stop'):
+            hist.update(self.reltolx_stop.history_dict)
+        if hasattr(self,'reltoly_stop'):
+            hist.update(self.reltoly_stop.history_dict)
+        return hist
+
+
     def primal(self):
         return (self.x,self.y)
 
@@ -381,6 +491,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     """
     def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
                  delta=None,tol_fac=0.5, logging_level= "INFO"):
+        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
@@ -574,24 +685,6 @@ class TikhonovCGOnlyDomain(RegSolver):
             self.krylov_basis[self.iteration_number, :] = res / self.op.domain.norm(res)
         """In every iteration step of the Tikhonov solver a new orthonormal vector is computed"""
 
-        self.tol = tol
-        """The absolute tolerance in the domain."""
-        self.reltolx = reltolx
-        """The relative tolerance in the domain."""
-
-        if tol is None  and reltolx is None:
-            self.reltolx = 10./sqrt(regpar)
-
-        if self.reltolx is not None:
-            self.sq_norm_x = 0
-
-        self.all_tol_criteria = all_tol_criteria
-        if self.all_tol_criteria:
-            self.isconverged = {'tol': self.tol is None, 'reltolx': self.reltolx is None}
-        else:
-            self.isconverged = {'tol': self.tol is not None, 'reltolx': self.reltolx is not None}
-
-
     def _next(self):
         TastGTdir = self.TastT(self.preconditioner(self.dir))
         alpha_pre = (self.op.domain.vdot(TastGTdir, self.dir) + self.regpar * self.op.domain.vdot(self.penalty (self.g_dir), self.dir)).real
@@ -600,11 +693,6 @@ class TikhonovCGOnlyDomain(RegSolver):
         stepsize = self.sq_norm_res / alpha_pre  # This parameter is often called alpha. We do not use this name to avoid confusion with the regularization parameter.
 
         self.x += stepsize * self.dir
-        if self.reltolx is not None:
-            if self.x0 is None:
-                self.sq_norm_x = self.h_domain.inner(self.x,self.x)
-            else:
-                self.sq_norm_x = self.h_domain.inner(self.x-self.x0,self.x-self.x0)
 
         self.g_res -= stepsize * (self.preconditioner( TastGTdir )+ self.regpar * self.penalty (self.g_dir) )
         res = self.hessR.inverse(self.g_res)
