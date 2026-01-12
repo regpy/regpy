@@ -23,7 +23,7 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
         If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
     from regpy.vecsps import MeasureSpaceFcts, DirectSum
-    if not func.separable:
+    if not func.is_separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if isinstance(func.domain,MeasureSpaceFcts):
         dom_l = np.max(func.dom_l)
@@ -161,7 +161,7 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         False, if the test fails and True otherwise.
     """
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -236,7 +236,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
     boolean
         False, if the test fails and True otherwise.
     """
-    if (not func.separable):
+    if (not func.is_separable):
         if u is None:
             u=func.domain.randn()
         h=func.domain.randn()
@@ -282,7 +282,7 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
     boolean
         False, if the test fails and True otherwise.
     """
-    if func.separable:
+    if func.is_separable:
         u,h = sample_essential_domain(func,eps_perturbation=eps)
     else:
         if u is None:
@@ -316,7 +316,7 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
         False, if the test fails and True otherwise.
     """
     from regpy.vecsps import MeasureSpaceFcts
-    if not func.separable:
+    if not func.is_separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if u is None :
         u=sample_essential_domain(func)
@@ -340,7 +340,7 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
 
 def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-6):
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.rand()
@@ -376,7 +376,7 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         False, if the test fails and True otherwise.
     """
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -431,7 +431,7 @@ def test_functional(func,u_s=None,sample_N=5,
 
     """
     if (u_s is None):
-        if func.separable:
+        if func.is_separable:
             u_s= [None] # [sample_essential_domain(func)]
         else:
             u_s = [func.domain.randn() for _ in range(sample_N)]
@@ -454,7 +454,7 @@ def test_functional(func,u_s=None,sample_N=5,
             if {"subgradient","hessian"} <= func.methods:
                 if not test_second_derivative(func,u):
                     raise AssertionError(f"{func} failed second derivative test!"+msg)
-            if func.separable:
+            if func.is_separable:
                 try:
                     if not test_Lipschitz_convexity(func):
                         raise AssertionError(f"{func} failed Lipschitz convexity test!"+msg)
