@@ -103,6 +103,10 @@ class PDHG(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1)->tuple[dict,dict]:
         out = {'info':''}; par = {}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
         if 'proximal' not in setting.data_fid.conj.methods:

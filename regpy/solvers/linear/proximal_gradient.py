@@ -58,6 +58,10 @@ class ForwardBackwardSplitting(RegSolver):
     @staticmethod
     def check_applicability(setting, op_norm=None, op_lower_bound=0.):
         out = {'info':''}; par={}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if 'proximal' not in setting.penalty.methods:
             out['info']+='Missing prox of penalty functional. '
         if 'subgradient' not in setting.data_fid.methods:

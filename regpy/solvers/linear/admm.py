@@ -116,6 +116,10 @@ class ADMM(RegSolver):
 
     def check_applicability(setting, regularizedInverse = None,op_norm=None):
         out = {'info': ''}; par = {}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
         if not 'proximal' in setting.data_fid.methods:
