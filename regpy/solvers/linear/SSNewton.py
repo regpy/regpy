@@ -67,13 +67,12 @@ class SemiSmoothNewton(RegSolver):
         self.psi_minus = self.R.dom_l
         regpar= setting.regpar
         x0 = x0 if x0 is not None else self.op.domain.zeros()
-        if not self.x in self.op.domain:
+        if not x0 in self.op.domain:
             raise ValueError(Errors.not_in_vecsp('x0 must be in op.domain',x0))
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         y0 = self.op(x0)
-
-        quad_setting = Setting(self.op, quadTaylor(self.R.hessian(x0)),quadTaylor(self.S(y0)),regpar=regpar)
+        quad_setting = Setting(self.op, quadTaylor(self.R,x0),quadTaylor(self.S,y0),regpar=regpar)
 
         cg_pars = {'tol': 0.001/sqrt(self.regpar)}
         self.cg_pars = cg_pars
@@ -82,9 +81,12 @@ class SemiSmoothNewton(RegSolver):
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
-        self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.data)))
-        if self.xref is not None:
-            self.b += self.regpar*self.xref
+        dual_data = -self.S.subgradient(y0)
+        gramX = quad_setting.h_domain.gram  #  = self.R.hessian(self.x)
+        gramY = quad_setting.h_codomain.gram # = self.S.hessian(self.y)
+        dual_b = self.op.adjoint(dual_data-gramY(y0))
+        dual_b -= self.R.subgradient(x0) + gramX(x0)
+        self.b = gramX.inverse(dual_b)
             
         """Prepare first iteration step"""
         self.lam_plus = self.op.domain.zeros()
@@ -127,15 +129,18 @@ class SemiSmoothNewton(RegSolver):
             self.log.info('all indices active!')
         else:
             quad_setting = Setting(self.op * projection, 
-                                  Composed(quadTaylor(self.R.hessian(self.x)),projection),
-                                  quadTaylor(self.S.hessian(self.y)),
+                                  Composed(quadTaylor(self.R(self.x)),projection),
+                                  quadTaylor(self.S(self.y)),
                                   regpar=self.regpar)
             tikhcg = TikhonovCG(quad_setting, x0 = projection(self.x), logging_level=self.cg_logging_level,**self.cg_pars)
             f, _ = tikhcg.run()
             self.x[self.inactive] = f[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
-        z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
+
+        gramX = quad_setting.h_domain.gram  #  = self.R.hessian(self.x)
+        gramY = quad_setting.h_codomain.gram # = self.S.hessian(self.y)
+        z = self.regpar*gramX(self.x) + gramX.inverse(self.op.adjoint(gramY(self.y)))
         
         self.lam_plus[self.active_plus]  = self.b[self.active_plus] -z[self.active_plus]
         self.lam_minus[self.active_minus]=-self.b[self.active_minus]+z[self.active_minus]
@@ -158,6 +163,10 @@ class SemiSmoothNewton(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None):
         out = {'info':''}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter.'
+        if not setting.is_convex:
+            out['info'] += 'Setting has not convex.'    
         if not 'hessian' in setting.data_fid.methods:
             out['info'] += 'Data functional not twice differentiable. '
         elif setting.data_fid.convexity_param==0.:

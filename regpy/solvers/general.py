@@ -356,15 +356,19 @@ class Setting:
                 self.log.warning("Existing data in data fidelity functional is overwritten.")
             self.data_fid=self.data_fid.as_data_func(new_data)
             self._data=new_data
-            self._set_flags()
 
-    def _set_flags(self):
-        self.is_tikhonov=(self.regpar is not None)
+    @property
+    def is_tikhonov(self):
         """True if a regularization parameter is set"""
-        self.is_convex=self.op.linear and self.penalty.convex and self.data_fid.convex
-        """True if the operator is linear"""
-        self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
+        return self.regpar is not None
+    @property
+    def is_convex(self):
+        """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
+        return self.op.linear and self.penalty.convex and self.data_fid.convex
+    @property
+    def is_hilbert(self):
         """True if penalty and data fidelity are both squared norms"""
+        return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
 
     @property
     def regpar(self):
@@ -379,7 +383,6 @@ class Setting:
                 raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
             new_regpar = float(new_regpar)
         self._regpar=new_regpar
-        self._set_flags()
 
     ######General convenience methods
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):

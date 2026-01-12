@@ -348,12 +348,14 @@ class Functional:
 
     log = util.ClassLogger()
 
-    def __init__(self, domain, h_domain=None, 
-                 linear = False,
-                 convexity_param=0.,
-                 Lipschitz = inf,
-                 separable = False,
-                 convex = True,
+    def __init__(self, 
+                 domain:VectorSpaceBase, 
+                 h_domain:HilbertSpace|None=None, 
+                 linear:bool = False,
+                 convexity_param:float=0.,
+                 Lipschitz:float = inf,
+                 separable:bool = False,
+                 convex:bool = True,
                  dom_l=None, dom_u=None,conj_dom_l=None,conj_dom_u=None,
                  methods:set[str]|None = set(), conj_methods:set[str]|None = set(),
                  is_data_func = False
@@ -963,11 +965,33 @@ class SquaredNorm(Functional):
     """
 
     def __init__(self, h_space, a:float=1., b=None,c:float=0.,shift=None, data = None):
+        from regpy.operators import PtwMultiplication, Identity
+        from regpy.operators.base import LinearCombination as LinComb 
+        if  isinstance(h_space.gram, (PtwMultiplication,Identity)):
+            separable = True
+        elif isinstance(h_space.gram,LinComb):
+            separable = (len(h_space.gram.ops)==1 and isinstance(h_space.gram.ops[0],(PtwMultiplication,Identity)))
+        else:
+            separable = False
+        if separable:
+            if a>0:
+                conj_dom_l = -np.inf
+                conj_dom_u = np.inf
+            elif a==0:
+                conj_dom_l = h_space.gram(b)
+                conj_dom_u = conj_dom_l
+            else:
+                conj_dom_l = None
+                conj_dom_u = None            
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         linear = (a==0 and shift is None and c==0),
                         convex = (a>=0),
                         convexity_param = a,
                         Lipschitz = a, 
+                        separable = separable,
+                        dom_l = -np.inf if separable else None,
+                        dom_u = np.inf if separable else None,
+                        conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
                         methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
                         conj_methods= {'eval','subgradient','hessian','proximal','dist_subdiff'}
                         )
