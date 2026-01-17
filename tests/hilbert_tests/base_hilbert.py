@@ -35,8 +35,22 @@ def call_safe(obj, method_name, *args, **kwargs):
 def check_parallelogram_identity(h_space, rel = 1e-6,tol=1e-10, u= None, v = None):
     u = h_space.vecsp.randn() if u is None else u
     v = h_space.vecsp.randn() if v is None else v
-    diff = abs(h_space.norm(u+v)**2-h_space.norm(u-v)**2-4*(h_space.inner(u,v)))
+    diff = abs(h_space.norm(u+v)**2 + h_space.norm(u-v)**2 - 2*h_space.norm(u)**2 - 2*h_space.norm(v)**2)
     assert diff == pytest.approx(0, rel = rel, abs = tol), Errors.failed_test(f"The parallelogram identity for {h_space} failed with diff = {diff}.",h_space,meth="Parallelogram Identity")
+
+
+def check_polarization_identity(h_space, rel = 1e-6,tol=1e-10, u= None, v = None):
+    u = h_space.vecsp.randn() if u is None else u
+    v = h_space.vecsp.randn() if v is None else v
+    if np.issubdtype(h_space.vecsp.dtype,np.floating) or h_space.as_real_space:
+        diff = abs(h_space.norm(u+v)**2-h_space.norm(u-v)**2-4*(h_space.inner(u,v)))
+    else:
+        diff = abs(      h_space.norm(u+v)**2 
+                   + 1j *h_space.norm(u+1j*v)**2
+                   -     h_space.norm(u-v)**2 
+                   - 1j *h_space.norm(u-1j*v)**2
+                   -4*(h_space.inner(u,v)))
+    assert diff == pytest.approx(0, rel = rel, abs = tol), Errors.failed_test(f"The polarization identity for {h_space} failed with diff = {diff}.",h_space,meth="Parallelogram Identity")
 
 def hilbert_basics(sp,test_methods = False,**kwargs):
     if not isinstance(sp,HilbertSpace):
