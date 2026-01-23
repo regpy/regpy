@@ -345,7 +345,7 @@ class TikhonovAlphaGrid(RegSolver):
         except StopIteration:
             return self.converge()
         self.alpha = alpha
-        self.error_prop = 1/np.sqrt(2*alpha)
+        self.error_prop = 1/(2*np.sqrt(alpha))
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")

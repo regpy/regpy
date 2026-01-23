@@ -604,12 +604,13 @@ class Lepskii(StopRule):
 
         Computes x for all available parameters
         and returns as best iterate x_{\bar k} where
-        \bar k =  max{ k=1,...,max_it | ||x_l - x_k|| <=  4 solver.error_prop(l) for all l<= k} 
+        \bar k =  max{ k=1,...,max_it | ||x_l - x_k|| <=  4 solver.error_prop(l)*noise_level for all l<= k} 
         
 
         Parameters
         ----------
         setting: Setting
+        noise_level: Noise level (absolute)
         solver: The solver used for computing the reconstructions x
         max_iter: int
             Maximal number of regularization parameters considered
@@ -617,10 +618,12 @@ class Lepskii(StopRule):
         def __init__(self, 
                      setting,
                      solver,
+                     noise_level,
                      max_iter:int=1000
                     ):
             from regpy.solvers import Setting
             super().__init__()
+            self.noise_level = noise_level
             self.data = setting.data
             self.norm = setting.h_codomain.norm
             self.history_dict["error_prop"] = []
@@ -645,18 +648,17 @@ class Lepskii(StopRule):
             return self.it >= self.max_iter
         
         def best_stopping_index(self):
-            k = 1
-            error_prop = self.history_dict["error_prop"]
-            norm_diff = 0
-            self.history_dict["max_change"] = []
-            while np.all(norm_diff <= 4*error_prop[:k-1]) & k<self.max_iter-1:
-                norm_diff = []
-                for x in self.recos[:k-1]:
-                    norm_diff.append(self.norm(self.recos[k] - x))
-                k +=1
-                print(norm_diff)
-                self.history_dict["max_change"].append(np.max(norm_diff))
-            return k-1 
+            bark = 1
+            while bark <= self.max_iter-1:
+                l = 0
+                while l<bark:
+                    if self.norm(self.recos[bark] - self.recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
+                        break;
+                    l +=1;
+                if l<= bark-1:
+                    break;
+                bark+=1;
+            return bark-1;
         
         def best_iterate(self):
             return self.recos[self.best_stopping_index()]
