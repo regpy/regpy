@@ -605,6 +605,8 @@ class Lepskii(StopRule):
         Computes x for all available parameters
         and returns as best iterate x_{\bar k} where
         \bar k =  max{ k=1,...,max_it | ||x_l - x_k|| <=  4 solver.error_prop(l)*noise_level for all l<= k} 
+        The function error_prop needs to be decreasing, which is typically the case if the regularization parameters are increasing
+        When selecting \bar k, the regularization parameters are hence sorted increasingly
         
 
         Parameters
@@ -648,11 +650,17 @@ class Lepskii(StopRule):
             return self.it >= self.max_iter
         
         def best_stopping_index(self):
+            # Check if regularization parameters are increasing
+            alphas = self.history_dict["alphas"]
+            idx = np.argsort(alphas)
+            self.history_dict["error_prop"] = [self.history_dict["error_prop"][i] for i in idx]
+            recos = [self.recos[i] for i in idx]
+            # Lepskii
             bark = 1
             while bark <= self.max_iter-1:
                 l = 0
                 while l<bark:
-                    if self.norm(self.recos[bark] - self.recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
+                    if self.norm(recos[bark] - recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
                         break;
                     l +=1;
                 if l<= bark-1:
