@@ -686,7 +686,8 @@ class Oracle(StopRule):
         from regpy.solvers import Setting
         super().__init__()
         self.data = setting.data
-        self.history_dict["error"] = []        
+        self.history_dict["error"] = []
+        self.history_dict["alphas"] = []
         self.recos=[]
         if not hasattr(setting,'exact_solution') and exact_solution is None:  
             raise ValueError(Errors.value_error('Oracle stopping rule needs the exact solution to be provided in the setting!'))
@@ -705,6 +706,7 @@ class Oracle(StopRule):
             raise MissingValueError     
         error = self.dist(self.solver.x)
         self.history_dict["error"].append(error)
+        self.history_dict["alphas"].append(self.solver.setting.regpar)
         self.recos.append(self.solver.x.copy())
         self.log_info = 'error {:.3e}'.format(error)
         return False
