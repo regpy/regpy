@@ -2,6 +2,7 @@ from copy import deepcopy
 from regpy.util import ClassLogger, Errors
 from typing import Callable
 import numpy as np
+import time
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping","LCurve","OptimalityCondStopping","CombineRules","AndCombineRules","NoneRule"]
 
@@ -321,6 +322,7 @@ class AndCombineRules(StopRule):
     
 
 class CountIterations(StopRule):
+    import time
     r"""Stopping rule based on number of iterations.
 
     Each call to :attr:`stop` increments the iteration count by 1.
@@ -329,9 +331,17 @@ class CountIterations(StopRule):
     ----------
     max_iterations : int
         The number of iterations after which to stop.
+    while_type :bool, optional 
+        Indicates if this StopRule is used in a while (Default: True) or an until loop.
+    measure_time: bool, optional
+        If True, the cpu time elapsed since the start of the iteration is saved for each call in self.history_dict
+
     """
 
-    def __init__(self, max_iterations, while_type = True,logging_level= "INFO"):
+    def __init__(self, max_iterations:int, 
+                 while_type:bool = True,
+                 timing:bool=False,
+                 logging_level:str= "INFO"):
         if not isinstance(max_iterations,int):
             raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
         if max_iterations<0:
@@ -340,6 +350,10 @@ class CountIterations(StopRule):
         self.max_iterations = max_iterations
         self.iteration = 0
         self.while_type = while_type
+        self.timing = timing
+        if timing: 
+            self.history_dict['time'] = []
+            self.start_time = time.process_time()
         self.log.setLevel(logging_level)
 
 
@@ -351,6 +365,8 @@ class CountIterations(StopRule):
         self.iteration = 0
 
     def _stop(self):
+        if self.timing:
+            self.history_dict['time'].append(time.process_time()-self.start_time)
         if self.while_type:
             triggered = self.iteration >= self.max_iterations
             self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)

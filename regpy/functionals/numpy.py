@@ -1892,12 +1892,12 @@ class QuadraticBilateralConstraints(LinearCombination):
     ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which functional is defined
-    lb: domain
-        lower bound
-    ub: domain
-        upper bound
-    x0: domain
-        reference value
+    lb: domain, optional
+        lower bound, default:0
+    ub: domain, optional
+        upper bound, default:1
+    x0: domain, optional
+        reference value default 0.5*(lb+ub)
     alpha: float [default: 1]
         regularization parameter
     eps: real [default: 0]
@@ -1905,7 +1905,8 @@ class QuadraticBilateralConstraints(LinearCombination):
         If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
 
-    def __init__(self,domain, lb=None, ub=None, x0=None,alpha=1.,**kwargs):
+    def __init__(self,domain:MeasureSpaceFcts, 
+                 lb=None, ub=None, x0=None,alpha:float=1.,**kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSPaceFcts isntance."))
         if isinstance(lb,(float,int)):
             lb = lb*domain.ones()
@@ -1916,7 +1917,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         if isinstance(ub,(float,int)):
             ub = ub*domain.ones()
         elif ub is None:
-            ub = domain.zeros()
+            ub = domain.ones()
         elif ub not in domain:
             raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"ub = {ub}"))
         if np.any(lb>=ub):

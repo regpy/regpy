@@ -134,9 +134,10 @@ class HmDomain(HilbertSpace):
     ----------
     vecsp : regpy.vecsps.UniformGridFcts
         Underlying grid functions.
-    mask : array-type
+    mask : array-type or None, optional
         Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
         values `{-1,0,1}` or is a boolean. Shape has to match the shape of `vecsp`.
+        Defaults to None. In this case it is set to all True.
     h : tuple or None or string, optional
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
         "normalized". (Defaults: "normalized)

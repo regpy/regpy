@@ -1282,7 +1282,7 @@ class Composition(Operator):
         match the next ones codomain. 
     """
 
-    def __init__(self, *ops):
+    def __init__(self, *ops,inverse =None):
         if not isinstance(ops[0],Operator):
             raise ValueError(util.Errors.not_instance(
                 ops[0],
@@ -1315,7 +1315,8 @@ class Composition(Operator):
                 self.d_eq_cd.append(op.domain.compatible(op.codomain))
         super().__init__(
             self.ops[-1].domain, self.ops[0].codomain,
-            linear=all(op.linear for op in self.ops))
+            linear=all(op.linear for op in self.ops),
+            inverse =inverse)
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
         if differentiate:

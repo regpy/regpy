@@ -237,11 +237,11 @@ class TikhonovCG(RegSolver):
         if xref is not None:
             self.log.warning("Providing xref as an argument to the CG solver is deprecated. Please provide it via the setting. Results may not be consistent!")
         else:
-            xref = -self.hessR.inverse(self.penalty.subgradient(self.op.domain.zeros()))
+            xref = -self.hessR.inverse(self.penalty.subgradient(self.penalty.domain.zeros()))
         self.y = self.op(self.x)
         """The image of the current iterate under the operator."""
         self.hessS = self.data_fid.hessian(self.y)
-        data = -self.hessS.inverse(self.data_fid.subgradient(self.op.codomain.zeros()))
+        data = -self.hessS.inverse(self.data_fid.subgradient(self.data_fid.domain.zeros()))
 
         if preconditioner is None:
             self.preconditioner = Identity (self.h_domain.vecsp)

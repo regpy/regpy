@@ -81,7 +81,7 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            if Tsetting.is_tikhonov:
+            if not Tsetting.is_tikhonov:
                 raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one argument the setting must contain a regularization parameter."))
             out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
             if not out['applicable']:
@@ -202,10 +202,10 @@ class SemismoothNewton_bilateral(RegSolver):
             self.x[self.inactive] = f[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
-        z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
+        self.z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
         
-        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -z[self.active_plus]
-        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+z[self.active_minus]
+        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -self.z[self.active_plus]
+        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+self.z[self.active_minus]
 
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
@@ -235,7 +235,6 @@ class SemismoothNewton_bilateral(RegSolver):
 
 def isQuadratic(func):
     r"""checks if a functional is quadratic."""
-    print("")
     if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
         return True
     elif isinstance(func,LppPower):

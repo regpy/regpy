@@ -381,7 +381,7 @@ class Setting:
     @property
     def is_convex(self):
         """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
-        return self.op.linear and self.penalty.convex and self.data_fid.convex
+        return self.op.linear and self.penalty.is_convex and self.data_fid.is_convex
     @property
     def is_hilbert(self):
         """True if penalty and data fidelity are both squared norms"""

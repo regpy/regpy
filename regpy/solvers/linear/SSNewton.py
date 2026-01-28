@@ -2,7 +2,8 @@ from math import sqrt,inf
 import numpy as np
 
 from regpy.util import Errors
-from regpy.operators import CoordinateMask 
+from regpy.operators import CoordinateMask
+from regpy.operators.base import Composition
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, SquaredNorm, Composed
 from regpy.stoprules import CountIterations
@@ -25,7 +26,7 @@ def quadTaylor(func:Functional,x):
     fx = func(x)
     h_space = GramHilbertSpace(hess)
     b=hess.inverse(grad)-x
-    c= fx-np.dot(0.5*x+b,hess(x))
+    c= fx-np.vdot(0.5*x+b,hess(x))
     return SquaredNorm(h_space,a=1.,b=b,c=c)
 
 class SemiSmoothNewton(RegSolver):
@@ -54,6 +55,7 @@ class SemiSmoothNewton(RegSolver):
 
     def __init__(self, setting,
                  cg_pars = None, logging_level = "INFO", cg_logging_level = "INFO",x0=None,
+                 psi_plus = None, psi_minus=None,
                  **kwargs
                  ):
         super().__init__(setting)
@@ -63,8 +65,14 @@ class SemiSmoothNewton(RegSolver):
             raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
         self.R = self.setting.penalty
         self.S = self.setting.data_fid
-        self.psi_plus  = self.R.dom_u
-        self.psi_minus = self.R.dom_l
+        if psi_plus is not None:
+            self.psi_plus = psi_plus
+        else:
+            self.psi_plus  = np.broadcast_to(self.R.dom_u, setting.op.domain.shape) if isinstance(self.R.dom_u,(float,int)) else self.R.dom_u
+        if psi_minus is not None:
+            self.psi_minus = psi_minus
+        else:
+            self.psi_minus = np.broadcast_to(self.R.dom_l, setting.op.domain.shape) if isinstance(self.R.dom_l,(float,int)) else self.R.dom_l
         regpar= setting.regpar
         x0 = x0 if x0 is not None else self.op.domain.zeros()
         if not x0 in self.op.domain:
@@ -85,7 +93,7 @@ class SemiSmoothNewton(RegSolver):
         gramX = quad_setting.h_domain.gram  #  = self.R.hessian(self.x)
         gramY = quad_setting.h_codomain.gram # = self.S.hessian(self.y)
         dual_b = self.op.adjoint(dual_data-gramY(y0))
-        dual_b -= self.R.subgradient(x0) + gramX(x0)
+        dual_b -= self.regpar*(self.R.subgradient(x0) + gramX(x0))
         self.b = gramX.inverse(dual_b)
             
         """Prepare first iteration step"""
@@ -95,7 +103,10 @@ class SemiSmoothNewton(RegSolver):
         tikhcg=TikhonovCG(quad_setting, x0 = x0, logging_level=self.cg_logging_level, **self.cg_pars)
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        
+        self.z = self.regpar*self.R.subgradient(self.x) 
+        self.z += self.op.adjoint(self.S.subgradient(self.y))
+        self.z = self.setting.h_domain.gram_inv(self.z)
+
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
         if not (self.active_plus).any() and not (self.active_minus).any():
@@ -108,6 +119,7 @@ class SemiSmoothNewton(RegSolver):
 
     def _next(self):
         """compute active and inactive sets, need to be computed in each step again"""
+        diff = -self.x
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         self.active  = self.active_plus | self.active_minus
@@ -128,22 +140,40 @@ class SemiSmoothNewton(RegSolver):
         if self.active.all():
             self.log.info('all indices active!')
         else:
+            full_R_taylor = quadTaylor(self.R,self.x)
+            hess_R_full = full_R_taylor.gram
+            S_taylor = quadTaylor(self.S,self.y)
+            self.hess_R_constr = Composition(projection.adjoint, hess_R_full, projection,
+                                              inverse = projection.adjoint * hess_R_full.inverse * projection)
+            h_space = GramHilbertSpace(self.hess_R_constr)
+
+            diff += self.x
+            diff -= projection.adjoint(projection(diff)) # now diff[active] = (self.x-x_old)[active]  and diff[inactive] = 0 
+            print('diff',diff, diff[self.inactive])
+
+            self.constr_R_taylor = SquaredNorm(h_space,a=1.,
+                                               b=projection.adjoint(full_R_taylor.b)
+                                               )
+
             quad_setting = Setting(self.op * projection, 
-                                  Composed(quadTaylor(self.R(self.x)),projection),
-                                  quadTaylor(self.S(self.y)),
-                                  regpar=self.regpar)
+                                  self.constr_R_taylor,
+                                  S_taylor,
+                                  regpar=self.regpar,
+                                  data = -self.op(diff)
+                                  )
             tikhcg = TikhonovCG(quad_setting, x0 = projection(self.x), logging_level=self.cg_logging_level,**self.cg_pars)
-            f, _ = tikhcg.run()
-            self.x[self.inactive] = f[self.inactive]
+            delta_x, _ = tikhcg.run()
+            self.x[self.inactive] += delta_x[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
 
-        gramX = quad_setting.h_domain.gram  #  = self.R.hessian(self.x)
-        gramY = quad_setting.h_codomain.gram # = self.S.hessian(self.y)
-        z = self.regpar*gramX(self.x) + gramX.inverse(self.op.adjoint(gramY(self.y)))
+        self.z = self.regpar*self.R.subgradient(self.x) 
+        self.z += self.op.adjoint(self.S.subgradient(self.y))
+        self.z = self.setting.h_domain.gram_inv(self.z)
+
         
-        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -z[self.active_plus]
-        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+z[self.active_minus]
+        self.lam_plus[self.active_plus]  = -self.z[self.active_plus]
+        self.lam_minus[self.active_minus]= +self.z[self.active_minus]
 
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
@@ -171,7 +201,7 @@ class SemiSmoothNewton(RegSolver):
             out['info'] += 'Data functional not twice differentiable. '
         elif setting.data_fid.convexity_param==0.:
             out['info'] += 'Data functional not strongly convex. '
-        if not setting.penalty.separable:
+        if not setting.penalty.is_separable:
             out['info'] += 'Penalty term not separable. '
         if not 'hessian' in setting.penalty.methods:
             out['info'] += 'Penalty term not twice differentiable. '
