@@ -590,6 +590,79 @@ class QuasiOpt(StopRule):
 
     def best_iterate(self):
         return self.recos[self.best_stopping_index()]
+    
+class Lepskii(StopRule):
+        """Lepskii principle.
+
+        Computes x for all available parameters
+        and returns as best iterate x_{\bar k} where
+        \bar k =  max{ k=1,...,max_it | ||x_l - x_k|| <=  4 solver.error_prop(l)*noise_level for all l<= k} 
+        The function error_prop needs to be decreasing, which is typically the case if the regularization parameters are increasing
+        When selecting \bar k, the regularization parameters are hence sorted increasingly
+        
+
+        Parameters
+        ----------
+        setting: Setting
+        noise_level: Noise level (absolute)
+        solver: The solver used for computing the reconstructions x
+        max_iter: int
+            Maximal number of regularization parameters considered
+        """
+        def __init__(self, 
+                     setting,
+                     solver,
+                     noise_level,
+                     max_iter:int=1000
+                    ):
+            from regpy.solvers import Setting
+            super().__init__()
+            self.noise_level = noise_level
+            self.data = setting.data
+            self.norm = setting.h_codomain.norm
+            self.history_dict["error_prop"] = []
+            self.history_dict["alphas"] = []
+            self.recos=[]
+            self.max_iter = max_iter
+            self.it =0
+
+        def __repr__(self):
+            return 'Lepskii'
+
+        def _stop(self):
+            self.it +=1
+            if self.solver.y is None:
+                raise MissingValueError
+            if self.solver.x is None:
+                raise MissingValueError
+            self.history_dict["alphas"].append(self.solver.alpha)
+            self.history_dict["error_prop"].append(self.solver.error_prop)
+            self.recos.append(self.solver.x.copy())
+            self.log_info = 'alpha {:.3e}'.format(self.solver.alpha)
+            return self.it >= self.max_iter
+        
+        def best_stopping_index(self):
+            # Check if regularization parameters are increasing
+            alphas = self.history_dict["alphas"]
+            idx = np.argsort(alphas)
+            self.history_dict["error_prop"] = [self.history_dict["error_prop"][i] for i in idx]
+            recos = [self.recos[i] for i in idx]
+            # Lepskii
+            bark = 1
+            while bark <= self.max_iter-1:
+                l = 0
+                while l<bark:
+                    if self.norm(recos[bark] - recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
+                        break;
+                    l +=1;
+                if l<= bark-1:
+                    break;
+                bark+=1;
+            return bark-1;
+        
+        def best_iterate(self):
+            return self.recos[self.best_stopping_index()]
+
 
 class Oracle(StopRule):
     r"""Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
@@ -613,7 +686,8 @@ class Oracle(StopRule):
         from regpy.solvers import Setting
         super().__init__()
         self.data = setting.data
-        self.history_dict["error"] = []        
+        self.history_dict["error"] = []
+        self.history_dict["alphas"] = []
         self.recos=[]
         if not hasattr(setting,'exact_solution') and exact_solution is None:  
             raise ValueError(Errors.value_error('Oracle stopping rule needs the exact solution to be provided in the setting!'))
@@ -632,6 +706,7 @@ class Oracle(StopRule):
             raise MissingValueError     
         error = self.dist(self.solver.x)
         self.history_dict["error"].append(error)
+        self.history_dict["alphas"].append(self.solver.setting.regpar)
         self.recos.append(self.solver.x.copy())
         self.log_info = 'error {:.3e}'.format(error)
         return False
