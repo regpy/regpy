@@ -20,9 +20,12 @@ authors:
 - family-names: "Aarset"
   given-names: "Christian"
   orcid: "https://orcid.org/0000-0001-8163-9305"
+- family-names: "Werner"
+  given-names: "Frank"
+  orcid: "https://orcid.org/0000-0001-8446-3587"  
 title: "RegPy: Regularization tools for inverse and ill-posed problems in Python"
 repository-code: "https://github.com/regpy/regpy"
-version: 1.0.0
-date-released: 2025-12-19
+version: 1.1.0
+date-released: 2026-01-29
 license: LGPL-3.0-only
 url: "https://num.math.uni-goettingen.de/regpy/"
