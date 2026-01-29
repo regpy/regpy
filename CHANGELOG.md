@@ -20,6 +20,32 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 ### Fixed: Bugs that were fixed
 -->
 
+## [1.1.0]
+
+### Added
+
+#### Addtions to `regpy.vecsps`
+
+- redesigned curve spaces: Different types of parameterized curves and (where applicable) also general curves can now be used interchangibly in forwarwd operators.
+
+#### New StopRules
+
+- L_curve, QuasiOpt, Lepskii, and Oracle stopping rules added
+
+#### additionas to `regpy.operators`
+
+- In Convolution operations in interpolation mode now not only complex, but also real UniformGridFct spaces can be handled.
+
+#### additions to 'regpy.solvers'
+
+- Added GeneralizedTikhonov solver as an interface to StopRules used for selecting the regularization parameter. 
+- More solvers now extract their parameters from setting; dual quardatic Tikhonov regularization works
+- Allowed initialization of Settings with exact data and implementated noise generation methods of different types in Setting.
+
+### Changed
+
+- Stooping of TikhonovCG now implemented by internal stoprule, which also do monitoring and allow general logical combinations
+
 ## [1.0.0]
 
 ### Added
