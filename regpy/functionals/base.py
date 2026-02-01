@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Callable
 from copy import copy
 from math import inf
 import logging
@@ -1739,6 +1740,8 @@ class Composed(Functional):
     op_lower_bound : float
         Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
         Used only to define self.convexity_param
+    hessian : Callable or None 
+        If not None (default), this allows to specify a user-defined hessian (e.g.,  with allowing an inversion or more efficient inversion)
     compute_op_norm : boolean
         If true the op norm will be computed using the norm method of the operator. Will only be computed if op_norm 
         is default value inf.
@@ -1751,6 +1754,7 @@ class Composed(Functional):
                  op:operators.Operator, 
                  op_norm :float= inf, 
                  op_lower_bound:float = 0, 
+                 hessian: Callable | None = None,
                  compute_op_norm:bool = False, norm_kwargs:dict = {},
                  h_domain:HilbertSpace = None,
                  methods:set[str]|None = None,conj_methods:set[str]|None=None):
@@ -1779,6 +1783,7 @@ class Composed(Functional):
                          methods = {'eval','subgradient','hessian'} if methods is None else methods,
                          conj_methods = conj_methods
                          )
+        self.user_defined_hessian = hessian
         if isinstance(func, type(self)):
             op = func.op * op
             func = func.func
@@ -1802,10 +1807,13 @@ class Composed(Functional):
         return deriv.adjoint(self.func.subgradient(y))
 
     def _hessian(self, x):
-        if self.op.linear:
-            return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
+        if self.user_defined_hessian is None:
+            if self.op.linear:
+                return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
+            else:
+                return super()._hessian(x)
         else:
-            return super()._hessian(x)
+            return self.user_defined_hessian(x)
 
     def _conj(self,x_star):
         if self.op.linear:

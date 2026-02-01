@@ -89,13 +89,6 @@ class SemiSmoothNewton(RegSolver):
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
-        dual_data = -self.S.subgradient(y0)
-        gramX = quad_setting.h_domain.gram  #  = self.R.hessian(self.x)
-        gramY = quad_setting.h_codomain.gram # = self.S.hessian(self.y)
-        dual_b = self.op.adjoint(dual_data-gramY(y0))
-        dual_b -= self.regpar*(self.R.subgradient(x0) + gramX(x0))
-        self.b = gramX.inverse(dual_b)
-            
         """Prepare first iteration step"""
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
@@ -103,9 +96,6 @@ class SemiSmoothNewton(RegSolver):
         tikhcg=TikhonovCG(quad_setting, x0 = x0, logging_level=self.cg_logging_level, **self.cg_pars)
         self.x, self.y = tikhcg.run()
         cg_its = tikhcg.iteration_step_nr
-        self.z = self.regpar*self.R.subgradient(self.x) 
-        self.z += self.op.adjoint(self.S.subgradient(self.y))
-        self.z = self.setting.h_domain.gram_inv(self.z)
 
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
@@ -118,18 +108,17 @@ class SemiSmoothNewton(RegSolver):
 
 
     def _next(self):
-        """compute active and inactive sets, need to be computed in each step again"""
-        diff = -self.x
+        """compute active and inactive sets"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         self.active  = self.active_plus | self.active_minus
         self.inactive= self.op.domain.logical_not(self.active)
 
-        # On the active sets the solution takes the values of the constraints.
+        """On the active sets the solution takes the values of the constraints."""
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
         self.x[self.active_minus]=self.psi_minus[self.active_minus]
 
-        # Lagrange parameters are 0 where the corresponding constraints are not active. 
+        """Lagrange parameters are 0 where the corresponding constraints are not active."""
         self.lam_plus[self.inactive]=0
         self.lam_plus[self.active_minus]=0
         self.lam_minus[self.inactive]=0
@@ -140,42 +129,46 @@ class SemiSmoothNewton(RegSolver):
         if self.active.all():
             self.log.info('all indices active!')
         else:
-            full_R_taylor = quadTaylor(self.R,self.x)
-            hess_R_full = full_R_taylor.gram
+            """Define quadratic Taylor approximation of the data fidelity functional at the current iterate"""
             S_taylor = quadTaylor(self.S,self.y)
-            self.hess_R_constr = Composition(projection.adjoint, hess_R_full, projection,
-                                              inverse = projection.adjoint * hess_R_full.inverse * projection)
-            h_space = GramHilbertSpace(self.hess_R_constr)
-
-            diff += self.x
-            diff -= projection.adjoint(projection(diff)) # now diff[active] = (self.x-x_old)[active]  and diff[inactive] = 0 
-            print('diff',diff, diff[self.inactive])
-
-            self.constr_R_taylor = SquaredNorm(h_space,a=1.,
-                                               b=projection.adjoint(full_R_taylor.b)
-                                               )
-
+            """... and a quadratic Taylor approximation of the full penalty functional"""
+            full_R_taylor = quadTaylor(self.R,self.x)
+            """ ... as wel as its restriction to the inactive set."""
+            hess_R_full =  full_R_taylor.gram
+            constr_R_taylor = Composed(full_R_taylor,
+                                            op = projection.adjoint,
+                                            hessian = lambda x: Composition(projection.adjoint, hess_R_full, projection,
+                                                                            inverse = projection.adjoint * hess_R_full.inverse * projection
+                                                                            )
+                                            )
+            """Define a quadratic approximation of the setting at the current iterate restricted to the inactive set, 
+               which respects the solution on the active set that we have already computed.
+               Since we assume separability of the penalty term, the solution on the active set only affects the data term.
+            """
             quad_setting = Setting(self.op * projection, 
-                                  self.constr_R_taylor,
+                                  constr_R_taylor,
                                   S_taylor,
                                   regpar=self.regpar,
-                                  data = -self.op(diff)
+                                  data = self.op(projection(self.x)-self.x)
                                   )
-            tikhcg = TikhonovCG(quad_setting, x0 = projection(self.x), logging_level=self.cg_logging_level,**self.cg_pars)
-            delta_x, _ = tikhcg.run()
-            self.x[self.inactive] += delta_x[self.inactive]
+            tikhcg = TikhonovCG(quad_setting, 
+                                x0 = projection(self.x), 
+                                logging_level=self.cg_logging_level,
+                                **self.cg_pars)
+            aux, _ = tikhcg.run()
+            self.x[self.inactive] = aux[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
 
-        self.z = self.regpar*self.R.subgradient(self.x) 
-        self.z += self.op.adjoint(self.S.subgradient(self.y))
-        self.z = self.setting.h_domain.gram_inv(self.z)
+        residual = self.regpar*self.R.subgradient(self.x) 
+        residual += self.op.adjoint(self.S.subgradient(self.y))
+        residual = self.setting.h_domain.gram_inv(residual)
 
         
-        self.lam_plus[self.active_plus]  = -self.z[self.active_plus]
-        self.lam_minus[self.active_minus]= +self.z[self.active_minus]
+        self.lam_plus[self.active_plus]  = -residual[self.active_plus]
+        self.lam_minus[self.active_minus]= +residual[self.active_minus]
 
-        #Update active and inactive sets
+        """Update active and inactive sets"""
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
         self.active_minus = (self.lam_minus-self.regpar*(self.x-self.psi_minus)) >=0
         added_ind = (self.op.domain.logical_and(self.active_plus,  self.op.domain.logical_not(self.active_plus_old ))).sum() \
