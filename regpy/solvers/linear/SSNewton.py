@@ -73,8 +73,9 @@ class SemiSmoothNewton(RegSolver):
             self.psi_minus = psi_minus
         else:
             self.psi_minus = np.broadcast_to(self.R.dom_l, setting.op.domain.shape) if isinstance(self.R.dom_l,(float,int)) else self.R.dom_l
+        self.Rpp_plus, self.Rpp_minus = self._get_second_R_derivatives_at_bound_constraints()
         regpar= setting.regpar
-        x0 = x0 if x0 is not None else self.op.domain.zeros()
+        x0 = x0 if x0 is not None else np.clip(self.op.domain.zeros(),a_min=self.psi_minus,a_max= self.psi_plus)
         if not x0 in self.op.domain:
             raise ValueError(Errors.not_in_vecsp('x0 must be in op.domain',x0))
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
@@ -160,10 +161,16 @@ class SemiSmoothNewton(RegSolver):
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
 
-        residual = self.regpar*self.R.subgradient(self.x) 
+        residual = self.regpar*self.R.subgradient(np.clip(self.x,a_max=self.psi_plus,a_min=self.psi_minus)) 
+        x_too_large = self.x>self.psi_plus
+        if np.any(x_too_large):
+            residual[x_too_large] += self.regpar * self.Rpp_plus[x_too_large]*(self.x[x_too_large]-self.psi_plus[x_too_large])
+        x_too_small = self.x<self.psi_minus
+        if np.any(x_too_small):
+            residual[x_too_small] += self.regpar * self.Rpp_minus[x_too_small]*(self.x[x_too_small]-self.psi_minus[x_too_small])
+
         residual += self.op.adjoint(self.S.subgradient(self.y))
         residual = self.setting.h_domain.gram_inv(residual)
-
         
         self.lam_plus[self.active_plus]  = -residual[self.active_plus]
         self.lam_minus[self.active_minus]= +residual[self.active_minus]
@@ -192,8 +199,8 @@ class SemiSmoothNewton(RegSolver):
             out['info'] += 'Setting has not convex.'    
         if not 'hessian' in setting.data_fid.methods:
             out['info'] += 'Data functional not twice differentiable. '
-        elif setting.data_fid.convexity_param==0.:
-            out['info'] += 'Data functional not strongly convex. '
+        elif setting.data_fid.Lipschitz==np.inf:
+            out['info'] += 'Data functional not Lipschitz continuous. '
         if not setting.penalty.is_separable:
             out['info'] += 'Penalty term not separable. '
         if not 'hessian' in setting.penalty.methods:
@@ -201,3 +208,24 @@ class SemiSmoothNewton(RegSolver):
         out['applicable'] = out['info']==''
         out['rate'] = np.nan
         return out, None
+
+    def _get_second_R_derivatives_at_bound_constraints(self):
+        """
+        Since the (separable!) penalty functional R may not be defined outside of the feasible set and SemiSmoothNewton may produce infeasible iterates 
+        for which the gradient of the penalty must be evaluated, we extend the R by a quadratic function outside of the feasible interval in each variable.
+        For the evaluation of the gradient of R, evaluations at the boundaries and knowledge of the second derivatives suffice. 
+
+        Returns: 
+        Rpp_plus, Rpp_minus:
+            Arrays of the the of the grid containing the second derivatives of the component functions of R at the upper and lower bound.  
+        """
+        ub = self.psi_plus
+        ub[ub==np.inf] = self.psi_minus[ub==np.inf]
+        ub[ub==-np.inf] = 0.
+
+        lb = self.psi_minus
+        lb[lb==-np.inf] = self.psi_plus[lb==-np.inf]
+        lb[lb==np.inf] = 0
+
+        ones = self.h_domain.vecsp.ones()
+        return self.R.hessian(ub)(ones), self.R.hessian(lb)(ones)
