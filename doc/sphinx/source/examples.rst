@@ -19,3 +19,12 @@ When downloading from ``git-hub`` repository you can find the examples listed be
    notebooks/potential_example
    notebooks/tfm
    notebooks/diffusion_coefficient
+
+..
+   volterra_main_example: Symlink
+   deconvolution_Impulsive: File
+   medium_scattering: File
+   parallel_mri: File
+   potential: File
+   tfm: Symlink
+   diffusion_coefficient: Symlink
