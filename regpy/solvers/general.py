@@ -7,7 +7,7 @@ from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
 from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
-from regpy.functionals import Functional,SquaredNorm, QuadraticLowerBound, QuadraticNonneg, QuadraticBilateralConstraints
+from regpy.functionals import Functional,SquaredNorm
 from regpy.stoprules import StopRule,NoneRule,DualityGapStopping,CombineRules,CountIterations
 import logging
 
@@ -813,7 +813,7 @@ class Setting:
     @staticmethod
     def _generate_full_solver_dictionary():
         '''This so far contains only linear solvers'''
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemiSmoothNewton,TikhonovCG
         method_dict={
                 'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
                 'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
@@ -824,8 +824,8 @@ class Setting:
                 'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
                 'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
                 'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
-                'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
-                'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+                'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
+                'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
     

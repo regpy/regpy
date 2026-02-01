@@ -65,7 +65,7 @@ class SemismoothNewton_bilateral(RegSolver):
         if len(args)==3:
             setting, data, regpar = args
             if setting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must not contain a regularization parameter"))
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three positional arguments the setting must not contain a regularization parameter"))
             if 'psi_plus' in kwargs:
                 psi_plus = kwargs['psi_plus']
             else:
@@ -82,7 +82,7 @@ class SemismoothNewton_bilateral(RegSolver):
         elif len(args)==1:
             Tsetting = args[0]
             if not Tsetting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one argument the setting must contain a regularization parameter."))
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one positional argument the setting must contain a regularization parameter."))
             out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
             if not out['applicable']:
                 raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
@@ -450,11 +450,13 @@ class SemismoothNewton_nonneg(RegSolver):
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
-        out = SemismoothNewton_bilateral(setting)
-        if np.any(setting.penalty.dom_u<inf):
-            out['info'] = '' if out['applicable'] else out['info']
-            out['applicable'] = False
-            out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
+        out = {'info':''}   
+        if not setting.data_fid.is_quadratic:
+            out['info'] += 'Data functional not quadratic. '
+        if not setting.penalty.is_quadratic:
+            out['info'] += 'Penalty term not quadratic. '
+        out['applicable'] = out['info']==''
+        out['rate'] = np.nan
         return out, None
 
     def _next(self):

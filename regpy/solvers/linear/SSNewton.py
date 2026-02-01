@@ -10,8 +10,7 @@ from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, Setting
 from .tikhonov import TikhonovCG
-__all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
-
+__all__ = ["SemiSmoothNewton"]
 
 def quadTaylor(func:Functional,x):
     """returns the quadratic Taylor polynomial of a functional at a given point as a SquaredNorm functional.
@@ -219,11 +218,11 @@ class SemiSmoothNewton(RegSolver):
         Rpp_plus, Rpp_minus:
             Arrays of the the of the grid containing the second derivatives of the component functions of R at the upper and lower bound.  
         """
-        ub = self.psi_plus
+        ub = self.psi_plus.copy()
         ub[ub==np.inf] = self.psi_minus[ub==np.inf]
         ub[ub==-np.inf] = 0.
 
-        lb = self.psi_minus
+        lb = self.psi_minus.copy()
         lb[lb==-np.inf] = self.psi_plus[lb==-np.inf]
         lb[lb==np.inf] = 0
 
