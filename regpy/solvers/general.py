@@ -7,7 +7,7 @@ from regpy.util.operator_tests import test_derivative
 from regpy.operators import Operator
 from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
-from regpy.functionals import Functional,SquaredNorm, QuadraticLowerBound, QuadraticNonneg, QuadraticBilateralConstraints
+from regpy.functionals import Functional,SquaredNorm
 from regpy.stoprules import StopRule,NoneRule,DualityGapStopping,CombineRules,CountIterations
 import logging
 
@@ -373,15 +373,19 @@ class Setting:
                 self.log.warning("Existing data in data fidelity functional is overwritten.")
             self._data_fid=self.data_fid.as_data_func(new_data)
             self._data=new_data
-            self._set_flags()
 
-    def _set_flags(self):
-        self.is_tikhonov=(self.regpar is not None)
+    @property
+    def is_tikhonov(self):
         """True if a regularization parameter is set"""
-        self.is_convex=self.op.linear and self.penalty.is_convex and self.data_fid.is_convex
-        """True if the operator is linear"""
-        self.is_hilbert=(isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm))
+        return self.regpar is not None
+    @property
+    def is_convex(self):
+        """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
+        return self.op.linear and self.penalty.is_convex and self.data_fid.is_convex
+    @property
+    def is_hilbert(self):
         """True if penalty and data fidelity are both squared norms"""
+        return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
 
     @property
     def regpar(self):
@@ -397,7 +401,6 @@ class Setting:
                 raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
             new_regpar = float(new_regpar)
         self._regpar=new_regpar
-        self._set_flags()
 
     ######General convenience methods
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
@@ -810,7 +813,7 @@ class Setting:
     @staticmethod
     def _generate_full_solver_dictionary():
         '''This so far contains only linear solvers'''
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemismoothNewton_bilateral,TikhonovCG
+        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemiSmoothNewton,TikhonovCG
         method_dict={
                 'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
                 'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
@@ -821,8 +824,8 @@ class Setting:
                 'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
                 'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
                 'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
-                'SSNewton': {'class':SemismoothNewton_bilateral, 'primal': True, 'full': 'Semismooth Newton method'},
-                'dual_SSNewton': {'class':SemismoothNewton_bilateral, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+                'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
+                'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
     

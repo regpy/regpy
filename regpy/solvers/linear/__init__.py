@@ -25,6 +25,7 @@ from .landweber import *
 from .primal_dual import *
 from .proximal_gradient import *
 from .richardson_lucy import *
+from .SSNewton import *
 from .semismoothNewton import *
 
 __all__ = []
@@ -43,6 +44,8 @@ __all__ += mod_all
 from .proximal_gradient import __all__ as mod_all
 __all__ += mod_all
 from .richardson_lucy import __all__ as mod_all
+__all__ += mod_all
+from .SSNewton import __all__ as mod_all
 __all__ += mod_all
 from .semismoothNewton import __all__ as mod_all
 __all__ += mod_all

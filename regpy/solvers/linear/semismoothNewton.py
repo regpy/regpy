@@ -65,7 +65,7 @@ class SemismoothNewton_bilateral(RegSolver):
         if len(args)==3:
             setting, data, regpar = args
             if setting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must not contain a regularization parameter"))
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three positional arguments the setting must not contain a regularization parameter"))
             if 'psi_plus' in kwargs:
                 psi_plus = kwargs['psi_plus']
             else:
@@ -81,8 +81,8 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            if Tsetting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one argument the setting must contain a regularization parameter."))
+            if not Tsetting.is_tikhonov:
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one positional argument the setting must contain a regularization parameter."))
             out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
             if not out['applicable']:
                 raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
@@ -202,10 +202,10 @@ class SemismoothNewton_bilateral(RegSolver):
             self.x[self.inactive] = f[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
-        z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
+        self.z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
         
-        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -z[self.active_plus]
-        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+z[self.active_minus]
+        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -self.z[self.active_plus]
+        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+self.z[self.active_minus]
 
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
@@ -235,7 +235,6 @@ class SemismoothNewton_bilateral(RegSolver):
 
 def isQuadratic(func):
     r"""checks if a functional is quadratic."""
-    print("")
     if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
         return True
     elif isinstance(func,LppPower):
@@ -451,11 +450,13 @@ class SemismoothNewton_nonneg(RegSolver):
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
-        out = SemismoothNewton_bilateral(setting)
-        if np.any(setting.penalty.dom_u<inf):
-            out['info'] = '' if out['applicable'] else out['info']
-            out['applicable'] = False
-            out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
+        out = {'info':''}   
+        if not setting.data_fid.is_quadratic:
+            out['info'] += 'Data functional not quadratic. '
+        if not setting.penalty.is_quadratic:
+            out['info'] += 'Penalty term not quadratic. '
+        out['applicable'] = out['info']==''
+        out['rate'] = np.nan
         return out, None
 
     def _next(self):

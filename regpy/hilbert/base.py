@@ -32,15 +32,22 @@ class HilbertSpace:
     ----------
     vecsp : regpy.vecsps.VectorSpaceBase
         The underlying vector space. Should be the domain and codomain of the Gram matrix.
-    """
+    as_real_space: bool
+        If True for a complex vector space, the vector space is interpreted as a real vector space, and a real part is taken in the inner product.
+        This can be necessary when dealing with operators mapping between real and complex spaces. 
+        This argument has no effect for real vector spaces. Default: False
+        """
 
     log = ClassLogger()
 
-    def __init__(self, vecsp:VectorSpaceBase):
+    def __init__(self, vecsp:VectorSpaceBase,as_real_space = False):
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
             raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are only defined on vector spaces defined on subsidies of the RegPy VectorSpaceBase"))
         self.vecsp = vecsp
         """The underlying vector space."""
+        if not isinstance(as_real_space,bool):
+            raise TypeError(Errors.type_error('as_real_space must be bool',as_real_space))
+        self.as_real_space = as_real_space
         self._no_pickle = {}
 
     def __deepcopy__(self, memo):
@@ -74,10 +81,8 @@ class HilbertSpace:
         """
         raise NotImplementedError
     
-    def inner(self, x, y)->float:
-        r"""Compute the inner product between to elements.
-
-        This is a convenience wrapper around `gram`.
+    def inner(self, x, y)->float|complex:
+        r"""Compute the inner product between to elements which is linear in the first and anti-linear in the second argument.
 
         Parameters
         ----------
@@ -89,7 +94,8 @@ class HilbertSpace:
         float
             The inner product.
         """
-        return (self.vecsp.vdot(x, self.gram(y))).real
+        prod =  self.vecsp.vdot(self.gram(y),x) 
+        return prod.real if self.as_real_space else prod
 
     def norm(self, x):
         r"""Compute the norm of an element.
@@ -106,7 +112,7 @@ class HilbertSpace:
         float
             The norm.
         """
-        return sqrt(self.inner(x, x))
+        return sqrt(self.inner(x, x).real)
 
     @memoized_property
     def norm_functional(self)->float:

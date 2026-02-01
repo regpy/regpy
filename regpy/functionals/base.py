@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Callable
 from copy import copy
 from math import inf
 import logging
@@ -988,22 +989,36 @@ class SquaredNorm(Functional):
     """
 
     def __init__(self, h_space, a:float=1., b=None,c:float=0.,shift=None, data = None):
+        from regpy.operators import PtwMultiplication, Identity
+        from regpy.operators.base import LinearCombination as LinComb 
+        if  isinstance(h_space.gram, (PtwMultiplication,Identity)):
+            separable = True
+        elif isinstance(h_space.gram,LinComb):
+            separable = (len(h_space.gram.ops)==1 and isinstance(h_space.gram.ops[0],(PtwMultiplication,Identity)))
+        else:
+            separable = False
+        conj_dom_l=None; conj_dom_u= None
+        if separable:
+            if a>0:
+                conj_dom_l = -np.inf
+                conj_dom_u = np.inf
+            elif a==0:
+                conj_dom_l = h_space.gram(b)
+                conj_dom_u = h_space.gram(b)        
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         is_linear = (a==0 and shift is None and c==0),
                         is_quadratic = True, conj_is_quadratic= (a>0), 
                         is_convex = (a>=0),
                         convexity_param = a,
                         Lipschitz = a, 
+                        is_separable = separable,
+                        dom_l = -np.inf if separable else None,
+                        dom_u = np.inf if separable else None,
+                        conj_dom_l = conj_dom_l, conj_dom_u = conj_dom_u,
                         methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
                         conj_methods= {'eval','subgradient','hessian','proximal','dist_subdiff'}
                         )
         if not isinstance(a,(float,int)): raise ValueError(util.Errors.not_instance(a,float,add_info="for SquaredNorm `a` has to be a scalar!"))
-        self.gram = self.h_domain.gram
-        try:
-            self.gram_inv = self.h_domain.gram_inv
-        except NotImplementedError:
-            self.gram_inv = None
-            self.log.warning("The inverse of the gram operator is not implemented. This will lead to errors in the conjugate functionals.")
         self._a=float(a)
         if shift is None:
             if b is None:
@@ -1026,7 +1041,20 @@ class SquaredNorm(Functional):
             else:
                 raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift not in domain of functional {self}.")) 
         self.data = data
-        
+
+    @property
+    def gram(self)->Operator:
+        return self.h_domain.gram
+
+    @property
+    def gram_inv(self)->Operator:
+        try:
+            gram_inv = self.h_domain.gram_inv
+        except NotImplementedError:
+            gram_inv = None
+            self.log.warning("The inverse of the gram operator of h_space is not implemented. ")
+        return gram_inv
+
     @util.memoized_property
     def a(self)->float:
         return self._a
@@ -1041,7 +1069,7 @@ class SquaredNorm(Functional):
     @util.memoized_property
     def c(self)->float:
         if self.is_data_func:
-            return self._c - self.h_domain.inner(self._b,self.data) + (self._a/2)* self.h_domain.norm(self.data)**2
+            return self._c - self.h_domain.inner(self._b,self.data).real + (self._a/2)* self.h_domain.norm(self.data)**2
         else:
             return self._c
 
@@ -1073,7 +1101,7 @@ class SquaredNorm(Functional):
         return self
 
     def _eval(self, x):
-        return (self.a/2.) * self.h_domain.inner(x,x)  + self.h_domain.inner(self.b,x) + self.c
+        return (self.a/2.) * self.h_domain.inner(x,x).real  + self.h_domain.inner(self.b,x).real + self.c
     
     def _subgradient(self, x):
         return self.gram(self.a*x+self.b)
@@ -1153,7 +1181,7 @@ class SquaredNorm(Functional):
         return SquaredNorm(self.h_domain,
                                a = self._a,
                                b = self._b-self._a*v,
-                               c = self._c - self.h_domain.inner(self._b,v) + (self._a/2)* self.h_domain.norm(v)**2,
+                               c = self._c - self.h_domain.inner(self._b,v).real + (self._a/2)* self.h_domain.norm(v)**2,
                                data=data_shift
                                )
 
@@ -1712,17 +1740,23 @@ class Composed(Functional):
     op_lower_bound : float
         Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
         Used only to define self.convexity_param
+    hessian : Callable or None 
+        If not None (default), this allows to specify a user-defined hessian (e.g.,  with allowing an inversion or more efficient inversion)
     compute_op_norm : boolean
         If true the op norm will be computed using the norm method of the operator. Will only be computed if op_norm 
         is default value inf.
     norm_kwargs : dict
         possible arguments passed to the operator norm computation.
+    h_domain: HilbertSpace or None
+        Underlying Hilbert space. Default: None. 
     """
     def __init__(self, func:Functional, 
                  op:operators.Operator, 
                  op_norm :float= inf, 
                  op_lower_bound:float = 0, 
+                 hessian: Callable | None = None,
                  compute_op_norm:bool = False, norm_kwargs:dict = {},
+                 h_domain:HilbertSpace = None,
                  methods:set[str]|None = None,conj_methods:set[str]|None=None):
         if not isinstance(func, Functional):
             raise TypeError(util.Errors.not_instance(func,Functional))
@@ -1739,6 +1773,7 @@ class Composed(Functional):
                 conj_methods = set()
 
         super().__init__(op.domain,
+                         h_domain = h_domain, 
                          is_linear = func.is_linear and  op.linear,
                          is_quadratic = func.is_quadratic and op.linear,
                          conj_is_quadratic = func.is_quadratic and op.linear  and  func.convexity_param * op_lower_bound**2>0, 
@@ -1748,6 +1783,7 @@ class Composed(Functional):
                          methods = {'eval','subgradient','hessian'} if methods is None else methods,
                          conj_methods = conj_methods
                          )
+        self.user_defined_hessian = hessian
         if isinstance(func, type(self)):
             op = func.op * op
             func = func.func
@@ -1771,10 +1807,13 @@ class Composed(Functional):
         return deriv.adjoint(self.func.subgradient(y))
 
     def _hessian(self, x):
-        if self.op.linear:
-            return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
+        if self.user_defined_hessian is None:
+            if self.op.linear:
+                return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
+            else:
+                return super()._hessian(x)
         else:
-            return super()._hessian(x)
+            return self.user_defined_hessian(x)
 
     def _conj(self,x_star):
         if self.op.linear:
