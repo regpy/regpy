@@ -132,8 +132,8 @@ class SemiSmoothNewton(RegSolver):
             """Define quadratic Taylor approximation of the data fidelity functional at the current iterate"""
             S_taylor = quadTaylor(self.S,self.y)
             """... and a quadratic Taylor approximation of the full penalty functional"""
-            full_R_taylor = quadTaylor(self.R,self.x)
-            """ ... as wel as its restriction to the inactive set."""
+            full_R_taylor = quadTaylor(self.R,self.x)            
+            """ ... as wel as its restriction to the inactive set.""" 
             hess_R_full =  full_R_taylor.gram
             constr_R_taylor = Composed(full_R_taylor,
                                             op = projection.adjoint,
@@ -150,7 +150,7 @@ class SemiSmoothNewton(RegSolver):
                                   S_taylor,
                                   regpar=self.regpar,
                                   data = self.op(projection(self.x)-self.x)
-                                  )
+                                  )         
             tikhcg = TikhonovCG(quad_setting, 
                                 x0 = projection(self.x), 
                                 logging_level=self.cg_logging_level,
@@ -160,15 +160,9 @@ class SemiSmoothNewton(RegSolver):
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
 
-        residual = self.regpar*self.R.subgradient(np.clip(self.x,a_max=self.psi_plus,a_min=self.psi_minus)) 
-        x_too_large = self.x>self.psi_plus
-        if np.any(x_too_large):
-            residual[x_too_large] += self.regpar * self.Rpp_plus[x_too_large]*(self.x[x_too_large]-self.psi_plus[x_too_large])
-        x_too_small = self.x<self.psi_minus
-        if np.any(x_too_small):
-            residual[x_too_small] += self.regpar * self.Rpp_minus[x_too_small]*(self.x[x_too_small]-self.psi_minus[x_too_small])
-
-        residual += self.op.adjoint(self.S.subgradient(self.y))
+        S_taylor.data = 0.*self.y # Has been changed by data in quad_setting!
+        residual = self.op.adjoint(S_taylor.subgradient(self.y))
+        residual += self.regpar*full_R_taylor.subgradient(self.x)
         residual = self.setting.h_domain.gram_inv(residual)
         
         self.lam_plus[self.active_plus]  = -residual[self.active_plus]
