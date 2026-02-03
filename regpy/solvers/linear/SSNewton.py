@@ -1,5 +1,6 @@
 from math import sqrt,inf
 import numpy as np
+import logging as log
 
 from regpy.util import Errors
 from regpy.operators import CoordinateMask
@@ -53,7 +54,7 @@ class SemiSmoothNewton(RegSolver):
     """
 
     def __init__(self, setting,
-                 cg_pars = None, logging_level = "INFO", cg_logging_level = "INFO",x0=None,
+                 cg_pars = None, logging_level = "INFO", cg_logging_level = "WARNING",x0=None,
                  psi_plus = None, psi_minus=None,
                  **kwargs
                  ):
@@ -93,16 +94,15 @@ class SemiSmoothNewton(RegSolver):
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
 
-        tikhcg=TikhonovCG(quad_setting, x0 = x0, logging_level=self.cg_logging_level, **self.cg_pars)
-        self.x, self.y = tikhcg.run()
-        cg_its = tikhcg.iteration_step_nr
+        self.tikhcg=TikhonovCG(quad_setting, x0 = x0, logging_level=self.cg_logging_level, **self.cg_pars)
+        self.x, self.y = self.tikhcg.run()
 
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
         if not (self.active_plus).any() and not (self.active_minus).any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
-        self.log.debug('it {}: CG its {}; changes active sets +{},-{}'.format(self.iteration_step_nr,cg_its,
+        self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(self.iteration_step_nr,self.tikhcg.iteration_step_nr,
                                                                             (1.*self.active_minus+self.active_plus).sum(),0 )
         )
 
@@ -125,7 +125,6 @@ class SemiSmoothNewton(RegSolver):
         self.lam_minus[self.active_plus]=0
 
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
-        cg_its = 0
         if self.active.all():
             self.log.info('all indices active!')
         else:
@@ -157,7 +156,6 @@ class SemiSmoothNewton(RegSolver):
                                 **self.cg_pars)
             aux, _ = tikhcg.run()
             self.x[self.inactive] = aux[self.inactive]
-            cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
 
         S_taylor.data = 0.*self.y # Has been changed by data in quad_setting!
@@ -176,7 +174,7 @@ class SemiSmoothNewton(RegSolver):
         removed_ind = (self.op.domain.logical_and(self.active_plus_old, self.op.domain.logical_not(self.active_plus))).sum() \
                 + (self.op.domain.logical_and(self.active_minus_old, self.op.domain.logical_not(self.active_minus))).sum()
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
-                                                                            cg_its,
+                                                                            tikhcg.iteration_step_nr if not self.active.all() else 0,
                                                                             added_ind, removed_ind
                                                                             )
                         )

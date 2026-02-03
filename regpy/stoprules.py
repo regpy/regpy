@@ -3,6 +3,7 @@ from regpy.util import ClassLogger, Errors
 from typing import Callable
 import numpy as np
 import time
+import logging 
 
 __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeSol","Monotonicity","DualityGapStopping","LCurve","OptimalityCondStopping","CombineRules","AndCombineRules","NoneRule"]
 
@@ -177,7 +178,7 @@ class CombineRules(StopRule):
         The rules to be combined.
     """
 
-    def __init__(self, rules:list[StopRule]):
+    def __init__(self, rules:list[StopRule],logging_level=None):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
         super().__init__()
@@ -193,6 +194,10 @@ class CombineRules(StopRule):
                 self.rules.append(rule)
             self.history_dict.update(rule.history_dict)
             rule.is_main_rule = False
+        if logging_level is None:
+            self.log.level = min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules])
+        else:
+            self.log.level = logging_level
         
         self.active_rule = None
         r"""
@@ -240,7 +245,9 @@ class CombineRules(StopRule):
             log_infos_rules += rule.log_info + ' | '
         log_infos_rules = log_infos_rules[:-3]
         if self.is_main_rule:
-            self.log.info(log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info)
+            self.log.log(logging.INFO if self.triggered else logging.DEBUG,
+                         log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info
+                         )
         else:
             self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
         return triggered
@@ -257,7 +264,7 @@ class AndCombineRules(StopRule):
         The rules to be combined.
     """
 
-    def __init__(self, rules:list[StopRule]):
+    def __init__(self, rules:list[StopRule],logging_level = None):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
             raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
         super().__init__()
@@ -273,6 +280,10 @@ class AndCombineRules(StopRule):
                 self.rules.append(rule)
             self.history_dict.update(rule.history_dict)
             rule.is_main_rule = False
+        if logging_level is None:
+            self.log.level = min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules])
+        else:
+            self.log.level = logging_level
 
     def __repr__(self):
         return 'AndCombineRules({})'.format(self.rules)
@@ -315,7 +326,9 @@ class AndCombineRules(StopRule):
             log_infos_rules += rule.log_info + ' & '
         log_infos_rules = log_infos_rules[:-3]
         if self.is_main_rule:
-            self.log.info(log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info)
+            self.log.log(logging.INFO if self.triggered else logging.DEBUG,
+                        log_infos_rules+('\n' if self.log_info != '' else '')+self.log_info
+                        )
         else:
             self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
         return triggered
@@ -376,7 +389,7 @@ class CountIterations(StopRule):
             triggered = self.iteration >= self.max_iterations
             self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
         if self.is_main_rule:
-            self.log.info(self.log_info)
+            self.log.lot(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
     
 ######### StopRules for determining regularization parameters or for regularization by early stopping #########
@@ -481,9 +494,10 @@ class Discrepancy(StopRule):
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
         self.log_info = 'discr./noiselevel = {:3.2f}< {:1.2f}'.format(rel, self.tau)
+        triggered =  rel < self.tau
         if self.is_main_rule:
-            self.log.info(self.log_info)
-        return rel < self.tau
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
+        return triggered
 
 class LCurve(StopRule):
     r"""L Curve method.
@@ -669,12 +683,12 @@ class Lepskii(StopRule):
                 l = 0
                 while l<bark:
                     if self.norm(recos[bark] - recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
-                        break;
-                    l +=1;
+                        break
+                    l +=1
                 if l<= bark-1:
-                    break;
-                bark+=1;
-            return bark-1;
+                    break
+                bark+=1
+            return bark-1
         
         def best_iterate(self):
             return self.recos[self.best_stopping_index()]
@@ -786,15 +800,16 @@ class RelativeChangeData(StopRule):
             self.data_old = self.solver.y.copy()
             self.log_info = 'First iteration, no change computed.'
             if self.is_main_rule:
-                self.log.info(self.log_info)
+                self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.y - self.data_old)
         self.data_old = self.solver.y.copy()
         self.history_dict["relative change of y"].append(change)
         self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol)
+        triggered =  change < self.tol
         if self.is_main_rule:
-            self.log.info(self.log_info)
-        return change < self.tol
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
+        return triggered
 
 
 class RelativeChangeSol(StopRule):
@@ -845,15 +860,16 @@ class RelativeChangeSol(StopRule):
             self.sol_old = self.solver.x.copy()
             self.log_info = 'First iteration, no change computed.'
             if self.is_main_rule:
-                self.log.info(self.log_info)
+                self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.x - self.sol_old)
         self.sol_old = self.solver.x.copy()
         self.history_dict["relative change of x"].append(change)
         self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol)
+        triggered = change < self.tol
         if self.is_main_rule:
-            self.log.info(self.log_info)
-        return change < self.tol
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
+        return triggered
 
 ######### StopRules for convex optimization problems #########
 
@@ -891,11 +907,11 @@ class OptimalityCondStopping(StopRule):
         dSstar,dR = self.solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
-        stop = (dSstar+dR<=self.tol)
+        triggered = (dSstar+dR<=self.tol)
         self.log_info = '{:.1e} + {:.1e} = {:.2e}  <= {:.1e}'.format(dSstar,dR,dSstar+dR,self.tol)
         if self.is_main_rule:
-            self.log.info(self.log_info)    
-        return stop 
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
+        return triggered 
     
 class DualityGapStopping(StopRule):
     r"""Stopping rule based on duality gap.
@@ -920,6 +936,7 @@ class DualityGapStopping(StopRule):
     def _complete_init_with_solver(self, solver):
         if not solver.setting.is_tikhonov and  solver.setting.is_convex:
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
+        solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
 
     def _stop(self):
@@ -929,11 +946,11 @@ class DualityGapStopping(StopRule):
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
         gap = self.solver.setting.duality_gap(primal = primal, dual = dual)
         self.history_dict["duality gap"].append(gap)
-        stop = (gap<=self.tol) or (gap == np.nan)
+        triggered = (gap<=self.tol) or (gap == np.nan)
         if gap==np.nan:
             self.log_info = 'duality gap is NaN'
         else:
             self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap,self.tol)
         if self.is_main_rule:
-            self.log.info(self.log_info)    
-        return stop 
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
+        return triggered

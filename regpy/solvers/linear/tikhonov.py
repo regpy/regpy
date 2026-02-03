@@ -336,11 +336,11 @@ class TikhonovCG(RegSolver):
         if self.tol is None  and self.reltolx is None and self.reltoly is None:
             self.reltolx_stop = TikhonovCG.RelTolXStop(10./sqrt(self.regpar),logging_level=self.logging_level)
             stoprule_list.append(self.reltolx_stop)
-        combined_rule = AndCombineRules(stoprule_list) if self.all_tol_criteria else CombineRules(stoprule_list)
+        combined_rule = AndCombineRules(stoprule_list,logging_level=self.logging_level) if self.all_tol_criteria else CombineRules(stoprule_list,logging_level=self.logging_level)
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(self.krylov_basis.shape[0] if self.krylov_basis else 0, 
                                                     logging_level= self.logging_level)
-        return CountIterations(self.max_it) + (combined_rule & self.kappa_track) + other_stuprule if other_stuprule else \
-               CountIterations(self.max_it) + (combined_rule & self.kappa_track) 
+        return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stuprule if other_stuprule else \
+               CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) 
 
     def run(self, stoprule=None):
         """ Runs the method with the stoprule specified by the parameters of the constructor.

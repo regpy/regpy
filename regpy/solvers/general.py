@@ -331,6 +331,7 @@ class Setting:
         self._primal_setting = _primal_setting
         if _primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = Setting._generate_full_solver_dictionary()
+        self.duality_gap_warning_incr = 1.
 
     @property
     def op(self):
@@ -764,8 +765,10 @@ class Setting:
         res = dat+pen+ddat+dpen
         if ares/res>1e10:
             self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-        elif ares/res>1e5:
+        elif ares/res>1e5*self.duality_gap_warning_incr:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
+            self.duality_gap_warning_incr *=10.
+
         return res
     
     def violation_optimality_cond(self,primal=None,dual=None):
@@ -965,11 +968,13 @@ class Setting:
             self.evaluate_methods(themethod) 
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting.')
+        if 'logging_level' not in kwargs: 
+            kwargs['logging_level'] = self.log.level
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(DualityGapStopping(tol = 0.1,logging_level=logging.INFO)
-                                   +CountIterations(1000,logging_level=logging.INFO),
+            self.set_stopping_rule(DualityGapStopping(tol = 0.1,logging_level=kwargs['logging_level'])
+                                   +CountIterations(1000,logging_level=kwargs['logging_level']),
                                    method_names=[method_name])
 
         
