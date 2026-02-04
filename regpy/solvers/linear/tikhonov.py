@@ -1,5 +1,6 @@
 from math import sqrt,inf
 import numpy as np
+import logging
 
 from regpy.util import Errors
 from regpy.functionals.base import SquaredNorm
@@ -202,7 +203,7 @@ class TikhonovCG(RegSolver):
                 max_it:int = 1000,
                 krylov_basis:list|None=None, 
                 preconditioner:Operator|None=None,
-                logging_level:str = "INFO",
+                logging_level:int = logging.INFO,
                 update_setting:bool = True,
                 x_exact= None, 
                 y_exact= None
@@ -319,7 +320,7 @@ class TikhonovCG(RegSolver):
         else:
             self.g_dir=self.hessR(self.dir)
 
-    def get_stoprule(self,other_stuprule=None):
+    def get_stoprule(self,other_stoprule=None):
         """ Constructs the internal StopRule defined by the parameters of the constructor
         """
         from regpy.stoprules import AndCombineRules,CombineRules, CountIterations             
@@ -336,10 +337,10 @@ class TikhonovCG(RegSolver):
         if self.tol is None  and self.reltolx is None and self.reltoly is None:
             self.reltolx_stop = TikhonovCG.RelTolXStop(10./sqrt(self.regpar),logging_level=self.logging_level)
             stoprule_list.append(self.reltolx_stop)
-        combined_rule = AndCombineRules(stoprule_list,logging_level=self.logging_level) if self.all_tol_criteria else CombineRules(stoprule_list,logging_level=self.logging_level)
+        combined_rule = AndCombineRules(stoprule_list,logging_level=self.logging_level) if self.all_tol_criteria else CombineRules(stoprule_list,logging_level=self.logging_level) 
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(self.krylov_basis.shape[0] if self.krylov_basis else 0, 
                                                     logging_level= self.logging_level)
-        return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stuprule if other_stuprule else \
+        return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stoprule if other_stoprule else \
                CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) 
 
     def run(self, stoprule=None):
@@ -349,7 +350,7 @@ class TikhonovCG(RegSolver):
         stoprule: StopRule, optional
             Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
         """
-        self.stoprule = self.get_stoprule(other_stuprule=stoprule)
+        self.stoprule = self.get_stoprule(other_stoprule=stoprule)
         return super().run(stoprule=self.stoprule)
         
     def get_convergence_histories(self):

@@ -195,9 +195,9 @@ class CombineRules(StopRule):
             self.history_dict.update(rule.history_dict)
             rule.is_main_rule = False
         if logging_level is None:
-            self.log.level = min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules])
+            self.log.setLevel(min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules]))
         else:
-            self.log.level = logging_level
+            self.log.setLevel(logging_level)
         
         self.active_rule = None
         r"""
@@ -280,10 +280,10 @@ class AndCombineRules(StopRule):
                 self.rules.append(rule)
             self.history_dict.update(rule.history_dict)
             rule.is_main_rule = False
-        if logging_level is None:
-            self.log.level = min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules])
+        if logging_level is None:         
+            self.log.setLevel(min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules]))
         else:
-            self.log.level = logging_level
+            self.log.setLevel(logging_level)
 
     def __repr__(self):
         return 'AndCombineRules({})'.format(self.rules)
@@ -389,7 +389,7 @@ class CountIterations(StopRule):
             triggered = self.iteration >= self.max_iterations
             self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
         if self.is_main_rule:
-            self.log.lot(logging.INFO if triggered else logging.DEBUG,self.log_info)
+            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
     
 ######### StopRules for determining regularization parameters or for regularization by early stopping #########
@@ -923,11 +923,12 @@ class DualityGapStopping(StopRule):
     logging_level : str
         The logging level for the stopping rule.
     """    
-    def __init__(self, tol = 0, logging_level = "INFO"):
+    def __init__(self, tol = 0, stop_at_infty = True, logging_level = "INFO"):
         super().__init__()
         self.tol = tol
         self.log.setLevel(logging_level)
         self.history_dict["duality gap"] = []
+        self.stop_at_infty = stop_at_infty
 
     def __repr__(self):
         return 'DualityGapStopping(tol={})'.format(
@@ -946,7 +947,7 @@ class DualityGapStopping(StopRule):
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
         gap = self.solver.setting.duality_gap(primal = primal, dual = dual)
         self.history_dict["duality gap"].append(gap)
-        triggered = (gap<=self.tol) or (gap == np.nan)
+        triggered = (gap<=self.tol) or (gap == np.nan) or (gap == np.inf and self.stop_at_infty)
         if gap==np.nan:
             self.log_info = 'duality gap is NaN'
         else:
