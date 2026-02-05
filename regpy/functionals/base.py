@@ -379,36 +379,36 @@ class Functional:
 
         if not isinstance(convexity_param, (float, np.floating,int,np.integer)) and convexity_param>=0:
             raise ValueError(f'convexity_param must be a scalar, nonnegative float. Got {convexity_param}.')
-        self.convexity_param = np.float64(convexity_param)
+        self._convexity_param = np.float64(convexity_param)
         """parameter of strong convexity of the functional."""
         if not isinstance(Lipschitz, (float, np.floating,int,np.integer)) and Lipschitz>=0:
             raise ValueError(f'Lipschitz must be a scalar, nonnegative float. Got {Lipschitz}.')
-        self.Lipschitz = np.float64(Lipschitz)
+        self._Lipschitz = np.float64(Lipschitz)
         """Lipschitz continuity constant of the gradient."""
 
         if not isinstance(is_linear,(bool, np.bool_)):
             raise TypeError(Errors.type_error('is_linear must be boolean.',is_linear))
-        self.is_linear = is_linear
+        self._is_linear = is_linear
         """boolean indicating if the functional is linear"""
         if not isinstance(is_quadratic,(bool, np.bool_)):
             raise TypeError(Errors.type_error('is_quadratic must be boolean.',is_quadratic))
-        self.is_quadratic = is_quadratic
+        self._is_quadratic = is_quadratic
         """boolean indicating if the functional is quadratic"""
         if not isinstance(conj_is_quadratic,(bool, np.bool_,type(None))):
             raise TypeError(Errors.type_error('conj_is_quadratic must be boolean or None.',conj_is_quadratic))
-        self.conj_is_quadratic = is_quadratic if conj_is_quadratic is None else conj_is_quadratic
+        self._conj_is_quadratic = is_quadratic if conj_is_quadratic is None else conj_is_quadratic
         """boolean indicating if the conjugate functional is quadratic"""
         if not isinstance(is_separable,(bool, np.bool_)):
             raise TypeError(Errors.type_error('is_separable must be boolean.',is_separable))
-        self.is_separable = is_separable
+        self._is_separable = is_separable
         """boolean indicating if the functional is separable."""
         if not isinstance(is_convex,(bool, np.bool_)):
             raise TypeError(Errors.type_error('is_convex must be boolean.',is_convex))
-        self.is_convex = is_convex
+        self._is_convex = is_convex
         """boolean indicating if the functional is convex."""
 
 
-        if self.is_separable:
+        if is_separable:
             if isinstance(dom_l,np.ndarray) and isinstance(dom_u,np.ndarray) and np.any(dom_l>dom_u):
                 raise ValueError('dom_l must be smaller or equal to dom_u.')
             if conj_dom_l is not None  and isinstance(conj_dom_l,np.ndarray) \
@@ -681,7 +681,51 @@ class Functional:
         return HorizontalShiftDilation(self,dilation=a)
 
     @property
+    def Lipschitz(self)->float:
+        """ The Lipschitz constant of the derivative of the functional.
+        """
+        return self._Lipschitz
+
+    @property
+    def convexity_param(self)->float:
+        """ The convexity parameter of the functional.
+        """
+        return self._convexity_param
+
+    @property
+    def is_convex(self)->bool:
+        """ Flag if the functional is convex.
+        """
+        return self._is_convex
+
+    @property
+    def is_linear(self)->bool:
+        """ Flag if the functional is linear.
+        """
+        return self._is_linear
+
+    @property
+    def is_quadratic(self)->bool:
+        """ Flag if the functional is quadratic.
+        """
+        return self._is_quadratic
+
+    @property
+    def conj_is_quadratic(self)->bool:
+        """ Flag if the conjugate functional is quadratic.
+        """
+        return self._conj_is_quadratic
+
+    @property
+    def is_separable(self)->bool:
+        """ Flag if the functional is separable, i.e. F(x)=\sum_i f_i(x_i)
+        """
+        return self._is_separable
+
+    @property
     def dom_l(self):
+        """For a separable functional, this is the pointwise lower boundary of the essential domain.
+        """
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore dom_l is not defined.'))
         elif isinstance(self._dom_l,(int,float,np.floating,np.integer)) and isinstance(self.domain,NumPyVectorSpace):
@@ -691,6 +735,8 @@ class Functional:
 
     @property
     def dom_u(self):
+        """For a separable functional, this is the pointwise upper boundary of the essential domain.
+        """        
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore dom_u is not defined.'))        
         elif isinstance(self._dom_l,(int,float,np.floating,np.integer)) and isinstance(self.domain,NumPyVectorSpace):
@@ -700,6 +746,8 @@ class Functional:
 
     @property
     def conj_dom_l(self):
+        """For a separable functional, this is the pointwise lower boundary of the essential domain of the conjugate functional.
+        """        
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore conj_dom_l is not defined.'))                
         elif isinstance(self._conj_dom_l,(int,float,np.floating,np.integer))  and isinstance(self.domain,NumPyVectorSpace):
@@ -709,6 +757,8 @@ class Functional:
 
     @property
     def conj_dom_u(self):
+        """For a separable functional, this is the pointwise upper boundary of the essential domain of the conjugate functional.
+        """            
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore conj_dom_u is not defined.'))                
         elif isinstance(self._conj_dom_u,(int,float,np.floating,np.integer)) and isinstance(self.domain,NumPyVectorSpace):
@@ -819,11 +869,8 @@ class Conj(Functional):
             self.log.warning("Taking conjugate of a non-convex functional. The biconjugate will not coincide with the primal functional.")
         """The underlying functional."""
         super().__init__(func.domain, h_domain = func.h_domain.dual_space(),
-                         Lipschitz = 1/func.convexity_param if func.convexity_param>0 else inf,
-                         convexity_param = 1/func.Lipschitz if func.Lipschitz>0 else inf,
                          is_separable = func.is_separable,
-                         is_convex = True,
-                         is_quadratic = func.conj_is_quadratic
+                         is_convex = True
                          )         
 
     def _eval(self,x):
@@ -866,6 +913,22 @@ class Conj(Functional):
     def methods(self):
         return self.func._conj_methods
 
+    @property
+    def Lipschitz(self)->float:
+        return 1/self.func.convexity_param if self.func.convexity_param>0 else inf,
+
+    @property
+    def convexity_param(self)->float:
+        return 1/self.func.Lipschitz if self.func.Lipschitz>0 else inf
+
+    @property
+    def is_quadratic(self):
+        return self.func.conj_is_quadratic
+    
+    @property
+    def conj_is_quadratic(self):
+        return self.func.is_quadratic
+    
     @property
     def dom_l(self):
         return self.func.conj_dom_l
@@ -1047,10 +1110,7 @@ class SquaredNorm(Functional):
             separable = False    
         super().__init__(h_space.vecsp,h_domain=h_space, 
                         is_linear = (a==0 and shift is None and c==0),
-                        is_quadratic = True, conj_is_quadratic= (a>0), 
-                        is_convex = (a>=0),
-                        convexity_param = a,
-                        Lipschitz = a, 
+                        is_quadratic = True,
                         is_separable = separable,
                         dom_l = -np.inf if separable else None,
                         dom_u = np.inf if separable else None,
@@ -1134,6 +1194,22 @@ class SquaredNorm(Functional):
             del self._data
             del self.a; del self.b; del self.c
             self.is_data_func = False
+
+    @property
+    def Lipschitz(self):
+        return np.abs(self.a)
+    
+    @property
+    def convexity_param(self):
+        return max([self.a,0])
+
+    @property
+    def is_convex(self):
+        return (self.a>=0)
+
+    @property
+    def conj_is_quadratic(self):
+        return (self.a>0) 
 
     @property
     def conj_dom_l(self):    
@@ -1357,18 +1433,7 @@ class LinearCombination(Functional):
             conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
         else: 
             conj_methods = set()
-        all_convex = all([func.is_convex for func in self.funcs])
-        all_quadratic = all([func.is_quadratic for func in self.funcs])
-        Lipschitz = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        Lipschitz -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        convexity_param = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        convexity_param += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
         super().__init__(domain, is_linear = all(self.linear_table),
-                         is_quadratic = all_quadratic, 
-                         conj_is_quadratic = (all_quadratic and (convexity_param>0)),
-                         Lipschitz = Lipschitz if all_convex else np.inf,
-                         convexity_param = convexity_param if (convexity_param>=0 and all_convex) else 0.,
-                         is_convex =  all_convex and convexity_param>=0,
                          is_separable=is_separable,
                          methods = methods, conj_methods = conj_methods
                          )
@@ -1491,6 +1556,30 @@ class LinearCombination(Functional):
             return NotImplementedError
 
     @property
+    def Lipschitz(self):
+        Lip = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
+        Lip -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
+        return Lip if all([func.is_convex for func in self.funcs]) else np.inf
+    
+    @property
+    def convexity_param(self):
+        conv = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
+        conv += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
+        return conv if (conv>=0 and all([func.is_convex for func in self.funcs])) else 0.
+
+    @property
+    def is_quadratic(self):
+        return all([func.is_quadratic for func in self.funcs])
+
+    @property
+    def conj_is_quadratic(self): 
+        return self.is_quadratic and self.convexity_param>0
+    
+    @property
+    def is_convex(self):  
+        return all([func.is_convex for func in self.funcs]) and self.convexity_param>=0,            
+
+    @property
     def dom_l(self):
         return np.max([F.dom_l for F in self.funcs]) if self.is_separable else None
     
@@ -1553,11 +1642,7 @@ class VerticalShift(Functional):
                 offset = {offset}."""))
         super().__init__(func.domain, 
                          is_linear = False,
-                         is_quadratic = func.is_quadratic, 
-                         convexity_param= func. convexity_param,
-                         Lipschitz = func.Lipschitz,
                          is_separable = func.is_separable,
-                         is_convex = func.is_convex,
                          methods = func._methods, conj_methods = func._conj_methods 
                          )
         self.func = func
@@ -1599,6 +1684,22 @@ class VerticalShift(Functional):
 
     def _conj_proximal(self, x, tau,**proximal_par):
         return self.func.conj.proximal(x, tau,**proximal_par)
+
+    @property
+    def is_quadratic(self):
+        return self.func.is_quadratic
+
+    @property 
+    def convexity_param(self): 
+        return self.func.convexity_param
+    
+    @property
+    def Lipschitz(self):
+        return self.func.Lipschitz
+    
+    @property
+    def is_convex(self): 
+        return self.func.is_convex
 
     @property
     def dom_l(self):
@@ -1680,12 +1781,7 @@ class HorizontalShiftDilation(Functional):
             self.is_data_func = True
 
         super().__init__(func.domain, h_domain = func.h_domain, 
-                         is_linear = func.is_linear and self.shift_val is None,
-                         Lipschitz = func.Lipschitz * dilation**2,
-                         convexity_param= func.convexity_param  * dilation**2,
-                         is_separable = func.is_separable,
-                         is_convex = func.is_convex,
-                         is_quadratic = func.is_quadratic,
+                         is_separable = func.is_separable,                         
                          methods = func.methods, conj_methods=func._conj_methods,
                          is_data_func = self.is_data_func#(shift is not None)
                          )
@@ -1790,6 +1886,26 @@ class HorizontalShiftDilation(Functional):
                                                   **proximal_par
                                                   )
     @property
+    def Lipschitz(self):
+        return self.func.Lipschitz * self.dilation**2
+    
+    @property
+    def convexity_param(self):
+        return self.func.convexity_param  * self.dilation**2
+    
+    @property
+    def is_convex(self):
+        return self.func.is_convex
+
+    @property
+    def is_linear(self):
+        return self.func.is_linear and self.shift_val is None
+    
+    @property
+    def is_quadratic(self):
+        return self.func.is_quadratic
+    
+    @property
     def dom_l(self):
         if self.func.is_separable:
             if self.dilation>0:
@@ -1864,8 +1980,8 @@ class Composed(Functional):
             raise TypeError(util.Errors.not_instance(op,operators.Operator))
         if func.domain != op.codomain:
             raise ValueError(util.Errors.not_equal(func.domain,op.codomain, add_info="Codomain of operator and domain of fucntional have to match to be composed."))
-        if op_norm == inf and compute_op_norm:
-            op_norm = op.norm(h_codomain = func.h_domain, **norm_kwargs)
+        self.op_norm = op.norm(h_codomain = func.h_domain, **norm_kwargs)  if (op_norm == inf and compute_op_norm) else op_norm
+        self.op_lower_bound = op_lower_bound
         if conj_methods is None:
             if op.invertible:
                 conj_methods = {'eval','subgradient','hessian'}
@@ -1874,12 +1990,6 @@ class Composed(Functional):
 
         super().__init__(op.domain,
                          h_domain = h_domain, 
-                         is_linear = func.is_linear and  op.linear,
-                         is_quadratic = func.is_quadratic and op.linear,
-                         conj_is_quadratic = func.is_quadratic and op.linear  and  func.convexity_param * op_lower_bound**2>0, 
-                         convexity_param= func.convexity_param * op_lower_bound**2,
-                         Lipschitz= func.Lipschitz * op_norm**2,
-                         is_convex = func.is_convex and op.linear, 
                          methods = {'eval','subgradient','hessian'} if methods is None else methods,
                          conj_methods = conj_methods
                          )
@@ -1943,6 +2053,30 @@ class Composed(Functional):
             return f
         else:
             return NotImplementedError
+        
+    @property
+    def is_linear(self): 
+        return self.func.is_linear and self.op.linear
+    
+    @property
+    def is_quadratic(self):
+        return self.func.is_quadratic and self.op.linear
+    
+    @property
+    def conj_is_quadratic(self): 
+        return self. func.is_quadratic and self.op.linear  and  self.func.convexity_param * self.op_lower_bound**2>0
+
+    @property 
+    def convexity_param(self):
+        return self.func.convexity_param * self.op_lower_bound**2
+    
+    @property
+    def Lipschitz(self):
+        return self.func.Lipschitz * self. op_norm**2
+    
+    @property
+    def is_convex(self):
+        return self.func.is_convex and self.op.linear         
 
 class FunctionalOnDirectSum(Functional):
     r"""Helper to define Functionals with respective prox-operators on sum spaces (vecsps.DirectSum objects).
@@ -1974,17 +2108,10 @@ class FunctionalOnDirectSum(Functional):
         """List of the functionals on each summand of the direct sum domain.
         """
         is_separable = all([func.is_separable for func in funcs])
-        is_convex = all([func.is_convex for func in funcs])
         methods = set.intersection(*[func.methods for func in funcs])
         conj_methods = set.intersection(*[func.conj.methods for func in funcs])
         super().__init__(domain, 
-                        is_linear = all([func.is_linear for func in funcs]),
-                        is_quadratic = all([func.is_quadratic for func in funcs]),
-                        conj_is_quadratic = all([func.conj_is_quadratic for func in funcs]),
-                        convexity_param = min([func.convexity_param for func in funcs]),
-                        Lipschitz = max([func.Lipschitz for func in funcs]),
-                        is_separable = is_separable,
-                        is_convex = is_convex,
+                        is_separable = is_separable,                        
                         methods=methods,conj_methods=conj_methods 
                         )
 
@@ -2025,6 +2152,30 @@ class FunctionalOnDirectSum(Functional):
         elif len(proximal_par_list) != self.length:
             raise ValueError(util.Errors.generic_message("The proximal parameters in conjugate of FuncitonalOnDirectSum have to be either a list of dictionaries of same length or None!"))
         return self.domain.join(*[f_i.conj.proximal(xstar_i,tau, proximal_par_i) for f_i,xstar_i,proximal_par_i in zip(self.funcs,xstar,proximal_par_list)])
+
+    @property
+    def is_linear(self):
+        return all([func.is_linear for func in self.funcs])
+    
+    @property
+    def is_quadratic(self):
+        return all([func.is_quadratic for func in self.funcs])
+    
+    @property
+    def conj_is_quadratic(self):
+        return all([func.conj_is_quadratic for func in self.funcs])
+    
+    @property
+    def convexity_param(self): 
+        return min([func.convexity_param for func in self.funcs])
+    
+    @property
+    def Lipschitz(self):
+        return max([func.Lipschitz for func in self.funcs])
+    
+    @property
+    def is_convex(self): 
+        return all([func.is_convex for func in self.funcs])
 
     @property
     def dom_l(self):

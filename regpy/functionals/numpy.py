@@ -162,6 +162,7 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
         if self.quad_taylor_l is not None and np.all(self.quad_taylor_l<self._nat_dom_l):
             self.quad_taylor_l = None
+        print('quad_taylor_l',self.quad_taylor_l)
 
         if quad_taylor_u is None or quad_taylor_u in domain: 
             self.quad_taylor_u = quad_taylor_u
@@ -262,15 +263,11 @@ class IntegralFunctionalBase(Functional):
                 self.fstarpp_u[taylor_active_u] = self._f_conj_second_deriv(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**kwargs)
                 self._if_constant_broadcast(self.fstarpp_u,mask=taylor_active_u)
 
-        if (self.constr_l is not None or self.constr_u is not None):
-            self.Lipschitz=np.inf
-        if (self.lin_taylor_l is not None or self.lin_taylor_u is not None):
-            self.convexity_param = 0.
-
         self._buf = self.domain.zeros()
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
+        print('quad_taylor_l check 2',self.quad_taylor_l)
 
     @property
     def _taylor_l(self)->np.ndarray:
@@ -289,7 +286,23 @@ class IntegralFunctionalBase(Functional):
             return self.quad_taylor_u
         else:
             return None
-                
+
+    @property
+    def _Lipschitz_exterior(self):
+        return np.inf if (self.constr_l is not None or self.constr_u is not None) else 0.
+    
+    @property
+    def Lipschitz(self):
+        return max([super().Lipschitz,self._Lipschitz_exterior])
+
+    @property
+    def _convexity_param_exterior(self):
+        return 0. if (self.lin_taylor_l is not None or self.lin_taylor_u is not None) else np.inf
+
+    @property
+    def convexity_param(self):
+        return min([super().convexity_param,self._convexity_param_exterior])    
+
     @property
     def dom_l(self)->np.ndarray:
         toret = self._nat_dom_l.copy()
@@ -1162,6 +1175,7 @@ class LppPower(IntegralFunctionalBase):
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                   quad_taylor_l=None, quad_taylor_u=None,
                  **kwargs):
+        print('starting LppPower init with lin_taylor_l=',lin_taylor_l)        
         if not np.isscalar(p): raise TypeError(Errors.not_instance(p,float,f"p in Lpp functional can only be a scalar. not {p} of type {type(p)}."))
         if p<= 1: raise ValueError(Errors.value_error(f"p in Lpp functional has to be bigger than one. was given p = {p}", self))
         self.p = p
@@ -1173,40 +1187,46 @@ class LppPower(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
-        dom_l = -np.inf if constr_l is None else constr_l        
-        dom_u = np.inf if constr_u is None else constr_u
-        dom2_l = dom_l
-        dom2_u = dom_u
-        taylor_l = -np.inf if lin_taylor_l is None else lin_taylor_l
+        print('finished LppPower init. ',self.lin_taylor_l)
+
+    @property
+    def Lipschitz(self):
+        taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
         if self.quad_taylor_l is not None:
-            taylor_l = quad_taylor_l
-            dom2_l= taylor_l
-        taylor_u = np.inf if lin_taylor_u is None else lin_taylor_u
+            taylor_l = self.quad_taylor_l
+        taylor_u = np.inf if self.lin_taylor_u is None else self.lin_taylor_u
         if self.quad_taylor_u is not None:
-            taylor_u = quad_taylor_u
+            taylor_u = self.quad_taylor_u
+
+        if self.p<2:
+            aux = np.min(np.maximum(taylor_l,-taylor_u))
+            return (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
+        if self.p>2:
+            aux =  np.abs(np.max(np.maximum(-taylor_l,taylor_u)))
+            return (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
+        if self.p==2:
+            return 1. if self.constr_l is None and self.constr_u is None else np.inf
+
+    @property
+    def convexity_param(self):
+        dom2_l, dom2_u = self.dom_l, self.dom_u
+        taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
+        if self.quad_taylor_l is not None:
+            taylor_l = self.quad_taylor_l
+            dom2_l= taylor_l
+        taylor_u = np.inf if self.lin_taylor_u is None else self.lin_taylor_u
+        if self.quad_taylor_u is not None:
+            taylor_u = self.quad_taylor_u
             dom2_u= taylor_u
 
-        if p<2:
+        if self.p<2:
             aux = np.abs(np.max(np.maximum(-dom2_l,dom2_u)))
-            convexity_param = (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
-
-            aux = np.min(np.maximum(taylor_l,-taylor_u))
-            Lipschitz = (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
-
-        if p>2:
+            return (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
+        if self.p>2:
             aux = np.min(np.maximum(dom2_l, -dom2_u))
-            convexity_param = (self.p-1) * aux**(self.p-2)  if aux>0 else 0
-
-            aux =  np.abs(np.max(np.maximum(-taylor_l,taylor_u)))
-            Lipschitz = (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
-
-        if p==2:
-            convexity_param = 1. if lin_taylor_l is None and lin_taylor_u is None else 0.
-            Lipschitz = 1. if constr_l is None and constr_u is None else np.inf
-        self._Lipschitz = Lipschitz
-        self._convexity_param = convexity_param
-
-  
+            return (self.p-1) * aux**(self.p-2)  if aux>0 else 0
+        if self.p==2:
+            return 1. if self.lin_taylor_l is None and self.lin_taylor_u is None else 0.
 
     def _f(self,v,**kwargs):
         # member efficient implementation of 
@@ -1409,23 +1429,6 @@ class KullbackLeibler(IntegralFunctionalBase):
                          **kwargs
                          )
 
-        if constr_u is not None and np.any(constr_u<np.inf):
-            Lipschitz = np.inf
-        elif self.quad_taylor_l is not None or lin_taylor_l is not None:
-            taylor_l = quad_taylor_l if self.quad_taylor_l is not None else lin_taylor_l
-            Lipschitz =  np.max(w/taylor_l**2) if np.min(taylor_l)>0 else np.inf
-        else: 
-            Lipschitz = np.inf
-
-        if lin_taylor_l is not None or lin_taylor_u is not None:
-            convexity_param = 0 
-        elif constr_u is not None or self.quad_taylor_u is not None:
-            u = constr_u if constr_u is not None else quad_taylor_u
-            convexity_param = np.min(w/u**2) 
-        else:
-            convexity_param = 0.
-        self.Lipschitz = Lipschitz
-        self.convexity_param =convexity_param
         #if data is not None:
         #    self.data = data
         
@@ -1464,6 +1467,25 @@ class KullbackLeibler(IntegralFunctionalBase):
     def as_data_func(self,data):
         self.data=data
         return self
+
+    @property
+    def Lipschitz(self):
+        if self.constr_u is not None:
+            return np.inf
+        elif self._taylor_l is not None:
+            return  np.max(self.w/self._taylor_l**2) if np.min(self._taylor_l)>0 else np.inf
+        else: 
+            return np.inf
+
+    @property
+    def convexity_param(self):
+        if self.lin_taylor_l is not None or self.lin_taylor_u is not None:
+            return 0. 
+        elif self.constr_u is not None or self.quad_taylor_u is not None:
+            u = self.constr_u if self.constr_u is not None else self.quad_taylor_u
+            return np.min(self.w/u**2) 
+        else:
+            return 0
 
     def _f(self, u,**kwargs):
         if 'w' in kwargs.keys():
@@ -1618,25 +1640,24 @@ class RelativeEntropy(IntegralFunctionalBase):
                          **kwargs
                          )
 
-        if constr_u is not None and np.any(constr_u<np.inf):
-            Lipschitz = np.inf
-        elif self.quad_taylor_l is not None or lin_taylor_l is not None:
-            taylor_l = quad_taylor_l if self.quad_taylor_l is not None else lin_taylor_l
-            if not np.isscalar(taylor_l):
-                taylor_l= min(taylor_l)
-            Lipschitz = np.max(1/taylor_l) if np.min(taylor_l)>0 else np.inf
+    @property
+    def Lipschitz(self):
+        if self.constr_u is not None:
+            return np.inf
+        elif self._taylor_l is not None:
+            return np.max(1/self._taylor_l) if np.min(self._taylor_l)>0 else np.inf
         else: 
-            Lipschitz = np.inf
+            return np.inf
 
-        if lin_taylor_u is not None or lin_taylor_l is not None:
-            convexity_param = 0.
-        elif constr_u is not None or self.quad_taylor_u is not None:
-            u = constr_u if constr_u is not None else quad_taylor_u
-            convexity_param = np.min(1./u) 
+    @property
+    def convexity_param(self):
+        if self.lin_taylor_u is not None or self.lin_taylor_l is not None:
+            return 0.
+        elif self.constr_u is not None or self.quad_taylor_u is not None:
+            u = self.constr_u if self.constr_u is not None else self.quad_taylor_u
+            return np.min(1./u) 
         else:
-            convexity_param = 0.
-        self.Lipschitz = Lipschitz
-        self.convexity_param = convexity_param
+            return 0.
 
     def _f(self, u,**kwargs):
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
