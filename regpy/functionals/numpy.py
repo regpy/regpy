@@ -162,7 +162,6 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
         if self.quad_taylor_l is not None and np.all(self.quad_taylor_l<self._nat_dom_l):
             self.quad_taylor_l = None
-        print('quad_taylor_l',self.quad_taylor_l)
 
         if quad_taylor_u is None or quad_taylor_u in domain: 
             self.quad_taylor_u = quad_taylor_u
@@ -267,7 +266,6 @@ class IntegralFunctionalBase(Functional):
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
-        print('quad_taylor_l check 2',self.quad_taylor_l)
 
     @property
     def _taylor_l(self)->np.ndarray:
@@ -1174,8 +1172,7 @@ class LppPower(IntegralFunctionalBase):
     def __init__(self, domain, p=2.,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                   quad_taylor_l=None, quad_taylor_u=None,
-                 **kwargs):
-        print('starting LppPower init with lin_taylor_l=',lin_taylor_l)        
+                 **kwargs):       
         if not np.isscalar(p): raise TypeError(Errors.not_instance(p,float,f"p in Lpp functional can only be a scalar. not {p} of type {type(p)}."))
         if p<= 1: raise ValueError(Errors.value_error(f"p in Lpp functional has to be bigger than one. was given p = {p}", self))
         self.p = p
@@ -1187,8 +1184,7 @@ class LppPower(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
-        print('finished LppPower init. ',self.lin_taylor_l)
-
+        
     @property
     def Lipschitz(self):
         taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
@@ -1200,12 +1196,13 @@ class LppPower(IntegralFunctionalBase):
 
         if self.p<2:
             aux = np.min(np.maximum(taylor_l,-taylor_u))
-            return (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
+            Lip= (self.p-1) * np.abs(aux)**(self.p-2) if aux>0 else np.inf
         if self.p>2:
             aux =  np.abs(np.max(np.maximum(-taylor_l,taylor_u)))
-            return (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
+            Lip = (self.p-1) * aux**(self.p-2) if aux<np.inf else np.inf
         if self.p==2:
-            return 1. if self.constr_l is None and self.constr_u is None else np.inf
+            Lip = 1. if self.constr_l is None and self.constr_u is None else np.inf
+        return np.max([Lip,self._Lipschitz_exterior])
 
     @property
     def convexity_param(self):
@@ -1221,12 +1218,13 @@ class LppPower(IntegralFunctionalBase):
 
         if self.p<2:
             aux = np.abs(np.max(np.maximum(-dom2_l,dom2_u)))
-            return (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
+            conv = (self.p-1) * aux**(self.p-2) if aux<np.inf else 0
         if self.p>2:
             aux = np.min(np.maximum(dom2_l, -dom2_u))
-            return (self.p-1) * aux**(self.p-2)  if aux>0 else 0
+            conv = (self.p-1) * aux**(self.p-2)  if aux>0 else 0
         if self.p==2:
-            return 1. if self.lin_taylor_l is None and self.lin_taylor_u is None else 0.
+            conv = 1. if self.lin_taylor_l is None and self.lin_taylor_u is None else 0.
+        return np.min([conv,self._convexity_param_exterior])
 
     def _f(self,v,**kwargs):
         # member efficient implementation of 
@@ -1473,7 +1471,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         if self.constr_u is not None:
             return np.inf
         elif self._taylor_l is not None:
-            return  np.max(self.w/self._taylor_l**2) if np.min(self._taylor_l)>0 else np.inf
+            return  np.max([self._Lipschitz_exterior,np.max(self.w/self._taylor_l**2) if np.min(self._taylor_l)>0 else np.inf])
         else: 
             return np.inf
 
@@ -1483,7 +1481,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             return 0. 
         elif self.constr_u is not None or self.quad_taylor_u is not None:
             u = self.constr_u if self.constr_u is not None else self.quad_taylor_u
-            return np.min(self.w/u**2) 
+            return np.min([self._convexity_param_exterior,np.min(self.w/u**2) if np.min(u)>0 else np.inf]) 
         else:
             return 0
 
@@ -1645,7 +1643,7 @@ class RelativeEntropy(IntegralFunctionalBase):
         if self.constr_u is not None:
             return np.inf
         elif self._taylor_l is not None:
-            return np.max(1/self._taylor_l) if np.min(self._taylor_l)>0 else np.inf
+            return np.max([self._Lipschitz_exterior,np.max(1/self._taylor_l) if np.min(self._taylor_l)>0 else np.inf])
         else: 
             return np.inf
 
@@ -1655,7 +1653,7 @@ class RelativeEntropy(IntegralFunctionalBase):
             return 0.
         elif self.constr_u is not None or self.quad_taylor_u is not None:
             u = self.constr_u if self.constr_u is not None else self.quad_taylor_u
-            return np.min(1./u) 
+            return np.min([self._convexity_param_exterior,np.min(1./u) if np.min(u)>0 else np.inf]) 
         else:
             return 0.
 
