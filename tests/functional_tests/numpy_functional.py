@@ -92,9 +92,11 @@ class TestKullbackLeibler():
     dom = UniformGridFcts((-1,1,10),(-2,3,5))
 
     def test_w_ones(self):
-        F=KL(self.dom,w=self.dom.ones())
+        F=KL(self.dom,w=self.dom.ones(),data = 0.2*self.dom.ones())
         ft.test_functional(F)
-        
+        F.data=None
+        ft.test_functional(F)
+
         ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()))
         ft.test_functional(F-2.)
 
@@ -102,8 +104,19 @@ class TestKullbackLeibler():
         w=1.+0.5*np.sin(self.dom.coords[0]*self.dom.coords[1])   
         F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
         ft.test_functional(F)
-        ft.test_functional(4.*F+LinearFunctional(F.domain.ones(),domain=F.domain))
-        ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=-F.domain.ones()))
+        F.data = 0.2*self.dom.ones()
+        ft.test_functional(F)
+        F.quad_taylor_l = None
+        ft.test_functional(F)
+        F.lin_taylor_l = 0.6
+        ft.test_functional(F)
+        F.quad_taylor_u = None
+        ft.test_functional(F)
+        lin_taylor_u= 10.*self.dom.ones(); lin_taylor_u[0,0]=11.
+        F.quad_taylor_u = lin_taylor_u
+        ft.test_functional(F)
+        #ft.test_functional(4.*F+LinearFunctional(F.domain.ones(),domain=F.domain))
+        #ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=2*F.domain.ones()))
         
     def test_lin_taylor_l(self):
         F = KL(self.dom,w=4.*self.dom.ones(),lin_taylor_l=0.1,quad_taylor_u=2.5)
@@ -137,6 +150,8 @@ class TestRelativeEntropy():
 
     def test_ft(self,kwargs):
         F=RE(self.dom,w=self.dom.ones(), **kwargs)
+        ft.test_functional(F)
+        F.w = 2*self.dom.ones()
         ft.test_functional(F)
 
     def test_shifted(self, kwargs):

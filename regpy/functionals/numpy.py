@@ -99,173 +99,278 @@ class IntegralFunctionalBase(Functional):
                          conj_methods = conj_methods if conj_methods is not None else all_methods
                          )
 
-        if sum([trunc is not None for trunc in [constr_l,lin_taylor_l,quad_taylor_l]])>1:
-            raise ValueError(Errors.value_error('At most one of the parameters constr_l,lin_taylor_l, quad_taylor_l may be specified.',self))
-        if sum([trunc is not None for trunc in [constr_u,lin_taylor_u,quad_taylor_u]])>1:
-            raise ValueError(Errors.value_error('At most one of the parameters constr_u,lin_taylor_u, quad_taylor_u may be specified.',self))     
-
-        if nat_dom_l is None or nat_dom_l in domain: 
-            self._nat_dom_l = nat_dom_l
-        elif np.isscalar(nat_dom_l):
-            self._nat_dom_l = np.broadcast_to(nat_dom_l,self.domain.shape)   
-        else:
-            raise TypeError(Errors.type_error(f"The lower bound of the essential domain if defined, can only be either a scaler or an element in the domain. Given nat_dom_l = {nat_dom_l}"))
-        
-        if nat_dom_u is None or nat_dom_u in domain: 
-            self._nat_dom_u = nat_dom_u
-        elif np.isscalar(nat_dom_u):
-            self._nat_dom_u = np.broadcast_to(nat_dom_u,self.domain.shape)   
-        else:
-            raise TypeError(Errors.type_error(f"The upper bound of the essential domain if defined, can only be either a scaler or an element in the domain. Given nat_dom_u = {nat_dom_u}"))
-
-        if constr_l is None or constr_l in domain: 
-            self.constr_l = constr_l
-        elif np.isscalar(constr_l):
-            self.constr_l = np.broadcast_to(constr_l,self.domain.shape)
-        else:  
-            raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scaler or an element in the domain. Given constr_l = {constr_l}"))
-        if self.constr_l is not None and np.all(self.constr_l<self._nat_dom_l):
-            self.constr_l = None
-        
-        if constr_u is None or constr_u in domain: 
-            self.constr_u = constr_u
-        elif np.isscalar(constr_u):
-            self.constr_u = np.broadcast_to(constr_u,self.domain.shape)
-        else:
-            raise TypeError(Errors.type_error(f"The upper constraint if defined, can only be either a scaler or an element in the domain. Given constr_u = {constr_u}"))
-        if self.constr_u is not None and np.all(self.constr_u>self._nat_dom_u):
-            self.constr_u = None
-        
-        if lin_taylor_l is None or lin_taylor_l in domain: 
-            self.lin_taylor_l = lin_taylor_l
-        elif np.isscalar(lin_taylor_l):
-            self.lin_taylor_l = np.broadcast_to(lin_taylor_l,self.domain.shape)
-        else: 
-            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain. Given lin_taylor_l = {lin_taylor_l}"))
-        if self.lin_taylor_l is not None and np.all(self.lin_taylor_l<self._nat_dom_l):
-            self.lin_taylor_l = None
-        
-        if lin_taylor_u is None or lin_taylor_u in domain: 
-            self.lin_taylor_u = lin_taylor_u
-        elif np.isscalar(lin_taylor_u):
-            self.lin_taylor_u = np.broadcast_to(lin_taylor_u,self.domain.shape)
-        else:
-            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor first order expansion if defined, can only be either a scaler or an element in the domain. Given lin_taylor_u = {lin_taylor_u}"))
-        if self.lin_taylor_u is not None and np.all(self.lin_taylor_u>self._nat_dom_u):
-            self.lin_taylor_u = None
-
-        if quad_taylor_l is None or quad_taylor_l in domain: 
-            self.quad_taylor_l = quad_taylor_l
-        elif np.isscalar(quad_taylor_l):
-            self.quad_taylor_l = np.broadcast_to(quad_taylor_l,self.domain.shape)
-        else: 
-            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
-        if self.quad_taylor_l is not None and np.all(self.quad_taylor_l<self._nat_dom_l):
-            self.quad_taylor_l = None
-
-        if quad_taylor_u is None or quad_taylor_u in domain: 
-            self.quad_taylor_u = quad_taylor_u
-        elif np.isscalar(quad_taylor_u):
-            self.quad_taylor_u = np.broadcast_to(quad_taylor_u,self.domain.shape)
-        else: 
-            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor second order expansion if defined, can only be either a scaler or an element in the domain. Given quad_taylor_u = {quad_taylor_u}"))
-        if self.quad_taylor_u is not None and np.all(self.quad_taylor_u>self._nat_dom_u):
-            self.quad_taylor_u = None
-
-        if np.isscalar(conj_nat_dom_l) and isinstance(domain,UniformGridFcts):
-            self._conj_nat_dom_l = np.broadcast_to(conj_nat_dom_l*self.measure,domain.shape)
-        else:
-            self._conj_nat_dom_l = self.h_domain.gram(np.broadcast_to(conj_nat_dom_l,domain.shape))
-
-        if np.isscalar(conj_nat_dom_u) and isinstance(domain,UniformGridFcts):
-            self._conj_nat_dom_u = np.broadcast_to(conj_nat_dom_u*self.measure,domain.shape)
-        else:
-            self._conj_nat_dom_u = self.h_domain.gram(np.broadcast_to(conj_nat_dom_u,domain.shape))
-
-        if self.constr_l is not None:
-            active_ind_l = constr_l> self._nat_dom_l
-            self.conj_taylor_l = np.full(domain.shape,-np.inf)
-            self.conj_taylor_l[active_ind_l] = self._f_deriv(self.dom_l[active_ind_l],mask=active_ind_l,**kwargs)*self.measure[active_ind_l]
-            self._if_constant_broadcast(self.conj_taylor_l)
-
-            self.f_l = self.domain.zeros()
-            self.f_l[active_ind_l] = self._f(self.dom_l[active_ind_l],mask=active_ind_l,**kwargs)
-            self._if_constant_broadcast(self.f_l,mask=active_ind_l)
-
-        if self.constr_u is not None:
-            active_ind_u = constr_u< self._nat_dom_u
-            self.conj_taylor_u = np.full(domain.shape,np.inf)
-            self.conj_taylor_u[active_ind_u] = self._f_deriv(self.dom_u[active_ind_u],mask=active_ind_u,**kwargs)*self.measure[active_ind_u]
-            self._if_constant_broadcast(self.conj_taylor_u)
-
-            self.f_u = self.domain.zeros()
-            self.f_u[active_ind_u] = self._f(self.dom_u[active_ind_u],mask=active_ind_u,**kwargs)
-            self._if_constant_broadcast(self.f_u,mask=active_ind_u)
-
-
-        if lin_taylor_l is not None:           
-            self.conj_f_l = domain.zeros()
-            conj_active_ind_l = self._taylor_l>self.dom_l
-            self.conj_f_l[conj_active_ind_l] = self._f_conj(self.conj_dom_l[conj_active_ind_l]/self.measure[conj_active_ind_l],mask=conj_active_ind_l,**kwargs)
-            self._if_constant_broadcast(self.conj_f_l,mask=conj_active_ind_l)
-
-        if lin_taylor_u is not None:
-            self.conj_f_u = domain.zeros()
-            conj_active_ind_u = self._taylor_u<self.dom_u
-            self.conj_f_u[conj_active_ind_u] = self._f_conj(self.conj_dom_u[conj_active_ind_u]/self.measure[conj_active_ind_u],mask=conj_active_ind_u,**kwargs)
-            self._if_constant_broadcast(self.conj_f_u,mask=self._taylor_u<self.dom_u)
-
-        if self.quad_taylor_l is not None:
-            taylor_active_l = self._taylor_l>=self.dom_l
-            if np.any(taylor_active_l):
-                self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
-                self.conj_taylor_l[taylor_active_l] = self._f_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)*self.measure[taylor_active_l]
-                self._if_constant_broadcast(self.conj_taylor_l)
-
-                self.f_l = self.domain.zeros()
-                self.f_l[taylor_active_l] = self._f(self._taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)
-                self._if_constant_broadcast(self.f_l,mask=taylor_active_l)
-
-                self.conj_f_l = domain.zeros()
-                self.conj_f_l[taylor_active_l] = self._f_conj(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**kwargs)
-                self._if_constant_broadcast(self.conj_f_l,mask=taylor_active_l)
-
-                self.fpp_l = domain.zeros()
-                self.fpp_l[taylor_active_l] = self._f_second_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**kwargs)
-                self._if_constant_broadcast(self.fpp_l,mask=taylor_active_l)
- 
-                self.fstarpp_l = domain.zeros()
-                self.fstarpp_l[taylor_active_l] = self._f_conj_second_deriv(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**kwargs)
-                self._if_constant_broadcast(self.fstarpp_l,mask=taylor_active_l)
-
-
-        if self.quad_taylor_u is not None:
-            taylor_active_u = self._taylor_u<=self.dom_u
-            if np.any(taylor_active_u):
-                self.conj_taylor_u = np.full(self.domain.shape,np.inf)
-                self.conj_taylor_u[taylor_active_u] = self._f_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)*self.measure[taylor_active_u]
-                self._if_constant_broadcast(self.conj_taylor_u)
-
-                self.f_u = self.domain.zeros()
-                self.f_u[taylor_active_u] = self._f(self._taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)
-                self._if_constant_broadcast(self.f_u,mask=taylor_active_u)
-
-                self.conj_f_u = domain.zeros()
-                self.conj_f_u[taylor_active_u] = self._f_conj(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**kwargs)
-                self._if_constant_broadcast(self.conj_f_u,mask=taylor_active_u)
-
-                self.fpp_u = domain.zeros()
-                self.fpp_u[taylor_active_u] = self._f_second_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**kwargs)
-                self._if_constant_broadcast(self.fpp_u,mask=taylor_active_u)
-
-                self.fstarpp_u = domain.zeros()
-                self.fstarpp_u[taylor_active_u] = self._f_conj_second_deriv(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**kwargs)
-                self._if_constant_broadcast(self.fstarpp_u,mask=taylor_active_u)
-
         self._buf = self.domain.zeros()
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
+        
+        if sum([trunc is not None for trunc in [constr_l,lin_taylor_l,quad_taylor_l]])>1:
+            raise ValueError(Errors.value_error('At most one of the parameters constr_l,lin_taylor_l, quad_taylor_l may be specified.',self))
+        if sum([trunc is not None for trunc in [constr_u,lin_taylor_u,quad_taylor_u]])>1:
+            raise ValueError(Errors.value_error('At most one of the parameters constr_u,lin_taylor_u, quad_taylor_u may be specified.',self))     
+       
+        if nat_dom_l in domain: 
+            self._nat_dom_l = nat_dom_l
+        elif np.isscalar(nat_dom_l):
+            self._nat_dom_l = np.broadcast_to(nat_dom_l,self.domain.shape)   
+        else:
+            raise TypeError(Errors.type_error(f"The lower bound of the essential domain can only be either a scalar or an element in the domain. Given nat_dom_l = {nat_dom_l}"))
+        
+        if nat_dom_u in domain: 
+            self._nat_dom_u = nat_dom_u
+        elif np.isscalar(nat_dom_u):
+            self._nat_dom_u = np.broadcast_to(nat_dom_u,self.domain.shape)   
+        else:
+            raise TypeError(Errors.type_error(f"The upper bound of the essential domain can only be either a scalar or an element in the domain. Given nat_dom_u = {nat_dom_u}"))
+        
+        if np.isscalar(conj_nat_dom_l):
+            if isinstance(domain,UniformGridFcts) or conj_nat_dom_l==-np.inf:
+                self._conj_nat_dom_l = np.broadcast_to(conj_nat_dom_l*self.measure,domain.shape)
+            else:
+                self._conj_nat_dom_l = self.h_domain.gram(np.broadcast_to(conj_nat_dom_l,self.domain.shape))
+        elif conj_nat_dom_l in domain:
+            self._conj_nat_dom_l = self.h_domain.gram(conj_nat_dom_l)
+        else:
+            raise TypeError(Errors.type_error(f"The lower bound of the conjugate essential domain can only be either a scalar, an element in the domain or a MeasureSpaceFcts. Given conj_nat_dom_l = {conj_nat_dom_l} of type {type(conj_nat_dom_l)}."))
+
+        if np.isscalar(conj_nat_dom_u):
+            if isinstance(domain,UniformGridFcts) or conj_nat_dom_u==np.inf:
+                self._conj_nat_dom_u = np.broadcast_to(conj_nat_dom_u*self.measure,domain.shape)
+            else:
+                self._conj_nat_dom_u = self.h_domain.gram(np.broadcast_to(conj_nat_dom_u,self.domain.shape))
+        elif conj_nat_dom_u in domain:
+            self._conj_nat_dom_u = self.h_domain.gram(conj_nat_dom_u)
+        else:
+            raise TypeError(Errors.type_error(f"The upper bound of the conjugate essential domain can only be either a scalar, an element in the domain or a MeasureSpaceFcts. Given conj_nat_dom_u = {conj_nat_dom_u} of type {type(conj_nat_dom_u)}."))
+        
+        self._constr_l, self._constr_u, self._lin_taylor_l, self._lin_taylor_u, self._quad_taylor_l, self._quad_taylor_u = None, None, None, None,  None, None
+
+        if constr_l is not None: self.constr_l = constr_l
+        if constr_u is not None: self.constr_u = constr_u
+        if lin_taylor_l is not None: self.lin_taylor_l = lin_taylor_l
+        if lin_taylor_u is not None: self.lin_taylor_u = lin_taylor_u
+        if quad_taylor_l is not None: self.quad_taylor_l = quad_taylor_l
+        if quad_taylor_u is not None: self.quad_taylor_u = quad_taylor_u
+        
+    @property
+    def constr_l(self):
+        return self._constr_l
+    
+    @constr_l.setter
+    def constr_l(self, constr_l):
+        if constr_l is None or (constr_l is not None and np.all(constr_l<self._nat_dom_l)):
+            self._constr_l = None
+            self._delete_f_l()
+        elif self.lin_taylor_l is not None or self.quad_taylor_l is not None:
+            raise ValueError(Errors.value_error("Cannot set lower constraint when Taylor expansion is already set. First set those to None.",self))
+        elif constr_l in self.domain: 
+            self._constr_l = constr_l
+            self._precompute_f_l()
+        elif np.isscalar(constr_l):
+            self._constr_l = np.broadcast_to(constr_l,self.domain.shape)
+            self._precompute_f_l()
+        else:  
+            raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scalar or an element in the domain. Given constr_l = {constr_l}"))
+        
+    @property
+    def constr_u(self):
+        return self._constr_u
+    
+    @constr_u.setter
+    def constr_u(self, constr_u):
+        if constr_u is None or (constr_u is not None and np.all(constr_u>self._nat_dom_u)):
+            self._constr_u = None
+            self._delete_f_u()
+        elif self.lin_taylor_u is not None or self.quad_taylor_u is not None:
+            raise ValueError(Errors.value_error("Cannot set upper constraint when Taylor expansion is already set. First set those to None.",self))
+        elif constr_u in self.domain: 
+            self._constr_u = constr_u
+            self._precompute_f_u()
+        elif np.isscalar(constr_u):
+            self._constr_u = np.broadcast_to(constr_u,self.domain.shape)
+            self._precompute_f_u()
+        else:  
+            raise TypeError(Errors.type_error(f"The upper constraint if defined, can only be either a scalar or an element in the domain. Given constr_u = {constr_u}"))
+
+    @property
+    def lin_taylor_l(self):
+        return self._lin_taylor_l
+
+    @lin_taylor_l.setter        
+    def lin_taylor_l(self, lin_taylor_l):
+        if lin_taylor_l is None or (lin_taylor_l is not None and np.all(lin_taylor_l<self._nat_dom_l)):
+            self._lin_taylor_l = None
+            self._delete_f_l()
+        elif self.constr_l is not None or self.quad_taylor_l is not None:
+            raise ValueError(Errors.value_error("Cannot set lower linear Taylor expansion when constraint or quadratic Taylor expansion is already set. First set those to None.",self))
+        elif lin_taylor_l in self.domain:       
+            self._lin_taylor_l = lin_taylor_l
+            self._precompute_f_l()      
+        elif np.isscalar(lin_taylor_l):
+            self._lin_taylor_l = np.broadcast_to(lin_taylor_l,self.domain.shape)
+            self._precompute_f_l()
+        else: 
+            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor first order expansion if defined, can only be either a scalar or an element in the domain. Given lin_taylor_l = {lin_taylor_l}"))
+        
+    @property
+    def lin_taylor_u(self):
+        return self._lin_taylor_u
+
+    @lin_taylor_u.setter
+    def lin_taylor_u(self, lin_taylor_u):
+        if lin_taylor_u is None or (lin_taylor_u is not None and np.all(lin_taylor_u>self._nat_dom_u)):
+            self._lin_taylor_u = None
+            self._delete_f_u() 
+        elif self.constr_u is not None or self.quad_taylor_u is not None:
+            raise ValueError(Errors.value_error("Cannot set upper linear Taylor expansion when constraint or quadratic Taylor expansion is already set. First set those to None.",self)) 
+        elif lin_taylor_u in self.domain: 
+            self._lin_taylor_u = lin_taylor_u
+            self._precompute_f_u()
+        elif np.isscalar(lin_taylor_u):
+            self._lin_taylor_u = np.broadcast_to(lin_taylor_u,self.domain.shape)
+            self._precompute_f_u()
+        else: 
+            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor first order expansion if defined, can only be either a scalar or an element in the domain. Given lin_taylor_u = {lin_taylor_u}"))
+    
+    @property
+    def quad_taylor_l(self):
+        return self._quad_taylor_l
+    
+    @quad_taylor_l.setter
+    def quad_taylor_l(self, quad_taylor_l):
+        if quad_taylor_l is None or (quad_taylor_l is not None and np.all(quad_taylor_l<self._nat_dom_l)):
+            self._quad_taylor_l = None
+            self._delete_f_l()
+        elif self.constr_l is not None or self.lin_taylor_l is not None:
+            raise ValueError(Errors.value_error("Cannot set lower quadratic Taylor expansion when constraint or linear Taylor expansion is already set. First set those to None.",self))
+        elif quad_taylor_l in self.domain: 
+            self._quad_taylor_l = quad_taylor_l
+            self._precompute_f_l()
+        elif np.isscalar(quad_taylor_l):
+            self._quad_taylor_l = np.broadcast_to(quad_taylor_l,self.domain.shape)
+            self._precompute_f_l()
+        else: 
+            raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scalar or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
+        
+    @property   
+    def quad_taylor_u(self):
+        return self._quad_taylor_u
+    
+    @quad_taylor_u.setter
+    def quad_taylor_u(self, quad_taylor_u):
+        if quad_taylor_u is None or (quad_taylor_u is not None and np.all(quad_taylor_u>self._nat_dom_u)):
+            self._quad_taylor_u = None
+            self._delete_f_u()
+        elif self.constr_u is not None or self.lin_taylor_u is not None:
+            raise ValueError(Errors.value_error("Cannot set upper quadratic Taylor expansion when constraint or linear Taylor expansion is already set. First set those to None.",self))
+        elif quad_taylor_u is None or quad_taylor_u in self.domain: 
+            self._quad_taylor_u = quad_taylor_u
+            self._precompute_f_u()
+        elif np.isscalar(quad_taylor_u):
+            self._quad_taylor_u = np.broadcast_to(quad_taylor_u,self.domain.shape)
+            self._precompute_f_u()
+        else: 
+            raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor second order expansion if defined, can only be either a scalar or an element in the domain. Given quad_taylor_u = {quad_taylor_u}"))
+  
+    def _precompute_f_l(self):
+        if self.constr_l is not None:
+            active_ind_l = self.constr_l> self._nat_dom_l
+            self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
+            self.conj_taylor_l[active_ind_l] = self._f_deriv(self.dom_l[active_ind_l],mask=active_ind_l,**self.kwargs)*self.measure[active_ind_l]
+            self._if_constant_broadcast(self.conj_taylor_l)
+
+            self.f_l = self.domain.zeros()
+            self.f_l[active_ind_l] = self._f(self.dom_l[active_ind_l],mask=active_ind_l,**self.kwargs)
+            self._if_constant_broadcast(self.f_l,mask=active_ind_l)
+        elif self.lin_taylor_l is not None:           
+            self.conj_f_l = self.domain.zeros()
+            conj_active_ind_l = self._taylor_l>self.dom_l
+            self.conj_f_l[conj_active_ind_l] = self._f_conj(self.conj_dom_l[conj_active_ind_l]/self.measure[conj_active_ind_l],mask=conj_active_ind_l,**self.kwargs)
+            self._if_constant_broadcast(self.conj_f_l,mask=conj_active_ind_l)
+        elif self.quad_taylor_l is not None:
+            taylor_active_l = self._taylor_l>=self.dom_l
+            if np.any(taylor_active_l):
+                self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
+                self.conj_taylor_l[taylor_active_l] = self._f_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)*self.measure[taylor_active_l]
+                self._if_constant_broadcast(self.conj_taylor_l)
+
+                self.f_l = self.domain.zeros()
+                self.f_l[taylor_active_l] = self._f(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)
+                self._if_constant_broadcast(self.f_l,mask=taylor_active_l)
+
+                self.conj_f_l = self.domain.zeros()
+                self.conj_f_l[taylor_active_l] = self._f_conj(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**self.kwargs)
+                self._if_constant_broadcast(self.conj_f_l,mask=taylor_active_l)
+
+                self.fpp_l = self.domain.zeros()
+                self.fpp_l[taylor_active_l] = self._f_second_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)
+                self._if_constant_broadcast(self.fpp_l,mask=taylor_active_l)
+ 
+                self.fstarpp_l = self.domain.zeros()
+                self.fstarpp_l[taylor_active_l] = self._f_conj_second_deriv(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**self.kwargs)
+                self._if_constant_broadcast(self.fstarpp_l,mask=taylor_active_l)
+
+    def _delete_f_l(self):
+        if hasattr(self,'conj_taylor_l'):
+            del self.conj_taylor_l
+        if hasattr(self,'f_l'):
+            del self.f_l
+        if hasattr(self,'conj_f_l'):
+            del self.conj_f_l
+        if hasattr(self,'fpp_l'):
+            del self.fpp_l
+        if hasattr(self,'fstarpp_l'):
+            del self.fstarpp_l
+
+    def _precompute_f_u(self):
+        if self.constr_u is not None:
+            active_ind_u = self.constr_u< self._nat_dom_u
+            self.conj_taylor_u = np.full(self.domain.shape,np.inf)
+            self.conj_taylor_u[active_ind_u] = self._f_deriv(self.dom_u[active_ind_u],mask=active_ind_u,**self.kwargs)*self.measure[active_ind_u]
+            self._if_constant_broadcast(self.conj_taylor_u)
+
+            self.f_u = self.domain.zeros()
+            self.f_u[active_ind_u] = self._f(self.dom_u[active_ind_u],mask=active_ind_u,**self.kwargs)
+            self._if_constant_broadcast(self.f_u,mask=active_ind_u)
+        elif self.lin_taylor_u is not None:
+            self.conj_f_u = self.domain.zeros()
+            conj_active_ind_u = self._taylor_u<self.dom_u
+            self.conj_f_u[conj_active_ind_u] = self._f_conj(self.conj_dom_u[conj_active_ind_u]/self.measure[conj_active_ind_u],mask=conj_active_ind_u,**self.kwargs)
+            self._if_constant_broadcast(self.conj_f_u,mask=self._taylor_u<self.dom_u)
+        elif self.quad_taylor_u is not None:
+            taylor_active_u = self._taylor_u<=self.dom_u
+            if np.any(taylor_active_u):
+                self.conj_taylor_u = np.full(self.domain.shape,np.inf)
+                self.conj_taylor_u[taylor_active_u] = self._f_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)*self.measure[taylor_active_u]
+                self._if_constant_broadcast(self.conj_taylor_u)
+
+                self.f_u = self.domain.zeros()
+                self.f_u[taylor_active_u] = self._f(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)
+                self._if_constant_broadcast(self.f_u,mask=taylor_active_u)
+
+                self.conj_f_u = self.domain.zeros()
+                self.conj_f_u[taylor_active_u] = self._f_conj(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**self.kwargs)
+                self._if_constant_broadcast(self.conj_f_u,mask=taylor_active_u)
+
+                self.fpp_u = self.domain.zeros()
+                self.fpp_u[taylor_active_u] = self._f_second_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)
+                self._if_constant_broadcast(self.fpp_u,mask=taylor_active_u)
+
+                self.fstarpp_u = self.domain.zeros()
+                self.fstarpp_u[taylor_active_u] = self._f_conj_second_deriv(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**self.kwargs)
+                self._if_constant_broadcast(self.fstarpp_u,mask=taylor_active_u)
+
+    def _delete_f_u(self):
+        if hasattr(self,'conj_taylor_u'):
+            del self.conj_taylor_u
+        if hasattr(self,'f_u'):
+            del self.f_u
+        if hasattr(self,'conj_f_u'):
+            del self.conj_f_u
+        if hasattr(self,'fpp_u'):
+            del self.fpp_u
+        if hasattr(self,'fstarpp_u'):
+            del self.fstarpp_u
 
     @property
     def _taylor_l(self)->np.ndarray:
@@ -1392,8 +1497,8 @@ class KullbackLeibler(IntegralFunctionalBase):
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Kullback-Leibler divergence
-    w: domain 
-        First argument of Kullback-Leibler divergence.
+    w: domain or scalar or None (default: None) 
+        First argument of Kullback-Leibler divergence. In the case of None, w is set to zero. If w is scalar, it is broadcasted to the shape of the domain. 
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
     data: explcitly declared data. 
@@ -1405,17 +1510,18 @@ class KullbackLeibler(IntegralFunctionalBase):
                  quad_taylor_l=None, quad_taylor_u=None, data = None,
                  **kwargs):
         if(w is None):
-            w=domain.zeros()
-        if not w in domain and not isinstance(w, (int,float,np.floating,np.integer)):
-            raise ValueError(Errors.value_error('w not in domain and not scalar.'))
+            w=0.
         if w in domain:
             self._w=w.copy()
+        elif  isinstance(w, (int,float,np.floating,np.integer)):
+            self._w= np.broadcast_to(float(w),domain.shape)
         else:
-            self._w= np.broadcast_to(w,domain.shape).copy()
+            raise ValueError(Errors.value_error(f'w not in domain and not scalar. {w} of type {type(w)}.', self))
+  
         if(data is not None):
             if(data not in domain):
                 raise ValueError(Errors.value_error('data not in domain.'))
-            w=self._w+data#update parameter w to set correct constants everywhere
+            w=self._w+data
         if np.min(w)<0:
             raise ValueError(Errors.value_error('w must be non-negative.'))
         
@@ -1431,12 +1537,24 @@ class KullbackLeibler(IntegralFunctionalBase):
         #    self.data = data
         
 
-    @memoized_property
+    @property
     def w(self):
         if self.is_data_func:
             return self._w + self.data
         else:
             return self._w
+    @w.setter
+    def w(self, new_w):
+        if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
+            if new_w in self.domain:
+                self._w = new_w.copy()
+            else:
+                self._w = np.broadcast_to(float(new_w),self.domain.shape)
+            if np.min(self._w+ self._data if self.is_data_func else self._w)<0:
+                raise ValueError(Errors.value_error('w must be non-negative.'))
+            self._precompute_f_l(); self._precompute_f_u()
+        else:
+            raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
 
     @property
     def data(self):
@@ -1444,14 +1562,17 @@ class KullbackLeibler(IntegralFunctionalBase):
     
     @data.setter
     def data(self, new_data):
-        self.log.warning("Setting new data outside of constructor currently does not update the convexity and Lipschitz constants and taylor or constraint parameters.")
         if new_data is None:
             self.is_data_func = False
-            del self.w
+            if self.is_data_func:
+                del self._data
+                self._precompute_f_l(); self._precompute_f_u()
         elif new_data in self.domain:
             self.is_data_func = True
             self._data = new_data
-            del self.w
+            if np.min(self._w+ self._data)<0:
+                raise ValueError(Errors.value_error('w+data must be non-negative.'))
+            self._precompute_f_l(); self._precompute_f_u()
         else:
             raise ValueError(Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
         
@@ -1459,8 +1580,8 @@ class KullbackLeibler(IntegralFunctionalBase):
     def data(self):
         if self.is_data_func:
             del self._data
-            del self.w
             self.is_data_func = False
+            self._precompute_f_l(); self._precompute_f_u()
 
     def as_data_func(self,data):
         self.data=data
@@ -1471,7 +1592,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         if self.constr_u is not None:
             return np.inf
         elif self._taylor_l is not None:
-            return  np.max([self._Lipschitz_exterior,np.max(self.w/self._taylor_l**2) if np.min(self._taylor_l)>0 else np.inf])
+            return  max([self._Lipschitz_exterior,np.max(self.w/self._taylor_l**2) if np.min(self._taylor_l)>0 else np.inf])
         else: 
             return np.inf
 
@@ -1630,13 +1751,30 @@ class RelativeEntropy(IntegralFunctionalBase):
             raise TypeError(Errors.not_in_vecsp(w,domain,vec_name="second argument",add_info=f" Error occured setting up the Relative Entropy functional."))
         if np.min(w)<=0:
             raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positiv!", self))
-        self.w= w.copy()
+        self._w= w.copy()
 
         super().__init__(domain,nat_dom_l = 1e-14*w,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
+
+    @property
+    def w(self):
+        return self._w
+
+    @w.setter
+    def w(self, new_w):
+        if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
+            if new_w in self.domain:
+                self._w = new_w.copy()
+            else:
+                self._w = np.broadcast_to(float(new_w),self.domain.shape)
+            if np.min(self._w)<0:
+                raise ValueError(Errors.value_error('w must be non-negative.'))
+            self._precompute_f_l(); self._precompute_f_u()
+        else:
+            raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
 
     @property
     def Lipschitz(self):

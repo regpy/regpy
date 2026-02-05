@@ -915,7 +915,7 @@ class Conj(Functional):
 
     @property
     def Lipschitz(self)->float:
-        return 1/self.func.convexity_param if self.func.convexity_param>0 else inf,
+        return 1/self.func.convexity_param if self.func.convexity_param>0 else inf
 
     @property
     def convexity_param(self)->float:
