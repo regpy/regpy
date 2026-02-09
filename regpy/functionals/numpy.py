@@ -1517,7 +1517,7 @@ class Quadratic(IntegralFunctionalBase):
     def _f_conj_prox(self, v_star, tau,**kwargs):
         if np.min(self.a)<=0:
             raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
-        return (v_star - tau*self._c) / (1. + tau/self._a)  
+        return (self._a* v_star + tau*self._b) / (self._a + tau)
 
 class L1MeasureSpace(IntegralFunctionalBase):
     r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.

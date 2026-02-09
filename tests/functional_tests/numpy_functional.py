@@ -179,7 +179,7 @@ class TestHuber():
 
 def test_quadratic():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
-    F=Quadratic(dom,a=2.)
+    F=Quadratic(dom,a=2.,b0=1.,c=-2.)
     ft.test_functional(F)
 
 def test_quadratic_intv():
