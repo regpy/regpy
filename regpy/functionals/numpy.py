@@ -85,6 +85,7 @@ class IntegralFunctionalBase(Functional):
                  quad_taylor_l=None, quad_taylor_u= None,
                  Lipschitz = np.inf, convexity_param=0.,
                  methods = None, conj_methods = None,
+                 is_data_func = False,
                  **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info="Integral functionals are only implemented for MeasureSPaceFcts domains."))
         self.h_domain = L2(domain)
@@ -96,7 +97,8 @@ class IntegralFunctionalBase(Functional):
         super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
                          is_separable=True,
                          methods = methods if methods is not None else all_methods, 
-                         conj_methods = conj_methods if conj_methods is not None else all_methods
+                         conj_methods = conj_methods if conj_methods is not None else all_methods,
+                         is_data_func = is_data_func
                          )
 
         self._buf = self.domain.zeros()
@@ -1404,6 +1406,119 @@ class LppPower(IntegralFunctionalBase):
                                 **kwargs
                                 )
 
+class Quadratic(IntegralFunctionalBase):
+    r"""Quadratic functional :math:`v\mapsto \int\frac{a}{2}v(x)^2+b(x)v(x)+c(x)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts` as an integral functional.
+
+    Parameters
+    ----------
+    domain : `regpy.vecsps.MeasureSpaceFcts`
+        Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
+    a,b,c: scalar or domain element
+        Coefficients of the quadratic functional. Defaults are 1., 0., and 0., respectively. If scalar, they are broadcasted to the shape of the domain.         
+    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
+        see IntegralFunctional  
+    """
+    def __init__(self, domain,
+                 a=1., b=0., c=0.,
+                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
+                 quad_taylor_l=None, quad_taylor_u=None,
+                 **kwargs):
+        super().__init__(domain, is_quadratic=True,
+                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
+                         **kwargs
+                         )
+        if not np.isscalar(a) and a not in domain:
+            raise ValueError(Errors.value_error(f'a needs to be either scalar or an element of the domain. Given a: {a} of type {type(a)}', self))
+        self._a = np.broadcast_to(a, domain.shape) if np.isscalar(a) else a
+        if not np.isscalar(b) and b not in domain:  
+            raise ValueError(Errors.value_error(f'b needs to be either scalar or an element of the domain. Given b: {b} of type {type(b)}', self))
+        self._b = np.broadcast_to(b, domain.shape) if np.isscalar(b) else b
+        if not np.isscalar(c) and c not in domain:  
+            raise ValueError(Errors.value_error(f'c needs to be either scalar or an element of the domain. Given c: {c} of type {type(c)}', self))
+        self._c = np.broadcast_to(c, domain.shape) if np.isscalar(c) else c
+
+    @property
+    def a(self):
+        return self._a
+    
+    @a.setter
+    def a(self, value):
+        if not np.isscalar(value) and value not in self.domain:
+            raise ValueError(Errors.value_error(f'a needs to be either scalar or an element of the domain. Given a: {value} of type {type(value)}', self))
+        self._a = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
+        self._precompute_f_l(); self._precompute_f_u()
+        
+    @property
+    def b(self):
+        return self._b
+
+    @b.setter
+    def b(self, value): 
+        if not np.isscalar(value) and value not in self.domain:
+            raise ValueError(Errors.value_error(f'b needs to be either scalar or an element of the domain. Given b: {value} of type {type(value)}', self))
+        self._b = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
+        self._precompute_f_l(); self._precompute_f_u()
+
+    @property
+    def c(self):
+        return self._c
+
+    @c.setter
+    def c(self, value):
+        if not np.isscalar(value) and value not in self.domain:
+            raise ValueError(Errors.value_error(f'c needs to be either scalar or an element of the domain. Given c: {value} of type {type(value)}', self))
+        self._c = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
+        self._precompute_f_l(); self._precompute_f_u()
+
+    @property
+    def Lipschitz(self):
+        return max([self._Lipschitz_exterior,np.max(np.abs(self._a))]) 
+    
+    @property
+    def convexity_param(self):
+        return min([self._convexity_param_exterior,np.min(self._a)])
+    
+    @property
+    def is_convex(self):
+        return self.convexity_param>=0
+    
+    @property
+    def conj_is_quadratic(self):
+        return (np.min(self.a)>0)
+     
+
+    def _f(self, v,**kwargs):
+        return 0.5*self._a*v**2 + self._b*v + self._c
+    
+    def _f_deriv(self, v,**kwargs):
+        return self._a*v + self._b
+    
+    def _f_second_deriv(self, v,**kwargs):
+        return self._a.copy()
+    
+    def _f_prox(self, v, tau,**kwargs):
+        return (v - tau*self._b) / (1. + tau*self._a)
+    
+    def _f_conj(self, v_star,**kwargs):
+        if np.min(self.a)<=0:
+            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
+        return 0.5*(v_star - self._b)**2 / self._a - self._c
+
+    def _f_conj_deriv(self, v_star,**kwargs):
+        if np.min(self.a)<=0:
+            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
+        return (v_star - self._b) / self._a 
+    def _f_conj_second_deriv(self, v_star,**kwargs):
+        if np.min(self.a)<=0:
+            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
+        return 1./self._a
+        
+    def _f_conj_prox(self, v_star, tau,**kwargs):
+        if np.min(self.a)<=0:
+            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
+        return (v_star - tau*self._c) / (1. + tau/self._a)  
+
 class L1MeasureSpace(IntegralFunctionalBase):
     r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.
 
@@ -1521,7 +1636,8 @@ class KullbackLeibler(IntegralFunctionalBase):
         if(data is not None):
             if(data not in domain):
                 raise ValueError(Errors.value_error('data not in domain.'))
-            w=self._w+data
+            self._data=data
+            self.is_data_func = True            
         if np.min(w)<0:
             raise ValueError(Errors.value_error('w must be non-negative.'))
         
@@ -1532,9 +1648,6 @@ class KullbackLeibler(IntegralFunctionalBase):
                           is_data_func = (data is not None),
                          **kwargs
                          )
-
-        #if data is not None:
-        #    self.data = data
         
 
     @property
