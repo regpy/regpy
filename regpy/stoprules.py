@@ -144,6 +144,12 @@ class StopRule:
 
     def __add__(self, other):
         return CombineRules([self, other])
+    
+    def __radd__(self, other):
+        # Adding zero should not change the rule, this allows to use sum() to combine rules.
+        if other == 0:
+            return self
+        return NotImplemented
 
     def __or__(self, other):
         return CombineRules([self, other])

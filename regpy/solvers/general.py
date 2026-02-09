@@ -369,7 +369,7 @@ class Setting:
     def change_data(self,new_data):
         if(new_data is None):
             raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
-        if not hasattr(self,"_data") or not new_data is self._data:
+        if not (hasattr(self,"_data") and new_data is self._data):
             if(self.data_fid.is_data_func):
                 self.log.warning("Existing data in data fidelity functional is overwritten.")
             self._data_fid=self.data_fid.as_data_func(new_data)
@@ -471,7 +471,7 @@ class Setting:
         if self.data is not None:
             self.log.warning("Overwriting given data!")
         if expected_nr_counts is not None:
-            scale = expected_nr_counts / self.h_codomain.sum(self._exact_data)
+            scale = expected_nr_counts / np.sum(np.array(self._exact_data))
         else:
             scale = 1.0      
         poisson_data = self.op.codomain.poisson(scale*self._exact_data,seed=seed)/scale
