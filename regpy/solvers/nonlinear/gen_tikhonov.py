@@ -60,6 +60,7 @@ class GeneralizedTikhonov(RegSolver):
                  inner_stoprule_param_list:list[dict]=[{'tol':1e-3},{'max_iterations':1000}],
                  alphas: Iterable[float] | Tuple[float,float] = (1e0,0.5),
                  logging_level:str= "INFO",
+                 inner_logging_level:str="WARNING"
                  ):
                  
         super().__init__(setting)
@@ -69,6 +70,7 @@ class GeneralizedTikhonov(RegSolver):
         self.inner_solver_is_primal = inner_solver_is_primal
         self.inner_stoprule_class_list = inner_stoprule_class_list
         self.inner_solver_params = inner_solver_params 
+        self.inner_logging_level = inner_logging_level
         self.inner_stoprule_param_list = inner_stoprule_param_list
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alpha_iterator = GeometricSequence(alphas[0],alphas[1])
@@ -82,8 +84,8 @@ class GeneralizedTikhonov(RegSolver):
         if exhausted:
             raise ValueError(Errors.value_error("No valid regularization parameter found in alphas.",alphas))
         the_setting = self.setting if self.inner_solver_is_primal else self.setting.get_dual_setting()
-        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params) 
-        self.inner_stoprule = sum([rule(**params) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
+        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params | {"logging_level":self.inner_logging_level}) 
+        self.inner_stoprule = sum([rule(**params | {"logging_level":self.inner_logging_level}) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
         self.x,self.y = self.inner_solver.run(self.inner_stoprule)
         if not self.inner_solver_is_primal:
             self.x = self.setting.dual_to_primal((self.x,self.y))
@@ -92,11 +94,12 @@ class GeneralizedTikhonov(RegSolver):
         self._external_alpha_call = False
         self.setting.get_or_update_initial_guess(self.x,update=True)
         """use the computed solution as initial guess for next iteration."""
+    
 
     def _next(self):
         the_setting = self.setting if self.inner_solver_is_primal else self.setting.get_dual_setting()
-        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params) 
-        self.inner_stoprule = sum([rule(**params) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
+        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params | {"logging_level":self.inner_logging_level}) 
+        self.inner_stoprule = sum([rule(**params | {"logging_level":self.inner_logging_level}) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
 
         if not self._external_alpha_call:
             exhausted = self.set_next_alpha()
