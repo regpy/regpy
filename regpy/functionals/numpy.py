@@ -2482,6 +2482,7 @@ class TVGeneric(Functional):
 
 from regpy.operators import ForwardFDGradient
 class TVUniformGridFcts(Composed):
+    import logging
     r"""Total Variation Norm: For :math:`C^1` functions the :math:`l^1`-norm of the gradient on a `UniformGrid`
 
     Parameters
@@ -2496,7 +2497,7 @@ class TVUniformGridFcts(Composed):
         Boundary condition in the discretization of gradient, see ForwardFDGradient
     """
 
-    def __init__(self, domain,beta=0.,boundary_condition='Neum'):
+    def __init__(self, domain,beta=0.,boundary_condition='Neum',tol_chambolle=3e-3,stepsize_safety_chambolle=2.,maxiter_chambolle=1000,logging_level=logging.DEBUG,**kwargs ):
         if not isinstance(domain, UniformGridFcts):
             raise TypeError(Errors.not_instance(domain,UniformGridFcts,'only implemented for UniformGridFcts'))
         if not isinstance(beta,float) and (beta>=0.):
@@ -2508,11 +2509,16 @@ class TVUniformGridFcts(Composed):
             self.func = L1L2(self.grad.codomain)
         else:
             self.func = HuberL2(self.grad.codomain)
+        self.tol_chambolle = tol_chambolle
+        self.stepsize_safety_chambolle = stepsize_safety_chambolle    
+        self.maxiter_chambolle = maxiter_chambolle
+        
+        self.log.setLevel(logging_level)
 
         super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
                          methods = {'eval','proximal'},conj_methods = {'proximal'})
 
-    def _proximal(self, x, tau, stepsize_safety=2., maxiter=1000,tol=0.01):
+    def _proximal(self, x, tau, stepsize_safety=None, maxiter=None,tol=None, **kwargs):
         r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
         Parameters
         ----------
@@ -2520,26 +2526,39 @@ class TVUniformGridFcts(Composed):
             First argument of prox
         tau: float >=0
             Second (scaling) argument of prox
-        stepsize_safety: float [optional, default: 2.]
+        stepsize_safety: float or None [optional, default: self.stepsize_safety_chambolle]
             Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
             best results are optained for stepsize_safety =2.
-        maxiter: int [optional: default: 1000]
+        maxiter: int or None [optional, default: self.maxiter_chambolle]
             Maximum number of iterations
-        tol: float>=0 [optional, default: 0.01]
+        tol: float>=0 or None [optional, default: self.tol_chambolle]
             Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
             iteratives differ by less than tol in the maxium norm. 
         """
+
         if self.beta!=0.:
             raise ValueError("Chambolle's method only works for beta=0.")
+        
+        if stepsize_safety is None:
+            stepsize_safety = self.stepsize_safety_chambolle
+        if maxiter is None:
+            maxiter = self.maxiter_chambolle
+        if tol is None:
+            tol = self.tol_chambolle
+
         p = self.grad.codomain.zeros()
         lastp = p
         stepsize = stepsize_safety/self.grad.norm()**2
         for i in range(maxiter):
             update = stepsize*self.grad( -self.grad.adjoint(p)-x/tau)
             p = (p+update) / np.expand_dims(1.+self.func.vector_norm(x = update, axis=self.func._vaxes),-1)
+            self.log.debug(f'Chambolle iteration {i}: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')
             if np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))<tol:
-                self.log.info(f'TV prox Chambolle terminated after {i} iterations.')
+                self.log.info(f'TV prox Chambolle terminated after {i+1} iterations.')
                 break
             else:
+                if i==maxiter-1:
+                    self.log.warning(f'TV prox Chambolle reached maximum number of iterations ({maxiter}) without convergence. Final distance: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')                
                 lastp=p
+       
         return x+tau*self.grad.adjoint(p)
