@@ -2532,8 +2532,6 @@ class TVUniformGridFcts(Composed):
             self.func.sigmaeps = np.broadcast_to(1.+1e-5, domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
         if prox_method not in ["Chambolle", "SaddlePoint"]:
             raise ValueError(f'prox_method must either be "Chambolle" or "SaddlePoint". Got {prox_method}.')
-        elif beta>0:
-            self.prox_method = 'SaddlePoint'
         else:
             self.prox_method = prox_method
         self.chambolle_param = chambolle_param
@@ -2604,8 +2602,6 @@ class TVUniformGridFcts(Composed):
             Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
             iteratives differ by less than tol in the maxium norm. 
         """        
-        if self.beta != 0:
-            raise RuntimeError(f"Chambolle's algorithm only works for beta==0. Given beta: {self.beta}")
         stepsize_safety = stepsize_safety if stepsize_safety is not None else self.chambolle_param["stepsize_safety"]
         maxiter = maxiter if maxiter is not None else self.chambolle_param["maxiter"]
         tol = tol if tol is not None else self.chambolle_param["tol"]
@@ -2614,7 +2610,10 @@ class TVUniformGridFcts(Composed):
         lastp = p
         stepsize = stepsize_safety/self.grad.norm()**2
         for i in range(maxiter):
-            update = stepsize*self.grad( -self.grad.adjoint(p)-x/tau)
+            update = self.grad( -self.grad.adjoint(p)-x/tau)
+            if self.beta!=0:
+                update -= self.beta *p
+            update *= stepsize
             p = (p+update) / np.expand_dims(1.+self.func.vector_norm(x = update, axis=self.func._vaxes),-1)
             self.log.debug(f'Chambolle iteration {i}: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')
             if np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))<tol:
