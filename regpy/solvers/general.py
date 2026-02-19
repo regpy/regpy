@@ -286,6 +286,8 @@ class Setting:
         Before this happens, exact_data will not have any effect.
     logging_level: int [default: logging.INFO]
         logging level
+    explicitDataWarning:bool, optional
+        If True (default), a warning will be given if the setting is initialized without explicit data or exact_data. 
     """
 
     
@@ -301,6 +303,7 @@ class Setting:
                  data= None, 
                  exact_data = None, 
                  logging_level = "INFO",
+                 explicitDataWarning:bool = True,                 
                  _primal_setting =None # intended only for internal use in get_dual_setting()
                  ):
         if not isinstance(op,Operator):
@@ -313,7 +316,7 @@ class Setting:
             self._penalty = as_functional(penalty, op.domain)
         self.regpar=regpar#The flags are set by setting the regularization parameter
         if(not self.data_fid.is_data_func and data is None and _primal_setting is None):
-            if exact_data is None:
+            if exact_data is None and explicitDataWarning:
                 self.log.warning("Setting does not contain any explicit data.")
             self._data=None
         if(self.data_fid.is_data_func):
@@ -944,7 +947,9 @@ class Setting:
         else:
             return self._methods[method_name]['stoprule']   
 
-    def run(self,method_name = None,**kwargs):
+    def run(self,method_name = None,
+            stoprule:StopRule = DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG'),
+            **kwargs):
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
         Parameters
@@ -952,6 +957,9 @@ class Setting:
         method_name: string or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
+        stoprule: StopRule | None 
+            stopping rule. Defualt is  DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG')
+            If None, 
         **kwargs: dict
             Arguments to be passed to the method.
 
@@ -962,21 +970,20 @@ class Setting:
         if method_name is None:
             method_name = self.select_best_method()
         if not method_name in self._methods:
-            raise ValueError('Unknown method name')
+            raise ValueError('')
         themethod= self._methods[method_name]
         if not 'applicable' in themethod:
-            self.evaluate_methods(themethod) 
+            self.evaluate_methods([method_name]) 
         if themethod['applicable'] == False:
-            raise RuntimeError(f'{method_name} is not applicable in this setting.')
+            raise RuntimeError(f'{method_name} is not applicable in this setting: '+themethod['info'])
         if 'logging_level' not in kwargs: 
             kwargs['logging_level'] = self.log.level
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
-        if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            self.set_stopping_rule(DualityGapStopping(tol = 0.1,logging_level=kwargs['logging_level'])
-                                   +CountIterations(1000,logging_level=kwargs['logging_level']),
-                                   method_names=[method_name])
-
+        if stoprule is not None:
+            self.set_stopping_rule(stoprule,method_names=[method_name])
+        elif 'stoprule' not in themethod or themethod['stoprule'] is None:
+            raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stopping_rule.')
         
         solver = themethod['class'](thesetting,**kwargs)
         x,y = solver.run(themethod['stoprule'])
