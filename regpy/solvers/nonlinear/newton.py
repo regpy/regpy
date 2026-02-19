@@ -38,13 +38,17 @@ class NewtonCG(RegSolver):
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     simplified_op : regpy.operators.Operator, optional
         Simplified operator to be used for the derivative. (Default: None)
+    logging_level:str
+        logging level
     """
 
     def __init__(self, 
                  setting:Setting, 
                  data=None, 
                  init=None, 
-                 cgmaxit:int=50, rho:float=0.8, simplified_op:Operator = None):
+                 cgmaxit:int=50, rho:float=0.8, 
+                 simplified_op:Operator = None,
+                 logging_level:str = 'INFO'):
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -72,6 +76,7 @@ class NewtonCG(RegSolver):
         self.cgmaxit = cgmaxit
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
+        self.log.setLevel(logging_level)
     
     def _next(self):
         self._k = 0
