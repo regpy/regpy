@@ -1244,7 +1244,7 @@ class L1L2(VectorIntegralFunctional):
     """
     def __init__(self, vdomain, conj_tol = 1e-16):
         sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
-        super().__init__(vdomain, scalar_func= sfunc, Lipschitz=1.)
+        super().__init__(vdomain, scalar_func= sfunc, Lipschitz=np.inf)
 
 class HuberL2(VectorIntegralFunctional):
     """
@@ -1258,8 +1258,8 @@ class HuberL2(VectorIntegralFunctional):
         Parameter in Huber functional
     """
     def __init__(self, vdomain,sigma=1.):
-        sfunc = Huber(vdomain.scalar_space(),sigma)
-        super().__init__(vdomain, scalar_func=sfunc, Lipschitz=1.)
+        sfunc = (1./sigma)*Huber(vdomain.scalar_space(),sigma)
+        super().__init__(vdomain, scalar_func=sfunc, Lipschitz=sfunc.Lipschitz)
 
 class LppPower(IntegralFunctionalBase):
     r"""
@@ -1533,7 +1533,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
     """
     def __init__(self, domain,
                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-16,**kwargs):
+                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-10,**kwargs):
         self.conj_tol = conj_tol
         super().__init__(domain,conj_nat_dom_u=1.,conj_nat_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
@@ -2495,30 +2495,99 @@ class TVUniformGridFcts(Composed):
         If beta>0, the L^1-norm is approximated by a Huber functional with this parameter. 
     boundary_condition: 'Neum', 'Diri' or 'per' (default: 'Neum')
         Boundary condition in the discretization of gradient, see ForwardFDGradient
+    prox_method: str, optional
+        Method to compute the prox operator. Either "Chambolle" (default) or "SaddlePoint"
     """
 
-    def __init__(self, domain,beta=0.,boundary_condition='Neum',tol_chambolle=3e-3,stepsize_safety_chambolle=2.,maxiter_chambolle=1000,logging_level=logging.DEBUG,**kwargs ):
+    def __init__(self, domain,
+                 beta:float =0.,#
+                 boundary_condition:str='Neum',
+                 prox_method:str = 'Chambolle',
+                 chambolle_param:dict = {'tol':3e-3,
+                                         'stepsize_safety':2.,
+                                         'maxiter':1000,
+                                         'logging_level':logging.DEBUG
+                                         },
+                 saddle_point_param:dict = {'method_name':'dual_PDHG',
+                                            'method_param': {'logging_level':logging.INFO},
+                                            'stoprule': None
+                                        },
+                 logging_level = "INFO",
+                 prox_it_logging_level = "INFO"
+                ):
+        from regpy.stoprules import DualityGapStopping,CountIterations
+    
         if not isinstance(domain, UniformGridFcts):
             raise TypeError(Errors.not_instance(domain,UniformGridFcts,'only implemented for UniformGridFcts'))
-        if not isinstance(beta,float) and (beta>=0.):
+        if not isinstance(beta,(float,int)) and (beta>=0.):
             raise ValueError(Errors.value_error('beta must be a non-negative float'))
         else:
-            self.beta = beta
+            self._beta = beta
         self.grad = ForwardFDGradient(domain, boundary_condition=boundary_condition)
         if beta==0.:
             self.func = L1L2(self.grad.codomain)
+            self.func.scalar_func.conj_tol = 1e-5 # increase tolerance to avoid inf's in duality gap evaluations
         else:
-            self.func = HuberL2(self.grad.codomain)
-        self.tol_chambolle = tol_chambolle
-        self.stepsize_safety_chambolle = stepsize_safety_chambolle    
-        self.maxiter_chambolle = maxiter_chambolle
-        
+            self.func = HuberL2(self.grad.codomain,sigma=beta)
+            self.func.sigmaeps = np.broadcast_to(1.+1e-5, domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
+        if prox_method not in ["Chambolle", "SaddlePoint"]:
+            raise ValueError(f'prox_method must either be "Chambolle" or "SaddlePoint". Got {prox_method}.')
+        elif beta>0:
+            self.prox_method = 'SaddlePoint'
+        else:
+            self.prox_method = prox_method
+        self.chambolle_param = chambolle_param
+        self.saddle_point_param = saddle_point_param
+      
+        if saddle_point_param['stoprule'] is None:  
+           self.saddle_point_param['stoprule'] = DualityGapStopping(tol=0.1,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
+        else:
+            self.saddle_point_param['stoprule'] = saddle_point_param['stoprule'] 
         self.log.setLevel(logging_level)
 
         super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
                          methods = {'eval','proximal'},conj_methods = {'proximal'})
+        
+    @property
+    def beta(self):
+        """
+        Parameter in Huber approximation of the L^1-norm. Exact TV functional only for beta==0.
+        """
+        return self._beta
 
-    def _proximal(self, x, tau, stepsize_safety=None, maxiter=None,tol=None, **kwargs):
+    def _proximal(self, x, tau,  prox_method=None):
+        prox_method = prox_method if prox_method is not None else self.prox_method
+        if prox_method == "Chambolle":
+            return self.proximal_Chambolle(x,tau)
+        elif prox_method == "SaddlePoint":
+            return self.proximal_saddle_point(x,tau)
+        else:
+            raise ValueError(f'Unknown prox_method {prox_method}')
+      
+    def proximal_saddle_point(self,x,
+                              tau:float,
+                              method_name:str|None = None,
+                              method_param:dict|None = None,
+                              stoprule = None
+                              ):
+        r""" Compute prox using the Rockafellar-Fenchel type formulation 
+
+        ::math::
+            prox_{tau TV} = argmin_u \tau \|grad u\|_{L^1} +  \frac{1}{2} \|u-x\|_{L^2}^2
+
+        or the corresponding saddle point problem.
+        """      
+        from regpy.solvers import Setting
+        method_name = method_name if method_name is not None else self.saddle_point_param['method_name']
+        method_param = method_param if method_param is not None else self.saddle_point_param['method_param']
+        stoprule = stoprule if stoprule is not None else self.saddle_point_param['stoprule']
+        setting = Setting(op=self.grad,data_fid = self.func, penalty = L2, penalty_shift = x, regpar=1./tau,explicitDataWarning=False)
+        return setting.run(method_name,stoprule=stoprule,**method_param)[0]
+        
+    def proximal_Chambolle(self,x,tau,
+                           stepsize_safety:float|None = None, 
+                           maxiter:int|None = None,
+                           tol:float|None = None):
         r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
         Parameters
         ----------
@@ -2534,17 +2603,12 @@ class TVUniformGridFcts(Composed):
         tol: float>=0 or None [optional, default: self.tol_chambolle]
             Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
             iteratives differ by less than tol in the maxium norm. 
-        """
-
-        if self.beta!=0.:
-            raise ValueError("Chambolle's method only works for beta=0.")
-        
-        if stepsize_safety is None:
-            stepsize_safety = self.stepsize_safety_chambolle
-        if maxiter is None:
-            maxiter = self.maxiter_chambolle
-        if tol is None:
-            tol = self.tol_chambolle
+        """        
+        if self.beta != 0:
+            raise RuntimeError(f"Chambolle's algorithm only works for beta==0. Given beta: {self.beta}")
+        stepsize_safety = stepsize_safety if stepsize_safety is not None else self.chambolle_param["stepsize_safety"]
+        maxiter = maxiter if maxiter is not None else self.chambolle_param["maxiter"]
+        tol = tol if tol is not None else self.chambolle_param["tol"]
 
         p = self.grad.codomain.zeros()
         lastp = p
