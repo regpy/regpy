@@ -718,7 +718,7 @@ class Functional:
 
     @property
     def is_separable(self)->bool:
-        """ Flag if the functional is separable, i.e. F(x)=\sum_i f_i(x_i)
+        """ Flag if the functional is separable, i.e. :math:`F(x)=sum_i f_i(x_i)`
         """
         return self._is_separable
 
@@ -1067,6 +1067,16 @@ class LinearFunctional(Functional):
             return self
         else:
             return NotImplemented
+
+class NullFunctional(LinearFunctional):
+    """ Functional which is identically zero
+    
+    Parameters:
+    domain: VectorSpaceBase
+    """
+    def __init__(self,domain:VectorSpaceBase):
+        zeros = np.broadcast_to([0.],domain.shape) if isinstance(domain,NumPyVectorSpace) else domain.zeros()
+        super().__init__(zeros,domain=domain)
 
 class SquaredNorm(Functional):
     r"""Functionals of the form 
