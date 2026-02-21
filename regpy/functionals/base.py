@@ -1599,39 +1599,35 @@ class LinearCombination(Functional):
 
     @property
     def conj_dom_l(self):
-        self._conj_dom_l = None
+        _conj_dom_l = None
         if self.is_separable:
             if len(self.funcs) == 1:
-                if self.coeffs[0]>0:
-                    self._conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
-                else:
-                    self._conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
+                if self.coeffs[0]>=0:
+                    _conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
             elif self.linear_table.count(False)==0:
-                self._conj_dom_l = self.grad_sum
+                _conj_dom_l = self.grad_sum
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
-                self._conj_dom_l = self.funcs[0].domain.zeros()
-                self._conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] if self.coeffs[j] >0 else self.funcs[j].conj_dom_u*self.coeffs[j]
-                self._conj_dom_l += self.grad_sum
-        return super().conj_dom_l
+                if self.coeffs[j] >=0:
+                    _conj_dom_l = self.grad_sum
+                    _conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] 
+        return _conj_dom_l
     
     @property
     def conj_dom_u(self):
-        self._conj_dom_u = None
+        _conj_dum_u = None
         if self.is_separable:
             if len(self.funcs) == 1:
-                if self.coeffs[0]>0:
-                    self._conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
-                else:
-                    self._conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
+                if self.coeffs[0]>=0:
+                    _conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
             elif self.linear_table.count(False)==0:
-                self._conj_dom_u = self.grad_sum
+                _conj_dom_u = self.grad_sum
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
-                self._conj_dom_u = self.funcs[0].domain.zeros()
-                self._conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j] if self.coeffs[j] >0 else self.funcs[j].conj_dom_u*self.coeffs[j]
-                self._conj_dom_u += self.grad_sum
-        return super().conj_dom_u
+                if self.coeffs[j] >=0:
+                    _conj_dom_u += self.grad_sum
+                    _conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j]
+        return _conj_dom_u
 
 class VerticalShift(Functional):
     r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
