@@ -418,7 +418,7 @@ class Setting:
 
     def _init_convex_Tikhonov(self):
         if hasattr(self,'regpar') and self._primal_setting is None and self.is_convex and self.is_tikhonov:
-            self._methods = Setting._generate_full_solver_dictionary()
+            self._methods = self._generate_full_solver_dictionary()
             self.duality_gap_warning_incr = 1.        
 
     ######General convenience methods
@@ -753,8 +753,7 @@ class Setting:
 
     
     ######Methods checking applicability
-    @staticmethod
-    def _generate_full_solver_dictionary()->dict:
+    def _generate_full_solver_dictionary(self)->dict:
         """This so far contains only solvers for convex Tikhonov functionals."""
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemiSmoothNewton,TikhonovCG
         method_dict={
@@ -793,7 +792,7 @@ class Setting:
         if not self.is_convex or not self.is_tikhonov:
             raise RuntimeError(Errors.runtime_error('So far only convex Tikhonov functional have a method dictionary.'))
         if not hasattr(self,'_methods'):
-            self._methods = Setting._generate_full_solver_dictionary()
+            self._methods = self._generate_full_solver_dictionary()
         self._methods[method_abbrv] = {'class':class_name, 'primal':primal,'full':full_method_name}
 
     def evaluate_methods(self,method_names = None)->None:
@@ -936,7 +935,7 @@ class Setting:
         if method_name is None:
             method_name = self.select_best_method()
         if not method_name in self._methods:
-            raise ValueError('')
+            raise ValueError(Errors.value_error(f"{method_name} not in list of methods: {self._methods}."))
         themethod= self._methods[method_name]
         if not 'applicable' in themethod:
             self.evaluate_methods([method_name]) 

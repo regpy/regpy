@@ -2496,7 +2496,13 @@ class TVUniformGridFcts(Composed):
     boundary_condition: 'Neum', 'Diri' or 'per' (default: 'Neum')
         Boundary condition in the discretization of gradient, see ForwardFDGradient
     prox_method: str, optional
-        Method to compute the prox operator. Either "Chambolle" (default) or "SaddlePoint"
+        A string specifying the method for computing the prox operator. This must be a solver for the class-internal
+        TV_prox_setting derived from Setting. The default is "dual_FISTA". An alternative -- besides most other standard solvers 
+        for convex Tikhonov settings -- is "Chambolle" implementing Chambolle's dual fixed point iteration.  
+    prox_method_param: dict, optional
+        parameters of the prox_method. Defaults to {}
+    prox_stop_rule: StoprRule or None, optional
+        StopRule of the prox_methods. Defaults to DualityGapStopping(tol=1e-4,stop_at_infty = False) + CountIterations(500)
     """
 
     ###############################################################################
@@ -2522,13 +2528,19 @@ class TVUniformGridFcts(Composed):
                      penalty_shift = None,
                      tau:float = 1.
                      ):
-            self.beta = 1./tv.func.scalar_func.Lipschitz
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
                              penalty_shift=penalty_shift, 
                              regpar = 1./tau,
                              explicitDataWarning=False)
+
+        def _generate_full_solver_dictionary(self)->dict:
+            _methods = super()._generate_full_solver_dictionary()
+            _methods.update({'Chambolle':{'class':TVUniformGridFcts.Chambolle,
+                                          'primal':False,
+                                          'full':"Chambolle's dual fixed point iteration"}})
+            return _methods
 
         def set_penalty_shift(self,penalty_shift):
             self.set_penalty(L2,penalty_shift=penalty_shift)
@@ -2614,20 +2626,13 @@ class TVUniformGridFcts(Composed):
     def __init__(self, domain,
                  beta:float =0.,#
                  boundary_condition:str='Neum',
-                 prox_method:str = 'Chambolle',
-                 chambolle_param:dict = {'tol':3e-3,
-                                         'stepsize_safety':2.,
-                                         'maxiter':1000,
-                                         'logging_level':logging.DEBUG
-                                         },
-                 saddle_point_param:dict = {'method_name':'dual_PDHG',
-                                            'method_param': {'logging_level':logging.INFO},
-                                            'stoprule': None
-                                        },
+                 prox_method:str = 'dual_FISTA',
+                 prox_method_param:dict = {},
+                 prox_stop_rule = None,
                  logging_level = "INFO",
                  prox_it_logging_level = "INFO"
                 ):
-        from regpy.stoprules import DualityGapStopping,CountIterations
+        from regpy.stoprules import DualityGapStopping,CountIterations,StopRule
 
         if not isinstance(domain, UniformGridFcts):
             raise TypeError(Errors.not_instance(domain,UniformGridFcts,'only implemented for UniformGridFcts'))
@@ -2637,20 +2642,21 @@ class TVUniformGridFcts(Composed):
         super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
                          methods = {'eval','proximal'},conj_methods = {'proximal'})
 
-        if prox_method not in ["Chambolle", "SaddlePoint"]:
-            raise ValueError(f'prox_method must either be "Chambolle" or "SaddlePoint". Got {prox_method}.')
-        else:
-            self.prox_method = prox_method
-        self.chambolle_param = chambolle_param.copy()
-        self.saddle_point_param = saddle_point_param.copy()
-       
-        if saddle_point_param['stoprule'] is None:  
-           self.saddle_point_param['stoprule'] = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
-        else:
-            self.saddle_point_param['stoprule'] = saddle_point_param['stoprule'] 
-        self.log.setLevel(logging_level)
-
         self.prox_setting = TVUniformGridFcts.TV_prox_setting(self)
+        if prox_method not in self.prox_setting.applicable_methods():
+            raise ValueError(Errors.value_error(f"{prox_method} not in list of applicable methods of the TV_pvrox_setting, which is {self.prox_setting.applicable_methods()}."))
+        else:
+            self.prox_method = prox_method      
+        if prox_stop_rule is None:
+            prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
+        elif not isinstance(prox_stop_rule,StopRule):
+            raise ValueError(Errors.value_error(f"{prox_stop_rule} is not a StopRule."))
+        if not isinstance(prox_method_param,dict):
+            raise ValueError(Errors.value_error(f"{prox_method_param} is not a dictionary."))
+        else:
+            self.prox_method_param = prox_method_param
+        self.prox_stop_rule = prox_stop_rule
+        self.log.setLevel(logging_level)
 
     @property
     def beta(self):
@@ -2683,71 +2689,12 @@ class TVUniformGridFcts(Composed):
             func = HuberL2(self.grad.codomain,sigma=beta)
             func.sigmaeps = np.broadcast_to(1.+1e-5, self.grad.domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
         return func
-
-    def _proximal(self, x, tau,  prox_method=None):
-        prox_method = prox_method if prox_method is not None else self.prox_method    
-        if prox_method == "Chambolle":
-            return self.proximal_Chambolle(x,tau)
-        elif prox_method == "SaddlePoint":
-            return self.proximal_saddle_point(x,tau)
-        else:
-            raise ValueError(f'Unknown prox_method {prox_method}')
       
-    def proximal_saddle_point(self,x,
-                              tau:float,
-                              method_name:str|None = None,
-                              method_param:dict|None = None,
-                              stoprule = None
-                              ):    
+    def _proximal(self,x,tau:float,**kwargs):
         self.prox_setting.set_penalty_shift(x)
         self.prox_setting.regpar=1./tau
-        self.prox_setting.add_method('Chambolle',TVUniformGridFcts.Chambolle,False,"Chambolle's dual fixed point iteration") 
+        prox_method_param = self.prox_method_param.copy()
+        prox_method_param.update(kwargs)
 
-        method_name = method_name if method_name is not None else self.saddle_point_param['method_name']
-        method_param = method_param if method_param is not None else self.saddle_point_param['method_param']
-        stoprule = stoprule if stoprule is not None else self.saddle_point_param['stoprule']
-        return self.prox_setting.run(method_name,stoprule=stoprule,**method_param)[0]
+        return self.prox_setting.run(self.prox_method,stoprule=self.prox_stop_rule,**prox_method_param)[0]
         
-    def proximal_Chambolle(self,x,tau,
-                           stepsize_safety:float|None = None, 
-                           maxiter:int|None = None,
-                           tol:float|None = None):
-        r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004) 
-        Parameters
-        ----------
-        x: np.array 
-            First argument of prox
-        tau: float >=0
-            Second (scaling) argument of prox
-        stepsize_safety: float or None [optional, default: self.stepsize_safety_chambolle]
-            Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
-            best results are optained for stepsize_safety =2.
-        maxiter: int or None [optional, default: self.maxiter_chambolle]
-            Maximum number of iterations
-        tol: float>=0 or None [optional, default: self.tol_chambolle]
-            Tolerance parameter for stopping criterion. Iteration is stopped if two consecutive 
-            iteratives differ by less than tol in the maxium norm. 
-        """        
-        stepsize_safety = stepsize_safety if stepsize_safety is not None else self.chambolle_param["stepsize_safety"]
-        maxiter = maxiter if maxiter is not None else self.chambolle_param["maxiter"]
-        tol = tol if tol is not None else self.chambolle_param["tol"]
-
-        p = self.grad.codomain.zeros()
-        lastp = p
-        stepsize = stepsize_safety/self.grad.norm()**2
-        for i in range(maxiter):
-            update = self.grad( -self.grad.adjoint(p)-x/tau)
-            if self.beta!=0:
-                update -= (self.beta/tau) *p
-            update *= stepsize
-            p = (p+update) / np.expand_dims(1.+self.func.vector_norm(x = update, axis=self.func._vaxes),-1)
-            self.log.debug(f'Chambolle iteration {i}: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')
-            if np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))<tol:
-                self.log.info(f'TV prox Chambolle terminated after {i+1} iterations.')
-                break
-            else:
-                if i==maxiter-1:
-                    self.log.warning(f'TV prox Chambolle reached maximum number of iterations ({maxiter}) without convergence. Final distance: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')                
-                lastp=p
-       
-        return x+tau*self.grad.adjoint(p)
