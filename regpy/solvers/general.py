@@ -274,7 +274,8 @@ class Setting:
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
     regpar: float or None, optional
-        regularization parameter  :math:`alpha`.
+        regularization parameter  :math:`alpha`. 
+        Defaults to None. See explanations above on different meaning of solvers in this case.
     penalty_shift: op.domain or None, optional
         If not None, the penalty functional  :math:`\mathcal{R}` is replaced by  :math:`\mathcal{R}(. - penalty_shift)`. Defaults to None
     data: array-like or None, optionals
@@ -309,12 +310,8 @@ class Setting:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
-        self._data_fid = as_functional(data_fid, op.codomain)
-        if not penalty_shift is None:
-            self._penalty = as_functional(penalty, op.domain).shift(penalty_shift)
-        else:
-            self._penalty = as_functional(penalty, op.domain)
-        self.regpar=regpar#The flags are set by setting the regularization parameter
+        self.set_data_fid(data_fid)
+        self.set_penalty(penalty,penalty_shift=penalty_shift)
         if(not self.data_fid.is_data_func and data is None and _primal_setting is None):
             if exact_data is None and explicitDataWarning:
                 self.log.warning("Setting does not contain any explicit data.")
@@ -332,9 +329,7 @@ class Setting:
         if _primal_setting is not None and not (_primal_setting.is_convex and _primal_setting.is_tikhonov):
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
         self._primal_setting = _primal_setting
-        if _primal_setting is None and self.is_convex and self.is_tikhonov:
-            self._methods = Setting._generate_full_solver_dictionary()
-        self.duality_gap_warning_incr = 1.
+        self.regpar=regpar#The flags are set by setting the regularization parameter
 
     @property
     def op(self):
@@ -346,10 +341,24 @@ class Setting:
         r"""The penalty functional."""        
         return self._penalty
 
+    def set_penalty(self, penalty,penalty_shift=None):
+        if penalty_shift is not None:
+            self._penalty = as_functional(penalty, self.op.domain).shift(penalty_shift)
+        else:
+            self._penalty = as_functional(penalty, self.op.domain)
+        self._init_convex_Tikhonov()
+
     @property
     def data_fid(self):
         r"""The data fidelity functional."""
         return self._data_fid 
+
+    def set_data_fid(self,data_fid):
+        if self.data is not None:
+            raise RuntimeError(Errors.runtime_error("data fidelity term cannot be changed if data are set."))
+        self._data_fid = as_functional(data_fid, self.op.codomain)
+        self._init_convex_Tikhonov()
+
     @property
     def h_domain(self):
         r"""The Hilbert space associated to penalty functional"""
@@ -405,6 +414,12 @@ class Setting:
                 raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
             new_regpar = float(new_regpar)
         self._regpar=new_regpar
+        self._init_convex_Tikhonov()
+
+    def _init_convex_Tikhonov(self):
+        if hasattr(self,'regpar') and self._primal_setting is None and self.is_convex and self.is_tikhonov:
+            self._methods = Setting._generate_full_solver_dictionary()
+            self.duality_gap_warning_incr = 1.        
 
     ######General convenience methods
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
@@ -479,84 +494,6 @@ class Setting:
             scale = 1.0      
         poisson_data = self.op.codomain.poisson(scale*self._exact_data,seed=seed)/scale
         self.data = poisson_data    
-
-    def check_adjoint(self,test_real_adjoint=False,tolerance=1e-10):
-        r"""Convenience method to run `regpy.util.operator_tests`. Which test if the provided adjoint in the operator 
-        is the true matrix adjoint. That is 
-
-        .. code-block:: python
-    
-           (vec_typ.vdot(y, self.op(x)) - vec_typ.vdot(self.op.adjoint(y), x)).real < tolerance
-
-        If the operator is non-linear this will be done for the derivative.
-
-        Parameters
-        ----------
-        tolerance : float
-            Tolerance of the two computed inner products.
-
-        Returns
-        -------
-        bool
-            Tests either the operator or the derivative with `regpy.util.operator_tests.test_adjoint` and returns that value. 
-        """
-        from regpy.util.operator_tests import test_adjoint
-        if self.op.linear:
-            return test_adjoint(self.op,tolerance=tolerance)
-        else:
-            _, deriv = self.op.linearize(self.op.domain.randn())
-            return test_adjoint(deriv, tolerance=tolerance)
-
-
-
-    def check_deriv(self,steps=None):
-        r"""Convenience method to run `regpy.util.operator_tests.test_derivative`. Which test if the 
-        provided derivative in the operator ,if it is a non-linear operator. It computes for 
-        the provided `steps` as :math:`t`
-
-        .. math::
-            ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| 
-
-        wrt the :math:`L^2`-norm and returns true if it is a decreasing sequence.
-
-        Parameters
-        ----------
-        steps : list, optional
-            A decreasing sequence used as steps. Defaults to (Default: [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7]).
-
-        Returns
-        -------
-        Boolean
-            True if the operator is linear or affine linear or if test_derivative returns True.
-        """
-        from regpy.util.operator_tests import test_derivative, test_affine_linearity
-        if self.op.linear or test_affine_linearity(self.op):
-            return True
-        return test_derivative(self.op,steps=steps)
-    
-    def h_adjoint(self,y=None):
-        r"""Returns the adjoint with respect ro the Hilbert spaces by implementing :math:`G_X^{-1} \circ F \circ G_Y`.
-
-        If the operator is non-linear this provided the adjoint to the derivative at `y`.
-
-        Parameters
-        ----------
-        y : op.codomain
-            Element of the domain at which to evaluate the adjoint of the derivative. 
-
-        Returns
-        -------
-        regpy.operators.Operator
-            Adjoint wrt chosen Hilbert spaces. 
-        regpy.operators.Operator
-            The operator who's adjoint is computed. Only needed for non-linear case as this return the 
-            derivative at the point.
-        """
-        if self.op.linear:
-            return self.h_domain.gram_inv * self.op.adjoint * self.h_codomain.gram, self.op
-        else:
-            _ , deriv = self.op.linearize(y)
-            return self.h_domain.gram_inv * deriv.adjoint * self.h_codomain.gram, deriv
 
     def get_or_update_data(self, new_data=None,update:bool=True):
         r""" Updates the data stored in the setting or gets these data of they are not provided.
@@ -817,8 +754,8 @@ class Setting:
     
     ######Methods checking applicability
     @staticmethod
-    def _generate_full_solver_dictionary():
-        '''This so far contains only linear solvers'''
+    def _generate_full_solver_dictionary()->dict:
+        """This so far contains only solvers for convex Tikhonov functionals."""
         from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemiSmoothNewton,TikhonovCG
         method_dict={
                 'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
@@ -834,8 +771,32 @@ class Setting:
                 'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
             }
         return method_dict
-    
-    def evaluate_methods(self,method_names = None):
+
+    def add_method(self,
+                   method_abbrv:str,
+                   class_name:type,
+                   primal:bool,
+                   full_method_name:str=None)->None:
+        """ Add a new method to the method dictionary
+        
+        Parameters:
+        ----------------
+        method_abbrv:str
+            Abbreviation of the new method by which it is called.
+        class_name:type
+            Class of the new method
+        primal:bool
+            Flag if the method is applied to the primal or to the dual problem
+        full_method_name:str | None, optional
+            Full, more descriptive name of the method. Defaults to None 
+        """
+        if not self.is_convex or not self.is_tikhonov:
+            raise RuntimeError(Errors.runtime_error('So far only convex Tikhonov functional have a method dictionary.'))
+        if not hasattr(self,'_methods'):
+            self._methods = Setting._generate_full_solver_dictionary()
+        self._methods[method_abbrv] = {'class':class_name, 'primal':primal,'full':full_method_name}
+
+    def evaluate_methods(self,method_names = None)->None:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
@@ -890,6 +851,11 @@ class Setting:
             if method['applicable']==False:
                 print(name, (' ('+method['full']+'): ' if full_names else ''),
                       method['info'])
+
+    def set_method_parameters(self,method_name:str,params:dict={})->None:
+        if method_name not in self._methods:
+            raise RuntimeError(Errors.runtime_error(f"Unknown method name {method_name}. Known methods are {self._methods}. Use add_method() to add a new method."))    
+        self._methods[method_name]['parameters']=params
 
     def select_best_method(self):
         """Returns the name of the applicable method with the best convergence rate predicted by theory 
@@ -978,6 +944,8 @@ class Setting:
             raise RuntimeError(f'{method_name} is not applicable in this setting: '+themethod['info'])
         if 'logging_level' not in kwargs: 
             kwargs['logging_level'] = self.log.level
+        if 'parameters' in themethod:
+            kwargs.update(themethod['parameters'])
 
         thesetting = self if themethod['primal'] else self.get_dual_setting()
         if stoprule is not None:
