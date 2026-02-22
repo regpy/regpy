@@ -1601,31 +1601,31 @@ class LinearCombination(Functional):
     def conj_dom_l(self):
         _conj_dom_l = None
         if self.is_separable:
-            if len(self.funcs) == 1:
+            if self.linear_table.count(False)==0:
+                _conj_dom_l = self.grad_sum.copy()
+            elif len(self.funcs) == 1:
                 if self.coeffs[0]>=0:
                     _conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
-            elif self.linear_table.count(False)==0:
-                _conj_dom_l = self.grad_sum
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
                 if self.coeffs[j] >=0:
-                    _conj_dom_l = self.grad_sum
+                    _conj_dom_l = self.grad_sum.copy()
                     _conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] 
         return _conj_dom_l
     
     @property
     def conj_dom_u(self):
-        _conj_dum_u = None
+        _conj_dom_u = None
         if self.is_separable:
-            if len(self.funcs) == 1:
+            if self.linear_table.count(False)==0:
+                _conj_dom_u = self.grad_sum.copy()
+            elif len(self.funcs) == 1:
                 if self.coeffs[0]>=0:
                     _conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
-            elif self.linear_table.count(False)==0:
-                _conj_dom_u = self.grad_sum
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
                 if self.coeffs[j] >=0:
-                    _conj_dom_u += self.grad_sum
+                    _conj_dom_u = self.grad_sum.copy()
                     _conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j]
         return _conj_dom_u
 
