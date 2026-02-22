@@ -11,7 +11,7 @@ from regpy.vecsps.numpy import *
 import regpy.operators as rop
 from regpy.hilbert import L2
 
-from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed
+from .base import Functional, Conj, LinearFunctional,LinearCombination,HorizontalShiftDilation,NotInEssentialDomainError,NotTwiceDifferentiableError, AbstractFunctional, Composed, as_functional
 
 __all__ = ["IntegralFunctionalBase","VectorIntegralFunctional","LppL2","L1L2","HuberL2","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","QuadraticPositiveSemidef","L1Generic","TVGeneric","TVUniformGridFcts"]
 
@@ -1258,7 +1258,7 @@ class HuberL2(VectorIntegralFunctional):
         Parameter in Huber functional
     """
     def __init__(self, vdomain,sigma=1.):
-        sfunc = (1./sigma)*Huber(vdomain.scalar_space(),sigma)
+        sfunc = (1./sigma)*Huber(vdomain.scalar_space(),sigma=sigma)
         super().__init__(vdomain, scalar_func=sfunc, Lipschitz=sfunc.Lipschitz)
 
 class LppPower(IntegralFunctionalBase):
@@ -2499,6 +2499,118 @@ class TVUniformGridFcts(Composed):
         Method to compute the prox operator. Either "Chambolle" (default) or "SaddlePoint"
     """
 
+    ###############################################################################
+    from regpy.solvers import Setting
+    class TV_prox_setting(Setting):
+        r""" Rockafellar-Fenchel type setting for computing the proximal mapping of the TV functional: 
+
+        ::math::
+            prox_{tau TV} = argmin_u  S(grad u) +  \frac{1}{2*tau} \|u-x\|_{L^2}^2
+
+        where S is either an L1L2 functional (for beta==0) or a HuberL2 functional
+            
+        Parameters:
+            tv: TVUnivormGridFct 
+               the TV functional
+            penalty_shift: np.ndarray | None (optional)
+                The argument x. Defaults to None correpsonding to x=0
+            tau: float (optional)
+                 Parameter of the prox. Defaults to 1. 
+            
+        """  
+        def __init__(self,tv,
+                     penalty_shift = None,
+                     tau:float = 1.
+                     ):
+            self.beta = 1./tv.func.scalar_func.Lipschitz
+            super().__init__(op=tv.grad,
+                             data_fid = tv.func, 
+                             penalty = L2, 
+                             penalty_shift=penalty_shift, 
+                             regpar = 1./tau,
+                             explicitDataWarning=False)
+
+        def set_penalty_shift(self,penalty_shift):
+            self.set_penalty(L2,penalty_shift=penalty_shift)
+
+    #############################################################################
+    from regpy.solvers.general import RegSolver
+    class Chambolle(RegSolver):
+        r"""Fixed point iteration for the dual problem suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004). 
+        Compared to this original reference, the free variable is rescaled by the factor (tau*grid.volume_elem)
+        to match the free variable of the dual of the TV_prox_setting, and it is adapted also to the case of Huber-TV, i.e., beta>0. 
+        
+        Parameters
+        ----------
+        x: np.array 
+            First argument of prox
+        tau: float >=0
+            Second (scaling) argument of prox
+        stepsize_safety: float or None [optional, default: self.stepsize_safety_chambolle]
+            Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
+            best results are optained for stepsize_safety =2.
+        """           
+        def __init__(self,setting,x=None,y=None, stepsize_safety = 1.,**kwargs):
+            out,_ = TVUniformGridFcts.Chambolle.check_applicability(setting)
+            if not out['applicable']:
+                raise ValueError(out['info'])
+            super().__init__(setting, x=x,y=y)
+            self.lastx = self.x
+            primal = setting._primal_setting
+            self.vol_el =  primal.op.domain.volume_elem            
+            self.grad = primal.op
+            self.x = x if x is not None else  self.grad.codomain.zeros()
+            self.S = primal.data_fid
+            self.R = primal.penalty
+            self.ub = self.vol_el * setting.regpar 
+            self.stepsize = stepsize_safety/self.grad.norm()**2 
+            self.ref = -primal.penalty.subgradient(self.grad.domain.zeros())
+            """the argument of the prox operator, transformed to the dual space"""
+            if isinstance(self.S,HuberL2):
+                self.hessian = setting.penalty.hessian(setting.penalty.domain.zeros())
+                self.beta = setting.penalty.convexity_param # the parameter in the Huber functional
+            self.y = self.grad.adjoint(self.x)
+
+        def _next(self):
+            self.lastx = self.x; 
+            self.u = self.y+self.ref
+            self.update = self.grad(-self.u)
+            if isinstance(self.S,HuberL2):
+                self.update -= (self.regpar*self.beta)*self.x
+            self.update *= self.stepsize
+            if isinstance(self.S,HuberL2):
+                #compute projection of x + update onto feasible set
+                ptw_norms = self.S.vector_norm(x = self.x + self.update, axis=self.S._vaxes)
+                ptw_norms[ptw_norms<=self.ub] = self.ub
+                self.x = (self.ub / np.expand_dims(ptw_norms,-1)) * (self.x+self.update)
+            else:         
+                self.x = (self.x+self.update) / np.expand_dims(1.+(1./self.ub)*self.S.vector_norm(x = self.update, axis=self.S._vaxes),-1)
+            self.y = self.grad.adjoint(self.x)
+
+        def primal(self):
+            """primal variables (of the dual problem) needed for the evaluation of the dualitzy gap
+            """
+            return (self.x,self.y)
+
+        def dual(self):
+            """dual variables of the dual problem (i.e., actually the primal variables) needed for the evaluation of the dualitzy gap
+            """
+            if hasattr(self,'u'):
+                return ((1./self.vol_el)*self.u,(-1./(self.vol_el*self.stepsize))*self.update) 
+            else: # at first iterate
+                return (self.y,self.x)
+
+        @staticmethod
+        def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
+            from regpy.solvers import Setting            
+            out = {'info':''}; par = {}            
+            if not isinstance(setting,Setting) or not isinstance(setting._primal_setting,TVUniformGridFcts.TV_prox_setting):
+                out['info'] += "Chambolle's method is only applicable in the dual of a TV_prox_setting."
+            out['applicable'] = out['info'] == ''
+            out['rate']=np.nan            
+            return out,par 
+
+    #####################################################################
     def __init__(self, domain,
                  beta:float =0.,#
                  boundary_condition:str='Neum',
@@ -2516,45 +2628,64 @@ class TVUniformGridFcts(Composed):
                  prox_it_logging_level = "INFO"
                 ):
         from regpy.stoprules import DualityGapStopping,CountIterations
-    
+
         if not isinstance(domain, UniformGridFcts):
             raise TypeError(Errors.not_instance(domain,UniformGridFcts,'only implemented for UniformGridFcts'))
-        if not isinstance(beta,(float,int)) and (beta>=0.):
-            raise ValueError(Errors.value_error('beta must be a non-negative float'))
-        else:
-            self._beta = beta
         self.grad = ForwardFDGradient(domain, boundary_condition=boundary_condition)
-        if beta==0.:
-            self.func = L1L2(self.grad.codomain)
-            self.func.scalar_func.conj_tol = 1e-5 # increase tolerance to avoid inf's in duality gap evaluations
-        else:
-            self.func = HuberL2(self.grad.codomain,sigma=beta)
-            self.func.sigmaeps = np.broadcast_to(1.+1e-5, domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
+
+        self.beta = beta # also sets self.func as L1L2 or HuberL2!
+        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
+                         methods = {'eval','proximal'},conj_methods = {'proximal'})
+
         if prox_method not in ["Chambolle", "SaddlePoint"]:
             raise ValueError(f'prox_method must either be "Chambolle" or "SaddlePoint". Got {prox_method}.')
         else:
             self.prox_method = prox_method
-        self.chambolle_param = chambolle_param
-        self.saddle_point_param = saddle_point_param
-      
+        self.chambolle_param = chambolle_param.copy()
+        self.saddle_point_param = saddle_point_param.copy()
+       
         if saddle_point_param['stoprule'] is None:  
-           self.saddle_point_param['stoprule'] = DualityGapStopping(tol=0.1,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
+           self.saddle_point_param['stoprule'] = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
         else:
             self.saddle_point_param['stoprule'] = saddle_point_param['stoprule'] 
         self.log.setLevel(logging_level)
 
-        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
-                         methods = {'eval','proximal'},conj_methods = {'proximal'})
-        
+        self.prox_setting = TVUniformGridFcts.TV_prox_setting(self)
+
     @property
     def beta(self):
         """
         Parameter in Huber approximation of the L^1-norm. Exact TV functional only for beta==0.
         """
         return self._beta
+    
+    @beta.setter
+    def beta(self, beta_val):
+        """
+        Sets beta as well as the functional that is applied to the gradient (L1L2 if beta == 0 and HuberL2 else)
+        """
+        if not isinstance(beta_val,(float,int)) and (beta_val>=0.):
+            raise ValueError(Errors.value_error('beta must be a non-negative float'))
+        else:
+            self._beta = float(beta_val)
+        self._beta = beta_val
+        self.func = self._grad_func(beta_val)
+        if hasattr(self,'prox_setting'):
+            self.prox_setting.data_fid = self.func
+
+    def _grad_func(self,beta)->Functional:
+        r"""Returns the functional applied to the gradient -- L1L2 if beta ==0 and HuberL2 if beta>0
+        """
+        if beta==0.:
+            func = L1L2(self.grad.codomain)
+            func.scalar_func.conj_tol = 1e-5 # increase tolerance to avoid inf's in duality gap evaluations
+        else:
+            func = HuberL2(self.grad.codomain,sigma=beta)
+            func.sigmaeps = np.broadcast_to(1.+1e-5, self.grad.domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
+        return func
 
     def _proximal(self, x, tau,  prox_method=None):
-        prox_method = prox_method if prox_method is not None else self.prox_method
+        prox_method = prox_method if prox_method is not None else self.prox_method    
         if prox_method == "Chambolle":
             return self.proximal_Chambolle(x,tau)
         elif prox_method == "SaddlePoint":
@@ -2567,20 +2698,15 @@ class TVUniformGridFcts(Composed):
                               method_name:str|None = None,
                               method_param:dict|None = None,
                               stoprule = None
-                              ):
-        r""" Compute prox using the Rockafellar-Fenchel type formulation 
+                              ):    
+        self.prox_setting.set_penalty_shift(x)
+        self.prox_setting.regpar=1./tau
+        self.prox_setting.add_method('Chambolle',TVUniformGridFcts.Chambolle,False,"Chambolle's dual fixed point iteration") 
 
-        ::math::
-            prox_{tau TV} = argmin_u \tau \|grad u\|_{L^1} +  \frac{1}{2} \|u-x\|_{L^2}^2
-
-        or the corresponding saddle point problem.
-        """      
-        from regpy.solvers import Setting
         method_name = method_name if method_name is not None else self.saddle_point_param['method_name']
         method_param = method_param if method_param is not None else self.saddle_point_param['method_param']
         stoprule = stoprule if stoprule is not None else self.saddle_point_param['stoprule']
-        setting = Setting(op=self.grad,data_fid = self.func, penalty = L2, penalty_shift = x, regpar=1./tau,explicitDataWarning=False)
-        return setting.run(method_name,stoprule=stoprule,**method_param)[0]
+        return self.prox_setting.run(method_name,stoprule=stoprule,**method_param)[0]
         
     def proximal_Chambolle(self,x,tau,
                            stepsize_safety:float|None = None, 
@@ -2612,7 +2738,7 @@ class TVUniformGridFcts(Composed):
         for i in range(maxiter):
             update = self.grad( -self.grad.adjoint(p)-x/tau)
             if self.beta!=0:
-                update -= self.beta *p
+                update -= (self.beta/tau) *p
             update *= stepsize
             p = (p+update) / np.expand_dims(1.+self.func.vector_norm(x = update, axis=self.func._vaxes),-1)
             self.log.debug(f'Chambolle iteration {i}: {np.max(self.func.vector_norm(x = p-lastp, axis=self.func._vaxes))} >= {tol}')
