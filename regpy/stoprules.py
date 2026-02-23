@@ -1,6 +1,6 @@
 from copy import deepcopy
 from regpy.util import ClassLogger, Errors
-from typing import Callable
+from typing import Callable,Iterable
 import numpy as np
 import time
 import logging 
@@ -761,7 +761,7 @@ class RelativeChangeData(StopRule):
     Stops at the first iterate at which the difference between the old residual
     and the new residual is smaller than a pre-determined tol::
 
-        ||y_k-y_{k+1}|| < tol
+        ||y_k-y_{k+1}|| < tol max(||y_k||,||y_{k+1}||)
 
     Parameters
     ----------
@@ -809,10 +809,11 @@ class RelativeChangeData(StopRule):
                 self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.y - self.data_old)
+        ref = max([self.norm(self.solver.y),self.norm(self.data_old)])
         self.data_old = self.solver.y.copy()
-        self.history_dict["relative change of y"].append(change)
-        self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol)
-        triggered =  change < self.tol
+        self.history_dict["relative change of y"].append(change/ref)
+        self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol*ref)
+        triggered =  change < self.tol*ref
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
@@ -824,9 +825,9 @@ class RelativeChangeSol(StopRule):
     Stops at the first iterate at which the difference between the old estimate
     and the new estimate is smaller than a pre-determined tol::
 
-        ||x_k-x_{k+1}|| < tol
+        ||x_k-x_{k+1}|| < tol max(||x_k||,||x_{k+1}||)
 
-    Parameters
+ a   Parameters
     ----------
     norm : callable [default=None]
         The norm with respect to which the difference should be measured.
@@ -869,19 +870,40 @@ class RelativeChangeSol(StopRule):
                 self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.x - self.sol_old)
+        ref = max([self.norm(self.solver.x),self.norm(self.sol_old)])
         self.sol_old = self.solver.x.copy()
-        self.history_dict["relative change of x"].append(change)
-        self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol)
-        triggered = change < self.tol
+        self.history_dict["relative change of x"].append(change/ref)
+        self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol*ref)
+        triggered = change < self.tol*ref
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
 
 ######### StopRules for convex optimization problems #########
 
+class LinearSequence:
+    r"""Iterator generating a linear sequence (c,c+a,c+2a,c+3a, ....)
+    
+    Parameters
+    ----------
+    a: int, optional
+        difference between neighboring sequence elements. Defaults to 1 
+    start: int, optional
+        first element of the sequence. Defaults to 0
+    """    
+    def __init__(self, a:int=1,start:int=0):
+        self.a=a, self.x= start
+
+    def __iter__(self):
+        return self
+
+    def __next__(self)->int:
+        result = self.x
+        self.x += self.a
+        return result
+
 class OptimalityCondStopping(StopRule):
-    def __init__(self, logging_level = "INFO",tol = 0.):
-        r"""Stopping rule based on optimality condition violation.
+    r"""Stopping rule based on optimality condition violation.
         
         Parameters
         ----------
@@ -889,7 +911,11 @@ class OptimalityCondStopping(StopRule):
             The tolerance for the duality gap.
         logging_level : str
             The logging level for the stopping rule.
-        """
+    """
+    def __init__(self, 
+                 tol = 0., 
+                 steps: int | Iterable[int]=1,
+                 logging_level = "INFO"):   
         super().__init__()
         self.tol = tol
         self.log.setLevel(logging_level)
