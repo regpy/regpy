@@ -102,7 +102,7 @@ class TestKullbackLeibler():
 
     def test_quad_taylor(self):
         w=1.+0.5*np.sin(self.dom.coords[0]*self.dom.coords[1])   
-        F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
+        F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.,omit_normalization=True)
         ft.test_functional(F)
         F.data = 0.2*self.dom.ones()
         ft.test_functional(F)

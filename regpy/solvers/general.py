@@ -330,6 +330,7 @@ class Setting:
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
         self._primal_setting = _primal_setting
         self.regpar=regpar#The flags are set by setting the regularization parameter
+        self._noise_model_param = {}
 
     @property
     def op(self):
@@ -387,6 +388,20 @@ class Setting:
             self._data_fid=self.data_fid.as_data_func(new_data)
             self._data=new_data
 
+    @data.deleter
+    def data(self):
+        del self.data_fid.data
+        del self._data
+
+    @property
+    def exact_data(self):
+        return self._exact_data
+    
+    @exact_data.setter
+    def exact_data(self, new_exact_data):
+        self._exact_data = new_exact_data
+        del self.data
+
     @property
     def is_tikhonov(self):
         """True if a regularization parameter is set"""
@@ -422,6 +437,39 @@ class Setting:
             self.duality_gap_warning_incr = 1.        
 
     ######General convenience methods
+    @property
+    def noise_model_fixed(self)->bool:
+        r""" Flag indicating if a noise model has been fixed. 
+        """
+        return self._noise_model_param != {}
+
+    def set_Gaussian_white_noise_model(self,relative_noise_level:float=None,absolute_noise_level:float=None,white_noise=True)->None:
+        self._noise_model_param = {'model_name':'Gaussian',
+                                   'relative_noise_level':relative_noise_level,
+                                   'absolute_noise_level':absolute_noise_level,
+                                   'white_noise':white_noise
+                                   }
+
+    def set_Poisson_noise_model(self,expected_nr_counts=None)->None:
+        self._noise_model_param = {'model_name':'Poisson',
+                                   'expected_nr_counts':expected_nr_counts}
+
+    def generate_synthetic_data(self)->None:
+        r""" Generates synthetic noisy data based on exact_data and some noise model that has to be fixed in advance.
+        """
+        model = self._noise_model_param
+        if not 'model_name' in model:
+            raise RuntimeError(f"No noise model has been set, yet. {self._noise_model_param}")
+        elif model['model_name'] not in ['Gaussian','Poisson']:
+            raise RuntimeError(f"Unknown noise model: {model['model_name']}")
+
+        if model['model_name'] == 'Gaussian':
+            self.add_Gaussian_noise(relative_noise_level=model['relative_noise_level'],
+                                    absolute_noise_level=model['absolute_noise_level'],
+                                    white_noise=model['white_noise'])
+        elif model['model_name'] == 'Poisson':
+            self.generate_Poisson_data(expected_nr_counts=model['expected_nr_counts'])
+
     def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
         r""" generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
         

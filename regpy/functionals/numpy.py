@@ -1616,13 +1616,18 @@ class KullbackLeibler(IntegralFunctionalBase):
         First argument of Kullback-Leibler divergence. In the case of None, w is set to zero. If w is scalar, it is broadcasted to the shape of the domain. 
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
-    data: explcitly declared data. 
+    data: explcitly declared data (default:None) 
         If data is given, then w is w+data; if the parameter w is not given, then w is just the data.
+    omit_normalization:bool (default:False)
+        If true, the term :math:`w(x)\ln w(x)` is omitted in the definition of F_w. (Then :math:`F_w(w)\neq 0`.)
+        This is sometines done if KullbackLeibler is used as Poisson log-likelikhood since the omitted term is not well-defined for 
+        a continuous Poisson process, and it is irrelevant and large for large discrete data. 
     """
 
     def __init__(self, domain, w=None,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                  quad_taylor_l=None, quad_taylor_u=None, data = None,
+                 omit_normalization:bool = False,
                  **kwargs):
         if(w is None):
             w=0.
@@ -1641,6 +1646,10 @@ class KullbackLeibler(IntegralFunctionalBase):
         if np.min(w)<0:
             raise ValueError(Errors.value_error('w must be non-negative.'))
         
+        if not isinstance(omit_normalization,bool):
+            raise ValueError(Errors.value_error(f"{omit_normalization} not of type bool."))
+        self.omit_normalization = omit_normalization
+
         super().__init__(domain,nat_dom_l=1e-14*w,
                          conj_nat_dom_u=domain.ones()-1e-14*w,
                           constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
@@ -1723,10 +1732,13 @@ class KullbackLeibler(IntegralFunctionalBase):
         if 'w' in kwargs.keys():
             raise ValueError(Errors.value_error('second parameter w of KullbackLeibler must be fixed in constructor.'))
         wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        res=np.zeros_like(u)
         # memory efficient implementation of 
         # res[ind_else]=u[ind_else]-self.w[ind_else] - self.w[ind_else] * np.log(u[ind_else]/self.w[ind_else])
-        np.divide(u,wm, out=res)
+        if self.omit_normalization:
+            res = u.copy()
+        else:
+            res=np.zeros_like(u)            
+            np.divide(u,wm, out=res)
         with np.errstate(invalid='ignore', divide='ignore'):
             np.log(res,out=res)
         res *= wm
@@ -1772,6 +1784,8 @@ class KullbackLeibler(IntegralFunctionalBase):
             np.log(res,out=res)
         res *= wm
         res *= -1
+        if self.omit_normalization:
+            res += np.where(wm>0, wm*np.log(wm),0.)
         # end
         res[(u_star>1) | ((u_star == 1) & (wm>0))] = np.inf
         return res
