@@ -615,7 +615,7 @@ class QuasiOpt(StopRule):
         else:
             norm_diff = 0
         self.history_dict["norm_diff"].append(norm_diff)
-        self.history_dict["alphas"].append(self.solver.alpha)
+        self.history_dict["alphas"].append(self.solver.setting.regpar)
         self.recos.append(self.solver.x.copy())
         self.log_info = 'norm_diff {:.3e}'.format(norm_diff)
         return self.it >= self.max_iter
@@ -640,27 +640,30 @@ class Lepskii(StopRule):
         Parameters
         ----------
         setting: Setting
-        noise_level: Noise level (absolute)
         solver: The solver used for computing the reconstructions x
+        error_propagation: anonymous function used to estimate the error propagation in terms of alpha
         max_iter: int
             Maximal number of regularization parameters considered
         """
         def __init__(self, 
                      setting,
                      solver,
-                     noise_level,
-                     max_iter:int=1000
+                     error_prop:Callable = None,
+                     max_iter:int=100
                     ):
             from regpy.solvers import Setting
             super().__init__()
-            self.noise_level = noise_level
             self.data = setting.data
             self.norm = setting.h_codomain.norm
-            self.history_dict["error_prop"] = []
+            #self.history_dict["error_prop"] = []
             self.history_dict["alphas"] = []
             self.recos=[]
             self.max_iter = max_iter
             self.it =0
+            if error_prop is not None:
+                self.Psi = error_prop
+            #else:
+                #TODO: Implement estimation of error propagation
 
         def __repr__(self):
             return 'Lepskii'
@@ -671,30 +674,30 @@ class Lepskii(StopRule):
                 raise MissingValueError
             if self.solver.x is None:
                 raise MissingValueError
-            self.history_dict["alphas"].append(self.solver.alpha)
-            self.history_dict["error_prop"].append(self.solver.error_prop)
+            self.history_dict["alphas"].append(self.solver.setting.regpar)
             self.recos.append(self.solver.x.copy())
-            self.log_info = 'alpha {:.3e}'.format(self.solver.alpha)
-            return self.it >= self.max_iter
+            self.log_info = 'iter {:d}, alpha {:.3e}'. format(self.it, self.solver.setting.regpar)
+            return self.it > self.max_iter
         
         def best_stopping_index(self):
             # Check if regularization parameters are increasing
             alphas = self.history_dict["alphas"]
-            idx = np.argsort(alphas)
-            self.history_dict["error_prop"] = [self.history_dict["error_prop"][i] for i in idx]
-            recos = [self.recos[i] for i in idx]
+            if not np.all(alphas[:-1] <= alphas[1:]):
+                idx = np.argsort(alphas)
+            else:
+                idx = np.arange(len(alphas))
             # Lepskii
             bark = 1
             while bark <= self.max_iter-1:
                 l = 0
                 while l<bark:
-                    if self.norm(recos[bark] - recos[l])>= 4*self.history_dict["error_prop"][l]*self.noise_level:
+                    if self.norm(self.recos[idx[bark]] - self.recos[idx[l]])>= 4*self.Psi(alphas[idx[l]]):
                         break
                     l +=1
                 if l<= bark-1:
                     break
                 bark+=1
-            return bark-1
+            return idx[bark-1]
         
         def best_iterate(self):
             return self.recos[self.best_stopping_index()]
