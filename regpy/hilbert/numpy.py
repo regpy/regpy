@@ -126,7 +126,7 @@ class HmDomain(HilbertSpace):
     The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
 
     By default it is assumed that the lengths in grid are given in physical dimensions,
-    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
+    and a non-dimensionalization is carried out such that the largest side length (extent) of the grid is 1.
 
     If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
 

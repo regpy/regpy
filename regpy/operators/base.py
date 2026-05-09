@@ -183,7 +183,7 @@ class Operator:
         return set(self.__dict__)
     
     def reset_detect_loop(self):
-        self._detect_loop = [False]*4    
+        self._detect_loop = [False]*6  
 
     def __call__(self, x, out = None, **kwargs):
         if x not in self.domain and (not hasattr(self, "full_domain") or x not in self.full_domain):
@@ -204,7 +204,7 @@ class Operator:
                     self.codomain,
                     add_info=f" Evaluation of {self} went wrong! Please analyse your evaluation method _eval it does not return a proper element in the codomain."
                     ))
-            self._detect_loop = [False]*4
+            self.reset_detect_loop()
             return y
         elif out in self.codomain:
             if self.linear:
@@ -263,7 +263,8 @@ class Operator:
             else:
                 self.__revoke()
                 if not return_adjoint_eval:
-                    y = self._eval(self._insert_constants(x), differentiate=True, **kwargs)
+                    kwargs.setdefault("differentiate", True)
+                    y = self._eval(self._insert_constants(x), **kwargs)
                     if y not in self.codomain:
                         raise RuntimeError(util.Errors.not_in_vecsp(
                             y,
@@ -373,7 +374,7 @@ class Operator:
     
     def _ieval(self, x, out, **kwargs):
         r"""In place/ out evaluation. A method that ideally provides an in place evaluation into the specified out
-        value. The default implementation uses _eval. Note If eval is equally not defined the it will raise an Error.
+        value. The default implementation uses _eval. Note: If eval is not defined either, then it will raise an error.
 
         Parameters
         ----------
@@ -388,7 +389,7 @@ class Operator:
         if self._detect_loop[0]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user has to define it!"
+                "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[0] = True
         if out is x:
@@ -402,7 +403,7 @@ class Operator:
         if self._detect_loop[1]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _derivative or _iderivative are not implemented for an Operator!\n You as a user has to define it!"
+                "By default, the method _derivative or _iderivative are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self.log.debug(f"deriv: {self._detect_loop}")
         self._detect_loop[1] = True
@@ -411,8 +412,8 @@ class Operator:
     
     def _iderivative(self, x, out, **kwargs):
         r"""In place/ out evaluation of derivative. A method that ideally provides an in place evaluation into the 
-        specified out value of the derivative. The default implementation uses _derivative. Note If _derivative is 
-        equally not defined the it will raise an Error.
+        specified out value of the derivative. The default implementation uses _derivative. Note: If _derivative is 
+        not defined either, then it will raise an error.
 
         Parameters
         ----------
@@ -426,7 +427,7 @@ class Operator:
         if self._detect_loop[1]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _derivative or _iderivative are not implemented for an Operator!\n You as a user has to define it!"
+                "By default, the method _derivative or _iderivative are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[1] = True
         if out is x:
@@ -439,7 +440,7 @@ class Operator:
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user has to define it!"
+                "By default, the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[2] = True
         out = self.domain.zeros()
@@ -449,7 +450,7 @@ class Operator:
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user has to define it!"
+                "By default the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[2] = True
         if out is y:
@@ -462,7 +463,7 @@ class Operator:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _adjoint_data or _iadjoint_data are not implemented for an Operator!\n You as a user has to define it!"
+                "By default, the method _adjoint_data or _iadjoint_data are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self.log.debug(f"adjdata: {self._detect_loop}")
         self._detect_loop[3] = True
@@ -473,7 +474,7 @@ class Operator:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
-                "By default the method _adjoint_data or _iadjoint_data are not implemented for an Operator!\n You as a user has to define it!"
+                "By default, the method _adjoint_data or _iadjoint_data are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self.log.debug(f"adjdata: {self._detect_loop}")
         self._detect_loop[3] = True
@@ -501,43 +502,77 @@ class Operator:
                 return self._iadjoint(data, out,**kwargs)
     
     def _adjoint_eval(self, x, **kwargs):
-        self.log.warning("The default implementation of _adjoint_eval is not optimised to exclude constructing elements in the codomain!")
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        if self.linear:
-            return self.adjoint(self(x))
+        if self._detect_loop[4]:
+            if not hasattr(self, '_warning_adjoint_eval_issued') or self._warning_adjoint_eval_issued == False:
+                self.log.warning("The default implementation of  _adjoint_eval is not optimized to exclude constructing elements in the codomain!")
+                self._warning_adjoint_eval_issued = True
+            if len(kwargs) != 0:
+                self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs. Thus ignoring yours: kwargs= {kwargs}")
+            if self.linear:
+                return self.adjoint(self(x))
+            else:
+                y,deriv = self.linearize(x)
+                return deriv.adjoint(y)
         else:
-            y,deriv = self.linearize(x)
-            return deriv.adjoint(y)
+            self._detect_loop[4] = True
+            out = self.domain.zeros()
+            return self._iadjoint_eval(x, out, **kwargs)
     
     def _iadjoint_eval(self, x, out, **kwargs):
-        self.log.warning("The default implementation of _iadjoint_eval is not optimised to exclude constructing elements in the codomain!")
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        if self.linear:
-            return self.adjoint(self(x), out = out)
+        if self._detect_loop[4]:
+            if not hasattr(self, '_warning_adjoint_eval_issued') or self._warning_adjoint_eval_issued == False:
+                self.log.warning("The default implementation of _iadjoint_eval is not optimized to exclude constructing elements in the codomain!")
+                self._warning_adjoint_eval_issued = True
+            if len(kwargs) != 0:
+                self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs. Thus ignoring yours: kwargs= {kwargs}")
+            if self.linear:
+                return self.adjoint(self(x), out = out)
+            else:
+                y, deriv = self.linearize(x)
+                return deriv.adjoint(y, out = out)
         else:
-            y, deriv = self.linearize(x)
-            return deriv.adjoint(y, out = out)
+            self._detect_loop[4] = True
+            if out is x:
+                x = x.copy()
+            out *= 0
+            out += self._adjoint_eval(x, **kwargs)        
+            return out
             
 
     def _adjoint_derivative(self, x, **kwargs):
-        self.log.warning(f"The default implementation of _adjoint_derivative is not optimised to exclude constructing elements in the codomain!")
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        if self.linear:
-            return self._adjoint(self._eval(x))
+        if self._detect_loop[5]:
+            if not hasattr(self, '_warning_adjoint_derivative_issued') or self._warning_adjoint_derivative_issued == False:
+                self.log.warning(f"The default implementation of _adjoint_derivative is not optimised to exclude constructing elements in the codomain!")
+                self._warning_adjoint_derivative_issued = True
+            if len(kwargs) != 0:
+                self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+            if self.linear:
+                return self._adjoint(self._eval(x))
+            else:
+                return self._adjoint(self._derivative(x))
         else:
-            return self._adjoint(self._derivative(x))
+            self._detect_loop[5] = True
+            out = self.domain.zeros()
+            return self._iadjoint_derivative(x, out, **kwargs)
         
     def _iadjoint_derivative(self, x, out, **kwargs):
-        self.log.warning(f"The default implementation of _adjoint_derivative is not optimised to exclude constructing elements in the codomain!")
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        if self.linear:
-            return self._iadjoint(self._eval(x), out)
+        if self._detect_loop[5]:
+            if not hasattr(self, '_warning_adjoint_derivative_issued') or self._warning_adjoint_derivative_issued == False:
+                self.log.warning(f"The default implementation of _iadjoint_derivative is not optimised to exclude constructing elements in the codomain!")
+                self._warning_adjoint_derivative_issued = True
+            if len(kwargs) != 0:
+                self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+            if self.linear:
+                return self._iadjoint(self._eval(x), out)
+            else:
+                return self._iadjoint(self._derivative(x), out)
         else:
-            return self._iadjoint(self._derivative(x), out)
+            self._detect_loop[5] = True
+            if out is x:
+                x = x.copy()            
+            out *= 0
+            out += self._adjoint_derivative(x, **kwargs)
+            return out
 
     @property
     def inverse(self):
@@ -593,8 +628,6 @@ class Operator:
     def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
         r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
         By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
-        # To-do: Test making this a memoized property (should only be recomputed if non-linear, should be possible for user to input if analytically known).    
-        #@memoized_property
  
         Parameters
         ----------
@@ -1366,7 +1399,7 @@ class Composition(Operator):
     
     def _iadjoint_eval(self, x, out, **kwargs):
         if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs. Thus ignoring yours: kwargs= {kwargs}")
         if self.linear:
             x = self.ops[-1](x)
             for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
@@ -1816,7 +1849,7 @@ class CoordinateMask(Operator):
         return self._ieval(x, out)
     
     def _iadjoint_eval(self, x, out):
-        return self._eval(x, out)
+        return self._ieval(x, out)
 
     def __repr__(self):
         return util.make_repr(self, self.domain)
