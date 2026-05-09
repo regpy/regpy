@@ -35,6 +35,12 @@ class FISTA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     logging_level: [default: logging.INFO]
         logging level
+    data : setting.op.codomain or array-like or None [default: None]
+        The data to be fitted. If None, the data is taken from the setting.
+    without_codomain_vectors : bool [default: False]
+        If True, the algorithm is run without codomain vectors. This can be used to save memory if the codomain is very large. 
+    update_setting : bool [default: True]   
+        If True, the setting is updated with the initial guess and data. This can be used to save memory if the initial guess and data are very large.
     """
     def __init__(self, setting:Setting, init= None, tau:float = 10**16, eta:float = 0.8, op_lower_bound:float= 0., 
                  proximal_pars:dict|None=None,logging_level:str= "INFO",
@@ -46,7 +52,10 @@ class FISTA(RegSolver):
         super().__init__(setting)
         self.x = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
-        self.data = setting.get_or_update_data(data, update_setting)
+        if without_codomain_vectors:
+            self.data = data
+        else:
+            self.data = setting.get_or_update_data(data, update_setting)
         if self.op.linear:
             self.log.warning("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear")
         self.log.setLevel(logging_level)
