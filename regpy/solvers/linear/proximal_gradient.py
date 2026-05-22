@@ -131,10 +131,17 @@ class FISTA(RegSolver):
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
+    without_codomain_vectors : bool [default: False]
+        If True, the algorithm is run without codomain vectors. This can be used to save memory if the codomain is very large.
+        setting.data_fid is ignored in this case, and setting.op.adjoint_eval and setting.op.adjoint_data are used instead.
+    data: array-type [default:None]
+        only used if without_codomain_vectors = True. In this case, the data is backpropagated once using op.adjoint_data(data)
     logging_level: [default: logging.INFO]
         logging level
     """
-    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,logging_level= "INFO"):
+    def __init__(self, setting, init= None, tau = None, op_lower_bound = 0, proximal_pars=None,
+                 without_codomain_vectors:bool=False, data = None, 
+                 logging_level= "INFO"):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("FISTA requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
@@ -146,12 +153,16 @@ class FISTA(RegSolver):
 
         self.log.setLevel(logging_level)
 
-        self.y = self.op(self.x)
+        if not without_codomain_vectors:
+            self.y = self.op(self.x)
+        else:
+            self.backpropagated_data = self.op.adjoint_data(data)
 
         self.proximal_pars = proximal_pars
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
-        out, par = FISTA.check_applicability(setting, op_lower_bound=op_lower_bound)
+        self.without_codomain_vectors = without_codomain_vectors
+        out, par = FISTA.check_applicability(setting, op_lower_bound=op_lower_bound,without_codomain_vectors=without_codomain_vectors)
         if out['applicable']:
             self.log.info(out['info'])
         else:
@@ -173,7 +184,7 @@ class FISTA(RegSolver):
         self._dual_variables_computed = False
         
     @staticmethod
-    def check_applicability(setting,op_lower_bound=0.,op_norm=None):
+    def check_applicability(setting,op_lower_bound=0.,op_norm=None,without_codomain_vectors=False):
         out = {'info':''}; par={}
         if 'proximal' not in setting.penalty.methods:
             out['info']+='Missing prox of penalty functional. '
@@ -187,7 +198,7 @@ class FISTA(RegSolver):
             par['mu_penalty']  = setting.regpar * setting.penalty.convexity_param
             par['mu_data_fidelity'] = setting.data_fid.convexity_param * op_lower_bound**2 
             par['mu'] = par['mu_data_fidelity']+par['mu_penalty']
-            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
+            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain,without_codomain_vectors=without_codomain_vectors) if op_norm is None else op_norm
             par['tau'] = 1./(op_norm**2 * setting.data_fid.Lipschitz)
             par['q'] = (par['tau'] * par['mu']) / (1+par['tau']*par['mu_penalty'])
             out['rate'] = 1.-ma.sqrt(par['q']) 
@@ -199,9 +210,13 @@ class FISTA(RegSolver):
         return out, par
 
     def primal(self): # for stopping rules and monitoring
+        if self.without_codomain_vectors:
+            raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
         return (self.x,self.y)
     
     def dual(self): # for stopping rules and monitoring
+        if self.without_codomain_vectors:
+            raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
         if self._dual_variables_computed==False:
             if not hasattr(self,"p"): # first iteration
                 self.p = self.op.adjoint.domain.zeros()
@@ -228,9 +243,14 @@ class FISTA(RegSolver):
         self.t_old = self.t
 
         self._dual_variables_computed = False
-        self.p = self.data_fid.subgradient(self.y)
-        self.Tp = self.op.adjoint(self.p)
+        if self.without_codomain_vectors:
+             self.Tp = self.op.adjoint_eval(self.x) 
+             self.Tp -= self.backpropagated_data
+        else:
+            self.p = self.data_fid.subgradient(self.y)
+            self.Tp = self.op.adjoint(self.p)
         grad = self.h_domain.gram_inv(self.Tp)
         self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
-        self.y = self.op(self.x)
+        if not self.without_codomain_vectors:
+            self.y = self.op(self.x)
 
