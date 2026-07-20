@@ -181,7 +181,34 @@ class Operator:
         to declare every current attribute as constant for deep copies.
         """
         return set(self.__dict__)
-    
+
+    @staticmethod
+    def copyto(out, x):
+        r"""Copy ``x`` into the existing vector ``out``. 
+        May have to be overwritten in child classes using special vector classes.
+
+        Parameters
+        ----------
+        out : array-like
+            Existing vector whose contents are to be overwritten.
+        x : array-like
+            Vector whose contents are copied into ``out``.
+
+        Returns
+        -------
+        array-like
+            The object ``out``.
+        """
+
+        # NumPy and many array-compatible vector classes.
+        try:
+            out[:] = x
+        except (AttributeError, TypeError, ValueError, IndexError) as error:
+            # fall back option -- does not handle exceptional values such as Nan's correctly!
+            out *= 0
+            out += x
+        return out
+
     def reset_detect_loop(self):
         self._detect_loop = [False]*6  
 
@@ -394,8 +421,7 @@ class Operator:
         self._detect_loop[0] = True
         if out is x:
             x = x.copy()
-        out *= 0
-        out += self._eval(x, **kwargs)
+        self.copyto(out, self._eval(x, **kwargs))
         return out
 
 
@@ -432,8 +458,7 @@ class Operator:
         self._detect_loop[1] = True
         if out is x:
             x = x.copy()
-        out *= 0
-        out += self._derivative(x, **kwargs)
+        self.copyto(out, self._derivative(x, **kwargs))
         return out
 
     def _adjoint(self, y, **kwargs):
@@ -455,8 +480,7 @@ class Operator:
         self._detect_loop[2] = True
         if out is y:
             y = y.copy()
-        out *= 0
-        out += self._adjoint(y, **kwargs)
+        self.copyto(out, self._adjoint(y, **kwargs))
         return out
 
     def _adjoint_data(self, data, **kwargs):
@@ -480,8 +504,7 @@ class Operator:
         self._detect_loop[3] = True
         if out is data:
             data = data.copy()
-        out *= 0
-        out += self._adjoint_data(data, **kwargs)
+        self.copyto(out, self._adjoint_data(data, **kwargs))
         return out
         
     def adjoint_data(self, data, out = None, **kwargs):
@@ -534,8 +557,7 @@ class Operator:
             self._detect_loop[4] = True
             if out is x:
                 x = x.copy()
-            out *= 0
-            out += self._adjoint_eval(x, **kwargs)        
+            self.copyto(out, self._adjoint_eval(x, **kwargs))        
             return out
             
 
@@ -570,8 +592,7 @@ class Operator:
             self._detect_loop[5] = True
             if out is x:
                 x = x.copy()            
-            out *= 0
-            out += self._adjoint_derivative(x, **kwargs)
+            self.copyto(out, self._adjoint_derivative(x, **kwargs))
             return out
 
     @property
@@ -1644,8 +1665,7 @@ class Pow(Operator):
                 out = self.op(out, out = out, **kwargs)
             return out
         else:
-            out *= 0
-            out += x
+            self.copyto(out, x)
             for _ in range(self.exponent):
                 out = self.op(out, out = out, **kwargs)
             return out
@@ -1662,8 +1682,7 @@ class Pow(Operator):
                 out = self.op.adjoint(out, out = out, **kwargs)
             return out
         else:
-            out *= 0
-            out += x
+            self.copyto(out, x)
             for _ in range(self.exponent):
                 out = self.op.adjoint(out, out = out, **kwargs)
             return out
@@ -1776,7 +1795,7 @@ class CoordinateProjection(Operator):
             out[~self.mask] = 0
             return out
         else:
-            out *= 0
+            self.copyto(out, self.domain.zeros())
             out[self.mask] = x[self.mask]
             return out
 
@@ -1835,7 +1854,7 @@ class CoordinateMask(Operator):
             out[~self.mask] = 0
             return out
         else:
-            out *= 0
+            self.copyto(out, self.domain.zeros())
             out[self.mask] = x[self.mask]
             return out
 
@@ -1902,8 +1921,7 @@ class PtwMultiplication(Operator):
 
     def _ieval(self, x, out):
         if out is not x:
-            out *= 0
-            out += x
+            self.copyto(out, x)
         out *= self.factor
         return out
 
@@ -1915,8 +1933,7 @@ class PtwMultiplication(Operator):
 
     def _iadjoint(self, x, out):
         if out is not x:
-            out *= 0
-            out += x
+            self.copyto(out, x)
         if self.domain.is_complex:
             out *= self.factor.conj()
         else:
@@ -1931,8 +1948,7 @@ class PtwMultiplication(Operator):
 
     def _iadjoint_eval(self, x, out):
         if out is not x:
-            out *= 0
-            out += x
+            self.copyto(out, x)
         if self.domain.is_complex:
             out *= self.factor.conj()*self.factor
         else:
@@ -2701,8 +2717,7 @@ class RealPart(Operator):
         return out
 
     def _iadjoint(self, y, out):
-        out *= 0
-        out += y
+        self.copyto(out, y)
         return out
 
 
@@ -2809,21 +2824,21 @@ class Zero(Operator):
         return self.codomain.zeros()
 
     def _ieval(self,x,out):
-        out *= 0
+        self.copyto(out, self.codomain.zeros())
         return out
 
     def _adjoint(self, x):
         return self.domain.zeros()
 
     def _iadjoint(self, x, out):
-        out *= 0
+        self.copyto(out, self.domain.zeros())
         return out
     
     def _adjoint_eval(self, x):
         return self.domain.zeros()
     
     def _iadjoint_eval(self, x, out):
-        out *= 0
+        self.copyto(out, self.domain.zeros())
         return out
 
 class ApproximateHessian(Operator):
