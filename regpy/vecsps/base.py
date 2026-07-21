@@ -230,6 +230,7 @@ class VectorSpaceBase:
      - rand(shape : tuple,random_generator : method)
      - poisson(x : Vector of the Space)
      - vdot(x : Vector of the Space, y : Vector of the Space)
+     - copyto(x : Vector of the Space, y : Vector of the Space)
      - logical_and(x : boolean Vector of the Space, y : boolean Vector of the Space)
      - logical_or(x : boolean Vector of the Space, y : boolean Vector of the Space)
      - logical_not(x : boolean Vector of the Space)
@@ -287,7 +288,7 @@ class VectorSpaceBase:
         return self.type.zeros(shape = self.shape)
     
     def ones(self):
-        """Return the zero vector of the space.
+        """Return a vector of the space containing all ones.
         """
         if self.type is None:
             raise NotImplementedError
@@ -382,8 +383,8 @@ class VectorSpaceBase:
         return self.rand(distribution="standard_normal", **kwargs)
     
     def vdot(self,x,y):
-        r"""Return the vector dot product as defined for these vectors. Note
-        for complex vector it is supposed, that the second vector is conjugated.
+        r"""Return the vector dot product as defined for these vectors. 
+        For complex vector it is supposed that the second vector is conjugated.
 
         Parameters
         ----------
@@ -400,6 +401,27 @@ class VectorSpaceBase:
         if self.type is None:
             raise NotImplementedError
         return self.type.vdot(x,y)
+
+    def copyto(self, x, y):
+        r"""Copy the values of ``y`` into the existing vector ``x``.
+
+        The identity of ``x`` is preserved. Concrete vector spaces may
+        override this method when their vectors require a special assignment
+        protocol.
+
+        Parameters
+        ----------
+        x : self.vec_type
+            Destination vector.
+        y : array-like
+            Source vector whose values are copied into ``x``.
+
+        """
+        if x is y:
+            return
+        if self.type is None:
+            raise NotImplementedError
+        self.type.copyto(x, y)
 
     def logical_and(self,x,y):
         """Logical and of two boolean vectors
@@ -693,6 +715,26 @@ class DirectSum(VectorSpaceBase):
         if y not in self:
             raise ValueError(Errors.not_in_vecsp(y,self,add_info="Second argument in vdot not in the VectorSpace."))
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
+
+    def copyto(self, x: TupleVector, y: TupleVector) -> None:
+        r"""Copy a direct-sum vector componentwise into ``x``.
+
+        Each component is copied by its own summand. This also supports direct
+        sums containing NGSolve vector spaces without replacing component
+        objects or allocating a new :class:`TupleVector`.
+        """
+        if x is y:
+            return
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="destination", add_info="copyto destination is not in the DirectSum."
+            ))
+        if not isinstance(y, TupleVector) or y.ndim != self.n_components:
+            raise ValueError(Errors.not_in_vecsp(
+                y, self, vec_name="source", add_info="copyto source is not compatible with the DirectSum."
+            ))
+        for summand, x_i, y_i in zip(self.summands, x, y):
+            summand.copyto(x_i, y_i)
 
     def logical_and(self,x,y) -> TupleVector:
         return TupleVector([s.logical_and(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])

@@ -3398,5 +3398,9 @@ class TVUniformGridFcts(Composed):
             self.prox_method, stoprule=self.prox_stop_rule,
             **prox_method_param
         )[0]
-        return self._copyto(out, result)
+        if out is None:
+            return result
+        else:
+            np.copyto(out,result)
+            return out
         

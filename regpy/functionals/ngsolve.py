@@ -151,5 +151,9 @@ class NgsTV(Functional):
                 break
             diff_last = diff
             grad_u_last.vec.data = grad_u.vec
-        result = x + tau * self._grad_op.adjoint(grad_u)
-        return self._copyto(out, result)
+        if out is None:
+            return x + tau * self._grad_op.adjoint(grad_u)
+        else:
+            self.domain.copyto(out, x + tau * self._grad_op.adjoint(grad_u))
+            return out
+

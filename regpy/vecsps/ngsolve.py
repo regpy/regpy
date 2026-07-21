@@ -456,6 +456,34 @@ class NgsVectorSpace(VectorSpaceBase):
     def vdot(self, x, y):
         return ngs.InnerProduct(y.vec,x.vec)
 
+    def copyto(self, x, y):
+        r"""Copy ``y`` into the existing :class:`NgsBaseVector` ``x``.
+
+        NGSolve performs vector assignment through the writable ``data``
+        property of the wrapped ``BaseVector``. Dynamic destination
+        expressions are evaluated once before they are used as output storage.
+        """
+        if x is y:
+            return
+        if not isinstance(x, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                x, NgsBaseVector,
+                add_info="The destination of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if not isinstance(y, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                y, NgsBaseVector,
+                add_info="The source of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if x.size != y.size:
+            raise ValueError(Errors.value_error(
+                f"Cannot copy NGSolve vectors of different sizes {y.size} and {x.size}."
+            ))
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.data = y.vec
+    
     def complex_space(self):
         """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
 

@@ -439,57 +439,6 @@ class Functional:
             ))
         return out
 
-    @staticmethod
-    def _copyto(out, value):
-        """Copy ``value`` into ``out`` while preserving the identity of ``out``.
-
-        NumPy arrays, RegPy/NGSolve wrapper vectors and NGSolve BaseVectors are
-        supported explicitly. Other vector implementations may provide a
-        ``copy_from`` method or full-array assignment.
-        """
-        if out is None:
-            return value
-        if out is value:
-            return out
-
-        copy_from = getattr(out, "copy_from", None)
-        if callable(copy_from):
-            copy_from(value)
-            return out
-
-        if isinstance(out, np.ndarray):
-            np.copyto(out, value)
-            return out
-
-        out_vec = getattr(out, "vec", None)
-        if out_vec is not None and hasattr(out_vec, "data"):
-            out_vec.data = getattr(value, "vec", value)
-            return out
-
-        ngsolve_modules = {"ngsolve", "pyngcore", "_ngsolve"}
-        is_ngsolve_vector = any(
-            cls.__module__.split(".", 1)[0] in ngsolve_modules
-            for cls in type(out).__mro__
-        )
-        if is_ngsolve_vector:
-            out.data = getattr(value, "vec", value)
-            return out
-
-        try:
-            out[...] = value
-            return out
-        except (AttributeError, TypeError, ValueError, IndexError):
-            pass
-        try:
-            out[:] = value
-            return out
-        except (AttributeError, TypeError, ValueError, IndexError) as error:
-            raise TypeError(
-                f"Cannot copy {type(value).__name__} into {type(out).__name__}. "
-                "The destination must support copy_from, NGSolve vector data "
-                "assignment, or full-array assignment."
-            ) from error
-
     def __call__(self, x):
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to evaluate {self} on the given vector."))
@@ -551,7 +500,9 @@ class Functional:
             grad = self._subgradient(x, out=out, **subgradient_par)
         except NotImplementedError:
             _, grad = self._linearize(x)
-        grad = self._copyto(out, grad)
+        if out is not None:
+            self.domain.copyto(out, grad)
+            grad = out
         if grad not in self.domain:
             raise RuntimeError(util.Errors.not_in_vecsp(
                 grad, self.domain, vec_name="gradient", space_name="domain",
@@ -626,7 +577,9 @@ class Functional:
                 _, grad = self._conj_linearize(xstar)
             except (NotInEssentialDomainError, NotImplementedError) as error:
                 raise error
-        grad = self._copyto(out, grad)
+        if out is not None:
+            self.domain.copyto(out, grad)
+            grad = out
         if grad not in self.domain:
             raise RuntimeError(util.Errors.not_in_vecsp(
                 grad, self.domain, vec_name="gradient", space_name="domain",
@@ -725,7 +678,9 @@ class Functional:
                 out=dual_arg, **proximal_par
             )
             proximal = x - tau * gram_inv(dual_arg)
-        proximal = self._copyto(out, proximal)
+        if out is not None:
+            self.domain.copyto(out, proximal)
+            proximal = out
         if proximal not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
                 proximal, self.domain, space_name="domain",
@@ -758,7 +713,9 @@ class Functional:
                 out=primal_arg, **proximal_par
             )
             proximal = xstar - tau * gram(primal_arg)
-        proximal = self._copyto(out, proximal)
+        if out is not None:
+            self.domain.copyto(out, proximal)
+            proximal = out
         if proximal not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
                 proximal, self.domain, space_name="domain",
@@ -1100,7 +1057,10 @@ class LinearFunctional(Functional):
         return self._gradient.copy()
 
     def _subgradient(self, x, out=None, **subgradient_par):
-        return self._copyto(out, self._gradient.copy() if out is None else self._gradient)
+        if out is None:
+            return self._gradient.copy()
+        self.domain.copyto(out, self._gradient)
+        return out
 
     def _hessian(self, x)-> operators.Operator:
         return operators.Zero(self.domain)
@@ -1110,7 +1070,11 @@ class LinearFunctional(Functional):
 
     def _conj_subgradient(self, xstar, out=None, **subgradient_par):
         if self.domain.norm(xstar - self._gradient) == 0:
-            return self._copyto(out, self.domain.zeros())
+            value = self.domain.zeros()
+            if out is None:
+                return value
+            self.domain.copyto(out, value)
+            return out
         raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _conj_dist_subdiff(self,v,xstar):
@@ -1122,12 +1086,15 @@ class LinearFunctional(Functional):
     def _proximal(self, x, tau, out=None, **proximal_par):
         if out is None:
             return x - tau * self._gradient
-        self._copyto(out, x)
+        self.domain.copyto(out, x)
         out -= tau * self._gradient
         return out
 
     def _conj_proximal(self, xstar, tau, out=None, **proximal_par):
-        return self._copyto(out, self._gradient.copy() if out is None else self._gradient)
+        if out is None:
+            return self._gradient.copy()
+        self.domain.copyto(out, self._gradient)
+        return out
 
     def dilation(self, a):
         return LinearFunctional(a*self.gradient,domain=self.domain,h_domain=self.h_domain,gradient_in_dual_space=True)
@@ -1355,7 +1322,7 @@ class SquaredNorm(Functional):
             ))
         if out is None:
             return (z - tau * self.b) / (tau * self.a + 1)
-        self._copyto(out, z)
+        self.domain.copyto(out, z)
         out -= tau * self.b
         out *= 1. / (tau * self.a + 1)
         return out
@@ -1381,7 +1348,11 @@ class SquaredNorm(Functional):
             result *= 1. / self.a
             return result
         if self.a == 0:
-            return self._copyto(out, self.domain.zeros())
+            value = self.domain.zeros()
+            if out is None:
+                return value
+            self.domain.copyto(out, value)
+            return out
         raise NotInEssentialDomainError
 
     def _conj_dist_subdiff(self,v,xstar):
@@ -1411,7 +1382,7 @@ class SquaredNorm(Functional):
         bstar = self.gram(self.b)
         if out is None:
             return (zstar - bstar) / (1. + tau / self.a) + bstar
-        self._copyto(out, zstar)
+        self.domain.copyto(out, zstar)
         out -= bstar
         out *= 1. / (1. + tau / self.a)
         out += bstar
@@ -1614,7 +1585,7 @@ class LinearCombination(Functional):
         if self.linear_table.count(False) == 0:
             if out is None:
                 return x - tau * self.h_domain.gram_inv(self.grad_sum)
-            self._copyto(out, x)
+            self.domain.copyto(out, x)
             out -= tau * self.h_domain.gram_inv(self.grad_sum)
             return out
         if self.linear_table.count(False) == 1:
@@ -1648,7 +1619,11 @@ class LinearCombination(Functional):
             )
         if self.linear_table.count(False) == 0:
             if self.domain.norm(xstar - self.grad_sum) == 0:
-                return self._copyto(out, self.domain.zeros())
+                value = self.domain.zeros()
+                if out is None:
+                    return value
+                self.domain.copyto(out, value)
+                return out
             raise NotInEssentialDomainError('Linear combination of linear functionals')
         if self.linear_table.count(False) == 1:
             j = self.linear_table.index(False)
@@ -1694,7 +1669,10 @@ class LinearCombination(Functional):
             result *= coeff
             return result
         if self.linear_table.count(False) == 0:
-            return self._copyto(out, self.grad_sum)
+            if out is None:
+                return self.grad_sum
+            self.domain.copyto(out, self.grad_sum)
+            return out
         if self.linear_table.count(False) == 1:
             j = self.linear_table.index(False)
             coeff = self.coeffs[j]
@@ -2226,7 +2204,10 @@ class Composed(Functional):
                 regpar=tau,
                 **params
             ).run()
-            return self._copyto(out, result)
+            if out is None:
+                return result
+            self.domain.copyto(out, result)
+            return out
         raise NotImplementedError
         
     @property
