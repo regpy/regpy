@@ -160,7 +160,7 @@ class TestRelativeEntropy():
         ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()),test_second_deriv=False)
 
 class TestHuber():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     sigma=np.real(dom.ones())
     sigma[0,0]=4
     F=Hub(dom,sigma=sigma,eps=1e-10)
@@ -178,12 +178,12 @@ class TestHuber():
                        )    
 
 def test_quadratic():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     F=Quadratic(dom,a=2.,b0=1.,c=-2.)
     ft.test_functional(F)
 
 def test_quadratic_intv():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     sigma=np.real(dom.ones())
     sigma[0,0]=4
     F=QuadIntv(dom,sigma=sigma,eps=1e-10)
