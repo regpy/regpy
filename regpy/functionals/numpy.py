@@ -1532,50 +1532,64 @@ class VectorIntegralFunctional(Functional):
         self._sbuf = self.dual_vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
-    def _subgradient(self, vec):
+    def _subgradient(self, vec, out=None, **subgradient_par):
         r"""
-        returns   
-        
+        returns
+
         .. math::
             [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
         """
         if self.p != 2:
             raise NotImplementedError('subgradient only implemented for L2 norm')
+        result = np.empty_like(vec) if out is None else out
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
-        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.subgradient(self._sbuf, out=self._sbuf)
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
     
-    def _conj_subgradient(self, vec_star):
+    def _conj_subgradient(self, vec_star, out=None, **subgradient_par):
         if self.p != 2:
             raise NotImplementedError('conjugate subgradient only implemented for L2 norm')
+        result = np.empty_like(vec_star) if out is None else out
         self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
-        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec_star, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.conj_subgradient(self._sbuf, out=self._sbuf)
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
 
-    def _proximal(self, vec, tau, mask=None):
-        r"""
-        returns   :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
-        """
+    def _proximal(self, vec, tau, mask=None, out=None, **proximal_par):
+        r"""returns :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`"""
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
+        result = np.empty_like(vec) if out is None else out
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
-        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.proximal(self._sbuf, tau ,mask=None)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.proximal(
+            self._sbuf, tau, out=self._sbuf, mask=None, **proximal_par
+        )
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
 
-    def _conj_proximal(self, vec_star, tau, mask=None):
+    def _conj_proximal(self, vec_star, tau, mask=None, out=None, **proximal_par):
         if self.p != 2:
             raise NotImplementedError('conjugate proximal only implemented for L2 norm')
+        result = np.empty_like(vec_star) if out is None else out
         self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
-        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec_star, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.conj_proximal(
+            self._sbuf, tau, out=self._sbuf, mask=None, **proximal_par
+        )
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
     
     def _hessian(self, vec):
         if self.p != 2:
@@ -3085,11 +3099,13 @@ class QuadraticPositiveSemidef(Functional):
         np.copyto(out, result, where=where)
         return out
         
-    def _subgradient(self, x):
-        if(self.is_in_essential_domain(x)):
-            return np.copy(x)
-        else:
-            return NotInEssentialDomainError
+    def _subgradient(self, x, out=None, **subgradient_par):
+        if self.is_in_essential_domain(x):
+            if out is None:
+                return np.copy(x)
+            np.copyto(out, x)
+            return out
+        raise NotInEssentialDomainError
         
     def _hessian(self, x):
         if(self.is_in_essential_domain(x)):
@@ -3123,15 +3139,27 @@ class L1Generic(Functional):
     def _eval(self, x):
         return np.sum(np.abs(x))
 
-    def _subgradient(self, x):
-        return np.sign(x)
+    def _subgradient(self, x, out=None, **subgradient_par):
+        if out is None:
+            out = np.empty_like(x)
+        np.sign(x, out=out)
+        return out
 
     def _hessian(self, x):
         # Even approximate Hessians don't work here.
         raise NotImplementedError
 
-    def _proximal(self, x, tau):
-        return np.maximum(0, np.abs(x)-tau)*np.sign(x)
+    def _proximal(self, x, tau, out=None, **proximal_par):
+        if out is None:
+            out = np.empty_like(x)
+            source = x
+        else:
+            source = x.copy() if np.may_share_memory(out, x) else x
+        np.abs(source, out=out)
+        np.subtract(out, tau, out=out)
+        np.maximum(out, 0, out=out)
+        np.copysign(out, source, out=out)
+        return out
 
 
 class TVGeneric(Functional):
@@ -3142,14 +3170,14 @@ class TVGeneric(Functional):
     def __init__(self, domain, h_domain=L2):
         super().__init__(domain,h_domain=h_domain)
 
-    def _subgradient(self, x):
-        return NotImplementedError
+    def _subgradient(self, x, out=None, **subgradient_par):
+        raise NotImplementedError
 
     def _hessian(self, x):
         return NotImplementedError
     
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    def _proximal(self, x, tau, out=None, **proximal_par):
+        raise NotImplementedError
 
 from regpy.operators import ForwardFDGradient
 class TVUniformGridFcts(Composed):
@@ -3361,11 +3389,14 @@ class TVUniformGridFcts(Composed):
             func.sigmaeps = np.broadcast_to(1.+1e-5, self.grad.domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
         return func
       
-    def _proximal(self, x, tau:float, **kwargs):
+    def _proximal(self, x, tau: float, out=None, **kwargs):
         self.prox_setting.set_penalty_shift(x)
-        self.prox_setting.regpar=1./tau
+        self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
-
-        return self.prox_setting.run(self.prox_method,stoprule=self.prox_stop_rule,**prox_method_param)[0]
+        result = self.prox_setting.run(
+            self.prox_method, stoprule=self.prox_stop_rule,
+            **prox_method_param
+        )[0]
+        return self._copyto(out, result)
         

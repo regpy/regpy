@@ -59,17 +59,19 @@ class NgsL1(Functional):
     def _eval(self, x):
         return ngs.Integrate( ngs.Norm(self.domain.to_gf(x)), self.domain.fes.mesh )
 
-    def _subgradient(self, x):
+    def _subgradient(self, x, out=None, **subgradient_par):
         self.sign.Update(x.vec)
-        self._w_help.vec.data = self.sign * x.vec
-        return self._w_help.copy()
+        target = self._w_help if out is None else out
+        target.vec.data = self.sign * x.vec
+        return target.copy() if out is None else target
 
-    def _proximal(self, x, tau):
+    def _proximal(self, x, tau, out=None, **proximal_par):
         self.sign.Update(x.vec)
         self._gfu.vec.data = self.sign * x.vec
-        self._gfu.Interpolate(ngs.IfPos(self._gfu - tau,1,0)*(self._gfu - tau))
-        self._w_help.vec.data = self.sign * self._gfu.vec
-        return self._w_help.copy()
+        self._gfu.Interpolate(ngs.IfPos(self._gfu - tau, 1, 0) * (self._gfu - tau))
+        target = self._w_help if out is None else out
+        target.vec.data = self.sign * self._gfu.vec
+        return target.copy() if out is None else target
 
 class NgsTV(Functional):
     r"""Implementation of the total variation functional :math:`TV` on a given `NgsVectorSpace`. It is 
@@ -109,7 +111,7 @@ class NgsTV(Functional):
             tvnorm += ngs.InnerProduct(gradu[i],gradu[i])
         return sqrt(ngs.Integrate(tvnorm, self.domain.fes.mesh))
 
-    def _proximal(self, x, tau, stepsize=0.0002, maxiter=1000,tol=0.001):
+    def _proximal(self, x, tau, out=None, stepsize=0.0002, maxiter=1000, tol=0.001, **proximal_par):
         r"""Prox computation after the method suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004)
 
         Parameters
@@ -130,19 +132,24 @@ class NgsTV(Functional):
         grad_u_last = self._grad_op.codomain.empty()
         diff_last = inf
         for i in range(maxiter):
-            _gfu_help = -self._grad_op.adjoint(grad_u)-x/tau
-            update = self._grad_op.codomain.to_gf(stepsize*self._grad_op(_gfu_help))
-            vec_norm = ngs.sqrt(sum(ngs.InnerProduct(g,g) for g in update))
-            grad_u = self._grad_op.codomain.from_ngs((self._grad_op.codomain.to_gf(grad_u) + update)/(1.0 + vec_norm))
-            diff = max(ngs.Integrate(ngs.Norm(g),self.domain.fes.mesh) for g in self._grad_op.codomain.to_gf(grad_u-grad_u_last))
-            if diff<tol and i>0:
+            _gfu_help = -self._grad_op.adjoint(grad_u) - x / tau
+            update = self._grad_op.codomain.to_gf(stepsize * self._grad_op(_gfu_help))
+            vec_norm = ngs.sqrt(sum(ngs.InnerProduct(g, g) for g in update))
+            grad_u = self._grad_op.codomain.from_ngs(
+                (self._grad_op.codomain.to_gf(grad_u) + update) / (1.0 + vec_norm)
+            )
+            diff = max(
+                ngs.Integrate(ngs.Norm(g), self.domain.fes.mesh)
+                for g in self._grad_op.codomain.to_gf(grad_u - grad_u_last)
+            )
+            if diff < tol and i > 0:
                 self.log.info(f'TV proximal Chambolle terminated after {i} iterations, diff={diff}.')
                 break
-            elif diff>diff_last:
+            if diff > diff_last:
                 self.log.info(f'TV proximal Chambolle increasing residual, stopping after {i+1} iterations.')
                 grad_u.vec.data = grad_u_last.vec
                 break
-            else:
-                diff_last = diff
-                grad_u_last.vec.data = grad_u.vec
-        return x+tau*self._grad_op.adjoint(grad_u)
+            diff_last = diff
+            grad_u_last.vec.data = grad_u.vec
+        result = x + tau * self._grad_op.adjoint(grad_u)
+        return self._copyto(out, result)
