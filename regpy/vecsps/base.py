@@ -774,6 +774,18 @@ class DirectSum(VectorSpaceBase):
         else:
             raise ValueError(Errors.value_error("Construction of a vector from a flat vector only supported for x an np.ndarray not {}".format(type(x))))
     
+    def compatible(self, other):
+        return (
+            isinstance(other, DirectSum)
+            and len(self.summands) == len(other.summands)
+            and all(
+                own.compatible(other_)
+                for own, other_ in zip(
+                    self.summands, other.summands
+                )
+            )
+        )
+
     def iter_basis(self):
         for i,s in enumerate(self.summands()):
             vec = self.zeros()
