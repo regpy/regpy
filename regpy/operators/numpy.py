@@ -91,8 +91,29 @@ class MatrixMultiplication(Operator):
     def _eval(self, x):
         return self.matvec(x)
 
+    def _ieval(self, x, out):
+        if isinstance(self.matrix, np.ndarray):
+            # NumPy's matvec ufunc does not protect against overlapping input
+            # and output arrays.
+            if np.shares_memory(x, out):
+                x = x.copy()
+            return np.matvec(self.matrix, x, out=out)
+        np.copyto(out, self.matvec(x))
+        return out
+
     def _adjoint(self, y):
         return self.rmatvec(y)
+
+    def _iadjoint(self, y, out):
+        if isinstance(self.matrix, np.ndarray):
+            # vecmat conjugates its vector argument. Conjugating its result
+            # therefore yields the multiplication by the adjoint matrix.
+            if np.shares_memory(y, out):
+                y = y.copy()
+            np.vecmat(y, self.matrix, out=out)
+            return np.conjugate(out, out=out)
+        np.copyto(out, self.rmatvec(y))
+        return out
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
@@ -163,8 +184,23 @@ class CholeskyInverse(Operator):
         return self.domain.fromflat(
             cho_solve(self.factorization, self.domain.flatten(x)))
 
+    def _ieval(self, x, out):
+        flat_out = self.domain.flatten(out)
+        np.copyto(flat_out, self.domain.flatten(x))
+        result = cho_solve(self.factorization, flat_out, overwrite_b=True)
+        if result is not flat_out:
+            np.copyto(flat_out, result)
+        # ``flatten`` normally returns a view. Retain correctness for vector
+        # spaces whose flattening operation has to allocate.
+        if not np.shares_memory(flat_out, out):
+            np.copyto(out, self.domain.fromflat(flat_out))
+        return out
+
     def _adjoint(self, x):
         return self._eval(x)
+
+    def _iadjoint(self, x, out):
+        return self._ieval(x, out)
     
     def _adjoint_eval(self, x):
         return self.domain.fromflat(
@@ -211,8 +247,32 @@ class SuperLUInverse(Operator):
             else:
                 return self.lu.solve(x.real) + 1j*self.lu.solve(x.imag) 
 
-    def _adjoint(self,x):
-        return self.lu.solve(x,trans='H')
+    def _ieval(self, x, out):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            np.copyto(out, self.lu.solve(x))
+        else:
+            # A real SuperLU factorization cannot consume a complex right-hand
+            # side directly. Fill the two components without constructing the
+            # additional ``real + 1j * imag`` result array.
+            out.real[...] = self.lu.solve(x.real)
+            out.imag[...] = self.lu.solve(x.imag)
+        return out
+
+    def _adjoint(self, x):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            return self.lu.solve(x, trans='H')
+        return (
+            self.lu.solve(x.real, trans='H')
+            + 1j * self.lu.solve(x.imag, trans='H')
+        )
+
+    def _iadjoint(self, x, out):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            np.copyto(out, self.lu.solve(x, trans='H'))
+        else:
+            out.real[...] = self.lu.solve(x.real, trans='H')
+            out.imag[...] = self.lu.solve(x.imag, trans='H')
+        return out
 
     @property
     def inverse(self):
@@ -251,37 +311,46 @@ class Power(Operator):
         self.power = power
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
+    def _ieval(self, x, out, differentiate=False):
         if self.integer:
-            res = np.ones_like(x)
+            # ``powx`` is squared repeatedly and therefore always needs its own
+            # storage. Taking the copy before initializing ``out`` also makes
+            # the method safe for ``out is x``.
+            powx = x.copy()
+            out.fill(1)
             if differentiate:
-                self._factor = self.power*np.ones_like(x)
-                if self.power>0:
-                    self._dpow_bin = "{0:b}".format(self.power-1)
-                    if len(self._dpow_bin)< len(self._power_bin):
-                        self._dpow_bin = '0'+self._dpow_bin
+                self._factor = np.empty_like(x)
+                self._factor.fill(self.power)
+                if self.power > 0:
+                    self._dpow_bin = "{0:b}".format(self.power - 1)
+                    if len(self._dpow_bin) < len(self._power_bin):
+                        self._dpow_bin = '0' + self._dpow_bin
                 else:
                     self._dpow_bin = "{0:b}".format(0)
-            powx = x.copy()
             for k in reversed(range(len(self._power_bin))):
                 if self._power_bin[k] == '1':
-                    res *= powx
-                if differentiate:
-                    if self._dpow_bin[k] == '1':
-                        self._factor *= powx
-                if k>0:
-                    powx *= powx
+                    np.multiply(out, powx, out=out)
+                if differentiate and self._dpow_bin[k] == '1':
+                    np.multiply(self._factor, powx, out=self._factor)
+                if k > 0:
+                    np.multiply(powx, powx, out=powx)
         else:
+            # The factor has to be computed before overwriting an aliased input.
             if differentiate:
-                self._factor = self.power * x**(self.power - 1)
-            res = x**self.power
-        return res
+                self._factor = np.empty_like(x)
+                np.power(x, self.power - 1, out=self._factor)
+                self._factor *= self.power
+            np.power(x, self.power, out=out)
+        return out
 
-    def _derivative(self, x):
-        return self._factor * x
+    def _iderivative(self, x, out):
+        return np.multiply(self._factor, x, out=out)
 
-    def _adjoint(self, y):
-        return np.conjugate(self._factor) * y
+    def _iadjoint(self, y, out):
+        if np.shares_memory(y, out):
+            y = y.copy()
+        np.conjugate(self._factor, out=out)
+        return np.multiply(out, y, out=out)
 
 
 class Exponential(Operator):
@@ -299,15 +368,21 @@ class Exponential(Operator):
         super().__init__(domain, domain)
 
     def _ieval(self, x, out, differentiate=False):
+        np.exp(x, out=out)
         if differentiate:
-            self._exponential_factor = np.exp(x)
-        return np.exp(x, out = out)
+            # Reuse the value already computed in ``out`` instead of evaluating
+            # the exponential a second time.
+            self._exponential_factor = out.copy()
+        return out
 
     def _iderivative(self, x, out):
-        return np.multiply(self._exponential_factor,x,out = out)
+        return np.multiply(self._exponential_factor, x, out=out)
 
     def _iadjoint(self, y, out):
-        return np.multiply(self._exponential_factor.conj(), y, out = out)
+        if np.shares_memory(y, out):
+            y = y.copy()
+        np.conjugate(self._exponential_factor, out=out)
+        return np.multiply(out, y, out=out)
 
 
 class FourierTransform(Operator):
@@ -550,11 +625,11 @@ class PtwScalarDivision(Operator):
         
         super().__init__(domain, domain, linear=True)
 
-    def _eval(self, f, out = None):
-        return np.divide(f,self.divisor,out = out)
-    
-    def _adjoint(self, g, out = None):
-        return np.divide(g,self.divisor.conj(), out = out)
+    def _ieval(self, f, out):
+        return np.divide(f, self.divisor, out=out)
+
+    def _iadjoint(self, g, out):
+        return np.divide(g, self.divisor.conj(), out=out)
 
     @Operator.inverse.getter
     def inverse(self):
@@ -612,8 +687,8 @@ class ForwardFDGradient(Operator):
         self.boundary_condition = boundary_condition
         super().__init__(domain, domain.vector_valued_space(domain.ndim), linear=True)
 
-    def _eval(self, v):
-        out = self.codomain.zeros()
+    def _ieval(self, v, out):
+        out.fill(0.)
         for (ax,h) in zip(range(self.domain.ndim),self.domain.spacing):
             # Interior: forward differences: out[i1,...in,ax] = (v[... i_ax+1 ...] - v[...,i_ax ...])/h_ax
             slc_mid = [slice(None)] * self.domain.ndim
@@ -633,8 +708,8 @@ class ForwardFDGradient(Operator):
 
         return out
 
-    def _adjoint(self, v):
-        out = self.domain.zeros()
+    def _iadjoint(self, v, out):
+        out.fill(0.)
         for ax,h in zip(range(self.domain.ndim),self.domain.spacing):
             # Interior: backward difference: (v[i_ax-1]-v[i_ax])/h_ax
             slc_mid = [slice(None)] * self.domain.ndim
@@ -708,6 +783,9 @@ class OuterProduct(Operator):
         super().__init__(domain, codomain, linear=False)
         self._adjoint_summation_strings=self._calc_adjoint_summation_strings()
         """List of strings for calculation of adjoint in einsum."""
+        characters=tuple(chr(k) for k in range(ord('A'),ord('A')+self.codomain.ndim))
+        self._eval_summation_string = ",".join(characters) + "->" + "".join(characters)
+        """String for writing the outer product directly into an output array."""
         self._consts = {*self._consts,"_p","_p_conj_flat"}
 
     def _calc_adjoint_summation_strings(self):
@@ -725,18 +803,75 @@ class OuterProduct(Operator):
             self._p_conj_flat=tuple(np.conj(p_j).flat for p_j in self._p)
         return self.codomain.product(*self._p)
 
-    def _derivative(self, x):
-        y=self.codomain.zeros()
-        for j,x_j in enumerate(x):
-            y+=self.codomain.product(*self._p[:j],x_j,*self._p[j+1:])
-        return y
-    
+    def _ieval(self, x, out, differentiate=False):
+        self._p = self.domain.split(x)
+        if differentiate:
+            self._p_conj_flat = tuple(np.conj(p_j).flat for p_j in self._p)
+        operands = tuple(
+            p_j.copy().reshape(-1) if np.shares_memory(p_j, out) else p_j.reshape(-1)
+            for p_j in self._p
+        )
+        return np.einsum(
+            self._eval_summation_string,
+            *operands,
+            optimize=True,
+            out=out
+        )
+
+    def _iderivative(self, x, out):
+        x_components = tuple(
+            x_j.copy() if np.shares_memory(x_j, out) else x_j
+            for x_j in self.domain.split(x)
+        )
+        flat_p = tuple(
+            p_j.copy().reshape(-1) if np.shares_memory(p_j, out) else p_j.reshape(-1)
+            for p_j in self._p
+        )
+        term = None
+        for j, x_j in enumerate(x_components):
+            operands = (*flat_p[:j], x_j.reshape(-1), *flat_p[j+1:])
+            if j == 0:
+                np.einsum(
+                    self._eval_summation_string,
+                    *operands,
+                    optimize=True,
+                    out=out
+                )
+            else:
+                if term is None:
+                    term = np.empty_like(out)
+                np.einsum(
+                    self._eval_summation_string,
+                    *operands,
+                    optimize=True,
+                    out=term
+                )
+                np.add(out, term, out=out)
+        return out
+
     def _adjoint(self, y):
         xs=[]
         for j,s in enumerate(self._adjoint_summation_strings):
             x_j=np.einsum(s,y,*self._p_conj_flat[:j],*self._p_conj_flat[j+1:],optimize=True)
             xs.append(x_j.reshape(self.domain[j].shape))
         return self.domain.join(*xs)
+
+    def _iadjoint(self, y, out):
+        out_components = self.domain.split(out)
+        if any(np.shares_memory(y, out_j) for out_j in out_components):
+            y = y.copy()
+        for j, (s, out_j) in enumerate(
+            zip(self._adjoint_summation_strings, out_components)
+        ):
+            np.einsum(
+                s,
+                y,
+                *self._p_conj_flat[:j],
+                *self._p_conj_flat[j+1:],
+                optimize=True,
+                out=out_j.reshape(-1)
+            )
+        return out
 
 
 class EinSum(Operator):
@@ -863,18 +998,59 @@ class EinSum(Operator):
         return eval_opt,adjoint_opt
 
     
-    def _eval(self, x, differentiate=False):
-        self._p=(x,) if self.linear else self.domain.split(x)
-        if(differentiate):
-            self._p_conj=tuple(np.conj(p_j) for p_j in self._p)
-        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=self._eval_opt)
+    def _ieval(self, x, out, differentiate=False):
+        self._p = (x,) if self.linear else self.domain.split(x)
+        if differentiate:
+            self._p_conj = tuple(np.conj(p_j) for p_j in self._p)
+        operands = tuple(
+            p_j.copy() if np.shares_memory(p_j, out) else p_j
+            for p_j in self._p
+        )
+        return np.einsum(
+            self.subscripts,
+            *operands,
+            *self.tensors,
+            optimize=self._eval_opt,
+            out=out
+        )
 
-    def _derivative(self, x):
-        y=self.codomain.zeros()
-        for j,x_j in enumerate(x):
-            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=self._eval_opt)
-        return y
-    
+    def _iderivative(self, x, out):
+        x_components = (x,) if self.linear else self.domain.split(x)
+        x_components = tuple(
+            x_j.copy() if np.shares_memory(x_j, out) else x_j
+            for x_j in x_components
+        )
+        evaluation_point = tuple(
+            p_j.copy() if np.shares_memory(p_j, out) else p_j
+            for p_j in self._p
+        )
+        term = None
+        for j, x_j in enumerate(x_components):
+            operands = (
+                *evaluation_point[:j],
+                x_j,
+                *evaluation_point[j+1:],
+                *self.tensors
+            )
+            if j == 0:
+                np.einsum(
+                    self.subscripts,
+                    *operands,
+                    optimize=self._eval_opt,
+                    out=out
+                )
+            else:
+                if term is None:
+                    term = np.empty_like(out)
+                np.einsum(
+                    self.subscripts,
+                    *operands,
+                    optimize=self._eval_opt,
+                    out=term
+                )
+                np.add(out, term, out=out)
+        return out
+
     def _adjoint(self, y):
         if(self.linear):
             x=np.einsum(self._adjoint_subscripts[0][1],*self.tensors,y,optimize=self._adjoint_opt[0])
@@ -897,3 +1073,68 @@ class EinSum(Operator):
                 np.einsum(s[2],x_j_full)[:]=x_j
                 xs.append(x_j_full)
         return self.domain.join(*xs)
+
+    @staticmethod
+    def _write_adjoint_component(subscripts, operands, optimize, out):
+        if not subscripts[0]:
+            # Missing output indices have to be introduced by broadcasting.
+            # ``einsum(..., out=target)`` requires an exact shape match, so this
+            # branch necessarily retains the reduced temporary.
+            out.fill(0)
+            target = np.einsum(subscripts[2], out)
+            value = np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize
+            )
+            if np.issubdtype(out.dtype, np.floating):
+                value = np.real(value)
+            np.copyto(target, value)
+            return
+
+        if np.issubdtype(out.dtype, np.floating):
+            value = np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize
+            )
+            np.copyto(out, np.real(value))
+        else:
+            np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize,
+                out=out
+            )
+
+    def _iadjoint(self, y, out):
+        if self.linear:
+            if np.shares_memory(y, out):
+                y = y.copy()
+            self._write_adjoint_component(
+                self._adjoint_subscripts[0],
+                (*self.tensors, y),
+                self._adjoint_opt[0],
+                out
+            )
+            return out
+
+        out_components = self.domain.split(out)
+        if any(np.shares_memory(y, out_j) for out_j in out_components):
+            y = y.copy()
+        for j, (subscripts, out_j) in enumerate(
+            zip(self._adjoint_subscripts, out_components)
+        ):
+            self._write_adjoint_component(
+                subscripts,
+                (
+                    *self._p_conj[:j],
+                    *self._p_conj[j+1:],
+                    *self.tensors,
+                    y
+                ),
+                self._adjoint_opt[j],
+                out_j
+            )
+        return out
+
