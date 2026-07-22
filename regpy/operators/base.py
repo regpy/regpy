@@ -101,10 +101,26 @@ class Operator:
     allowing it to save on precomputations. It does not need to ensure that data shared with some
     derivative remains intact; all derivative instances will be invalidated regardless.
 
-    Linear operators should implement
+    For each operation family, subclasses normally need to implement only one of the
+    allocating and in-place variants: ``_eval`` or ``_ieval``, ``_derivative`` or
+    ``_iderivative``, and ``_adjoint`` or ``_iadjoint``. The base class derives the missing
+    variant from the implemented one. The same applies to ``_adjoint_data``,
+    ``_adjoint_eval`` and ``_adjoint_derivative`` and their corresponding ``_i*`` methods.
+    Implementing both variants is useful only when their optimal algorithms differ.
 
-        _eval(self, x)
-        _adjoint(self, y)
+    In general, subclasses should prefer implementing the in-place ``_i*`` variant: it can
+    write directly into caller-provided storage and the base class can still construct the
+    allocating result by creating an output vector once. Implementations must completely
+    overwrite the requested output and return that exact output object. They should also be
+    safe when input and output are identical whenever domain and codomain are compatible.
+
+    Linear operators should therefore normally implement
+
+        _ieval(self, x, out)
+        _iadjoint(self, y, out)
+
+    or, when a genuinely better allocating algorithm exists, the corresponding ``_eval``
+    and ``_adjoint`` methods.
 
     Here the logic is simpler, and no sharing of precomputations is needed (unless it applies to the
     operator as a whole, in which case it should be performed in `__init__`).
@@ -899,8 +915,9 @@ class Operator:
         if np.isscalar(other):
             if other == 1:
                 return self
-            else:
-                return LinearCombination((other, self))         
+            if isinstance(self, PtwMultiplication):
+                return PtwMultiplication(self.domain, other * self.factor)
+            return LinearCombination((other, self))         
         elif other in self.codomain:
             return PtwMultiplication(self.codomain, other) * self
         elif isinstance(other, Operator):
@@ -1231,6 +1248,19 @@ class LinearCombination(Operator):
             out += z
         return out
     
+    def _ieval(self, x, out, differentiate=False, **kwargs):
+        if len(self.ops) == 1:
+            coeff = self.coeffs[0]
+            op = self.ops[0]
+            if differentiate:
+                out, deriv = op.linearize(x, out=out, **kwargs)
+                self._derivs = [deriv]
+            else:
+                out = op(x, out=out, **kwargs)
+            out *= coeff
+            return out
+        return super()._ieval(x, out, differentiate=differentiate, **kwargs)
+
     def _iadjoint_eval(self, x, out, **kwargs):
         if len(self.ops) == 1:
             if self.linear:
@@ -1916,9 +1946,11 @@ class Pow(Operator):
 
 
 class Identity(Operator):
-    r"""The identity operator on a vector space. 
-    By default, a copy is performed to prevent callers from
-    accidentally modifying the argument when modifying the return value.
+    r"""The identity operator on a vector space.
+
+    The allocating methods return an independent vector. In-place calls copy into the
+    supplied output vector. A configurable no-copy mode is intentionally not provided,
+    because allocating operator results must be freely modifiable by the caller.
 
     Parameters
     ----------
@@ -1926,22 +1958,20 @@ class Identity(Operator):
         The underlying vector space.
     """
 
-    def __init__(self, domain, copy=True):
-        self.copy = copy
+    def __init__(self, domain):
         super().__init__(domain, domain, linear=True)
 
-    def _eval(self, x, copy = False):
-        if self.copy or copy:
-            return x.copy()
-        else:
-            return x
+    def _ieval(self, x, out, **kwargs):
+        if out is not x:
+            self.domain.copyto(out, x)
+        return out
 
-    def _adjoint(self, x, **kwargs):
-        return self._eval(x, **kwargs)
-        
-    def _adjoint_eval(self, x, **kwargs):
-        return self._eval(x, **kwargs)
-    
+    def _iadjoint(self, x, out, **kwargs):
+        return self._ieval(x, out, **kwargs)
+
+    def _iadjoint_eval(self, x, out, **kwargs):
+        return self._ieval(x, out, **kwargs)
+
     @Operator.inverse.getter
     def inverse(self):
         return self
@@ -2590,8 +2620,19 @@ class VectorOfOperators(Operator):
         return out
 
     def _iderivative(self, x, out, **kwargs):
-        for i,deriv in enumerate(self._derivs):
-            out[i] = deriv(x,**kwargs)
+        for deriv, out_i in zip(self._derivs, out):
+            deriv(x, out=out_i, **kwargs)
+        return out
+
+    def _iadjoint(self, y, out, **kwargs):
+        ops = self.ops if self.linear else self._derivs
+        first = True
+        for op, y_i in zip(ops, y):
+            if first:
+                op.adjoint(y_i, out=out, **kwargs)
+                first = False
+            else:
+                out += op.adjoint(y_i, **kwargs)
         return out
 
     def _adjoint(self, y, **kwargs):
@@ -2741,43 +2782,54 @@ class MatrixOfOperators(Operator):
         
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
 
-    def _eval(self, x, differentiate=False, **kwargs):
-        out = self.codomain.zeros()
-        self._derivs = []
-        for T_j, x_j in zip(self.ops,x):
-            self._derivs.append([])
-            for i, (T_ij,out_i) in enumerate(zip(T_j,out)):
+    def _ieval(self, x, out, differentiate=False, **kwargs):
+        self._derivs = [[] for _ in self.ops]
+        written = [False] * len(out)
+        for j, (T_j, x_j) in enumerate(zip(self.ops, x)):
+            for i, T_ij in enumerate(T_j):
+                if T_ij is None:
+                    self._derivs[j].append(None)
+                    continue
                 if differentiate:
-                    if T_ij:
-                        out_deriv,deriv = T_ij.linearize(x_j)
-                        out_i += out_deriv
-                        Tprime_ij = deriv
+                    if written[i]:
+                        value, deriv = T_ij.linearize(x_j, **kwargs)
+                        out[i] += value
                     else:
-                        Tprime_ij = None
-                    self._derivs[i].append(Tprime_ij)
-                else:   
-                    if T_ij:
-                        out_i += T_ij(x_j)
+                        _, deriv = T_ij.linearize(x_j, out=out[i], **kwargs)
+                        written[i] = True
+                    self._derivs[j].append(deriv)
+                elif written[i]:
+                    out[i] += T_ij(x_j, **kwargs)
+                else:
+                    T_ij(x_j, out=out[i], **kwargs)
+                    written[i] = True
         return out
 
-    def _derivative(self, x, **kwargs):
-        out = self.codomain.zeros()
-        for Tprime_j, x_j in zip(self._derivs,x):
-            for Tprime_ij,out_i in zip(Tprime_j,out):
-                if Tprime_ij:
-                    out_i += Tprime_ij(x_j)
+    def _iderivative(self, x, out, **kwargs):
+        written = [False] * len(out)
+        for Tprime_j, x_j in zip(self._derivs, x):
+            for i, Tprime_ij in enumerate(Tprime_j):
+                if Tprime_ij is None:
+                    continue
+                if written[i]:
+                    out[i] += Tprime_ij(x_j, **kwargs)
+                else:
+                    Tprime_ij(x_j, out=out[i], **kwargs)
+                    written[i] = True
         return out
 
-    def _adjoint(self, y, **kwargs):
-        if self.linear:
-            ops = self.ops
-        else:
-            ops = self._derivs
-        out = self.domain.zeros()
+    def _iadjoint(self, y, out, **kwargs):
+        ops = self.ops if self.linear else self._derivs
         for Tprime_j, out_j in zip(ops, out):
-            for Tprime_ij, y_i in zip(Tprime_j,y):
-                if Tprime_ij:
-                    out_j += Tprime_ij.adjoint(y_i)
+            first = True
+            for Tprime_ij, y_i in zip(Tprime_j, y):
+                if Tprime_ij is None:
+                    continue
+                if first:
+                    Tprime_ij.adjoint(y_i, out=out_j, **kwargs)
+                    first = False
+                else:
+                    out_j += Tprime_ij.adjoint(y_i, **kwargs)
         return out
 
     def __repr__(self):
@@ -2830,10 +2882,13 @@ class Sum(Operator):
                 add_info="The codomain has to be indentical to the summands of the domain."
             ))
 
-    def _eval(self,x):
-        return sum(self.domain.split(x))
-    
-    
+    def _ieval(self, x, out):
+        components = iter(x)
+        self.codomain.copyto(out, next(components))
+        for component in components:
+            out += component
+        return out
+
     def _iadjoint(self,y, out):
         for i, summand in enumerate(self.domain):
             out[i] = y.real if not summand.is_complex else y
@@ -2880,22 +2935,24 @@ class Product(Operator):
                 add_info="The codomain has to be indentical to the summands of the domain."
             ))
 
-    def _eval(self,x,differentiate=False):
-        out = self.codomain.ones()
-        for x_i in x:
+    def _ieval(self, x, out, differentiate=False):
+        components = list(x)
+        self.codomain.copyto(out, components[0])
+        for x_i in components[1:]:
             out *= x_i
         if differentiate:
-            self.deriv_data=[self.codomain.ones() for _ in x]
-            for j,x_j in enumerate(x):
-                for i in range(self.domain.ndim):
-                    if(i!=j):
-                        self.deriv_data[i]*=x_j
+            self.deriv_data = [self.codomain.ones() for _ in components]
+            for j, x_j in enumerate(components):
+                for i in range(len(components)):
+                    if i != j:
+                        self.deriv_data[i] *= x_j
         return out
-    
-    def _derivative(self, x):
-        out = self.deriv_data[0]*x[0]
-        for i,x_i in enumerate(x[1:]):
-            out+=self.deriv_data[i+1]*x_i
+
+    def _iderivative(self, x, out):
+        self.codomain.copyto(out, self.deriv_data[0])
+        out *= x[0]
+        for factor, x_i in zip(self.deriv_data[1:], x[1:]):
+            out += factor * x_i
         return out
 
     def _iadjoint(self,y, out):
@@ -2923,12 +2980,8 @@ class RealPart(Operator):
         codomain = domain.real_space()
         super().__init__(domain, codomain, linear=True)
 
-    def _eval(self, x, out = None):
-        return x.real.copy()
-
-    def _adjoint(self, y):
-        out = self.domain.zeros()
-        out += y
+    def _ieval(self, x, out):
+        self.codomain.copyto(out, x.real)
         return out
 
     def _iadjoint(self, y, out):
@@ -2956,11 +3009,13 @@ class ImaginaryPart(Operator):
         codomain = domain.real_space()
         super().__init__(domain, codomain, linear=True)
 
-    def _eval(self, x):
-        return x.imag
+    def _ieval(self, x, out):
+        self.codomain.copyto(out, x.imag)
+        return out
 
-    def _adjoint(self, y):
-        return 1j * y
+    def _iadjoint(self, y, out):
+        self.domain.copyto(out, 1j * y)
+        return out
 
 class SplitRealImag(VectorOfOperators):
     """Splits a complex vector into its real and imaginary part. 
@@ -3008,16 +3063,22 @@ class SquaredModulus(Operator):
         codomain = domain.real_space()
         super().__init__(domain, codomain)
 
-    def _eval(self, x, differentiate=False):
+    def _ieval(self, x, out, differentiate=False):
         if differentiate:
             self._factor = 2 * x
-        return x.real**2 + x.imag**2
+        np.square(x.real, out=out)
+        out += np.square(x.imag)
+        return out
 
-    def _derivative(self, h):
-        return (self._factor.conj() * h).real
+    def _iderivative(self, h, out):
+        np.multiply(self._factor.real, h.real, out=out)
+        if self.domain.is_complex:
+            out += self._factor.imag * h.imag
+        return out
 
-    def _adjoint(self, y):
-        return self._factor * y
+    def _iadjoint(self, y, out):
+        np.multiply(self._factor, y, out=out)
+        return out
 
 
 class Zero(Operator):
