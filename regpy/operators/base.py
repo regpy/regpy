@@ -480,22 +480,26 @@ class Operator:
         self.domain.copyto(out, self._adjoint_data(data, **kwargs))
         return out
         
-    def adjoint_data(self, data, out = None, **kwargs):
-        if out is None:
+    def adjoint_data(self, data, out=None, **kwargs):
+            self.reset_detect_loop()
             try:
-                res = self._adjoint_data(data, **kwargs)
-            except NotImplementedError:
-                res = self._adjoint(data,**kwargs)
-            return res
-        else:
-            if out not in self.domain:
-                raise ValueError(util.Errors.value_error(
-                f"The output must be a an element of the domain when calling constructing adjoint data. You gave:"+"\n\t"+f"out = {out}"
-                )) 
-            try:
-                return self._iadjoint_data(data, out, **kwargs)
-            except NotImplementedError:
-                return self._iadjoint(data, out,**kwargs)
+                if out is None:
+                    try:
+                        return self._adjoint_data(data, **kwargs)
+                    except NotImplementedError:
+                        self.reset_detect_loop()
+                        return self._adjoint(data, **kwargs)
+
+                if out not in self.domain:
+                    raise ValueError(...)
+
+                try:
+                    return self._iadjoint_data(data, out, **kwargs)
+                except NotImplementedError:
+                    self.reset_detect_loop()
+                    return self._iadjoint(data, out, **kwargs)
+            finally:
+                self.reset_detect_loop()
     
     def _adjoint_eval(self, x, **kwargs):
         if self._detect_loop[4]:
@@ -1796,15 +1800,23 @@ class PartOfOperator(Operator):
             return self.base_op.codomain.join(*[cd.zeros() if i not in self.index else out[self.index.index(i)] for i,cd in enumerate(self.base_op.codomain)])
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
-        if(self.base_op.linear):
-            y=self.base_op._ieval(x, self._extend_to_full(out), **kwargs)
+        full_out = self._extend_to_full(out)
+        if self.base_op.linear:
+            self.base_op._ieval(x, full_out, **kwargs)
         else:
-            y=self.base_op._ieval(x, self._extend_to_full(out), differentiate=differentiate, **kwargs)
-        return self._get_codomain_part(y)
-    
+            self.base_op._ieval(
+                x, full_out,
+                differentiate=differentiate,
+                **kwargs
+            )
+        return out
+
+
     def _iderivative(self, x, out, **kwargs):
-        y = self.base_op._iderivative(x, self._extend_to_full(out), **kwargs)
-        return self._get_codomain_part(y)
+        self.base_op._iderivative(
+            x, self._extend_to_full(out), **kwargs
+        )
+        return out
 
     def _iadjoint(self, y, out, **kwargs):
         out = self.base_op._iadjoint(self._extend_to_full(y), out, **kwargs)
