@@ -1296,43 +1296,56 @@ class LinearCombination(Operator):
 
 class Composition(Operator):
     r"""A composition of operators. This class should normally not be instantiated directly,
-    but rather through multiplying `Operator` instances.
+    but rather through multiplying :class:`Operator` instances.
 
-    .. code-block::python
+    .. code-block:: python
 
         op_composed = op_n * ... * op_2 * op_1
+
+    If desired, you can then activate the use of buffers by
+
+        op_composed.use_buffers = True
+
+    Then intermediate values will be written into reusable
+    buffers.  There is at most one buffer for every interface between two
+    operators.  Adjacent interfaces share a buffer whenever the operator between
+    them has compatible domain and codomain, because that operator can then be
+    evaluated in place.
 
     Parameters
     ----------
     *ops : tuple
-        Variable number of Operator instanced to be composed. Each Operators domain has to 
-        match the next ones codomain. 
+        Operators to be composed.  The domain of each operator must be compatible
+        with the codomain of the following operator.
+    inverse : Operator, optional
+        Explicit inverse of the composition.
     """
 
-    def __init__(self, *ops,inverse =None):
-        if not isinstance(ops[0],Operator):
+    def __init__(self, *ops, use_buffers=True, inverse=None):
+        if not ops or not isinstance(ops[0], Operator):
             raise ValueError(util.Errors.not_instance(
-                ops[0],
+                ops[0] if ops else None,
                 Operator,
                 add_info="The first argument of the list of operators is not an Operator."
-                ))
-        for i,(f, g) in enumerate(zip(ops, ops[1:])):
-            if not isinstance(g,Operator):
+            ))
+        for i, (f, g) in enumerate(zip(ops, ops[1:])):
+            if not isinstance(g, Operator):
                 raise ValueError(util.Errors.not_instance(
                     g,
                     Operator,
                     add_info=f"The {i+2}-th entry of operators is not an Operator."
-                    ))  
+                ))
             if not f.domain.compatible(g.codomain):
                 raise ValueError(util.Errors.not_equal(
                     f,
                     g,
                     add_info=f"The domain of the {i+1}-th and codomain of {i+2}-th entry do not match up."
-                    ))
+                ))
+
         self.ops = []
-        """The list of composed operators."""
+        """The flattened list of composed operators."""
         self.d_eq_cd = []
-        """Stores the information if domain and codomain are equal to possibly have in-place evaluations."""
+        """Whether each operator has compatible domain and codomain."""
         for op in ops:
             if isinstance(op, Composition):
                 self.ops.extend(op.ops)
@@ -1340,126 +1353,344 @@ class Composition(Operator):
             else:
                 self.ops.append(op)
                 self.d_eq_cd.append(op.domain.compatible(op.codomain))
+
+        self._use_buffers = False
+        self._interface_buffers = []
+        # One entry for every interface. Entries may reference the same buffer.
+        self._buffer_status = {}
+        # Status is stored per unique buffer to guard against recursion or
+        # concurrent use of one Composition instance.
+
         super().__init__(
-            self.ops[-1].domain, self.ops[0].codomain,
+            self.ops[-1].domain,
+            self.ops[0].codomain,
             linear=all(op.linear for op in self.ops),
-            inverse =inverse)
+            inverse=inverse,
+        )
+        if use_buffers:
+            self.use_buffers = True
+
+    @property
+    def use_buffers(self):
+        """Whether reusable intermediate buffers are enabled."""
+        return self._use_buffers
+
+    @use_buffers.setter
+    def use_buffers(self, value):
+        if not isinstance(value, (bool, np.bool_)):
+            raise TypeError(util.Errors.type_error(
+                'use_buffers must be boolean.', value
+            ))
+        value = bool(value)
+        if value == self._use_buffers:
+            return
+        if any(self._buffer_status.values()):
+            raise RuntimeError(util.Errors.runtime_error(
+                "Cannot change use_buffers while composition buffers are in use."
+            ))
+        self._use_buffers = value
+        if value:
+            self._initialize_buffers()
+        else:
+            self._interface_buffers = []
+            self._buffer_status = {}
+
+    @property
+    def use_buffer(self):
+        """Backward-compatible singular alias for :attr:`use_buffers`."""
+        return self.use_buffers
+
+    @use_buffer.setter
+    def use_buffer(self, value):
+        self.use_buffers = value
+
+    def _initialize_buffers(self):
+        """Allocate and map reusable buffers to composition interfaces."""
+        self._interface_buffers = []
+        self._buffer_status = {}
+        if len(self.ops) < 2:
+            return
+
+        previous = None
+        for interface_index in range(len(self.ops) - 1):
+            # Interface i is ops[i].domain == ops[i+1].codomain.
+            # It may share the preceding interface buffer exactly when ops[i]
+            # maps a compatible space to itself.
+            if interface_index > 0 and self.d_eq_cd[interface_index]:
+                buffer = previous
+            else:
+                buffer = self.ops[interface_index].domain.empty()
+                self._buffer_status[id(buffer)] = False
+            self._interface_buffers.append(buffer)
+            previous = buffer
+
+    def _acquire_buffers(self):
+        if not self._use_buffers:
+            return None
+        if len(self._interface_buffers) != max(0, len(self.ops) - 1):
+            self._initialize_buffers()
+        busy = [key for key, in_use in self._buffer_status.items() if in_use]
+        if busy:
+            raise RuntimeError(util.Errors.runtime_error(
+                "Composition buffers are already in use. This usually indicates "
+                "recursive evaluation or concurrent use of the same Composition "
+                "instance. Disable use_buffers or use a separate Composition instance."
+            ))
+        for key in self._buffer_status:
+            self._buffer_status[key] = True
+        return self._interface_buffers
+
+    def _release_buffers(self):
+        for key in self._buffer_status:
+            self._buffer_status[key] = False
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
+        if not self._use_buffers or len(self.ops) < 2:
+            return self._ieval_without_buffers(x, out, differentiate=differentiate, **kwargs)
+
+        buffers = self._acquire_buffers()
+        try:
+            if differentiate:
+                self._derivs = [None] * len(self.ops)
+                current, deriv = self.ops[-1].linearize(
+                    x, out=buffers[-1], **kwargs
+                )
+                self._derivs[-1] = deriv
+                for i in range(len(self.ops) - 2, 0, -1):
+                    current, deriv = self.ops[i].linearize(
+                        current, out=buffers[i - 1], **kwargs
+                    )
+                    self._derivs[i] = deriv
+                out, deriv = self.ops[0].linearize(current, out=out, **kwargs)
+                self._derivs[0] = deriv
+                return out
+
+            current = self.ops[-1](x, out=buffers[-1], **kwargs)
+            for i in range(len(self.ops) - 2, 0, -1):
+                current = self.ops[i](current, out=buffers[i - 1], **kwargs)
+            return self.ops[0](current, out=out, **kwargs)
+        finally:
+            self._release_buffers()
+
+    def _ieval_without_buffers(self, x, out, differentiate=False, **kwargs):
         if differentiate:
             self._derivs = []
-            x, deriv = self.ops[-1].linearize(x,**kwargs)
+            x, deriv = self.ops[-1].linearize(x, **kwargs)
             self._derivs.append(deriv)
-            for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
+            for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1], self.ops[-2:0:-1]):
                 if d_eq_cd:
-                    x, deriv = op.linearize(x, out = x,**kwargs)
+                    x, deriv = op.linearize(x, out=x, **kwargs)
                 else:
-                    x, deriv = op.linearize(x,**kwargs)
-                self._derivs.insert(0,deriv)
-            out, deriv = self.ops[0].linearize(x, out = out,**kwargs)
-            self._derivs.insert(0,deriv)
+                    x, deriv = op.linearize(x, **kwargs)
+                self._derivs.insert(0, deriv)
+            out, deriv = self.ops[0].linearize(x, out=out, **kwargs)
+            self._derivs.insert(0, deriv)
             return out
-        else:
-            x = self.ops[-1](x,**kwargs)
-            for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
-                if d_eq_cd:
-                    x = op(x, out = x,**kwargs)
-                else:
-                    x = op(x,**kwargs)
-            return self.ops[0](x, out = out,**kwargs)
+
+        x = self.ops[-1](x, **kwargs)
+        for d_eq_cd, op in zip(self.d_eq_cd[-2:0:-1], self.ops[-2:0:-1]):
+            if d_eq_cd:
+                x = op(x, out=x, **kwargs)
+            else:
+                x = op(x, **kwargs)
+        return self.ops[0](x, out=out, **kwargs)
 
     def _iderivative(self, x, out, **kwargs):
-        x = self._derivs[-1](x, **kwargs)
-        for d_eq_cd, deriv in zip(self.d_eq_cd[-2:0:-1],self._derivs[-2:0:-1]):
-            if d_eq_cd:
-                x = deriv(x, out = x, **kwargs)
-            else:
-                x = deriv(x, **kwargs)
-        return self._derivs[0](x, out = out,**kwargs)
+        if not self._use_buffers or len(self._derivs) < 2:
+            x = self._derivs[-1](x, **kwargs)
+            for d_eq_cd, deriv in zip(
+                    self.d_eq_cd[-2:0:-1], self._derivs[-2:0:-1]):
+                if d_eq_cd:
+                    x = deriv(x, out=x, **kwargs)
+                else:
+                    x = deriv(x, **kwargs)
+            return self._derivs[0](x, out=out, **kwargs)
+
+        buffers = self._acquire_buffers()
+        try:
+            current = self._derivs[-1](x, out=buffers[-1], **kwargs)
+            for i in range(len(self._derivs) - 2, 0, -1):
+                current = self._derivs[i](
+                    current, out=buffers[i - 1], **kwargs
+                )
+            return self._derivs[0](current, out=out, **kwargs)
+        finally:
+            self._release_buffers()
 
     def _iadjoint(self, y, out, **kwargs):
-        if self.linear:
-            ops = self.ops
-        else:
-            ops = self._derivs
-        y = ops[0].adjoint(y, **kwargs)
-        for d_eq_cd,op in zip(self.d_eq_cd[1:-1],ops[1:-1]):
-            if d_eq_cd:
-                y = op.adjoint(y, out = y, **kwargs)
-            else:
-                y = op.adjoint(y, **kwargs)
-        out = ops[-1].adjoint(y, out = out,**kwargs)
-        return out
-    
+        ops = self.ops if self.linear else self._derivs
+        if not self._use_buffers or len(ops) < 2:
+            y = ops[0].adjoint(y, **kwargs)
+            for d_eq_cd, op in zip(self.d_eq_cd[1:-1], ops[1:-1]):
+                if d_eq_cd:
+                    y = op.adjoint(y, out=y, **kwargs)
+                else:
+                    y = op.adjoint(y, **kwargs)
+            return ops[-1].adjoint(y, out=out, **kwargs)
+
+        buffers = self._acquire_buffers()
+        try:
+            current = ops[0].adjoint(y, out=buffers[0], **kwargs)
+            for i in range(1, len(ops) - 1):
+                current = ops[i].adjoint(
+                    current, out=buffers[i], **kwargs
+                )
+            return ops[-1].adjoint(current, out=out, **kwargs)
+        finally:
+            self._release_buffers()
+
     def _iadjoint_eval(self, x, out, **kwargs):
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments. Maybe implement your own _adjoint_eval and process the kwargs. Thus ignoring yours: kwargs= {kwargs}")
+        if kwargs:
+            self.log.warning(
+                "In the default implementation of _adjoint_eval it is unclear "
+                "where to put keyword arguments. Ignoring kwargs=%s", kwargs
+            )
+        if not self._use_buffers or len(self.ops) < 2:
+            return self._iadjoint_eval_without_buffers(x, out)
+
+        buffers = self._acquire_buffers()
+        try:
+            if self.linear:
+                current = self.ops[-1](x, out=buffers[-1])
+                for i in range(len(self.ops) - 2, 0, -1):
+                    current = self.ops[i](current, out=buffers[i - 1])
+                current = self.ops[0].adjoint_eval(
+                    current, out=buffers[0]
+                )
+                for i in range(1, len(self.ops) - 1):
+                    current = self.ops[i].adjoint(
+                        current, out=buffers[i]
+                    )
+                return self.ops[-1].adjoint(current, out=out)
+
+            self._derivs = [None] * len(self.ops)
+            current, deriv = self.ops[-1].linearize(
+                x, out=buffers[-1]
+            )
+            self._derivs[-1] = deriv
+            for i in range(len(self.ops) - 2, 0, -1):
+                current, deriv = self.ops[i].linearize(
+                    current, out=buffers[i - 1]
+                )
+                self._derivs[i] = deriv
+            current, deriv = self.ops[0].linearize(
+                current, out=buffers[0], return_adjoint_eval=True
+            )
+            self._derivs[0] = deriv
+            for i in range(1, len(self._derivs) - 1):
+                current = self._derivs[i].adjoint(
+                    current, out=buffers[i]
+                )
+            return self._derivs[-1].adjoint(current, out=out)
+        finally:
+            self._release_buffers()
+
+    def _iadjoint_eval_without_buffers(self, x, out):
         if self.linear:
             x = self.ops[-1](x)
-            for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
-                self.log.debug(f"domain = {op.domain}, codomain = {op.codomain}")
+            for d_eq_cd, op in zip(
+                    self.d_eq_cd[-2:0:-1], self.ops[-2:0:-1]):
                 if d_eq_cd:
-                    x = op(x, out = x)
+                    x = op(x, out=x)
                 else:
                     x = op(x)
-            x = self.ops[0].adjoint_eval(x, out = x)
-            for d_eq_cd,op in zip(self.d_eq_cd[1:-1],self.ops[1:-1]):
+            x = self.ops[0].adjoint_eval(x, out=x)
+            for d_eq_cd, op in zip(self.d_eq_cd[1:-1], self.ops[1:-1]):
                 if d_eq_cd:
-                    x = op.adjoint(x, out = x)
+                    x = op.adjoint(x, out=x)
                 else:
                     x = op.adjoint(x)
-            return self.ops[-1].adjoint(x, out = out)
-        else:
-            self._derivs = []
-            x, deriv = self.ops[-1].linearize(x)
-            self._derivs.append(deriv)
-            for d_eq_cd,op in zip(self.d_eq_cd[-2:0:-1],self.ops[-2:0:-1]):
-                if d_eq_cd:
-                    x, deriv = op.linearize(x, out = x)
-                else:
-                    x, deriv = op.linearize(x)
-                self._derivs.insert(0,deriv)
-            x, deriv = self.ops[0].linearize(x, out = x,return_adjoint_eval=True)
-            self._derivs.insert(0,deriv)
-            for d_eq_cd,deriv in zip(self.d_eq_cd[1:-1],self._derivs[1:-1]):
-                if d_eq_cd:
-                    x = deriv.adjoint(x, out = x)
-                else:
-                    x = deriv.adjoint(x)
-            return self._derivs[-1].adjoint(x, out = out)
-    
-    def _iadjoint_data(self, data, out, **kwargs):
-        if self.linear:
-            ops = self.ops
-        else:
-            ops = self._derivs
-        if self.d_eq_cd[0]:
-            data = ops[0].adjoint_data(data, out = data, **kwargs)
-        else:
-            data = ops[0].adjoint_data(data, **kwargs)
-        for d_eq_cd,op in zip(self.d_eq_cd[1:-1],ops[1:-1]):
+            return self.ops[-1].adjoint(x, out=out)
+
+        self._derivs = []
+        x, deriv = self.ops[-1].linearize(x)
+        self._derivs.append(deriv)
+        for d_eq_cd, op in zip(
+                self.d_eq_cd[-2:0:-1], self.ops[-2:0:-1]):
             if d_eq_cd:
-                data = op.adjoint(data, out = data, **kwargs)
+                x, deriv = op.linearize(x, out=x)
             else:
-                data = op.adjoint(data, **kwargs)
-        return ops[-1].adjoint(data, out = out, **kwargs)
-    
-    def _iadjoint_derivative(self, x, out, **kwargs):
-        if len(kwargs) != 0:
-            self.log.warning(f"In the default implementation of _adjoint_eval it is unclear where to put keyword arguments.Maybe implement your own _adjoint_eval and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
-        x = self._derivs[-1](x)
-        for d_eq_cd,deriv in zip(self.d_eq_cd[-2:0:-1],self._derivs[-2:0:-1]):
+                x, deriv = op.linearize(x)
+            self._derivs.insert(0, deriv)
+        x, deriv = self.ops[0].linearize(
+            x, out=x, return_adjoint_eval=True
+        )
+        self._derivs.insert(0, deriv)
+        for d_eq_cd, deriv in zip(
+                self.d_eq_cd[1:-1], self._derivs[1:-1]):
             if d_eq_cd:
-                x = deriv(x, out = x)
-            else:
-                x = deriv(x)
-        x = self._derivs[0].adjoint_eval(x, out = x)
-        for d_eq_cd,deriv in zip(self.d_eq_cd[1:-1],self._derivs[1:-1]):
-            if d_eq_cd:
-                x = deriv.adjoint(x, out = x)
+                x = deriv.adjoint(x, out=x)
             else:
                 x = deriv.adjoint(x)
-        return self._derivs[-1].adjoint(x, out = out)
+        return self._derivs[-1].adjoint(x, out=out)
+
+    def _iadjoint_data(self, data, out, **kwargs):
+        ops = self.ops if self.linear else self._derivs
+        if not self._use_buffers or len(ops) < 2:
+            if self.d_eq_cd[0]:
+                data = ops[0].adjoint_data(data, out=data, **kwargs)
+            else:
+                data = ops[0].adjoint_data(data, **kwargs)
+            for d_eq_cd, op in zip(self.d_eq_cd[1:-1], ops[1:-1]):
+                if d_eq_cd:
+                    data = op.adjoint(data, out=data, **kwargs)
+                else:
+                    data = op.adjoint(data, **kwargs)
+            return ops[-1].adjoint(data, out=out, **kwargs)
+
+        buffers = self._acquire_buffers()
+        try:
+            current = ops[0].adjoint_data(
+                data, out=buffers[0], **kwargs
+            )
+            for i in range(1, len(ops) - 1):
+                current = ops[i].adjoint(
+                    current, out=buffers[i], **kwargs
+                )
+            return ops[-1].adjoint(current, out=out, **kwargs)
+        finally:
+            self._release_buffers()
+
+    def _iadjoint_derivative(self, x, out, **kwargs):
+        if kwargs:
+            self.log.warning(
+                "In the default implementation of _adjoint_derivative it is "
+                "unclear where to put keyword arguments. Ignoring kwargs=%s", kwargs
+            )
+        if not self._use_buffers or len(self._derivs) < 2:
+            x = self._derivs[-1](x)
+            for d_eq_cd, deriv in zip(
+                    self.d_eq_cd[-2:0:-1], self._derivs[-2:0:-1]):
+                if d_eq_cd:
+                    x = deriv(x, out=x)
+                else:
+                    x = deriv(x)
+            x = self._derivs[0].adjoint_eval(x, out=x)
+            for d_eq_cd, deriv in zip(
+                    self.d_eq_cd[1:-1], self._derivs[1:-1]):
+                if d_eq_cd:
+                    x = deriv.adjoint(x, out=x)
+                else:
+                    x = deriv.adjoint(x)
+            return self._derivs[-1].adjoint(x, out=out)
+
+        buffers = self._acquire_buffers()
+        try:
+            current = self._derivs[-1](x, out=buffers[-1])
+            for i in range(len(self._derivs) - 2, 0, -1):
+                current = self._derivs[i](
+                    current, out=buffers[i - 1]
+                )
+            current = self._derivs[0].adjoint_eval(
+                current, out=buffers[0]
+            )
+            for i in range(1, len(self._derivs) - 1):
+                current = self._derivs[i].adjoint(
+                    current, out=buffers[i]
+                )
+            return self._derivs[-1].adjoint(current, out=out)
+        finally:
+            self._release_buffers()
 
     @Operator.inverse.getter
     def inverse(self):
@@ -1469,15 +1700,14 @@ class Composition(Operator):
             return Composition(*(op.inverse for op in self.ops[::-1]))
         except NotImplementedError:
             raise NotImplementedError(util.Errors._compose_message(
-                    "INVERSE NOT DEFINED",
+                "INVERSE NOT DEFINED",
                 f"The inverse of the composition {self} is not well-defined since one or more of the operators does not have an inverse."
-                ))
+            ))
 
     def __repr__(self):
-        if hasattr(self,"ops"):
+        if hasattr(self, "ops"):
             return util.make_repr(self, *[type(op).__qualname__ for op in self.ops])
-        else:
-            return util.make_repr(self)
+        return util.make_repr(self)
 
 
 class PartOfOperator(Operator):
