@@ -36,7 +36,7 @@ class IntegralFunctionalBase(Functional):
      * `_f_conj_second_deriv' the second derivative :math:`\partial f*^2/\partial v_*^2` (often not needed!)
      * `_f_conj_prox` giving the proximal  function :math:`\mathrm{prox}_{\tau f^*(\cdot,x)}`     
     
-    since 
+    (where _f_deriv, _f_prox, _f_conj, and _f_conj_prox must be able to handle out=input) since 
 
     .. math::
         F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
@@ -790,16 +790,33 @@ class IntegralFunctionalBase(Functional):
 
     def _subgradient(self, v, out=None):
         if not self.everywhere_finite:
-            self._assert_essential_domain(v, msg='_subgradient')
-        out = self._prepare_out(out, v)
-        mask = None
+            self._assert_essential_domain(v, msg="_subgradient")
 
-        if self._taylor_l is not None:
-            v_small = v < self._taylor_l
-            if np.any(v_small):
+        out = self._prepare_out(out, v)
+
+        source = v
+        source_scratch = None
+        if np.may_share_memory(out, v):
+            source_scratch = self._get_scratch("_subgradient_input", v)
+            np.copyto(source_scratch, v)
+            source = source_scratch
+
+        try:
+            v_small = (
+                source < self._taylor_l
+                if self._taylor_l is not None else None
+            )
+            v_large = (
+                source > self._taylor_u
+                if self._taylor_u is not None else None
+            )
+
+            mask = None
+
+            if v_small is not None and np.any(v_small):
                 mask = ~v_small
                 if self.quad_taylor_l is not None:
-                    aux = v[v_small] - self._taylor_l[v_small]
+                    aux = source[v_small] - self._taylor_l[v_small]
                     aux *= self.fpp_l[v_small]
                     aux *= self.measure[v_small]
                     out[v_small] = self.conj_taylor_l[v_small]
@@ -807,12 +824,10 @@ class IntegralFunctionalBase(Functional):
                 else:
                     out[v_small] = self.conj_dom_l[v_small]
 
-        if self._taylor_u is not None:
-            v_large = v > self._taylor_u
-            if np.any(v_large):
+            if v_large is not None and np.any(v_large):
                 mask = ~v_large if mask is None else mask & ~v_large
                 if self.quad_taylor_u is not None:
-                    aux = v[v_large] - self._taylor_u[v_large]
+                    aux = source[v_large] - self._taylor_u[v_large]
                     aux *= self.fpp_u[v_large]
                     aux *= self.measure[v_large]
                     out[v_large] = self.conj_taylor_u[v_large]
@@ -820,10 +835,19 @@ class IntegralFunctionalBase(Functional):
                 else:
                     out[v_large] = self.conj_dom_u[v_large]
 
-        self._apply_pointwise(self._f_deriv, v, out, mask=mask, **self.kwargs)
-        np.multiply(out, self.measure, out=out, where=self._where(mask, out))
-        return out
-
+            self._apply_pointwise(
+                self._f_deriv, source, out,
+                mask=mask, **self.kwargs
+            )
+            np.multiply(
+                out, self.measure, out=out,
+                where=self._where(mask, out)
+            )
+            return out
+        finally:
+            if source_scratch is not None:
+                self._free_scratch("_subgradient_input")
+ 
     def dist_subdiff(self, vstar, x):
         self._assert_essential_domain(x, msg='dist_subdiff')
         diff = self._ptw_dist_subdiff(vstar, x)
@@ -3085,7 +3109,7 @@ class QuadraticPositiveSemidef(Functional):
         else:
             return np.inf
 
-    def _f_prox(self, x, tau, out=None, mask=None):
+    def _proximal(self, x, tau, out=None, mask=None, **proximal_par):
         evs, U = np.linalg.eigh(x)
         evs /= 1 + tau
         if self.has_trace_constraint:
