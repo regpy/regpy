@@ -89,13 +89,9 @@ def test_volterra():
         regpar = 0.01
     )
 
-    proximal_pars = {
-            'stepsize' : 0.001,
-            'maxiter' : 100
-            }
     # """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
-    solver = FISTA(setting, init, proximal_pars=proximal_pars)
+    solver = FISTA(setting, init)
     stoprule = (
         # Method is slow, so need to use large number of iterations
         rules.CountIterations(max_iterations=100000) +
