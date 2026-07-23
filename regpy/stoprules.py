@@ -559,15 +559,19 @@ class LCurve(StopRule):
     def best_stopping_index(self):
         res = self.history_dict["residual"]
         norm_x = self.history_dict["norm"]
-        alphas = self.history_dict["alphas"]
-        xi = np.log(res)
-        eta = np.log(norm_x)
-        dxi = np.gradient(xi,alphas)
-        d2xi = np.gradient(dxi,alphas)
-        deta = np.gradient(eta,alphas)
-        d2eta = np.gradient(deta,alphas)
-        kappa = (d2xi*deta - dxi*d2eta)/(dxi**2 + deta**2)**(3/2)
-        return np.argmax(kappa)
+        #alphas = self.history_dict["alphas"]
+        #xi = np.log(res)
+        #eta = np.log(norm_x)
+        #dxi = np.gradient(xi,alphas)
+        #d2xi = np.gradient(dxi,alphas)
+        #deta = np.gradient(eta,alphas)
+        #d2eta = np.gradient(deta,alphas)
+        #kappa = (d2xi*deta - dxi*d2eta)/(dxi**2 + deta**2)**(3/2)
+        #dydx = np.gradient(eta,xi)
+        #d2yd2x = np.gradient(dydx,xi)
+        #kappa = d2yd2x/(1+dydx**2)**(3/2)
+        #return np.argmax(abs(kappa))
+        return np.argmin(np.array(res)*np.array(norm_x))
         
     def best_iterate(self):
         return self.recos[self.best_stopping_index()]
