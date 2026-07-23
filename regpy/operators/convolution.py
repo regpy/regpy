@@ -671,6 +671,11 @@ class ConvolutionOperator(Composition):
                        'convolution_axes' : self.convolution_axes.copy(),
                        'kernel_matrix_shape' : self.kernel_matrix_shape}
 
+        # Set only in the branch without spatial padding or Fourier resizing.
+        # It contains the actually applied, fully broadcast Fourier multiplier
+        # and is used to decide whether a real RFFT range is preserved.
+        self._exact_fourier_multiplier = None
+
         freq_slice = (self.convolution_axes,  *tuple(slice(None) if i in self.convolution_axes else slice(0, 1) for i in np.arange(ndim)))
         if np.all(self.pad_amount ==0) and self.Fourier_truncation_amount is None:
             ft = FourierTransform(grid,axes=self.convolution_axes)
@@ -686,10 +691,23 @@ class ConvolutionOperator(Composition):
             else:
                 self._otf = fourier_multiplier
             if self.kernel_matrix_shape is None:
-                multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
+                multiplier_values = np.broadcast_to(
+                    self._otf, ft.codomain.shape
+                )
+                multiplier = PtwMultiplication(
+                    ft.codomain, multiplier_values
+                )
             else:
-                extended_shape = ft.codomain.shape_domain+self.kernel_matrix_shape
-                multiplier = PtwMatrixVectorMultiplication(ft.codomain,  np.broadcast_to(self._otf,extended_shape))
+                extended_shape = (
+                    ft.codomain.shape_domain + self.kernel_matrix_shape
+                )
+                multiplier_values = np.broadcast_to(
+                    self._otf, extended_shape
+                )
+                multiplier = PtwMatrixVectorMultiplication(
+                    ft.codomain, multiplier_values
+                )
+            self._exact_fourier_multiplier = multiplier_values
             super().__init__(ft_codomain.left_inverse, multiplier, ft)
         elif self.Fourier_truncation_amount is None: 
             pad_op = PaddingOperator(grid,self.pad_amount,pad_value=pad_value)
@@ -942,14 +960,160 @@ class ConvolutionOperator(Composition):
             kwargs_comp["kernel_matrix_shape"] = (self.kernel_matrix_shape[0],L.kernel_matrix_shape[1])
             return ConvolutionOperator(L.grid,new_otf, **kwargs_comp) 
 
-    def conv_inverse(self):
-        """Inverse convolution operator, with Fourier multiplier 1/F(k).
-        Only valid for scalar convolution kernels which are non-zero everywhere in Fourier space.
+    def _pointwise_inverse_multiplier(self):
+        """Return the pointwise inverse Fourier multiplier, if it exists.
+
+        Scalar/component-wise multipliers are inverted by reciprocation.  A
+        matrix-valued multiplier is invertible only when it is square and all
+        matrices in its batch are nonsingular.
         """
+        multiplier = np.asarray(
+            self._exact_fourier_multiplier
+            if self._exact_fourier_multiplier is not None
+            else self._otf
+        )
+        try:
+            if not np.all(np.isfinite(multiplier)):
+                return None
+        except TypeError:
+            return None
+
         if self.kernel_matrix_shape is None:
-            return ConvolutionOperator(self.grid, 1/self._otf,**self.kwargs)
+            if np.any(multiplier == 0):
+                return None
+            return 1 / multiplier
+
+        rows, cols = self.kernel_matrix_shape
+        if rows != cols:
+            return None
+        try:
+            inverse_multiplier = np.linalg.inv(multiplier)
+        except (np.linalg.LinAlgError, ValueError, TypeError):
+            return None
+        if not np.all(np.isfinite(inverse_multiplier)):
+            return None
+        return inverse_multiplier
+
+    def _preserves_real_fourier_range(self):
+        """Whether the multiplier preserves the Hermitian RFFT range.
+
+        For the interior frequencies of the compressed RFFT axis no additional
+        condition is needed.  On its zero and, for even lengths, Nyquist slices,
+        the remaining transformed axes must satisfy Hermitian symmetry.  This
+        check applies entry-wise also to matrix-valued multipliers.
+        """
+        if self.grid.is_complex:
+            return True
+        if self._exact_fourier_multiplier is None:
+            return False
+
+        multiplier = np.asarray(self._exact_fourier_multiplier)
+        positive_axis = int(self.convolution_axes[-1])
+        positive_size = int(self.grid.shape_domain[positive_axis])
+        endpoint_indices = [0]
+        if positive_size > 1 and positive_size % 2 == 0:
+            endpoint_indices.append(positive_size // 2)
+
+        other_transform_axes = [
+            int(axis) for axis in self.convolution_axes
+            if int(axis) != positive_axis
+        ]
+        real_dtype = multiplier.real.dtype
+        if np.issubdtype(real_dtype, np.floating):
+            eps = np.finfo(real_dtype).eps
+            rtol = max(100 * eps, 1e-12)
+            atol = max(100 * eps, 1e-12)
         else:
-            raise NotImplementedError('Inverse convolution only implemented for scalar convolution kernels.')           
+            rtol = atol = 0.0
+
+        for endpoint_index in endpoint_indices:
+            endpoint = np.take(
+                multiplier, endpoint_index, axis=positive_axis
+            )
+            reflected = endpoint
+            for axis in other_transform_axes:
+                reflected_axis = axis - (axis > positive_axis)
+                size = int(self.grid.shape_domain[axis])
+                negative_indices = (-np.arange(size)) % size
+                reflected = np.take(
+                    reflected, negative_indices, axis=reflected_axis
+                )
+            if not np.allclose(
+                    endpoint, np.conjugate(reflected),
+                    rtol=rtol, atol=atol):
+                return False
+        return True
+
+    def _has_exact_convolution_inverse(self):
+        """Return whether ``conv_inverse`` is a genuine two-sided inverse."""
+        return (
+            self._inverse is not None
+            or (
+                self.linear
+                and np.all(self.pad_amount == 0)
+                and self.Fourier_truncation_amount is None
+                and self.domain.compatible(self.codomain)
+                and self._pointwise_inverse_multiplier() is not None
+                and self._preserves_real_fourier_range()
+            )
+        )
+
+    def conv_inverse(self):
+        """Return the convolution-calculus inverse multiplier.
+
+        For scalar/component-wise convolutions this uses the reciprocal Fourier
+        multiplier.  For a square matrix-valued convolution it uses the
+        pointwise matrix inverse.  With padding or Fourier resizing this method
+        retains its historical interpretation as a convolution-calculus
+        approximation; use :attr:`inverse` to request an exact two-sided
+        inverse.
+        """
+        inverse_multiplier = self._pointwise_inverse_multiplier()
+        if inverse_multiplier is None:
+            raise NotImplementedError(Errors.generic_message(
+                'The Fourier multiplier is not pointwise invertible.'
+            ))
+
+        kwargs_inverse = self.kwargs.copy()
+        if self.kernel_matrix_shape is not None:
+            rows, cols = self.kernel_matrix_shape
+            kwargs_inverse['kernel_matrix_shape'] = (cols, rows)
+
+        return ConvolutionOperator(
+            self.grid,
+            inverse_multiplier,
+            **kwargs_inverse
+        )
+
+    @Operator.inverse.getter
+    def inverse(self):
+        """Exact inverse for an unpadded, unresized convolution.
+
+        In the real-valued case the returned convolution uses
+        :attr:`FourierTransform.left_inverse`, rather than trying to invert the
+        real Fourier transform as an operator onto the unrestricted complex
+        half-spectrum.
+        """
+        if self._inverse is not None:
+            return self._inverse
+        if not self._has_exact_convolution_inverse():
+            raise NotImplementedError(Errors.generic_message(
+                'An exact inverse is available only for a linear convolution '
+                'without spatial padding or Fourier-domain resizing, with '
+                'compatible domain and codomain, a pointwise invertible '
+                'Fourier multiplier, and (for real spaces) a multiplier that '
+                'preserves the Hermitian RFFT range.'
+            ))
+
+        inverse = self.conv_inverse()
+        self._inverse = inverse
+        inverse._inverse = self
+        return inverse
+
+    @property
+    def invertible(self):
+        """Whether an exact inverse is known for this convolution."""
+        return self._has_exact_convolution_inverse()
 
     def conv_adjoint(self):
         """Return the adjoint in the convolution calculus.
