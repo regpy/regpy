@@ -5,7 +5,7 @@ from regpy.util import Errors
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
-from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
+from regpy.functionals.integral_functionals import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, Setting

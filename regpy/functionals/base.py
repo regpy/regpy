@@ -13,7 +13,7 @@ from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
 from regpy.hilbert import HilbertSpace
 from regpy.util import Errors
 
-__all__ = ["as_functional","AbstractFunctional","Functional","LinearFunctional","LinearCombination","Composed","SquaredNorm","VerticalShift","HorizontalShiftDilation","FunctionalOnDirectSum"]
+__all__ = ["as_functional", "AbstractFunctional", "Functional", "LinearFunctional", "LinearCombination", "Composed","SquaredNorm", "VerticalShift", "HorizontalShiftDilation", "FunctionalOnDirectSum"]
 
 class NotInEssentialDomainError(Exception):
     r"""
