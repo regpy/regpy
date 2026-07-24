@@ -10,7 +10,7 @@ from regpy.hilbert import L2
 
 from .base import Functional, LinearFunctional, LinearCombination,HorizontalShiftDilation, NotInEssentialDomainError,NotTwiceDifferentiableError, as_functional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg"]
+__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -2801,3 +2801,41 @@ def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
     return a*HorizontalShiftDilation(F,shift=lb)+ a*lin + a*offset
  
+class L1Generic(Functional):
+    r"""Generic :math:`L ^1` Functional. Proximal implemented for default :math:`L^2` as `h_domain`.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.NumPyVectorSpace
+        Domain on which to define the generic L1.
+    """
+    def __init__(self, domain):
+        if not isinstance(domain,NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,"To construct a L1Generic functional you need a NumPyVectorSpace"))
+        super().__init__(domain,
+                         methods = {'eval','subgradient','hessian','proximal'})
+
+    def _eval(self, x):
+        return np.sum(np.abs(x))
+
+    def _subgradient(self, x, out=None, **subgradient_par):
+        if out is None:
+            out = np.empty_like(x)
+        np.sign(x, out=out)
+        return out
+
+    def _hessian(self, x):
+        # Even approximate Hessians don't work here.
+        raise NotImplementedError
+
+    def _proximal(self, x, tau, out=None, **proximal_par):
+        if out is None:
+            out = np.empty_like(x)
+            source = x
+        else:
+            source = x.copy() if np.may_share_memory(out, x) else x
+        np.abs(source, out=out)
+        np.subtract(out, tau, out=out)
+        np.maximum(out, 0, out=out)
+        np.copysign(out, source, out=out)
+        return out

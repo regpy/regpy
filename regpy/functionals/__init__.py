@@ -38,7 +38,7 @@ def _register_functionals():
     HilbertNorm.register(hilbert.HilbertSpace, SquaredNorm)
     HilbertNorm.register(VectorSpaceBase,HilbertNormOnAbstractSpace)
 
-    L1.register(NumPyVectorSpace, L1Generic)
+    L1.register(NumPyVectorSpace, L1Generic)    
     L1.register(MeasureSpaceFcts, L1MeasureSpace)
 
     TV.register(UniformGridFcts, TVUniformGridFcts)
