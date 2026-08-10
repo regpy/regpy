@@ -2595,7 +2595,41 @@ class VectorOfOperators(Operator):
             ))
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
+    @staticmethod
+    def _shares_memory(x, y):
+        """Whether two vectors can be modified through the same storage.
+
+        Object identity covers generic vector types. NumPy arrays additionally
+        need a memory-overlap check because direct-sum components may be views.
+        TupleVectors are handled recursively for nested direct sums.
+        """
+        if x is y:
+            return True
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            return np.shares_memory(x, y)
+        if isinstance(x, vecsps.TupleVector):
+            return any(VectorOfOperators._shares_memory(x_i, y) for x_i in x)
+        if isinstance(y, vecsps.TupleVector):
+            return any(VectorOfOperators._shares_memory(x, y_i) for y_i in y)
+        return False
+
+    def _preserve_input_if_needed(self, x, out):
+        """Copy ``x`` only if an early output component aliases it.
+
+        The final output component may alias ``x`` safely: after it is written,
+        no later component evaluation needs the original input anymore.
+        """
+        for i, out_i in enumerate(out):
+            if i == len(self.ops) - 1:
+                break
+            if self._shares_memory(x, out_i):
+                source = self.domain.empty()
+                self.domain.copyto(source, x)
+                return source
+        return x
+
     def _ieval(self, x, out, differentiate=False, **kwargs):
+        x = self._preserve_input_if_needed(x, out)
         if differentiate:
             self._derivs = []
             for i, op in enumerate(self.ops):
@@ -2620,12 +2654,21 @@ class VectorOfOperators(Operator):
         return out
 
     def _iderivative(self, x, out, **kwargs):
+        x = self._preserve_input_if_needed(x, out)
         for deriv, out_i in zip(self._derivs, out):
             deriv(x, out=out_i, **kwargs)
         return out
 
     def _iadjoint(self, y, out, **kwargs):
         ops = self.ops if self.linear else self._derivs
+
+        # Writing to ``out`` may destroy a component of ``y`` that is still
+        # needed later. Preserve the complete input only in that case.
+        if any(self._shares_memory(out, y_i) for y_i in y):
+            y_copy = self.codomain.empty()
+            self.codomain.copyto(y_copy, y)
+            y = y_copy
+
         first = True
         for op, y_i in zip(ops, y):
             if first:
@@ -2633,6 +2676,7 @@ class VectorOfOperators(Operator):
                 first = False
             else:
                 out += op.adjoint(y_i, **kwargs)
+
         return out
 
     def _adjoint(self, y, **kwargs):
@@ -2782,54 +2826,43 @@ class MatrixOfOperators(Operator):
         
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
 
-    def _ieval(self, x, out, differentiate=False, **kwargs):
-        self._derivs = [[] for _ in self.ops]
-        written = [False] * len(out)
-        for j, (T_j, x_j) in enumerate(zip(self.ops, x)):
-            for i, T_ij in enumerate(T_j):
-                if T_ij is None:
-                    self._derivs[j].append(None)
-                    continue
+    def _eval(self, x, differentiate=False, **kwargs):
+        out = self.codomain.zeros()
+        self._derivs = []
+        for T_j, x_j in zip(self.ops,x):
+            self._derivs.append([])
+            for i, (T_ij,out_i) in enumerate(zip(T_j,out)):
                 if differentiate:
-                    if written[i]:
-                        value, deriv = T_ij.linearize(x_j, **kwargs)
-                        out[i] += value
+                    if T_ij:
+                        out_deriv,deriv = T_ij.linearize(x_j)
+                        out_i += out_deriv
+                        Tprime_ij = deriv
                     else:
-                        _, deriv = T_ij.linearize(x_j, out=out[i], **kwargs)
-                        written[i] = True
-                    self._derivs[j].append(deriv)
-                elif written[i]:
-                    out[i] += T_ij(x_j, **kwargs)
-                else:
-                    T_ij(x_j, out=out[i], **kwargs)
-                    written[i] = True
+                        Tprime_ij = None
+                    self._derivs[i].append(Tprime_ij)
+                else:   
+                    if T_ij:
+                        out_i += T_ij(x_j)
         return out
 
-    def _iderivative(self, x, out, **kwargs):
-        written = [False] * len(out)
-        for Tprime_j, x_j in zip(self._derivs, x):
-            for i, Tprime_ij in enumerate(Tprime_j):
-                if Tprime_ij is None:
-                    continue
-                if written[i]:
-                    out[i] += Tprime_ij(x_j, **kwargs)
-                else:
-                    Tprime_ij(x_j, out=out[i], **kwargs)
-                    written[i] = True
+    def _derivative(self, x, **kwargs):
+        out = self.codomain.zeros()
+        for Tprime_j, x_j in zip(self._derivs,x):
+            for Tprime_ij,out_i in zip(Tprime_j,out):
+                if Tprime_ij:
+                    out_i += Tprime_ij(x_j)
         return out
 
-    def _iadjoint(self, y, out, **kwargs):
-        ops = self.ops if self.linear else self._derivs
+    def _adjoint(self, y, **kwargs):
+        if self.linear:
+            ops = self.ops
+        else:
+            ops = self._derivs
+        out = self.domain.zeros()
         for Tprime_j, out_j in zip(ops, out):
-            first = True
-            for Tprime_ij, y_i in zip(Tprime_j, y):
-                if Tprime_ij is None:
-                    continue
-                if first:
-                    Tprime_ij.adjoint(y_i, out=out_j, **kwargs)
-                    first = False
-                else:
-                    out_j += Tprime_ij.adjoint(y_i, **kwargs)
+            for Tprime_ij, y_i in zip(Tprime_j,y):
+                if Tprime_ij:
+                    out_j += Tprime_ij.adjoint(y_i)
         return out
 
     def __repr__(self):
