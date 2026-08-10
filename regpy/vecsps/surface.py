@@ -11,6 +11,117 @@ from .numpy import MeasureSpaceFcts,GridFcts
 from regpy.operators import Operator
 from regpy.util import Errors
 
+
+def _angles_and_frame(directions: np.ndarray):
+    """Return spherical angles and the orthonormal frame for unit directions."""
+    directions = np.asarray(directions, dtype=float)
+    if directions.ndim < 1 or directions.shape[-1] != 3:
+        raise ValueError(
+            f"directions must have shape (..., 3). Got {directions.shape}."
+        )
+    norms = np.linalg.norm(directions, axis=-1)
+    if np.any(norms == 0):
+        raise ValueError("directions must not contain the zero vector.")
+    if not np.allclose(norms, 1.0, atol=1e-12, rtol=1e-12):
+        raise ValueError("directions must consist of normalized vectors.")
+
+    z = np.clip(directions[..., 2], -1.0, 1.0)
+    theta = np.arccos(z)
+    phi = np.mod(np.arctan2(directions[..., 1], directions[..., 0]), 2*np.pi)
+    st, ct = np.sin(theta), np.cos(theta)
+    sp, cp = np.sin(phi), np.cos(phi)
+    erho = directions
+    etheta = np.stack((ct*cp, ct*sp, -st), axis=-1)
+    ephi = np.stack((-sp, cp, np.zeros_like(sp)), axis=-1)
+    return theta, phi, st, erho, etheta, ephi
+
+
+def _complex_spherical_harmonics(
+        degree: int, directions: np.ndarray, derivatives: bool = False):
+    """Complex spherical harmonics in ``l*l + l + m`` ordering.
+
+    If ``derivatives`` is true, the returned derivatives are with respect to
+    theta and the unit ``Ephi`` direction, i.e.
+    ``(1/sin(theta))*d/dphi``.
+    """
+    from scipy.special import sph_harm_y
+
+    theta, phi, st, _, etheta, ephi = _angles_and_frame(directions)
+    shape = theta.shape + ((degree+1)**2,)
+    values = np.empty(shape, dtype=complex)
+    if derivatives:
+        dtheta = np.empty(shape, dtype=complex)
+        dphi_tilde = np.empty(shape, dtype=complex)
+
+    for l in range(degree+1):
+        for m in range(-l, l+1):
+            idx = l*l + l + m
+            if derivatives:
+                y, yp = sph_harm_y(l, m, theta, phi, diff_n=1)
+                values[..., idx] = y
+                dtheta[..., idx] = yp[..., 0]
+                np.divide(
+                    yp[..., 1],
+                    st,
+                    out=dphi_tilde[..., idx],
+                    where=st >= 1e-12,
+                )
+            else:
+                values[..., idx] = sph_harm_y(l, m, theta, phi)
+
+    if derivatives:
+        pole_mask = st < 1e-12
+        if np.any(pole_mask):
+            directions = np.asarray(directions, dtype=float)
+            eps = 1e-7
+            c, s = np.cos(eps), np.sin(eps)
+            for tangent, target in ((etheta, dtheta), (ephi, dphi_tilde)):
+                plus = c*directions[pole_mask] + s*tangent[pole_mask]
+                minus = c*directions[pole_mask] - s*tangent[pole_mask]
+                target[pole_mask] = (
+                    _complex_spherical_harmonics(degree, plus)
+                    - _complex_spherical_harmonics(degree, minus)
+                )/(2*eps)
+        return values, dtheta, dphi_tilde
+    return values
+
+
+def _real_spherical_harmonics(
+        degree: int, directions: np.ndarray, derivatives: bool = False):
+    """Real basis used by :class:`StarSHSurfaceSpc`."""
+    if derivatives:
+        yc, ytheta, yphi = _complex_spherical_harmonics(
+            degree, directions, derivatives=True
+        )
+        basis = np.empty_like(yc.real)
+        btheta = np.empty_like(basis)
+        bphi = np.empty_like(basis)
+    else:
+        yc = _complex_spherical_harmonics(degree, directions)
+        basis = np.empty_like(yc.real)
+
+    fac = np.sqrt(2.0)
+    for l in range(degree+1):
+        i0 = l*l + l
+        basis[..., i0] = yc[..., i0].real
+        if derivatives:
+            btheta[..., i0] = ytheta[..., i0].real
+            bphi[..., i0] = yphi[..., i0].real
+        for m in range(1, l+1):
+            ip = l*l + l + m
+            im = l*l + l - m
+            basis[..., ip] = fac*yc[..., ip].real
+            basis[..., im] = fac*yc[..., ip].imag
+            if derivatives:
+                btheta[..., ip] = fac*ytheta[..., ip].real
+                btheta[..., im] = fac*ytheta[..., ip].imag
+                bphi[..., ip] = fac*yphi[..., ip].real
+                bphi[..., im] = fac*yphi[..., ip].imag
+    if derivatives:
+        return basis, btheta, bphi
+    return basis
+
+
 class S2Surface(ABC):
     """ Surfaces parameterized by the unit sphere :math:`S^2`. 
     More precisely, the surface is given by :math:`q(S^2)` for some smooth and smoothly invertible function 
@@ -45,7 +156,8 @@ class S2Surface(ABC):
         values o the function :math:`q` defining the surface on the quadrature points.
         shape (n+1,2n+2,3)
     Ttheta,Tphi: np.ndarray
-        derivatives of q with respect to theta and phi on the quadrature points. shape (n+1,2n+2,3)
+        derivatives of q in the orthonormal ``Etheta`` and ``Ephi`` directions.
+        Thus ``Tphi=(1/sin(theta))*d q/dphi``. Shape (n+1,2n+2,3).
     normal: np.ndarray
         unit normal vector on the surface.  shape (n+1,2n+2,3)
     Jacobian: nd_array
@@ -86,8 +198,10 @@ class S2Surface(ABC):
         return self._n
     @n.setter
     def n(self,n_new:int):
-        self._n = n_new
-        dat = S2Surface.sphere_quad_data(n_new)
+        if not isinstance(n_new, (int, np.integer)) or n_new < 0:
+            raise ValueError("n must be a non-negative integer.")
+        self._n = int(n_new)
+        dat = S2Surface.sphere_quad_data(self._n)
         self.__dict__.update(dat.__dict__)
 
     @property
@@ -150,13 +264,67 @@ class S2Surface(ABC):
 
     @abstractmethod
     def _evaluate(self)->None:
-        """initializes q, Ttheta, Tphi"""
+        """Initialize ``q``, ``Ttheta`` and ``Tphi`` on the standard grid."""
+
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        r"""Evaluate the surface geometry at arbitrary points of :math:`S^2`.
+
+        ``Ttheta`` is the derivative in the unit ``Etheta`` direction and
+        ``Tphi`` is the derivative in the unit ``Ephi`` direction, i.e.
+        ``(1/sin(theta))*d/dphi``.  Consequently ``Jacobian`` is the surface
+        Jacobian relative to the area element on the unit sphere.  This is the
+        convention used by the original MATLAB ``S2_surface.eval`` routine.
+
+        The base implementation uses the degree-``n`` spherical-harmonic
+        interpolant of the sampled parametrization ``q``.  Concrete surfaces
+        may override this method when an exact evaluation is available.
+        With ``full=False`` only ``(q, Jacobian, normal)`` is returned.
+        ``full=True`` additionally returns ``Ttheta``, ``Tphi`` and the
+        spherical frame ``Erho``, ``Etheta``, ``Ephi``.
+        """
+        directions = np.asarray(directions, dtype=float)
+        if not hasattr(self, "_q_sh_coeff"):
+            basis = _complex_spherical_harmonics(self.n, self.xhat)
+            self._q_sh_coeff = np.einsum(
+                "...j,...,...k->jk",
+                np.conj(basis),
+                self.quadweights,
+                self.q,
+            )
+
+        basis, btheta, bphi = _complex_spherical_harmonics(
+            self.n, directions, derivatives=True
+        )
+        q = np.einsum("...j,jk->...k", basis, self._q_sh_coeff).real
+        Ttheta = np.einsum(
+            "...j,jk->...k", btheta, self._q_sh_coeff
+        ).real
+        Tphi = np.einsum(
+            "...j,jk->...k", bphi, self._q_sh_coeff
+        ).real
+        _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+    @staticmethod
+    def _finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=False):
+        normal = np.cross(Ttheta, Tphi)
+        Jacobian = np.linalg.norm(normal, axis=-1)
+        if np.any(Jacobian <= 0):
+            raise ValueError("surface parameterization has a vanishing Jacobian.")
+        normal = normal / Jacobian[..., None]
+        if full:
+            return q, Jacobian, normal, Ttheta, Tphi, Erho, Etheta, Ephi
+        return q, Jacobian, normal
 
     def _complete_evaluation(self)->None:
-        """ computes Jacobian and normal after Ttheta and Tphi have been evaluated for a subclass.
-        """
+        """Compute Jacobian and unit normal from the tangent vectors."""
         self._normal = np.cross(self.Ttheta, self.Tphi)
         self._Jacobian = np.linalg.norm(self._normal, axis=2)
+        if np.any(self._Jacobian <= 0):
+            raise ValueError("surface parameterization has a vanishing Jacobian.")
         self._normal /= self._Jacobian[:,:,None]
 
     def grid_space(self)->GridFcts:
@@ -201,9 +369,24 @@ class Sphere(StarSurface):
         r = self.R * np.ones(self.grid_shape)
         return r, np.zeros(self.grid_shape), np.zeros(self.grid_shape)
 
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        q = self.R * Erho
+        Ttheta = self.R * Etheta
+        Tphi = self.R * Ephi
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
 class Ellipsoid(S2Surface):
     def __init__(self,n:int,A: float,B: float,C: float):
-        self.scaling = np.broadcast_to(np.array([A,B,C])[None,None,:],(n+1,2*n+2,3))
+        self.axes = np.asarray([A, B, C], dtype=float)
+        if np.any(self.axes <= 0):
+            raise ValueError("ellipsoid semi-axes must be positive.")
+        self.scaling = np.broadcast_to(
+            self.axes[None,None,:], (n+1,2*n+2,3)
+        )
         super().__init__(n)
 
     def _evaluate(self):
@@ -211,35 +394,68 @@ class Ellipsoid(S2Surface):
         self._Ttheta = self.scaling * self.Etheta
         self._Tphi = self.scaling * self.Ephi
 
-class Peanut(StarSurface):
-    def __init__(self, n:int,alpha=0.25):
-        self.alpha = alpha
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        q = self.axes * Erho
+        Ttheta = self.axes * Etheta
+        Tphi = self.axes * Ephi
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
+class Peanut(S2Surface):
+    r"""The ``peanut`` surface from the original MATLAB 3D toolbox.
+
+    The old MATLAB surface is not a radial star surface in Euclidean
+    coordinates: its second Cartesian coordinate is stretched by a factor
+    two.  The previous Python version omitted this factor and therefore
+    represented a different obstacle.
+    """
+
+    def __init__(self, n:int, alpha=0.25):
+        if alpha <= 0:
+            raise ValueError("alpha must be positive.")
+        self.alpha = float(alpha)
         super().__init__(n)
 
-    def radius_and_derivatives(self)->tuple[np.ndarray,np.ndarray,np.ndarray]:
-        s2 = 2*self.st*self.ct                          # sin^2(theta)
-        c2 = self.ct*self.ct - self.st*self.st          # sin^2(theta)
+    def _evaluate(self):
+        (
+            self._q, _, _, self._Ttheta, self._Tphi,
+            _, _, _
+        ) = self.evaluate_directions(self.xhat, full=True)
 
-        A = self.alpha + 1
-        B = A - s2*s2                                   # = alpha + 1 - sin²(2θ)
-        sqrtB = np.sqrt(B)
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        theta, _, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        ct = np.cos(theta)
+        s2 = 2*st*ct
+        c2 = ct*ct - st*st
 
-        C = c2 + sqrtB
-        sqrtC = np.sqrt(C)
-
+        A = self.alpha + 1.0
+        sqrtB = np.sqrt(A - s2*s2)
+        sqrtC = np.sqrt(c2 + sqrtB)
         denom = 2*np.sqrt(1+np.sqrt(A))
         r = sqrtC / denom
 
-        # compute derivative w.r.t. theta
-        ds2 = 2*c2                                      # d/dθ sin(2θ) = 2 cos(2θ)
+        ds2 = 2*c2
         dc2 = -2*s2
         dB = -2*s2*ds2
         dC = dc2 + dB/(2*sqrtB)
-        dr = dC/(2*sqrtC*denom)
+        dr_dtheta = dC/(2*sqrtC*denom)
 
-        sh = self.grid_shape
+        # This anisotropic factor is present in the MATLAB ``peanut``.
+        scale = np.array([1.0, 2.0, 1.0])
+        scaled_Erho = Erho * scale
+        q = r[..., None] * scaled_Erho
+        Ttheta = (
+            dr_dtheta[..., None] * scaled_Erho
+            + r[..., None] * (Etheta * scale)
+        )
+        Tphi = r[..., None] * (Ephi * scale)
 
-        return np.broadcast_to(r[:,None],sh), np.broadcast_to(dr[:,None],sh), np.zeros(sh)
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
 
 ######################################################################
 
@@ -293,7 +509,7 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
     def __init__(self, n:int,sh_deg:int=3):
         if not isinstance(n,int) or not isinstance(sh_deg,int):
             raise TypeError(Errors.type_error())
-        if sh_deg>n or n<0:
+        if sh_deg < 0 or sh_deg>n or n<0:
             raise ValueError(Errors.value_error(msg=f'need 0<=sh_deg<=n. {n},{sh_deg}'))
         MeasureSpaceFcts.__init__(self,measure = np.ones(((sh_deg+1)**2,),dtype=float))
         ParameterizedSurfaceSpc.__init__(self)
@@ -305,31 +521,17 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
 
  
     def _compute_SH_basis(self):
-        from scipy.special import sph_harm_y
-        shape = (len(self._theta),len(self._phi),(self.sh_deg+1)**2)
-        self.basis       = np.zeros(shape,dtype=float)
-        self.basis_theta = np.zeros(shape,dtype=float)
-        self.basis_phi   = np.zeros(shape,dtype=float)
-
-        fac = np.sqrt(2)
-        phi, theta = np.meshgrid(self._phi,self._theta)
-        for l in range(self.sh_deg+1):
-            y,yp = sph_harm_y(l,0,theta,phi,diff_n=1)
-            self.basis[:,:,l*l+l] = y.real
-            self.basis_theta[:,:,l*l+l] = yp[:,:,0].real
-            self.basis_phi[:,:,l*l+l] = yp[:,:,1].real    
-            for m in range(1,l+1):
-                y,yp = sph_harm_y(l,m,theta,phi,diff_n=1)
-                self.basis[:,:,l*l+l+m] = fac*y.real
-                self.basis_theta[:,:,l*l+1+m] = fac*yp[:,:,0].real
-                self.basis_phi[:,:,l*l+1+m] = fac*yp[:,:,1].real
-                self.basis[:,:,l*l+l-m] = fac*y.imag
-                self.basis_theta[:,:,l*l+1-m] = fac*yp[:,:,0].imag
-                self.basis_phi[:,:,l*l+1-m] = fac*yp[:,:,1].imag          
+        (
+            self.basis,
+            self.basis_theta,
+            self.basis_phi,
+        ) = _real_spherical_harmonics(
+            self.sh_deg, self._Erho, derivatives=True
+        )
 
     def coeff2surface(self,coeff:np.ndarray)->StarSHSurface:
         if len(coeff.shape)!=1 or len(coeff) != (self.sh_deg+1)**2:
-            raise ValueError(f'coefficient vector must have shape (sh_deg**2,). sh_deg={self.sh_deg}, {coeff.shape}')
+            raise ValueError(f'coefficient vector must have shape ((sh_deg+1)**2,). sh_deg={self.sh_deg}, {coeff.shape}')
         return StarSHSurface(self,coeff)
 
     def sphere(self,radius:float=1.)->StarSHSurface:
@@ -420,6 +622,21 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
 
         return r, rtheta, rphi
 
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        basis, btheta, bphi = _real_spherical_harmonics(
+            self.spc.sh_deg, directions, derivatives=True
+        )
+        r = np.einsum("...j,j->...", basis, self.coeff)
+        rtheta = np.einsum("...j,j->...", btheta, self.coeff)
+        rphi = np.einsum("...j,j->...", bphi, self.coeff)
+        _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        q = r[..., None] * Erho
+        Ttheta = rtheta[..., None] * Erho + r[..., None] * Etheta
+        Tphi = rphi[..., None] * Erho + r[..., None] * Ephi
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
     def field2SHcoeffs(self,u:np.ndarray)->np.ndarray:
         """ Computes the spherical harmonics coefficients of a real-valued field on the sphere given 
         at the quadrature points.
@@ -437,461 +654,3 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
         if u.shape!=self.grid_shape:
             raise ValueError(f'shape of u does not match: {u.shape},{self.grid_shape}')
         return np.sum(u[:,:,None]*self.quadweights[:,:,None]*self.spc.basis,axis =(0,1))
-
-"""
-@dataclass
-class SphericalHarmonicsCache:
-    N: int
-    P: list              # P[l][m+l, theta]
-    dP: list             # d/dtheta P[l][m+l, theta]
-    exp_imphi: np.ndarray  # shape (n_phi, 2N+1)
-
-def radius_and_derivatives(self):
-        N = self.N
-        theta = self.theta
-        phi = self.phi
-
-        H = np.zeros(self.grid_shape, dtype=complex)
-        dtheta_H = np.zeros_like(H)
-        dphi_H = np.zeros_like(H)
-
-        for m in range(-N, N + 1):
-            res_P = np.zeros(self.n+1, dtype=complex)
-            res_dP = np.zeros(self.n+1, dtype=complex) if compute_gradient else None
-
-            for l in range(abs(m), N + 1):
-                idx = l*l + l + m
-                res_P += coeff[idx] * self.spc.P[l][m + l]
-                res_dP += coeff[idx] * self.spc.dP[l][m + l]
-
-            exp_mphi = self.spc.exp_imphi[:, m + N]  # shape (2n+2,)
-            H += res_P[:, None] * exp_mphi[None, :]
-
-            dtheta_H += res_dP[:, None] * exp_mphi[None, :]
-            dphi_H += 1j * m * res_P[:, None] * exp_mphi[None, :]
-
-            # dphi_H_flat = (dphi_H / sin_theta).reshape(1, -1)
-
-        return H, dtheta_H, dphi_H
-
-def harmonics_to_surface(
-    coeff: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-    Etheta: np.ndarray,
-    Ephi: np.ndarray,
-    *,
-    N: int,
-    cache: Optional[SphericalHarmonicsCache] = None,
-    compute_gradient: bool = True
-) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    ###
-    Parameters
-    ----------
-    coeff : ( (N+1)^2, ) complex
-        Spherical harmonic coefficients, ordered as in MATLAB:
-        index = l^2 + l + m
-    theta : (n_theta,)
-    phi   : (n_phi,)
-    Etheta, Ephi : (3, n_theta * n_phi)
-        Tangent vectors on S^2
-    N : int
-        Harmonic truncation
-    cache : optional SphericalHarmonicsCache
-    ###
-
-    theta = theta.reshape(-1)
-    phi = phi.reshape(-1)
-
-    n_theta = theta.size
-    n_phi = phi.size
-
-    sin_theta = np.sin(theta)[:, None]
-
-    # --------------------------------------------------
-    # Precomputation (if not supplied)
-    # --------------------------------------------------
-    if cache is None:
-        from scipy.special import lpmv
-
-        P = []
-        dP = []
-
-        x = np.cos(theta)
-
-        for l in range(N + 1):
-            Pl = np.zeros((2*l + 1, n_theta))
-            dPl = np.zeros_like(Pl)
-
-            for m in range(-l, l + 1):
-                Pl[m + l] = lpmv(m, l, x)
-                # derivative w.r.t. theta
-                dPl[m + l] = -np.sin(theta) * np.gradient(Pl[m + l], theta)
-
-            P.append(Pl)
-            dP.append(dPl)
-
-        exp_imphi = np.exp(1j * phi[:, None] * np.arange(-N, N + 1))
-
-    else:
-        P = cache.P
-        dP = cache.dP
-        exp_imphi = cache.exp_imphi
-
-    # --------------------------------------------------
-    # Field evaluation
-    # --------------------------------------------------
-    H = np.zeros((n_theta, n_phi), dtype=complex)
-
-    if compute_gradient:
-        dtheta_H = np.zeros_like(H)
-        dphi_H = np.zeros_like(H)
-
-    for m in range(-N, N + 1):
-        res_P = np.zeros(n_theta, dtype=complex)
-        res_dP = np.zeros(n_theta, dtype=complex)
-
-        for l in range(abs(m), N + 1):
-            idx = l*l + l + m
-            res_P += coeff[idx] * P[l][m + l]
-            if compute_gradient:
-                res_dP += coeff[idx] * dP[l][m + l]
-
-        exp_mphi = exp_imphi[:, m + N]  # (n_phi,)
-
-        H += res_P[:, None] * exp_mphi[None, :]
-
-        if compute_gradient:
-            dtheta_H += res_dP[:, None] * exp_mphi[None, :]
-            dphi_H += (1j * m) * res_P[:, None] * exp_mphi[None, :]
-
-    # --------------------------------------------------
-    # Surface gradient
-    # --------------------------------------------------
-    gradS2 = None
-    if compute_gradient:
-        dtheta_H = dtheta_H.reshape(1, -1)
-        dphi_H = (dphi_H / sin_theta).reshape(1, -1)
-
-        gradS2 = (
-            dtheta_H * Etheta
-            +
-            dphi_H * Ephi
-        )
-
-    return H, gradS2
-"""
-
-
-"""
-@dataclass
-class SphericalHarmonicsCache:
-    N: int
-    P: list              # P[l][m+l, theta]
-    dP: list             # d/dtheta P[l][m+l, theta]
-    exp_imphi: np.ndarray  # shape (n_phi, 2N+1)
-
-def harmonics_to_surface(
-    coeff: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-    Etheta: np.ndarray,
-    Ephi: np.ndarray,
-    *,
-    N: int,
-    cache: Optional[SphericalHarmonicsCache] = None,
-    compute_gradient: bool = True
-) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    ###
-    Parameters
-    ----------
-    coeff : ( (N+1)^2, ) complex
-        Spherical harmonic coefficients, ordered as in MATLAB:
-        index = l^2 + l + m
-    theta : (n_theta,)
-    phi   : (n_phi,)
-    Etheta, Ephi : (3, n_theta * n_phi)
-        Tangent vectors on S^2
-    N : int
-        Harmonic truncation
-    cache : optional SphericalHarmonicsCache
-    ###
-
-    theta = theta.reshape(-1)
-    phi = phi.reshape(-1)
-
-    n_theta = theta.size
-    n_phi = phi.size
-
-    sin_theta = np.sin(theta)[:, None]
-
-    # --------------------------------------------------
-    # Precomputation (if not supplied)
-    # --------------------------------------------------
-    if cache is None:
-        from scipy.special import lpmv
-
-        P = []
-        dP = []
-
-        x = np.cos(theta)
-
-        for l in range(N + 1):
-            Pl = np.zeros((2*l + 1, n_theta))
-            dPl = np.zeros_like(Pl)
-
-            for m in range(-l, l + 1):
-                Pl[m + l] = lpmv(m, l, x)
-                # derivative w.r.t. theta
-                dPl[m + l] = -np.sin(theta) * np.gradient(Pl[m + l], theta)
-
-            P.append(Pl)
-            dP.append(dPl)
-
-        exp_imphi = np.exp(1j * phi[:, None] * np.arange(-N, N + 1))
-
-    else:
-        P = cache.P
-        dP = cache.dP
-        exp_imphi = cache.exp_imphi
-
-    # --------------------------------------------------
-    # Field evaluation
-    # --------------------------------------------------
-    H = np.zeros((n_theta, n_phi), dtype=complex)
-
-    if compute_gradient:
-        dtheta_H = np.zeros_like(H)
-        dphi_H = np.zeros_like(H)
-
-    for m in range(-N, N + 1):
-        res_P = np.zeros(n_theta, dtype=complex)
-        res_dP = np.zeros(n_theta, dtype=complex)
-
-        for l in range(abs(m), N + 1):
-            idx = l*l + l + m
-            res_P += coeff[idx] * P[l][m + l]
-            if compute_gradient:
-                res_dP += coeff[idx] * dP[l][m + l]
-
-        exp_mphi = exp_imphi[:, m + N]  # (n_phi,)
-
-        H += res_P[:, None] * exp_mphi[None, :]
-
-        if compute_gradient:
-            dtheta_H += res_dP[:, None] * exp_mphi[None, :]
-            dphi_H += (1j * m) * res_P[:, None] * exp_mphi[None, :]
-
-    # --------------------------------------------------
-    # Surface gradient
-    # --------------------------------------------------
-    gradS2 = None
-    if compute_gradient:
-        dtheta_H = dtheta_H.reshape(1, -1)
-        dphi_H = (dphi_H / sin_theta).reshape(1, -1)
-
-        gradS2 = (
-            dtheta_H * Etheta
-            +
-            dphi_H * Ephi
-        )
-
-    return H, gradS2
-"""
-
-
-
-
-"""import pyshtools as pysh
-class SphericalHarmonicField:
-    ###
-    Represents a scalar field on the sphere expanded in spherical harmonics.
-    Uses pyshtools internally for fast evaluation and gradient computation.
-    ###
-    def __init__(self, coeffs=None, lmax=None, normalization='schmidt'):
-        ###
-        Initialize the field.
-        
-        Parameters
-        ----------
-        coeffs : array_like, optional
-            MATLAB-style 1D coefficients in order l^2 + l + m, including negative m.
-        lmax : int
-            Maximum degree of the expansion. Required if coeffs is given.
-        normalization : str
-            Normalization to use ('4pi', 'schmidt', or 'unnorm').
-        ###
-        self.normalization = normalization
-        if coeffs is not None:
-            assert lmax is not None, "Must provide lmax if coeffs are given"
-            self.lmax = lmax
-            self.coeffs = self._convert_matlab_coeffs(coeffs, lmax)
-        else:
-            self.lmax = 0
-            self.coeffs = None
-
-    def _convert_matlab_coeffs(self, coeffs, lmax):
-        #Convert MATLAB linear coefficients to pyshtools (C_lm/S_lm) array.
-        
-        clm = np.zeros((2, lmax+1, lmax+1))
-        for l in range(lmax+1):
-            for m in range(0, l+1):
-                # MATLAB linear index: l^2 + l + m
-                idx_pos = l**2 + l + m
-                clm[0, l, m] = coeffs[idx_pos].real  # cosine term
-                clm[1, l, m] = coeffs[idx_pos].imag  # sine term
-        return clm
-
-def evaluate(self, theta, phi):
-        ###
-        Evaluate H(theta,phi) and gradS2(theta,phi) in Cartesian coordinates.
-        theta, phi in radians
-        Returns: H (lt x lp), gradS2 (3 x lt*lp)
-        ###
-        theta = np.asarray(theta)
-        phi = np.asarray(phi)
-        lt, lp = theta.size, phi.size
-
-        # Associated Legendre functions and derivatives
-        plm = pysh.legendre.Plm(self.lmax, theta)
-        dplm = pysh.legendre.PlmDeriv(self.lmax, theta)
-
-        # exp(i*m*phi) matrix
-        mvec = np.arange(-self.lmax, self.lmax+1)
-        exp_imphi = np.exp(1j * np.outer(phi, mvec))  # lp x (2*lmax+1)
-
-        # Initialize
-        H = np.zeros((lt, lp), dtype=complex)
-        grad_theta = np.zeros((lt, lp), dtype=complex)
-        grad_phi = np.zeros((lt, lp), dtype=complex)
-
-        # Vectorized sum over m
-        for idx_m, m in enumerate(mvec):
-            res = np.zeros(lt, dtype=complex)
-            dres = np.zeros(lt, dtype=complex)
-            for l in range(abs(m), self.lmax+1):
-                c_idx = l**2 + l + m
-                coef = self.coeffs[c_idx]
-                res += coef * plm[l, abs(m), :]
-                dres += coef * dplm[l, abs(m), :]
-            exp_col = exp_imphi[:, idx_m]  # lp
-            H += np.outer(res, exp_col)
-            grad_theta += np.outer(dres, exp_col)
-            grad_phi += np.outer(1j*m*res, exp_col)
-
-        # Compute tangent vectors in Cartesian coordinates
-        st = np.sin(theta)[:, None]
-        ct = np.cos(theta)[:, None]
-        sp = np.sin(phi)[None, :]
-        cp = np.cos(phi)[None, :]
-
-        # Etheta and Ephi as 3 x (lt*lp)
-        Etheta = np.array([ct, np.zeros_like(ct), -st])  # along theta
-        Ephi   = np.array([-sp, cp, np.zeros_like(sp)])  # along phi
-        # Repeat to match grid
-        Etheta = np.repeat(Etheta, lp, axis=1)
-        Ephi = np.repeat(Ephi, lt, axis=1)
-
-        # Vectorized gradS2
-        gradS2 = (grad_theta.ravel()[None,:] * Etheta +
-                  (grad_phi.ravel()/st.ravel())[None,:] * Ephi)
-
-        return H.real, gradS2.real
-def evaluate(self, theta, phi):
-        ###
-        Evaluate H(theta,phi) and gradS2(theta,phi) using full vectorization.
-        theta, phi in radians
-        Returns: H (lt x lp), gradS2 (3 x lt*lp)
-        ###
-        theta = np.asarray(theta)
-        phi = np.asarray(phi)
-        lt, lp = theta.shape[0], phi.shape[0]
-
-        # Compute associated Legendre functions
-        # pyshtools: 'Plm' returns array of shape (lmax+1, lmax+1, theta.size)
-        plm = pysh.legendre.Plm(self.lmax, theta)
-        dplm = pysh.legendre.PlmDeriv(self.lmax, theta)
-
-        # Build exp(i*m*phi) matrix (lp x 2*lmax+1)
-        mvec = np.arange(-self.lmax, self.lmax+1)
-        exp_imphi = np.exp(1j * np.outer(phi, mvec))  # shape: lp x (2*lmax+1)
-
-        # Vectorized computation over m
-        H = np.zeros((lt, lp), dtype=complex)
-        grad_theta = np.zeros((lt, lp), dtype=complex)
-        grad_phi = np.zeros((lt, lp), dtype=complex)
-
-        for idx_m, m in enumerate(mvec):
-            res = np.zeros(lt, dtype=complex)
-            dres = np.zeros(lt, dtype=complex)
-            for l in range(abs(m), self.lmax+1):
-                c_idx = l**2 + l + m
-                coef = self.coeffs[c_idx]
-                res += coef * plm[l, abs(m), :]
-                dres += coef * dplm[l, abs(m), :]
-            exp_col = exp_imphi[:, idx_m]  # size lp
-            H += np.outer(res, exp_col)
-            grad_theta += np.outer(dres, exp_col)
-            grad_phi += np.outer(1j*m*res, exp_col)
-
-        # gradS2: combine Etheta and Ephi
-        st = np.sin(theta)[:, None]
-        Etheta = np.array([[1],[0],[0]])  # Placeholder; replace with actual 3D vectors
-        Ephi = np.array([[0],[1],[0]])    # Placeholder; replace with actual 3D vectors
-        gradS2 = (grad_theta.ravel()[None,:] * Etheta +
-                  (grad_phi.ravel()/st.ravel())[None,:] * Ephi)
-
-        return H.real, gradS2.real
-    def evaluate(self, theta, phi):
-        ###
-        Evaluate the spherical harmonic field at points (theta, phi).
-        Theta and phi are in radians.
-        ###
-        # Convert to grids suitable for pyshtools
-        theta = np.asarray(theta)
-        phi = np.asarray(phi)
-        # Make regular lat/lon grids for DH sampling
-        lat = 90 - np.degrees(theta)  # colatitude -> latitude
-        lon = np.degrees(phi)
-        grid = pysh.expand.MakeGridDH(self.coeffs, sampling=2, lmax=self.lmax,
-                                      norm=self.normalization)
-        # Interpolation to arbitrary points
-        from scipy.interpolate import RegularGridInterpolator
-        lats = np.linspace(90, -90, grid.shape[0])
-        lons = np.linspace(0, 360, grid.shape[1], endpoint=False)
-        interp = RegularGridInterpolator((lats, lons), grid, bounds_error=False, fill_value=None)
-        points = np.stack([lat.ravel(), lon.ravel()], axis=-1)
-        values = interp(points).reshape(theta.shape)
-        return values
-
-    def gradient(self, theta, phi):
-        ###
-        Compute the gradient on the sphere (∇_θ, ∇_φ components).
-        ###
-        theta = np.asarray(theta)
-        phi = np.asarray(phi)
-        # Compute theta/phi derivatives using pyshtools
-        grad_theta, grad_phi = pysh.expand.SHGradDH(self.coeffs, lmax=self.lmax,
-                                                    norm=self.normalization)
-        # Interpolation to arbitrary points
-        lat = 90 - np.degrees(theta)
-        lon = np.degrees(phi)
-        lats = np.linspace(90, -90, grad_theta.shape[0])
-        lons = np.linspace(0, 360, grad_theta.shape[1], endpoint=False)
-        interp_theta = RegularGridInterpolator((lats, lons), grad_theta, bounds_error=False, fill_value=None)
-        interp_phi = RegularGridInterpolator((lats, lons), grad_phi, bounds_error=False, fill_value=None)
-        points = np.stack([lat.ravel(), lon.ravel()], axis=-1)
-        grad_theta_val = interp_theta(points).reshape(theta.shape)
-        grad_phi_val = interp_phi(points).reshape(theta.shape)
-        return grad_theta_val, grad_phi_val
-
-    @classmethod
-    def from_random(cls, lmax, seed=None, normalization='schmidt'):
-        #Create a random spherical harmonic field.
-        
-        rng = np.random.default_rng(seed)
-        coeffs = rng.standard_normal((2, lmax+1, lmax+1))
-        field = cls(lmax=lmax, normalization=normalization)
-        field.coeffs = coeffs
-        return field
-"""
