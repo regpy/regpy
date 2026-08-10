@@ -46,6 +46,18 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
+    def fill(self, x: np.ndarray, value) -> None:
+        r"""Fill ``x`` in place with the scalar ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NumPyVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x.fill(value)
+
     def rand(self, distribution = "uniform", seed = None,**kwargs):
         if seed is not None:
             set_rng_seed(seed)

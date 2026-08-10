@@ -231,6 +231,7 @@ class VectorSpaceBase:
      - poisson(x : Vector of the Space)
      - vdot(x : Vector of the Space, y : Vector of the Space)
      - copyto(x : Vector of the Space, y : Vector of the Space)
+     - fill(x : Vector of the Space, value : scalar)
      - logical_and(x : boolean Vector of the Space, y : boolean Vector of the Space)
      - logical_or(x : boolean Vector of the Space, y : boolean Vector of the Space)
      - logical_not(x : boolean Vector of the Space)
@@ -422,6 +423,33 @@ class VectorSpaceBase:
         if self.type is None:
             raise NotImplementedError
         self.type.copyto(x, y)
+
+    def fill(self, x, value):
+        r"""Fill the existing vector ``x`` with a scalar value.
+
+        The identity of ``x`` is preserved. Concrete vector spaces may
+        override this method when their vectors require a special assignment
+        protocol.
+
+        Parameters
+        ----------
+        x : self.vec_type
+            Vector to modify in place.
+        value : scalar
+            Scalar value assigned to every element of ``x``.
+        """
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the vector space."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        try:
+            x.fill(value)
+        except AttributeError as exc:
+            raise NotImplementedError from exc
 
     def logical_and(self,x,y):
         """Logical and of two boolean vectors
@@ -735,6 +763,19 @@ class DirectSum(VectorSpaceBase):
             ))
         for summand, x_i, y_i in zip(self.summands, x, y):
             summand.copyto(x_i, y_i)
+
+    def fill(self, x: TupleVector, value) -> None:
+        r"""Fill a direct-sum vector componentwise with ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the DirectSum."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        for summand, x_i in zip(self.summands, x):
+            summand.fill(x_i, value)
 
     def logical_and(self,x,y) -> TupleVector:
         return TupleVector([s.logical_and(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])

@@ -2040,7 +2040,7 @@ class CoordinateProjection(Operator):
             out[~self.mask] = 0
             return out
         else:
-            self.domain.copyto(out, self.domain.zeros())
+            self.domain.fill(out, 0)
             out[self.mask] = x[self.mask]
             return out
 
@@ -2099,7 +2099,7 @@ class CoordinateMask(Operator):
             out[~self.mask] = 0
             return out
         else:
-            self.codomain.copyto(out, self.domain.zeros())
+            self.codomain.fill(out, 0)
             out[self.mask] = x[self.mask]
             return out
 
@@ -3133,21 +3133,21 @@ class Zero(Operator):
         return self.codomain.zeros()
 
     def _ieval(self,x,out):
-        self.codomain.copyto(out, self.codomain.zeros())
+        self.codomain.fill(out, 0)
         return out
 
     def _adjoint(self, x):
         return self.domain.zeros()
 
     def _iadjoint(self, x, out):
-        self.domain.copyto(out, self.domain.zeros())
+        self.domain.fill(out, 0)
         return out
     
     def _adjoint_eval(self, x):
         return self.domain.zeros()
     
     def _iadjoint_eval(self, x, out):
-        self.domain.copyto(out, self.domain.zeros())
+        self.domain.fill(out, 0)
         return out
 
 class ApproximateHessian(Operator):

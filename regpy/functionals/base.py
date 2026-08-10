@@ -1070,10 +1070,9 @@ class LinearFunctional(Functional):
 
     def _conj_subgradient(self, xstar, out=None, **subgradient_par):
         if self.domain.norm(xstar - self._gradient) == 0:
-            value = self.domain.zeros()
             if out is None:
-                return value
-            self.domain.copyto(out, value)
+                return self.domain.zeros()
+            self.domain.fill(out, 0)
             return out
         raise NotInEssentialDomainError('LinearFunctional.conj')
 
@@ -1348,10 +1347,9 @@ class SquaredNorm(Functional):
             result *= 1. / self.a
             return result
         if self.a == 0:
-            value = self.domain.zeros()
             if out is None:
-                return value
-            self.domain.copyto(out, value)
+                return self.domain.zeros()
+            self.domain.fill(out, 0)
             return out
         raise NotInEssentialDomainError
 
@@ -1619,10 +1617,9 @@ class LinearCombination(Functional):
             )
         if self.linear_table.count(False) == 0:
             if self.domain.norm(xstar - self.grad_sum) == 0:
-                value = self.domain.zeros()
                 if out is None:
-                    return value
-                self.domain.copyto(out, value)
+                    return self.domain.zeros()
+                self.domain.fill(out, 0)
                 return out
             raise NotInEssentialDomainError('Linear combination of linear functionals')
         if self.linear_table.count(False) == 1:
