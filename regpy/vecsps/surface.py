@@ -122,6 +122,34 @@ def _real_spherical_harmonics(
     return basis
 
 
+def _divide_by_sin_with_pole_limit(
+        value: np.ndarray,
+        dvalue_dtheta: np.ndarray,
+        theta: np.ndarray,
+        sin_theta: np.ndarray) -> np.ndarray:
+    """Return ``value/sin(theta)`` with the differentiable pole limits.
+
+    This is useful for axisymmetric parameterizations written as
+    ``(x(theta), h(theta) sin(phi), h(theta) cos(phi))``.  If ``h`` vanishes
+    at a pole, then h/sin(theta) tends to h'(0) at the north pole and to
+    -h'(pi) at the south pole.
+    """
+    value = np.asarray(value, dtype=float)
+    dvalue_dtheta = np.asarray(dvalue_dtheta, dtype=float)
+    theta = np.asarray(theta, dtype=float)
+    sin_theta = np.asarray(sin_theta, dtype=float)
+
+    result = np.empty_like(value)
+    regular = np.abs(sin_theta) > 1e-12
+    np.divide(value, sin_theta, out=result, where=regular)
+
+    north = ~regular & (theta <= np.pi/2)
+    south = ~regular & ~north
+    result[north] = dvalue_dtheta[north]
+    result[south] = -dvalue_dtheta[south]
+    return result
+
+
 class S2Surface(ABC):
     """ Surfaces parameterized by the unit sphere :math:`S^2`. 
     More precisely, the surface is given by :math:`q(S^2)` for some smooth and smoothly invertible function 
@@ -166,9 +194,15 @@ class S2Surface(ABC):
 
     """
     def __init__(self, n: int):
+        # During construction the grid must be initialized before the
+        # subclass-specific geometry can be evaluated.  Subsequent assignments
+        # to ``n`` go through the same setter and additionally refresh all
+        # geometry derived from the grid.
+        self._surface_initialized = False
         self.n = n
         self._evaluate()
         self._complete_evaluation()
+        self._surface_initialized = True
 
     class sphere_quad_data:
         """ compute data for Gauss-Legendre quadrature on grid of :math:`(n+1) (2n+2)` 
@@ -200,9 +234,22 @@ class S2Surface(ABC):
     def n(self,n_new:int):
         if not isinstance(n_new, (int, np.integer)) or n_new < 0:
             raise ValueError("n must be a non-negative integer.")
+
         self._n = int(n_new)
         dat = S2Surface.sphere_quad_data(self._n)
         self.__dict__.update(dat.__dict__)
+
+        # The fallback arbitrary-direction evaluator caches spherical-harmonic
+        # coefficients of q on the current grid.  They are invalid as soon as
+        # the grid changes.
+        self.__dict__.pop("_q_sh_coeff", None)
+
+        # On construction, subclasses have not necessarily initialized their
+        # parameters yet, so S2Surface.__init__ performs the first evaluation.
+        # Later changes of n must refresh every grid-dependent geometry field.
+        if getattr(self, "_surface_initialized", False):
+            self._evaluate()
+            self._complete_evaluation()
 
     @property
     def grid_shape(self)->tuple[int]:
@@ -384,12 +431,14 @@ class Ellipsoid(S2Surface):
         self.axes = np.asarray([A, B, C], dtype=float)
         if np.any(self.axes <= 0):
             raise ValueError("ellipsoid semi-axes must be positive.")
-        self.scaling = np.broadcast_to(
-            self.axes[None,None,:], (n+1,2*n+2,3)
-        )
         super().__init__(n)
 
     def _evaluate(self):
+        # Keep the historical ``scaling`` attribute, but rebuild its broadcast
+        # view for the current quadrature order.
+        self.scaling = np.broadcast_to(
+            self.axes[None,None,:], self.grid_shape + (3,)
+        )
         self._q = self.scaling * self.Erho
         self._Ttheta = self.scaling * self.Etheta
         self._Tphi = self.scaling * self.Ephi
@@ -452,6 +501,295 @@ class Peanut(S2Surface):
             + r[..., None] * (Etheta * scale)
         )
         Tphi = r[..., None] * (Ephi * scale)
+
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
+class Bean(S2Surface):
+    r"""The ``bean`` surface from the original MATLAB ``S2_surface.m``.
+
+    Parameters
+    ----------
+    n : int
+        Quadrature order.
+    R : float, optional
+        Overall scaling.  MATLAB default: ``0.5``.
+    """
+
+    def __init__(self, n: int, R: float = 0.5):
+        if R <= 0:
+            raise ValueError("R must be positive.")
+        self.R = float(R)
+        super().__init__(n)
+
+    def _evaluate(self):
+        (
+            self._q, _, _, self._Ttheta, self._Tphi,
+            _, _, _
+        ) = self.evaluate_directions(self.xhat, full=True)
+
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        ct = np.cos(theta)
+        sp, cp = np.sin(phi), np.cos(phi)
+
+        cos_pct = np.cos(np.pi * ct)
+        sin_pct = np.sin(np.pi * ct)
+
+        a = np.sqrt(0.64 * (1.0 - 0.1 * cos_pct))
+        b = np.sqrt(0.64 * (1.0 - 0.4 * cos_pct))
+
+        q1 = a * st * cp
+        q2 = b * st * sp - 0.3 * cos_pct
+        q3 = ct
+        q = self.R * np.stack((q1, q2, q3), axis=-1)
+
+        da_dtheta = (
+            0.5 / a * 0.64 * 0.1 * sin_pct * np.pi * (-st)
+        )
+        db_dtheta = (
+            0.5 / b * 0.64 * 0.4 * sin_pct * np.pi * (-st)
+        )
+
+        dq1_dtheta = a * ct * cp + da_dtheta * st * cp
+        dq2_dtheta = (
+            b * ct * sp
+            + db_dtheta * st * sp
+            + 0.3 * sin_pct * np.pi * (-st)
+        )
+        dq3_dtheta = -st
+        Ttheta = self.R * np.stack(
+            (dq1_dtheta, dq2_dtheta, dq3_dtheta), axis=-1
+        )
+
+        # Derivative in the unit Ephi direction, i.e. (1/sin(theta))*d/dphi.
+        Tphi = self.R * np.stack(
+            (-a * sp, b * cp, np.zeros_like(st)), axis=-1
+        )
+
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
+class Ogive(S2Surface):
+    r"""The ``ogive`` surface from the original MATLAB ``S2_surface.m``.
+
+    This surface has the conical singularities of the MATLAB model.
+    """
+
+    def __init__(
+            self, n: int,
+            angle: float = np.pi * 22.62 / 180.0,
+            length: float = 1.0):
+        if not 0 < angle < np.pi/2:
+            raise ValueError("angle must lie in (0, pi/2).")
+        if length <= 0:
+            raise ValueError("length must be positive.")
+        self.angle = float(angle)
+        self.length = float(length)
+        super().__init__(n)
+
+    def _evaluate(self):
+        (
+            self._q, _, _, self._Ttheta, self._Tphi,
+            _, _, _
+        ) = self.evaluate_directions(self.xhat, full=True)
+
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        sp, cp = np.sin(phi), np.cos(phi)
+        length = self.length
+        d0 = 1.0 - np.cos(self.angle)
+
+        q1 = length * (-0.5 + theta / np.pi)
+        c = 2.0 * np.sin(self.angle) / length
+        radicand = np.maximum(0.0, 1.0 - (c * q1)**2)
+        root = np.sqrt(radicand)
+        f = (root - 1.0 + d0) * length / (10.0 * d0)
+
+        q = np.stack((q1, f * sp, f * cp), axis=-1)
+
+        dq1_dtheta = length / np.pi
+        df_dtheta = (
+            (-0.1 * length / d0)
+            * (c**2 * length / np.pi)
+            * q1 / root
+        )
+        Ttheta = np.stack(
+            (
+                np.full_like(theta, dq1_dtheta),
+                df_dtheta * sp,
+                df_dtheta * cp,
+            ),
+            axis=-1,
+        )
+
+        f_over_st = _divide_by_sin_with_pole_limit(
+            f, df_dtheta, theta, st
+        )
+        Tphi = np.stack(
+            (
+                np.zeros_like(theta),
+                f_over_st * cp,
+                -f_over_st * sp,
+            ),
+            axis=-1,
+        )
+
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
+class OgiveCos(S2Surface):
+    r"""The ``ogive_cos`` surface from the original MATLAB ``S2_surface.m``."""
+
+    def __init__(
+            self, n: int,
+            angle: float = np.pi * 22.62 / 180.0,
+            length: float = 1.0):
+        if not 0 < angle < np.pi/2:
+            raise ValueError("angle must lie in (0, pi/2).")
+        if length <= 0:
+            raise ValueError("length must be positive.")
+        self.angle = float(angle)
+        self.length = float(length)
+        super().__init__(n)
+
+    def _evaluate(self):
+        (
+            self._q, _, _, self._Ttheta, self._Tphi,
+            _, _, _
+        ) = self.evaluate_directions(self.xhat, full=True)
+
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        sp, cp = np.sin(phi), np.cos(phi)
+        length = self.length
+        d0 = 1.0 - np.cos(self.angle)
+
+        q1 = -0.5 * length * np.cos(theta)
+        c = 2.0 * np.sin(self.angle) / length
+        radicand = np.maximum(0.0, 1.0 - (c * q1)**2)
+        root = np.sqrt(radicand)
+        f = (root - 1.0 + d0) * length / (10.0 * d0)
+
+        q = np.stack((q1, f * sp, f * cp), axis=-1)
+
+        dq1_dtheta = 0.5 * length * st
+        df_dtheta = (
+            (-0.1 * length / d0)
+            * (c**2 * 0.5 * length)
+            * q1 * st / root
+        )
+        Ttheta = np.stack(
+            (dq1_dtheta, df_dtheta * sp, df_dtheta * cp), axis=-1
+        )
+
+        f_over_st = _divide_by_sin_with_pole_limit(
+            f, df_dtheta, theta, st
+        )
+        Tphi = np.stack(
+            (
+                np.zeros_like(theta),
+                f_over_st * cp,
+                -f_over_st * sp,
+            ),
+            axis=-1,
+        )
+
+        return self._finish_direction_evaluation(
+            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
+        )
+
+
+class ConeSphere(S2Surface):
+    r"""The ``cone_sphere`` surface from the original MATLAB toolbox.
+
+    A cone is glued C1-smoothly to a sphere.  The default unscaled MATLAB
+    parameters ``alpha=23.821``, ``beta=3.306`` and ``gamma=2.947`` are
+    rescaled so that ``alpha + beta == length``.
+    """
+
+    def __init__(
+            self, n: int, length: float = 1.0,
+            alpha: float = 23.821, beta: float = 3.306,
+            gamma: float = 2.947):
+        if length <= 0:
+            raise ValueError("length must be positive.")
+        if alpha <= 0 or beta <= 0 or gamma <= 0:
+            raise ValueError("alpha, beta and gamma must be positive.")
+
+        scale = float(length) / (float(alpha) + float(beta))
+        self.alpha = scale * float(alpha)
+        self.beta = scale * float(beta)
+        self.gamma = scale * float(gamma)
+        self.length = float(length)
+        super().__init__(n)
+
+    def _evaluate(self):
+        (
+            self._q, _, _, self._Ttheta, self._Tphi,
+            _, _, _
+        ) = self.evaluate_directions(self.xhat, full=True)
+
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+        theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
+        sp, cp = np.sin(phi), np.cos(phi)
+
+        alpha = self.alpha
+        beta = self.beta
+        gamma = self.gamma
+        beta0 = beta - gamma
+
+        q1 = -alpha + theta * (alpha + beta) / np.pi
+        dq1_dtheta = (alpha + beta) / np.pi
+
+        arg1 = np.maximum(
+            0.0, 1.0 - ((q1 - beta0) / gamma)**2
+        )
+        h1 = gamma * np.sqrt(arg1)
+        cone_factor = np.sqrt(
+            max(0.0, 1.0 - (-beta0 / gamma)**2)
+        )
+        h2 = gamma * cone_factor * (q1 + alpha) / alpha
+
+        cone = (q1 <= 0.0) & (q1 >= -alpha)
+        sphere = (q1 <= beta) & (q1 > 0.0)
+        h = np.where(cone, h2, np.where(sphere, h1, 0.0))
+
+        q = np.stack((q1, h * sp, h * cp), axis=-1)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            dh1_dtheta = -dq1_dtheta * (q1 - beta0) / h1
+        dh2_dtheta = gamma * cone_factor * dq1_dtheta / alpha
+        dh_dtheta = np.where(
+            cone, dh2_dtheta, np.where(sphere, dh1_dtheta, 0.0)
+        )
+
+        Ttheta = np.stack(
+            (
+                np.full_like(theta, dq1_dtheta),
+                dh_dtheta * sp,
+                dh_dtheta * cp,
+            ),
+            axis=-1,
+        )
+
+        h_over_st = _divide_by_sin_with_pole_limit(
+            h, dh_dtheta, theta, st
+        )
+        Tphi = np.stack(
+            (
+                np.zeros_like(theta),
+                h_over_st * cp,
+                -h_over_st * sp,
+            ),
+            axis=-1,
+        )
 
         return self._finish_direction_evaluation(
             q, Ttheta, Tphi, Erho, Etheta, Ephi, full=full
@@ -597,14 +935,23 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
 
     @S2Surface.n.setter
     def n(self,n_new:int):
+        if not isinstance(n_new, (int, np.integer)) or n_new < 0:
+            raise ValueError("n must be a non-negative integer.")
+        n_new = int(n_new)
+        if self.spc.n != n_new:
+            raise RuntimeError(
+                f"StarSHSurface is tied to its StarSHSurfaceSpc grid: "
+                f"spc.n={self.spc.n}, requested n={n_new}."
+            )
         self._n = n_new
-        if self.spc.n!=n_new:
-            raise RuntimeError(f"mismatch of spc.n and n_new. {self.spc.n},{n_new}")
-        for k in ["_theta","_phi","_st","_ct","_sp","_cp","_Ephi","_Etheta","_Erho","_alpha"]:
+        for k in [
+                "_theta", "_phi", "_st", "_ct", "_sp", "_cp",
+                "_Ephi", "_Etheta", "_Erho", "_alpha"]:
             setattr(self, k, getattr(self.spc, k))
-        #self._theta, self._phi = self.spc._theta, self.spc._phi 
-        #self._st,self._ct, self._sp, self._cp =  self.spc._st,self.spc._ct, self.spc._sp, self.spc._cp
-        #self._Erho, self._Etheta, self._Ephi = self.spc._Erho, self.spc._Etheta, self.spc._Ephi 
+        self.__dict__.pop("_q_sh_coeff", None)
+        if getattr(self, "_surface_initialized", False):
+            self._evaluate()
+            self._complete_evaluation()
 
     def radius_and_derivatives(self)->tuple[np.ndarray,np.ndarray,np.ndarray]:
         """
