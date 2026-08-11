@@ -801,7 +801,7 @@ class ParameterizedSurface():
     r""" This is an abstract class for S2Surfacess parameterized by coefficients in some vector space.
 
     Typical forward operators are naturally defined on a shape space. In particular, they 
-    are invariant under re-parametrizations of the surface. However, such shape spaces are not vector spaces, and we define forward operators on some vector space of coefficients paraemeterizing a certain class of surface (e.g., star-shape surfaces with radial functions given by spherical harminces of a cetrain degree).  
+    are invariant under re-parametrizations of the surface. However, such shape spaces are not vector spaces, and we define forward operators on some vector space of coefficients paraemeterizing a certain class of surface (e.g., star-shape surfaces with radial functions given by spherical harminces of a certain degree).  
 
     One may think of the mapping taking coefficients to surfaces as an operator, and of the parameterized forward operators as compositions of this operator with the actual forward operator defined 
     on a shape space. However, as mentioned above, shape spaces aren't vector spaces, and it is often  
@@ -828,7 +828,7 @@ class ParameterizedSurface():
         """The coefficient vector characterizing the surface.
         """
         self.der_normal = der_normal
-        """Linear `regpy.operators.Operator` given by the inner product of the derivative of the coefficient-to-curve "operator" (i.e. the derivative of `ParameterizedCurveSpc.coeff2curve`) and the normal vector of length 1 of the curve. """
+        """Linear `regpy.operators.Operator` given by the inner product of the derivative of the coefficient-to-surface "operator" (i.e. the derivative of `ParameterizedCurveSpc.coeff2surface`) and the normal vector of length 1 of the surface. """
 
 
 class ParameterizedSurfaceSpc(ABC):
@@ -844,12 +844,20 @@ class ParameterizedSurfaceSpc(ABC):
         pass
 
 class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
-    def __init__(self, n:int,sh_deg:int=3):
+    def __init__(self, n:int, sh_deg:int=3):
         if not isinstance(n,int) or not isinstance(sh_deg,int):
             raise TypeError(Errors.type_error())
         if sh_deg < 0 or sh_deg>n or n<0:
             raise ValueError(Errors.value_error(msg=f'need 0<=sh_deg<=n. {n},{sh_deg}'))
-        MeasureSpaceFcts.__init__(self,measure = np.ones(((sh_deg+1)**2,),dtype=float))
+
+        # The coefficient vector space carries no Sobolev geometry. Inner
+        # products and regularization norms belong to regpy.hilbert and can
+        # therefore be selected independently in a Setting.
+        MeasureSpaceFcts.__init__(
+            self,
+            measure=np.ones(((sh_deg+1)**2,), dtype=float),
+            dtype=float,
+        )
         ParameterizedSurfaceSpc.__init__(self)
         self.n = n
         self.sh_deg = sh_deg
@@ -857,7 +865,6 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
         self.__dict__.update(dat.__dict__)
         self._compute_SH_basis()
 
- 
     def _compute_SH_basis(self):
         (
             self.basis,

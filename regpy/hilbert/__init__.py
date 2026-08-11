@@ -10,8 +10,9 @@ from regpy.operators import Operator
 
 from .base import *
 from .numpy import *
+from .surface import *
 
-__all__ = ["L2", "Sobolev","Hm","Hm0","L2Boundary","SobolevBoundary"]
+__all__ = ["L2", "Sobolev","Hm","Hm0","L2Boundary","SobolevBoundary","SobolevSphereSHBasis"]
 
 def as_hilbert_space(h, vecsp):
     r"""Convert h to HilbertSpace instance on vecsp.
@@ -102,6 +103,8 @@ def _register_spaces():
 
     Sobolev.register(DirectSumVS, componentwise(Sobolev))
     Sobolev.register(UniformGridFcts, SobolevUniformGridFcts)
+    from regpy.vecsps.surface import StarSHSurfaceSpc
+    Sobolev.register(StarSHSurfaceSpc, SobolevSphereSHBasis)
 
     Hm.register(Prod, componentwise(HmDomain,cls=TensorProd))
     Hm.register(DirectSumVS, componentwise(HmDomain))
