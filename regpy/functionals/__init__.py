@@ -69,5 +69,5 @@ def _register_functionals():
         L1.register(NgsVectorSpace, NgsL1)
         TV.register(NgsVectorSpace,NgsTV)
     except :
-        logging.info("'Ngsolve' appears to be not installed not registering the respective functionls.")
+        logging.info("'Ngsolve' appears to be not installed not registering the respective functionals.")
 

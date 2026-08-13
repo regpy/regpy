@@ -153,7 +153,7 @@ class NgsBaseVector:
     
     def __imul__(self,other):
         if self.is_dynamic:
-            self.log.debug("To have inplace multiplication of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place multiplication of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):
@@ -163,7 +163,7 @@ class NgsBaseVector:
     
     def __itruediv__(self,other):
         if self.is_dynamic:
-            self.log.debug("To have inplace division of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place division of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):

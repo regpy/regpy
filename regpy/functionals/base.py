@@ -118,22 +118,23 @@ class AbstractFunctional(AbstractFunctionalBase):
         self.args = {}
 
     def register(self, vecsp_type, impl=None):
-        r"""Either registers a new implementation on a specific `regpy.vecsps.VectorSpaceBase` 
-        for a given Abstract functional or returns as decorator that can output any implementation
-        option for a given vector space.
+        r"""Register an implementation for a vector-space class.
+
+        When ``impl`` is omitted, return a decorator that performs the
+        registration.
 
         Parameters
         ----------
         vecsp_type : `regpy.vecsps.VectorSpaceBase`
             Vector Space on which the functional should be registered. 
         impl : regpy.functionals.Functional, optional
-            The explicit implementation to be used for that Vector Space, by default None
+            Concrete implementation to register. Defaults to ``None``.
 
         Returns
         -------
-        None or decorator : None or map
-            Either nothing or map that can output any of the registered implementations for 
-            a specific vector space. 
+        None or callable
+            ``None`` for direct registration; otherwise, a registration
+            decorator.
         """
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
@@ -556,7 +557,7 @@ class Functional:
         if isinstance(h, operators.Operator) and h.linear and h.domain == h.codomain == self.domain:
             return h
         else:
-            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly non-linear operator with non matching domain and codomain that is not identical to the domain of the functional."))
+            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
     def conj_subgradient(self, xstar, out=None, **subgradient_par):
         r"""Return a subgradient of the conjugate functional.
@@ -616,7 +617,7 @@ class Functional:
         if isinstance(h, operators.Operator) and h.linear and h.domain == h.codomain == self.domain:
             return h
         else:
-            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of conjugate of {self} return a possibly non-linear operator with non matching domain and codomain that is not identical to the domain of the functional."))
+            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of conjugate of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
     def conj_linearize(self, xstar):
         r"""
@@ -1163,10 +1164,10 @@ class SquaredNorm(Functional):
     as other arguments are overwritten to yield the expected `SquaredNorm`\s. 
 
     Parameters
-    --------
+    ----------
     domain : regpy.vecsps.VectorSpaceBase
-        The uncerlying vector space for the function space on which it is defined.
-    h_sapce : regpy.hilbert.HilbertSpace (default: None)
+        The underlying vector space for the function space on which it is defined.
+    h_space : regpy.hilbert.HilbertSpace (default: None)
         The underlying Hilbert space.
     a: float [default:1]
        coefficient of quadratic term
@@ -2268,7 +2269,7 @@ class FunctionalOnDirectSum(Functional):
             raise TypeError(util.Errors.generic_message(f"To setup a FunctionalOnDirectSum the functionals have to be provided as a list or tuple of functionals."))
         if domain is not None:
             if not isinstance(domain, vecsps.DirectSum) or len(funcs)!=len(domain.summands) or any([f_i.domain != domain_i for f_i,domain_i in zip(funcs,domain.summands)]) :
-                raise TypeError(util.Errors.not_instance(domain,vecsps.DirectSum,add_info="The given domain for a FunctionalOnDirectSum has to be a DirectSum with the same length of arguemnts and matching domains!"))
+                raise TypeError(util.Errors.not_instance(domain,vecsps.DirectSum,add_info="The given domain for a FunctionalOnDirectSum has to be a DirectSum with the same length of arguments and matching domains!"))
         else:
             domain = vecsps.DirectSum(*[f_i.domain for f_i in funcs])
         self.length = len(domain.summands)

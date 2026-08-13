@@ -51,10 +51,13 @@ class _Revocable:
 
 
 class Operator:
-    r"""Base class for (forward) operators. Both linear and non-linear operators are handled. Operator
-    instances are callable, calling them with an array argument evaluates the operator.
+    r"""Base class for linear and nonlinear forward operators.
 
-    Subclasses implementing non-linear operators should implement the following methods:
+    Operator instances are callable; calling one with a vector evaluates it.
+    Domain and codomain vectors are duck typed according to their respective
+    :class:`regpy.vecsps.VectorSpaceBase` instances. 
+
+    Subclasses implementing nonlinear operators should implement the following methods:
 
         _eval(self, x, differentiate=False)
         _derivative(self, x)
@@ -93,7 +96,7 @@ class Operator:
 
     If derivatives at multiple points are needed, a copy of the operator should be performed using
     `copy.deepcopy`. For efficiency, subclasses can add the names of attributes that are considered
-    as constants and should not be deepcopied to `self._consts` (a `set`). By default, `domain` and
+    as constants and should not be deep-copied to `self._consts` (a `set`). By default, `domain` and
     `codomain` will not be copied, since `regpy.vecsps.VectorSpaceBase` instances should never
     change in-place.
 
@@ -156,9 +159,9 @@ class Operator:
 
     def __init__(self, domain=None, codomain=None, linear=False, inverse=None):
         if not isinstance(domain,vecsps.VectorSpaceBase):
-            raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of VectorSpaceBases."))
+            raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of vector spaces."))
         if not isinstance(codomain,vecsps.VectorSpaceBase):
-            raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of VectorSpaceBases."))
+            raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of vector spaces."))
         self.domain = domain
         r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
@@ -674,7 +677,7 @@ class Operator:
         Raises
         ------
         NotImplementedError
-            If the operator is non-linear or the method is not implemented.
+            If the operator is nonlinear or the method is not implemented.
         """
 
         if(not self.linear):
@@ -1047,9 +1050,9 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
-    r"""An proxy class wrapping a non-linear operator. Calling it will evaluate the operator's
+    r"""An proxy class wrapping a nonlinear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
-    `Operator.linearize` method of a non-linear operator.
+    `Operator.linearize` method of a nonlinear operator.
 
     Parameters
     ----------
@@ -1327,7 +1330,7 @@ class LinearCombination(Operator):
         if len(self.ops) > 1:
             raise NotImplementedError(util.Errors._compose_message(
                     "INVERSE NOT DEFINED",
-                f"The inverse of the linear combination {self} is not defined. Since it was not explicitly defined and automatically computing it with more then one operator is ambiguous. You may specify an explicit inverse by setting self.inverse for this operator."
+                f"The inverse of the linear combination {self} is not defined. Since it was not explicitly defined and automatically computing it with more than one operator is ambiguous. You may specify an explicit inverse by setting self.inverse for this operator."
                 ))
         return (1 / self.coeffs[0]) * self.ops[0].inverse
 
@@ -1820,7 +1823,7 @@ class PartOfOperator(Operator):
                 raise IndexError(util.Errors.indexation(
                     index,
                     self,
-                    f"The given tuple/list of indeces has to be a list of integers in the range of {-n_codim},...,{n_codim}."))
+                    f"The given tuple/list of indices has to be a list of integers in the range of {-n_codim},...,{n_codim}."))
             if(len(index)==1):
                 self.index=index[0]
             else:
@@ -2155,7 +2158,7 @@ class PtwMultiplication(Operator):
             raise ValueError(util.Errors.not_a_vecsp(
                 domain,
                 vecsps.VectorSpaceBase,
-                add_info="The domain for a PtwMultiplication has to be a VectorSpaceBases instance."
+                add_info="The domain for a PtwMultiplication has to be a vector spaces instance."
             ))
         if isinstance(domain,vecsps.NumPyVectorSpace):
             try:
@@ -2879,7 +2882,7 @@ class Sum(Operator):
             raise ValueError(util.Errors.not_a_vecsp(
                 domain,
                 vecsps.DirectSum,
-                add_info="To construct a Sum (summation operater) the domain has to be a DirectSum!"
+                add_info="To construct a Sum (summation operator) the domain has to be a DirectSum!"
             ))
         if any(domain.summands[0].shape!=summand.shape for summand in domain.summands):
             raise ValueError(util.Errors.not_equal(
@@ -2899,7 +2902,7 @@ class Sum(Operator):
             raise ValueError(util.Errors.not_equal(
                 self.domain.summands[0],
                 self.codomain,
-                add_info="The codomain has to be indentical to the summands of the domain."
+                add_info="The codomain has to be identical to the summands of the domain."
             ))
 
     def _ieval(self, x, out):
@@ -2952,7 +2955,7 @@ class Product(Operator):
             raise ValueError(util.Errors.not_equal(
                 self.domain.summands[0],
                 self.codomain,
-                add_info="The codomain has to be indentical to the summands of the domain."
+                add_info="The codomain has to be identical to the summands of the domain."
             ))
 
     def _ieval(self, x, out, differentiate=False):

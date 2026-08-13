@@ -69,7 +69,7 @@ class IntegralFunctionalBase(Functional):
     nat_dom_l,nat_dom_u : float or np.ndarray, default: -np.inf, np.inf
         lower and upper boundary of the natural essential domain of :math:`f`, i.e., the interval on which :math:`f` without artificial constraints or Taylor expansion is finite 
         If dom_l or dom_u are finite, :math:`f` should be finite at these points (possibly very large if :math:`f` tends to infinity there) 
-        If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a numpy array.
+        If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a NumPy array.
     conj_nat_dom_l,conj_nat_dom_u : float or np.ndarray [default: -np.inf and np.inf, rsp.]
         lower and upper boundary of the natural essential domain of the conjugate of :math:`f` 
         (as vector in primal space)
@@ -78,11 +78,11 @@ class IntegralFunctionalBase(Functional):
     constr_l: None or float or np.ndarray [default: None]
         If not None, a lower hard constraint is imposed, and constr_u specifies :math:`a(x)` 
     lin_taylor_u: None or float or np.ndarray [default: None]
-        If not None, :math:`b(x)` for linear Taylor on the right hand side
+        If not None, :math:`b(x)` for linear Taylor on the right-hand side
     lin_taylor_l: None or float or np.ndarray [default: None]
         If not None, :math:`a(x)` for linear Taylor on the left hand side
     quad_taylor_u: None or float or np.ndarray [default: None]
-        If not None, :math:`b(x)` for quadratic Taylor on the right hand side
+        If not None, :math:`b(x)` for quadratic Taylor on the right-hand side
     quad_taylor_l: None or float or np.ndarray [default: None]
         If not None, :math:`a(x)` for quadratic Taylor on the left hand side
     methods, conj_methods = set of strings or None [default: None]
@@ -583,7 +583,7 @@ class IntegralFunctionalBase(Functional):
         if not isinstance(x, np.ndarray) or x.shape != self.domain.shape:
             raise TypeError(Errors.type_error(
                 "If constant use broadcasting in the IntegralFunctional init only allowed "
-                "for numpy arrays of same shape as domain." + "\n\t" + f"x = {x}"
+                "for NumPy arrays of same shape as domain." + "\n\t" + f"x = {x}"
             ))
         where = self._where(mask, x)
         if not np.any(where):
@@ -1223,7 +1223,7 @@ class IntegralFunctionalBase(Functional):
         tau : float
             Prox parameter (>0).
         f, fp, fpp : callables
-            f, f', f'' (accept numpy arrays).
+            f, f', f'' (accept NumPy arrays).
         dom_l, dom_u : floats
             Domain bounds (can be -np.inf, np.inf).
         start: np.ndarray or None
@@ -1689,7 +1689,7 @@ class L1L2(VectorIntegralFunctional):
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
         A vector valued measure space.
     conj_tol : float
-        A tolarance introduced into `L1` functional that allows also numbers slighly bigger then 1.0 in the conjugate.
+        A tolerance introduced into `L1` functional that allows also numbers slightly greater than 1.0 in the conjugate.
     """
     def __init__(self, vdomain, conj_tol = 1e-16):
         sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
@@ -2180,7 +2180,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         If data is given, then w is w+data; if the parameter w is not given, then w is just the data.
     omit_normalization:bool (default:False)
         If true, the term :math:`w(x)\ln w(x)` is omitted in the definition of F_w. (Then :math:`F_w(w)\neq 0`.)
-        This is sometines done if KullbackLeibler is used as Poisson log-likelikhood since the omitted term is not well-defined for 
+        This is sometimes done if KullbackLeibler is used as Poisson log-likelihood since the omitted term is not well-defined for 
         a continuous Poisson process, and it is irrelevant and large for large discrete data. 
     """
 
@@ -2480,7 +2480,7 @@ class RelativeEntropy(IntegralFunctionalBase):
         elif w not in domain:
             raise TypeError(Errors.not_in_vecsp(w,domain,vec_name="second argument",add_info=f" Error occured setting up the Relative Entropy functional."))
         if np.min(w)<=0:
-            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positiv!", self))
+            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positive!", self))
         self._w= w.copy()
 
         super().__init__(domain,nat_dom_l = 1e-14*w,
@@ -2666,9 +2666,9 @@ class Huber(IntegralFunctionalBase):
     """
 
     def  __init__(self, domain, as_primal=True, sigma = 1., eps=1e-10, **kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSPaceFcts isntance."))
+        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if isinstance(sigma,int):
             self.sigma = np.broadcast_to(np.real(float(sigma)),domain.shape)
         elif isinstance(sigma, float):
@@ -2765,11 +2765,11 @@ class QuadraticIntv(IntegralFunctionalBase):
 
     def  __init__(self, domain, as_primal=True, sigma=1., eps=1e-10, **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): 
-            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSPaceFcts isntance."))
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if np.min(sigma)<=0:
-            raise ValueError(Errors.value_error("The interval width in the QuadtraticIntv needs to be positiv!", self))
+            raise ValueError(Errors.value_error("The interval width in the QuadraticIntv needs to be positive!", self))
         self.eps=eps
         if isinstance(sigma, (float,int)):
             self.sigma = np.broadcast_to(np.real(sigma), domain.shape)
@@ -2956,19 +2956,19 @@ class QuadraticBilateralConstraints(LinearCombination):
 
     def __init__(self,domain:MeasureSpaceFcts, 
                  lb=None, ub=None, x0=None, alpha:float=1., **kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSPaceFcts isntance."))
+        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSpaceFcts instance."))
         if isinstance(lb,(float,int)):
             lb = lb*domain.ones()
         elif lb is None:
             lb = domain.zeros()
         elif lb not in domain:
-            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
+            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
         if isinstance(ub,(float,int)):
             ub = ub*domain.ones()
         elif ub is None:
             ub = domain.ones()
         elif ub not in domain:
-            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"ub = {ub}"))
+            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"ub = {ub}"))
         if np.any(lb>=ub):
             raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint:"+"\n\t "+f"lb = {lb},"+"\n\t "+f"ub = {ub}"))
         if x0 is None:
@@ -2976,7 +2976,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         elif isinstance(x0,(float,int)):
             x0 = x0*domain.ones()
         elif x0 not in domain:
-            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
+            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
 
         if not isinstance(alpha,(float,int)):
             raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
@@ -3013,19 +3013,19 @@ def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     a : float or int
         scaling factor
     """
-    if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticLowerBound domain needs to be a MeasureSPaceFcts isntance."))
+    if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticLowerBound domain needs to be a MeasureSpaceFcts instance."))
     if isinstance(lb,(float,int)):
         lb = lb*domain.ones()
     elif lb is None:
         lb = domain.zeros()
     elif lb not in domain:
-        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
+        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
     if isinstance(x0,(float,int)):
         x0 = x0*domain.ones()
     elif x0 is None:
         x0 = domain.zeros()
     elif x0 not in domain:
-        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
+        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
     if not isinstance(a,(float,int)):
             raise TypeError(Errors.not_instance(a,float,add_info="Scaling factor a in QuadraticLowerBound needs to be a scalar!"))
 
@@ -3045,7 +3045,7 @@ class QuadraticPositiveSemidef(Functional):
     and prox are only correct for hermitian inputs.
 
     Parameters
-    ---------
+    ----------
     domain: regpy.vecsps.UniformGridFcts
         two dimensional domain on which functional is defined, volume_elements have to be one
     trace_val: float or None, optional
@@ -3056,7 +3056,7 @@ class QuadraticPositiveSemidef(Functional):
     """
 
     def  __init__(self, domain,trace_val=None,tol=1e-15, **kwargs):
-        if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts isntance."))
+        if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts instance."))
         if domain.ndim!=2 or domain.shape[0]!=domain.shape[1] or domain.volume_elem!=1.:
             raise ValueError(Errors.value_error("The domain for QuadraticPositiveSemidef must be a two-dimensional domain with identical spread in the two domensions and uniform one measure! This is to represent vectors as a matrix."))
         if tol<0:
@@ -3086,11 +3086,11 @@ class QuadraticPositiveSemidef(Functional):
     @staticmethod
     def closest_point_simplex(p, a):
         r'''
-        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\qeq 0,\sum q_{i}=a\}`.
+        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\geq 0,\sum q_{i}=a\}`.
         It uses that p is already sorted in increasing order.
 
         Parameters
-        ---------
+        ----------
         p: numpy.ndarray
             Input point sorted in increasing order
         a: float
@@ -3242,7 +3242,7 @@ class TVUniformGridFcts(Composed):
             tv: TVUnivormGridFct 
                the TV functional
             penalty_shift: np.ndarray | None (optional)
-                The argument x. Defaults to None correpsonding to x=0
+                The argument x. Defaults to None corresponding to x=0
             tau: float (optional)
                  Parameter of the prox. Defaults to 1. 
             

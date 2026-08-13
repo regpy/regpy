@@ -23,7 +23,7 @@ class L2MeasureSpaceFcts(HilbertSpace):
     def __init__(self, vecsp:vecsps.MeasureSpaceFcts, 
                  weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.MeasureSpaceFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or a derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
@@ -54,7 +54,7 @@ class L2UniformGridFcts(HilbertSpace):
 
     def __init__(self, vecsp:vecsps.UniformGridFcts, weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
@@ -89,7 +89,7 @@ class SobolevUniformGridFcts(HilbertSpace):
                  index:float=1., 
                  axes:list[int]|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
         self.index = index
         if axes is None:

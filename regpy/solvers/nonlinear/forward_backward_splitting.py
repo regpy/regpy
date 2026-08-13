@@ -29,10 +29,10 @@ class ForwardBackwardSplitting(RegSolver):
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
         if self.op.linear:
-            self.log.warning("Using non-linear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear")
+            self.log.warning("Using nonlinear ForwardBackwardSplitting with a linear Operator! Consider using the linear ForwardBackwardSplitting in the module solvers.linear")
         self.x = setting.get_or_update_initial_guess(init, update_setting)
         setting.get_or_update_data(data, update_setting)
-        """The right hand side gets initialized with the measured data."""
+        """The right-hand side gets initialized with the measured data."""
         self.y, self.deriv = self.op.linearize(self.x)
         self.tau = 1/self.deriv.norm(setting.h_domain,setting.h_codomain)**2 if tau is None else tau
         """The step size parameter"""

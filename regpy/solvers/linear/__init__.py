@@ -15,7 +15,7 @@ from regpy.solvers import *
 ```
 
 where you have access to `linear` and can use for example `linear.TikhonovCG` to define 
-a TIkhonov solver.
+a Tikhonov solver.
 """
 
 from .tikhonov import * 

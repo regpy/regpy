@@ -18,7 +18,7 @@ class IrgnmCG(RegSolver):
     .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
 
-    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
@@ -118,7 +118,7 @@ class LevenbergMarquardt(RegSolver):
     .. math::
         \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert h\Vert^{2}
 
-    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
@@ -218,7 +218,7 @@ class IrgnmCGPrec(RegSolver):
     .. math::
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
 
-    where :math:`F` is a Frechet-differentiable operator, by solving in every iteration step the problem
+    where :math:`F` is a Fréchet-differentiable operator, by solving in every iteration step the problem
     
     .. math::
         \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
