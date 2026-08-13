@@ -319,8 +319,7 @@ class S2Surface(ABC):
         ``Ttheta`` is the derivative in the unit ``Etheta`` direction and
         ``Tphi`` is the derivative in the unit ``Ephi`` direction, i.e.
         ``(1/sin(theta))*d/dphi``.  Consequently ``Jacobian`` is the surface
-        Jacobian relative to the area element on the unit sphere.  This is the
-        convention used by the original MATLAB ``S2_surface.eval`` routine.
+        Jacobian relative to the area element on the unit sphere.  
 
         The base implementation uses the degree-``n`` spherical-harmonic
         interpolant of the sampled parametrization ``q``.  Concrete surfaces
@@ -427,8 +426,8 @@ class Sphere(StarSurface):
 
 
 class Ellipsoid(S2Surface):
-    def __init__(self,n:int,A: float,B: float,C: float):
-        self.axes = np.asarray([A, B, C], dtype=float)
+    def __init__(self,n:int,a: float,b: float,c: float):
+        self.axes = np.asarray([a, b, c], dtype=float)
         if np.any(self.axes <= 0):
             raise ValueError("ellipsoid semi-axes must be positive.")
         super().__init__(n)
@@ -846,7 +845,7 @@ class ParameterizedSurfaceSpc(ABC):
 class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
     def __init__(self, n:int, sh_deg:int=3):
         if not isinstance(n,int) or not isinstance(sh_deg,int):
-            raise TypeError(Errors.type_error())
+            raise TypeError(Errors.type_error(f'n and sh_deg must be integers. {n},{sh_deg}'))
         if sh_deg < 0 or sh_deg>n or n<0:
             raise ValueError(Errors.value_error(msg=f'need 0<=sh_deg<=n. {n},{sh_deg}'))
 
