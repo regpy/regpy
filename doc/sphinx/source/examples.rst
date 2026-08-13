@@ -1,13 +1,13 @@
 .. _examples:
 
-========
 Examples
 ========
 
 List of examples
 ----------------
 
-When downloading from ``git-hub`` repository you can find the examples listed below in the submodule ``examples``. These examples should provide an overview of how and for what ``RegPy`` might be used.
+The examples below are included in the repository's ``examples`` directory.
+They illustrate representative applications and common RegPy workflows.
 
 .. toctree::
    :maxdepth: 1

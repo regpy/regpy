@@ -8,7 +8,7 @@
 from regpy._version import version_tuple
 
 project = 'RegPy'
-copyright = '2024, Thorsten Hohage'
+copyright = '2024–2026, Thorsten Hohage'
 author = 'Thorsten Hohage'
 version = f"{version_tuple[0]}.{version_tuple[1]}"
 release = f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
@@ -28,7 +28,7 @@ extensions = [
     ]
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns = ['_build', '**/.ipynb_checkpoints']
 
 autoapi_dirs = ['../../../regpy']
 autoapi_options = [
@@ -80,4 +80,5 @@ source_suffix = {
 }
 
 html_theme = 'furo'
-html_static_path = ['_static']
+# Add directories here when project-specific static files are introduced.
+html_static_path = []

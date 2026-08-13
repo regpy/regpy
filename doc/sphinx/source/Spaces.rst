@@ -1,33 +1,68 @@
-Space Structures
+Space structures
 ================
 
-**The current vector space architecture is undergoing a significant redesign to support a more flexible and extensible framework.**
+Vectors and vector spaces
+-------------------------
 
-At the core of this framework are vector space structures, represented by the base class \:class:`VectorSpace`. Currently, vectors are assumed to be instances of `numpy.ndarray`. While complex-valued vectors are supported, they are interpreted as vector spaces over the **real numbers**.
+RegPy uses duck typing for vectors. A vector may be any object that implements
+vector addition and subtraction, scalar multiplication and division, unary
+negation, and the corresponding in-place operations. Generic algorithms must
+not assume that vectors are NumPy arrays or that they support indexing,
+componentwise operations, attributes such as ``shape`` or ``dtype``, or a
+``copy`` method.
 
-The inner product, as defined in the \:class:`HilbertSpace` structure, is given by:
+Every vector representation is accompanied by a subclass of
+:class:`regpy.vecsps.VectorSpaceBase`. The vector space recognizes its vectors
+and provides representation-dependent operations such as allocation, copying,
+inner products, random sampling, flattening, and reconstruction. Generic code
+should therefore use, for example, ``space.empty()`` together with
+``space.copyto(target, source)`` instead of calling ``source.copy()``.
+
+Specialized vector spaces may provide additional operations. NumPy vector
+spaces support array operations, while NGSolve vector spaces expose operations
+appropriate for their finite-element representation. Algorithms that require
+such capabilities should state and validate the corresponding restriction.
+
+All vector spaces are interpreted as spaces over the real numbers, including
+spaces whose vectors have complex coefficients. This convention determines the
+real dimension and the standard inner product used to define operator
+adjoints.
+
+Hilbert spaces
+--------------
+
+A :class:`regpy.hilbert.HilbertSpace` equips a vector space with an inner
+product. If its Gram operator is denoted by :math:`G_X`, the inner product is
 
 .. math::
-    \Re\left(\overline{x}^T G_{\underline{\mathbb{X}}} y\right)
 
-This defines a real-valued inner product, making Hilbert spaces the first level of structure applied to vector spaces in this framework.
+   \langle x, y\rangle_X = \operatorname{Re}\langle G_X x, y\rangle,
+
+where the pairing on the right is supplied by the underlying vector space.
+This separates the vector representation from the geometry used by an inverse
+problem or optimization method.
 
 Functionals
-~~~~~~~~~~~
+-----------
 
-In addition, `regpy` introduces the notion of convex real **functionals** via the class \:class:`Functional`. These include, for example, norms or regularization terms. Functionals provide a second layer of structure by mapping vectors to real values, typically in the context of optimization.
+A :class:`regpy.functionals.Functional` maps vectors to extended real values.
+Examples include norms, data-fidelity terms, and regularization penalties.
+Functionals thus add optimization-related structure independently of the
+storage representation of vectors.
 
-Abstract Spaces
-~~~~~~~~~~~~~~~
+Abstract spaces and functionals
+-------------------------------
 
-`Regpy` provides abstract base classes for Hilbert spaces and functionals. These abstract definitions can then be instantiated with concrete vector spaces to produce problem-specific implementations.
+RegPy provides abstract Hilbert spaces and functionals that select a concrete
+implementation for a given vector-space class. For example:
 
 .. code-block:: python
 
-    from regpy.hilbert import H1
-    h1_on_my_space = H1(my_domain)
+   from regpy.hilbert import H1
+   h1_on_my_space = H1(my_domain)
 
-    from regpy.functionals import TV 
-    tv_on_my_space = TV(my_domain)
+   from regpy.functionals import TV
+   tv_on_my_space = TV(my_domain)
 
-These components enable the composition of rich mathematical structures on top of simple numerical vector spaces, paving the way for general and reusable algorithms in inverse problems and variational methods.
+This dispatch mechanism makes algorithms reusable across compatible vector
+representations while allowing specialized implementations where necessary.
