@@ -32,7 +32,7 @@ class Landweber(RegSolver):
         If true, ``init`` itself is used as iteration vector. Otherwise it is
         copied. Defaults to false.
     data : array-like, optional
-        Right hand side. Defaults to ``setting.data``.
+        Right-hand side. Defaults to ``setting.data``.
     stepsize : float, optional
         Step size :math:`\mu`. If omitted, ``1 / norm(T)**2`` is used.
     norm_method

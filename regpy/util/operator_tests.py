@@ -475,7 +475,7 @@ def test_derivative(op, steps=None,ret_sequence=False,x=None):
         The point at which the derivative is tested. Chosen randomly if None.
 
     Returns
-    ------
+    -------
     bool
         If the sequence of differences is decreasing then True, otherwise False. 
     """
@@ -578,7 +578,7 @@ def test_operator(
             if not test_linearity(op,tolerance) or not test_adjoint(op,tolerance):
                 raise AssertionError('Linearity or adjoint test failed for linear operator.')
             if not test_adjoint_eval(op,tolerance):
-                raise AssertionError(f'Applying the adjoint and eval deviates more then {tolerance} form the implementation of adjoint_eval with respect to the vector space l2 norm.')
+                raise AssertionError(f'Applying the adjoint and eval deviates more than {tolerance} from the implementation of adjoint_eval with respect to the vector space l2 norm.')
     elif test_affine_linearity(op,tolerance=tolerance):
         op.log.info('Testing affine linearity of operator. Skipping test of derivative.')
         for _ in range(sample_N):
@@ -601,7 +601,7 @@ def test_operator(
             if(adjoint_derivative) and not test_adjoint_derivative(op,tolerance=tolerance):
                 raise AssertionError('Adjoint derivative test failed for affine linear operator.')
     else:
-        op.log.info('Testing non-linear operator for exactness of linearization and derivative.')
+        op.log.info('Testing nonlinear operator for exactness of linearization and derivative.')
         if x_s is None:
             x_s = [op.domain.rand() for _ in range(sample_N)]
         elif isinstance(x_s,list): 
@@ -617,10 +617,10 @@ def test_operator(
                     op, x=x_s[k], tolerance=tolerance,
                     test_aliasing=test_inplace_aliasing):
                 raise AssertionError(
-                    'Allocating/in-place equivalence test failed for non-linear operator.'
+                    'Allocating/in-place equivalence test failed for nonlinear operator.'
                 )
             if not test_derivative(op, steps = steps,x = x_s[k]):
-                raise AssertionError('Derivative test failed for non-linear operator.')
+                raise AssertionError('Derivative test failed for nonlinear operator.')
             _, deriv = op.linearize(x_s[k])
             try:
                 test_operator(
@@ -629,7 +629,7 @@ def test_operator(
                     test_inplace_aliasing=test_inplace_aliasing
                 )
             except AssertionError:
-                raise AssertionError('Test for the derivative operator test failed for non-linear operator.')
+                raise AssertionError('Test for the derivative operator test failed for nonlinear operator.')
             if(adjoint_derivative) and not test_adjoint_derivative(op,tolerance=tolerance):
-                raise AssertionError('Adjoint derivative test failed for non-linear operator.')
+                raise AssertionError('Adjoint derivative test failed for nonlinear operator.')
     op.log.info('All tests passed.')

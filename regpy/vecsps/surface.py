@@ -797,20 +797,18 @@ class ConeSphere(S2Surface):
 ######################################################################
 
 class ParameterizedSurface():
-    r""" This is an abstract class for S2Surfacess parameterized by coefficients in some vector space.
+    r"""Surface represented by coefficients in a vector space.
 
-    Typical forward operators are naturally defined on a shape space. In particular, they 
-    are invariant under re-parametrizations of the surface. However, such shape spaces are not vector spaces, and we define forward operators on some vector space of coefficients paraemeterizing a certain class of surface (e.g., star-shape surfaces with radial functions given by spherical harminces of a certain degree).  
+    Many forward maps are naturally defined on a shape space and are invariant
+    under reparameterization. Because a shape space is not itself a vector
+    space, RegPy represents a chosen class of surfaces by coefficient vectors;
+    star-shaped surfaces, for example, can use spherical-harmonic coefficients.
 
-    One may think of the mapping taking coefficients to surfaces as an operator, and of the parameterized forward operators as compositions of this operator with the actual forward operator defined 
-    on a shape space. However, as mentioned above, shape spaces aren't vector spaces, and it is often  
-    computationally more convenient, not to implement the discrete Frechet derivative of the parameterized forward operator, but to discretize a continuous characterization of the Frechet derivative. For this reason the forward operators on shape spaces in this toolbox are not implemented as such compositions.
-
-    Due to invariance under reparameterizations, Frechet derivatives of operators on shape spaces only 
-    depend on the normal component of a perturbation of the surface, and this quantity is used 
-    in our implementations of the derivatives of parameterized forward operators. More precisely, 
-    these derivatives are compositions of a discretization of the continuous derivative on shape space 
-    and the operator `self.der_normal`.
+    Implementations commonly discretize a continuous shape derivative instead
+    of differentiating a discrete coefficient-to-surface composition. The
+    derivative depends only on the normal component of a surface perturbation,
+    so derivatives of parameterized forward maps are composed with
+    ``self.der_normal``.
     """
     from regpy.operators import Operator
     def __init__(self,coeff:np.ndarray,der_normal:Operator,**kwargs):
@@ -831,15 +829,13 @@ class ParameterizedSurface():
 
 
 class ParameterizedSurfaceSpc(ABC):
-    r""" Abstract base class of vector spaces of coefficients of `ParameterizedSurface`s. 
-    """
+    r"""Base class for coefficient spaces of :class:`ParameterizedSurface`."""
     def __init__(self,**kwargs):
         pass
 
     @abstractmethod
     def coeff2surface(self, coeff : np.ndarray, nderivs : int =0)->ParameterizedSurface:
-        r"""Compute a curve for the given coefficients.
-        """
+        r"""Compute a surface for the given coefficients."""
         pass
 
 class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
@@ -895,7 +891,7 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
     -----------
 
     spc: StarSHSurfaceSpc
-        The underlying vector space of of SH coefficients. 
+        The underlying vector space of SH coefficients. 
     n: int
         Parameter of quadrature grid 
     coeff: np.ndarray

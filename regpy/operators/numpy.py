@@ -56,7 +56,7 @@ class MatrixMultiplication(Operator):
                 self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
                 matrix = np.asarray(matrix)
             except Exception as e:
-                raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to numpy array!")) from e
+                raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to NumPy array!")) from e
         if len(matrix.shape) != 2:
             raise ValueError(Errors.value_error(f"While initializing MatrixMultiplication the matrix has to be two-dimensional. Was given:"+"\n\t"+ f"matrix = {matrix}"+"\n\t"+ f"of shape {matrix.shape} and type {type(matrix)}"))
         
@@ -1172,7 +1172,7 @@ class PtwMatrixVectorMultiplication(Operator):
         codomain_shape = domain.shape_codomain
 
         if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
-            raise TypeError(Errors.type_error(f'To initialize a PtwMatrixVectorMultiplication the matrix functions matrixfct must be a numpy array of the same data type. Was given\n\t matrixfct = {matrixfct}\n\t and matrixfcts.dtype={matrixfct.dtype} and domain.dtype = {domain.dtype}'))
+            raise TypeError(Errors.type_error(f'To initialize a PtwMatrixVectorMultiplication the matrix functions matrixfct must be a NumPy array of the same data type. Was given\n\t matrixfct = {matrixfct}\n\t and matrixfcts.dtype={matrixfct.dtype} and domain.dtype = {domain.dtype}'))
         if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
             raise ValueError(Errors.value_error(f'Initializing a PtwMatrixVectorMultiplication: shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}'))
 
@@ -1221,7 +1221,7 @@ class PtwScalarMultiplication(Operator):
         elif multiplier in domain.scalar_space():
             self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
-            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be numpy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
         
         
         super().__init__(domain, domain, linear=True)
@@ -1265,7 +1265,7 @@ class PtwScalarDivision(Operator):
         elif divisor in domain.scalar_space():
             self.divisor = np.reshape(divisor,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
-            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be numpy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
         if np.any(self.divisor==0):
             raise ValueError(Errors.value_error('Divisor must not vanish anywhere.'))
         
@@ -1286,7 +1286,7 @@ class PtwScalarDivision(Operator):
         return True
 
 class AddSingletonVectorDimension(Operator):
-    """Operater that adds a singleton dimension as codimension in `regpy.vecsps.MeasureSpaceFcts`. 
+    """Operator that adds a singleton dimension as codimension in `regpy.vecsps.MeasureSpaceFcts`. 
     Wrapper to np.reshape(...,1).
 
     Parameters
@@ -1316,7 +1316,10 @@ class AddSingletonVectorDimension(Operator):
         return True   
 
 class ForwardFDGradient(Operator):
-    """ Forward finite difference gradient on  `regpy.vecsps.UniformGridFcts`. The codomain are is a vector-valued `regpy.vecsps.UniformGridFcts` space.
+    """Forward finite-difference gradient on ``UniformGridFcts``.
+
+    The codomain is a vector-valued
+    :class:`regpy.vecsps.UniformGridFcts` space.
     
     Parameters
     ----------
@@ -1521,7 +1524,7 @@ class OuterProduct(Operator):
 
 
 class EinSum(Operator):
-    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed numpy arrays t1...tn.
+    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed NumPy arrays t1...tn.
     Nearly all accepted subscripts are supported except ellipses and subscripts resulting in scalar values.
 
     Parameters
@@ -1531,7 +1534,7 @@ class EinSum(Operator):
     domains : regpy.vecsps.GridFcts
         The underlying vector spaces.
     tensors : tuple of numpy.ndarray
-        Tuple of constant numpy arrays.
+        Tuple of constant NumPy arrays.
     codomain : regpy.vecsps.NumPyVectorSpace, optional
         Codomain of the operator. If it is not specified it is computed based on the input data.
     """

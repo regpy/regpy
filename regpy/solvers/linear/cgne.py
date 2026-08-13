@@ -24,7 +24,7 @@ class CGNE(RegSolver):
     setting : regpy.solvers.Setting
         Regularization setting involving Hilbert space norms.
     data : array-like, optional
-        Right hand side ``g``. If omitted, the data is taken from ``setting``.
+        Right-hand side ``g``. If omitted, the data is taken from ``setting``.
     x0 : array-like, optional
         Initial iterate. Defaults to zero.
     logging_level

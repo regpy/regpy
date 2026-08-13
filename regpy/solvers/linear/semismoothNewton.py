@@ -347,7 +347,7 @@ class SemismoothNewton_nonneg(RegSolver):
         subject to x>=0
 
 
-    Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stopping rule 
+    Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stoprule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
 
     Parameters
@@ -523,7 +523,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     data: array-like, default None
-        The right hand side. If it is None the data is taken from setting.
+        The right-hand side. If it is None the data is taken from setting.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50
@@ -555,7 +555,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         else:
             self._alphas = iter(alphas)
         self.data = data
-        """Right hand side of the operator equation."""
+        """Right-hand side of the operator equation."""
         self.xref = xref
         """initial guess in Tikhonov functional."""
         if self.xref is not None:

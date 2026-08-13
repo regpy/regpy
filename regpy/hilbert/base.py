@@ -42,7 +42,7 @@ class HilbertSpace:
 
     def __init__(self, vecsp:VectorSpaceBase,as_real_space = False):
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are only defined on vector spaces defined on subsidies of the RegPy VectorSpaceBase"))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are defined only on subclasses of regpy.vecsps.VectorSpaceBase."))
         self.vecsp = vecsp
         """The underlying vector space."""
         if not isinstance(as_real_space,bool):

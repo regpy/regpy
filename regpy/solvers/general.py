@@ -90,21 +90,21 @@ class Solver:
             yield self.x, self.y
 
     def while_(self, stoprule=NoneRule()):
-        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stoprule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
-        stopping rule triggers.
+        stoprule triggers.
 
         Parameters
         ----------
         stoprule : regpy.stoprules.StopRule, optional
-            The stopping rule to be used. If omitted, stopping will only be
+            The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next`.
 
         Yields
         ------
         tuple of arrays
             The (x, y) pair of the current iteration, or the solution chosen by
-            the stopping rule.
+            the stoprule.
         """
         stoprule._complete_init_with_solver(self)
         while not stoprule.stop() and self.next(): 
@@ -114,21 +114,21 @@ class Solver:
 
 
     def until(self, stoprule=NoneRule()):
-        r"""Generator that runs the solver with the given stopping rule. This is a convenience method
+        r"""Generator that runs the solver with the given stoprule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
-        stopping rule triggers.
+        stoprule triggers.
 
         Parameters
         ----------
         stoprule : regpy.stoprules.StopRule, optional
-            The stopping rule to be used. If omitted, stopping will only be
+            The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next`.
 
         Yields
         ------
         tuple of arrays
             The (x, y) pair of the current iteration, or the solution chosen by
-            the stopping rule.
+            the stoprule.
         """
         stoprule._complete_init_with_solver(self)
         self.next()
@@ -139,7 +139,7 @@ class Solver:
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
     def run(self, stoprule=NoneRule()):
-        r"""Run the solver with the given stopping rule. 
+        r"""Run the solver with the given stoprule. 
         """
         for x, y in self.while_(stoprule):
             if not 'x' in locals(): 
@@ -203,7 +203,7 @@ class RegSolver(Solver):
 
     def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000):
         r"""
-        Run solver with Morozov's discrepancy principle as stopping rule.
+        Run solver with Morozov's discrepancy principle as stoprule.
 
         Parameters
         ----------
@@ -255,12 +255,14 @@ class Setting:
     This class is mostly a container that keeps all of this data in one place and makes sure that all initializations are 
     done correctly.
 
-    The meaning of a "solver" is quite different in the case where a regularization parameter is given and in the case where it is not given. 
-    In the first case, a solver is a minimization algorithm. In the seond case, a solver can be a wrapper applying solvers of the first kind
-    for different regularization parameter, driven by a parameter selection rule as `StopRule`.
-    Other solvers of the second kind are iterative mimimization method based 
-    on the penalty and data fidelity term such as a Newton-type (which also uase solvers of the first kind as inner iterations) or radient methods. Since iterative methods exhibit semiconvergent behavior in the presence of ill-posedness, early stopping by an appropriate `StopRule` is 
-    again essential.  
+    A setting with a regularization parameter describes a minimization problem. Solvers approximately compute minimizers, which 
+    serve as regularized solutions to the inverse problem. 
+    Settings without a regularization parameter indicate prior information through the penalty functional, but do not specify a unique estimator 
+    of the solution to the inverse problem. Solver may iterate over regularization
+    parameters under the control of a parameter-choice rule, which requires inner minimization solvers. 
+    Other iterative regularization methods such as gradient methods use the penalty functional more implicitely, e.g., via its 
+    proximal operator. Since such methods are semiconvergent for ill-posed problems, an appropriate :class:`regpy.stoprules.StopRule` is
+    essential.
 
     Parameters
     ----------
@@ -268,7 +270,8 @@ class Setting:
         The forward operator :math:`F`.
     penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The penalty functional  :math:`\mathcal{R}`.
-        If a Hilbert space is given, the squared Hilbert norm (class `regyp.functionals.SquaredNorm`) is used as penalty functional. 
+        If a Hilbert space is given, its squared norm, represented by
+        :class:`regpy.functionals.SquaredNorm`, is used as the penalty.
         If an `AbstractFunctional`, or more generally any callable is given instead of a `regpy.functionals.Functional`, it is called on the operator's domain to construct a concrete `Functional` instance.
     data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
@@ -282,9 +285,9 @@ class Setting:
         If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
         belong to op.codomain). Defaults to None
     exact_data: op.codomain | None, optional 
-        A setting may also be initialized with exact data. Once the setting is instantiated, convenience methods 
-        such add add_Gaussian_noise() or generate_Poisson_data() can be used to generate synthetic noisy data. 
-        Before this happens, exact_data will not have any effect.
+        Optional exact data used to generate synthetic noisy observations with
+        :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
+        of these methods is called, ``exact_data`` does not affect ``data``.
     logging_level: int [default: logging.INFO]
         logging level
     explicitDataWarning:bool, optional
@@ -519,7 +522,9 @@ class Setting:
         self.data = self._exact_data + noise 
 
     def generate_Poisson_data(self,expected_nr_counts=None,seed=None):
-        r""" generates Poisson data using self.codomain.poisson (which must have been provided at initialization of the setting), and sets data to this.
+        r"""Generate and store Poisson-distributed data.
+
+        Sampling is delegated to :meth:`self.op.codomain.poisson`.
         
         Parameters:
         -----------
@@ -927,7 +932,7 @@ class Setting:
         method_name: string 
             key of the method
         rule: StopRule
-            the stopping rule
+            the stoprule
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
@@ -941,7 +946,7 @@ class Setting:
             self._methods[method_name]['stoprule'] = rule.copy_and_reset()
 
     def get_stopping_rule(self,method_name):
-        """Retrieves a stopping rule that has run an optimization method 
+        """Retrieves a stoprule that has run an optimization method 
         (e.g. to view statistics or (intermediate) solutions)
         
         Parameters
@@ -971,7 +976,7 @@ class Setting:
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
         stoprule: StopRule | None 
-            stopping rule. Defualt is  DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG')
+            stoprule. Defualt is  DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG')
             If None, 
         **kwargs: dict
             Arguments to be passed to the method.

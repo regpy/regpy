@@ -72,7 +72,7 @@ class TikhonovCG(RegSolver):
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
     krylov_basis : list or None, optional 
-        Defaults to None. Otherwise, an orthonormal basies of the Krylov subspace is computed while running CG solver
+        Defaults to None. Otherwise, an orthonormal basis of the Krylov subspace is computed while running CG solver
     preconditioner : Preconditioner such that the iteration is done on 
         :math:`\Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2`
         The iterates (self.x) still solve the original equation without preconditioner.
@@ -302,7 +302,7 @@ class TikhonovCG(RegSolver):
             if setting.is_tikhonov:
                 regpar = par['regpar']
             else:
-                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the regularization parameter needs to be specified in TIkhonovCG!"))
+                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the regularization parameter needs to be specified in TikhonovCG!"))
         self.regpar = regpar
         """The regularization parameter."""
 
@@ -537,8 +537,8 @@ class TikhonovCG(RegSolver):
         return out,par
 
 class TikhonovAlphaGrid(RegSolver):
-    r"""Class runnning Tikhonov regularization on a grid of different regularization parameters.
-    This allows to choose the regularization parameter by some stopping rule. 
+    r"""Class running Tikhonov regularization on a grid of different regularization parameters.
+    This allows to choose the regularization parameter by some stoprule. 
     Tikhonov functionals are minimized by an inner CG iteration.
 
     Parameters
@@ -546,9 +546,9 @@ class TikhonovAlphaGrid(RegSolver):
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
-        The right hand side.
+        The right-hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     max_CG_iter: integer, default 1000.
         maximum number of CG iterations. 
     xref: array-like, default None
@@ -573,7 +573,7 @@ class TikhonovAlphaGrid(RegSolver):
         else:
             self._alphas = alphas
         self.data = data
-        """Right hand side of the operator equation."""
+        """Right-hand side of the operator equation."""
         self.xref = xref
         """initial guess in Tikhonov functional."""
         if self.xref is not None:
@@ -625,9 +625,9 @@ class NonstationaryIteratedTikhonov(RegSolver):
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
     data: array-like
-        The right hand side.
+        The right-hand side.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     delta = float, default None
@@ -646,7 +646,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         else:
             self._alphas = alphas
         self.data = data
-        """Right hand side of the operator equation."""
+        """Right-hand side of the operator equation."""
         self.xref = xref
         """initial guess in Tikhonov functional."""
         if self.xref is not None:
@@ -727,7 +727,7 @@ class TikhonovCGOnlyDomain(RegSolver):
     x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
     tol : float, default: None
-        The absoluted tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
+        The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is noiselevel/2*sqrt(regpar)

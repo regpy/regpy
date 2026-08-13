@@ -13,7 +13,9 @@ class MissingValueError(Exception):
 class StopRule:
     r"""Abstract base class for stopping rules.
 
-    The attributes :attr:`x` and :attr:`y` are set to the current iterate from the solver. The method :meth:`stop` then checks whether the stopping rule should trigger using the private method :meth:`_stop_`. If it does, then the attribute :attr:`triggered` is set to true and the method :meth:`stop` returns `True`. Note that a later call to :meth:`stop` will not evaluate the rule again since the attribute :attr:`triggered` is set to `True`. 
+    :meth:`stop` attaches the solver on first use and delegates the decision to
+    :meth:`_stop`. Once a rule triggers, :attr:`triggered` remains true and
+    subsequent calls return immediately without evaluating the rule again.
     """
 
     log = ClassLogger()
@@ -22,38 +24,40 @@ class StopRule:
         self.solver = None
 
         self.triggered = False
-        """Whether the stopping rule decided to stop."""
+        """Whether the stoprule decided to stop."""
         self.history_dict = {}
-        """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stopping rule."""
+        """A place to save scalars for later use/analysis. An entry of the form {"parameter_name":[]} needs to be added in the implementation of the stoprule."""
         self.is_main_rule = True
-        r"""Whether this is the main stopping rule of the solver or a sub-rule used for example in a combined rule."""
+        r"""Whether this is the main stoprule of the solver or a sub-rule used for example in a combined rule."""
         self.log.setLevel(logging_level)
 
     def _complete_init_with_solver(self,solver):
-        """Complete the initialisation of the stoprule by giving a solver. 
-        A stoprule might reimplement this if this if the _stop_method 
-        for example
-        ``` 
-        if isinstance(solver,specific_solver):
-            self._stop = _specific_stop
+        """Attach a solver and complete rule-specific initialization.
 
-        Args:
-            solver (Solver): The solver the stopping rule applies to
+        Subclasses may override this hook when their criterion needs
+        information from the concrete solver.
+
+        Parameters
+        ----------
+        solver : regpy.solvers.Solver
+            Solver to which this rule is attached.
         """
         if self.solver is not None:
             self.log.warning("the solver was already set and is now overwritten")
         self.solver = solver
 
     def copy_and_reset(self):
-        """copy stopping rule and reset to the initial state
+        """copy stoprule and reset to the initial state
         """
         rule = self.copy()
         rule.reset()
         return rule
     
     def reset(self):
-        """resets the stoprule to initial state
-        (reset needs to be re-implemented in a stoprule if more parameters need to be reset)
+        """Reset the rule to its initial state.
+
+        Subclasses that maintain additional state must override this method and
+        reset that state as well.
         """
         self.solver = None
         self.triggered = False
@@ -82,7 +86,7 @@ class StopRule:
         return should_stop
 
     def trigger(self):
-        """Force the stopping rule to trigger at the current iterate.
+        """Force the stoprule to trigger at the current iterate.
 
         This sets the :attr:`triggered` attribute to `True` and stores
         the current iterate in :attr:`x` and :attr:`y`.
@@ -92,10 +96,10 @@ class StopRule:
         self.y = self.solver.y if hasattr(self.solver,"y") else None
 
     def best_iterate(self):
-        """Return the best iterate according to this stopping rule. 
-        By default, this is the last iterate computed before the stopping rule triggered.
+        """Return the best iterate according to this stoprule. 
+        By default, this is the last iterate computed before the stoprule triggered.
 
-        However, since iterative methods for ill-posed problems typically exhibit a semi-convergent behaviour, the best iterate is not necessarily the last one computed before the stopping rule triggered. 
+        However, since iterative methods for ill-posed problems typically exhibit a semi-convergent behaviour, the best iterate is not necessarily the last one computed before the stoprule triggered. 
 
         Returns
         -------
@@ -120,10 +124,10 @@ class StopRule:
             self.x = self.solver.x
             self.y = self.solver.y if hasattr(self.solver,"y") else None
         elif not self.triggered:
-            self.log.warning("The stopping rule has not triggered yet and the solver has not converged, so no best iterate is available!")
+            self.log.warning("The stoprule has not triggered yet and the solver has not converged, so no best iterate is available!")
             return None
         if not hasattr(self,"x"):
-            raise RuntimeError(Errors.generic_message("The stopping rule did not store self.x when triggered! Please re-implement the best_iterate method of the stopping rule!"))
+            raise RuntimeError(Errors.generic_message("The stoprule did not store self.x when triggered! Please re-implement the best_iterate method of the stoprule!"))
         if not hasattr(self,"y"):
             self.y = None
         return self.x, self.y
@@ -186,7 +190,7 @@ class CombineRules(StopRule):
 
     def __init__(self, rules:list[StopRule],logging_level=None):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
-            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of stopping rules! You gave {rules} of type {type(rules)}"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
@@ -272,7 +276,7 @@ class AndCombineRules(StopRule):
 
     def __init__(self, rules:list[StopRule],logging_level = None):
         if not isinstance(rules,(list,tuple)) or any(not isinstance(rule,StopRule) for rule in rules):
-            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of StopRules! You gave {rules} of type {type(rules)}"))
+            raise TypeError(Errors.type_error(f"Combining stopping rules is only supported for a list of stopping rules! You gave {rules} of type {type(rules)}"))
         super().__init__()
         self.rules = []
         r"""List of :class:`StopRule` the combined rules.
@@ -398,7 +402,7 @@ class CountIterations(StopRule):
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
     
-######### StopRules for determining regularization parameters or for regularization by early stopping #########
+######### stopping rules for determining regularization parameters or for regularization by early stopping #########
 
 class Discrepancy(StopRule):
     r"""Morozov's discrepancy principle.
@@ -415,7 +419,7 @@ class Discrepancy(StopRule):
     setting: Setting| None, optional
         setting, default: None. In the default case, data and norm must be given.  
     data : array or None, optional
-        The right hand side (noisy data) or None (default). 
+        The right-hand side (noisy data) or None (default). 
         In the default case, setting.data is used.   
     norm : callable or None, optional
         The norm with respect to which the discrepancy should be measured or None (default).
@@ -457,7 +461,7 @@ class Discrepancy(StopRule):
         if not isinstance(noiselevel,(int,float)):  
             raise TypeError(Errors.type_error(f"The noise level in the discrepancy principle should be real scalar! Got {noiselevel}"))
         if noiselevel<=0:
-            raise ValueError(Errors.value_error(f"The noise level in the discrepancy principle needs to be bigger then zero! Got {noiselevel}"))
+            raise ValueError(Errors.value_error(f"The noise level in the discrepancy principle needs to be greater than zero! Got {noiselevel}"))
         if not isinstance(tau,(int,float)):
             raise TypeError(Errors.type_error(f"The multiplier in the discrepancy principle should be real scalar! Got {tau}."))
         if tau<=1:
@@ -708,7 +712,7 @@ class Lepskii(StopRule):
 
 
 class Oracle(StopRule):
-    r"""Oracle stopping rule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
+    r"""Oracle stoprule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
     Useful for testing purposes and monitoring when the exact solution is known.
 
 
@@ -733,7 +737,7 @@ class Oracle(StopRule):
         self.history_dict["alphas"] = []
         self.recos=[]
         if not hasattr(setting,'exact_solution') and exact_solution is None:  
-            raise ValueError(Errors.value_error('Oracle stopping rule needs the exact solution to be provided in the setting!'))
+            raise ValueError(Errors.value_error('Oracle stoprule needs the exact solution to be provided in the setting!'))
         if exact_solution is not None:
             setting.exact_solution = exact_solution
         if distance_function is None:
@@ -760,7 +764,7 @@ class Oracle(StopRule):
     def best_iterate(self):
         return self.recos[self.best_stopping_index()]
 
-########## General StopRules based on relative change of data or solution ##########
+########## General stopping rules based on relative change of data or solution ##########
 
 class RelativeChangeData(StopRule):
     r"""Stops if the relative change in the residual becomes small
@@ -886,7 +890,7 @@ class RelativeChangeSol(StopRule):
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
 
-######### StopRules for convex optimization problems #########
+######### stopping rules for convex optimization problems #########
 
 class LinearSequence:
     r"""Iterator generating a linear sequence (c,c+a,c+2a,c+3a, ....)
@@ -917,7 +921,7 @@ class OptimalityCondStopping(StopRule):
         tol : float [default=0.]
             The tolerance for the duality gap.
         logging_level : str
-            The logging level for the stopping rule.
+            The logging level for the stoprule.
     """
     def __init__(self, 
                  tol = 0., 
@@ -960,7 +964,7 @@ class DualityGapStopping(StopRule):
     tol : float [default=0.]
         The tolerance for the duality gap.
     logging_level : str
-        The logging level for the stopping rule.
+        The logging level for the stoprule.
     """    
     def __init__(self, tol = 0, stop_at_infty = True, logging_level = "INFO"):
         super().__init__()

@@ -31,7 +31,7 @@ def as_hilbert_space(h, vecsp):
     if not isinstance(h, HilbertSpace):
         raise RuntimeError(Errors.not_instance(h,HilbertSpace,add_info="The construction with the method as_hilbert_space failed to construct a Hilbert Space!"))
     if h.vecsp != vecsp:
-        raise RuntimeError(Errors.not_equal(vecsp,h.vecsp,add_info="The constructed Hilbert space with as_hilbert_space constructed a Hilbert space with diverting vector space than the method was called with!"))
+        raise RuntimeError(Errors.not_equal(vecsp,h.vecsp,add_info="as_hilbert_space returned a Hilbert space with a different underlying vector space."))
     return h
 
 

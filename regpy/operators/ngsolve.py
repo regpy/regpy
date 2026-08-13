@@ -42,13 +42,13 @@ class NgsOperator(Operator):
             vector, 
             gfu,
             definedonelements =None):
-        r"""Read in of a numpy array into a ngsolve grid function. Note You can also read into
+        r"""Read in of a NumPy array into a ngsolve grid function. Note You can also read into
         ngsolve LinearForm.
 
         Parameters
         ----------
         vector : numpy.array
-            Numpy array to be put into the `GridFunction`
+            NumPy array to be put into the `GridFunction`
         gfu : ngsolve.GridFunction or ngsolve.LinearForm
             ngsolve element to be written into.
         definedonelements : pyngcore.pyngcore.BitArray, optional
@@ -334,7 +334,7 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             Test functions for PDE
 
         Returns
-        ------
+        -------
         ngsolve.comp.SumOfIntegrals
             the formal Integration formula of the bilinear form depending on the coefficient
         """
@@ -364,7 +364,7 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         the PDE. By default this is the empty Linear form. 
 
         Returns
-        ------
+        -------
         ngsolve.Linearform
             Linear form of the PDE :math:`F` as `ngsolve.LinearForm`
         """
@@ -398,7 +398,7 @@ class SolveSystem(NgsOperator):
             use_prec : bool = True,
             **inverse_kwargs) -> None:
         if not isinstance(bf, ngs.BilinearForm):
-            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearForm!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         self.use_prec = use_prec
@@ -505,7 +505,7 @@ class BilinearForm(NgsOperator):
         domain : NgsVectorSpace, 
         bf : ngs.BilinearForm) -> None:
         if not isinstance(bf, ngs.BilinearForm):
-            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a BilinearForm operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a BilinearForm operator the bilinear form needs to be a proper ngs.BilinearForm!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         

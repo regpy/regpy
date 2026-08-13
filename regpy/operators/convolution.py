@@ -17,7 +17,7 @@ __all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","Gaussia
 ########################### padding and truncation #################################################
 
 class PaddingOperator(Operator):
-    r"""Operator that implements zero-padding for numpy arrays.
+    r"""Operator that implements zero-padding for NumPy arrays.
 
     Parameters
     ----------
@@ -518,7 +518,7 @@ class ConvolutionOperator(Composition):
         The space on which the operator is defined.
         If it real, real-valued fft will be used, otherwise complex fft   
     fourier_multiplier: (:math:`F(k)`) 
-        - Either: An numpy array, the Fourier transform of the convolution kernel.
+        - Either: An NumPy array, the Fourier transform of the convolution kernel.
           Case of scalar domain, i.e., domain.shape_codomain=(): 
             The number of dimensions should be d=len(domain.shape_domain). 
             If grid is real, the size of the last dimension is about half of that of grid corresponding to the frequency grid in rfft.
@@ -544,7 +544,7 @@ class ConvolutionOperator(Composition):
     Fourier_truncation_amount: [optional, default:None] None or integer or d-tuple of integers 
         Specifies a truncation of the Fourier domain, leading to a subsampling of the padded spatial domain.
         In particular, if Fourier_truncation_amount=0, the convolution on the full padded domain is returned. 
-    convolution_axes: [optional, default: None] None or 1d numpy array integer of integers 
+    convolution_axes: [optional, default: None] None or 1d NumPy array integer of integers 
         Specifies a subset of the axes of grid along which convolution is performed. 
         If None, np.arange(grid.ndim_domain) is used, i.e. convolution is performed w.r.t. to all domain axes.
     kernel_matrix_shape: [optional, default: None] None or pair of positive integers
@@ -621,7 +621,7 @@ class ConvolutionOperator(Composition):
         self.stackaxes = np.asarray(
             sorted(set(range(stack_ndim)) - set(self.convolution_axes.tolist())),dtype=int)
         if not callable(fourier_multiplier) and not isinstance(fourier_multiplier,np.ndarray):
-            raise TypeError(Errors.type_error('fourier_multiplier must be callable or a numpy array'))
+            raise TypeError(Errors.type_error('fourier_multiplier must be callable or a NumPy array'))
 
         def normalize_amount(amount,name,allow_negative=False,none_allowed=False):
             if amount is None:
@@ -1441,7 +1441,7 @@ def GaussianBlur(grid,sigma=1.,pad_amount=0,pad_value=0.,
         See Convolution Operator.
     """
     if not np.isscalar(sigma):
-        raise TypeError(Errors.type_error("To define a Gaussian blur the width of the gaussian kernel has to be a scalar!"))
+        raise TypeError(Errors.type_error("To define a Gaussian blur the width of the Gaussian kernel has to be a scalar!"))
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
     return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))

@@ -186,7 +186,7 @@ class TupleVector:
                 for k_i,item_i in zip(key,item.v):
                     self.v[k_i] = item_i
             else:
-                raise TypeError(Errors.type_error(f"If keys are lists or tuples of length smaller then the length of the Vector  the items can be list or TupleVectors of length same length. Got key list of length {len(key)} and item of length {len(item)}"))
+                raise TypeError(Errors.type_error(f"If keys are lists or tuples of length smaller than the length of the Vector  the items can be list or TupleVectors of length same length. Got key list of length {len(key)} and item of length {len(item)}"))
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim): 
             if (isinstance(item,TupleVector) and item.ndim == key.ndim):
                 for v_i,k_i,item_i in zip(self.v,key,item):
@@ -212,44 +212,45 @@ class TupleVector:
     
     def component_wise(self,method):
         if not callable(method):
-            raise TypeError(Errors.type_error(f"To apply a method component wise to a TupleVector the method has to be a callable. {method} is not callable"))
+            raise TypeError(Errors.type_error(f"To apply a method componentwise to a TupleVector the method has to be a callable. {method} is not callable"))
         return TupleVector([method(s_k) for s_k in self])
 
 class VectorSpaceBase:
-    r"""Discrete space :math:`\mathbb{R}^\text{shape}` or :math:`\mathbb{C}^\text{shape}` (viewed as a real
-    space) without any additional structure.
+    r"""Base class for vector representations and their storage operations.
 
-    VectorSpaceBases can be added, producing `DirectSum` instances.
+    Vectors themselves are duck typed. Generic RegPy code may rely only on
+    linear operations: addition, subtraction, scalar multiplication and
+    division, unary negation, and their in-place variants. It must not assume
+    that a vector is a NumPy array, exposes ``shape`` or ``dtype``, supports
+    indexing or componentwise comparisons, or provides a ``copy`` method.
 
-    The type if given can be used to implement the methods with the same name
-    given each can deal with the following input the following methods:
+    A concrete ``VectorSpaceBase`` connects those vectors to operations that
+    cannot be expressed purely through linear algebra. In particular, it must
+    recognize its elements via :meth:`__contains__` and provide appropriate
+    allocation and copying operations. Generic code that needs an independent
+    copy should allocate it with :meth:`empty` and populate it with
+    :meth:`copyto`.
 
-     - zeros(shape : tuple)
-     - ones(shape : tuple)
-     - empty(shape : tuple)
-     - rand(shape : tuple,random_generator : method)
-     - poisson(x : Vector of the Space)
-     - vdot(x : Vector of the Space, y : Vector of the Space)
-     - copyto(x : Vector of the Space, y : Vector of the Space)
-     - logical_and(x : boolean Vector of the Space, y : boolean Vector of the Space)
-     - logical_or(x : boolean Vector of the Space, y : boolean Vector of the Space)
-     - logical_not(x : boolean Vector of the Space)
-     - logical_xor(x : boolean Vector of the Space, y : boolean Vector of the Space)
-     
-    for convenience these methods will be linked by the same name in this
-    class.
+    Subclasses may override the methods directly. Alternatively, ``type`` may
+    be an adapter object that supplies methods such as ``zeros``, ``ones``,
+    ``empty``, ``vdot``, ``copyto``, and the logical operations. Specialized
+    vector spaces may expose further capabilities such as indexing, masking,
+    flattening, or pointwise operations; algorithms using those capabilities
+    should explicitly restrict their accepted vector spaces.
+
+    Vector spaces can be added to construct :class:`DirectSum` instances.
 
     Parameters
     ----------
     vec_type : object
-        The class of vectors used.
+        Class used to recognize vectors belonging to this space.
     shape : tuple(int) or int
         The general shape of the vectors.
     complex : boolean, optional
-        Determines if the vectors have complex coefficients. Default, False.
+        Whether vectors have complex coefficients. Defaults to ``False``.
     type : {None,object}, optional
-        A class, module or library that the vec_type belongs to and implements the 
-        above methods. Default, None.
+        Optional adapter implementing storage operations for ``vec_type``.
+        Defaults to ``None``.
     """
 
     log = ClassLogger()
@@ -305,32 +306,29 @@ class VectorSpaceBase:
         set_rng_seed(seed)
     
     def _draw_sample(self, distribution : str , size = None, seed=None,**kwargs):
-        """Draws samples of the shape of the space from the given distribution. The distribution
-        has to be given as a string representing a method associated with a distribution of
-        the NumPy Generator.
+        """Draw samples from a NumPy random-generator distribution.
 
         Parameters
         ----------
         distribution : str
-            Name of the distribution to be used.
+            Name of a method on :class:`numpy.random.Generator`.
         size : None | int | tuple(int), optional
-            The size/shape that is passed to the distribution. Default: self.realsize
+            Sample size passed to the distribution. Defaults to
+            :attr:`realsize`.
         kwargs : dict
-            These keyword arguments are passed to the distribution sampler. Note that we have
-            `size = ` as an extra argument so it will be always handled.
+            Additional arguments passed to the distribution method.
 
         Returns
         -------
         ndarray or scalar
-            A numpy array or scalar by default of the realsize of the space. Which can by 
-            the `fromflat` method be directly transformed into a vector of the space.
+            Samples that :meth:`fromflat` can convert into a vector.
         """
         if size is None:
             size = self.realsize
         elif isinstance(size,int) and size != self.realsize:
             self.log.debug(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
         elif isinstance(size,tuple) and np.prod(size) != self.realsize:
-            self.log.debug(f"You are sampling on a size specified as an tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
+            self.log.debug(f"You are sampling on a size specified as a tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
         if seed is not None:
             set_rng_seed(seed)
         try:
@@ -342,11 +340,13 @@ class VectorSpaceBase:
             raise TypeError(Errors.type_error(f"The chosen distribution {distribution} might not have an argument size or one of your additional keyword arguments is unknown. Please, only use distributions listed in NumPy that have specified a size Argument."))
 
     def rand(self, distribution = "uniform", **kwargs):
-        """Return a random vector of the vector space. Note, this might not correspond to a
-        random element seen in the Hilbert space. For that we refer to the random sampling in Hilbert 
-        spaces.
+        """Return a randomly sampled vector.
 
-        For complex vectors it generates, real and imaginary parts are generated independently.
+        This distribution is defined by the vector-space representation and
+        need not correspond to a canonical distribution for an associated
+        Hilbert space.
+
+        For complex vectors, real and imaginary parts are sampled independently.
 
         The distribution for sampling the random numbers can be specified as a string and is then 
         used by the `draw_sample` function and the on initiation created Generator to draw samples.
@@ -361,18 +361,18 @@ class VectorSpaceBase:
         Returns
         -------
         array_like
-            A vector in the space. The vector is created as a flat numpy array and then cast to the actual 
+            A vector in the space. The vector is created as a flat NumPy array and then cast to the actual 
             vector and type by the `fromflat` method
         """
         return self.fromflat(self._draw_sample(distribution=distribution))
     
     def poisson(self, x,**kwargs):
-        """Return a poisson distributed vector given the distribution x.
+        """Return a Poisson-distributed vector with rate ``x``.
 
         Parameters
         ----------
         x : self.vec_type
-            The lambda to be used.
+            Poisson rate vector.
         """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
@@ -383,8 +383,9 @@ class VectorSpaceBase:
         return self.rand(distribution="standard_normal", **kwargs)
     
     def vdot(self,x,y):
-        r"""Return the vector dot product as defined for these vectors. 
-        For complex vector it is supposed that the second vector is conjugated.
+        r"""Return the vector dot product defined by this space.
+
+        For complex vectors, the second argument is conjugated.
 
         Parameters
         ----------
@@ -413,8 +414,9 @@ class VectorSpaceBase:
         ----------
         x : self.vec_type
             Destination vector.
-        y : array-like
-            Source vector whose values are copied into ``x``.
+        y : self.vec_type
+            Source vector whose values are copied into ``x``. Generic callers
+            should use this method instead of invoking ``y.copy()``.
 
         """
         if x is y:
