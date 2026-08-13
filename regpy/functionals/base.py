@@ -1054,11 +1054,15 @@ class LinearFunctional(Functional):
 
     @property
     def gradient(self):
-        return self._gradient.copy()
+        gradient = self.domain.empty()
+        self.domain.copyto(gradient, self._gradient)
+        return gradient
 
     def _subgradient(self, x, out=None, **subgradient_par):
         if out is None:
-            return self._gradient.copy()
+            gradient = self.domain.empty()
+            self.domain.copyto(gradient, self._gradient)
+            return gradient
         self.domain.copyto(out, self._gradient)
         return out
 
@@ -1078,7 +1082,7 @@ class LinearFunctional(Functional):
         raise NotInEssentialDomainError('LinearFunctional.conj')
 
     def _conj_dist_subdiff(self,v,xstar):
-        if xstar == self.gradient:
+        if self.domain.norm(xstar - self._gradient) == 0:
             return 0.
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')          
@@ -1092,7 +1096,9 @@ class LinearFunctional(Functional):
 
     def _conj_proximal(self, xstar, tau, out=None, **proximal_par):
         if out is None:
-            return self._gradient.copy()
+            gradient = self.domain.empty()
+            self.domain.copyto(gradient, self._gradient)
+            return gradient
         self.domain.copyto(out, self._gradient)
         return out
 
@@ -1551,7 +1557,11 @@ class LinearCombination(Functional):
         return y, grad
 
     def _subgradient(self, x, out=None, **subgradient_par):
-        source = x.copy() if out is x else x
+        if out is x:
+            source = self.domain.empty()
+            self.domain.copyto(source, x)
+        else:
+            source = x
         grad = self.funcs[0].subgradient(source, out=out, **subgradient_par)
         grad *= self.coeffs[0]
         for coeff, func in zip(self.coeffs[1:], self.funcs[1:]):
@@ -1722,14 +1732,16 @@ class LinearCombination(Functional):
         _conj_dom_l = None
         if self.is_separable:
             if self.linear_table.count(False)==0:
-                _conj_dom_l = self.grad_sum.copy()
+                _conj_dom_l = self.domain.empty()
+                self.domain.copyto(_conj_dom_l, self.grad_sum)
             elif len(self.funcs) == 1:
                 if self.coeffs[0]>=0:
                     _conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
                 if self.coeffs[j] >=0:
-                    _conj_dom_l = self.grad_sum.copy()
+                    _conj_dom_l = self.domain.empty()
+                    self.domain.copyto(_conj_dom_l, self.grad_sum)
                     _conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] 
         return _conj_dom_l
     
@@ -1738,14 +1750,16 @@ class LinearCombination(Functional):
         _conj_dom_u = None
         if self.is_separable:
             if self.linear_table.count(False)==0:
-                _conj_dom_u = self.grad_sum.copy()
+                _conj_dom_u = self.domain.empty()
+                self.domain.copyto(_conj_dom_u, self.grad_sum)
             elif len(self.funcs) == 1:
                 if self.coeffs[0]>=0:
                     _conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
             elif self.linear_table.count(False)==1:
                 j = self.linear_table.index(False)
                 if self.coeffs[j] >=0:
-                    _conj_dom_u = self.grad_sum.copy()
+                    _conj_dom_u = self.domain.empty()
+                    self.domain.copyto(_conj_dom_u, self.grad_sum)
                     _conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j]
         return _conj_dom_u
 

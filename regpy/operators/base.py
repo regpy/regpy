@@ -409,7 +409,9 @@ class Operator:
             ))
         self._detect_loop[0] = True
         if out is x:
-            x = x.copy()
+            source = self.domain.empty()
+            self.domain.copyto(source, x)
+            x = source
         self.codomain.copyto(out, self._eval(x, **kwargs))
         return out
 
@@ -446,7 +448,9 @@ class Operator:
             ))
         self._detect_loop[1] = True
         if out is x:
-            x = x.copy()
+            source = self.domain.empty()
+            self.domain.copyto(source, x)
+            x = source
         self.codomain.copyto(out, self._derivative(x, **kwargs))
         return out
 
@@ -468,7 +472,9 @@ class Operator:
             ))
         self._detect_loop[2] = True
         if out is y:
-            y = y.copy()
+            source = self.codomain.empty()
+            self.codomain.copyto(source, y)
+            y = source
         self.domain.copyto(out, self._adjoint(y, **kwargs))
         return out
 
@@ -492,7 +498,9 @@ class Operator:
         self.log.debug(f"adjdata: {self._detect_loop}")
         self._detect_loop[3] = True
         if out is data:
-            data = data.copy()
+            source = self.codomain.empty()
+            self.codomain.copyto(source, data)
+            data = source
         self.domain.copyto(out, self._adjoint_data(data, **kwargs))
         return out
         
@@ -549,7 +557,9 @@ class Operator:
         else:
             self._detect_loop[4] = True
             if out is x:
-                x = x.copy()
+                source = self.domain.empty()
+                self.domain.copyto(source, x)
+                x = source
             self.domain.copyto(out, self._adjoint_eval(x, **kwargs))        
             return out
             
@@ -584,7 +594,9 @@ class Operator:
         else:
             self._detect_loop[5] = True
             if out is x:
-                x = x.copy()            
+                source = self.domain.empty()
+                self.domain.copyto(source, x)
+                x = source
             self.domain.copyto(out, self._adjoint_derivative(x, **kwargs))
             return out
 
@@ -1288,7 +1300,9 @@ class LinearCombination(Operator):
 
     def _iadjoint(self, y, out, **kwargs):
         if y is out:
-            y = y.copy()
+            source = self.codomain.empty()
+            self.codomain.copyto(source, y)
+            y = source
         if self.linear:
             ops = self.ops
         else:
@@ -1299,7 +1313,9 @@ class LinearCombination(Operator):
        
     def _iadjoint_data(self, x, out, **kwargs):
         if x is out:
-            x = x.copy()
+            source = self.codomain.empty()
+            self.codomain.copyto(source, x)
+            x = source
         for coeff, op in zip(self.coeffs, self.ops):
             out += coeff.conj() * op.adjoint_data(x,**kwargs)
         return out
@@ -2031,7 +2047,8 @@ class CoordinateProjection(Operator):
         return y
     
     def _adjoint_eval(self, x):
-        y = x.copy()
+        y = self.domain.empty()
+        self.domain.copyto(y, x)
         y[~self.mask] = 0
         return y
 
@@ -2158,7 +2175,8 @@ class PtwMultiplication(Operator):
                 space_name="domain",
                 add_info="For a PtwMultiplication the factor has to be in the domain."
             ))
-        self.factor = factor.copy()
+        self.factor = domain.empty()
+        domain.copyto(self.factor, factor)
         super().__init__(domain, domain, linear=True)
 
     def _eval(self, x):
@@ -2252,7 +2270,8 @@ class OuterShift(Operator):
             offset = offset + op.offset
             op = op.op
         self.op = op
-        self.offset = offset.copy()
+        self.offset = op.codomain.empty()
+        op.codomain.copyto(self.offset, offset)
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
         if differentiate:
@@ -2312,7 +2331,8 @@ class InnerShift(Operator):
             offset = offset + op.offset
             op = op.op
         self.op = op
-        self.offset = offset.copy()
+        self.offset = op.domain.empty()
+        op.domain.copyto(self.offset, offset)
 
     def _ieval(self, x, out, differentiate=False, **kwargs):
         if differentiate:
@@ -3145,7 +3165,8 @@ class ApproximateHessian(Operator):
         self.gradx = func.gradient(x)
         """The gradient at `x`"""
         self.func = func
-        self.x = x.copy()
+        self.x = func.domain.empty()
+        func.domain.copyto(self.x, x)
         self.stepsize = stepsize
         # linear=True is a necessary lie
         super().__init__(func.domain, func.domain, linear=True)

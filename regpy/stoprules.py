@@ -10,6 +10,12 @@ __all__ = ["CountIterations","Discrepancy","RelativeChangeData","RelativeChangeS
 class MissingValueError(Exception):
     pass
 
+
+def _copy_vector(space, vector):
+    result = space.empty()
+    space.copyto(result, vector)
+    return result
+
 class StopRule:
     r"""Abstract base class for stopping rules.
 
@@ -552,7 +558,7 @@ class LCurve(StopRule):
         self.history_dict["residual"].append(norm_res)
         self.history_dict["norm"].append(norm_x)     
         self.history_dict["alphas"].append(self.setting.regpar)
-        self.recos.append(self.solver.x.copy())
+        self.recos.append(_copy_vector(self.solver.op.domain, self.solver.x))
         self.log_info = 'res {:.3e},norm {:.3e}'.format(norm_res,norm_x)
         return self.it >= self.max_iter
    
@@ -620,7 +626,7 @@ class QuasiOpt(StopRule):
             norm_diff = 0
         self.history_dict["norm_diff"].append(norm_diff)
         self.history_dict["alphas"].append(self.solver.setting.regpar)
-        self.recos.append(self.solver.x.copy())
+        self.recos.append(_copy_vector(self.solver.op.domain, self.solver.x))
         self.log_info = 'norm_diff {:.3e}'.format(norm_diff)
         return self.it >= self.max_iter
     
@@ -679,7 +685,7 @@ class Lepskii(StopRule):
             if self.solver.x is None:
                 raise MissingValueError
             self.history_dict["alphas"].append(self.solver.setting.regpar)
-            self.recos.append(self.solver.x.copy())
+            self.recos.append(_copy_vector(self.solver.op.domain, self.solver.x))
             self.log_info = 'iter {:d}, alpha {:.3e}'. format(self.it, self.solver.setting.regpar)
             return self.it > self.max_iter
         
@@ -750,7 +756,7 @@ class Oracle(StopRule):
         error = self.dist(self.solver.x)
         self.history_dict["error"].append(error)
         self.history_dict["alphas"].append(self.solver.setting.regpar)
-        self.recos.append(self.solver.x.copy())
+        self.recos.append(_copy_vector(self.solver.op.domain, self.solver.x))
         self.log_info = 'error {:.3e}'.format(error)
         return False
 
@@ -810,14 +816,14 @@ class RelativeChangeData(StopRule):
         if self.solver.y is None:
             raise MissingValueError
         if self.data_old is None:   
-            self.data_old = self.solver.y.copy()
+            self.data_old = _copy_vector(self.solver.op.codomain, self.solver.y)
             self.log_info = 'First iteration, no change computed.'
             if self.is_main_rule:
                 self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.y - self.data_old)
         ref = max([self.norm(self.solver.y),self.norm(self.data_old)])
-        self.data_old = self.solver.y.copy()
+        self.data_old = _copy_vector(self.solver.op.codomain, self.solver.y)
         self.history_dict["relative change of y"].append(change/ref)
         self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol*ref)
         triggered =  change < self.tol*ref
@@ -871,14 +877,14 @@ class RelativeChangeSol(StopRule):
 
     def _stop(self,):
         if self.sol_old is None:   
-            self.sol_old = self.solver.x.copy()
+            self.sol_old = _copy_vector(self.solver.op.domain, self.solver.x)
             self.log_info = 'First iteration, no change computed.'
             if self.is_main_rule:
                 self.log.debug(self.log_info)
             return False
         change = self.norm(self.solver.x - self.sol_old)
         ref = max([self.norm(self.solver.x),self.norm(self.sol_old)])
-        self.sol_old = self.solver.x.copy()
+        self.sol_old = _copy_vector(self.solver.op.domain, self.solver.x)
         self.history_dict["relative change of x"].append(change/ref)
         self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol*ref)
         triggered = change < self.tol*ref
