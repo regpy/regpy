@@ -211,6 +211,83 @@ For the example above, the inverse Fourier transform defines the adjoint:
     def _adjoint(self, y):
         return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(y), norm='ortho'))
 
+.. _in_place_variants:
+
+Allocating and in-place implementations
+---------------------------------------
+
+Each fundamental operator action has an allocating and an in-place variant:
+
+* ``_eval(x, ...)`` and ``_ieval(x, out, ...)`` evaluate the operator;
+* ``_derivative(h, ...)`` and ``_iderivative(h, out, ...)`` apply the
+  derivative at the current linearization point;
+* ``_adjoint(y, ...)`` and ``_iadjoint(y, out, ...)`` apply the corresponding
+  adjoint.
+
+The leading ``i`` means that the result is written into the supplied ``out``
+vector. These are private implementation methods; callers continue to use the
+public operator interface and pass an output buffer with the ``out`` keyword:
+
+.. code-block:: python
+
+    y = op.codomain.empty()
+    op(x, out=y)
+
+    x_adjoint = op.domain.empty()
+    op.adjoint(y, out=x_adjoint)
+
+For a nonlinear operator, the derivative returned by ``linearize`` has the
+same public interface:
+
+.. code-block:: python
+
+    value, derivative = op.linearize(x)
+
+    derivative_value = op.codomain.empty()
+    derivative(h, out=derivative_value)
+
+    adjoint_value = op.domain.empty()
+    derivative.adjoint(y, out=adjoint_value)
+
+An operator normally implements only one method from each allocating/in-place
+pair. The base class derives the other variant automatically. If only the
+in-place method is implemented, the allocating variant creates a vector in the
+appropriate output space and passes it as ``out``. If only the allocating
+method is implemented, the default in-place variant evaluates it and transfers
+the result into ``out`` using the output vector space's ``copyto`` method.
+
+Implementing an in-place variant is useful when an algorithm can write directly
+to existing storage and thereby avoid an allocation or an additional copy. Its
+contract is:
+
+* ``out`` belongs to the method's output space: the codomain for ``_ieval`` and
+  ``_iderivative``, and the domain for ``_iadjoint``;
+* the method completely overwrites ``out`` and does not rely on its previous
+  contents;
+* it returns the exact same object supplied as ``out``.
+
+Whenever the domain and codomain are compatible, callers may supply the input
+itself as the output buffer. An implementation must therefore also be safe when
+``out is x`` or ``out is y``. If the underlying algorithm cannot naturally
+handle this aliasing, preserve the input through its vector space before
+overwriting ``out``:
+
+.. code-block:: python
+
+    def _ieval(self, x, out):
+        if out is x:
+            source = self.domain.empty()
+            self.domain.copyto(source, x)
+            x = source
+        evaluate_into(x, out)
+        return out
+
+This example uses only representation-independent storage operations. A
+specialized NumPy operator may instead use array assignment, while an NGSolve
+operator may use the corresponding NGSolve storage interface.
+
+Cached linearization data must remain valid if the caller subsequently reuses
+or modifies ``x`` or ``out``. 
 
 Defining the class
 ------------------

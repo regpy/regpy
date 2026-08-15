@@ -1,5 +1,5 @@
-Space structures
-================
+Spaces
+======
 
 Vectors and vector spaces
 -------------------------
@@ -26,7 +26,8 @@ such capabilities should state and validate the corresponding restriction.
 All vector spaces are interpreted as spaces over the real numbers, including
 spaces whose vectors have complex coefficients. This convention determines the
 real dimension and the standard inner product used to define operator
-adjoints.
+adjoints, subgradients, Hessians, and conjugate functionals. See
+:doc:`Functionals` for the corresponding dual-pairing convention.
 
 Hilbert spaces
 --------------
@@ -42,27 +43,18 @@ where the pairing on the right is supplied by the underlying vector space.
 This separates the vector representation from the geometry used by an inverse
 problem or optimization method.
 
-Functionals
------------
+Abstract Hilbert spaces
+-----------------------
 
-A :class:`regpy.functionals.Functional` maps vectors to extended real values.
-Examples include norms, data-fidelity terms, and regularization penalties.
-Functionals thus add optimization-related structure independently of the
-storage representation of vectors.
-
-Abstract spaces and functionals
--------------------------------
-
-RegPy provides abstract Hilbert spaces and functionals that select a concrete
-implementation for a given vector-space class. For example:
+RegPy provides abstract Hilbert spaces that select a concrete implementation
+for a given vector-space class. For example:
 
 .. code-block:: python
 
    from regpy.hilbert import H1
    h1_on_my_space = H1(my_domain)
 
-   from regpy.functionals import TV
-   tv_on_my_space = TV(my_domain)
-
 This dispatch mechanism makes algorithms reusable across compatible vector
 representations while allowing specialized implementations where necessary.
+The analogous mechanism for abstract functionals is described in
+:doc:`Functionals`.
