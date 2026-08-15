@@ -159,9 +159,7 @@ Hilbert-space adjoint is obtained by
 
    T^*_{X,Y}=G_X^{-1}T'G_Y,
 
-where :math:`T'` is the standard RegPy adjoint. Keeping this conversion outside
-the operator makes the same operator implementation reusable with different
-Hilbert-space geometries.
+where :math:`T'` is the standard RegPy adjoint. 
 
 The method ``space.dual_space()`` returns the Hilbert structure on the same
 underlying vector space for which the roles of ``gram`` and ``gram_inv`` are

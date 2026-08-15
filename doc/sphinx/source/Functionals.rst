@@ -135,9 +135,7 @@ Having these constants attached to the functional is useful when it is passed
 to a convex optimization method. Solvers can select admissible step sizes,
 activate accelerated or strongly convex variants, estimate convergence rates,
 and assess conditioning without requiring the caller to supply the same
-geometric information separately. The flags ``functional.is_convex``,
-``functional.is_linear``, and ``functional.is_quadratic`` provide additional
-structural information.
+geometric information separately. 
 
 Abstract functionals
 --------------------
