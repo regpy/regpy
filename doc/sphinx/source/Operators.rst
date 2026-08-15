@@ -20,7 +20,7 @@ A linear operator :math:`T\colon \mathbb{X}\to\mathbb{Y}` can be represented
 by a matrix :math:`\underline{T}\in\mathbb{R}^{M\times N}`. Forming this
 matrix may be inefficient or impossible, whereas applying it to a vector is
 often feasible. RegPy represents this action through ``_eval`` and the action
-of the transpose through ``_adjoint``.
+of the standard vector-space adjoint through ``_adjoint``.
 
 Equivalently, ``_adjoint`` represents the dual operator
 :math:`T'\colon\mathbb{Y}'\to\mathbb{X}'` after identifying each space with
@@ -28,6 +28,9 @@ its dual through the standard real pairing:
 
 .. math::
     \langle u,v\rangle = \operatorname{Re}(\operatorname{vdot}(u,v)).
+
+The same real-pairing convention is used throughout RegPy, including for
+functionals.
 
 Thus ``_eval`` and ``_adjoint`` must satisfy
 
@@ -47,7 +50,10 @@ structures. If their inner products are represented by the Gram matrices
 Hilbert-space adjoint is
 
 .. math::
-    T^{\ast} = G_{\mathbb{X}}^{-1} T^{\top} G_{\mathbb{Y}}.
+    T^{\ast} = G_{\mathbb{X}}^{-1} T' G_{\mathbb{Y}},
+
+where :math:`T'` denotes the adjoint with respect to the standard
+vector-space pairings.
 
 This decomposition motivates RegPy's design: an operator adjoint is defined
 with respect to the standard pairings supplied by its vector spaces. Additional
@@ -133,8 +139,9 @@ The evaluation method
 ---------------------
 
 For a linear operator, ``_eval`` receives a single vector ``x``. Users invoke
-the public interface as ``op(x)``; :class:`Operator` checks that ``x`` belongs
-to the domain and that the returned vector belongs to the codomain. An
+the public interface as ``op(x)``; :class:`regpy.operators.Operator` checks
+that ``x`` belongs to the domain and that the returned vector belongs to the
+codomain. An
 implementation of ``_eval`` may therefore assume a valid input, but it must
 return a freely modifiable codomain vector.
 
@@ -156,8 +163,43 @@ The ``_adjoint`` method follows the same convention. Users call
 and validates the result against the domain. The adjoint is always taken with
 respect to the standard real pairings of the two vector spaces.
 
-Use :func:`regpy.util.operator_tests.test_adjoint` to test this identity
-numerically.
+As mentioned above, RegPy defines adjoints with respect to the standard real
+pairing. For vectors with complex coefficients, this pairing is
+
+.. math::
+    \langle x,y\rangle_{\mathbb{R}}
+    = \operatorname{Re}(x^*y).
+
+If ``_eval`` is represented by a matrix :math:`\underline{T}`, the following
+cases are useful:
+
+* If the domain and codomain have real coefficients, ``_adjoint`` implements
+  :math:`y\mapsto \underline{T}^{\top}y`.
+* If the domain and codomain have complex coefficients and ``_eval`` is
+  complex-linear, ``_adjoint`` implements
+  :math:`y\mapsto \underline{T}^{*}y`.
+* If the domain has real coefficients, the codomain has complex coefficients,
+  and ``_eval`` implements :math:`x\mapsto \underline{T}x`, then ``_adjoint``
+  implements :math:`y\mapsto \operatorname{Re}(\underline{T}^{*}y)`.
+* If the domain has complex coefficients, the codomain has real coefficients,
+  and ``_eval`` implements
+  :math:`x\mapsto \operatorname{Re}(\underline{T}x)`, then ``_adjoint``
+  implements :math:`y\mapsto \underline{T}^{*}y`.
+
+We recommend checking every new ``_adjoint`` implementation with
+:func:`regpy.util.operator_tests.test_adjoint`.
+
+For complex coefficient spaces, let :math:`\underline{T}` be the complex
+matrix of a complex-linear operator and let :math:`G_{\mathbb{X}}` and
+:math:`G_{\mathbb{Y}}` be Hermitian positive-definite Gram matrices. The
+Hilbert-space adjoint is then represented by
+
+.. math::
+    T_{\mathbb{X},\mathbb{Y}}^{\ast}
+    = G_{\mathbb{X}}^{-1}\underline{T}^{*}G_{\mathbb{Y}}.
+
+This is consistent with the usual complex Hilbert-space adjoint and with
+RegPy's real-pairing convention.
 
 Example
 ^^^^^^^
@@ -180,7 +222,7 @@ A custom linear operator typically has the following structure:
     from regpy.operators import Operator
 
     class MyOperator(Operator):
-        def __init__(self, par_1, par_2, ...):
+        def __init__(self, par_1, par_2):
             # Compute the domain and codomain here if they are not parameters.
             super().__init__(
                 domain=my_domain,
@@ -241,7 +283,7 @@ Nonlinear operators
 ~~~~~~~~~~~~~~~~~~~
 
 Nonlinear operators also define a domain, a codomain, and an ``_eval`` method.
-Regularization methods for inverse problems usually also need the Fréchet derivative
+Regularization methods for inverse problems usually also need the FrÃ©chet derivative
 :math:`F'[x]` and its adjoint.
 
 RegPy deliberately couples a derivative to the evaluation at its linearization
@@ -315,7 +357,7 @@ When RegPy calls ``op.linearize(x)``, the following steps occur:
     y, derivative = my_op.linearize(x)
 
 For operators whose codomain vectors are too expensive to construct,
-``linearize(x, return_adjoint_eval=True)`` may return :math:`F'[x]^*F(x)` in
+``linearize(x, return_adjoint_eval=True)`` returns :math:`F'[x]^*F(x)` in
 place of :math:`F(x)`. The second return value is still the derivative.
 
 Thus a typical implementation would look like this:
@@ -325,7 +367,7 @@ Thus a typical implementation would look like this:
     from regpy.operators import Operator
 
     class MyOperator(Operator):
-        def __init__(self, par_1, par_2, ...):
+        def __init__(self, par_1, par_2):
             # Compute the domain and codomain here if they are not parameters.
             super().__init__(
                 domain=my_domain,
@@ -490,7 +532,7 @@ specify the required bilinear and linear forms. See the
 .. _Adjoint_Derivative:
 
 Combined adjoint and derivative
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Some operators admit a more efficient implementation of
 :math:`F'[x]^*F'[x]` than separate derivative and adjoint applications. This is
