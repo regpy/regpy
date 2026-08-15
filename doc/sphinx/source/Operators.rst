@@ -308,8 +308,8 @@ Implement the following methods:
 
 These private methods are called through ``op(x)``, ``op.linearize(x)``, and the
 linear operator returned by ``linearize``; users should not invoke them
-directly. In-place variants may be implemented instead, as described by the
-:class:`regpy.operators.Operator` API.
+directly. The corresponding in-place methods are described in
++:ref:`in_place_variants`
 
 .. _eval_nonlinear:
 
