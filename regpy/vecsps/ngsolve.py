@@ -483,6 +483,21 @@ class NgsVectorSpace(VectorSpaceBase):
             x.vec = x.vec.Evaluate()
             x.is_dynamic = False
         x.vec.data = y.vec
+
+    def fill(self, x, value) -> None:
+        r"""Fill an existing :class:`NgsBaseVector` with ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NgsVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.FV().NumPy().fill(value)
     
     def complex_space(self):
         """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
