@@ -1,14 +1,58 @@
+from __future__ import annotations
+
 from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
-from typing import List, overload
+from typing import Iterator, List, Protocol
+
+from typing_extensions import Self
 
 
 import numpy as np
 
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
-__all__ = ["TupleVector", "VectorSpaceBase", "DirectSum"]
+__all__ = ["Vector", "TupleVector", "VectorSpaceBase", "DirectSum"]
+
+
+Scalar = int | float | complex | np.number
+
+
+class Vector(Protocol):
+    r"""Structural type for vectors accepted by generic RegPy code.
+
+    A vector supports only the linear operations documented by
+    :class:`VectorSpaceBase`.  Allocation, copying, scalar products and other
+    representation-dependent operations belong to the vector space instead.
+
+    Vectors are duck-typed. This class is only used for typing and for clarity,
+    but does not influence the behavior of the code. In particular, vector classes used 
+    in RegPy do not need to inherit from it. 
+    """
+
+    def __add__(self, other: Self, /) -> Self: ...
+
+    def __radd__(self, other: Self, /) -> Self: ...
+
+    def __iadd__(self, other: Self, /) -> Self: ...
+
+    def __sub__(self, other: Self, /) -> Self: ...
+
+    def __rsub__(self, other: Self, /) -> Self: ...
+
+    def __isub__(self, other: Self, /) -> Self: ...
+
+    def __mul__(self, scalar: Scalar, /) -> Self: ...
+
+    def __rmul__(self, scalar: Scalar, /) -> Self: ...
+
+    def __imul__(self, scalar: Scalar, /) -> Self: ...
+
+    def __truediv__(self, scalar: Scalar, /) -> Self: ...
+
+    def __itruediv__(self, scalar: Scalar, /) -> Self: ...
+
+    def __neg__(self) -> Self: ...
 
 @dataclass 
 class TupleVector:
@@ -281,21 +325,21 @@ class VectorSpaceBase:
                 setattr(result, k, deepcopy(v, memo))
         return result
 
-    def zeros(self):
+    def zeros(self) -> Vector:
         """Return the zero vector of the space.
         """
         if self.type is None:
             raise NotImplementedError
         return self.type.zeros(shape = self.shape)
     
-    def ones(self):
+    def ones(self) -> Vector:
         """Return a vector of the space containing all ones.
         """
         if self.type is None:
             raise NotImplementedError
         return self.type.ones(shape = self.shape)
 
-    def empty(self):
+    def empty(self) -> Vector:
         """Return an uninitialized element of the space.
         """
         if self.type is None:
@@ -339,7 +383,7 @@ class VectorSpaceBase:
         except TypeError:
             raise TypeError(Errors.type_error(f"The chosen distribution {distribution} might not have an argument size or one of your additional keyword arguments is unknown. Please, only use distributions listed in NumPy that have specified a size Argument."))
 
-    def rand(self, distribution = "uniform", **kwargs):
+    def rand(self, distribution: str = "uniform", **kwargs) -> Vector:
         """Return a randomly sampled vector.
 
         This distribution is defined by the vector-space representation and
@@ -366,7 +410,7 @@ class VectorSpaceBase:
         """
         return self.fromflat(self._draw_sample(distribution=distribution))
     
-    def poisson(self, x,**kwargs):
+    def poisson(self, x: Vector, **kwargs) -> Vector:
         """Return a Poisson-distributed vector with rate ``x``.
 
         Parameters
@@ -378,11 +422,11 @@ class VectorSpaceBase:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
         return self.rand(distribution="poisson", lam = self.flatten(x), **kwargs)
     
-    def randn(self,**kwargs):
+    def randn(self, **kwargs) -> Vector:
         """Like `rand`, but using a standard normal distribution."""
         return self.rand(distribution="standard_normal", **kwargs)
     
-    def vdot(self,x,y):
+    def vdot(self, x: Vector, y: Vector) -> float | complex:
         r"""Return the vector dot product defined by this space.
 
         For complex vectors, the second argument is conjugated.
@@ -403,7 +447,7 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.vdot(x,y)
 
-    def copyto(self, x, y):
+    def copyto(self, x: Vector, y: Vector) -> None:
         r"""Copy the values of ``y`` into the existing vector ``x``.
 
         The identity of ``x`` is preserved. Concrete vector spaces may
@@ -425,7 +469,7 @@ class VectorSpaceBase:
             raise NotImplementedError
         self.type.copyto(x, y)
 
-    def fill(self, x, value):
+    def fill(self, x: Vector, value: Scalar) -> None:
         r"""Fill the existing vector ``x`` with a scalar value.
 
         The identity of ``x`` is preserved. Concrete vector spaces may
@@ -480,7 +524,7 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.logical_xor(x,y) 
 
-    def iter_basis(self):
+    def iter_basis(self) -> Iterator[Vector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array should returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of a complex vector space after each
@@ -489,16 +533,16 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Vector]:
         return self.iter_basis()
     
     @property
-    def size(self):
+    def size(self) -> int:
         """The size of elements (as arrays) of this vector space."""
         return np.prod(self.shape)
 
     @property
-    def realsize(self):
+    def realsize(self) -> int:
         """The dimension of the vector space as a real vector space. For complex dtypes,
         this is twice the number of array elements. """
         if self.is_complex:
@@ -507,7 +551,7 @@ class VectorSpaceBase:
             return np.prod(self.shape)
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
         """The number of array dimensions, i.e. the length of the shape. """
         return len(self.shape)
 
@@ -517,10 +561,10 @@ class VectorSpaceBase:
         from regpy.operators import Identity
         return Identity(self)
 
-    def __contains__(self, x):
+    def __contains__(self, x: object) -> bool:
         return isinstance(x,self.vec_type) and all(xis == si for xis,si in zip(x.shape, self.shape))
 
-    def flatten(self, x):
+    def flatten(self, x: Vector) -> np.ndarray:
         r"""Transform the vector `x`, an element of the vector space, into a flattened vector. Inverse
         to `fromflat`.
 
@@ -536,7 +580,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
 
-    def fromflat(self, x):
+    def fromflat(self, x: np.ndarray) -> Vector:
         """Transform a flattened vector into an element of the vector space. Inverse to `flatten`.
 
         Parameters
@@ -586,7 +630,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def IfPos(self, x):
+    def IfPos(self, x: Vector):
         """Analyses which components contribute to the positive part of the 
         function corresponding to the vector.
 
@@ -602,10 +646,10 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def norm(self,x):
+    def norm(self, x: Vector) -> float:
         return sqrt(self.vdot(x,x).real)
 
-    def __eq__(self, other):
+    def __eq__(self, other: VectorSpaceBase) -> bool:
         if not isinstance(other, type(self)):
             return False
         return (self.type == other.type and
@@ -613,7 +657,7 @@ class VectorSpaceBase:
                 self.is_complex == other.is_complex and
                 self.vec_type == other.vec_type)
     
-    def compatible(self,other):
+    def compatible(self,other: VectorSpaceBase) -> bool:
         """Tests compatibility of vectors! This is not as restrictive as `__eq__`
         in the sense, that we only compare the underlying vector type, shape and
         if both are complex. This guarantees that vectors of the space can be 

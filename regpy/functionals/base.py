@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from typing import Callable
 from copy import copy
@@ -10,6 +12,7 @@ from numpy import isscalar
 from regpy import operators, util, vecsps, hilbert
 from regpy.operators import Operator
 from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
+from regpy.vecsps.base import Vector
 from regpy.hilbert import HilbertSpace
 from regpy.util import Errors
 
@@ -431,7 +434,7 @@ class Functional:
         self.is_data_func = is_data_func
 
 
-    def _validate_out(self, out):
+    def _validate_out(self, out: Vector | None) -> Vector | None:
         """Validate an optional output vector and return it unchanged."""
         if out is not None and out not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
@@ -440,7 +443,7 @@ class Functional:
             ))
         return out
 
-    def __call__(self, x):
+    def __call__(self, x: Vector) -> float:
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to evaluate {self} on the given vector."))
         try:
@@ -451,7 +454,7 @@ class Functional:
             raise RuntimeError(util.Errors.not_instance(x,float, add_info=f"The evaluation of the functional {self} did not return a float or int."+"\n\t"+f"x = {x}"))
         return y
 
-    def linearize(self, x):
+    def linearize(self, x: Vector) -> tuple[float, Vector]:
         r"""
         Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
 
@@ -485,7 +488,9 @@ class Functional:
             raise RuntimeError(util.Errors.not_in_vecsp(grad,self.domain,vec_name="gradient",space_name="domain", add_info=f"The computation of the gradient of functional {self} did not return an element in the domain." ))
         return y, grad
 
-    def subgradient(self, x, out=None, **subgradient_par):
+    def subgradient(
+        self, x: Vector, out: Vector | None = None, **subgradient_par
+    ) -> Vector:
         r"""Return a subgradient of the functional at ``x``.
 
         If ``out`` is supplied, the result is written into that vector and the
@@ -511,7 +516,7 @@ class Functional:
             ))
         return grad
     
-    def dist_subdiff(self,vstar,x):
+    def dist_subdiff(self, vstar: Vector, x: Vector) -> float:
         r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
         to the dual norm.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
@@ -526,7 +531,9 @@ class Functional:
         xi = self.subgradient(x)
         return self.h_domain.dual_space().norm(vstar-xi)
 
-    def hessian(self, x,recursion_safeguard:bool=False):
+    def hessian(
+        self, x: Vector, recursion_safeguard: bool = False
+    ) -> operators.Operator:
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
         functionals `domain` to it self. It is defined by 
 
@@ -559,7 +566,9 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
-    def conj_subgradient(self, xstar, out=None, **subgradient_par):
+    def conj_subgradient(
+        self, xstar: Vector, out: Vector | None = None, **subgradient_par
+    ) -> Vector:
         r"""Return a subgradient of the conjugate functional.
 
         If ``out`` is supplied, the result is written into that vector and the
@@ -588,7 +597,7 @@ class Functional:
             ))
         return grad
 
-    def _conj_dist_subdiff(self,v,xstar):
+    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
         r"""Returns the distance of a vector :math:`v` to the subdifferential :math:`\partial F^*(x^*)` at :math:`x^*`.
         Needs to be re-implemented for functionals whose conjugate is not Gateaux differentiable.
 
@@ -602,7 +611,9 @@ class Functional:
         xi = self.conj_subgradient(xstar)
         return self.domain.norm(v-xi)        
 
-    def conj_hessian(self,xstar, recursion_safeguard=False):
+    def conj_hessian(
+        self, xstar: Vector, recursion_safeguard: bool = False
+    ) -> operators.Operator:
         r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
         """
         if xstar not in self.domain:
@@ -619,7 +630,7 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of conjugate of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
-    def conj_linearize(self, xstar):
+    def conj_linearize(self, xstar: Vector) -> tuple[float, Vector]:
         r"""
         Linearizes the conjugate functional :math:`F^*`. Should not be called directly, but via self.conj.linearize
         """
@@ -636,7 +647,14 @@ class Functional:
             raise RuntimeError(util.Errors.not_in_vecsp(grad,self.domain,vec_name="gradient",space_name="domain", add_info=f"The computation of the gradient of conjugate of functional {self} did not return an element in the domain." ))
         return y, grad
 
-    def proximal(self, x, tau, recursion_safeguard = False, out=None, **proximal_par):
+    def proximal(
+        self,
+        x: Vector,
+        tau: float,
+        recursion_safeguard: bool = False,
+        out: Vector | None = None,
+        **proximal_par,
+    ) -> Vector:
         r"""Proximal operator 
 
         .. math::
@@ -689,7 +707,14 @@ class Functional:
             ))
         return proximal
 
-    def conj_proximal(self, xstar, tau, recursion_safeguard=False, out=None, **proximal_par):
+    def conj_proximal(
+        self,
+        xstar: Vector,
+        tau: float,
+        recursion_safeguard: bool = False,
+        out: Vector | None = None,
+        **proximal_par,
+    ) -> Vector:
         r"""Evaluate the proximal mapping of the conjugate functional.
 
         If ``out`` is supplied, the result is written into that vector and the
@@ -724,10 +749,10 @@ class Functional:
             ))
         return proximal
     
-    def as_data_func(self,data):
+    def as_data_func(self, data: Vector):
         return HorizontalShiftDilation(self, data = data)
 
-    def shift(self,v=None,data_shift=None):
+    def shift(self, v: Vector | None = None, data_shift: Vector | None = None):
         r"""Returns the functional :math:`x\mapsto F(x-v-data)` """
         return HorizontalShiftDilation(self,shift=v,data=data_shift)
     
@@ -821,34 +846,46 @@ class Functional:
         else:
             return self._conj_dom_u
 
-    def _eval(self, x):
+    def _eval(self, x: Vector) -> float:
         raise NotImplementedError
 
-    def _linearize(self, x):
+    def _linearize(self, x: Vector) -> tuple[float, Vector]:
         raise NotImplementedError
 
-    def _subgradient(self, x, out=None, **subgradient_par):
+    def _subgradient(
+        self, x: Vector, out: Vector | None = None, **subgradient_par
+    ) -> Vector:
         raise NotImplementedError
 
-    def _hessian(self, x):
+    def _hessian(self, x: Vector) -> operators.Operator:
         raise NotImplementedError
     
-    def _conj(self, xstar):
+    def _conj(self, xstar: Vector) -> float:
         raise NotImplementedError
 
-    def _conj_linearize(self, xstar):
+    def _conj_linearize(self, xstar: Vector) -> tuple[float, Vector]:
         raise NotImplementedError
     
-    def _conj_subgradient(self, xstar, out=None, **subgradient_par):
+    def _conj_subgradient(
+        self, xstar: Vector, out: Vector | None = None, **subgradient_par
+    ) -> Vector:
         raise NotImplementedError
 
-    def _conj_hessian(self, xstar):
+    def _conj_hessian(self, xstar: Vector) -> operators.Operator:
         raise NotImplementedError
 
-    def _proximal(self, x, tau, out=None, **proximal_par):
+    def _proximal(
+        self, x: Vector, tau: float, out: Vector | None = None, **proximal_par
+    ) -> Vector:
         raise NotImplementedError
 
-    def _conj_proximal(self, xstar, tau, out=None, **proximal_par):
+    def _conj_proximal(
+        self,
+        xstar: Vector,
+        tau: float,
+        out: Vector | None = None,
+        **proximal_par,
+    ) -> Vector:
         raise NotImplementedError
 
     def __mul__(self, other):
