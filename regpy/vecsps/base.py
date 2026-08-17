@@ -3,12 +3,16 @@ from __future__ import annotations
 from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
-from typing import Iterator, List, Protocol
+from types import NotImplementedType
+from typing import Any, Callable, Iterator, Protocol, TYPE_CHECKING
 
 from typing_extensions import Self
 
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from regpy.operators import Operator
 
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
@@ -56,79 +60,79 @@ class Vector(Protocol):
 
 @dataclass 
 class TupleVector:
-    v: List
+    v: list[Vector]
 
     __array_ufunc__ = None
 
     log = ClassLogger()
 
-    def copy(self):
+    def copy(self) -> Self:
         return copy(self)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.v = list(self.v)
         self.types = [type(v_i) for v_i in self.v]
         self.ndim = len(self.types)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.ndim
     
-    def conj(self):
+    def conj(self) -> Self:
         return TupleVector([v_i.conj() for v_i in self])
 
     @property
-    def real(self):
+    def real(self) -> Self:
         return TupleVector([v_i.real for v_i in self])
     
     @property
-    def imag(self):
+    def imag(self) -> Self:
         return TupleVector([v_i.imag for v_i in self])
 
-    def __eq__(self,other):
+    def __eq__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
             return TupleVector([s_i == o_i for s_i,o_i in zip(self.v,other.v)])
         else:
             return TupleVector([s_i == other for s_i in self.v])
     
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
             return TupleVector([s_i < o_i for s_i,o_i in zip(self.v,other.v)])
         else:
             return TupleVector([s_i < other for s_i in self.v])
 
-    def __le__(self, other):
+    def __le__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
             return TupleVector([s_i <= o_i for s_i,o_i in zip(self.v,other.v)])
         else:
             return TupleVector([s_i <= other for s_i in self.v])
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         return not (self == other)
     
-    def __ge__(self, other):
+    def __ge__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
             return TupleVector([s_i >= o_i for s_i,o_i in zip(self.v,other.v)])
         else:
             return TupleVector([s_i >= other for s_i in self.v])
     
-    def __gt__(self, other):
+    def __gt__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
             return TupleVector([s_i > o_i for s_i,o_i in zip(self.v,other.v)])
         else:
             return TupleVector([s_i > other for s_i in self.v])
 
-    def all(self):
+    def all(self) -> bool:
         return all((v_i.all() for v_i in self.v))
 
-    def any(self):
+    def any(self) -> bool:
         return any((v_i.any() for v_i in self.v))
     
-    def __or__(self,other):
+    def __or__(self, other: TupleVector) -> TupleVector:
         if not isinstance(other,TupleVector) or self.ndim != other.ndim:
             raise ValueError(Errors.value_error("Comparing with TupleVector only supported for TupleVectors of identical dimension!"))
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
-    def sum(self,**kwargs):
+    def sum(self, **kwargs: Any) -> Scalar:
         z = []
         for v_i in self.v:
             if isinstance(v_i,np.ndarray):
@@ -144,52 +148,52 @@ class TupleVector:
                 z.append(s)
         return sum(z)
     
-    def __iadd__(self,other):
+    def __iadd__(self, other: TupleVector) -> Self:
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error("Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
             self.v[k] += v_o
         return self
 
-    def __isub__(self,other):
+    def __isub__(self, other: TupleVector) -> Self:
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error("Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
             self.v[k] -= v_o
         return self
     
-    def __neg__(self):
+    def __neg__(self) -> Self:
         return TupleVector([-v_i for v_i in self])
     
-    def __add__(self,other):
+    def __add__(self, other: TupleVector) -> Self:
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error("Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         return TupleVector([s_k + o_k for s_k,o_k in zip(self,other)])
     
-    def __radd__(self,other):
+    def __radd__(self, other: TupleVector) -> Self:
         return self + other
     
-    def __sub__(self,other):
+    def __sub__(self, other: TupleVector) -> Self:
         return self + (-1*other)
     
-    def __rsub__(self,other):
+    def __rsub__(self, other: TupleVector) -> Self:
         return (-1*self) + other
     
-    def __imul__(self,other):
+    def __imul__(self, other: Scalar) -> Self:
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
             self.v[k] *= other
         return self
     
-    def __itruediv__(self,other):
+    def __itruediv__(self, other: Scalar) -> Self:
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Division TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
             self.v[k] /= other
             return self
     
-    def __mul__(self,other):
+    def __mul__(self, other: Scalar | Operator) -> Self | Operator:
         from regpy.operators.base import Operator,PtwMultiplication
         if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
             return TupleVector([other * s_k for s_k in self])
@@ -198,18 +202,18 @@ class TupleVector:
         else:
             raise NotImplementedError(Errors.generic_message(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator."))
         
-    def __rmul__(self,other):
+    def __rmul__(self, other: Scalar | Operator) -> Self | Operator:
         return self * other
 
-    def __truediv__(self,other):
+    def __truediv__(self, other: Scalar) -> Self:
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Division TupleVector only supported for scalars (int, float, or complex)!"))
         return TupleVector([s_k / other for s_k in self])
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Vector]:
         return iter(self.v)
     
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> Any:
         if isinstance(key,slice) or isinstance(key,int):
             return self.v[key]
         elif (isinstance(key,TupleVector) and self.ndim == key.ndim):
@@ -219,7 +223,7 @@ class TupleVector:
         else:
             raise KeyError(Errors.indexation(key,self,add_info=f"keys of type {type(key)} are not supported either int or list of length {self.ndim}"))
     
-    def __setitem__(self, key, item):
+    def __setitem__(self, key: Any, item: Any) -> None:
         if isinstance(key,slice) or isinstance(key,int):
             self.v[key] = item
         elif isinstance(key,(list,tuple)) and len(key) <= self.ndim:
@@ -243,10 +247,10 @@ class TupleVector:
         else:
             raise KeyError(Errors.indexation(key,self,add_info=f"keys of type {type(key)} are not supported either int or list of length {self.ndim} or TupleVector"))
     
-    def __copy__(self):
+    def __copy__(self) -> Self:
         return deepcopy(self)
     
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         cls = self.__class__
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -254,7 +258,7 @@ class TupleVector:
             setattr(result, k, deepcopy(v, memo))
         return result
     
-    def component_wise(self,method):
+    def component_wise(self, method: Callable[[Vector], Vector]) -> Self:
         if not callable(method):
             raise TypeError(Errors.type_error(f"To apply a method componentwise to a TupleVector the method has to be a callable. {method} is not callable"))
         return TupleVector([method(s_k) for s_k in self])
@@ -300,10 +304,10 @@ class VectorSpaceBase:
     log = ClassLogger()
 
     def __init__(self, 
-                 vec_type : object, 
-                 shape : tuple, 
+                 vec_type: type[Vector] | tuple[type[Vector], ...],
+                 shape: int | tuple[int, ...],
                  complex : bool = False, 
-                 type = None):
+                 type: Any | None = None) -> None:
         self.vec_type = vec_type
         """The vector type"""
         self.shape = (shape,) if isinstance(shape,int) else shape
@@ -314,7 +318,7 @@ class VectorSpaceBase:
         self._no_pickle = {'type', 'vec_type'}
         """A dictionary containing modules kept extra in the copy"""
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -346,10 +350,16 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.empty(shape = self.shape)
     
-    def set_rng_seed(self,seed):
+    def set_rng_seed(self, seed: int | None) -> None:
         set_rng_seed(seed)
     
-    def _draw_sample(self, distribution : str , size = None, seed=None,**kwargs):
+    def _draw_sample(
+        self,
+        distribution: str,
+        size: int | tuple[int, ...] | None = None,
+        seed: int | None = None,
+        **kwargs: Any,
+    ) -> np.ndarray | np.generic:
         """Draw samples from a NumPy random-generator distribution.
 
         Parameters
@@ -383,7 +393,7 @@ class VectorSpaceBase:
         except TypeError:
             raise TypeError(Errors.type_error(f"The chosen distribution {distribution} might not have an argument size or one of your additional keyword arguments is unknown. Please, only use distributions listed in NumPy that have specified a size Argument."))
 
-    def rand(self, distribution: str = "uniform", **kwargs) -> Vector:
+    def rand(self, distribution: str = "uniform", **kwargs: Any) -> Vector:
         """Return a randomly sampled vector.
 
         This distribution is defined by the vector-space representation and
@@ -404,13 +414,13 @@ class VectorSpaceBase:
         
         Returns
         -------
-        array_like
+        Vector
             A vector in the space. The vector is created as a flat NumPy array and then cast to the actual 
             vector and type by the `fromflat` method
         """
         return self.fromflat(self._draw_sample(distribution=distribution))
     
-    def poisson(self, x: Vector, **kwargs) -> Vector:
+    def poisson(self, x: Vector, **kwargs: Any) -> Vector:
         """Return a Poisson-distributed vector with rate ``x``.
 
         Parameters
@@ -422,7 +432,7 @@ class VectorSpaceBase:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
         return self.rand(distribution="poisson", lam = self.flatten(x), **kwargs)
     
-    def randn(self, **kwargs) -> Vector:
+    def randn(self, **kwargs: Any) -> Vector:
         """Like `rand`, but using a standard normal distribution."""
         return self.rand(distribution="standard_normal", **kwargs)
     
@@ -496,28 +506,28 @@ class VectorSpaceBase:
         except AttributeError as exc:
             raise NotImplementedError from exc
 
-    def logical_and(self,x,y):
+    def logical_and(self, x: Vector, y: Vector) -> Vector:
         """Logical and of two boolean vectors
         """
         if self.type is None:
             raise NotImplementedError
         return self.type.logical_and(x,y) 
 
-    def logical_or(self,x,y):
+    def logical_or(self, x: Vector, y: Vector) -> Vector:
         """Logical or of two boolean vectors
         """
         if self.type is None:
             raise NotImplementedError
         return self.type.logical_or(x,y) 
     
-    def logical_not(self,x):
+    def logical_not(self, x: Vector) -> Vector:
         """Logical not of a boolean vectors
         """
         if self.type is None:
             raise NotImplementedError
         return self.type.logical_not(x) 
     
-    def logical_xor(self,x,y):
+    def logical_xor(self, x: Vector, y: Vector) -> Vector:
         """Logical xor of two boolean vectors
         """
         if self.type is None:
@@ -526,9 +536,9 @@ class VectorSpaceBase:
 
     def iter_basis(self) -> Iterator[Vector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
-        the same array should returned in each step, and subsequently modified in-place. If you need
-        the array longer than that, perform a copy. In case of a complex vector space after each
-        each array modified in its place with a real one it should return the same vector with \(1i\)
+        the same vector should be returned in each step and subsequently modified in-place. If you need
+        the vector longer than that, perform a copy. In case of a complex vector space, after each
+        vector with a real one it should return the same vector with \(1i\)
         in its place.
         """
         raise NotImplementedError
@@ -538,13 +548,13 @@ class VectorSpaceBase:
     
     @property
     def size(self) -> int:
-        """The size of elements (as arrays) of this vector space."""
+        """The number of coefficients used to represent an element."""
         return np.prod(self.shape)
 
     @property
     def realsize(self) -> int:
-        """The dimension of the vector space as a real vector space. For complex dtypes,
-        this is twice the number of array elements. """
+        """The dimension of the vector space as a real vector space. For complex
+        coefficients, this is twice :attr:`size`."""
         if self.is_complex:
             return 2 * np.prod(self.shape)
         else:
@@ -552,11 +562,11 @@ class VectorSpaceBase:
 
     @property
     def ndim(self) -> int:
-        """The number of array dimensions, i.e. the length of the shape. """
+        """The number of representation dimensions, i.e. the length of ``shape``."""
         return len(self.shape)
 
     @memoized_property
-    def identity(self):
+    def identity(self) -> Operator:
         """The `regpy.operators.Identity` operator on this vector space. """
         from regpy.operators import Identity
         return Identity(self)
@@ -585,17 +595,17 @@ class VectorSpaceBase:
 
         Parameters
         ----------
-        x : array-like
+        x : numpy.ndarray
             The flat vector to transform
 
         Returns
         -------
-        array
-            The reshaped array.
+        Vector
+            The reconstructed vector.
         """
         raise NotImplementedError
 
-    def complex_space(self):
+    def complex_space(self) -> VectorSpaceBase:
         """Compute the corresponding complex vector space.
 
         Returns
@@ -605,7 +615,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
 
-    def real_space(self):
+    def real_space(self) -> VectorSpaceBase:
         """Compute the corresponding real vector space.
 
         Returns
@@ -615,7 +625,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def masked_space(self,mask):
+    def masked_space(self, mask: object) -> VectorSpaceBase:
         """Gives a masked space given a mask.
 
         Parameters
@@ -630,18 +640,18 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def IfPos(self, x: Vector):
+    def IfPos(self, x: Vector) -> object:
         """Analyses which components contribute to the positive part of the 
         function corresponding to the vector.
 
         Parameters
         ----------
-        x : array-like
+        x : Vector
             The vector to analyse.
 
         Returns
         -------
-        mask : array-like
+        mask : object
             Mask for the vector components contributing to the positive part of a function.
         """
         raise NotImplementedError
@@ -686,25 +696,25 @@ class VectorSpaceBase:
                 self.is_complex == other.is_complex
                 )
         
-    def __iadd__(self, other):
+    def __iadd__(self, other: object) -> DirectSum | NotImplementedType:
         if isinstance(other, VectorSpaceBase):
             return DirectSum(self, other, flatten=True)
         else:
             return NotImplemented
 
-    def __add__(self, other):
+    def __add__(self, other: object) -> DirectSum | NotImplementedType:
         if isinstance(other, VectorSpaceBase):
             return DirectSum(self, other, flatten=True)
         else:
             return NotImplemented
 
-    def __radd__(self, other):
+    def __radd__(self, other: object) -> DirectSum | NotImplementedType:
         if isinstance(other, VectorSpaceBase):
             return DirectSum(other, self, flatten=True)
         else:
             return NotImplemented
         
-    def __pow__(self, power):
+    def __pow__(self, power: int) -> VectorSpaceBase:
         if not isinstance(power, int):
             raise TypeError(Errors.not_instance(power,int,add_info="Construction of powers of a vector space only supported for integer!"))
         domain = self
@@ -712,14 +722,14 @@ class VectorSpaceBase:
             domain = DirectSum(domain, self, flatten=True)
         return domain
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return make_repr(self,self.shape,self.is_complex)
 
 
 class DirectSum(VectorSpaceBase):
     r"""The direct sum of an arbitrary number of vector spaces.
 
-    Elements of the direct sum will always be 1d real arrays.
+    Elements of the direct sum are represented by :class:`TupleVector` instances.
 
     Note that constructing DirectSum instances can be done more comfortably simply by adding
     `regpy.vecsps.VectorSpaceBase` instances. However, for generic code, when it's not known whether the summands
@@ -741,7 +751,7 @@ class DirectSum(VectorSpaceBase):
         like `A + B + C` unambiguous.
     """
 
-    def __init__(self, *summands, flatten=False):
+    def __init__(self, *summands: VectorSpaceBase, flatten: bool = False) -> None:
         if any(not isinstance(s, VectorSpaceBase) for s in summands):
             raise TypeError(Errors.type_error(f"The list of summands for a DirectSum vector space contains elements which are not a RegPy vector space! Given "+"\n\t "+f"summands = {summands}"))
         if flatten:
@@ -774,10 +784,10 @@ class DirectSum(VectorSpaceBase):
     def empty(self)-> TupleVector:
         return TupleVector([s.empty() for s in self.summands])
     
-    def rand(self, distribution = "uniform", **kwargs)-> TupleVector:
+    def rand(self, distribution: str = "uniform", **kwargs: Any) -> TupleVector:
         return TupleVector([s.rand(distribution=distribution, **kwargs) for s in self.summands])
     
-    def poisson(self,x)-> TupleVector:
+    def poisson(self, x: TupleVector) -> TupleVector:
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in poisson not in the VectorSpace."))
         return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
@@ -809,7 +819,7 @@ class DirectSum(VectorSpaceBase):
         for summand, x_i, y_i in zip(self.summands, x, y):
             summand.copyto(x_i, y_i)
 
-    def fill(self, x: TupleVector, value) -> None:
+    def fill(self, x: TupleVector, value: Scalar) -> None:
         r"""Fill a direct-sum vector componentwise with ``value``."""
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
@@ -822,22 +832,22 @@ class DirectSum(VectorSpaceBase):
         for summand, x_i in zip(self.summands, x):
             summand.fill(x_i, value)
 
-    def logical_and(self,x,y) -> TupleVector:
+    def logical_and(self, x: TupleVector, y: TupleVector) -> TupleVector:
         return TupleVector([s.logical_and(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
     
-    def logical_or(self,x,y) -> TupleVector:
+    def logical_or(self, x: TupleVector, y: TupleVector) -> TupleVector:
         return TupleVector([s.logical_or(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
     
-    def logical_not(self,x) -> TupleVector:
+    def logical_not(self, x: TupleVector) -> TupleVector:
         return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
     
-    def logical_xor(self,x,y) -> TupleVector:
+    def logical_xor(self, x: TupleVector, y: TupleVector) -> TupleVector:
         return TupleVector([s.logical_xor(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
 
-    def complex_space(self):
+    def complex_space(self) -> DirectSum:
         return DirectSum(*[s.complex_space() for s in self.summands])
 
-    def real_space(self):
+    def real_space(self) -> DirectSum:
         return DirectSum(*[s.real_space() for s in self.summands])
     
     def flatten(self, x : TupleVector) -> np.ndarray:
@@ -860,7 +870,7 @@ class DirectSum(VectorSpaceBase):
         else:
             raise ValueError(Errors.value_error("Construction of a vector from a flat vector only supported for x an np.ndarray not {}".format(type(x))))
     
-    def compatible(self, other):
+    def compatible(self, other: VectorSpaceBase) -> bool:
         return (
             isinstance(other, DirectSum)
             and len(self.summands) == len(other.summands)
@@ -872,14 +882,14 @@ class DirectSum(VectorSpaceBase):
             )
         )
 
-    def iter_basis(self):
+    def iter_basis(self) -> Iterator[TupleVector]:
         for i,s in enumerate(self.summands()):
             vec = self.zeros()
             for b in s.iter_basis():
                 vec.v[i] = b
                 yield vec
 
-    def masked_space(self, mask):
+    def masked_space(self, mask: object) -> DirectSum:
         if isinstance(mask,int):
             self.summands[mask]
         x = self.rand()
@@ -887,7 +897,7 @@ class DirectSum(VectorSpaceBase):
         x[mask] = self.ones()[mask]
         return DirectSum(*[s_i.masked_space(m_i) for s_i,m_i in zip(self.summands,mask)])
     
-    def IfPos(self, x):
+    def IfPos(self, x: TupleVector) -> tuple[object, ...]:
         """Analyses which components contribute to the positive part of the 
         function corresponding to the vector.
 
@@ -905,7 +915,7 @@ class DirectSum(VectorSpaceBase):
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="IfPos only defined for vectors in the space!"))
         return tuple(s_i.IfPos(x_i) for s_i,x_i in zip(self.summands,x.v))
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):
             return (
                 len(self.summands) == len(other.summands) and
@@ -914,54 +924,54 @@ class DirectSum(VectorSpaceBase):
         else:
             return NotImplemented
         
-    def __contains__(self, x):
+    def __contains__(self, x: object) -> bool:
         return isinstance(x,TupleVector) and x.ndim == self.n_components and all([x_i in s_i for x_i,s_i in zip(x,self.summands)])
         
 
-    def join(self, *xs):
+    def join(self, *xs: Vector) -> TupleVector:
         r"""Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
         ----------
-        *xs : tuple of array-like
+        *xs : tuple of Vector
             The elements of the summands. The number should match the number of summands,
             and for all `i`, `xs[i]` should be an element of `self[i]`.
 
         Returns
         -------
-        1d array
+        TupleVector
             An element of the direct sum
         """
         if any(x not in s for s, x in zip(self.summands, xs)):
             raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: "+"\n\t "+f"xs = {xs},"+"\n\t "+f"summands = {self.summands} "))
         return TupleVector(list(xs))
 
-    def split(self, x):
+    def split(self, x: TupleVector) -> tuple[Vector, ...]:
         r"""Split an element of the direct sum into a tuple of elements of the summands.
 
-        The result arrays may be views into `x`, if memory layout allows it. For complex
-        summands, a necessary condition is that the elements' real and imaginary parts are
-        contiguous in memory.
+        The result contains the component vectors of `x`.
 
         Parameters
         ----------
-        x : array
-            An array representing an element of the direct sum.
+        x : TupleVector
+            An element of the direct sum.
 
         Returns
         -------
-        tuple of arrays
+        tuple of Vector
             The components of x for the summands.
         """
         if not x in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="split only defined for vectors in the space!"))
         return tuple(x.v)
 
-    def __getitem__(self, item):
+    def __getitem__(
+        self, item: int | slice
+    ) -> VectorSpaceBase | list[VectorSpaceBase] | tuple[VectorSpaceBase, ...]:
         return self.summands[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[VectorSpaceBase]:
         return iter(self.summands)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.summands)
