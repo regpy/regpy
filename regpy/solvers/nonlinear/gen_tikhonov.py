@@ -34,7 +34,7 @@ class GeometricSequence:
         return result
 
 class GeneralizedTikhonov(RegSolver):
-    r"""Class runnning generalized Tikhonov regularization with some inner solver for different regularization parameters.
+    r"""Class running generalized Tikhonov regularization with some inner solver for different regularization parameters.
     This can serve as an interface to stopping rules for the selection of the regularization parameters 
 
     Parameters
@@ -42,14 +42,14 @@ class GeneralizedTikhonov(RegSolver):
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
     inner_solver: regpy.solvers.RegSolver class name
-        The right hand side.
+        The right-hand side.
     inner_stoprule_class_list: list[regpy.stoprules.StopRule]        
         List of stop rules to be combined for the inner solver. Default is [regpy.stoprules.DualityGapStopping,regpy.stoprules.CountIterations].
     inner_stoprule_param_list: list[dict]
         List of parameter dicts for the inner stop rules. Default is [{'tol':1e-3},{'max_iterations':1000}].
     alphas: iterable or tuple, optional
         Either an iterable giving the grid of alphas or a tuple (alpha0,q).
-        In the second case the seuqence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
+        In the second case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
         Default is (1.0,0.5).
     """
     def __init__(self,setting:Setting, 

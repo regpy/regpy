@@ -1,16 +1,24 @@
 import numpy as np
 from numpy import pi 
 from numpy.linalg import norm
+from scipy.fft import fftshift, ifftshift
+from scipy.signal import resample
 import pytest
 
 from regpy.vecsps.numpy import *
 from regpy.operators.convolution import *
+from regpy.operators.numpy import FourierTransform
 from regpy.util import Errors
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot
 from regpy.util import set_rng_seed
 
 set_rng_seed(15873098306879350073259142812684978477)
+
+
+def _centered_axis(size, spacing=1.0):
+    return np.arange(-(size // 2), (size + 1) // 2) * spacing
+
 
 class TestPaddingOperator():
 
@@ -44,6 +52,161 @@ class TestConvolutionOperator():
     def test_ot_eval(self,vs,pad_amount,kernel):
         op=ConvolutionOperator(vs,fourier_multiplier=kernel,pad_amount=2)
         op_evaluation_and_ot(op)
+
+class TestConvolutionOperatorRegression:
+    @pytest.mark.parametrize("size", [1, 2, 3, 4, 7, 8])
+    def test_real_identity_convolution(self, size):
+        grid = UniformGridFcts(_centered_axis(size), dtype=float)
+        op = ConvolutionOperator(
+            grid, fourier_multiplier=lambda frequency: 1.0
+        )
+        rng = np.random.default_rng(size)
+        x = rng.normal(size=grid.shape)
+
+        op_evaluation_and_ot(op, x=x, res=x, sample_N=1)
+
+    @pytest.mark.parametrize(
+        "shape, convolution_axes",
+        [
+            ((5, 7), (0,)),
+            ((4, 6, 3), (1, 0)),
+        ],
+    )
+    def test_partial_and_reordered_transform_axes(
+            self, shape, convolution_axes):
+        grid = UniformGridFcts(
+            *[_centered_axis(size) for size in shape], dtype=float
+        )
+        ft = FourierTransform(grid, axes=convolution_axes)
+        multiplier = 1.0 / (
+            1.0 + sum(coord**2 for coord in ft.codomain.coords)
+        )
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=multiplier,
+            convolution_axes=convolution_axes,
+        )
+        rng = np.random.default_rng(sum(shape) + sum(convolution_axes))
+        x = rng.normal(size=grid.shape)
+        expected = ft.left_inverse(multiplier * ft(x))
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+
+    @pytest.mark.parametrize(
+        "source_size, target_size",
+        [
+            (2, 4),
+            (4, 2),
+            (4, 8),
+            (8, 4),
+            (5, 9),
+            (9, 5),
+            (8, 12),
+            (12, 8),
+        ],
+    )
+    def test_real_fourier_resizing_matches_scipy_resample(
+            self, source_size, target_size):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        rng = np.random.default_rng(source_size * 100 + target_size)
+        x = rng.normal(size=grid.shape)
+        expected = fftshift(resample(ifftshift(x), target_size))
+
+        assert op.codomain.shape == (target_size,)
+        op_evaluation_and_ot(
+            op, x=x, res=expected, sample_N=1,
+            rel_tol=2e-11, tol=2e-11,
+        )
+
+    @pytest.mark.parametrize(
+        "source_size, target_size",
+        [
+            pytest.param(9, 5, id="Fourier-truncation"),
+            pytest.param(5, 9, id="Fourier-zero-extension"),
+        ],
+    )
+    def test_fourier_truncation_and_zero_extension(
+            self, source_size, target_size):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        source_ft = FourierTransform(grid, centered=True)
+        target_ft = FourierTransform(op.codomain, centered=True)
+        rng = np.random.default_rng(1000 + source_size * 10 + target_size)
+        x = rng.normal(size=grid.shape)
+
+        source_spectrum = source_ft(x)
+        expected_spectrum = target_ft.codomain.zeros()
+        retained_size = min(
+            source_spectrum.shape[0], expected_spectrum.shape[0]
+        )
+        expected_spectrum[:retained_size] = (
+            np.sqrt(target_size / source_size)
+            * source_spectrum[:retained_size]
+        )
+        expected = target_ft.left_inverse(expected_spectrum)
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+        actual_spectrum = target_ft(op(x))
+        np.testing.assert_allclose(
+            actual_spectrum, expected_spectrum, rtol=2e-12, atol=2e-12
+        )
+        if target_size > source_size:
+            np.testing.assert_allclose(
+                actual_spectrum[source_spectrum.shape[0]:], 0,
+                rtol=0, atol=2e-12,
+            )
+
+    @pytest.mark.parametrize(
+        "source_size, target_size, coefficient, nyquist_factor",
+        [
+            pytest.param(4, 8, 2.0, 0.5, id="split-source-Nyquist"),
+            pytest.param(8, 4, 1.5, 2.0, id="collapse-to-target-Nyquist"),
+        ],
+    )
+    def test_even_length_nyquist_splitting_and_collapsing(
+            self, source_size, target_size, coefficient, nyquist_factor):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        source_ft = FourierTransform(grid, centered=True)
+        target_ft = FourierTransform(op.codomain, centered=True)
+
+        source_spectrum = source_ft.codomain.zeros()
+        retained_index = min(
+            source_ft.codomain.shape_domain[0],
+            target_ft.codomain.shape_domain[0],
+        ) - 1
+        source_spectrum[retained_index] = coefficient
+        x = source_ft.left_inverse(source_spectrum)
+
+        expected_spectrum = target_ft.codomain.zeros()
+        expected_spectrum[retained_index] = (
+            np.sqrt(target_size / source_size)
+            * nyquist_factor
+            * coefficient
+        )
+        expected = target_ft.left_inverse(expected_spectrum)
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+        np.testing.assert_allclose(
+            target_ft(op(x)), expected_spectrum, rtol=2e-12, atol=2e-12
+        )
+
 
 @pytest.mark.parametrize("vs, sigma, pad_amount, convolution_axes",[ 
         (UniformGridFcts(10,10),5,2,[1]),

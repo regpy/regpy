@@ -42,13 +42,13 @@ class NgsOperator(Operator):
             vector, 
             gfu,
             definedonelements =None):
-        r"""Read in of a numpy array into a ngsolve grid function. Note You can also read into
+        r"""Read in of a NumPy array into a ngsolve grid function. Note You can also read into
         ngsolve LinearForm.
 
         Parameters
         ----------
         vector : numpy.array
-            Numpy array to be put into the `GridFunction`
+            NumPy array to be put into the `GridFunction`
         gfu : ngsolve.GridFunction or ngsolve.LinearForm
             ngsolve element to be written into.
         definedonelements : pyngcore.pyngcore.BitArray, optional
@@ -90,6 +90,37 @@ class NgsOperator(Operator):
         """
         ngs.solvers.BVP(bf, lf, gf, pre = pre, solver = solver, **kwargs)
 
+    @staticmethod
+    def _source_vec(x: NgsBaseVector, out: NgsBaseVector):
+        r"""Return an input vector that remains valid when ``out`` aliases ``x``.
+
+        NGSolve matrix-vector products are represented lazily.  When source and
+        destination are the same vector, evaluating the expression after assigning
+        to ``out.vec.data`` may therefore overwrite data that is still needed.
+        """
+        if out is x or out.vec is x.vec:
+            if getattr(x, "is_dynamic", False):
+                return x.vec.Evaluate().Copy()
+            return x.vec.Copy()
+        return x.vec
+
+    @staticmethod
+    def _prepare_out(out: NgsBaseVector) -> NgsBaseVector:
+        """Ensure that ``out`` wraps writable NGSolve vector storage."""
+        if getattr(out, "is_dynamic", False):
+            out.vec = out.vec.Evaluate()
+            out.is_dynamic = False
+        return out
+
+    @classmethod
+    def _write_vec(cls, out: NgsBaseVector, value) -> NgsBaseVector:
+        """Assign an NGSolve vector or vector expression to ``out``."""
+        cls._prepare_out(out)
+        if isinstance(value, NgsBaseVector):
+            value = value.vec
+        out.vec.data = value
+        return out
+
 class NgsMatrixMultiplication(NgsOperator):
     r"""An operator defined by an NGSolve bilinear form. This is a helper to define 
     Gram matrices by a bilinear form.  
@@ -116,15 +147,14 @@ class NgsMatrixMultiplication(NgsOperator):
         self.mat = mat
         """The assembled matrix."""
         self._inverse = None
-        self.res = self.domain.zeros()
 
-    def _eval(self, x):
-        self.res.vec.data = self.mat * x.vec
-        return self.res.copy()
+    def _ieval(self, x, out):
+        source = self._source_vec(x, out)
+        return self._write_vec(out, self.mat * source)
 
-    def _adjoint(self, y):
-        self.res.vec.data = self.mat.T * y.vec
-        return self.res.copy
+    def _iadjoint(self, y, out):
+        source = self._source_vec(y, out)
+        return self._write_vec(out, self.mat.T * source)
 
     @property
     def inverse(self):
@@ -246,37 +276,45 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
 
         self.lf_adj = ngs.LinearForm(self.domain.fes)
         self.lf_adj += -1*self._bf(self.v_a,self.gf_eval,self.gf_adj_help)
+        self.projector_domain = ngs.Projector(self.domain.fes.FreeDofs(), range=True)
 
-        self._consts = {*self._consts, "u_a","v_a","u","v", "bf_mat", "bf_mat_inv", "bf_mat_adj", "bf_mat_adj_inv","lf","lf_adj","c_u",}
+        self._consts = {*self._consts, "u_a","v_a","u","v", "bf_mat", "bf_mat_inv", "bf_mat_adj", "bf_mat_adj_inv","lf","lf_adj","c_u","projector_domain",}
 
-    def _eval(self, 
-            a : NgsBaseVector, 
+    def _ieval(self,
+            a : NgsBaseVector,
+            out : NgsBaseVector,
             differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
         self.gf_a.vec.data = a.vec
-        ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.gf_a.vec)
+        self.projector_domain.Project(self.gf_a.vec)
         self.gf_a.vec.data += self.a_bdr
-        
+
         self.bf_mat.Assemble()
         self.bf_mat_inv = self.bf_mat.mat.Inverse(freedofs=self.codomain.fes.FreeDofs())
         self.gf_eval.vec.data += self.bf_mat_inv * (self.lf.vec - self.bf_mat.mat * self.gf_eval.vec)
-        return self.codomain.from_ngs(self.gf_eval, copy = True)
-    
-    def _derivative(self, 
-            h : NgsBaseVector) -> NgsBaseVector:
+        return self._write_vec(out, self.gf_eval.vec)
+
+    def _iderivative(self,
+            h : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
         lf = self._c_u(h.vec)
         self.gf_deriv.vec.data += self.bf_mat_inv * (-lf.vec - self.bf_mat.mat * self.gf_deriv.vec)
-        return self.codomain.from_ngs(self.gf_deriv, copy = True)
+        return self._write_vec(out, self.gf_deriv.vec)
 
-    def _adjoint(self, 
-            g : NgsBaseVector) -> NgsBaseVector:
+    def _iadjoint(self,
+            g : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
         if self.adj_first:
             self.bf_mat_adj = self.bf_mat.mat.CreateTranspose()
             self.bf_mat_adj_inv = self.bf_mat_adj.Inverse(freedofs=self.codomain.fes.FreeDofs())
             self.adj_first = False
         self.gf_adj_help.vec.data += self.bf_mat_adj_inv * (g.vec - self.bf_mat_adj * self.gf_adj_help.vec)
         self.lf_adj.Assemble()
-        return NgsBaseVector(ngs.Projector(self.domain.fes.FreeDofs(), range=True).Project(self.lf_adj.vec) + self.a_bdr,make_copy=True)
+        self._prepare_out(out)
+        out.vec.data = self.lf_adj.vec
+        self.projector_domain.Project(out.vec)
+        out.vec.data += self.a_bdr
+        return out
 
     def _bf(self,
             a : ngs.fem.CoefficientFunction,
@@ -296,7 +334,7 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             Test functions for PDE
 
         Returns
-        ------
+        -------
         ngsolve.comp.SumOfIntegrals
             the formal Integration formula of the bilinear form depending on the coefficient
         """
@@ -326,7 +364,7 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         the PDE. By default this is the empty Linear form. 
 
         Returns
-        ------
+        -------
         ngsolve.Linearform
             Linear form of the PDE :math:`F` as `ngsolve.LinearForm`
         """
@@ -360,7 +398,7 @@ class SolveSystem(NgsOperator):
             use_prec : bool = True,
             **inverse_kwargs) -> None:
         if not isinstance(bf, ngs.BilinearForm):
-            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearForm!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         self.use_prec = use_prec
@@ -380,21 +418,25 @@ class SolveSystem(NgsOperator):
 
         self._consts = {*self._consts, "bf", "prec", "f", "f_adj"}
         
-    def _eval(self, 
-            argument : NgsBaseVector) -> NgsBaseVector:
+    def _ieval(self,
+            argument : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
         if self.use_prec:
             self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, self.prec, **self.inverse_kwargs)
         else:
             self._solve_dirichlet_problem(self.bf, self.f, self.gfu_eval, **self.inverse_kwargs)
-        return NgsBaseVector(self.gfu_eval.vec,make_copy=True)
-    
-    def _adjoint(self, 
-            argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu_adj.vec.data=self.bf.mat.Inverse(freedofs = self.domain.fes.FreeDofs()).T*argument.vec
+        return self._write_vec(out, self.gfu_eval.vec)
+
+    def _iadjoint(self,
+            argument : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
+        source = self._source_vec(argument, out)
+        self.gfu_adj.vec.data = self.bf.mat.Inverse(
+            freedofs=self.domain.fes.FreeDofs()).T * source
         self.f_adj.Assemble()
-        return NgsBaseVector(self.f_adj.vec,make_copy=True)
+        return self._write_vec(out, self.f_adj.vec)
         
         
 class LinearForm(NgsOperator):
@@ -410,15 +452,17 @@ class LinearForm(NgsOperator):
 
         self._consts = {*self._consts, "f"}
         
-    def _eval(self, 
-            argument : NgsBaseVector) -> NgsBaseVector:
+    def _ieval(self,
+            argument : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
-        return NgsBaseVector(self.f.vec,make_copy=True)
-    
-    def _adjoint(self, 
-            argument : NgsBaseVector) -> NgsBaseVector:
-        return self._eval(argument)
+        return self._write_vec(out, self.f.vec)
+
+    def _iadjoint(self,
+            argument : NgsBaseVector,
+            out : NgsBaseVector) -> NgsBaseVector:
+        return self._ieval(argument, out)
     
 class LinearFormGrad(NgsOperator):
     
@@ -434,25 +478,25 @@ class LinearFormGrad(NgsOperator):
         
         self.f = ngs.LinearForm(self.domain.fes)
         self.f += ngs.grad(self.gfu) * ngs.grad(self.gfu_eval) * v * ngs.dx
-        self._y = NgsBaseVector(self.f.vec)
-        
+
         self.f_adj = ngs.LinearForm(self.domain.fes)
         self.f_adj += self.gfu_adj * ngs.grad(self.gfu_eval) * ngs.grad(v) * ngs.dx
-        self._x = NgsBaseVector(self.f_adj.vec)
 
         self._consts = {*self._consts, "f", "f_adj"}
-        
-    def _eval(self,
-        argument : NgsBaseVector) -> NgsBaseVector:
+
+    def _ieval(self,
+        argument : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
         self.gfu.vec.data = argument.vec
         self.f.Assemble()
-        return self._y.copy()
-    
-    def _adjoint(self, 
-        argument : NgsBaseVector) -> NgsBaseVector:
+        return self._write_vec(out, self.f.vec)
+
+    def _iadjoint(self,
+        argument : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
         self.gfu_adj.vec.data = argument.vec
         self.f_adj.Assemble()
-        return self._x.copy()
+        return self._write_vec(out, self.f_adj.vec)
 
 
 class BilinearForm(NgsOperator):
@@ -461,28 +505,39 @@ class BilinearForm(NgsOperator):
         domain : NgsVectorSpace, 
         bf : ngs.BilinearForm) -> None:
         if not isinstance(bf, ngs.BilinearForm):
-            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a BilinearForm operator the bilinear form needs to be a proper ngs.BilinearFrom!"))
+            raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a BilinearForm operator the bilinear form needs to be a proper ngs.BilinearForm!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
         self.bf=bf
         
         self.gfu=ngs.GridFunction(self.domain.fes)
-        self._y = NgsBaseVector(self.gfu.vec)
         self.gfu_adj=ngs.GridFunction(self.domain.fes)
-        self._x = NgsBaseVector(self.gfu_adj.vec)
-        
+
         self.f_eval = ngs.LinearForm(self.domain.fes)
         self.f_adj  = ngs.LinearForm(self.domain.fes)
         self._consts = {*self._consts, "bf","f_eval", "f_adj"}
-        
-    def _eval(self, 
-        argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu.vec.data=self.bf.mat.Inverse(freedofs = self.domain.fes.FreeDofs())*argument.vec
-        return self._y.copy()
-    
-    def _adjoint(self, 
-        argument : NgsBaseVector) -> NgsBaseVector:
-        self.gfu_adj.vec.data=self.bf.mat.CreateTranspose().Inverse(freedofs = self.domain.fes.FreeDofs())*argument.vec
-        return self._x.conj().copy()
+
+    def _ieval(self,
+        argument : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
+        source = self._source_vec(argument, out)
+        return self._write_vec(
+            out,
+            self.bf.mat.Inverse(
+                freedofs=self.domain.fes.FreeDofs()) * source
+        )
+
+    def _iadjoint(self,
+        argument : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
+        source = self._source_vec(argument, out)
+        self.gfu_adj.vec.data = self.bf.mat.CreateTranspose().Inverse(
+            freedofs=self.domain.fes.FreeDofs()) * source
+        self._prepare_out(out)
+        if out.is_complex_dtype:
+            out.vec.FV().NumPy()[:] = self.gfu_adj.vec.FV().NumPy().conj()
+        else:
+            out.vec.data = self.gfu_adj.vec
+        return out
 
 
 class NgsGradOP(NgsOperator):
@@ -566,11 +621,13 @@ class NgsGradOP(NgsOperator):
         self._consts = {*self._consts, "bf"}
 
 
-    def _eval(self, x):
-        return self.codomain.from_ngs(self.bf.mat * x.vec, copy=True)
+    def _ieval(self, x, out):
+        source = self._source_vec(x, out)
+        return self._write_vec(out, self.bf.mat * source)
 
-    def _adjoint(self, y):
-        return self.domain.from_ngs(self.bf.mat.T * y.vec, copy=True)
+    def _iadjoint(self, y, out):
+        source = self._source_vec(y, out)
+        return self._write_vec(out, self.bf.mat.T * source)
 
 class ProjectToBoundary(NgsOperator):
     """Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
@@ -589,8 +646,7 @@ class ProjectToBoundary(NgsOperator):
             bdr : types.NoneType | ngs.comp.Region | str | BitArray = None) -> None:
         codomain = codomain or domain
         self.same_domain = codomain == domain
-        super().__init__(domain, codomain)
-        self.linear=True
+        super().__init__(domain, codomain, linear=True)
         if bdr is None:
             if codomain.bdr is None:
                 raise ValueError(Errors.value_error(f"Either bdr is given or codomain has a specified boundary by regular expression!"))
@@ -617,28 +673,34 @@ class ProjectToBoundary(NgsOperator):
         self._consts = {*self._consts, "bdr_domain","bdr_codomain","projector_domain","projector_codomain"}
 
 
-    def _eval(self, 
-        x : NgsBaseVector) -> NgsBaseVector:
+    def _ieval(self,
+        x : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
-            _x_eval = x.copy()
-            self.projector_codomain.Project(_x_eval.vec)
-            return _x_eval
-        else:
-            self.gfu_domain.vec.data = x.vec
-            self.gfu_codomain.Set(self.gfu_domain)
-            self.projector_codomain.Project(self.gfu_codomain.vec)
-            return NgsBaseVector(self.gfu_codomain.vec, make_copy=True)
+            self._prepare_out(out)
+            if out is not x and out.vec is not x.vec:
+                out.vec.data = x.vec
+            self.projector_codomain.Project(out.vec)
+            return out
 
-    def _adjoint(self, 
-        x : NgsBaseVector) -> NgsBaseVector:
+        self.gfu_domain.vec.data = x.vec
+        self.gfu_codomain.Set(self.gfu_domain)
+        self.projector_codomain.Project(self.gfu_codomain.vec)
+        return self._write_vec(out, self.gfu_codomain.vec)
+
+    def _iadjoint(self,
+        x : NgsBaseVector,
+        out : NgsBaseVector) -> NgsBaseVector:
         if self.same_domain:
-            _x_eval = x.copy()
-            self.projector_domain.Project(_x_eval.vec)
-            return _x_eval
-        else:
-            self.gfu_codomain.vec.data = x.vec
-            self.gfu_domain.Set(self.gfu_codomain)
-            self.projector_domain.Project(self.gfu_domain.vec)
-            return NgsBaseVector(self.gfu_domain.vec, make_copy=True)
+            self._prepare_out(out)
+            if out is not x and out.vec is not x.vec:
+                out.vec.data = x.vec
+            self.projector_domain.Project(out.vec)
+            return out
+
+        self.gfu_codomain.vec.data = x.vec
+        self.gfu_domain.Set(self.gfu_codomain)
+        self.projector_domain.Project(self.gfu_domain.vec)
+        return self._write_vec(out, self.gfu_domain.vec)
    
 

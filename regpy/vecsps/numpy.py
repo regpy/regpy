@@ -224,7 +224,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     Notes
     -----
 
-    The measure is stored as a numpy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
+    The measure is stored as a NumPy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
 
     Parameters
     ----------
@@ -500,7 +500,7 @@ class GridFcts(MeasureSpaceFcts):
 
         Returns
         -------
-            np.ndarray: Numpy array with same shape as domain containing all the distances.
+            np.ndarray: NumPy array with same shape as domain containing all the distances.
         """
         if point is None:
             point=np.zeros(self.ndim)
@@ -509,7 +509,7 @@ class GridFcts(MeasureSpaceFcts):
         if(min(axes)<0 or max(axes)>=self.ndim):
             raise ValueError(Errors.value_error(f"Axes {axes} out of bounds for grid with {self.ndim} axes."))
         if(not isinstance(point,np.ndarray) or  point.shape[0]!=self.ndim or point.ndim!=1):
-            raise ValueError(Errors.value_error(f"Point {point} not a numpy array or not compatible with domain with dimension {self.ndim}."))
+            raise ValueError(Errors.value_error(f"Point {point} not a NumPy array or not compatible with domain with dimension {self.ndim}."))
         res=self.zeros()
         for j in axes:
             res+=(self.coords[j]-point[j])**2
@@ -611,7 +611,7 @@ class Prod(NumPyVectorSpace):
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
             raise TypeError(Errors.type_error("There are both complex and non-complex Factors. This is not supported in Prod!"))
         self.factors = []
-        """List of the `VectorSpaceBases` to be taken as Product."""
+        """List of the `vector spaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1.
         """Product of the `volume_elem` of all factors that have defined this property. """

@@ -7,12 +7,12 @@ from ..general import RegSolver
 __all__ = ["Landweber"]
 
 class Landweber(RegSolver):
-    r"""The Landweber method. Solves the potentially non-linear, ill-posed equation
+    r"""The Landweber method. Solves the potentially nonlinear, ill-posed equation
 
     .. math::
         F(x) = g^\delta,
 
-    where :math:`T` is a Frechet-differentiable operator, by gradient descent for the residual
+    where :math:`T` is a Fréchet-differentiable operator, by gradient descent for the residual
     
     .. math::
         \Vert F(x) - g^\delta\Vert^2,
@@ -30,7 +30,7 @@ class Landweber(RegSolver):
     init : array-like, optional
         The initial guess and starting point of the iteration. If None (default), it is taken from setting.
     data : array-like, default None
-        The measured data/right hand side. If None it is taken from setting.
+        The measured data/right-hand side. If None it is taken from setting.
     stepsize : float, optional
         The step length; must be chosen not too large. If omitted, it is guessed from the norm of
         the derivative at the initial guess. Alternatively, if backtracking is used, stepsize defines an
@@ -43,10 +43,10 @@ class Landweber(RegSolver):
     def __init__(self, setting,init=None,data=None, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos",update_setting = True):
         super().__init__(setting)
         if self.op.linear:
-            self.log.warning("Using non-linear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear")
+            self.log.warning("Using nonlinear Landweber with a linear Operator! Consider using the linear Landweber in the module solvers.linear")
         self.x = setting.get_or_update_initial_guess(init, update_setting)
         self.rhs = setting.get_or_update_data(data, update_setting)
-        """The right hand side gets initialized with the measured data."""
+        """The right-hand side gets initialized with the measured data."""
                 
         self.y, deriv = self.op.linearize(self.x)
         self.deriv = deriv

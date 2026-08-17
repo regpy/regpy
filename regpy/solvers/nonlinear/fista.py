@@ -57,7 +57,7 @@ class FISTA(RegSolver):
         else:
             self.data = setting.get_or_update_data(data, update_setting)
         if self.op.linear:
-            self.log.warning("Using non-linear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear")
+            self.log.warning("Using nonlinear FISTA with a linear Operator! Consider using the linear FISTA in the module solvers.linear")
         self.log.setLevel(logging_level)
         self.regpar = self.setting.regpar
         self.mu_penalty  = self.regpar * self.penalty.convexity_param

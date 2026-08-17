@@ -36,7 +36,7 @@ class IntegralFunctionalBase(Functional):
      * `_f_conj_second_deriv' the second derivative :math:`\partial f*^2/\partial v_*^2` (often not needed!)
      * `_f_conj_prox` giving the proximal  function :math:`\mathrm{prox}_{\tau f^*(\cdot,x)}`     
     
-    since 
+    (where _f_deriv, _f_prox, _f_conj, and _f_conj_prox must be able to handle out=input) since 
 
     .. math::
         F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
@@ -46,6 +46,21 @@ class IntegralFunctionalBase(Functional):
     .. math::
         \mathrm{prox}_{\tau F}(v)(x) = \mathrm{prox}_{\tau f(\cdot,x)}(v(x)).
 
+    It allows to replace the function :math:`f(\cdot,x)` on the interval :math:`(-\infty,a(x))` by one of 
+    the following terms, and analogously on :math:`(b(x),\infty)` with :math:`-\infty<=a(x) < b(x)\leq \infty`
+
+    .. math::
+        \infty &\text{hard constraint}\\
+        f(a(x),x) + (x-a(x)) \partial_1 f(a(x),x) & \text{first order Taylor approximation}\\ 
+        f(a(x),x) + (x-a(x)) \partial_1 f(a(x),x) +0.5(x-a(x))^2 \partial_1^2 f(a(x),x)& \text{second order Taylor approximation}\\ 
+
+    An important use case of quadratic Taylor approximations is the improvement of the convexity constant 
+    (and the Lipschitz constant of the conjugate functional) in convex optimization methods. 
+    As opposed to hard constraints, this preserves Lipschitz continuity of derivative. 
+    Note that hard constraints correspond to linear Taylor approximations of the conjugate functionals and vice versa, 
+    whereas quadratic Taylor approximations lead to quadratic Taylor approximation of the conjugate. 
+
+    Only one of the above replacements may for specified for all :math:`x` on each side.
 
     Parameters
     ----------
@@ -54,30 +69,28 @@ class IntegralFunctionalBase(Functional):
     nat_dom_l,nat_dom_u : float or np.ndarray, default: -np.inf, np.inf
         lower and upper boundary of the natural essential domain of :math:`f`, i.e., the interval on which :math:`f` without artificial constraints or Taylor expansion is finite 
         If dom_l or dom_u are finite, :math:`f` should be finite at these points (possibly very large if :math:`f` tends to infinity there) 
-        If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a numpy array.
+        If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a NumPy array.
     conj_nat_dom_l,conj_nat_dom_u : float or np.ndarray [default: -np.inf and np.inf, rsp.]
         lower and upper boundary of the natural essential domain of the conjugate of :math:`f` 
         (as vector in primal space)
     constr_u: None or float or np.ndarray [default: None]
-        If not None, an upper constraint is imposed, i.e. :math:`f(v,x)` is replaced by a function that takes the value `np.inf` 
-        if `v>contr_u(x)`.
+        If not None, an upper hard constraint is imposed, and constr_u specifies :math:`b(x)`
     constr_l: None or float or np.ndarray [default: None]
-        As `constr_u`, but for a lower constraint. 
+        If not None, a lower hard constraint is imposed, and constr_u specifies :math:`a(x)` 
     lin_taylor_u: None or float or np.ndarray [default: None]
-        If not None, :math:`f(v,x)` is replaced by its first order Taylor expansion 
-        :math: `f(r(x),x) + (v-r(x)) \partial_v f(r(x),x) ` if :math:`x>r(x):=lin_taylor_u(x)`
+        If not None, :math:`b(x)` for linear Taylor on the right-hand side
     lin_taylor_l: None or float or np.ndarray [default: None]
-        Analogous to right linearization, but for small values of :math:`v`.
+        If not None, :math:`a(x)` for linear Taylor on the left hand side
     quad_taylor_u: None or float or np.ndarray [default: None]
-        Analogous to lin_taylor_u, but with a quadratic Taylor expansion
+        If not None, :math:`b(x)` for quadratic Taylor on the right-hand side
     quad_taylor_l: None or float or np.ndarray [default: None]
-        Analogous to quad_taylor_u, but for small values of :math:`v`
+        If not None, :math:`a(x)` for quadratic Taylor on the left hand side
     methods, conj_methods = set of strings or None [default: None]
         Names of the methods implemented by an IntegralFunctionalBase instance (see Functional!).
         In the default case all methods are indicated as being implemented. 
     """
 
-    def __init__(self,domain,
+    def __init__(self, domain,
                  nat_dom_l=-np.inf, nat_dom_u=np.inf, 
                  conj_nat_dom_l=-np.inf,conj_nat_dom_u=np.inf,
                  constr_l=None, constr_u=None,
@@ -87,21 +100,26 @@ class IntegralFunctionalBase(Functional):
                  methods = None, conj_methods = None,
                  is_data_func = False,
                  **kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info="Integral functionals are only implemented for MeasureSPaceFcts domains."))
+        if not isinstance(domain,MeasureSpaceFcts):
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info="IntegralFunctionalBase only implemented for real-valued MeasureSpaceFcts domains."))
+        if not domain.shape_codomain == () or not np.issubdtype(domain.dtype, np.floating):
+            raise RuntimeError(Errors.runtime_error(f'IntegralFunctionalBase only implemented for real-valued MeasureSpaceFcts. Got dtype={domain.dtype}, shape_codomain = {domain.shape_codomain}. Consider using  VectorIntegralFunctional instead.'))
         self.h_domain = L2(domain)
         self.measure = np.broadcast_to(domain.measure,domain.shape) if np.isscalar(domain.measure) else domain.measure
         self.domain = domain
 
         all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
 
-        super().__init__(domain,Lipschitz=Lipschitz,convexity_param=convexity_param,
+        super().__init__(domain, Lipschitz=Lipschitz, convexity_param=convexity_param,
                          is_separable=True,
                          methods = methods if methods is not None else all_methods, 
                          conj_methods = conj_methods if conj_methods is not None else all_methods,
                          is_data_func = is_data_func
                          )
 
-        self._buf = self.domain.zeros()
+        self._buffer_status = {}  
+        # dictionary with keys corresponding to buffer names and boolean values indicating if they are currently in use (True) 
+        # or not (False). This dictionary helps to prevent accidental overwriting of buffers by recursions or multithreading. 
         self.kwargs = kwargs
         if 'logging_level' in kwargs.keys():
             self.log.setLevel(kwargs['logging_level'])
@@ -276,41 +294,80 @@ class IntegralFunctionalBase(Functional):
   
     def _precompute_f_l(self):
         if self.constr_l is not None:
-            active_ind_l = self.constr_l> self._nat_dom_l
-            self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
-            self.conj_taylor_l[active_ind_l] = self._f_deriv(self.dom_l[active_ind_l],mask=active_ind_l,**self.kwargs)*self.measure[active_ind_l]
+            active_ind_l = self.constr_l > self._nat_dom_l
+            self.conj_taylor_l = np.full(self.domain.shape, -np.inf)
+            self._f_deriv(
+                self.dom_l, out=self.conj_taylor_l, mask=active_ind_l,
+                **self.kwargs
+            )
+            np.multiply(
+                self.conj_taylor_l, self.measure, out=self.conj_taylor_l,
+                where=active_ind_l
+            )
             self._if_constant_broadcast(self.conj_taylor_l)
 
             self.f_l = self.domain.zeros()
-            self.f_l[active_ind_l] = self._f(self.dom_l[active_ind_l],mask=active_ind_l,**self.kwargs)
-            self._if_constant_broadcast(self.f_l,mask=active_ind_l)
-        elif self.lin_taylor_l is not None:           
+            self._f(self.dom_l, out=self.f_l, mask=active_ind_l, **self.kwargs)
+            self._if_constant_broadcast(self.f_l, mask=active_ind_l)
+        elif self.lin_taylor_l is not None:
             self.conj_f_l = self.domain.zeros()
-            conj_active_ind_l = self._taylor_l>self.dom_l
-            self.conj_f_l[conj_active_ind_l] = self._f_conj(self.conj_dom_l[conj_active_ind_l]/self.measure[conj_active_ind_l],mask=conj_active_ind_l,**self.kwargs)
-            self._if_constant_broadcast(self.conj_f_l,mask=conj_active_ind_l)
+            conj_active_ind_l = self._taylor_l > self.dom_l
+            argument = np.empty_like(self.conj_dom_l)
+            np.divide(
+                self.conj_dom_l, self.measure, out=argument,
+                where=conj_active_ind_l
+            )
+            self._f_conj(
+                argument, out=self.conj_f_l, mask=conj_active_ind_l,
+                **self.kwargs
+            )
+            self._if_constant_broadcast(self.conj_f_l, mask=conj_active_ind_l)
         elif self.quad_taylor_l is not None:
-            taylor_active_l = self._taylor_l>=self.dom_l
+            taylor_active_l = self._taylor_l >= self.dom_l
             if np.any(taylor_active_l):
-                self.conj_taylor_l = np.full(self.domain.shape,-np.inf)
-                self.conj_taylor_l[taylor_active_l] = self._f_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)*self.measure[taylor_active_l]
+                self.conj_taylor_l = np.full(self.domain.shape, -np.inf)
+                self._f_deriv(
+                    self._taylor_l, out=self.conj_taylor_l,
+                    mask=taylor_active_l, **self.kwargs
+                )
+                np.multiply(
+                    self.conj_taylor_l, self.measure, out=self.conj_taylor_l,
+                    where=taylor_active_l
+                )
                 self._if_constant_broadcast(self.conj_taylor_l)
 
                 self.f_l = self.domain.zeros()
-                self.f_l[taylor_active_l] = self._f(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)
-                self._if_constant_broadcast(self.f_l,mask=taylor_active_l)
+                self._f(
+                    self._taylor_l, out=self.f_l, mask=taylor_active_l,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.f_l, mask=taylor_active_l)
 
+                argument = np.empty_like(self.conj_taylor_l)
+                np.divide(
+                    self.conj_taylor_l, self.measure, out=argument,
+                    where=taylor_active_l
+                )
                 self.conj_f_l = self.domain.zeros()
-                self.conj_f_l[taylor_active_l] = self._f_conj(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**self.kwargs)
-                self._if_constant_broadcast(self.conj_f_l,mask=taylor_active_l)
+                self._f_conj(
+                    argument, out=self.conj_f_l, mask=taylor_active_l,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.conj_f_l, mask=taylor_active_l)
 
                 self.fpp_l = self.domain.zeros()
-                self.fpp_l[taylor_active_l] = self._f_second_deriv(self._taylor_l[taylor_active_l],mask=taylor_active_l,**self.kwargs)
-                self._if_constant_broadcast(self.fpp_l,mask=taylor_active_l)
- 
+                self._f_second_deriv(
+                    self._taylor_l, out=self.fpp_l, mask=taylor_active_l,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.fpp_l, mask=taylor_active_l)
+
                 self.fstarpp_l = self.domain.zeros()
-                self.fstarpp_l[taylor_active_l] = self._f_conj_second_deriv(self.conj_taylor_l[taylor_active_l]/self.measure[taylor_active_l],mask=taylor_active_l,**self.kwargs)
-                self._if_constant_broadcast(self.fstarpp_l,mask=taylor_active_l)
+                self._f_conj_second_deriv(
+                    argument, out=self.fstarpp_l, mask=taylor_active_l,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.fstarpp_l, mask=taylor_active_l)
 
     def _delete_f_l(self):
         if hasattr(self,'conj_taylor_l'):
@@ -326,41 +383,80 @@ class IntegralFunctionalBase(Functional):
 
     def _precompute_f_u(self):
         if self.constr_u is not None:
-            active_ind_u = self.constr_u< self._nat_dom_u
-            self.conj_taylor_u = np.full(self.domain.shape,np.inf)
-            self.conj_taylor_u[active_ind_u] = self._f_deriv(self.dom_u[active_ind_u],mask=active_ind_u,**self.kwargs)*self.measure[active_ind_u]
+            active_ind_u = self.constr_u < self._nat_dom_u
+            self.conj_taylor_u = np.full(self.domain.shape, np.inf)
+            self._f_deriv(
+                self.dom_u, out=self.conj_taylor_u, mask=active_ind_u,
+                **self.kwargs
+            )
+            np.multiply(
+                self.conj_taylor_u, self.measure, out=self.conj_taylor_u,
+                where=active_ind_u
+            )
             self._if_constant_broadcast(self.conj_taylor_u)
 
             self.f_u = self.domain.zeros()
-            self.f_u[active_ind_u] = self._f(self.dom_u[active_ind_u],mask=active_ind_u,**self.kwargs)
-            self._if_constant_broadcast(self.f_u,mask=active_ind_u)
+            self._f(self.dom_u, out=self.f_u, mask=active_ind_u, **self.kwargs)
+            self._if_constant_broadcast(self.f_u, mask=active_ind_u)
         elif self.lin_taylor_u is not None:
             self.conj_f_u = self.domain.zeros()
-            conj_active_ind_u = self._taylor_u<self.dom_u
-            self.conj_f_u[conj_active_ind_u] = self._f_conj(self.conj_dom_u[conj_active_ind_u]/self.measure[conj_active_ind_u],mask=conj_active_ind_u,**self.kwargs)
-            self._if_constant_broadcast(self.conj_f_u,mask=self._taylor_u<self.dom_u)
+            conj_active_ind_u = self._taylor_u < self.dom_u
+            argument = np.empty_like(self.conj_dom_u)
+            np.divide(
+                self.conj_dom_u, self.measure, out=argument,
+                where=conj_active_ind_u
+            )
+            self._f_conj(
+                argument, out=self.conj_f_u, mask=conj_active_ind_u,
+                **self.kwargs
+            )
+            self._if_constant_broadcast(self.conj_f_u, mask=conj_active_ind_u)
         elif self.quad_taylor_u is not None:
-            taylor_active_u = self._taylor_u<=self.dom_u
+            taylor_active_u = self._taylor_u <= self.dom_u
             if np.any(taylor_active_u):
-                self.conj_taylor_u = np.full(self.domain.shape,np.inf)
-                self.conj_taylor_u[taylor_active_u] = self._f_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)*self.measure[taylor_active_u]
+                self.conj_taylor_u = np.full(self.domain.shape, np.inf)
+                self._f_deriv(
+                    self._taylor_u, out=self.conj_taylor_u,
+                    mask=taylor_active_u, **self.kwargs
+                )
+                np.multiply(
+                    self.conj_taylor_u, self.measure, out=self.conj_taylor_u,
+                    where=taylor_active_u
+                )
                 self._if_constant_broadcast(self.conj_taylor_u)
 
                 self.f_u = self.domain.zeros()
-                self.f_u[taylor_active_u] = self._f(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)
-                self._if_constant_broadcast(self.f_u,mask=taylor_active_u)
+                self._f(
+                    self._taylor_u, out=self.f_u, mask=taylor_active_u,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.f_u, mask=taylor_active_u)
 
+                argument = np.empty_like(self.conj_taylor_u)
+                np.divide(
+                    self.conj_taylor_u, self.measure, out=argument,
+                    where=taylor_active_u
+                )
                 self.conj_f_u = self.domain.zeros()
-                self.conj_f_u[taylor_active_u] = self._f_conj(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**self.kwargs)
-                self._if_constant_broadcast(self.conj_f_u,mask=taylor_active_u)
+                self._f_conj(
+                    argument, out=self.conj_f_u, mask=taylor_active_u,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.conj_f_u, mask=taylor_active_u)
 
                 self.fpp_u = self.domain.zeros()
-                self.fpp_u[taylor_active_u] = self._f_second_deriv(self._taylor_u[taylor_active_u],mask=taylor_active_u,**self.kwargs)
-                self._if_constant_broadcast(self.fpp_u,mask=taylor_active_u)
+                self._f_second_deriv(
+                    self._taylor_u, out=self.fpp_u, mask=taylor_active_u,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.fpp_u, mask=taylor_active_u)
 
                 self.fstarpp_u = self.domain.zeros()
-                self.fstarpp_u[taylor_active_u] = self._f_conj_second_deriv(self.conj_taylor_u[taylor_active_u]/self.measure[taylor_active_u],mask=taylor_active_u,**self.kwargs)
-                self._if_constant_broadcast(self.fstarpp_u,mask=taylor_active_u)
+                self._f_conj_second_deriv(
+                    argument, out=self.fstarpp_u, mask=taylor_active_u,
+                    **self.kwargs
+                )
+                self._if_constant_broadcast(self.fstarpp_u, mask=taylor_active_u)
 
     def _delete_f_u(self):
         if hasattr(self,'conj_taylor_u'):
@@ -429,32 +525,38 @@ class IntegralFunctionalBase(Functional):
         return self._if_constant_broadcast(toret)
 
     @property
-    def conj_dom_l(self)->np.ndarray:
+    def conj_dom_l(self) -> np.ndarray:
         if self.constr_u is None and self._taylor_l is None:
             return self._conj_nat_dom_l
-        else:
-            toret = self._conj_nat_dom_l.copy()
-            if self.lin_taylor_l is not None:
-                toret[self._taylor_l>self._nat_dom_l] = self._f_deriv(self._taylor_l[self._taylor_l>self.dom_l],mask=self._taylor_l>self.dom_l)*self.measure[self._taylor_l>self.dom_l]
-            elif self.quad_taylor_l is not None:
-                toret[self._taylor_l>self._nat_dom_l]= -np.inf
-            elif self.constr_l is not None:
-                toret[self.constr_l>self._nat_dom_l] = -np.inf
-            return self._if_constant_broadcast(toret)
+        toret = self._conj_nat_dom_l.copy()
+        if self.lin_taylor_l is not None:
+            active = self._taylor_l > self.dom_l
+            self._f_deriv(self._taylor_l, out=toret, mask=active)
+            np.multiply(toret, self.measure, out=toret, where=active)
+        elif self.quad_taylor_l is not None:
+            active = self._taylor_l > self._nat_dom_l
+            np.copyto(toret, -np.inf, where=active)
+        elif self.constr_l is not None:
+            active = self.constr_l > self._nat_dom_l
+            np.copyto(toret, -np.inf, where=active)
+        return self._if_constant_broadcast(toret)
 
     @property
-    def conj_dom_u(self)->np.ndarray:
+    def conj_dom_u(self) -> np.ndarray:
         if self.constr_u is None and self._taylor_u is None:
             return self._conj_nat_dom_u
-        else:
-            toret = self._conj_nat_dom_u.copy()
-            if self.lin_taylor_u is not None:
-                toret[self._taylor_u<self._nat_dom_u] = self._f_deriv(self._taylor_u[self._taylor_u<self.dom_u],mask=self._taylor_u<self.dom_u)*self.measure[self._taylor_u<self.dom_u]
-            elif self.quad_taylor_u is not None:
-                toret[self._taylor_u<self._nat_dom_u]= np.inf
-            elif self.constr_u is not None:
-                toret[self.constr_u<self._nat_dom_u] = np.inf                
-            return self._if_constant_broadcast(toret)
+        toret = self._conj_nat_dom_u.copy()
+        if self.lin_taylor_u is not None:
+            active = self._taylor_u < self.dom_u
+            self._f_deriv(self._taylor_u, out=toret, mask=active)
+            np.multiply(toret, self.measure, out=toret, where=active)
+        elif self.quad_taylor_u is not None:
+            active = self._taylor_u < self._nat_dom_u
+            np.copyto(toret, np.inf, where=active)
+        elif self.constr_u is not None:
+            active = self.constr_u < self._nat_dom_u
+            np.copyto(toret, np.inf, where=active)
+        return self._if_constant_broadcast(toret)
 
     @property
     def everywhere_finite(self)->bool: 
@@ -477,391 +579,660 @@ class IntegralFunctionalBase(Functional):
         pass
     """
 
-    def _if_constant_broadcast(self,x,mask=None):
-        if not isinstance(x,np.ndarray) and x.shape != self.domain.shape:
-            raise TypeError(Errors.type_error(f"If constant use broadcasting in the IntegralFunctional init only allowed for numpy arrays of same shape as domain." +"\n\t" + f"x = {x}"))
-        if mask is None:
-            if np.allclose(x, x.flatten()[0],rtol=1e-10,atol=1e-12):
-                x = np.broadcast_to(x.flatten()[0],self.domain.shape)
-        else:
-            if np.allclose(x[mask], x[mask].flatten()[0],rtol=1e-10,atol=1e-12):
-                x = np.broadcast_to(x[mask].flatten()[0],self.domain.shape)
+    def _if_constant_broadcast(self, x, mask=None):
+        if not isinstance(x, np.ndarray) or x.shape != self.domain.shape:
+            raise TypeError(Errors.type_error(
+                "If constant use broadcasting in the IntegralFunctional init only allowed "
+                "for NumPy arrays of same shape as domain." + "\n\t" + f"x = {x}"
+            ))
+        where = self._where(mask, x)
+        if not np.any(where):
+            return x
+        first = x.flat[np.argmax(where)]
+        close = np.isclose(x, first, rtol=1e-10, atol=1e-12)
+        if np.all(close, where=where):
+            x = np.broadcast_to(first, self.domain.shape)
         return x
 
-    def _assert_essential_domain(self,v,eps=1e-10,msg=None):
-        self._buf = v-self.dom_u
+    def _get_scratch(self, name, like):
+        """Return a persistent scratch array (stored as ``self.<name>``) with the same
+        shape and dtype as ``like``, reusing the previous allocation whenever possible.
+        """
+        if name in self._buffer_status and self._buffer_status[name] == True:
+            raise RuntimeError(Errors.generic_message('Now request for buffer {name}, but this buffer is already in use.'))
+        buf = getattr(self, name, None)
+        if buf is None or buf.shape != like.shape or buf.dtype != like.dtype:
+            buf = np.empty_like(like)            
+            setattr(self, name, buf)
+        self._buffer_status[name] = True
+        return buf
+
+    def _free_scratch(self,name):
+        """Indicate that a buffer is no longer in use and hence not blocked.
+        Does not free the memory!
+        """
+        self._buffer_status[name] = False
+
+    @staticmethod
+    def _prepare_out(out, like):
+        """Return a writable output array compatible with ``like``.
+        If ``out`` is None, a new array is allocated and returned.
+        If ``out`` is an array, it is returned without initialization.
+        This is used in pointwise operations to share code between allocating and
+        in-place implementations.
+        """
+        if out is None:
+            return np.empty_like(like)
+        if not isinstance(out, np.ndarray):
+            raise TypeError(Errors.not_instance(
+                out, np.ndarray,
+                add_info="The out argument of an integral functional must be a NumPy array."
+            ))
+        if out.shape != like.shape:
+            raise ValueError(Errors.value_error(
+                f"out and input must have identical shapes. Got {out.shape} and {like.shape}."
+            ))
+        if not out.flags.writeable:
+            raise ValueError(Errors.value_error("The out array must be writable."))
+        return out
+
+    @staticmethod
+    def _where(mask, like):
+        """Return ``mask`` as a boolean array broadcast over the full input shape."""
+        if mask is None:
+            return np.broadcast_to(np.bool_(True), like.shape)
+        where = np.asarray(mask, dtype=bool)
+        if where.shape != like.shape:
+            raise ValueError(Errors.value_error(
+                f"mask and input must have identical shapes. Got {where.shape} and {like.shape}."
+            ))
+        return where
+
+    def _apply_pointwise(self, func, x, out, mask=None, **kwargs):
+        """Evaluate a pointwise method on full arrays using a NumPy ``where`` mask."""
+        return func(x, out=out, mask=mask, **kwargs)
+
+    def _assert_essential_domain(self, v, eps=1e-10, msg=None):
+        buf = self._get_scratch('_buf',v)
+        np.subtract(v, self.dom_u, out=buf)
         if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t" + f"diff:{np.max(self._buf)},"+"\n\t"+ f"eps={eps}"))
-        self._buf = self.dom_l-v
+        np.subtract(self.dom_l, v, out=buf)
         if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
+        self._free_scratch('_buf')
 
-    def _assert_conj_essential_domain(self,vstar,eps=1e-10,msg=None):
-        self._buf = vstar-self.conj_dom_u
+    def _assert_conj_essential_domain(self, vstar, eps=1e-10, msg=None):
+        buf = self._get_scratch('_buf',vstar)        
+        np.subtract(vstar, self.conj_dom_u, out=buf)
         if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        self._buf = self.conj_dom_l-vstar
+        np.subtract(self.conj_dom_l, vstar, out=buf)
         if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
+        self._free_scratch('_buf')
 
-    def _eval(self, v, func_vals =None):
-        # see comment in _conj! 
-        if self._taylor_l is not None:
-            v_small = (v<self._taylor_l)
-            if np.any(v_small):    
-                mask = ~v_small
-                self._buf[v_small] = v[v_small]
-                self._buf[v_small] *= self.conj_taylor_l[v_small] if self.quad_taylor_l is not None else self.conj_dom_l[v_small]
-                self._buf[v_small] /= self.measure[v_small] 
-                self._buf[v_small] -= self.conj_f_l[v_small]
-                if self.quad_taylor_l is not None:
-                    aux = v[v_small]-self._taylor_l[v_small]
-                    aux *= aux
-                    aux *= 0.5
-                    aux *= self.fpp_l[v_small]
-                    self._buf[v_small] += aux
-        if self._taylor_u is not None:
-            v_large = (v>self._taylor_u)
-            if np.any(v_large):    
-                mask = np.logical_and(mask,~v_large) if 'mask' in locals() else ~v_large
-                self._buf[v_large] = v[v_large]
-                self._buf[v_large] *= self.conj_taylor_u[v_large] if self.quad_taylor_u is not None else self.conj_dom_u[v_large]
-                self._buf[v_large] /= self.measure[v_large]
-                self._buf[v_large] -= self.conj_f_u[v_large]
-                if self.quad_taylor_u is not None:
-                    aux = v[v_large]-self._taylor_u[v_large]
-                    aux *= aux
-                    aux *= 0.5
-                    aux *= self.fpp_u[v_large]
-                    self._buf[v_large] += aux
-        if 'mask' in locals():
-            self._buf[mask] = self._f(v[mask],mask=mask,**self.kwargs)
-        else:
-            self._buf = self._f(v,**self.kwargs)            
-        if self.constr_l is not None:
-            self._buf[v<self.dom_l] = np.inf
-        if self.constr_u is not None:
-            self._buf[v>self.dom_u] = np.inf
-        if func_vals is not None:
-            np.copyto(func_vals,self._buf)
-        self._buf *= self.measure
-        return np.sum(self._buf)
+    def _eval(self, v, func_vals=None):
+        # See the comment in _conj.
+        buf = self._get_scratch('_buf', v)
+        try:
+            mask = None
+            if self._taylor_l is not None:
+                v_small = v < self._taylor_l
+                if np.any(v_small):
+                    mask = ~v_small
+                    buf[v_small] = v[v_small]
+                    buf[v_small] *= (
+                        self.conj_taylor_l[v_small]
+                        if self.quad_taylor_l is not None
+                        else self.conj_dom_l[v_small]
+                    )
+                    buf[v_small] /= self.measure[v_small]
+                    buf[v_small] -= self.conj_f_l[v_small]
+                    if self.quad_taylor_l is not None:
+                        aux = v[v_small] - self._taylor_l[v_small]
+                        aux *= aux
+                        aux *= 0.5
+                        aux *= self.fpp_l[v_small]
+                        buf[v_small] += aux
 
-    def _conj(self,vstar,func_vals=None):
-        # Using the definition of the conjugate, for v*<conj_taylor_l := f'(dom_l)  we get  
-        # f^*(v^*) = v^* dom_l - f(dom_l).
-        # By Young's equality conj_taylor_l * dom_l = f(dom_l) + f^*(conj_taylor_l) 
-        # and by the fact that f^*' and f' are inverse to each other, f^*(v^*) equals the first order Taylor approximation
-        # f^*(v^*) = f^*(conj_taylor_l) + f^*'(conj_taylor_l)(v^*-conj_taylor_l)
-        # This identity is used in the _eval.
-        self._buf2 = vstar/self.measure
-        if self.constr_l is not None or self.quad_taylor_l is not None:
-            vstar_small = (vstar<self.conj_taylor_l)
-            if np.any(vstar_small):
-                mask = ~vstar_small            
-                self._buf[vstar_small] = self._buf2[vstar_small]
-                self._buf[vstar_small] *= self._taylor_l[vstar_small] if self.quad_taylor_l is not None else self.dom_l[vstar_small]
-                self._buf[vstar_small] -= self.f_l[vstar_small]
-                if self.quad_taylor_l is not None:
-                    aux = self._buf2[vstar_small]-self.conj_taylor_l[vstar_small]/self.measure[vstar_small]
-                    aux *= aux
-                    aux *= 0.5
-                    aux *= self.fstarpp_l[vstar_small]
-                    self._buf[vstar_small] += aux
-        if self.constr_u is not None or self.quad_taylor_u is not None:
-            vstar_large = (vstar>self.conj_taylor_u)
-            if np.any(vstar_large):   
-                mask = np.logical_and(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
-                self._buf[vstar_large] = self._buf2[vstar_large]
-                self._buf[vstar_large] *= self._taylor_u[vstar_large] if self.quad_taylor_u is not None else self.dom_u[vstar_large]
-                self._buf[vstar_large] -= self.f_u[vstar_large]
-                if self.quad_taylor_u is not None:
-                    aux = self._buf2[vstar_large]-self.conj_taylor_u[vstar_large]/self.measure[vstar_large]
-                    aux *= aux
-                    aux *= 0.5
-                    aux *= self.fstarpp_u[vstar_large]
-                    self._buf[vstar_large] += aux                
-        if 'mask' in locals():
-            self._buf[mask] = self._f_conj(self._buf2[mask],mask=mask,**self.kwargs)
-        else:
-            self._buf = self._f_conj(self._buf2,**self.kwargs)
-        if self.lin_taylor_l is not None:
-            self._buf[vstar<self.conj_dom_l] = np.inf
-        if self.lin_taylor_u is not None:
-            self._buf[vstar>self.conj_dom_u] = np.inf
-        if func_vals is not None:
-            np.copyto(func_vals,self._buf)
-        self._buf *= self.measure
-        return np.sum(self._buf)
+            if self._taylor_u is not None:
+                v_large = v > self._taylor_u
+                if np.any(v_large):
+                    mask = ~v_large if mask is None else mask & ~v_large
+                    buf[v_large] = v[v_large]
+                    buf[v_large] *= (
+                        self.conj_taylor_u[v_large]
+                        if self.quad_taylor_u is not None
+                        else self.conj_dom_u[v_large]
+                    )
+                    buf[v_large] /= self.measure[v_large]
+                    buf[v_large] -= self.conj_f_u[v_large]
+                    if self.quad_taylor_u is not None:
+                        aux = v[v_large] - self._taylor_u[v_large]
+                        aux *= aux
+                        aux *= 0.5
+                        aux *= self.fpp_u[v_large]
+                        buf[v_large] += aux
 
-    def _subgradient(self, v):
+            self._apply_pointwise(self._f, v, buf, mask=mask, **self.kwargs)
+
+            if self.constr_l is not None:
+                buf[v < self.dom_l] = np.inf
+            if self.constr_u is not None:
+                buf[v > self.dom_u] = np.inf
+            if func_vals is not None:
+                np.copyto(func_vals, buf)
+            buf *= self.measure
+            return np.sum(buf)
+        finally:
+            self._free_scratch('_buf')
+
+    def _conj(self, vstar, func_vals=None):
+        # Using the definition of the conjugate, exterior values are given by
+        # the corresponding Taylor extensions.
+        buf = self._get_scratch('_buf', vstar)
+        buf2 = self._get_scratch('_buf2', vstar)
+        try:
+            np.divide(vstar, self.measure, out=buf2)
+            mask = None
+            if self.constr_l is not None or self.quad_taylor_l is not None:
+                vstar_small = vstar < self.conj_taylor_l
+                if np.any(vstar_small):
+                    mask = ~vstar_small
+                    buf[vstar_small] = buf2[vstar_small]
+                    buf[vstar_small] *= (
+                        self._taylor_l[vstar_small]
+                        if self.quad_taylor_l is not None
+                        else self.dom_l[vstar_small]
+                    )
+                    buf[vstar_small] -= self.f_l[vstar_small]
+                    if self.quad_taylor_l is not None:
+                        aux = (
+                            buf2[vstar_small]
+                            - self.conj_taylor_l[vstar_small] / self.measure[vstar_small]
+                        )
+                        aux *= aux
+                        aux *= 0.5
+                        aux *= self.fstarpp_l[vstar_small]
+                        buf[vstar_small] += aux
+
+            if self.constr_u is not None or self.quad_taylor_u is not None:
+                vstar_large = vstar > self.conj_taylor_u
+                if np.any(vstar_large):
+                    mask = ~vstar_large if mask is None else mask & ~vstar_large
+                    buf[vstar_large] = buf2[vstar_large]
+                    buf[vstar_large] *= (
+                        self._taylor_u[vstar_large]
+                        if self.quad_taylor_u is not None
+                        else self.dom_u[vstar_large]
+                    )
+                    buf[vstar_large] -= self.f_u[vstar_large]
+                    if self.quad_taylor_u is not None:
+                        aux = (
+                            buf2[vstar_large]
+                            - self.conj_taylor_u[vstar_large] / self.measure[vstar_large]
+                        )
+                        aux *= aux
+                        aux *= 0.5
+                        aux *= self.fstarpp_u[vstar_large]
+                        buf[vstar_large] += aux
+
+            self._apply_pointwise(self._f_conj, buf2, buf, mask=mask, **self.kwargs)
+
+            if self.lin_taylor_l is not None:
+                buf[vstar < self.conj_dom_l] = np.inf
+            if self.lin_taylor_u is not None:
+                buf[vstar > self.conj_dom_u] = np.inf
+            if func_vals is not None:
+                np.copyto(func_vals, buf)
+            buf *= self.measure
+            return np.sum(buf)
+        finally:
+            self._free_scratch('_buf2')
+            self._free_scratch('_buf')
+
+    def _subgradient(self, v, out=None):
         if not self.everywhere_finite:
-            self._assert_essential_domain(v,msg='_subgradient')
-        if self._taylor_l is not None:
-            v_small = (v<self._taylor_l)
-            if np.any(v_small):
-                mask = np.logical_not(v_small)   
-                self._buf[v_small] = self.conj_taylor_l[v_small] if self.quad_taylor_l is not None else self.conj_dom_l[v_small]
+            self._assert_essential_domain(v, msg="_subgradient")
+
+        out = self._prepare_out(out, v)
+
+        source = v
+        source_scratch = None
+        if np.may_share_memory(out, v):
+            source_scratch = self._get_scratch("_subgradient_input", v)
+            np.copyto(source_scratch, v)
+            source = source_scratch
+
+        try:
+            v_small = (
+                source < self._taylor_l
+                if self._taylor_l is not None else None
+            )
+            v_large = (
+                source > self._taylor_u
+                if self._taylor_u is not None else None
+            )
+
+            mask = None
+
+            if v_small is not None and np.any(v_small):
+                mask = ~v_small
                 if self.quad_taylor_l is not None:
-                    aux = v[v_small]-self._taylor_l[v_small]
+                    aux = source[v_small] - self._taylor_l[v_small]
                     aux *= self.fpp_l[v_small]
                     aux *= self.measure[v_small]
-                    self._buf[v_small] += aux  
-        if self._taylor_u is not None:
-            v_large = (v>self._taylor_u)
-            if np.any(v_large):
-                mask = np.logical_and(mask,~v_large) if 'mask' in locals() else ~v_large
-                self._buf[v_large] = self.conj_taylor_u[v_large] if self.quad_taylor_u is not None else self.conj_dom_u[v_large]
+                    out[v_small] = self.conj_taylor_l[v_small]
+                    out[v_small] += aux
+                else:
+                    out[v_small] = self.conj_dom_l[v_small]
+
+            if v_large is not None and np.any(v_large):
+                mask = ~v_large if mask is None else mask & ~v_large
                 if self.quad_taylor_u is not None:
-                    aux = v[v_large]-self._taylor_u[v_large]
+                    aux = source[v_large] - self._taylor_u[v_large]
                     aux *= self.fpp_u[v_large]
                     aux *= self.measure[v_large]
-                    self._buf[v_large] += aux                
-        if 'mask' in locals():
-            self._buf[mask] = self._f_deriv(v[mask],mask=mask,**self.kwargs)*self.measure[mask]
-        else:
-            self._buf = self._f_deriv(v,**self.kwargs)*self.measure
-        return self._buf.copy()
+                    out[v_large] = self.conj_taylor_u[v_large]
+                    out[v_large] += aux
+                else:
+                    out[v_large] = self.conj_dom_u[v_large]
 
+            self._apply_pointwise(
+                self._f_deriv, source, out,
+                mask=mask, **self.kwargs
+            )
+            np.multiply(
+                out, self.measure, out=out,
+                where=self._where(mask, out)
+            )
+            return out
+        finally:
+            if source_scratch is not None:
+                self._free_scratch("_subgradient_input")
+ 
     def dist_subdiff(self, vstar, x):
-        self._assert_essential_domain(x,msg='dist_subdiff')
-        diff = self._ptw_dist_subdiff(vstar,x)
-        ind = np.where(np.isclose(x,self.dom_u))
+        self._assert_essential_domain(x, msg='dist_subdiff')
+        diff = self._ptw_dist_subdiff(vstar, x)
+        deriv = np.empty_like(x)
+
+        ind = np.isclose(x, self.dom_u)
         if np.any(ind):
-            diff[ind]=np.minimum(vstar[ind]-self._f_deriv(x[ind],mask =ind)*self.measure[ind],0.)
-        ind = np.where(np.isclose(x,self.dom_l))
+            self._f_deriv(x, out=deriv, mask=ind)
+            np.multiply(deriv, self.measure, out=deriv, where=ind)
+            np.subtract(vstar, deriv, out=deriv, where=ind)
+            np.minimum(deriv, 0., out=diff, where=ind)
+
+        ind = np.isclose(x, self.dom_l)
         if np.any(ind):
-            diff[ind]=np.maximum(vstar[ind]-self._f_deriv(x[ind],mask =ind)*self.measure[ind],0.)
+            self._f_deriv(x, out=deriv, mask=ind)
+            np.multiply(deriv, self.measure, out=deriv, where=ind)
+            np.subtract(vstar, deriv, out=deriv, where=ind)
+            np.maximum(deriv, 0., out=diff, where=ind)
         return self.h_domain.dual_space().norm(diff)
 
-    def _conj_subgradient(self, vstar):
+    def _conj_subgradient(self, vstar, out=None):
         if not self.conj_everywhere_finite:
-            self._assert_conj_essential_domain(vstar,msg='_conj_subgradient')
-        self._buf2 = vstar/self.measure
-        if self.constr_l is not None or self.quad_taylor_l is not None:
-            vstar_small = (vstar<self.conj_taylor_l)
-            if np.any(vstar_small):
-                mask = np.logical_and(mask,~vstar_small) if 'mask' in locals() else ~vstar_small  
-                self._buf[vstar_small] = self._taylor_l[vstar_small] if self.quad_taylor_l is not None else self.dom_l[vstar_small]
+            self._assert_conj_essential_domain(vstar, msg='_conj_subgradient')
+        out = self._prepare_out(out, vstar)
+        buf2 = self._get_scratch('_buf2', vstar)
+        try:
+            np.divide(vstar, self.measure, out=buf2)
+            vstar_small = (
+                vstar < self.conj_taylor_l
+                if self.constr_l is not None or self.quad_taylor_l is not None
+                else None
+            )
+            vstar_large = (
+                vstar > self.conj_taylor_u
+                if self.constr_u is not None or self.quad_taylor_u is not None
+                else None
+            )
+            mask = None
+
+            if vstar_small is not None and np.any(vstar_small):
+                mask = ~vstar_small
                 if self.quad_taylor_l is not None:
-                    aux = self._buf2[vstar_small]-self.conj_taylor_l[vstar_small]/self.measure[vstar_small]
+                    aux = (
+                        buf2[vstar_small]
+                        - self.conj_taylor_l[vstar_small] / self.measure[vstar_small]
+                    )
                     aux *= self.fstarpp_l[vstar_small]
-                    self._buf[vstar_small] += aux
-        if self.constr_u is not None or self.quad_taylor_u is not None:
-            vstar_large = (vstar>self.conj_taylor_u)
-            if np.any(vstar_large):
-                mask = np.logical_and(mask,~vstar_large) if 'mask' in locals() else ~vstar_large
-                self._buf[vstar_large] = self._taylor_u[vstar_large] if self.quad_taylor_u is not None else self.dom_u[vstar_large]
+                    out[vstar_small] = self._taylor_l[vstar_small]
+                    out[vstar_small] += aux
+                else:
+                    out[vstar_small] = self.dom_l[vstar_small]
+
+            if vstar_large is not None and np.any(vstar_large):
+                mask = ~vstar_large if mask is None else mask & ~vstar_large
                 if self.quad_taylor_u is not None:
-                    aux = self._buf2[vstar_large]-self.conj_taylor_u[vstar_large]/self.measure[vstar_large]
+                    aux = (
+                        buf2[vstar_large]
+                        - self.conj_taylor_u[vstar_large] / self.measure[vstar_large]
+                    )
                     aux *= self.fstarpp_u[vstar_large]
-                    self._buf[vstar_large] += aux
-        if 'mask' in locals():
-            self._buf[mask] = self._f_conj_deriv(self._buf2[mask],mask=mask,**self.kwargs)
-        else:
-            self._buf = self._f_conj_deriv(self._buf2,**self.kwargs)
-        return self._buf.copy()
+                    out[vstar_large] = self._taylor_u[vstar_large]
+                    out[vstar_large] += aux
+                else:
+                    out[vstar_large] = self.dom_u[vstar_large]
+
+            self._apply_pointwise(
+                self._f_conj_deriv, buf2, out, mask=mask, **self.kwargs
+            )
+            return out
+        finally:
+            self._free_scratch('_buf2')
 
     def _conj_dist_subdiff(self, v, xstar):
         self._assert_conj_essential_domain(xstar, msg='_conj_dist_subdiff')
-        diff = self._conj_ptw_dist_subdiff(v,xstar)
-        ind = np.where(np.isclose(xstar, self.conj_dom_u))
+        diff = self._conj_ptw_dist_subdiff(v, xstar)
+        argument = np.empty_like(xstar)
+        deriv = np.empty_like(xstar)
+        np.divide(xstar, self.measure, out=argument)
+
+        ind = np.isclose(xstar, self.conj_dom_u)
         if np.any(ind):
-            diff[ind]=np.minimum(v[ind]-self._f_conj_deriv(xstar[ind]/self.measure[ind],mask =ind),0.)
-        ind = np.where(np.isclose(xstar,self.conj_dom_l))
+            self._f_conj_deriv(argument, out=deriv, mask=ind)
+            np.subtract(v, deriv, out=deriv, where=ind)
+            np.minimum(deriv, 0., out=diff, where=ind)
+
+        ind = np.isclose(xstar, self.conj_dom_l)
         if np.any(ind):
-            diff[ind]=np.maximum(v[ind]-self._f_conj_deriv(xstar[ind]/self.measure[ind],mask =ind),0.)         
+            self._f_conj_deriv(argument, out=deriv, mask=ind)
+            np.subtract(v, deriv, out=deriv, where=ind)
+            np.maximum(deriv, 0., out=diff, where=ind)
         return self.h_domain.norm(diff)
 
     def _hessian(self, v):
         if not self.everywhere_finite:
-            self._assert_essential_domain(v,msg='_hessian')
-        self._buf = np.full(self.domain.shape,np.inf)
+            self._assert_essential_domain(v, msg='_hessian')
+        buf = self._get_scratch('_buf', v)
+        try:
+            buf.fill(np.inf)
+            if self.lin_taylor_l is not None:
+                buf[v < self._taylor_l] = 0.
+            if self.quad_taylor_l is not None:
+                v_small = v < self._taylor_l
+                buf[v_small] = self.fpp_l[v_small]
+            if self.lin_taylor_u is not None:
+                buf[v > self._taylor_u] = 0.
+            if self.quad_taylor_u is not None:
+                v_large = v > self._taylor_u
+                buf[v_large] = self.fpp_u[v_large]
 
-        if self.lin_taylor_l is not None:
-            self._buf[v<self._taylor_l] = 0.
-        if self.quad_taylor_l is not None:
-            v_small = v<self._taylor_l
-            self._buf[v_small] = self.fpp_l[v_small]
-        if self.lin_taylor_u is not None:
-            self._buf[v>self._taylor_u] = 0.
-        if self.quad_taylor_u is not None:
-            v_large = v>self._taylor_u
-            self._buf[v_large] = self.fpp_u[v_large]
-
-        if self._taylor_l is not None or self._taylor_u is not None:
-            mask = (self._buf==np.inf)
-            self._buf[mask] =  self._f_second_deriv(v[mask],mask=mask,**self.kwargs)
-        else:
-            self._buf =  self._f_second_deriv(v,**self.kwargs)
-        self._buf *= self.measure
-        return rop.PtwMultiplication(self.domain,self._buf.copy())
+            mask = None
+            if self._taylor_l is not None or self._taylor_u is not None:
+                mask = buf == np.inf
+            self._apply_pointwise(
+                self._f_second_deriv, v, buf, mask=mask, **self.kwargs
+            )
+            buf *= self.measure
+            return rop.PtwMultiplication(self.domain, buf.copy())
+        finally:
+            self._free_scratch('_buf')
 
     def _conj_hessian(self, vstar):
         if not self.conj_everywhere_finite:
-            self._assert_conj_essential_domain(vstar,msg='_conj_hessian')
-        self._buf2 = vstar/self.measure
-        self._buf = np.full(self.domain.shape,np.inf)
+            self._assert_conj_essential_domain(vstar, msg='_conj_hessian')
+        buf = self._get_scratch('_buf', vstar)
+        buf2 = self._get_scratch('_buf2', vstar)
+        try:
+            np.divide(vstar, self.measure, out=buf2)
+            buf.fill(np.inf)
+            if self.constr_l is not None:
+                buf[buf2 < self.conj_taylor_l] = 0.
+            if self.constr_u is not None:
+                buf[buf2 > self.conj_taylor_u] = 0.
+            if self.quad_taylor_l is not None:
+                vstar_small = vstar < self.conj_taylor_l
+                buf[vstar_small] = self.fstarpp_l[vstar_small]
+            if self.quad_taylor_u is not None:
+                vstar_large = vstar > self.conj_taylor_u
+                buf[vstar_large] = self.fstarpp_u[vstar_large]
 
-        if self.constr_l is not None:
-            self._buf[self._buf2<self.conj_taylor_l] = 0.
-        if self.constr_u is not None:
-            self._buf[self._buf2>self.conj_taylor_u] = 0.
-        if self.quad_taylor_l is not None:
-            vstar_small = vstar<self.conj_taylor_l
-            self._buf[vstar_small] = self.fstarpp_l[vstar_small]
-        if self.quad_taylor_u is not None:
-            vstar_large = vstar>self.conj_taylor_u
-            self._buf[vstar_large] = self.fstarpp_u[vstar_large]
-
-        if self.constr_l is not None or self.constr_u is not None or self.quad_taylor_l is not None or self.quad_taylor_u is not None:   
-            mask = (self._buf==np.inf)
-            self._buf[mask] = self._f_conj_second_deriv(self._buf2[mask],mask=mask,**self.kwargs)
-        else:
-            self._buf = self._f_conj_second_deriv(self._buf2,**self.kwargs)
-        self._buf /= self.measure
-        return rop.PtwMultiplication(self.domain, self._buf.copy())
+            mask = None
+            if (
+                self.constr_l is not None or self.constr_u is not None
+                or self.quad_taylor_l is not None or self.quad_taylor_u is not None
+            ):
+                mask = buf == np.inf
+            self._apply_pointwise(
+                self._f_conj_second_deriv, buf2, buf,
+                mask=mask, **self.kwargs
+            )
+            buf /= self.measure
+            return rop.PtwMultiplication(self.domain, buf.copy())
+        finally:
+            self._free_scratch('_buf2')
+            self._free_scratch('_buf')
     
-    def _proximal(self, v, tau,mask=None):
-        if mask is None:
-            res = self._f_prox(v,tau,**self.kwargs)
-        else:
-            res = self._f_prox(v,tau,mask=mask,**self.kwargs)
-        mask = mask if mask is not None else slice(None)            
+    def _proximal(self, v, tau, mask=None, out=None):
+        out = self._prepare_out(out, v)
+        where = self._where(mask, v)
+        needs_source = any(
+            item is not None for item in (
+                self.lin_taylor_l, self.lin_taylor_u,
+                self.quad_taylor_l, self.quad_taylor_u,
+            )
+        )
+        source = v
+        source_scratch = None
+        if needs_source and np.may_share_memory(out, v):
+            source_scratch = self._get_scratch('_prox_input', v)
+            np.copyto(source_scratch, v, where=where)
+            source = source_scratch
 
-        if self.constr_l is not None:
-            res = np.maximum(res,self.dom_l[mask])
-        if self.constr_u is not None:
-            res = np.minimum(res,self.dom_u[mask])
-        
-        if self.lin_taylor_l is not None:
-            linprox = v- tau*self.conj_dom_l[mask]/self.measure[mask]                
-            res[linprox<=self._taylor_l] = linprox[linprox<=self._taylor_l]
-        if self.lin_taylor_u is not None:
-            linprox = v-tau*self.conj_dom_u[mask]/self.measure[mask]
-            res[linprox>=self._taylor_u] = linprox[linprox>=self._taylor_u]
-        if self.quad_taylor_l is not None:
-            taufpp=tau*self.fpp_l[mask]
-            taufp=tau*self.conj_taylor_l[mask]/self.measure[mask]
-            quadprox=(v+taufpp*self._taylor_l-taufp)/(1.+taufpp)
-            res[quadprox<=self._taylor_l] = quadprox[quadprox<=self._taylor_l]
-        if self.quad_taylor_u is not None:
-            taufpp=tau*self.fpp_u[mask]
-            taufp=tau*self.conj_taylor_u[mask]/self.measure[mask]
-            quadprox = (v+taufpp*self._taylor_u-taufp)/(1.+taufpp)
-            res[quadprox>=self._taylor_u] = quadprox[quadprox>=self._taylor_u]
-        return res
+        candidate = aux = None
+        if needs_source:
+            candidate = self._get_scratch('_prox_candidate', v)
+            aux = self._get_scratch('_prox_aux', v)
+        try:
+            self._f_prox(v, tau, out=out, mask=mask, **self.kwargs)
+
+            if self.constr_l is not None:
+                np.maximum(out, self.dom_l, out=out, where=where)
+            if self.constr_u is not None:
+                np.minimum(out, self.dom_u, out=out, where=where)
+
+            if self.lin_taylor_l is not None:
+                np.multiply(tau, self.conj_dom_l, out=aux, where=where)
+                np.divide(aux, self.measure, out=aux, where=where)
+                np.subtract(source, aux, out=candidate, where=where)
+                active = where & (candidate <= self._taylor_l)
+                np.copyto(out, candidate, where=active)
+            if self.lin_taylor_u is not None:
+                np.multiply(tau, self.conj_dom_u, out=aux, where=where)
+                np.divide(aux, self.measure, out=aux, where=where)
+                np.subtract(source, aux, out=candidate, where=where)
+                active = where & (candidate >= self._taylor_u)
+                np.copyto(out, candidate, where=active)
+            if self.quad_taylor_l is not None:
+                np.multiply(tau, self.fpp_l, out=aux, where=where)
+                np.multiply(aux, self._taylor_l, out=candidate, where=where)
+                np.add(source, candidate, out=candidate, where=where)
+                np.multiply(tau, self.conj_taylor_l, out=aux, where=where)
+                np.divide(aux, self.measure, out=aux, where=where)
+                np.subtract(candidate, aux, out=candidate, where=where)
+                np.multiply(tau, self.fpp_l, out=aux, where=where)
+                np.add(aux, 1., out=aux, where=where)
+                np.divide(candidate, aux, out=candidate, where=where)
+                active = where & (candidate <= self._taylor_l)
+                np.copyto(out, candidate, where=active)
+            if self.quad_taylor_u is not None:
+                np.multiply(tau, self.fpp_u, out=aux, where=where)
+                np.multiply(aux, self._taylor_u, out=candidate, where=where)
+                np.add(source, candidate, out=candidate, where=where)
+                np.multiply(tau, self.conj_taylor_u, out=aux, where=where)
+                np.divide(aux, self.measure, out=aux, where=where)
+                np.subtract(candidate, aux, out=candidate, where=where)
+                np.multiply(tau, self.fpp_u, out=aux, where=where)
+                np.add(aux, 1., out=aux, where=where)
+                np.divide(candidate, aux, out=candidate, where=where)
+                active = where & (candidate >= self._taylor_u)
+                np.copyto(out, candidate, where=active)
+            return out
+        finally:
+            if aux is not None:
+                self._free_scratch('_prox_aux')
+                self._free_scratch('_prox_candidate')
+            if source_scratch is not None:
+                self._free_scratch('_prox_input')
     
-    def _conj_proximal(self, vstar, tau,mask=None):
-        if mask is None:
-            res = vstar/self.measure
-            res = self._f_conj_prox(res,tau,**self.kwargs)
-            res *= self.measure
-        else:
-            res = vstar/self.measure[mask]
-            res = self._f_conj_prox(res,tau,mask=mask,**self.kwargs)
-            res *= self.measure[mask]
-        mask = mask if mask is not None else slice(None)
+    def _conj_proximal(self, vstar, tau, mask=None, out=None):
+        out = self._prepare_out(out, vstar)
+        where = self._where(mask, vstar)
+        needs_source = any(
+            item is not None for item in (
+                self.lin_taylor_l, self.lin_taylor_u,
+                self.constr_l, self.constr_u,
+                self.quad_taylor_l, self.quad_taylor_u,
+            )
+        )
+        source = vstar
+        source_scratch = None
+        if needs_source and np.may_share_memory(out, vstar):
+            source_scratch = self._get_scratch('_prox_input', vstar)
+            np.copyto(source_scratch, vstar, where=where)
+            source = source_scratch
 
-        if self.lin_taylor_l is not None:
-            res = np.maximum(res,self.conj_dom_l[mask])
-        if self.lin_taylor_u is not None:
-            res = np.minimum(res,self.conj_dom_u[mask])
+        candidate = aux = None
+        if needs_source:
+            candidate = self._get_scratch('_prox_candidate', vstar)
+            aux = self._get_scratch('_prox_aux', vstar)
+        try:
+            np.divide(vstar, self.measure, out=out, where=where)
+            self._f_conj_prox(out, tau, out=out, mask=mask, **self.kwargs)
+            np.multiply(out, self.measure, out=out, where=where)
 
-        if self.constr_l is not None:
-            linprox = vstar -  tau*self.dom_l[mask]*self.measure[mask]
-            res[linprox<=self.conj_taylor_l] = linprox[linprox<=self.conj_taylor_l]
-        if self.constr_u is not None:
-            linprox = vstar -  tau*self.dom_u[mask]*self.measure[mask]
-            res[linprox>=self.conj_taylor_u] = linprox[linprox>=self.conj_taylor_u]           
+            if self.lin_taylor_l is not None:
+                np.maximum(out, self.conj_dom_l, out=out, where=where)
+            if self.lin_taylor_u is not None:
+                np.minimum(out, self.conj_dom_u, out=out, where=where)
 
-        if self.quad_taylor_l is not None:
-            taufstarpp=tau*self.fstarpp_l[mask]
-            taufstarp=tau*self._taylor_l[mask]*self.measure[mask]
-            quadprox=(vstar + taufstarpp*self.conj_taylor_l[mask] - taufstarp) / (1.+taufstarpp)
-            res[quadprox<=self.conj_taylor_l] = quadprox[quadprox<=self.conj_taylor_l] 
-        if self.quad_taylor_u is not None:
-            taufstarpp=tau*self.fstarpp_u[mask]
-            taufstarp=tau*self._taylor_u[mask]*self.measure[mask]
-            quadprox=(vstar + taufstarpp*self.conj_taylor_u[mask] - taufstarp) / (1.+taufstarpp) 
-            res[quadprox>=self.conj_taylor_u] = quadprox[quadprox>=self.conj_taylor_u]
+            if self.constr_l is not None:
+                np.multiply(tau, self.dom_l, out=aux, where=where)
+                np.multiply(aux, self.measure, out=aux, where=where)
+                np.subtract(source, aux, out=candidate, where=where)
+                active = where & (candidate <= self.conj_taylor_l)
+                np.copyto(out, candidate, where=active)
+            if self.constr_u is not None:
+                np.multiply(tau, self.dom_u, out=aux, where=where)
+                np.multiply(aux, self.measure, out=aux, where=where)
+                np.subtract(source, aux, out=candidate, where=where)
+                active = where & (candidate >= self.conj_taylor_u)
+                np.copyto(out, candidate, where=active)
+            if self.quad_taylor_l is not None:
+                np.multiply(tau, self.fstarpp_l, out=aux, where=where)
+                np.multiply(aux, self.conj_taylor_l, out=candidate, where=where)
+                np.add(source, candidate, out=candidate, where=where)
+                np.multiply(tau, self._taylor_l, out=aux, where=where)
+                np.multiply(aux, self.measure, out=aux, where=where)
+                np.subtract(candidate, aux, out=candidate, where=where)
+                np.multiply(tau, self.fstarpp_l, out=aux, where=where)
+                np.add(aux, 1., out=aux, where=where)
+                np.divide(candidate, aux, out=candidate, where=where)
+                active = where & (candidate <= self.conj_taylor_l)
+                np.copyto(out, candidate, where=active)
+            if self.quad_taylor_u is not None:
+                np.multiply(tau, self.fstarpp_u, out=aux, where=where)
+                np.multiply(aux, self.conj_taylor_u, out=candidate, where=where)
+                np.add(source, candidate, out=candidate, where=where)
+                np.multiply(tau, self._taylor_u, out=aux, where=where)
+                np.multiply(aux, self.measure, out=aux, where=where)
+                np.subtract(candidate, aux, out=candidate, where=where)
+                np.multiply(tau, self.fstarpp_u, out=aux, where=where)
+                np.add(aux, 1., out=aux, where=where)
+                np.divide(candidate, aux, out=candidate, where=where)
+                active = where & (candidate >= self.conj_taylor_u)
+                np.copyto(out, candidate, where=active)
+            return out
+        finally:
+            if aux is not None:
+                self._free_scratch('_prox_aux')
+                self._free_scratch('_prox_candidate')
+            if source_scratch is not None:
+                self._free_scratch('_prox_input')
 
-        return res
-
-    def _f(self,v,**kwargs):
+    def _f(self, v, out=None, mask=None, **kwargs):
         raise NotImplementedError
     
-    def _f_deriv(self,v,**kwargs):
+    def _f_deriv(self, v, out=None, mask=None, **kwargs):
         raise NotImplementedError
 
-    def _ptw_dist_subdiff(self,vstar,w,**kwargs):
-        return vstar-self.subgradient(w,**kwargs)
+    def _ptw_dist_subdiff(self,vstar, w, **kwargs):
+        return vstar-self.subgradient(w, **kwargs)
 
-    def _f_second_deriv(self,v,**kwargs):
+    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
         raise NotImplementedError
 
-    def _f_prox(self,v,tau,tol=1e-12, abstol=1e-12,maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
+    def _f_prox(self, v, tau, out=None, mask=None, tol=1e-12, abstol=1e-12,
+                maxNewtonIter=15, maxBisecIter=300, maxBoundsIter=100,
+                **kwargs):
         if self.__class__.__dict__.get("_f_deriv") is not None:
-            vclip = np.minimum(v,self.dom_u)
-            vclip = np.maximum(vclip,self.dom_l)
             f_second_deriv = self._f_second_deriv if self._f_second_deriv is not None else None
-            return self._numerical_prox(v,tau,self._f_deriv,f_second_deriv,self.dom_l, self.dom_u, 
-                                        tol=tol,abstol=abstol,
-                                        maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
-                                        **kwargs
-                                        )
-        else:
-            NotImplementedError('Need first derivative for numerical prox operator')
+            return self._numerical_prox(
+                v, tau, self._f_deriv, f_second_deriv, self.dom_l, self.dom_u,
+                out=out, mask=mask, tol=tol, abstol=abstol,
+                maxNewtonIter=maxNewtonIter, maxBisecIter=maxBisecIter,
+                maxBoundsIter=maxBoundsIter, **kwargs
+            )
+        raise NotImplementedError('Need first derivative for numerical prox operator')
     
-    def _f_conj(self,vstar,**kwargs):
+    def _f_conj(self, vstar, out=None, mask=None, **kwargs):
         raise NotImplementedError
     
-    def _f_conj_deriv(self,vstar,**kwargs):
+    def _f_conj_deriv(self, vstar, out=None, mask=None, **kwargs):
         raise NotImplementedError
 
-    def _conj_ptw_dist_subdiff(self,v,wstar,**kwargs):
-        return v-self.conj.subgradient(wstar,**kwargs)
+    def _conj_ptw_dist_subdiff(self, v, wstar, **kwargs):
+        return v-self.conj.subgradient(wstar, **kwargs)
 
-    def _f_conj_second_deriv(self,vstar,**kwargs):
+    def _f_conj_second_deriv(self, vstar, out=None, mask=None, **kwargs):
         raise NotImplementedError
 
-    def _f_conj_prox(self,vstar,tau,tol=1e-12, abstol=1e-12, 
-                     maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,
-                     **kwargs
-                     ):
+    def _f_conj_prox(self, vstar, tau, out=None, mask=None,
+                     tol=1e-12, abstol=1e-12,
+                     maxNewtonIter=15, maxBisecIter=300, maxBoundsIter=100,
+                     **kwargs):
         if self.__class__.__dict__.get("_f_conj_deriv") is not None:
-            vclip = np.minimum(vstar,self.conj_dom_u)
-            vclip = np.maximum(vclip,self.conj_dom_l)
-            vclip /= self.measure
-            f_conj_second_deriv = self._f_conj_second_deriv if self._f_conj_second_deriv is not None else None
-            return self._numerical_prox(vstar,tau,
-                                        self._f_conj_deriv,f_conj_second_deriv,
-                                        self.conj_dom_l/self.measure, 
-                                        self.conj_dom_u/self.measure, 
-                                        tol=tol, abstol=abstol,
-                                        maxNewtonIter=maxNewtonIter,maxBisecIter=maxBisecIter,maxBoundsIter=maxBoundsIter,
-                                        **kwargs
-                                        )
-        else:
-            NotImplementedError('Need first derivative of conjugate functional for numerical conjugate prox operator')
+            f_conj_second_deriv = (
+                self._f_conj_second_deriv
+                if self._f_conj_second_deriv is not None else None
+            )
+            return self._numerical_prox(
+                vstar, tau, self._f_conj_deriv, f_conj_second_deriv,
+                self.conj_dom_l / self.measure,
+                self.conj_dom_u / self.measure,
+                out=out, mask=mask, tol=tol, abstol=abstol,
+                maxNewtonIter=maxNewtonIter, maxBisecIter=maxBisecIter,
+                maxBoundsIter=maxBoundsIter, **kwargs
+            )
+        raise NotImplementedError(
+            'Need first derivative of conjugate functional for numerical conjugate prox operator'
+        )
 
-    def _numerical_prox(self, y, tau, fp, fpp, 
-                        dom_l, dom_u, 
-                        start=None,ub=None, lb=None,
-                        tol=1e-15, abstol=1-15, 
-                        maxNewtonIter=15,maxBisecIter=300,maxBoundsIter=100,**kwargs):
-        """
-        Vectorized proximal operator of a smooth convex scalar function
-        using Newton's method with automatic fallback to bisection.
+    def _numerical_prox(self, y, tau, fp, fpp, dom_l, dom_u,
+                        start=None, ub=None, lb=None, out=None, mask=None,
+                        tol=1e-15, abstol=1e-15,
+                        maxNewtonIter=15, maxBisecIter=300,
+                        maxBoundsIter=100, **kwargs):
+        """Vectorized proximal operator of a smooth convex scalar function
+        implemented by Newton's method with automatic fallback to bisection.
 
         Parameters
         ----------
-        y : ndarray
+        y : np.ndarray
             Input array.
         tau : float
             Prox parameter (>0).
         f, fp, fpp : callables
-            f, f', f'' (accept numpy arrays).
+            f, f', f'' (accept NumPy arrays).
         dom_l, dom_u : floats
             Domain bounds (can be -np.inf, np.inf).
         start: np.ndarray or None
             starting point
+        out: np.ndarray or None
+            If not None, this is used as the iterate and is returned
+        mask: np.ndarray[bool] or None
+            If not None, this specifies the subset of entries to which 
+            the Newton-bisection method is applied 
         lb,ub: np.ndarray or None
             guesses for lower and upper bounds on solution (must not be valid!)
         tol : float
@@ -873,168 +1244,232 @@ class IntegralFunctionalBase(Functional):
 
         Returns
         -------
-        prox : ndarray
+        out : ndarray
             Proximal points, same shape as y.
         """
-        if not isinstance(y,np.ndarray):
-            raise TypeError(Errors.not_instance(y,np.ndarray,add_info="The numerical prox in IntegralFunctionals can only be computed for y an ndarray"))
-        if np.isscalar(dom_u):
-            dom_u = np.broadcast_to(dom_u,y.shape)
-        if np.isscalar(dom_l):
-            dom_l = np.broadcast_to(dom_l,y.shape)    
-        if not np.all(dom_l<=dom_u):
-            raise ValueError(Errors.value_error('Upper/lower bounds of essential domain invalid. dom_l not less or equal to dom_u!',self,"_numerical_prox"))
-  
-
-        #initial guess
-        x = start if not (start is None) else y
-        x = np.maximum(dom_l,x)
-        x = np.minimum(x,dom_u)
-
-
-        r = fp(x,**kwargs) + (x - y)/tau
-        converged = ((dom_u-dom_l<abstol) | (dom_u-dom_l < tol * np.maximum(dom_u,-dom_l)))   # width of essential domain <tol
-        converged = converged | (r==0) # optimality condition satisfied 
-        converged = converged | ((x==dom_l) & (r>=0)) # optimality condition at left boundary satisfied
-        converged = converged | ((x==dom_u) & (r<=0)) # optimality condition at right boundary satiesfied
-
-        self.log.debug(f'initially {np.sum(converged)} converged.')
-        # obtain valid and finite upper and lower bounds
-        ub = x.copy()
-        x_too_small = (r<0) & (~converged)       
-        if np.any(x_too_small):
-            xs = x[x_too_small]
-            rs = r[x_too_small]
-            ds = dom_u[x_too_small]
-            up = np.minimum(tau*np.ones_like(rs),-tau*rs)
-            up2 = np.minimum(xs+up,ds)
-            ub[x_too_small] = up2
-#            ub[x_too_small] = np.minimum(x[x_too_small] 
-#                                      + np.minimum(np.ones_like(r[x_too_small]), - tau*r[x_too_small]),
-#                                        dom_u[x_too_small]),
-
-        lb = x.copy()
-        x_too_large = (r>0) & (~converged)
-        if np.any(x_too_large):
-           xl = x[x_too_large]
-           rl = r[x_too_large]
-           dl = dom_l[x_too_large]
-           up = np.minimum(tau*np.ones_like(xl),tau*rl)
-           up2 = np.maximum(xl-up,dl)
-           lb[x_too_large] = up2
-#           lb[x_too_large] = np.maximum(x[x_too_large]
-#                                     - np.minimum(tau*np.ones_like(r[x_too_large]), tau*r[x_too_large]),
-#                                        dom_l[x_too_large])
-
-        self.log.debug(f'before correction: r: {r}\n ub: {ub}\n lb: {lb}\n diff: {ub-lb}')
-        if not np.all(lb<=ub):
-            ind = lb>ub
-            raise RuntimeError(Errors.runtime_error(f'lb<=ub violated for input values {y[lb>ub]}. lb: {lb[lb>ub]}, ub: {ub[lb>ub]} ',self,"_numerical_prox"))
-
-        # decrease lb where necessary to make it a valid lower bound
-        for it in range(maxBoundsIter):
-            v = fp(lb,**kwargs) + (lb- y)/tau            
-            ind = (v>0) & (~converged) & (lb>dom_l)
-            if it==0 and not np.all(ub[ind]-lb[ind]>tol*np.maximum(ub[ind],-lb[ind])):
-                ii = ind & ((ub-lb<=tol * np.maximum(ub,-lb)))
-                lb[ii] = np.maximum(lb[ii]-tol*np.abs(lb[ii])-abstol,dom_l[ii])
-                self.log.debug(f'adding {np.sum(ii & (lb==dom_l))} indices as converged.')
-                converged = converged | (ii & (lb==dom_l))
-            self.log.debug(f'lower bound it {it}: {np.sum(ind)} indices invalid.')
-            if np.sum(ind)==0:
-                break
-            else:
-                lb[ind] = np.maximum(dom_l[ind],2*lb[ind]-ub[ind])
-        if not np.sum(ind)==0:
-            raise RuntimeError(Errors.runtime_error(f"Could not determine lower bound. Increase maxBoundsIter! lb: {lb[ind]}, ub: {ub[ind]}, dom_l: {dom_l[ind]}",self,"_numerical_prox")) 
-        r = fp(lb,**kwargs) + (lb - y)/tau 
-        converged = converged | ((lb==dom_l) & (r>=0))
-        if not np.all((r<=0) | converged):
-            raise RuntimeError(Errors.runtime_error(f'lower bound not satisfied for indices {np.where((r>0) & ~converged)}',self,"_numerical_prox"))
-
-        # increase ub where necessary to make it a valid upper bound
-        for it in range(maxBoundsIter):
-            v = fp(ub,**kwargs) + (ub- y)/tau            
-            ind = (v<0) & (~converged)
-            self.log.debug(f'upper bound it {it}: {np.sum(ind)} indices invalid')
-            if it==0 and not np.all(ub[ind]-lb[ind]>tol*np.maximum(ub[ind],-lb[ind])):
-                ii = ind & (ub-lb<=tol * np.maximum(ub,-lb))
-                ub[ii] = np.minimum(dom_u[ii],ub[ii]+tol*np.abs(ub[ii])+abstol)
-                self.log.debug(f'adding {np.sum(ii & (ub==dom_u))} indices as converged.')
-                converged = converged | (ii & (ub==dom_u))
-            if np.sum(ind)==0:
-                break
-            else:
-                ub[ind] = np.minimum(dom_u[ind], 2*ub[ind]-lb[ind])
-        if not np.sum(ind)==0:
-            raise RuntimeError(Errors.runtime_error("Could not determine upper bound. Increase maxBoundsIter!",self,"_numerical_prox"))
-        r = fp(ub,**kwargs) + (ub - y)/tau 
-        converged = converged | ((ub==dom_u) & (r<=0))
-        if not np.all((r>=0) | converged): 
-            raise RuntimeError(Errors.runtime_error(f'upper bound not satisfied for indices {np.where((r<0) & ~converged)}',self,"_numerical_prox"))
-        if not np.all(lb>=dom_l):
-            raise RuntimeError(Errors.runtime_error(f"Lower bound under the domains lower bound of the essential domain. "+"\n\t "+f"lb = {lb},"+"\n\t "+f"dom_l = {dom_l}", self,"_numerical_prox"))
-        if not np.all(ub<=dom_u):
-            raise RuntimeError(Errors.runtime_error(f"Uper bound above the domains uper bound of the essential domain. "+"\n\t "+f"ub = {ub},"+"\n\t "+f"dom_u = {dom_u}", self,"_numerical_prox"))
-
-        self.log.debug(f'lb: {lb}\n diff: {ub-lb}')
-
-        # --- Newton phase ---
-        if fpp is not None:
-            iter=0
-            for iter in range(maxNewtonIter):
-                d = fpp(x,**kwargs) + 1.0/tau
-                step = r / d
-
-                xnew = x - step
-                xnew = np.maximum(xnew, lb)
-                xnew = np.minimum(xnew, ub)
-        
-                summand1 = fp(x,**kwargs)
-                summand2 = (x - y)/tau
-                r = summand1 + summand2
-                lb[r<=0] = x[r<=0]
-                lb[r>0]  = np.maximum(lb[r>0],x[r>0] - tau*r[r>0])
-                ub[r>=0] = x[r>=0]
-                ub[r<0]  = np.minimum(ub[r<0],x[r<0] - tau*r[r<0])
-                # Check convergence
-                #conv = np.abs(r) < tol
-                conv = ((np.abs(ub-lb) < abstol) | (ub-lb <=tol*np.maximum(ub,-lb)))
-                converged = converged | conv
-                x = np.where(conv, x, xnew)
-                self.log.debug(f'Newton it {iter}: {np.sum(converged==True)} out of {len(x.flatten())} converged.')
     
+        if not isinstance(y, np.ndarray):
+            raise TypeError(Errors.not_instance(
+                y, np.ndarray,
+                add_info="The numerical prox in IntegralFunctionals can only be computed for y an ndarray"
+            ))
+        if tau <= 0:
+            raise ValueError(Errors.value_error('tau must be positive.', self, '_numerical_prox'))
+
+        where = self._where(mask, y)
+        out = self._prepare_out(out, y)
+        y_input = y.copy() if np.may_share_memory(out, y) else y
+
+        if np.isscalar(dom_u):
+            dom_u = np.broadcast_to(dom_u, y.shape)
+        if np.isscalar(dom_l):
+            dom_l = np.broadcast_to(dom_l, y.shape)
+        if np.any(where & (dom_l > dom_u)):
+            raise ValueError(Errors.value_error(
+                'Upper/lower bounds of essential domain invalid. dom_l not less or equal to dom_u!',
+                self, '_numerical_prox'
+            ))
+
+        np.copyto(out, y_input if start is None else start, where=where)
+        np.maximum(dom_l, out, out=out, where=where)
+        np.minimum(out, dom_u, out=out, where=where)
+        x = out
+
+        r = np.empty_like(y)
+        tmp = np.empty_like(y)
+        candidate = np.empty_like(y)
+
+        def residual(z, result, active):
+            fp(z, out=result, mask=active, **kwargs)
+            np.subtract(z, y_input, out=tmp, where=active)
+            np.divide(tmp, tau, out=tmp, where=active)
+            np.add(result, tmp, out=result, where=active)
+            return result
+
+        residual(x, r, where)
+        width = dom_u - dom_l
+        scale = np.maximum(dom_u, -dom_l)
+        converged = ~where | (
+            (width < abstol)
+            | (width < tol * scale)
+            | (r == 0)
+            | ((x == dom_l) & (r >= 0))
+            | ((x == dom_u) & (r <= 0))
+        )
+
+        self.log.debug(f'initially {np.sum(converged & where)} converged.')
+        ub = x.copy() if ub is None else np.array(ub, copy=True)
+        lb = x.copy() if lb is None else np.array(lb, copy=True)
+
+        x_too_small = where & (r < 0) & ~converged
+        np.multiply(r, -tau, out=candidate, where=x_too_small)
+        np.minimum(candidate, tau, out=candidate, where=x_too_small)
+        np.add(x, candidate, out=candidate, where=x_too_small)
+        np.minimum(candidate, dom_u, out=candidate, where=x_too_small)
+        np.copyto(ub, candidate, where=x_too_small)
+
+        x_too_large = where & (r > 0) & ~converged
+        np.multiply(r, tau, out=candidate, where=x_too_large)
+        np.minimum(candidate, tau, out=candidate, where=x_too_large)
+        np.subtract(x, candidate, out=candidate, where=x_too_large)
+        np.maximum(candidate, dom_l, out=candidate, where=x_too_large)
+        np.copyto(lb, candidate, where=x_too_large)
+
+        bad = where & (lb > ub)
+        if np.any(bad):
+            raise RuntimeError(Errors.runtime_error(
+                f'lb<=ub violated for input values {y_input[bad]}. '
+                f'lb: {lb[bad]}, ub: {ub[bad]}', self, '_numerical_prox'
+            ))
+
+        ind = np.zeros_like(where)
+        for it in range(maxBoundsIter):
+            active = where & ~converged
+            residual(lb, r, active)
+            ind = active & (r > 0) & (lb > dom_l)
+            if it == 0:
+                width = ub - lb
+                scale = np.maximum(ub, -lb)
+                ii = ind & (width <= tol * scale)
+                np.abs(lb, out=candidate, where=ii)
+                np.multiply(candidate, tol, out=candidate, where=ii)
+                np.add(candidate, abstol, out=candidate, where=ii)
+                np.subtract(lb, candidate, out=candidate, where=ii)
+                np.maximum(candidate, dom_l, out=candidate, where=ii)
+                np.copyto(lb, candidate, where=ii)
+                converged |= ii & (lb == dom_l)
+                ind &= ~converged
+            if not np.any(ind):
+                break
+            np.multiply(lb, 2., out=candidate, where=ind)
+            np.subtract(candidate, ub, out=candidate, where=ind)
+            np.maximum(candidate, dom_l, out=candidate, where=ind)
+            np.copyto(lb, candidate, where=ind)
+        if np.any(ind):
+            raise RuntimeError(Errors.runtime_error(
+                'Could not determine lower bound. Increase maxBoundsIter!',
+                self, '_numerical_prox'
+            ))
+
+        active = where & ~converged
+        residual(lb, r, active)
+        converged |= where & (lb == dom_l) & (r >= 0)
+        violation = where & ~converged & (r > 0)
+        if np.any(violation):
+            raise RuntimeError(Errors.runtime_error(
+                f'lower bound not satisfied for indices {np.where(violation)}',
+                self, '_numerical_prox'
+            ))
+
+        for it in range(maxBoundsIter):
+            active = where & ~converged
+            residual(ub, r, active)
+            ind = active & (r < 0) & (ub < dom_u)
+            if it == 0:
+                width = ub - lb
+                scale = np.maximum(ub, -lb)
+                ii = ind & (width <= tol * scale)
+                np.abs(ub, out=candidate, where=ii)
+                np.multiply(candidate, tol, out=candidate, where=ii)
+                np.add(candidate, abstol, out=candidate, where=ii)
+                np.add(ub, candidate, out=candidate, where=ii)
+                np.minimum(candidate, dom_u, out=candidate, where=ii)
+                np.copyto(ub, candidate, where=ii)
+                converged |= ii & (ub == dom_u)
+                ind &= ~converged
+            if not np.any(ind):
+                break
+            np.multiply(ub, 2., out=candidate, where=ind)
+            np.subtract(candidate, lb, out=candidate, where=ind)
+            np.minimum(candidate, dom_u, out=candidate, where=ind)
+            np.copyto(ub, candidate, where=ind)
+        if np.any(ind):
+            raise RuntimeError(Errors.runtime_error(
+                'Could not determine upper bound. Increase maxBoundsIter!',
+                self, '_numerical_prox'
+            ))
+
+        active = where & ~converged
+        residual(ub, r, active)
+        converged |= where & (ub == dom_u) & (r <= 0)
+        violation = where & ~converged & (r < 0)
+        if np.any(violation):
+            raise RuntimeError(Errors.runtime_error(
+                f'upper bound not satisfied for indices {np.where(violation)}',
+                self, '_numerical_prox'
+            ))
+
+        if fpp is not None:
+            d = np.empty_like(y)
+            xnew = np.empty_like(y)
+            for iteration in range(maxNewtonIter):
+                active = where & ~converged
+                if not np.any(active):
+                    return x
+                residual(x, r, active)
+                fpp(x, out=d, mask=active, **kwargs)
+                np.add(d, 1. / tau, out=d, where=active)
+                np.divide(r, d, out=tmp, where=active)
+                np.subtract(x, tmp, out=xnew, where=active)
+                np.maximum(xnew, lb, out=xnew, where=active)
+                np.minimum(xnew, ub, out=xnew, where=active)
+
+                nonpositive = active & (r <= 0)
+                np.copyto(lb, x, where=nonpositive)
+                positive = active & (r > 0)
+                np.multiply(r, tau, out=candidate, where=positive)
+                np.subtract(x, candidate, out=candidate, where=positive)
+                np.maximum(candidate, lb, out=candidate, where=positive)
+                np.copyto(lb, candidate, where=positive)
+
+                nonnegative = active & (r >= 0)
+                np.copyto(ub, x, where=nonnegative)
+                negative = active & (r < 0)
+                np.multiply(r, tau, out=candidate, where=negative)
+                np.subtract(x, candidate, out=candidate, where=negative)
+                np.minimum(candidate, ub, out=candidate, where=negative)
+                np.copyto(ub, candidate, where=negative)
+
+                width = np.abs(ub - lb)
+                scale = np.maximum(ub, -lb)
+                conv = active & ((width < abstol) | (width <= tol * scale))
+                converged |= conv
+                np.copyto(x, xnew, where=active & ~conv)
+                self.log.debug(
+                    f'Newton it {iteration}: {np.sum(converged & where)} '
+                    f'out of {np.sum(where)} converged.'
+                )
                 if np.all(converged):
                     return x
-                if np.allclose(summand1,-summand2,rtol=1e-14):
-                    self.log.info('Required tolerance cannot be guaranteed since prox of scalar function is too ill-conditioned.')
+
+        bisect_mask = where & ~converged
+        active = bisect_mask.copy()
+        not_converged = active.copy()
+        mid = np.empty_like(y)
+        fmid = np.empty_like(y)
+        if np.any(active):
+            for iteration in range(maxBisecIter):
+                np.add(lb, ub, out=mid, where=active)
+                np.multiply(mid, 0.5, out=mid, where=active)
+                residual(mid, fmid, active)
+                right = active & (fmid > 0)
+                np.copyto(ub, mid, where=right)
+                np.copyto(lb, mid, where=active & ~right)
+                width = ub - lb
+                scale = np.maximum(ub, -lb)
+                not_converged = active & (
+                    (width >= abstol) & (width >= tol * scale)
+                )
+                if not np.any(not_converged):
                     break
-
-            self.log.debug(f'diff ub-lb after Newton: {ub-lb}')
-
-        # --- Fallback to bisection for non-converged entries ---
-        mask = ~converged
-        if np.any(mask):
-            yi = y[mask]
-            lb = lb[mask]
-            ub = ub[mask]
-
-            for iter in range(maxBisecIter):  # max bisection iters
-                Mi = 0.5*(lb+ub)
-                fM = fp(Mi,mask=mask,**kwargs) + (Mi - yi)/tau
-                right = fM > 0
-                ub = np.where(right, Mi, ub)
-                lb = np.where(~right, Mi, lb)
-                nr_not_converged = np.sum(((ub-lb) >= abstol) & ((ub-lb) >= tol*np.maximum(ub,-lb)))
-                self.log.debug(f'bisection it. {iter}: {nr_not_converged} not converged')
-                if nr_not_converged == 0:
-                    break
-            x[mask] = 0.5*(lb+ub)
-            if np.any((ub-lb>=abstol)  &  ((ub-lb) >= tol*np.maximum(ub,-lb))):
-                ind = (ub-lb>= abstol) &  ((ub-lb) >= tol*np.maximum(ub,-lb))
-                ff =fp(x[mask],mask=mask,**kwargs) + (x[mask]-y[mask])/tau
-                raise RuntimeError(f'Could not satisfy either of the tolerance criteria (tol = {tol}, abstol = {abstol}) after {iter} steps of bisection algorithm at indices {np.where(ind)}. x values: {x[mask][ind]}, f values: {ff[ind]}, ub-lb {ub[ind]-lb[ind]}.')
-
+                active = not_converged
+            np.add(lb, ub, out=x, where=bisect_mask)
+            np.multiply(x, 0.5, out=x, where=bisect_mask)
+            if np.any(not_converged):
+                raise RuntimeError(
+                    f'Could not satisfy either tolerance criterion after '
+                    f'{iteration + 1} bisection steps.'
+                )
         return x
     
 class VectorIntegralFunctional(Functional):
@@ -1121,50 +1556,64 @@ class VectorIntegralFunctional(Functional):
         self._sbuf = self.dual_vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
-    def _subgradient(self, vec):
+    def _subgradient(self, vec, out=None, **subgradient_par):
         r"""
-        returns   
-        
+        returns
+
         .. math::
             [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
         """
         if self.p != 2:
             raise NotImplementedError('subgradient only implemented for L2 norm')
+        result = np.empty_like(vec) if out is None else out
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
-        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.subgradient(self._sbuf, out=self._sbuf)
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
     
-    def _conj_subgradient(self, vec_star):
+    def _conj_subgradient(self, vec_star, out=None, **subgradient_par):
         if self.p != 2:
             raise NotImplementedError('conjugate subgradient only implemented for L2 norm')
+        result = np.empty_like(vec_star) if out is None else out
         self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
-        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.subgradient(self._sbuf)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec_star, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.conj_subgradient(self._sbuf, out=self._sbuf)
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
 
-    def _proximal(self, vec, tau, mask=None):
-        r"""
-        returns   :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
-        """
+    def _proximal(self, vec, tau, mask=None, out=None, **proximal_par):
+        r"""returns :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`"""
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
+        result = np.empty_like(vec) if out is None else out
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
-        np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.proximal(self._sbuf, tau ,mask=None)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.proximal(
+            self._sbuf, tau, out=self._sbuf, mask=None, **proximal_par
+        )
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
 
-    def _conj_proximal(self, vec_star, tau, mask=None):
+    def _conj_proximal(self, vec_star, tau, mask=None, out=None, **proximal_par):
         if self.p != 2:
             raise NotImplementedError('conjugate proximal only implemented for L2 norm')
+        result = np.empty_like(vec_star) if out is None else out
         self._sbuf = self.dual_vector_norm(vec_star, axis=self._vaxes)
-        np.divide(vec_star,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
-        self._sbuf = self.scalar_func.conj.proximal(self._sbuf, tau, mask=None)
-        self._vbuf *= self._sbuf_ext
-        return self._vbuf.copy()
+        positive = self._sbuf_ext > 0
+        np.divide(vec_star, self._sbuf_ext, where=positive, out=result)
+        np.copyto(result, 0, where=~positive)
+        self.scalar_func.conj_proximal(
+            self._sbuf, tau, out=self._sbuf, mask=None, **proximal_par
+        )
+        np.multiply(result, self._sbuf_ext, out=result)
+        return result
     
     def _hessian(self, vec):
         if self.p != 2:
@@ -1240,7 +1689,7 @@ class L1L2(VectorIntegralFunctional):
     vdomain : `regpy.vecsps.MeasureSpaceFcts`
         A vector valued measure space.
     conj_tol : float
-        A tolarance introduced into `L1` functional that allows also numbers slighly bigger then 1.0 in the conjugate.
+        A tolerance introduced into `L1` functional that allows also numbers slightly greater than 1.0 in the conjugate.
     """
     def __init__(self, vdomain, conj_tol = 1e-16):
         sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
@@ -1333,78 +1782,95 @@ class LppPower(IntegralFunctionalBase):
             conv = 1. if self.lin_taylor_l is None and self.lin_taylor_u is None else 0.
         return np.min([conv,self._convexity_param_exterior])
 
-    def _f(self,v,**kwargs):
-        # member efficient implementation of 
-        # res = np.abs(v)**self.p/self.p
-        res = np.abs(v)
-        np.power(res,self.p,out=res)
-        res /=self.p
-        return res
+    def _f(self, v, out=None, mask=None, **kwargs):
+        # out = np.abs(v)**self.p/self.p
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.abs(v, out=out, where=where)
+        np.power(out, self.p, out=out, where=where)
+        np.divide(out, self.p, out=out, where=where)
+        return out
     
-    def _f_deriv(self, v,**kwargs):
-        # member efficient implementation of  
-        # res = np.abs(v)**(self.p-1)*np.sign(v) 
-        res = np.abs(v)
-        res = np.power(res,self.p-1) 
-        aux = np.sign(v)
-        res *= aux
-        return res
+    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+        # out = np.abs(v)**(self.p-1)*np.sign(v)
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        aux = self._get_scratch('_aux', v)
+        try:
+            np.sign(v, out=aux, where=where)
+            np.abs(v, out=out, where=where)
+            np.power(out, self.p - 1, out=out, where=where)
+            np.multiply(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
     
-    def _f_second_deriv(self, v,**kwargs):
-        # member efficient implementation of  
-        # res = (self.p-1)*np.abs(v)**(self.p-2)
-        res = np.abs(v)
-        res = np.power(res,self.p-2,out=res)        
-        res *= (self.p-1)
-        return res
+    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+        # out = (self.p-1)*np.abs(v)**(self.p-2)
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.abs(v, out=out, where=where)
+        np.power(out, self.p - 2, out=out, where=where)
+        np.multiply(out, self.p - 1, out=out, where=where)
+        return out
     
-    def _f_prox(self,v,tau,**kwargs):
-        if self.p==2:
-            return v/(1+tau)
-        else:
-            return self._numerical_prox(v,tau,
-                                self._f_deriv,self._f_second_deriv,-np.inf, np.inf,
-                                tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
-                                **kwargs
-                                )
+    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        if self.p == 2:
+            np.divide(v, 1 + tau, out=out, where=where)
+            return out
+        return self._numerical_prox(
+            v, tau, self._f_deriv, self._f_second_deriv,
+            -np.inf, np.inf, out=out, mask=mask,
+            tol=1e-12, maxNewtonIter=10, maxBisecIter=300,
+            maxBoundsIter=300, **kwargs
+        )
     
-    def _f_conj(self, vstar,**kwargs):
-        # member efficient implementation of
-        # res = np.abs(vstar)**self.q/self.q
-        res = np.abs(vstar)
-        np.power(res,self.q,out=res)     
-        res /= self.q
-        return res 
+    def _f_conj(self, vstar, out=None, mask=None, **kwargs):
+        # out = np.abs(vstar)**self.q/self.q
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        np.abs(vstar, out=out, where=where)
+        np.power(out, self.q, out=out, where=where)
+        np.divide(out, self.q, out=out, where=where)
+        return out
 
-    def _f_conj_deriv(self, vstar,**kwargs):
-        if not hasattr(self, '_aux'):
-            self._aux = self.domain.zeros()        
-        # member efficient implementation of 
-        # res = np.abs(vstar)**(self.q-1)*np.sign(vstar) 
-        res = np.abs(vstar)
-        np.power(res,self.q-1,out=res)     
-        self._aux = np.sign(vstar)
-        res *= self._aux       
-        return res
+    def _f_conj_deriv(self, vstar, out=None, mask=None, **kwargs):
+        # out = np.abs(vstar)**(self.q-1)*np.sign(vstar)
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        aux = self._get_scratch('_aux', vstar)
+        try:
+            np.sign(vstar, out=aux, where=where)
+            np.abs(vstar, out=out, where=where)
+            np.power(out, self.q - 1, out=out, where=where)
+            np.multiply(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
     
-    def _f_conj_second_deriv(self, vstar,**kwargs):
-        # member efficient implementation of 
-        # res = (self.q-1)*np.abs(vstar)**(self.q-2)   
-        res = np.abs(vstar)
-        np.power(res,self.q-2,out=res)     
-        res *= (self.q-1)
-        return res
+    def _f_conj_second_deriv(self, vstar, out=None, mask=None, **kwargs):
+        # out = (self.q-1)*np.abs(vstar)**(self.q-2)
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        np.abs(vstar, out=out, where=where)
+        np.power(out, self.q - 2, out=out, where=where)
+        np.multiply(out, self.q - 1, out=out, where=where)
+        return out
     
-    def _f_conj_prox(self,v_star,tau,**kwargs):
-        if self.p==2:
-            return v_star/(1+tau)
-        else:
-            return self._numerical_prox(v_star,tau,
-                                self._f_conj_deriv,self._f_conj_second_deriv,
-                                -np.inf, np.inf, 
-                                tol=1e-12,maxNewtonIter=10,maxBisecIter=300,maxBoundsIter=300,
-                                **kwargs
-                                )
+    def _f_conj_prox(self, v_star, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        if self.p == 2:
+            np.divide(v_star, 1 + tau, out=out, where=where)
+            return out
+        return self._numerical_prox(
+            v_star, tau, self._f_conj_deriv, self._f_conj_second_deriv,
+            -np.inf, np.inf, out=out, mask=mask,
+            tol=1e-12, maxNewtonIter=10, maxBisecIter=300,
+            maxBoundsIter=300, **kwargs
+        )
 
 class Quadratic(IntegralFunctionalBase):
     r"""Quadratic functional :math:`v\mapsto \int\frac{a}{2}v(x)^2+b(x)v(x)+c(x)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts` as an integral functional.
@@ -1488,36 +1954,111 @@ class Quadratic(IntegralFunctionalBase):
         return (np.min(self.a)>0)
      
 
-    def _f(self, v,**kwargs):
-        return 0.5*self._a*v**2 + self._b*v + self._c
+    def _f(self, v, out=None, mask=None, **kwargs):
+        # out = 0.5*self._a*v**2 + self._b*v + self._c
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        source = v
+        scratch = None
+        if np.may_share_memory(out, v):
+            scratch = self._get_scratch('_aux', v)
+            np.copyto(scratch, v, where=where)
+            source = scratch
+        try:
+            np.multiply(self._a, source, out=out, where=where)
+            np.multiply(out, 0.5, out=out, where=where)
+            np.add(out, self._b, out=out, where=where)
+            np.multiply(out, source, out=out, where=where)
+            np.add(out, self._c, out=out, where=where)
+        finally:
+            if scratch is not None:
+                self._free_scratch('_aux')
+        return out
     
-    def _f_deriv(self, v,**kwargs):
-        return self._a*v + self._b
+    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+        # out = a*v +b
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.multiply(self._a, v, out=out, where=where)
+        np.add(out, self._b, out=out, where=where)
+        return out
     
-    def _f_second_deriv(self, v,**kwargs):
-        return self._a.copy()
+    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.copyto(out, self._a, where=where)
+        return out
     
-    def _f_prox(self, v, tau,**kwargs):
-        return (v - tau*self._b) / (1. + tau*self._a)
+    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+        # out = (v - tau*b) / (1. + tau*a)
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        aux = self._get_scratch('_aux', v)
+        try:
+            np.multiply(tau, self._b, out=aux, where=where)
+            np.subtract(v, aux, out=out, where=where)
+            np.multiply(tau, self._a, out=aux, where=where)
+            np.add(aux, 1., out=aux, where=where)
+            np.divide(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
     
-    def _f_conj(self, v_star,**kwargs):
-        if np.min(self.a)<=0:
-            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
-        return 0.5*(v_star - self._b)**2 / self._a - self._c
+    def _f_conj(self, v_star, out=None, mask=None, **kwargs):
+        # out = 0.5*(v_star - b)**2 / a - c
+        if np.min(self.a) <= 0:
+            raise ValueError(Errors.value_error(
+                f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self
+            ))
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.subtract(v_star, self._b, out=out, where=where)
+        np.square(out, out=out, where=where)
+        np.multiply(out, 0.5, out=out, where=where)
+        np.divide(out, self._a, out=out, where=where)
+        np.subtract(out, self._c, out=out, where=where)
+        return out
 
-    def _f_conj_deriv(self, v_star,**kwargs):
-        if np.min(self.a)<=0:
-            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
-        return (v_star - self._b) / self._a 
-    def _f_conj_second_deriv(self, v_star,**kwargs):
-        if np.min(self.a)<=0:
-            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
-        return 1./self._a
+    def _f_conj_deriv(self, v_star, out=None, mask=None, **kwargs):
+        #  out = (v_star - b) / a
+        if np.min(self.a) <= 0:
+            raise ValueError(Errors.value_error(
+                f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self
+            ))
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.subtract(v_star, self._b, out=out, where=where)
+        np.divide(out, self._a, out=out, where=where)
+        return out
+    
+    def _f_conj_second_deriv(self, v_star, out=None, mask=None, **kwargs):
+        if np.min(self.a) <= 0:
+            raise ValueError(Errors.value_error(
+                f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self
+            ))
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.divide(1., self._a, out=out, where=where)
+        return out
         
-    def _f_conj_prox(self, v_star, tau,**kwargs):
-        if np.min(self.a)<=0:
-            raise ValueError(Errors.value_error(f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self))
-        return (self._a* v_star + tau*self._b) / (self._a + tau)
+    def _f_conj_prox(self, v_star, tau, out=None, mask=None, **kwargs):
+        # out =  (a* v_star + tau*b) / (a + tau)
+        if np.min(self.a) <= 0:
+            raise ValueError(Errors.value_error(
+                f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self
+            ))
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        aux = self._get_scratch('_aux', v_star)
+        try:
+            np.multiply(self._a, v_star, out=out, where=where)
+            np.multiply(tau, self._b, out=aux, where=where)
+            np.add(out, aux, out=out, where=where)
+            np.add(self._a, tau, out=aux, where=where)
+            np.divide(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
 
 class L1MeasureSpace(IntegralFunctionalBase):
     r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.
@@ -1533,7 +2074,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
     """
     def __init__(self, domain,
                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-10,**kwargs):
+                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-10, **kwargs):
         self.conj_tol = conj_tol
         super().__init__(domain,conj_nat_dom_u=1.,conj_nat_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
@@ -1541,50 +2082,69 @@ class L1MeasureSpace(IntegralFunctionalBase):
                          **kwargs
                          )
 
-    def _f(self, v,**kwargs):
-        return np.abs(v)
+    def _f(self, v, out=None, mask=None, **kwargs):
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.abs(v, out=out, where=where)
+        return out
 
-    def _f_deriv(self, v,**kwargs):
-        return np.sign(v)
+    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        np.sign(v, out=out, where=where)
+        return out
 
-    def _f_second_deriv(self, v,**kwargs):
-        if np.any(v==0):
+    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+        where = self._where(mask, v)
+        if np.any(where & (v == 0)):
             raise NotTwiceDifferentiableError('L1')
-        else:
-            return np.zeros_like(v)
+        out = self._prepare_out(out, v)
+        np.copyto(out, 0., where=where)
+        return out
 
-    def _f_prox(self, v,tau,**kwargs):
-        if not hasattr(self, '_aux'):
-            self._aux = self.domain.zeros()    
-        # res = np.maximum(0, np.abs(v)-tau)*np.sign(v)        
-        res = np.abs(v)
-        res -= tau
-        np.maximum(0,res,out=res)
-        self._aux = np.sign(v)
-        res *= self._aux
-        return res
+    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+        # out = np.maximum(0, np.abs(v)-tau)*np.sign(v)
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        aux = self._get_scratch('_aux', v)
+        try:
+            np.sign(v, out=aux, where=where)
+            np.abs(v, out=out, where=where)
+            np.subtract(out, tau, out=out, where=where)
+            np.maximum(0., out, out=out, where=where)
+            np.multiply(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
 
-    def _f_conj(self, v_star,**kwargs):
-        res = np.abs(v_star)    
-        ind = (res>1+self.conj_tol)
-        res *= 0.
-        res[ind]= inf
-        return res
+    def _f_conj(self, v_star, out=None, mask=None, **kwargs):
+        # out = 0 if abs(v_star) <= 1, and np.inf otherwise
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.abs(v_star, out=out, where=where)
+        outside = where & (out > 1 + self.conj_tol)
+        np.copyto(out, 0., where=where)
+        np.copyto(out, np.inf, where=outside)
+        return out
     
-    def _f_conj_deriv(self, v_star,**kwargs):
-        return np.zeros_like(v_star)
+    def _f_conj_deriv(self, v_star, out=None, mask=None, **kwargs):
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.copyto(out, 0., where=where)
+        return out
 
-    def _f_conj_second_deriv(self, v_star,**kwargs):
-        return self.domain.zeros()
+    def _f_conj_second_deriv(self, v_star, out=None, mask=None, **kwargs):
+        where = self._where(mask, v_star)
+        out = self._prepare_out(out, v_star)
+        np.copyto(out, 0., where=where)
+        return out
 
-    def _f_conj_prox(self,vstar,tau,**kwargs):
-        # res  = vstar/np.maximum(np.abs(vstar),1)
-        #res = np.abs(vstar)
-        #res = np.maximum(res,1.,out=res)
-        #np.divide(vstar,res, out =res)
-        res = np.minimum(vstar,1.)
-        np.maximum(res,-1.,out=res)
-        return res
+    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        np.maximum(vstar, -1., out=out, where=where)
+        np.minimum(out, 1., out=out, where=where)
+        return out
 
     def _ptw_dist_subdiff(self, vstar, x):
         diff = self.subgradient(x)
@@ -1620,7 +2180,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         If data is given, then w is w+data; if the parameter w is not given, then w is just the data.
     omit_normalization:bool (default:False)
         If true, the term :math:`w(x)\ln w(x)` is omitted in the definition of F_w. (Then :math:`F_w(w)\neq 0`.)
-        This is sometines done if KullbackLeibler is used as Poisson log-likelikhood since the omitted term is not well-defined for 
+        This is sometimes done if KullbackLeibler is used as Poisson log-likelihood since the omitted term is not well-defined for 
         a continuous Poisson process, and it is irrelevant and large for large discrete data. 
     """
 
@@ -1728,127 +2288,170 @@ class KullbackLeibler(IntegralFunctionalBase):
         else:
             return 0
 
-    def _f(self, u,**kwargs):
-        if 'w' in kwargs.keys():
-            raise ValueError(Errors.value_error('second parameter w of KullbackLeibler must be fixed in constructor.'))
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        # memory efficient implementation of 
-        # res[ind_else]=u[ind_else]-self.w[ind_else] - self.w[ind_else] * np.log(u[ind_else]/self.w[ind_else])
-        if self.omit_normalization:
-            res = u.copy()
-        else:
-            res=np.zeros_like(u)            
-            np.divide(u,wm, out=res)
-        with np.errstate(invalid='ignore', divide='ignore'):
-            np.log(res,out=res)
-        res *= wm
-        res *= -1
-        res += u
-        res -= wm
-        # end
-        res[(u<0)|((u==0)&(wm>0))]= np.inf
-        return res    
+    def _f(self, u, out=None, mask=None, **kwargs):
+        # out = u - w - w * log(u / w)
+        if 'w' in kwargs:
+            raise ValueError(Errors.value_error(
+                'second parameter w of KullbackLeibler must be fixed in constructor.'
+            ))
+        where = self._where(mask, u)
+        wm = self.w
+        out = self._prepare_out(out, u)
+        source = u
+        scratch = None
+        if np.may_share_memory(out, u):
+            scratch = self._get_scratch('_aux', u)
+            np.copyto(scratch, u, where=where)
+            source = scratch
+        invalid = where & ((source < 0) | ((source == 0) & (wm > 0)))
+        try:
+            if self.omit_normalization:
+                np.copyto(out, source, where=where)
+            else:
+                np.divide(source, wm, out=out, where=where)
+            with np.errstate(invalid='ignore', divide='ignore'):
+                np.log(out, out=out, where=where)
+            np.multiply(out, wm, out=out, where=where)
+            np.negative(out, out=out, where=where)
+            np.add(out, source, out=out, where=where)
+            np.subtract(out, wm, out=out, where=where)
+            np.copyto(out, np.inf, where=invalid)
+        finally:
+            if scratch is not None:
+                self._free_scratch('_aux')
+        return out
    
-    def _f_deriv(self, u,**kwargs):
-        if 'w' in kwargs.keys():
-            raise ValueError(Errors.value_error('first parameter w of KullbackLeibler must be fixed in constructor.'))
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        if not np.all(np.logical_or(np.logical_not(u==0),wm==0)):
-            raise ValueError(Errors.value_error('argument cannot be 0 at positions where w is not 0'))
-        # memory efficient implementation of 
-        # res = np.ones_like(u)-wm/u
-        res = np.divide(wm,u)
-        res *= -1.
-        res += 1.
-        # end
-        res[u==0] = 1
-        return res
+    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+        # out =  1 - w / u
+        if 'w' in kwargs:
+            raise ValueError(Errors.value_error(
+                'first parameter w of KullbackLeibler must be fixed in constructor.'
+            ))
+        where = self._where(mask, u)
+        wm = self.w
+        zero = where & (u == 0)
+        if np.any(zero & (wm != 0)):
+            raise ValueError(Errors.value_error(
+                'argument cannot be 0 at positions where w is not 0'
+            ))
+        out = self._prepare_out(out, u)
+        regular = where & ~zero
+        np.divide(wm, u, out=out, where=regular)
+        np.negative(out, out=out, where=regular)
+        np.add(out, 1., out=out, where=regular)
+        np.copyto(out, 1., where=zero)
+        return out
 
-    def _f_second_deriv(self, u, **kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w   
-        # memory efficient computation of 
-        # res = wm/u**2
-        res = np.divide(wm,u)
-        res /= u
-        # end
-        return res
+    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+        # out = w / u**2
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.square(u, out=out, where=where)
+        np.divide(self.w, out, out=out, where=where)
+        return out
 
-    def _f_conj(self, u_star,**kwargs):
-        if 'w' in kwargs.keys():
-            raise ValueError(Errors.value_error('second parameter w of KullbackLeibler must be fixed in constructor.'))
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        # memory efficient computation of
-        # res = -wm*np.log(1-u_star)
-        res = np.subtract(1.,u_star)
+    def _f_conj(self, u_star, out=None, mask=None, **kwargs):
+        # out = - w * log(1-u_star)
+        if 'w' in kwargs:
+            raise ValueError(Errors.value_error(
+                'second parameter w of KullbackLeibler must be fixed in constructor.'
+            ))
+        where = self._where(mask, u_star)
+        wm = self.w
+        invalid = where & ((u_star > 1) | ((u_star == 1) & (wm > 0)))
+        out = self._prepare_out(out, u_star)
+        np.subtract(1., u_star, out=out, where=where)
         with np.errstate(invalid='ignore', divide='ignore'):
-            np.log(res,out=res)
-        res *= wm
-        res *= -1
+            np.log(out, out=out, where=where)
+        np.multiply(out, wm, out=out, where=where)
+        np.negative(out, out=out, where=where)
         if self.omit_normalization:
-            res += np.where(wm>0, wm*np.log(wm),0.)
-        # end
-        res[(u_star>1) | ((u_star == 1) & (wm>0))] = np.inf
-        return res
+            aux = self._get_scratch('_aux', u_star)
+            try:
+                positive = where & (wm > 0)
+                np.log(wm, out=aux, where=positive)
+                np.multiply(aux, wm, out=aux, where=positive)
+                np.add(out, aux, out=out, where=positive)
+            finally:
+                self._free_scratch('_aux')
+        np.copyto(out, np.inf, where=invalid)
+        return out
 
-    def _f_conj_deriv(self, u_star,**kwargs):
-        if 'w' in kwargs.keys():
-            raise ValueError(Errors.value_error('second parameter w of KullbackLeibler must be fixed in constructor.'))
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w    
-        if not np.all(np.logical_or(np.logical_not(u_star==1),wm==0)):
-            raise ValueError(Errors.value_error('argument cannot be 1 at positions where w is not 0.'))
-        # memory efficient implementation of
-        # toret = wm/(1-u_star)
-        toret = np.subtract(1.,u_star)
-        np.divide(wm,toret,out = toret)
-        # end
-        toret[u_star==1] = 0
-        return toret 
+    def _f_conj_deriv(self, u_star, out=None, mask=None, **kwargs):
+        # out = w / (1-u_star)
+        if 'w' in kwargs:
+            raise ValueError(Errors.value_error(
+                'second parameter w of KullbackLeibler must be fixed in constructor.'
+            ))
+        where = self._where(mask, u_star)
+        wm = self.w
+        at_one = where & (u_star == 1)
+        if np.any(at_one & (wm != 0)):
+            raise ValueError(Errors.value_error(
+                'argument cannot be 1 at positions where w is not 0.'
+            ))
+        out = self._prepare_out(out, u_star)
+        regular = where & ~at_one
+        np.subtract(1., u_star, out=out, where=regular)
+        np.divide(wm, out, out=out, where=regular)
+        np.copyto(out, 0., where=at_one)
+        return out
     
-    def _f_conj_second_deriv(self, u_star,**kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        if not np.all(np.logical_or(np.logical_not(u_star==1),wm==0)):
-            raise RuntimeError(Errors.runtime_error(f"Whenever u^ast is not 1 the first argument of initial Kullback-Leibler cannot be zero for the computation of second derivativ of conjugate functional.", self,"_f_conj_second_deriv"))
-        # memory efficient implementation of 
-        # toret = wm/(1-u_star)**2
-        toret = np.subtract(1.,u_star)
-        toret *= toret
-        np.divide(wm,toret,out = toret)        
-        # end
-        return toret
+    def _f_conj_second_deriv(self, u_star, out=None, mask=None, **kwargs):
+        #  out = w / (1-u_star)**2
+        where = self._where(mask, u_star)
+        wm = self.w
+        at_one = where & (u_star == 1)
+        if np.any(at_one & (wm != 0)):
+            raise RuntimeError(Errors.runtime_error(
+                "Whenever u^ast is 1 the first argument of initial Kullback-Leibler "
+                "must be zero for the computation of the second derivative of the "
+                "conjugate functional.", self, "_f_conj_second_deriv"
+            ))
+        out = self._prepare_out(out, u_star)
+        regular = where & ~at_one
+        np.subtract(1., u_star, out=out, where=regular)
+        np.square(out, out=out, where=regular)
+        np.divide(wm, out, out=out, where=regular)
+        np.copyto(out, 0., where=at_one)
+        return out
 
-    def _f_prox(self, v, tau, **kwargs):
-        # memory efficient implementation of 
-        # toret = -0.5*(tau-v) + np.sqrt(0.25*(tau-v)**2+tau*self.w)
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        toret = np.subtract(tau,v)
-        toret *= toret
-        toret *= 0.25
-        aux = np.multiply(tau,wm)
-        toret += aux
-        toret = np.sqrt(toret,out=toret)
-        aux = np.subtract(tau,v)
-        aux *= -0.5
-        toret += aux
-        # end
-        return toret
+    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+        # out = -0.5 * (tau - v) + sqrt(0.25 * (tau - v)**2 + tau * w)
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        aux = self._get_scratch('_aux', v)
+        try:
+            np.subtract(tau, v, out=aux, where=where)
+            np.square(aux, out=out, where=where)
+            np.multiply(out, 0.25, out=out, where=where)
+            np.add(out, tau * self.w, out=out, where=where)
+            np.sqrt(out, out=out, where=where)
+            np.multiply(aux, 0.5, out=aux, where=where)
+            np.subtract(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
 
-    def _f_conj_prox(self, vstar, tau, **kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        # memory efficient implementation of 
-        # toret = 0.5*(1.+vstar) - np.sqrt(0.25*(1.+vstar)**2 + tau*self.w-vstar)
-        toret = np.add(1.,vstar)
-        toret *= toret
-        toret *= 0.25
-        aux = np.multiply(tau,wm)
-        aux -= vstar
-        toret += aux
-        np.sqrt(toret,out=toret)
-        toret *= -1
-        aux = np.add(1.,vstar,out=aux)
-        aux *= 0.5
-        toret += aux
-        # end
-        return toret
+    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+        # out =  0.5 * (1 + vstar) - sqrt(0.25 * (1 + vstar)**2 + tau * w - vstar)
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        aux = self._get_scratch('_aux', vstar)
+        try:
+            np.add(1., vstar, out=aux, where=where)
+            np.square(aux, out=out, where=where)
+            np.multiply(out, 0.25, out=out, where=where)
+            np.add(out, tau * self.w, out=out, where=where)
+            np.subtract(out, aux, out=out, where=where)
+            np.add(out, 1., out=out, where=where)
+            np.sqrt(out, out=out, where=where)
+            np.negative(out, out=out, where=where)
+            np.multiply(aux, 0.5, out=aux, where=where)
+            np.add(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
 
 
 class RelativeEntropy(IntegralFunctionalBase):
@@ -1877,7 +2480,7 @@ class RelativeEntropy(IntegralFunctionalBase):
         elif w not in domain:
             raise TypeError(Errors.not_in_vecsp(w,domain,vec_name="second argument",add_info=f" Error occured setting up the Relative Entropy functional."))
         if np.min(w)<=0:
-            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positiv!", self))
+            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positive!", self))
         self._w= w.copy()
 
         super().__init__(domain,nat_dom_l = 1e-14*w,
@@ -1922,86 +2525,124 @@ class RelativeEntropy(IntegralFunctionalBase):
         else:
             return 0.
 
-    def _f(self, u,**kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        res=np.zeros_like(u)
-        # memory efficient implementation of 
-        # res[ind_upos]=u[ind_upos] * np.log(u[ind_upos]/wm[ind_upos])
-        np.divide(u,wm, out= res)
-        np.log(res,out=res,where=res>0)
-        res *= u
-        # end
-        res[u<0] = np.inf
-        # res[u==0] = 0. # this is already the case due to initialization with zeros
-        return res    
+    def _f(self, u, out=None, mask=None, **kwargs):
+        # out = u * log(u / w)
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        source = u
+        scratch = None
+        if np.may_share_memory(out, u):
+            scratch = self._get_scratch('_aux', u)
+            np.copyto(scratch, u, where=where)
+            source = scratch
+        negative = where & (source < 0)
+        try:
+            np.divide(source, self.w, out=out, where=where)
+            positive = where & (out > 0)
+            np.log(out, out=out, where=positive)
+            np.multiply(out, source, out=out, where=where)
+            np.copyto(out, np.inf, where=negative)
+        finally:
+            if scratch is not None:
+                self._free_scratch('_aux')
+        return out
    
-    def _f_deriv(self, u,**kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        # memory efficient implementation of 
-        # res = np.ones_like(u)+np.log(u/wm)
-        res = np.divide(u,wm)
-        np.log(res,out=res)
-        res += 1.
-        # end
-        return res
+    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+        # out = 1 + log(u / w)
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.divide(u, self.w, out=out, where=where)
+        np.log(out, out=out, where=where)
+        np.add(out, 1., out=out, where=where)
+        return out
 
-    def _f_second_deriv(self, u, **kwargs):     
-        return 1/u
+    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+        # out = 1 / u
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.divide(1., u, out=out, where=where)
+        return out
 
-    def _f_prox(self, v, tau, **kwargs):
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        
-        thres = np.log(np.finfo(v.dtype).max)-np.maximum(0.,np.log(1./tau))-np.maximum(0.,np.log(np.max(wm)))-1.
-        v_mod = (v<=thres*tau) 
-        # For v>=thres*tau an overflow occurs in the exponential (for standard doubles thres ~ 710) or in the subsequent multiplication and division.
-        # For such values we use an approximation via linearization (= one Newon step) instead of the exact formula in terms of the Lambert-w function. 
-        
-        # memory efficient implementation of 
-        # toret = (1/tau)*self.w*np.exp(v/tau-1.)
-        toret = np.divide(v[v_mod],tau)
-        toret -= 1.
-        np.exp(toret,out=toret)
-        toret *= wm[v_mod]
-        toret /= tau
-        #end
-        #if not hasattr(self, '_aux'):
-        #    self._aux = self.domain.complex_space().zeros()        
-        aux =  lambertw(toret)
-        toret = aux.real
-        toret *= tau
+    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+        # out = tau * lambertW( (w / tau) * exp(v / tau - 1) )
+        # For v >= thres * tau an overflow occurs in the exponential (for standard doubles thres ~ 710) or
+        # in the subsequent multiplication and division.
+        # For such values we use an approximation via linearization (= one Newon step) instead of the exact formula above.
+        where = self._where(mask, v)
+        out = self._prepare_out(out, v)
+        source = v
+        source_scratch = None
+        if np.may_share_memory(out, v):
+            source_scratch = self._get_scratch('_aux', v)
+            np.copyto(source_scratch, v, where=where)
+            source = source_scratch
+        scaled = self._get_scratch('_prox_scaled', v)
+        try:
+            max_w = np.max(self.w, where=where, initial=0.)
+            thres = (
+                np.log(np.finfo(source.dtype).max)
+                - np.maximum(0., np.log(1. / tau))
+                - np.maximum(0., np.log(max_w)) - 1.
+            )
+            regular = where & (source <= thres * tau)
+            large = where & ~regular
 
-        if np.all(v_mod):
-            return toret.reshape(v.shape)
-        else:
-            res = np.zeros_like(v)
-            res[v_mod] = toret
-            vl = v[~v_mod]       
-            res[~v_mod] = (vl - tau*np.log(vl/wm[~v_mod])) / (1. + tau/vl)
-            return res
+            np.divide(source, tau, out=scaled, where=regular)
+            np.subtract(scaled, 1., out=scaled, where=regular)
+            np.exp(scaled, out=scaled, where=regular)
+            np.multiply(scaled, self.w, out=scaled, where=regular)
+            np.divide(scaled, tau, out=scaled, where=regular)
+            np.copyto(scaled, 0., where=~regular)
+            lambert = lambertw(scaled).real
+            np.multiply(lambert, tau, out=out, where=regular)
 
-    def _f_conj_prox(self, vstar, tau, **kwargs):
-        toret = (1/tau)*vstar
-        aux = self._f_prox(toret,1/tau, **kwargs)
-        aux *= tau
-        toret *= tau
-        toret -= aux
-        return toret
+            np.divide(source, self.w, out=scaled, where=large)
+            np.log(scaled, out=scaled, where=large)
+            np.multiply(scaled, tau, out=scaled, where=large)
+            np.subtract(source, scaled, out=out, where=large)
+            np.divide(tau, source, out=scaled, where=large)
+            np.add(scaled, 1., out=scaled, where=large)
+            np.divide(out, scaled, out=out, where=large)
+        finally:
+            self._free_scratch('_prox_scaled')
+            if source_scratch is not None:
+                self._free_scratch('_aux')
+        return out
 
-    def _f_conj(self, u_star,**kwargs):  
-        wm = self.w[kwargs['mask']] if 'mask' in kwargs.keys() else self.w
-        # memory efficient implementation of 
-        # toret =  wm*(np.exp(u_star-1))
-        toret = np.subtract(u_star,1.)
-        np.exp(toret,out=toret)
-        toret *= wm
-        # end
-        return toret
+    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+        # out = vstar - tau * f_prox(vstar / tau, 1 / tau)
+        where = self._where(mask, vstar)
+        out = self._prepare_out(out, vstar)
+        source = vstar
+        scratch = None
+        if np.may_share_memory(out, vstar):
+            scratch = self._get_scratch('_conj_prox_input', vstar)
+            np.copyto(scratch, vstar, where=where)
+            source = scratch
+        try:
+            np.divide(source, tau, out=out, where=where)
+            self._f_prox(out, 1. / tau, out=out, mask=mask, **kwargs)
+            np.multiply(out, tau, out=out, where=where)
+            np.subtract(source, out, out=out, where=where)
+        finally:
+            if scratch is not None:
+                self._free_scratch('_conj_prox_input')
+        return out
 
-    def _f_conj_deriv(self, u_star,**kwargs):
-        return self._f_conj(u_star,**kwargs)
+    def _f_conj(self, u_star, out=None, mask=None, **kwargs):
+        # out = w * (exp(u_star - 1))
+        where = self._where(mask, u_star)
+        out = self._prepare_out(out, u_star)
+        np.subtract(u_star, 1., out=out, where=where)
+        np.exp(out, out=out, where=where)
+        np.multiply(out, self.w, out=out, where=where)
+        return out
+
+    def _f_conj_deriv(self, u_star, out=None, mask=None, **kwargs):
+        return self._f_conj(u_star, out=out, mask=mask, **kwargs)
     
-    def _f_conj_second_deriv(self, u_star,**kwargs):
-        return self._f_conj(u_star,**kwargs)
+    def _f_conj_second_deriv(self, u_star, out=None, mask=None, **kwargs):
+        return self._f_conj(u_star, out=out, mask=mask, **kwargs)
 
 class Huber(IntegralFunctionalBase):
     r"""Huber functional 
@@ -2024,13 +2665,13 @@ class Huber(IntegralFunctionalBase):
         Only used for conjugate functional. See description of `QuadraticIntv`
     """
 
-    def  __init__(self, domain,as_primal=True,sigma = 1.,eps=1e-10,**kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSPaceFcts isntance."))
+    def  __init__(self, domain, as_primal=True, sigma = 1., eps=1e-10, **kwargs):
+        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if isinstance(sigma,int):
             self.sigma = np.broadcast_to(np.real(float(sigma)),domain.shape)
-        if isinstance(sigma, float):
+        elif isinstance(sigma, float):
             self.sigma = np.broadcast_to(np.real(sigma),domain.shape)
         else:
             self.sigma = np.real(sigma)
@@ -2049,46 +2690,55 @@ class Huber(IntegralFunctionalBase):
         self._abs_u = self.domain.zeros() 
         self._small = np.zeros(self.domain.shape,dtype=bool)
 
-    def _f(self, u,**kwargs):
-        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
-        # res = np.where(np.abs(u)<=sigma,0.5*np.abs(u)**2,sigma*np.abs(u)-0.5*sigma**2)
-        self._abs_u = np.abs(u)
-        self._small = (self._abs_u<=sigma)
-        res = np.multiply(self._abs_u,2.)
-        res -= sigma
-        res *= sigma
-        res *= 0.5
-        self._abs_u *=self._abs_u
-        self._abs_u *= 0.5
-        res[self._small] = self._abs_u[self._small]
-        return res 
+    def _f(self, u, out=None, mask=None, **kwargs):
+        # out = 1/2 * abs(u)**2                            if abs(u) <= sigma
+        # out = sigma * abs(x) - 1/2 * sigma**2            else
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        abs_u = self._get_scratch('_abs_u', u)
+        try:
+            np.abs(u, out=abs_u, where=where)
+            small = where & (abs_u <= self.sigma)
+            large = where & ~small
+            np.square(abs_u, out=out, where=small)
+            np.multiply(out, 0.5, out=out, where=small)
+            np.multiply(self.sigma, abs_u, out=out, where=large)
+            np.square(self.sigma, out=abs_u, where=large)
+            np.multiply(abs_u, 0.5, out=abs_u, where=large)
+            np.subtract(out, abs_u, out=out, where=large)
+        finally:
+            self._free_scratch('_abs_u')
+        return out
 
-    def _f_deriv(self, u,**kwargs):
-        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
-        # res = np.where(np.abs(u)<=sigma,u,sigma*u/np.abs(u))
-        self._abs_u = np.abs(u)
-        self._small = (self._abs_u<=sigma)
-        res = sigma*u
-        with np.errstate(invalid='ignore',divide='ignore'):
-           res /= self._abs_u
-        res[self._small] = u[self._small]
-        return res
+    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+        # out = u                      if abs(u) <= sigma
+        # out = sigma * sign(u)        else
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.maximum(u, -self.sigma, out=out, where=where)
+        np.minimum(out, self.sigma, out=out, where=where)
+        return out
 
-    def _f_second_deriv(self, u, **kwargs):
-        sigma = self.sigma[kwargs['mask']] if ('mask' in kwargs.keys() and not np.isscalar(self.sigma)) else self.sigma
-        return (np.abs(u)<=sigma).astype(float)
+    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+        # out = 1   if abs(u) <= sigma
+        # out = 0   else
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        inside = np.abs(u) <= self.sigma
+        np.copyto(out, inside, where=where, casting='unsafe')
+        return out
 
-    def _f_conj(self, ustar,**kwargs):
-        return self.conjugate._f(ustar,**kwargs)    
+    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f(ustar, out=out, mask=mask, **kwargs)
    
-    def _f_conj_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_deriv(ustar,**kwargs)
+    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_second_deriv(ustar,**kwargs)
+    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f_second_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.conjugate._f_prox(ustar,tau,**kwargs)
+    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+        return self.conjugate._f_prox(ustar, tau, out=out, mask=mask, **kwargs)
 
 
 class QuadraticIntv(IntegralFunctionalBase):
@@ -2113,12 +2763,13 @@ class QuadraticIntv(IntegralFunctionalBase):
         or NotInEssentialDomain exceptions in the presence of rounding errors
     """
 
-    def  __init__(self, domain,as_primal=True,sigma=1.,eps=1e-10,**kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSPaceFcts isntance."))
+    def  __init__(self, domain, as_primal=True, sigma=1., eps=1e-10, **kwargs):
+        if not isinstance(domain,MeasureSpaceFcts): 
+            raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
-            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
+            raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if np.min(sigma)<=0:
-            raise ValueError(Errors.value_error("The interval width in the QuadtraticIntv needs to be positiv!", self))
+            raise ValueError(Errors.value_error("The interval width in the QuadraticIntv needs to be positive!", self))
         self.eps=eps
         if isinstance(sigma, (float,int)):
             self.sigma = np.broadcast_to(np.real(sigma), domain.shape)
@@ -2136,39 +2787,55 @@ class QuadraticIntv(IntegralFunctionalBase):
             dual_domain.measure = 1./domain.measure
             super().__init__(dual_domain, convexity_param=1,                                                     
                          **kwargs)   
-        self._aux = domain.zeros()
 
-    def _f(self, u,**kwargs):
-        # res =  0.5*np.abs(u)**2
-        self._aux = np.abs(u)
-        res = self._aux**2
-        res *= 0.5 
-        res[self._aux>self.sigmaeps] = np.inf        
-        return res  
+    def _f(self, u, out=None, mask=None, **kwargs):
+        # out = 0.5 * abs(u)**2    if abs(u)<=sigmaeps
+        # out = np.inf             else
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        outside = where & (np.abs(u) > self.sigmaeps)
+        np.square(u, out=out, where=where)
+        np.multiply(out, 0.5, out=out, where=where)
+        np.copyto(out, np.inf, where=outside)
+        return out
    
-    def _f_deriv(self, u,**kwargs):
-        return u.copy()
+    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.copyto(out, u, where=where)
+        return out
 
-    def _f_prox(self,u,tau,**kwargs):
-        res = u/(1+tau)
-        self._aux = np.abs(res)
-        self._aux /= self.sigma
-        return res/np.maximum(self._aux,1)
+    def _f_prox(self, u, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.divide(u, 1. + tau, out=out, where=where)
+        aux = self._get_scratch('_aux', u)
+        try:
+            np.abs(out, out=aux, where=where)
+            np.divide(aux, self.sigma, out=aux, where=where)
+            np.maximum(aux, 1., out=aux, where=where)
+            np.divide(out, aux, out=out, where=where)
+        finally:
+            self._free_scratch('_aux')
+        return out
 
-    def _f_second_deriv(self, u,**kwargs):
-        return np.ones_like(u)
+    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.copyto(out, 1., where=where)
+        return out
 
-    def _f_conj(self, ustar,**kwargs):
-        return self.conjugate._f(ustar,**kwargs)    
+    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f(ustar, out=out, mask=mask, **kwargs)
    
-    def _f_conj_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_deriv(ustar,**kwargs)
+    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_second_deriv(self, ustar,**kwargs):
-        return self.conjugate._f_second_deriv(ustar,**kwargs)
+    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+        return self.conjugate._f_second_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_prox(self,ustar,tau,**kwargs):
-        return self.conjugate._f_prox(ustar,tau,**kwargs)
+    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+        return self.conjugate._f_prox(ustar, tau, out=out, mask=mask, **kwargs)
     
     def _ptw_dist_subdiff(self, vstar, x):
         diff = vstar.copy()
@@ -2194,47 +2861,70 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     """
 
-    def  __init__(self, domain,**kwargs):
-        super().__init__(domain,convexity_param = 1.,nat_dom_l=0.,
+    def  __init__(self, domain, **kwargs):
+        super().__init__(domain,convexity_param = 1., nat_dom_l=0.,
                          methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
                          conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
                          **kwargs)
 
-    def _f(self, u,**kwargs):
-        res =  u*u
-        res *= 0.5
-        res[u<0] = np.inf
-        return res    
+    def _f(self, u, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        negative = where & (u < 0)
+        np.square(u, out=out, where=where)
+        np.multiply(out, 0.5, out=out, where=where)
+        np.copyto(out, np.inf, where=negative)
+        return out
 
-    def _f_deriv(self, u,**kwargs):
-        return u.copy()
+    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.copyto(out, u, where=where)
+        return out
 
-    def _f_prox(self,u,tau,**kwargs):
-        res = u/(1+tau)
-        np.maximum(res,0,out=res)
-        return res
+    def _f_prox(self, u, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.divide(u, 1. + tau, out=out, where=where)
+        np.maximum(out, 0., out=out, where=where)
+        return out
 
-    def _f_second_deriv(self, u,**kwargs):
-        return np.ones_like(u)
+    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+        where = self._where(mask, u)
+        out = self._prepare_out(out, u)
+        np.copyto(out, 1., where=where)
+        return out
 
-    def _f_conj(self, ustar,**kwargs):
-        res = ustar*ustar
-        res *= 0.5
-        res[ustar<0] = 0
-        return res
+    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+        where = self._where(mask, ustar)
+        out = self._prepare_out(out, ustar)
+        negative = where & (ustar < 0)
+        np.square(ustar, out=out, where=where)
+        np.multiply(out, 0.5, out=out, where=where)
+        np.copyto(out, 0., where=negative)
+        return out
 
-    def _f_conj_deriv(self, ustar,**kwargs):
-        res = ustar.copy()
-        res[ustar<0] = 0
-        return res
+    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+        where = self._where(mask, ustar)
+        out = self._prepare_out(out, ustar)
+        np.copyto(out, ustar, where=where)
+        np.copyto(out, 0., where=where & (ustar < 0))
+        return out
 
-    def _f_conj_second_deriv(self, ustar,**kwargs):
-        return 1.* (ustar>=0)
+    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+        where = self._where(mask, ustar)
+        out = self._prepare_out(out, ustar)
+        nonnegative = ustar >= 0
+        np.copyto(out, nonnegative, where=where, casting='unsafe')
+        return out
 
-    def _f_conj_prox(self,ustar,tau,**kwargs):
-        res=ustar.copy()
-        res[ustar>0]*=(1/(1+tau))
-        return res
+    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+        where = self._where(mask, ustar)
+        out = self._prepare_out(out, ustar)
+        np.copyto(out, ustar, where=where)
+        positive = where & (ustar > 0)
+        np.divide(ustar, 1. + tau, out=out, where=positive)
+        return out
     
     def _ptw_dist_subdiff(self, vstar, x):
         raise NotImplementedError
@@ -2265,20 +2955,20 @@ class QuadraticBilateralConstraints(LinearCombination):
     """
 
     def __init__(self,domain:MeasureSpaceFcts, 
-                 lb=None, ub=None, x0=None,alpha:float=1.,**kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSPaceFcts isntance."))
+                 lb=None, ub=None, x0=None, alpha:float=1., **kwargs):
+        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSpaceFcts instance."))
         if isinstance(lb,(float,int)):
             lb = lb*domain.ones()
         elif lb is None:
             lb = domain.zeros()
         elif lb not in domain:
-            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
+            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
         if isinstance(ub,(float,int)):
             ub = ub*domain.ones()
         elif ub is None:
             ub = domain.ones()
         elif ub not in domain:
-            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"ub = {ub}"))
+            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"ub = {ub}"))
         if np.any(lb>=ub):
             raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint:"+"\n\t "+f"lb = {lb},"+"\n\t "+f"ub = {ub}"))
         if x0 is None:
@@ -2286,13 +2976,13 @@ class QuadraticBilateralConstraints(LinearCombination):
         elif isinstance(x0,(float,int)):
             x0 = x0*domain.ones()
         elif x0 not in domain:
-            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
+            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
 
         if not isinstance(alpha,(float,int)):
             raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        F = QuadraticIntv(domain,sigma=(ub-lb)/2.,**kwargs)
+        F = QuadraticIntv(domain,sigma=(ub-lb)/2., **kwargs)
         center = (ub+lb)/2
         lin = LinearFunctional(center-x0,
                             domain=domain,
@@ -2304,7 +2994,7 @@ class QuadraticBilateralConstraints(LinearCombination):
                           (alpha,lin)
                           )
 
-def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
+def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     r""" Returns `Functional` defined by 
 
     .. math::
@@ -2323,19 +3013,19 @@ def QuadraticLowerBound(domain, lb=None, x0=None,a=1.):
     a : float or int
         scaling factor
     """
-    if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticLowerBound domain needs to be a MeasureSPaceFcts isntance."))
+    if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticLowerBound domain needs to be a MeasureSpaceFcts instance."))
     if isinstance(lb,(float,int)):
         lb = lb*domain.ones()
     elif lb is None:
         lb = domain.zeros()
     elif lb not in domain:
-        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"lb = {lb}"))
+        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticLowerBound needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
     if isinstance(x0,(float,int)):
         x0 = x0*domain.ones()
     elif x0 is None:
         x0 = domain.zeros()
     elif x0 not in domain:
-        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or elemnt in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
+        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticLowerBound needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
     if not isinstance(a,(float,int)):
             raise TypeError(Errors.not_instance(a,float,add_info="Scaling factor a in QuadraticLowerBound needs to be a scalar!"))
 
@@ -2355,7 +3045,7 @@ class QuadraticPositiveSemidef(Functional):
     and prox are only correct for hermitian inputs.
 
     Parameters
-    ---------
+    ----------
     domain: regpy.vecsps.UniformGridFcts
         two dimensional domain on which functional is defined, volume_elements have to be one
     trace_val: float or None, optional
@@ -2365,8 +3055,8 @@ class QuadraticPositiveSemidef(Functional):
 
     """
 
-    def  __init__(self, domain,trace_val=None,tol=1e-15,**kwargs):
-        if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts isntance."))
+    def  __init__(self, domain,trace_val=None,tol=1e-15, **kwargs):
+        if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts instance."))
         if domain.ndim!=2 or domain.shape[0]!=domain.shape[1] or domain.volume_elem!=1.:
             raise ValueError(Errors.value_error("The domain for QuadraticPositiveSemidef must be a two-dimensional domain with identical spread in the two domensions and uniform one measure! This is to represent vectors as a matrix."))
         if tol<0:
@@ -2384,7 +3074,7 @@ class QuadraticPositiveSemidef(Functional):
                          conj_methods = {'eval'},
                          **kwargs)
 
-    def is_in_essential_domain(self,rho):
+    def is_in_essential_domain(self, rho):
         if(not ishermitian(rho,atol=self.tol)):
             return False
         if(self.has_trace_constraint):
@@ -2394,13 +3084,13 @@ class QuadraticPositiveSemidef(Functional):
         return evs[0]>-self.tol
     
     @staticmethod
-    def closest_point_simplex(p,a):
+    def closest_point_simplex(p, a):
         r'''
-        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\qeq 0,\sum q_{i}=a\}`.
+        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\geq 0,\sum q_{i}=a\}`.
         It uses that p is already sorted in increasing order.
 
         Parameters
-        ---------
+        ----------
         p: numpy.ndarray
             Input point sorted in increasing order
         a: float
@@ -2419,28 +3109,35 @@ class QuadraticPositiveSemidef(Functional):
         else:
             return np.inf
 
-    def _f_prox(self, x, tau):
-        evs,U=np.linalg.eigh(x)
-        evs/=(1+tau)
-        if(self.has_trace_constraint):
-            proj_evs=QuadraticPositiveSemidef.closest_point_simplex(evs,self.trace_val)
+    def _proximal(self, x, tau, out=None, mask=None, **proximal_par):
+        evs, U = np.linalg.eigh(x)
+        evs /= 1 + tau
+        if self.has_trace_constraint:
+            proj_evs = QuadraticPositiveSemidef.closest_point_simplex(evs, self.trace_val)
         else:
-            proj_evs=np.maximum(0,evs)
-        return U@np.diag(proj_evs)@np.conj(U).T
+            proj_evs = np.maximum(0, evs)
+        result = (U * proj_evs) @ np.conj(U).T
+        if out is None:
+            out = np.empty_like(result)
+        where = True if mask is None else np.asarray(mask, dtype=bool)
+        np.copyto(out, result, where=where)
+        return out
         
-    def _subgradient(self, x):
-        if(self.is_in_essential_domain(x)):
-            return np.copy(x)
-        else:
-            return NotInEssentialDomainError
+    def _subgradient(self, x, out=None, **subgradient_par):
+        if self.is_in_essential_domain(x):
+            if out is None:
+                return np.copy(x)
+            np.copyto(out, x)
+            return out
+        raise NotInEssentialDomainError
         
-    def _hessian(self,x):
+    def _hessian(self, x):
         if(self.is_in_essential_domain(x)):
             return self.domain.identity
         else:
             return NotInEssentialDomainError
         
-    def _conj(self,xstar):
+    def _conj(self, xstar):
         evs=np.linalg.eigvalsh(xstar)
         if(self.has_trace_constraint):
             cps=QuadraticPositiveSemidef.closest_point_simplex(evs,self.trace_val)
@@ -2466,15 +3163,27 @@ class L1Generic(Functional):
     def _eval(self, x):
         return np.sum(np.abs(x))
 
-    def _subgradient(self, x):
-        return np.sign(x)
+    def _subgradient(self, x, out=None, **subgradient_par):
+        if out is None:
+            out = np.empty_like(x)
+        np.sign(x, out=out)
+        return out
 
     def _hessian(self, x):
         # Even approximate Hessians don't work here.
         raise NotImplementedError
 
-    def _proximal(self, x, tau):
-        return np.maximum(0, np.abs(x)-tau)*np.sign(x)
+    def _proximal(self, x, tau, out=None, **proximal_par):
+        if out is None:
+            out = np.empty_like(x)
+            source = x
+        else:
+            source = x.copy() if np.may_share_memory(out, x) else x
+        np.abs(source, out=out)
+        np.subtract(out, tau, out=out)
+        np.maximum(out, 0, out=out)
+        np.copysign(out, source, out=out)
+        return out
 
 
 class TVGeneric(Functional):
@@ -2485,14 +3194,14 @@ class TVGeneric(Functional):
     def __init__(self, domain, h_domain=L2):
         super().__init__(domain,h_domain=h_domain)
 
-    def _subgradient(self, x):
-        return NotImplementedError
+    def _subgradient(self, x, out=None, **subgradient_par):
+        raise NotImplementedError
 
     def _hessian(self, x):
         return NotImplementedError
     
-    def _proximal(self, x, tau):
-        return NotImplementedError
+    def _proximal(self, x, tau, out=None, **proximal_par):
+        raise NotImplementedError
 
 from regpy.operators import ForwardFDGradient
 class TVUniformGridFcts(Composed):
@@ -2533,12 +3242,12 @@ class TVUniformGridFcts(Composed):
             tv: TVUnivormGridFct 
                the TV functional
             penalty_shift: np.ndarray | None (optional)
-                The argument x. Defaults to None correpsonding to x=0
+                The argument x. Defaults to None corresponding to x=0
             tau: float (optional)
                  Parameter of the prox. Defaults to 1. 
             
         """  
-        def __init__(self,tv,
+        def __init__(self, tv,
                      penalty_shift = None,
                      tau:float = 1.
                      ):
@@ -2556,8 +3265,8 @@ class TVUniformGridFcts(Composed):
                                           'full':"Chambolle's dual fixed point iteration"}})
             return _methods
 
-        def set_penalty_shift(self,penalty_shift):
-            self.set_penalty(L2,penalty_shift=penalty_shift)
+        def set_penalty_shift(self, penalty_shift):
+            self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
     from regpy.solvers.general import RegSolver
@@ -2576,7 +3285,7 @@ class TVUniformGridFcts(Composed):
             Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
             best results are optained for stepsize_safety =2.
         """           
-        def __init__(self,setting,x=None,y=None, stepsize_safety = 1.,**kwargs):
+        def __init__(self, setting, x=None, y=None, stepsize_safety = 1., **kwargs):
             out,_ = TVUniformGridFcts.Chambolle.check_applicability(setting)
             if not out['applicable']:
                 raise ValueError(out['info'])
@@ -2627,7 +3336,7 @@ class TVUniformGridFcts(Composed):
                 return (self.y,self.x)
 
         @staticmethod
-        def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
+        def check_applicability(setting, op_norm=None)->tuple[dict,dict]:
             from regpy.solvers import Setting            
             out = {'info':''}; par = {}            
             if not isinstance(setting,Setting) or not isinstance(setting._primal_setting,TVUniformGridFcts.TV_prox_setting):
@@ -2638,7 +3347,7 @@ class TVUniformGridFcts(Composed):
 
     #####################################################################
     def __init__(self, domain,
-                 beta:float =0.,#
+                 beta:float =0.,
                  boundary_condition:str='Neum',
                  prox_method:str = 'dual_FISTA',
                  prox_method_param:dict = {},
@@ -2693,7 +3402,7 @@ class TVUniformGridFcts(Composed):
         if hasattr(self,'prox_setting'):
             self.prox_setting.data_fid = self.func
 
-    def _grad_func(self,beta)->Functional:
+    def _grad_func(self, beta)->Functional:
         r"""Returns the functional applied to the gradient -- L1L2 if beta ==0 and HuberL2 if beta>0
         """
         if beta==0.:
@@ -2704,11 +3413,18 @@ class TVUniformGridFcts(Composed):
             func.sigmaeps = np.broadcast_to(1.+1e-5, self.grad.domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
         return func
       
-    def _proximal(self,x,tau:float,**kwargs):
+    def _proximal(self, x, tau: float, out=None, **kwargs):
         self.prox_setting.set_penalty_shift(x)
-        self.prox_setting.regpar=1./tau
+        self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
-
-        return self.prox_setting.run(self.prox_method,stoprule=self.prox_stop_rule,**prox_method_param)[0]
+        result = self.prox_setting.run(
+            self.prox_method, stoprule=self.prox_stop_rule,
+            **prox_method_param
+        )[0]
+        if out is None:
+            return result
+        else:
+            np.copyto(out,result)
+            return out
         

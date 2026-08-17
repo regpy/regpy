@@ -261,7 +261,7 @@ class OperatorGraph(Operator):
         self.N_in=len(ed_in)
         self.N_out=len(ed_out)
         domain=self._compute_domain(ed_in)
-        self.input_op=Identity(domain,copy=False)
+        self.input_op=Identity(domain)
         self.node_dict.update({self.input_op:OperatorNode(self.input_op)})
         codomains=[]
         for edge in ed_in:
@@ -279,7 +279,7 @@ class OperatorGraph(Operator):
             self.edges.append(new_edge)
             codomains.append(new_edge.construct_start_space())
         codomain=vecsps.DirectSum(*codomains) if len(codomains)>1 else codomains[0]
-        self.output_op=Identity(codomain,copy=False)
+        self.output_op=Identity(codomain)
         self.node_dict.update({self.output_op:OperatorNode(self.output_op)})
         offset=len(ed_in)+len(ed_middle)
         for i in range(len(ed_out)):
@@ -426,47 +426,54 @@ class OperatorGraph(Operator):
         op_order.append(self.output_op)
         return op_order
     
+    def _run_forward(self, x, out=None, differentiate=False, derivative=False):
+        data_dict = {self.node_dict[self.input_op]: x}
+        last_index = len(self.operators) - 1
+        for i in range(1, len(self.operators)):
+            current_node = self.node_dict[self.operators[i]]
+            x_input = current_node.combine_input(data_dict)
+            target = out if i == last_index else None
+            if current_node.op.linear:
+                y = current_node.op(x_input, out=target)
+            elif derivative:
+                y = current_node.deriv(x_input, out=target)
+            elif differentiate:
+                y, current_node.deriv = current_node.op.linearize(x_input, out=target)
+            else:
+                y = current_node.op(x_input, out=target)
+            data_dict[current_node] = y
+        return data_dict[self.node_dict[self.output_op]]
+
     def _eval(self, x, differentiate=False):
-        data_dict={self.node_dict[self.input_op]:x}
-        for i in range(1,len(self.operators)):
-            current_node=self.node_dict[self.operators[i]]
-            x_input=current_node.combine_input(data_dict)
-            if(current_node.op.linear):
-                y=current_node.op(x_input)
-                # y=current_node.op._eval(x_input)
-            else:
-                if(differentiate):
-                    y,current_node.deriv=current_node.op.linearize(x_input)
-                else:
-                    y=current_node.op(x_input)
-                # y=current_node.op._eval(x_input,differentiate=differentiate)
-            data_dict.update({current_node:y})
-        return data_dict[self.node_dict[self.output_op]]
-    
+        return self._run_forward(x, differentiate=differentiate)
+
+    def _ieval(self, x, out, differentiate=False):
+        return self._run_forward(x, out=out, differentiate=differentiate)
+
     def _derivative(self, x):
-        data_dict={self.node_dict[self.input_op]:x}
-        for i in range(1,len(self.operators)):
-            current_node=self.node_dict[self.operators[i]]
-            x_input=current_node.combine_input(data_dict)
-            if(current_node.op.linear):
-                y=current_node.op(x_input)
+        return self._run_forward(x, derivative=True)
+
+    def _iderivative(self, x, out):
+        return self._run_forward(x, out=out, derivative=True)
+
+    def _run_adjoint(self, y, out=None):
+        data_dict = {self.node_dict[self.output_op]: y}
+        reverse_ops = self.operators[-2::-1]
+        last_index = len(reverse_ops) - 1
+        for i, op in enumerate(reverse_ops):
+            current_node = self.node_dict[op]
+            y_input = current_node.combine_output(data_dict)
+            target = out if i == last_index else None
+            if current_node.op.linear:
+                x = current_node.op.adjoint(y_input, out=target)
             else:
-                y=current_node.deriv(x_input)
-                # y=current_node.op._derivative(x_input)
-            data_dict.update({current_node:y})
-        return data_dict[self.node_dict[self.output_op]]
-    
-    def _adjoint(self, y):
-        data_dict={self.node_dict[self.output_op]:y}
-        for i in range(1,len(self.operators)):
-            current_node=self.node_dict[self.operators[len(self.operators)-1-i]]
-            y_input=current_node.combine_output(data_dict)
-            if(current_node.op.linear):
-                x=current_node.op.adjoint(y_input)
-            else:
-                x=current_node.deriv.adjoint(y_input)
-            data_dict.update({current_node:x})
+                x = current_node.deriv.adjoint(y_input, out=target)
+            data_dict[current_node] = x
         return data_dict[self.node_dict[self.input_op]]
 
+    def _adjoint(self, y):
+        return self._run_adjoint(y)
 
+    def _iadjoint(self, y, out):
+        return self._run_adjoint(y, out=out)
 

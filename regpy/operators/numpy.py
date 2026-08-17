@@ -1,3 +1,4 @@
+import inspect
 import string
 from functools import partial
 
@@ -12,7 +13,7 @@ from regpy.util import make_repr,memoized_property,Errors
 from regpy.vecsps import *
 from .base import Operator
 
-__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","Exponential","FourierTransform",
+__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
            "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct","EinSum"]
 
 class MatrixMultiplication(Operator):
@@ -55,7 +56,7 @@ class MatrixMultiplication(Operator):
                 self.log.warning(f"Casting the matrix {matrix} to an ndarray.")
                 matrix = np.asarray(matrix)
             except Exception as e:
-                raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to numpy array!")) from e
+                raise TypeError(Errors.type_error("While initializing MatrixMultiplication the matrix could not be converted to NumPy array!")) from e
         if len(matrix.shape) != 2:
             raise ValueError(Errors.value_error(f"While initializing MatrixMultiplication the matrix has to be two-dimensional. Was given:"+"\n\t"+ f"matrix = {matrix}"+"\n\t"+ f"of shape {matrix.shape} and type {type(matrix)}"))
         
@@ -91,8 +92,29 @@ class MatrixMultiplication(Operator):
     def _eval(self, x):
         return self.matvec(x)
 
+    def _ieval(self, x, out):
+        if isinstance(self.matrix, np.ndarray):
+            # NumPy's matvec ufunc does not protect against overlapping input
+            # and output arrays.
+            if np.shares_memory(x, out):
+                x = x.copy()
+            return np.matvec(self.matrix, x, out=out)
+        np.copyto(out, self.matvec(x))
+        return out
+
     def _adjoint(self, y):
         return self.rmatvec(y)
+
+    def _iadjoint(self, y, out):
+        if isinstance(self.matrix, np.ndarray):
+            # vecmat conjugates its vector argument. Conjugating its result
+            # therefore yields the multiplication by the adjoint matrix.
+            if np.shares_memory(y, out):
+                y = y.copy()
+            np.vecmat(y, self.matrix, out=out)
+            return np.conjugate(out, out=out)
+        np.copyto(out, self.rmatvec(y))
+        return out
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
@@ -163,8 +185,23 @@ class CholeskyInverse(Operator):
         return self.domain.fromflat(
             cho_solve(self.factorization, self.domain.flatten(x)))
 
+    def _ieval(self, x, out):
+        flat_out = self.domain.flatten(out)
+        np.copyto(flat_out, self.domain.flatten(x))
+        result = cho_solve(self.factorization, flat_out, overwrite_b=True)
+        if result is not flat_out:
+            np.copyto(flat_out, result)
+        # ``flatten`` normally returns a view. Retain correctness for vector
+        # spaces whose flattening operation has to allocate.
+        if not np.shares_memory(flat_out, out):
+            np.copyto(out, self.domain.fromflat(flat_out))
+        return out
+
     def _adjoint(self, x):
         return self._eval(x)
+
+    def _iadjoint(self, x, out):
+        return self._ieval(x, out)
     
     def _adjoint_eval(self, x):
         return self.domain.fromflat(
@@ -211,8 +248,32 @@ class SuperLUInverse(Operator):
             else:
                 return self.lu.solve(x.real) + 1j*self.lu.solve(x.imag) 
 
-    def _adjoint(self,x):
-        return self.lu.solve(x,trans='H')
+    def _ieval(self, x, out):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            np.copyto(out, self.lu.solve(x))
+        else:
+            # A real SuperLU factorization cannot consume a complex right-hand
+            # side directly. Fill the two components without constructing the
+            # additional ``real + 1j * imag`` result array.
+            out.real[...] = self.lu.solve(x.real)
+            out.imag[...] = self.lu.solve(x.imag)
+        return out
+
+    def _adjoint(self, x):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            return self.lu.solve(x, trans='H')
+        return (
+            self.lu.solve(x.real, trans='H')
+            + 1j * self.lu.solve(x.imag, trans='H')
+        )
+
+    def _iadjoint(self, x, out):
+        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
+            np.copyto(out, self.lu.solve(x, trans='H'))
+        else:
+            out.real[...] = self.lu.solve(x.real, trans='H')
+            out.imag[...] = self.lu.solve(x.imag, trans='H')
+        return out
 
     @property
     def inverse(self):
@@ -251,37 +312,436 @@ class Power(Operator):
         self.power = power
         super().__init__(domain, domain)
 
-    def _eval(self, x, differentiate=False):
+    def _ieval(self, x, out, differentiate=False):
         if self.integer:
-            res = np.ones_like(x)
+            # ``powx`` is squared repeatedly and therefore always needs its own
+            # storage. Taking the copy before initializing ``out`` also makes
+            # the method safe for ``out is x``.
+            powx = x.copy()
+            out.fill(1)
             if differentiate:
-                self._factor = self.power*np.ones_like(x)
-                if self.power>0:
-                    self._dpow_bin = "{0:b}".format(self.power-1)
-                    if len(self._dpow_bin)< len(self._power_bin):
-                        self._dpow_bin = '0'+self._dpow_bin
+                self._factor = np.empty_like(x)
+                self._factor.fill(self.power)
+                if self.power > 0:
+                    self._dpow_bin = "{0:b}".format(self.power - 1)
+                    if len(self._dpow_bin) < len(self._power_bin):
+                        self._dpow_bin = '0' + self._dpow_bin
                 else:
                     self._dpow_bin = "{0:b}".format(0)
-            powx = x.copy()
             for k in reversed(range(len(self._power_bin))):
                 if self._power_bin[k] == '1':
-                    res *= powx
-                if differentiate:
-                    if self._dpow_bin[k] == '1':
-                        self._factor *= powx
-                if k>0:
-                    powx *= powx
+                    np.multiply(out, powx, out=out)
+                if differentiate and self._dpow_bin[k] == '1':
+                    np.multiply(self._factor, powx, out=self._factor)
+                if k > 0:
+                    np.multiply(powx, powx, out=powx)
         else:
+            # The factor has to be computed before overwriting an aliased input.
             if differentiate:
-                self._factor = self.power * x**(self.power - 1)
-            res = x**self.power
-        return res
+                self._factor = np.empty_like(x)
+                np.power(x, self.power - 1, out=self._factor)
+                self._factor *= self.power
+            np.power(x, self.power, out=out)
+        return out
 
-    def _derivative(self, x):
-        return self._factor * x
+    def _iderivative(self, x, out):
+        return np.multiply(self._factor, x, out=out)
 
-    def _adjoint(self, y):
-        return np.conjugate(self._factor) * y
+    def _iadjoint(self, y, out):
+        if np.shares_memory(y, out):
+            y = y.copy()
+        np.conjugate(self._factor, out=out)
+        return np.multiply(out, y, out=out)
+
+
+class NemytskiiOperator(Operator):
+    r"""Pointwise superposition operator induced by a NumPy function.
+
+    Let ``domain`` be a :class:`regpy.vecsps.MeasureSpaceFcts` and let
+    ``f`` map one function value in :math:`F_1^n` to a value in
+    :math:`F_2^m`, where :math:`F_1,F_2` are either the real or complex
+    numbers. This class implements the Nemytskii (superposition) operator
+
+    .. math::
+
+        (x_i)_{i\in I} \longmapsto (f(x_i))_{i\in I}.
+
+    Complex vector spaces are viewed as real vector spaces throughout RegPy.
+    Consequently, ``Df`` must return the **real** Jacobian. Complex coordinates
+    are ordered componentwise as
+
+    ``[Re z_0, Im z_0, Re z_1, Im z_1, ...]``.
+
+    The function ``f`` and the Jacobian ``Df`` should be vectorized over all
+    leading domain axes. They act only on the trailing value axes. Ordinary
+    unary NumPy ufuncs such as ``np.exp`` are applied directly to the complete
+    value array. A genuine multi-input or multi-output ufunc is interpreted as
+    a map whose inputs and outputs are the flattened point-value components.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.MeasureSpaceFcts
+        Function space on which the superposition operator acts.
+    f : callable
+        Vectorized point function. If it accepts an ``out`` keyword, it is used
+        by :meth:`_ieval` to avoid an allocation.
+    Df : callable
+        Vectorized real Jacobian. Its result must be real and broadcastable to
+        ``domain.shape_domain + (real_output_size, real_input_size)``. For a
+        real scalar-to-scalar map, returning only an array of shape
+        ``domain.shape_domain`` is accepted as shorthand for a ``1 x 1``
+        Jacobian.
+    codomain_shape : int or tuple of ints, optional
+        Shape of one output value. By default it is inferred by evaluating
+        ``f`` once on a zero point value.
+    codomain_dtype : dtype, optional
+        Real or complex output dtype. By default it is inferred together with
+        ``codomain_shape``.
+    linear : bool, optional
+        Declare the point function linear. In this case the Jacobian is
+        computed once during initialization and the operator exposes an
+        adjoint directly. Defaults to ``False``.
+
+    Notes
+    -----
+    If ``A`` is a complex matrix representing a complex-linear derivative,
+    :meth:`complex_matrix_to_real_jacobian` converts it to the real Jacobian
+    convention required here. General non-holomorphic maps must provide their
+    real Jacobian directly.
+    """
+
+    def __init__(
+            self, domain, f, Df, codomain_shape=None,
+            codomain_dtype=None, linear=False):
+        if not isinstance(domain, MeasureSpaceFcts):
+            raise TypeError(Errors.not_instance(
+                domain, MeasureSpaceFcts,
+                add_info="The domain of a NemytskiiOperator must be a MeasureSpaceFcts."
+            ))
+        if not callable(f):
+            raise TypeError(Errors.type_error("f must be callable."))
+        if not callable(Df):
+            raise TypeError(Errors.type_error("Df must be callable."))
+
+        self.f = f
+        self.Df = Df
+        self._domain_shape = domain.shape_domain
+        self._input_shape = domain.shape_codomain
+        self._input_size = int(np.prod(self._input_shape)) if self._input_shape else 1
+        self._split_ufunc = (
+            isinstance(f, np.ufunc) and (f.nin != 1 or f.nout != 1)
+        )
+        if self._split_ufunc and f.nin != self._input_size:
+            raise ValueError(Errors.value_error(
+                f"The ufunc has {f.nin} inputs, but one domain value has "
+                f"{self._input_size} flattened components."
+            ))
+
+        point = np.zeros(self._input_shape or (), dtype=domain.dtype)
+        sample = self._evaluate_point(point)
+        inferred_shape = sample.shape
+
+        if codomain_shape is None:
+            codomain_shape = inferred_shape
+        elif isinstance(codomain_shape, (int, np.integer)):
+            codomain_shape = (int(codomain_shape),)
+        elif not (
+                isinstance(codomain_shape, tuple)
+                and all(isinstance(s, (int, np.integer)) and s > 0
+                        for s in codomain_shape)):
+            raise ValueError(Errors.value_error(
+                "codomain_shape must be an int, a tuple of positive ints, or ()."
+            ))
+        codomain_shape = tuple(int(s) for s in codomain_shape)
+        if sample.shape != codomain_shape:
+            raise ValueError(Errors.value_error(
+                f"f maps one point value to shape {sample.shape}, not to the "
+                f"requested codomain_shape={codomain_shape}."
+            ))
+
+        codomain_dtype = np.dtype(
+            sample.dtype if codomain_dtype is None else codomain_dtype
+        )
+        if not (
+                np.issubdtype(codomain_dtype, np.floating)
+                or np.issubdtype(codomain_dtype, np.complexfloating)):
+            raise TypeError(Errors.type_error(
+                f"codomain_dtype must be real or complex, got {codomain_dtype}."
+            ))
+        if not np.can_cast(sample.dtype, codomain_dtype, casting="same_kind"):
+            raise TypeError(Errors.type_error(
+                f"The values returned by f have dtype {sample.dtype}, which "
+                f"cannot be cast to {codomain_dtype} with same-kind casting."
+            ))
+
+        if codomain_shape == ():
+            codomain = domain.scalar_space()
+        else:
+            codomain = domain.vector_valued_space(codomain_shape)
+        codomain.dtype = codomain_dtype
+        codomain.is_complex = np.issubdtype(
+            codomain_dtype, np.complexfloating
+        )
+
+        self._output_shape = codomain_shape
+        self._output_size = (
+            int(np.prod(codomain_shape)) if codomain_shape else 1
+        )
+        self._real_input_size = self._input_size * (2 if domain.is_complex else 1)
+        self._real_output_size = self._output_size * (2 if codomain.is_complex else 1)
+        self._jacobian_dtype = np.result_type(
+            np.empty((), dtype=domain.dtype).real.dtype,
+            np.empty((), dtype=codomain.dtype).real.dtype,
+        )
+        self._jacobian = np.empty(
+            self._domain_shape
+            + (self._real_output_size, self._real_input_size),
+            dtype=self._jacobian_dtype,
+        )
+        self._input_real_buffer = (
+            np.empty(
+                self._domain_shape + (self._real_input_size,),
+                dtype=self._jacobian_dtype,
+            ) if domain.is_complex else None
+        )
+        self._output_real_buffer = (
+            np.empty(
+                self._domain_shape + (self._real_output_size,),
+                dtype=self._jacobian_dtype,
+            ) if codomain.is_complex else None
+        )
+        self._f_accepts_out = self._accepts_out(f)
+        self._Df_accepts_out = (
+            not isinstance(Df, np.ufunc) and self._accepts_out(Df)
+        )
+
+        super().__init__(domain, codomain, linear=linear)
+        self._consts.update({'f', 'Df'})
+        self._value_buffer = codomain.empty()
+        if linear:
+            self._update_jacobian(domain.zeros())
+
+    @staticmethod
+    def _accepts_out(func):
+        if isinstance(func, np.ufunc):
+            return True
+        try:
+            parameters = inspect.signature(func).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(
+            parameter.name == 'out'
+            or parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+
+    @staticmethod
+    def _stack_result(result):
+        if isinstance(result, (tuple, list)):
+            if len(result) == 1:
+                result = result[0]
+            else:
+                result = np.stack(tuple(np.asarray(item) for item in result), axis=-1)
+        return np.asarray(result)
+
+    def _evaluate_point(self, point):
+        if self._split_ufunc:
+            point_flat = np.reshape(point, (self._input_size,))
+            result = self.f(*(point_flat[j] for j in range(self._input_size)))
+        else:
+            result = self.f(point)
+        result = self._stack_result(result)
+        if result.dtype == object:
+            raise TypeError(Errors.type_error(
+                "f returned an object array. It must return a numeric scalar or array."
+            ))
+        return result
+
+    def _copy_function_result(self, result, out):
+        result = self._stack_result(result)
+        try:
+            np.copyto(out, result, casting='same_kind')
+        except (TypeError, ValueError) as exc:
+            raise ValueError(Errors.value_error(
+                f"f returned shape {result.shape} and dtype {result.dtype}; "
+                f"expected an array broadcastable to shape {out.shape} with "
+                f"dtype {out.dtype}."
+            )) from exc
+        return out
+
+    def _apply_function(self, x, out):
+        if self._split_ufunc:
+            x_flat = np.reshape(
+                x, self._domain_shape + (self._input_size,)
+            )
+            args = tuple(x_flat[..., j] for j in range(self._input_size))
+            if self.f.nout == 1:
+                result = self.f(*args, out=out)
+                if result is not out:
+                    self._copy_function_result(result, out)
+            else:
+                out_flat = np.reshape(
+                    out, self._domain_shape + (self._output_size,)
+                )
+                targets = tuple(out_flat[..., j] for j in range(self.f.nout))
+                result = self.f(*args, out=targets)
+                if result is not targets and not (
+                        isinstance(result, tuple)
+                        and all(a is b for a, b in zip(result, targets))):
+                    self._copy_function_result(result, out)
+            return out
+
+        if self._f_accepts_out:
+            result = self.f(x, out=out)
+            if result is None or result is out:
+                return out
+            if isinstance(result, tuple) and len(result) == 1 and result[0] is out:
+                return out
+            return self._copy_function_result(result, out)
+        return self._copy_function_result(self.f(x), out)
+
+    def _update_jacobian(self, x):
+        if self._Df_accepts_out:
+            result = self.Df(x, out=self._jacobian)
+            if result is None or result is self._jacobian:
+                return
+        else:
+            result = self.Df(x)
+
+        jacobian = np.asarray(result)
+        if np.issubdtype(jacobian.dtype, np.complexfloating):
+            raise TypeError(Errors.type_error(
+                "Df must return the real Jacobian, not a complex derivative."
+            ))
+        if (
+                self._real_input_size == 1
+                and self._real_output_size == 1
+                and jacobian.shape == self._domain_shape):
+            jacobian = jacobian[..., None, None]
+        try:
+            jacobian = np.broadcast_to(jacobian, self._jacobian.shape)
+            np.copyto(self._jacobian, jacobian, casting='same_kind')
+        except (TypeError, ValueError) as exc:
+            raise ValueError(Errors.value_error(
+                f"Df returned shape {np.shape(result)}; expected a real array "
+                f"broadcastable to {self._jacobian.shape}."
+            )) from exc
+
+    def _real_input(self, x):
+        x_flat = np.reshape(
+            x, self._domain_shape + (self._input_size,)
+        )
+        if not self.domain.is_complex:
+            return x_flat
+        self._input_real_buffer[..., 0::2] = x_flat.real
+        self._input_real_buffer[..., 1::2] = x_flat.imag
+        return self._input_real_buffer
+
+    def _real_output(self, y):
+        y_flat = np.reshape(
+            y, self._domain_shape + (self._output_size,)
+        )
+        if not self.codomain.is_complex:
+            return y_flat
+        self._output_real_buffer[..., 0::2] = y_flat.real
+        self._output_real_buffer[..., 1::2] = y_flat.imag
+        return self._output_real_buffer
+
+    def _apply_jacobian(self, h, out):
+        if np.shares_memory(h, out):
+            h = h.copy()
+        h_real = self._real_input(h)
+        out_flat = np.reshape(
+            out, self._domain_shape + (self._output_size,)
+        )
+        if self.codomain.is_complex:
+            np.einsum(
+                '...oi,...i->...o', self._jacobian[..., 0::2, :],
+                h_real, out=out_flat.real, optimize=True
+            )
+            np.einsum(
+                '...oi,...i->...o', self._jacobian[..., 1::2, :],
+                h_real, out=out_flat.imag, optimize=True
+            )
+        else:
+            np.einsum(
+                '...oi,...i->...o', self._jacobian,
+                h_real, out=out_flat, optimize=True
+            )
+        return out
+
+    def _apply_jacobian_transpose(self, y, out):
+        if np.shares_memory(y, out):
+            y = y.copy()
+        y_real = self._real_output(y)
+        out_flat = np.reshape(
+            out, self._domain_shape + (self._input_size,)
+        )
+        if self.domain.is_complex:
+            np.einsum(
+                '...oi,...o->...i', self._jacobian[..., :, 0::2],
+                y_real, out=out_flat.real, optimize=True
+            )
+            np.einsum(
+                '...oi,...o->...i', self._jacobian[..., :, 1::2],
+                y_real, out=out_flat.imag, optimize=True
+            )
+        else:
+            np.einsum(
+                '...oi,...o->...i', self._jacobian,
+                y_real, out=out_flat, optimize=True
+            )
+        return out
+
+    def _ieval(self, x, out, differentiate=False):
+        source = x.copy() if np.shares_memory(x, out) else x
+        if differentiate and not self.linear:
+            self._update_jacobian(source)
+        return self._apply_function(source, out)
+
+    def _iderivative(self, h, out):
+        return self._apply_jacobian(h, out)
+
+    def _iadjoint(self, y, out):
+        return self._apply_jacobian_transpose(y, out)
+
+    def _iadjoint_eval(self, x, out):
+        self._ieval(
+            x, self._value_buffer, differentiate=not self.linear
+        )
+        return self._iadjoint(self._value_buffer, out)
+
+    def _iadjoint_derivative(self, h, out):
+        self._iderivative(h, self._value_buffer)
+        return self._iadjoint(self._value_buffer, out)
+
+    @staticmethod
+    def complex_matrix_to_real_jacobian(matrix):
+        r"""Convert a complex matrix to its real Jacobian representation.
+
+        ``matrix`` must have shape ``... + (m, n)``. The returned real array
+        has shape ``... + (2*m, 2*n)`` and uses interleaved real/imaginary
+        coordinates.
+        """
+        matrix = np.asarray(matrix)
+        if matrix.ndim < 2:
+            raise ValueError("matrix must have at least two dimensions (..., m, n).")
+        m, n = matrix.shape[-2:]
+        dtype = np.empty((), dtype=matrix.dtype).real.dtype
+        result = np.empty(matrix.shape[:-2] + (2 * m, 2 * n), dtype=dtype)
+        result[..., 0::2, 0::2] = matrix.real
+        result[..., 0::2, 1::2] = -matrix.imag
+        result[..., 1::2, 0::2] = matrix.imag
+        result[..., 1::2, 1::2] = matrix.real
+        return result
+
+    def __repr__(self):
+        return make_repr(
+            self, self.domain, self.f, self.Df,
+            f"codomain_shape={self.codomain.shape_codomain}",
+            f"codomain_dtype={self.codomain.dtype}",
+            f"linear={self.linear}",
+        )
 
 
 class Exponential(Operator):
@@ -299,136 +759,397 @@ class Exponential(Operator):
         super().__init__(domain, domain)
 
     def _ieval(self, x, out, differentiate=False):
+        np.exp(x, out=out)
         if differentiate:
-            self._exponential_factor = np.exp(x)
-        return np.exp(x, out = out)
+            # Reuse the value already computed in ``out`` instead of evaluating
+            # the exponential a second time.
+            self._exponential_factor = out.copy()
+        return out
 
     def _iderivative(self, x, out):
-        return np.multiply(self._exponential_factor,x,out = out)
+        return np.multiply(self._exponential_factor, x, out=out)
 
     def _iadjoint(self, y, out):
-        return np.multiply(self._exponential_factor.conj(), y, out = out)
+        if np.shares_memory(y, out):
+            y = y.copy()
+        np.conjugate(self._exponential_factor, out=out)
+        return np.multiply(out, y, out=out)
 
 
 class FourierTransform(Operator):
-    """Fourier transform operator on UniformGridFcts implemented via numpy.fft.fftn.
+    r"""Discrete Fourier transform on selected axes of a ``UniformGridFcts``.
+
+    Complex-valued domains use :func:`scipy.fft.fftn`.  Real-valued domains
+    use :func:`scipy.fft.rfftn`, so only the non-negative frequencies of the
+    last transformed axis are stored.
 
     Parameters
     ----------
     domain : regpy.vecsps.UniformGridFcts
-        The underlying vector space
+        The underlying function space. Its dtype must be floating or complex.
     centered : bool, optional
-            Whether the resulting grid will have its zero frequency in the center or not. The
-            advantage is that the resulting grid will have strictly increasing axes, making it
-            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
-            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
-            performance reasons. Defaults to `False`.
-    axes : sequence of ints, optional
-        Axes over which to compute the Fourier transform. Only domain axes are allowed. 
-        If not given, all domain axes are used. Defaults to None.
+        Center the *frequency* ordering on every full FFT axis.  The compressed
+        axis of an RFFT remains ordered from zero to the Nyquist frequency.
+        Defaults to ``False``.
+    axes : int or sequence of ints, optional
+        Domain axes over which to transform. Negative axes follow NumPy's
+        convention. The order matters for real transforms because ``axes[-1]``
+        is the compressed RFFT axis. Defaults to all domain axes.
+    centered_input : bool or None, optional
+        Whether the samples are stored with the spatial zero at the center of
+        every transformed axis. If true, an ``ifftshift`` is applied before the
+        transform and the corresponding ``fftshift`` after the inverse or
+        adjoint transform. ``None`` preserves the historical behavior and uses
+        the value of ``centered``. Set this explicitly to ``False`` for grids
+        whose zero sample is stored at index zero. Defaults to ``None``.
+
+    Notes
+    -----
+    For a real domain the codomain is a :class:`GridFcts` carrying the
+    Hermitian multiplicity weights of the stored half-spectrum. Its measure is
+    the spatial volume element multiplied by ``1`` at zero and Nyquist
+    frequencies and by ``2`` at all interior frequencies of the compressed
+    axis. Consequently, if ``G_X`` and ``G_Y`` denote the L2 Gram operators
+    induced by the domain and codomain measures, respectively, then
+
+    ``G_X**(-1) * F.adjoint * G_Y``
+
+    equals ``irfftn`` and is a left inverse of the real transform. The
+    unweighted operator adjoint still uses factors ``1`` at zero and Nyquist
+    and ``1/2`` at interior frequencies. Since the declared complex
+    half-spectrum contains directions outside the RFFT range, the transform is
+    not a two-sided isomorphism; :attr:`left_inverse` provides inversion on the
+    range.
     """
-    def __init__(self, domain:UniformGridFcts, centered:bool=False, axes:list[int]|None=None):
-        if not isinstance(domain,UniformGridFcts):
-            raise TypeError(Errors.not_instance(domain, UniformGridFcts, add_info="Domain of a FourierTransform operator needs to be a UniformGridFcts!"))
+
+    def __init__(self, domain: UniformGridFcts, centered: bool = False,
+                 axes=None, centered_input: bool | None = None):
+        if not isinstance(domain, UniformGridFcts):
+            raise TypeError(Errors.not_instance(
+                domain, UniformGridFcts,
+                add_info="Domain of a FourierTransform operator needs to be a UniformGridFcts!"
+            ))
+
+        dtype = np.dtype(domain.dtype)
+        if not (np.issubdtype(dtype, np.floating)
+                or np.issubdtype(dtype, np.complexfloating)):
+            raise TypeError(Errors.type_error(
+                "FourierTransform requires a floating or complex domain dtype. "
+                f"Got dtype={domain.dtype}."
+            ))
+        if not isinstance(centered, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f"centered must be boolean. Got {centered!r}."
+            ))
+        if centered_input is None:
+            centered_input = bool(centered)
+        elif not isinstance(centered_input, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f"centered_input must be boolean or None. Got {centered_input!r}."
+            ))
+
+        self.axes = self._normalize_axes(domain.ndim_domain, axes)
+        if any(domain.spacing[axis] == 0 for axis in self.axes):
+            raise ValueError(Errors.value_error(
+                "FourierTransform cannot be constructed on a transformed axis "
+                "with zero grid spacing."
+            ))
+
         self.is_complex = domain.is_complex
-        if axes is None:
-            axes = tuple(np.arange(len(domain.shape_domain)))
-        frqs = FourierTransform.frequencies(domain,centered=centered, axes=axes, rfft= not domain.is_complex)
-        if centered or (not domain.is_complex and domain.ndim_domain==1):
-            codomain = UniformGridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain)
+        self.centered = bool(centered)
+        self.centered_input = bool(centered_input)
+        self._frequency_shift_axes = (
+            self.axes if self.is_complex else self.axes[:-1]
+        )
+
+        frqs = self.frequencies(
+            domain, centered=self.centered, axes=self.axes,
+            rfft=not self.is_complex
+        )
+        complex_dtype = np.result_type(dtype, 1j)
+
+        if not self.is_complex:
+            # The RFFT half-spectrum has non-constant Hermitian multiplicity
+            # weights and therefore must not be represented as a
+            # UniformGridFcts, even when its coordinate axes are uniform.
+            codomain = GridFcts(
+                *frqs, dtype=complex_dtype,
+                shape_codomain=domain.shape_codomain,
+                use_cell_measure=False
+            )
+
+            n = domain.shape_domain[self.axes[-1]]
+            n_half = n // 2 + 1
+            real_dtype = np.empty((), dtype=dtype).real.dtype
+
+            adjoint_weights_1d = np.full(
+                n_half, 0.5, dtype=real_dtype
+            )
+            adjoint_weights_1d[0] = 1
+            if n % 2 == 0:
+                adjoint_weights_1d[-1] = 1
+
+            value_broadcast_shape = [1] * len(codomain.shape)
+            value_broadcast_shape[self.axes[-1]] = n_half
+            self._rfft_adjoint_weights = adjoint_weights_1d.reshape(
+                value_broadcast_shape
+            )
+            self._rfft_inverse_adjoint_weights = (
+                1 / self._rfft_adjoint_weights
+            )
+
+            # Let A denote the Euclidean real adjoint of rfftn. Then
+            # A(y) = irfftn(w_adj*y), where w_adj is 1 at zero/Nyquist
+            # and 1/2 at interior frequencies. With the measure below,
+            # G_X^{-1} A G_Y = irfftn, since G_X is multiplication by
+            # domain.volume_elem and G_Y by domain.volume_elem/w_adj.
+            measure_broadcast_shape = [1] * codomain.ndim_domain
+            measure_broadcast_shape[self.axes[-1]] = n_half
+            rfft_multiplicity = (1 / adjoint_weights_1d).reshape(
+                measure_broadcast_shape
+            )
+            codomain.measure = np.broadcast_to(
+                np.asarray(domain.volume_elem, dtype=real_dtype)
+                * rfft_multiplicity,
+                codomain.shape_domain
+            )
         else:
-            # In non-centered case, the frequencies are not ascending, so using GridFcts here is slightly questionable.
-            codomain = GridFcts(*frqs, dtype=complex,shape_codomain=domain.shape_codomain,use_cell_measure=False)
+            # A non-centered full FFT axis has wrap-around ordering and
+            # therefore cannot in general be represented by
+            # UniformGridFcts.
+            frequencies_are_uniform = (
+                self.centered
+                or all(domain.shape_domain[axis] == 1
+                       for axis in self.axes)
+            )
+            if frequencies_are_uniform:
+                codomain = UniformGridFcts(
+                    *frqs, dtype=complex_dtype,
+                    shape_codomain=domain.shape_codomain
+                )
+            else:
+                codomain = GridFcts(
+                    *frqs, dtype=complex_dtype,
+                    shape_codomain=domain.shape_codomain,
+                    use_cell_measure=False
+                )
+
         super().__init__(domain, codomain, linear=True)
-        self.centered = centered
-        self.axes = axes
-  
+
+    @staticmethod
+    def _normalize_axes(ndim, axes):
+        if axes is None:
+            axes = tuple(range(ndim))
+        elif isinstance(axes, (int, np.integer)) and not isinstance(
+                axes, (bool, np.bool_)):
+            axes = (int(axes),)
+        else:
+            try:
+                axes = tuple(axes)
+            except TypeError as exc:
+                raise TypeError(Errors.type_error(
+                    "axes must be an integer or a sequence of integers."
+                )) from exc
+
+        if len(axes) == 0:
+            raise ValueError(Errors.value_error(
+                "FourierTransform needs at least one transformed axis."
+            ))
+
+        normalized = []
+        for axis in axes:
+            if (isinstance(axis, (bool, np.bool_))
+                    or not isinstance(axis, (int, np.integer))):
+                raise TypeError(Errors.type_error(
+                    "FourierTransform axes must be integers. "
+                    f"Got axis={axis!r}."
+                ))
+            axis = int(axis)
+            if axis < 0:
+                axis += ndim
+            if not 0 <= axis < ndim:
+                raise ValueError(Errors.value_error(
+                    f"Invalid FourierTransform axis {axis}. "
+                    f"Expected an axis in [-{ndim}, {ndim})."
+                ))
+            normalized.append(axis)
+
+        if len(normalized) != len(set(normalized)):
+            raise ValueError(Errors.value_error(
+                f"FourierTransform axes contain duplicates: {axes}."
+            ))
+        return tuple(normalized)
+
     def _eval(self, x):
-        if self.centered:
-            x = spfft.ifftshift(x, axes=self.axes)
+        data = (
+            spfft.ifftshift(x, axes=self.axes)
+            if self.centered_input else x
+        )
         if self.is_complex:
-            y = spfft.fftn(x, axes=self.axes, norm='ortho')
+            result = spfft.fftn(data, axes=self.axes, norm='ortho')
         else:
-            y = spfft.rfftn(x, axes=self.axes, norm='ortho') # type: ignore
-        if self.centered:
-            return spfft.fftshift(y, axes=self.axes if self.is_complex else self.axes[:-1])
+            result = spfft.rfftn(data, axes=self.axes, norm='ortho')
+        if self.centered and self._frequency_shift_axes:
+            result = spfft.fftshift(
+                result, axes=self._frequency_shift_axes
+            )
+        return result.astype(self.codomain.dtype, copy=False)
+
+    def _unshift_frequency_data(self, y):
+        if self.centered and self._frequency_shift_axes:
+            return spfft.ifftshift(
+                y, axes=self._frequency_shift_axes
+            )
+        return y
+
+    def _finish_spatial_transform(self, x):
+        if self.centered_input:
+            x = spfft.fftshift(x, axes=self.axes)
+        return x.astype(self.domain.dtype, copy=False)
+
+    def _inverse_eval(self, y):
+        """Apply the inverse FFT, which is only a left inverse for an RFFT."""
+        spectrum = self._unshift_frequency_data(y)
+        if self.is_complex:
+            result = spfft.ifftn(
+                spectrum, axes=self.axes, norm='ortho'
+            )
         else:
-            return y
+            result = spfft.irfftn(
+                spectrum,
+                s=tuple(self.domain.shape_domain[axis]
+                        for axis in self.axes),
+                axes=self.axes,
+                norm='ortho'
+            ).real
+        return self._finish_spatial_transform(result)
 
     def _adjoint(self, y):
-        if self.centered:
-            y = spfft.ifftshift(y, axes=self.axes if self.is_complex else self.axes[:-1])
+        spectrum = self._unshift_frequency_data(y)
         if self.is_complex:
-            x = spfft.ifftn(y, axes=self.axes, norm='ortho')
+            result = spfft.ifftn(
+                spectrum, axes=self.axes, norm='ortho'
+            )
         else:
-            x = spfft.irfftn(y, tuple(self.domain.shape[i] for i in self.axes),axes=self.axes, norm='ortho')
-        if self.centered:
-            x = spfft.fftshift(x, axes=self.axes)
-        if self.domain.is_complex:
-            return x
-        else:
-            return x.real
-        
-    def _adjoint_eval(self, x):
-        if self.domain.is_complex:
-            return x
-        else:
-            return x.real
-        
-    @staticmethod
-    def frequencies(domain,centered=False, axes=None, rfft=False):
-        """Compute the grid of frequencies for an FFT on this grid instance.
+            # irfftn is the inverse of rfftn on its range, not its adjoint with
+            # respect to the unrestricted complex half-spectrum. The factor
+            # 1/2 compensates for the conjugate frequency that irfftn inserts.
+            weighted = np.multiply(
+                spectrum, self._rfft_adjoint_weights
+            )
+            result = spfft.irfftn(
+                weighted,
+                s=tuple(self.domain.shape_domain[axis]
+                        for axis in self.axes),
+                axes=self.axes,
+                norm='ortho'
+            ).real
+        return self._finish_spatial_transform(result)
 
-        Parameters
-        ----------
-        centered : bool, optional
-            Whether the resulting grid will have its zero frequency in the center or not. The
-            advantage is that the resulting grid will have strictly increasing axes, making it
-            possible to define a `UniformGridFcts` instance in frequency space. The disadvantage is
-            that `numpy.fft.fftshift` has to be used, which should generally be avoided for
-            performance reasons. Default: `False`.
-        axes : tuple of ints, optional
-            Axes for which to compute the frequencies. All other axes will be returned as-is.
-            Intended to be used with the corresponding argument to `numpy.fft.fffn`. If `None`, all
-            domain axes will be computed. Default: `None`.
-        Returns
-        -------
-        array
-        """
-        if axes is not None:
-            if not np.all([0 <= ax < len(domain.shape_domain) for ax in axes]):
-                raise ValueError(Errors.value_error(f"Invalid axis specified: {axes}. Must be within [0, {len(domain.shape_domain)})",obj=FourierTransform,meth="frequencies"))
-            if not len(axes) == len(set(axes)):
-                raise ValueError(Errors.value_error(f"Axes contain duplicates: {axes}",obj=FourierTransform,meth="frequencies"))
-        else:
-            axes = np.arange(len(domain.shape_domain))
-        frqs = []
-        for i, (s, l) in enumerate(zip(domain.shape_domain, domain.spacing)):
-            if i in axes:
-                # Use (spacing * shape) in denominator instead of extents, since the grid is assumed
-                # to be periodic.
-                shalf = s/2+1 if (s//2)*2==s else (s+1)/2
-                if i==axes[-1] and rfft==True:
-                    frqs.append(np.arange(0,shalf) / (s*l))
-                else:
-                    if centered:
-                        frqs.append(np.arange(-(s//2), (s+1)//2) / (s*l))
-                    else:
-                        frqs.append(np.concatenate((np.arange(0, (s+1)//2), np.arange(-(s//2), 0))) / (s*l))
+    def _adjoint_eval(self, x):
+        if self.is_complex:
+            # The allocating API must return an independent result.
+            return np.array(x, dtype=self.domain.dtype, copy=True)
+        return self._adjoint(self._eval(x))
+
+    @staticmethod
+    def frequencies(domain, centered=False, axes=None, rfft=False):
+        """Return coordinate axes for the selected discrete Fourier transform."""
+        if not isinstance(domain, UniformGridFcts):
+            raise TypeError(Errors.not_instance(
+                domain, UniformGridFcts,
+                add_info="frequencies requires a UniformGridFcts instance."
+            ))
+        if not isinstance(centered, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f"centered must be boolean. Got {centered!r}."
+            ))
+        if not isinstance(rfft, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f"rfft must be boolean. Got {rfft!r}."
+            ))
+
+        axes = FourierTransform._normalize_axes(domain.ndim_domain, axes)
+        if any(domain.spacing[axis] == 0 for axis in axes):
+            raise ValueError(Errors.value_error(
+                "Cannot compute FFT frequencies for a zero grid spacing."
+            ))
+
+        result = []
+        rfft_axis = axes[-1] if rfft else None
+        for axis, (size, spacing) in enumerate(
+                zip(domain.shape_domain, domain.spacing)):
+            if axis not in axes:
+                result.append(np.array(domain.axes[axis], copy=True))
+            elif axis == rfft_axis:
+                result.append(spfft.rfftfreq(size, d=spacing))
             else:
-                frqs.append(domain.axes[i])
-        return tuple(frqs)
+                frequencies = spfft.fftfreq(size, d=spacing)
+                if centered:
+                    frequencies = spfft.fftshift(frequencies)
+                result.append(frequencies)
+        return tuple(result)
+
+    @memoized_property
+    def left_inverse(self):
+        """Return the inverse on the range of the transform.
+
+        For a real transform this is also the L2 adjoint induced by the
+        measures of ``domain`` and ``codomain``, i.e.
+        ``G_X**(-1) * self.adjoint * G_Y``.
+        """
+        if self.is_complex:
+            return self.adjoint
+        return _FourierTransformLeftInverse(self)
 
     @Operator.inverse.getter
     def inverse(self):
+        if not self.is_complex:
+            raise NotImplementedError(Errors.generic_message(
+                "A real FourierTransform maps into an unrestricted complex "
+                "half-spectrum and therefore has no two-sided inverse. Use "
+                "left_inverse when inversion on the RFFT range is intended."
+            ))
         return self.adjoint
 
     @property
     def invertible(self):
-        return True
+        return self.is_complex
 
     def __repr__(self):
-        return make_repr(self, self.domain)
+        return make_repr(
+            self, self.domain,
+            f"centered={self.centered}",
+            f"axes={self.axes}",
+            f"centered_input={self.centered_input}"
+        )
+
+
+class _FourierTransformLeftInverse(Operator):
+    """Left inverse of a real ``FourierTransform`` on its RFFT range."""
+
+    def __init__(self, transform):
+        self.transform = transform
+        super().__init__(
+            transform.codomain, transform.domain, linear=True
+        )
+        self._consts.add('transform')
+
+    def _eval(self, y):
+        return self.transform._inverse_eval(y)
+
+    def _adjoint(self, x):
+        result = self.transform._eval(x)
+        return np.multiply(
+            result, self.transform._rfft_inverse_adjoint_weights
+        )
+
+    @property
+    def invertible(self):
+        return False
+
+    def __repr__(self):
+        return make_repr(self, self.transform)
 
 
 class PtwMatrixVectorMultiplication(Operator):
@@ -451,7 +1172,7 @@ class PtwMatrixVectorMultiplication(Operator):
         codomain_shape = domain.shape_codomain
 
         if not isinstance(matrixfct,np.ndarray) or not matrixfct.dtype==domain.dtype:
-            raise TypeError(Errors.type_error(f'To initialize a PtwMatrixVectorMultiplication the matrix functions matrixfct must be a numpy array of the same data type. Was given\n\t matrixfct = {matrixfct}\n\t and matrixfcts.dtype={matrixfct.dtype} and domain.dtype = {domain.dtype}'))
+            raise TypeError(Errors.type_error(f'To initialize a PtwMatrixVectorMultiplication the matrix functions matrixfct must be a NumPy array of the same data type. Was given\n\t matrixfct = {matrixfct}\n\t and matrixfcts.dtype={matrixfct.dtype} and domain.dtype = {domain.dtype}'))
         if not matrixfct.shape[-len(codomain_shape):]==codomain_shape:
             raise ValueError(Errors.value_error(f'Initializing a PtwMatrixVectorMultiplication: shape of matrixfct does not match: {matrixfct.shape[-len(codomain_shape):]}, {codomain_shape}'))
 
@@ -500,7 +1221,7 @@ class PtwScalarMultiplication(Operator):
         elif multiplier in domain.scalar_space():
             self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
-            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be numpy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
         
         
         super().__init__(domain, domain, linear=True)
@@ -544,17 +1265,17 @@ class PtwScalarDivision(Operator):
         elif divisor in domain.scalar_space():
             self.divisor = np.reshape(divisor,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
-            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be numpy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
+            raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
         if np.any(self.divisor==0):
             raise ValueError(Errors.value_error('Divisor must not vanish anywhere.'))
         
         super().__init__(domain, domain, linear=True)
 
-    def _eval(self, f, out = None):
-        return np.divide(f,self.divisor,out = out)
-    
-    def _adjoint(self, g, out = None):
-        return np.divide(g,self.divisor.conj(), out = out)
+    def _ieval(self, f, out):
+        return np.divide(f, self.divisor, out=out)
+
+    def _iadjoint(self, g, out):
+        return np.divide(g, self.divisor.conj(), out=out)
 
     @Operator.inverse.getter
     def inverse(self):
@@ -565,7 +1286,7 @@ class PtwScalarDivision(Operator):
         return True
 
 class AddSingletonVectorDimension(Operator):
-    """Operater that adds a singleton dimension as codimension in `regpy.vecsps.MeasureSpaceFcts`. 
+    """Operator that adds a singleton dimension as codimension in `regpy.vecsps.MeasureSpaceFcts`. 
     Wrapper to np.reshape(...,1).
 
     Parameters
@@ -595,7 +1316,10 @@ class AddSingletonVectorDimension(Operator):
         return True   
 
 class ForwardFDGradient(Operator):
-    """ Forward finite difference gradient on  `regpy.vecsps.UniformGridFcts`. The codomain are is a vector-valued `regpy.vecsps.UniformGridFcts` space.
+    """Forward finite-difference gradient on ``UniformGridFcts``.
+
+    The codomain is a vector-valued
+    :class:`regpy.vecsps.UniformGridFcts` space.
     
     Parameters
     ----------
@@ -612,8 +1336,8 @@ class ForwardFDGradient(Operator):
         self.boundary_condition = boundary_condition
         super().__init__(domain, domain.vector_valued_space(domain.ndim), linear=True)
 
-    def _eval(self, v):
-        out = self.codomain.zeros()
+    def _ieval(self, v, out):
+        out.fill(0.)
         for (ax,h) in zip(range(self.domain.ndim),self.domain.spacing):
             # Interior: forward differences: out[i1,...in,ax] = (v[... i_ax+1 ...] - v[...,i_ax ...])/h_ax
             slc_mid = [slice(None)] * self.domain.ndim
@@ -633,8 +1357,8 @@ class ForwardFDGradient(Operator):
 
         return out
 
-    def _adjoint(self, v):
-        out = self.domain.zeros()
+    def _iadjoint(self, v, out):
+        out.fill(0.)
         for ax,h in zip(range(self.domain.ndim),self.domain.spacing):
             # Interior: backward difference: (v[i_ax-1]-v[i_ax])/h_ax
             slc_mid = [slice(None)] * self.domain.ndim
@@ -708,6 +1432,9 @@ class OuterProduct(Operator):
         super().__init__(domain, codomain, linear=False)
         self._adjoint_summation_strings=self._calc_adjoint_summation_strings()
         """List of strings for calculation of adjoint in einsum."""
+        characters=tuple(chr(k) for k in range(ord('A'),ord('A')+self.codomain.ndim))
+        self._eval_summation_string = ",".join(characters) + "->" + "".join(characters)
+        """String for writing the outer product directly into an output array."""
         self._consts = {*self._consts,"_p","_p_conj_flat"}
 
     def _calc_adjoint_summation_strings(self):
@@ -725,12 +1452,52 @@ class OuterProduct(Operator):
             self._p_conj_flat=tuple(np.conj(p_j).flat for p_j in self._p)
         return self.codomain.product(*self._p)
 
-    def _derivative(self, x):
-        y=self.codomain.zeros()
-        for j,x_j in enumerate(x):
-            y+=self.codomain.product(*self._p[:j],x_j,*self._p[j+1:])
-        return y
-    
+    def _ieval(self, x, out, differentiate=False):
+        self._p = self.domain.split(x)
+        if differentiate:
+            self._p_conj_flat = tuple(np.conj(p_j).flat for p_j in self._p)
+        operands = tuple(
+            p_j.copy().reshape(-1) if np.shares_memory(p_j, out) else p_j.reshape(-1)
+            for p_j in self._p
+        )
+        return np.einsum(
+            self._eval_summation_string,
+            *operands,
+            optimize=True,
+            out=out
+        )
+
+    def _iderivative(self, x, out):
+        x_components = tuple(
+            x_j.copy() if np.shares_memory(x_j, out) else x_j
+            for x_j in self.domain.split(x)
+        )
+        flat_p = tuple(
+            p_j.copy().reshape(-1) if np.shares_memory(p_j, out) else p_j.reshape(-1)
+            for p_j in self._p
+        )
+        term = None
+        for j, x_j in enumerate(x_components):
+            operands = (*flat_p[:j], x_j.reshape(-1), *flat_p[j+1:])
+            if j == 0:
+                np.einsum(
+                    self._eval_summation_string,
+                    *operands,
+                    optimize=True,
+                    out=out
+                )
+            else:
+                if term is None:
+                    term = np.empty_like(out)
+                np.einsum(
+                    self._eval_summation_string,
+                    *operands,
+                    optimize=True,
+                    out=term
+                )
+                np.add(out, term, out=out)
+        return out
+
     def _adjoint(self, y):
         xs=[]
         for j,s in enumerate(self._adjoint_summation_strings):
@@ -738,9 +1505,26 @@ class OuterProduct(Operator):
             xs.append(x_j.reshape(self.domain[j].shape))
         return self.domain.join(*xs)
 
+    def _iadjoint(self, y, out):
+        out_components = self.domain.split(out)
+        if any(np.shares_memory(y, out_j) for out_j in out_components):
+            y = y.copy()
+        for j, (s, out_j) in enumerate(
+            zip(self._adjoint_summation_strings, out_components)
+        ):
+            np.einsum(
+                s,
+                y,
+                *self._p_conj_flat[:j],
+                *self._p_conj_flat[j+1:],
+                optimize=True,
+                out=out_j.reshape(-1)
+            )
+        return out
+
 
 class EinSum(Operator):
-    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed numpy arrays t1...tn.
+    r"""Operator that computes the numpy.einsum(subscripts,x1,x2,...,xn,t1,t2,...tn) for inputs x1...xn and fixed NumPy arrays t1...tn.
     Nearly all accepted subscripts are supported except ellipses and subscripts resulting in scalar values.
 
     Parameters
@@ -750,7 +1534,7 @@ class EinSum(Operator):
     domains : regpy.vecsps.GridFcts
         The underlying vector spaces.
     tensors : tuple of numpy.ndarray
-        Tuple of constant numpy arrays.
+        Tuple of constant NumPy arrays.
     codomain : regpy.vecsps.NumPyVectorSpace, optional
         Codomain of the operator. If it is not specified it is computed based on the input data.
     """
@@ -863,18 +1647,59 @@ class EinSum(Operator):
         return eval_opt,adjoint_opt
 
     
-    def _eval(self, x, differentiate=False):
-        self._p=(x,) if self.linear else self.domain.split(x)
-        if(differentiate):
-            self._p_conj=tuple(np.conj(p_j) for p_j in self._p)
-        return np.einsum(self.subscripts,*self._p,*self.tensors,optimize=self._eval_opt)
+    def _ieval(self, x, out, differentiate=False):
+        self._p = (x,) if self.linear else self.domain.split(x)
+        if differentiate:
+            self._p_conj = tuple(np.conj(p_j) for p_j in self._p)
+        operands = tuple(
+            p_j.copy() if np.shares_memory(p_j, out) else p_j
+            for p_j in self._p
+        )
+        return np.einsum(
+            self.subscripts,
+            *operands,
+            *self.tensors,
+            optimize=self._eval_opt,
+            out=out
+        )
 
-    def _derivative(self, x):
-        y=self.codomain.zeros()
-        for j,x_j in enumerate(x):
-            y+=np.einsum(self.subscripts,*self._p[:j],x_j,*self._p[j+1:],*self.tensors,optimize=self._eval_opt)
-        return y
-    
+    def _iderivative(self, x, out):
+        x_components = (x,) if self.linear else self.domain.split(x)
+        x_components = tuple(
+            x_j.copy() if np.shares_memory(x_j, out) else x_j
+            for x_j in x_components
+        )
+        evaluation_point = tuple(
+            p_j.copy() if np.shares_memory(p_j, out) else p_j
+            for p_j in self._p
+        )
+        term = None
+        for j, x_j in enumerate(x_components):
+            operands = (
+                *evaluation_point[:j],
+                x_j,
+                *evaluation_point[j+1:],
+                *self.tensors
+            )
+            if j == 0:
+                np.einsum(
+                    self.subscripts,
+                    *operands,
+                    optimize=self._eval_opt,
+                    out=out
+                )
+            else:
+                if term is None:
+                    term = np.empty_like(out)
+                np.einsum(
+                    self.subscripts,
+                    *operands,
+                    optimize=self._eval_opt,
+                    out=term
+                )
+                np.add(out, term, out=out)
+        return out
+
     def _adjoint(self, y):
         if(self.linear):
             x=np.einsum(self._adjoint_subscripts[0][1],*self.tensors,y,optimize=self._adjoint_opt[0])
@@ -897,3 +1722,68 @@ class EinSum(Operator):
                 np.einsum(s[2],x_j_full)[:]=x_j
                 xs.append(x_j_full)
         return self.domain.join(*xs)
+
+    @staticmethod
+    def _write_adjoint_component(subscripts, operands, optimize, out):
+        if not subscripts[0]:
+            # Missing output indices have to be introduced by broadcasting.
+            # ``einsum(..., out=target)`` requires an exact shape match, so this
+            # branch necessarily retains the reduced temporary.
+            out.fill(0)
+            target = np.einsum(subscripts[2], out)
+            value = np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize
+            )
+            if np.issubdtype(out.dtype, np.floating):
+                value = np.real(value)
+            np.copyto(target, value)
+            return
+
+        if np.issubdtype(out.dtype, np.floating):
+            value = np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize
+            )
+            np.copyto(out, np.real(value))
+        else:
+            np.einsum(
+                subscripts[1],
+                *operands,
+                optimize=optimize,
+                out=out
+            )
+
+    def _iadjoint(self, y, out):
+        if self.linear:
+            if np.shares_memory(y, out):
+                y = y.copy()
+            self._write_adjoint_component(
+                self._adjoint_subscripts[0],
+                (*self.tensors, y),
+                self._adjoint_opt[0],
+                out
+            )
+            return out
+
+        out_components = self.domain.split(out)
+        if any(np.shares_memory(y, out_j) for out_j in out_components):
+            y = y.copy()
+        for j, (subscripts, out_j) in enumerate(
+            zip(self._adjoint_subscripts, out_components)
+        ):
+            self._write_adjoint_component(
+                subscripts,
+                (
+                    *self._p_conj[:j],
+                    *self._p_conj[j+1:],
+                    *self.tensors,
+                    y
+                ),
+                self._adjoint_opt[j],
+                out_j
+            )
+        return out
+

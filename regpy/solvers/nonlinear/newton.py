@@ -11,12 +11,12 @@ from ..linear import SemismoothNewton_bilateral
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
 
 class NewtonCG(RegSolver):
-    r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
+    r"""The Newton-CG method. Solves the potentially nonlinear, ill-posed equation:
     
     .. math::
         T(x) = y,
 
-    where :math:`T` is a Frechet-differentiable operator. The Newton equations are solved by the
+    where :math:`T` is a Fréchet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
 
@@ -210,7 +210,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
     psi_minus : scalar
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : scalar
-        upper constraint of the minimization. Must be smaller then `psi_minus`
+        upper constraint of the minimization. Must be smaller than `psi_minus`
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
     xref : array-like, optional
@@ -310,7 +310,7 @@ class IterativelyRegularizedNewton(RegSolver):
     .. math::
         S_{data}(T'[x_n]h+T(x_n)) + regpar_{n} \cdot R(h+x_n)
 
-    where :math:`T` is a Frechet-differentiable operator, using the given `inner_solver`.
+    where :math:`T` is a Fréchet-differentiable operator, using the given `inner_solver`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
