@@ -772,6 +772,11 @@ class Functional:
         return self._conj_is_quadratic
 
     @property
+    def is_norm_squared_type(self)->bool:
+        """ Flag if the functional behaves like a SquaredNorm functional for which the hessian is a positive multiple of the Gram matrix. """
+        return False
+
+    @property
     def is_separable(self)->bool:
         """ Flag if the functional is separable, i.e. :math:`F(x)=sum_i f_i(x_i)`
         """
@@ -979,6 +984,10 @@ class Conj(Functional):
     @property
     def is_quadratic(self):
         return self.func.conj_is_quadratic
+
+    @property
+    def is_norm_squared_type(self):
+        return super().is_norm_squared_type
     
     @property
     def conj_is_quadratic(self):
@@ -1294,6 +1303,10 @@ class SquaredNorm(Functional):
     @property
     def conj_is_quadratic(self):
         return (self.a>0) 
+
+    @property
+    def is_norm_squared_type(self):
+        return self.a>0 
 
     @property
     def conj_dom_l(self):    
@@ -1715,7 +1728,11 @@ class LinearCombination(Functional):
     @property
     def conj_is_quadratic(self): 
         return self.is_quadratic and self.convexity_param>0
-    
+
+    @property
+    def is_norm_squared_type(self):
+        return all([func.is_linear or func.is_norm_squared_type for func in self.funcs]) and self.convexity_param>0
+
     @property
     def is_convex(self):  
         return all([func.is_convex for func in self.funcs]) and self.convexity_param>=0,            
@@ -1829,6 +1846,10 @@ class VerticalShift(Functional):
     @property
     def is_quadratic(self):
         return self.func.is_quadratic
+
+    @property
+    def is_norm_squared_type(self):
+        return super().is_norm_squared_type
 
     @property 
     def convexity_param(self): 
@@ -2065,6 +2086,10 @@ class HorizontalShiftDilation(Functional):
     @property
     def is_quadratic(self):
         return self.func.is_quadratic
+
+    @property
+    def is_norm_squared_type(self):
+        return super().is_norm_squared_type
     
     @property
     def dom_l(self):
