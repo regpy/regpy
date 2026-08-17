@@ -415,8 +415,8 @@ class Setting:
         return self.op.linear and self.penalty.is_convex and self.data_fid.is_convex
     @property
     def is_hilbert(self):
-        """True if penalty and data fidelity are both squared norms"""
-        return isinstance(self.penalty,SquaredNorm) and isinstance(self.data_fid,SquaredNorm)
+        """True if penalty and data fidelity are quadratic with Hessian that are positive multiples of the corresponding Gram matrices."""
+        return self.penalty.is_norm_squared_type and self.data_fid.is_norm_squared_type
 
     @property
     def regpar(self):
@@ -578,6 +578,10 @@ class Setting:
             If True, the initial guess stored in the setting is updated to new_init.
         new_init : op.domain
             New initial guess in the domain of the operator.
+
+        Returns
+        --------
+        new initial guess
         """
         if new_init is not None:
             if not new_init in self.op.domain:
