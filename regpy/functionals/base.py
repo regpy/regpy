@@ -2384,6 +2384,11 @@ class FunctionalOnDirectSum(Functional):
     @property
     def conj_is_quadratic(self):
         return all([func.conj_is_quadratic for func in self.funcs])
+
+    @property
+    def is_norm_squared_type(self):
+        conv_params = [func.convexity_param for func in self.funcs]
+        return all([func.is_norm_squared_type for func in self.funcs]) and np.allclose(conv_params,conv_params[0])
     
     @property
     def convexity_param(self): 
