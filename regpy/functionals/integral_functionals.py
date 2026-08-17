@@ -1499,7 +1499,12 @@ class LppPower(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
-        
+
+    @property
+    def is_norm_squared_type(self):
+        return self.p==2 and all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
+                                                      self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])
+
     @property
     def Lipschitz(self):
         taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
@@ -1712,7 +1717,14 @@ class Quadratic(IntegralFunctionalBase):
     def conj_is_quadratic(self):
         return (np.min(self.a)>0)
      
-
+    @property
+    def is_norm_squared_type(self):
+        a0 = self.a.flat[0]
+        return (a0>0 and np.allclose(self.a, a0) and
+                all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
+                                         self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])             
+               )
+   
     def _f(self, v, out=None, mask=None, **kwargs):
         # out = 0.5*self._a*v**2 + self._b*v + self._c
         where = self._where(mask, v)

@@ -74,11 +74,16 @@ class VectorIntegralFunctional(Functional):
             methods -= {'subgradient','hessian','proximal'}
             conj_methods =  {'subgradient','hessian','proximal'}
 
-        super().__init__(vdomain, L2(vecsp=vdomain), 
+        super().__init__(vdomain, 
+                         L2(vecsp=vdomain), 
                          convexity_param = convexity_param, 
                          Lipschitz = Lipschitz, 
-                         is_separable= False, is_linear= False,
-                         methods = methods, conj_methods = conj_methods)
+                         is_separable = False, 
+                         is_linear = self.scalar_func.is_linear,
+                         is_quadratic = self.scalar_func.is_quadratic,
+                         methods = methods, 
+                         conj_methods = conj_methods
+                         )
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
         self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
@@ -200,6 +205,10 @@ class VectorIntegralFunctional(Functional):
                                                 )
 
         return scal_mult + proj.adjoint * ptw_mult * proj   
+
+    @property
+    def is_norm_squared_type(self):
+        return self.scalar_func.is_norm_squared_type
 
 class LppL2(VectorIntegralFunctional):
     """
