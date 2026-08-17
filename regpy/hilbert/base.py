@@ -49,6 +49,9 @@ class HilbertSpace:
             raise TypeError(Errors.type_error('as_real_space must be bool',as_real_space))
         self.as_real_space = as_real_space
         self._no_pickle = {}
+        # Allocated lazily because many Hilbert spaces are only used through
+        # their Gram operator and never evaluate inner products directly.
+        self._inner_buffer = None
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -94,7 +97,15 @@ class HilbertSpace:
         float
             The inner product.
         """
-        prod =  self.vecsp.vdot(self.gram(y),x) 
+        gram = self.gram
+        if gram is self.vecsp.identity:
+            # Avoid copying ``y`` through an identity operator.
+            prod = self.vecsp.vdot(y, x)
+        else:
+            if self._inner_buffer is None:
+                self._inner_buffer = self.vecsp.empty()
+            gram(y, out=self._inner_buffer)
+            prod = self.vecsp.vdot(self._inner_buffer, x)
         return prod.real if self.as_real_space else prod
 
     def norm(self, x):
@@ -435,16 +446,32 @@ class TensorProd(HilbertSpace):
     def gram(self)->Operator:
         bases = []
         domains = []
-        for w, s in zip(self.weights, self.factors):
-            basis =[]
-            domains.append(s.gram.domain)
-            for v in s.gram.domain.real_space().iter_basis():
-                if w == 1:
-                    basis.append(s.vecsp.real_space().flatten(s.gram(v)))
-                else:
-                    basis.append(s.vecsp.real_space().flatten((w**2 * s.gram)(v)))
-            bases.append(np.array(basis))
-        return BasisTransform(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
+        for weight, space in zip(self.weights, self.factors):
+            gram = space.gram
+            domain_real = gram.domain.real_space()
+            codomain_real = space.vecsp.real_space()
+            domains.append(gram.domain)
+
+            # Fill the matrix row by row. This avoids allocating one Gram
+            # result per basis vector and repeatedly constructing a scaled
+            # operator for weighted factors.
+            basis = np.empty(
+                (domain_real.size, codomain_real.size),
+                dtype=codomain_real.dtype,
+            )
+            gram_value = codomain_real.empty()
+            scale = weight**2
+            for row, vector in enumerate(domain_real.iter_basis()):
+                gram(vector, out=gram_value)
+                if scale != 1:
+                    gram_value *= scale
+                basis[row] = codomain_real.flatten(gram_value)
+            bases.append(basis)
+
+        product = vecsps.Prod(*domains)
+        return BasisTransform(
+            product, product, bases, dtype=self.vecsp.dtype
+        )
 
     def __getitem__(self, item):
         return self.factors[item]

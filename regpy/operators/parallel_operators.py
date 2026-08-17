@@ -528,7 +528,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         # Components that are not used by any worker must still be overwritten.
         for j, was_touched in enumerate(touched):
             if not was_touched:
-                self.domain[j].copyto(out[j], self.domain[j].zeros())
+                self.domain[j].fill(out[j], 0)
         return out
 
     def _eval(self, x, differentiate=False):
