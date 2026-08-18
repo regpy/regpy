@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import Solver 
+from ..setting import Solver 
 
 __all__ = ["RichardsonLucy"]
 

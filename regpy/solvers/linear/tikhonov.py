@@ -7,7 +7,7 @@ from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 
 __all__ = [
     "TikhonovCG",

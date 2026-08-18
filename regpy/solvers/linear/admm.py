@@ -1,7 +1,7 @@
 from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM"]

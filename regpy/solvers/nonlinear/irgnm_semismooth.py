@@ -1,7 +1,7 @@
 from regpy.operators import CoordinateMask
 from regpy.util import Errors
 
-from ..general import Setting, RegSolver
+from ..setting import Setting, RegSolver
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmSemiSmooth"]

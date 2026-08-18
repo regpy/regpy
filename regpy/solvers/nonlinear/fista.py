@@ -3,7 +3,7 @@ from math import inf, sqrt
 import numpy as np
 
 from regpy.util import Errors
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 
 __all__ = ["FISTA"]
 

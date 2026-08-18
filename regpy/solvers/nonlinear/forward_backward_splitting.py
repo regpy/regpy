@@ -2,7 +2,7 @@ import numpy as np
 
 from regpy.util import Errors
 
-from ..general import RegSolver
+from ..setting import RegSolver, Setting
 
 __all__ = ["ForwardBackwardSplitting"]
 

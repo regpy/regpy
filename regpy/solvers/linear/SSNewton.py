@@ -9,7 +9,7 @@ from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, SquaredNorm, Composed
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemiSmoothNewton"]
 

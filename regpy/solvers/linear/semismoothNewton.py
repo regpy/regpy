@@ -8,7 +8,7 @@ from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, Li
 from regpy.functionals.integral_functionals import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 

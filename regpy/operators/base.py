@@ -156,13 +156,13 @@ class Operator:
 
     Parameters
     ----------
-    domain, codomain : regpy.vecsps.VectorSpaceBase or None
-        The vector space on which the operator's arguments / values are defined. Using `None`
-        suppresses some consistency checks and is intended for ease of development, but should 
-        not be used except as a temporary measure. Some constructions like direct sums will fail
-        if the vector spaces are unknown.
-    linear : bool, optional
-        Whether the operator is linear. Default: `False`.
+    domain, codomain : regpy.vecsps.VectorSpaceBase
+        The vector space on which the operator's arguments / values are defined.
+    linear : bool [default: False]
+        Whether the operator is linear. 
+    inverse: Operator or None [default: None]
+        If an explicit expression for the inverse exists, it can be provided in the constructor 
+        and will be available under op.inverse. 
     """
 
     log = util.ClassLogger()

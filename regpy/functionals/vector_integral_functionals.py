@@ -283,7 +283,7 @@ class TVUniformGridFcts(Composed):
     """
 
     ###############################################################################
-    from regpy.solvers import Setting
+    from regpy.solvers.setting import Setting
     class TV_prox_setting(Setting):
         r""" Rockafellar-Fenchel type setting for computing the proximal mapping of the TV functional: 
 
@@ -323,7 +323,7 @@ class TVUniformGridFcts(Composed):
             self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
-    from regpy.solvers.general import RegSolver
+    from regpy.solvers.setting import RegSolver
     class Chambolle(RegSolver):
         r"""Fixed point iteration for the dual problem suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004). 
         Compared to this original reference, the free variable is rescaled by the factor (tau*grid.volume_elem)

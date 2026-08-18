@@ -3,7 +3,7 @@ import numpy as np
 
 from regpy.util import Errors
 
-from ..general import RegSolver
+from ..setting import RegSolver
 
 __all__ = ["ForwardBackwardSplitting","FISTA"]
 

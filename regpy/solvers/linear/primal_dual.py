@@ -4,7 +4,7 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver
+from ..setting import RegSolver, Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -42,7 +42,7 @@ class PDHG(RegSolver):
     theta : float [default: -1]
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
         If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
-    op_norm : float [default: None]
+    op_norm : float or None [default: None]
         The operator norm of the forward operator. If None, it is computed numerically.
     proximal_pars_data_fidelity_conjugate : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.

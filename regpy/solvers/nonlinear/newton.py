@@ -5,7 +5,7 @@ from regpy.stoprules import CountIterations
 from regpy.util import Errors
 from regpy.operators import Operator
 
-from ..general import RegSolver, Setting
+from ..setting import RegSolver, Setting
 from ..linear import SemismoothNewton_bilateral
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]

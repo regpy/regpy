@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import RegSolver
+from ..setting import Setting, RegSolver
 
 __all__ = ["CGNE"]
 
