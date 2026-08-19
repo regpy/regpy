@@ -44,9 +44,9 @@ class Landweber(RegSolver):
         init:Vector | None  = None,
         change_init:bool = True,
         stepsize:float | None = None,
-        op_norm = None,
+        op_norm:float | None = None,
         logging_level:int | str = "INFO"
-    ):
+    ) -> None:
         out, _ = Landweber.check_applicability(setting)
         if not out['applicable']:
             raise ValueError('Landweber not applicable to this setting. '+out['info'])        

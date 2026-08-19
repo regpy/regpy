@@ -1,4 +1,5 @@
 from math import inf, sqrt
+from typing import Any
 
 import numpy as np
 
@@ -37,20 +38,24 @@ class FISTA(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
     logging_level: [default: logging.INFO]
         logging level
-    data : setting.op.codomain or array-like or None [default: None]
+    data : Vector or Any or None [default: None]
         The data to be fitted. If None, the data is taken from the setting.
-    without_codomain_vectors : bool [default: False]
-        If True, the algorithm is run without codomain vectors. This can be used to save memory if the codomain is very large. 
     update_setting : bool [default: True]   
         If True, the setting is updated with the initial guess and data. This can be used to save memory if the initial guess and data are very large.
     """
 
     def __init__(
-            self, setting: Setting, init=None, tau: float = 10**16,
-            eta: float = 0.8, op_lower_bound: float = 0.,
-            proximal_pars: dict | None = None, logging_level: str = "INFO",
-            data=None, without_codomain_vectors: bool = False,
-            update_setting: bool = True):
+            self, 
+            setting: Setting, 
+            data: Vector | Any | None =None,
+            init: Vector | None =None, 
+            tau: float = 10**16,
+            eta: float = 0.8, 
+            op_lower_bound: float = 0.,
+            proximal_pars: dict | None = None, 
+            logging_level: int | str = "INFO",
+            update_setting: bool = True
+            ):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error(
                 "FISTA requires the setting to contain a regularization parameter!"
@@ -61,7 +66,7 @@ class FISTA(RegSolver):
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, initial)
         self.data = (
-            data if without_codomain_vectors
+            data if setting.without_codomain_vectors
             else setting.get_or_update_data(data, update_setting)
         )
 
@@ -80,7 +85,7 @@ class FISTA(RegSolver):
         self.proximal_pars = (
             {} if proximal_pars is None else dict(proximal_pars)
         )
-        self.without_codomain_vectors = without_codomain_vectors
+        self.without_codomain_vectors = setting.without_codomain_vectors
         self.eta = eta
         if not 0 < eta < 1:
             raise ValueError(Errors.value_error(
@@ -94,7 +99,7 @@ class FISTA(RegSolver):
         self._gradient = domain.empty()
         self._domain_work = domain.empty()
 
-        if without_codomain_vectors:
+        if self.without_codomain_vectors:
             if self.data_fid.Lipschitz == inf:
                 raise ValueError(Errors.value_error(
                     "FISTA without codomain vectors cannot use generic "
@@ -120,7 +125,7 @@ class FISTA(RegSolver):
             self.tau = 1. / (
                 deriv.norm(
                     setting.h_domain, setting.h_codomain,
-                    without_codomain_vectors=without_codomain_vectors
+                    without_codomain_vectors=self.without_codomain_vectors
                 )**2 * self.data_fid.Lipschitz
             )
             self.backtracking = False

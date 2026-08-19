@@ -258,7 +258,7 @@ class DouglasRachford(RegSolver):
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.
-    init_h : array_like
+    init_h : Vector
         The initial guess "f". Must be in setting.op.domain.
     tau : float , optional
         The parameter to compute the proximal operator of the penalty term. Must be positive. (Default: 1)

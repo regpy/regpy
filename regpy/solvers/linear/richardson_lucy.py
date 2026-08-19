@@ -13,9 +13,9 @@ class RichardsonLucy(Solver):
     ----------
     op : regpy.operators.Operator
         The linear forward operator.
-    data : array-like
+    data : Vector
         The non-negative data
-    x_init : array_like, optional
+    x_init : Vector, optional
         The initial guess "f". Must be in setting.op.domain. (Default: None)
     sigma : float , optional
         Non-negative parameter to shift the data and operator result to avoid division by zero or appearance of negative numbers. (Default: 0)
