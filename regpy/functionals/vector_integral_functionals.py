@@ -424,6 +424,7 @@ class TVUniformGridFcts(Composed):
             raise ValueError(Errors.value_error(f"{prox_method} not in list of applicable methods of the TV_pvrox_setting, which is {self.prox_setting.applicable_methods()}."))
         else:
             self.prox_method = prox_method      
+        self._fista_zero_data = {}
         if prox_stop_rule is None:
             prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
         elif not isinstance(prox_stop_rule,StopRule):
@@ -468,10 +469,20 @@ class TVUniformGridFcts(Composed):
         return func
       
     def _proximal(self, x, tau: float, out=None, **kwargs):
-        self.prox_setting.set_penalty_shift(x)
+        self.prox_setting.init = x
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
+        if self.prox_method in {'FISTA', 'dual_FISTA'} and 'data' not in prox_method_param:
+            data_space = (
+                self.grad.domain
+                if self.prox_method == 'dual_FISTA'
+                else self.grad.codomain
+            )
+            if self.prox_method not in self._fista_zero_data:
+                self._fista_zero_data[self.prox_method] = data_space.zeros()
+            prox_method_param['data'] = self._fista_zero_data[self.prox_method]
+            prox_method_param.setdefault('update_setting', False)
         result = self.prox_setting.run(
             self.prox_method, stoprule=self.prox_stop_rule,
             **prox_method_param
