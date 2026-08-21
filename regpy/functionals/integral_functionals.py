@@ -2235,47 +2235,138 @@ class RelativeEntropy(IntegralFunctionalBase):
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Relative Entropy divergence
-    w: scalar or in domain [optional, default: 1]
-        second argument of the Relative Entropy diverengence; reference value if used as penalty functional
+    w : scalar, Vector, or None [default: None]
+        Fixed part of the second argument of the Relative Entropy divergence.
+        If neither ``w`` nor ``data`` is supplied, ``w`` defaults to 1. If
+        ``data`` is supplied and ``w`` is None, the fixed part defaults to 0.
+    data : Vector or None [default: None]
+        Data-dependent part of the second argument. If supplied, the effective
+        reference is ``w + data`` and the instance is marked as a data
+        functional.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, scalar or in domain
         see IntegralFunctional  
     """
 
-    def  __init__(self, domain,w=1.,
+    def  __init__(self, domain, w=None,
                   constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                  quad_taylor_l=None, quad_taylor_u=None,
+                  quad_taylor_l=None, quad_taylor_u=None, data=None,
                   **kwargs
                   ):
+        self._w_is_default = w is None
+        if w is None:
+            w = 0. if data is not None else 1.
         if np.isscalar(w):
             w = np.broadcast_to(w,domain.shape)
         elif w not in domain:
             raise TypeError(Errors.not_in_vecsp(w,domain,vec_name="second argument",add_info=f" Error occured setting up the Relative Entropy functional."))
-        if np.min(w)<=0:
-            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positive!", self))
-        self._w= w.copy()
+        if np.min(w) < 0:
+            raise ValueError(Errors.value_error(
+                "The fixed part w of RelativeEntropy must be non-negative!",
+                self,
+            ))
+        self._w = w.copy()
 
-        super().__init__(domain,nat_dom_l = 1e-14*w,
+        if data is not None:
+            if data not in domain:
+                raise ValueError(Errors.not_in_vecsp(
+                    data, domain, vec_name="data", space_name="domain of functional"
+                ))
+            self._data = data
+            effective_w = self._w + data
+        else:
+            effective_w = self._w
+        if np.min(effective_w) <= 0:
+            raise ValueError(Errors.value_error(
+                "The second argument w + data of RelativeEntropy must be positive!",
+                self,
+            ))
+
+        super().__init__(domain,nat_dom_l = 1e-14*effective_w,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
+                         is_data_func=(data is not None),
                          **kwargs
                          )
 
     @property
     def w(self):
+        if self.is_data_func:
+            return self._w + self.data
         return self._w
 
     @w.setter
     def w(self, new_w):
         if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
             if new_w in self.domain:
-                self._w = new_w.copy()
+                candidate = new_w.copy()
             else:
-                self._w = np.broadcast_to(float(new_w),self.domain.shape)
-            if np.min(self._w)<0:
-                raise ValueError(Errors.value_error('w must be non-negative.'))
+                candidate = np.broadcast_to(
+                    float(new_w), self.domain.shape
+                ).copy()
+            if np.min(candidate) < 0:
+                raise ValueError(Errors.value_error(
+                    'The fixed part w must be non-negative.'
+                ))
+            effective_w = (
+                candidate + self.data if self.is_data_func else candidate
+            )
+            if np.min(effective_w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'The second argument w + data must be positive.'
+                ))
+            self._w = candidate
+            self._w_is_default = False
             self._precompute_f_l(); self._precompute_f_u()
         else:
             raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, new_data):
+        if new_data is None:
+            del self.data
+        elif new_data in self.domain:
+            fixed_w = (
+                np.zeros(self.domain.shape, dtype=self._w.dtype)
+                if self._w_is_default and not self.is_data_func
+                else self._w
+            )
+            effective_w = fixed_w + new_data
+            if np.min(effective_w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'The second argument w + data must be positive.'
+                ))
+            self._w = fixed_w
+            self._data = new_data
+            self.is_data_func = True
+            self._precompute_f_l(); self._precompute_f_u()
+        else:
+            raise ValueError(Errors.not_in_vecsp(
+                new_data, self.domain, vec_name="new data vector",
+                space_name="domain of functional"
+            ))
+
+    @data.deleter
+    def data(self):
+        if self.is_data_func:
+            if self._w_is_default:
+                self._w = np.ones(
+                    self.domain.shape, dtype=self._w.dtype
+                )
+            elif np.min(self._w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'Cannot remove data while the fixed part w is not positive.'
+                ))
+            del self._data
+            self.is_data_func = False
+            self._precompute_f_l(); self._precompute_f_u()
+
+    def as_data_func(self, data):
+        self.data = data
+        return self
 
     @property
     def Lipschitz(self):
