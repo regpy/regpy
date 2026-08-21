@@ -8,7 +8,8 @@ from regpy.util import Errors
 from regpy.operators import Operator
 from regpy.vecsps import Vector
 
-from ..setting import Setting, RegSolver, check_Hilbert_applicability
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
@@ -135,7 +136,7 @@ class IrgnmCG(RegSolver):
     ) -> tuple[dict, dict]:
         """Check whether IRGNM-CG can be used for ``setting``."""
         out, par = check_Hilbert_applicability(setting)
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             out['info'] += (
                 'IrgnmCG has no implementation without codomain vectors. '
             )

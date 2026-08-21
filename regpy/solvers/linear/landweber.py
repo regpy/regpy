@@ -2,7 +2,8 @@ from math import sqrt
 
 from regpy.vecsps import Vector
 from regpy.util import Errors
-from ..setting import RegSolver, Setting, check_Hilbert_applicability_linear
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability_linear
 
 __all__ = ["Landweber"]
 
@@ -61,7 +62,7 @@ class Landweber(RegSolver):
             self.x = self.op.domain.empty()
             self.op.domain.copyto(self.x,init)
 
-        if not setting.without_codomain_vectors:
+        if not setting.codomain_free:
             self.y = self.op.codomain.empty()
             self.op(self.x, out=self.y)
             # After the Gram application this stores G_Y(Tx-data).
@@ -73,8 +74,8 @@ class Landweber(RegSolver):
 
         if stepsize is None:
             norm = setting.op.norm(setting.h_domain,
-                                   None if setting.without_codomain_vectors else setting.h_codomain,
-                                   without_codomain_vectors = setting.without_codomain_vectors
+                                   None if setting.codomain_free else setting.h_codomain,
+                                   codomain_free = setting.codomain_free
                                    ) if op_norm is None else op_norm
             self.stepsize = 1 / norm**2
         else:
@@ -85,7 +86,7 @@ class Landweber(RegSolver):
     check_applicability = staticmethod(check_Hilbert_applicability_linear)
 
     def _next(self):
-        if not self.setting.without_codomain_vectors:
+        if not self.setting.codomain_free:
             codomain = self.op.codomain
 
             self.y -= self.data

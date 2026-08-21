@@ -1,5 +1,6 @@
 from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
-from ..setting import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 from typing import Iterable, Tuple
 from regpy.util import Errors
 

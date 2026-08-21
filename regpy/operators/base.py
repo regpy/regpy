@@ -683,7 +683,7 @@ class Operator:
         h_domain: HilbertSpace | None = None,
         h_codomain: HilbertSpace | None = None,
         method: str | None = None,
-        without_codomain_vectors: bool = False,
+        codomain_free: bool = False,
     ) -> float:
         r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
         By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
@@ -695,7 +695,7 @@ class Operator:
         method: string [default: None]
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
               if this is not set. Alternative: "power" for power method
-        without_codomain_vectors: bool [default: False]
+        codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
             adjoint_derivative. (Useful if the latter method in more efficient than the composition of
             adjoint and derivative or if vectors in the image space are too large to be stored.)
@@ -725,17 +725,17 @@ class Operator:
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
-        elif not without_codomain_vectors and h_codomain.vecsp != self.codomain:
+        elif not codomain_free and h_codomain.vecsp != self.codomain:
             raise ValueError(util.Errors.not_equal(
                 h_domain.vecsp,
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_domain} on codomain."))
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
         if method == "power":
-            return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
+            return self._power_method(h_domain,h_codomain,codomain_free=codomain_free)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
-            if without_codomain_vectors:
+            if codomain_free:
                 op = self.adjoint_eval
             else:
                 op = self.adjoint * h_codomain.gram * self
@@ -755,7 +755,7 @@ class Operator:
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
         stopping_rule: float = 1e-12,
-        without_codomain_vectors: bool = False,
+        codomain_free: bool = False,
     ) -> float:
         r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
 
@@ -765,12 +765,12 @@ class Operator:
         h_codomain: Hilbert space on the codomain.
         max_iter: int maximum number of iterations
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
-        without_codomain_vectors: bool [default: False]
+        codomain_free: bool [default: False]
             see method norm        
         """
         x = self.domain.rand()
         relative_residual = inf
-        if without_codomain_vectors:
+        if codomain_free:
             op = self.adjoint_eval
         else:
             op = self.adjoint * h_codomain.gram * self

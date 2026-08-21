@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..setting import Solver 
+from ..solver import Solver
 
 __all__ = ["RichardsonLucy"]
 
@@ -45,6 +45,5 @@ class RichardsonLucy(Solver):
         multiplier=self.op.adjoint((self.data+self.sigma)/(self.y+self.sigma))
         self.x=multiplier*self.x/self.adj_ones
         self.y=self.op(self.x)
-
 
 

@@ -1,7 +1,8 @@
 from regpy.operators import Operator, ConvolutionOperator
 from regpy.util import Errors
 
-from ..setting import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 from .tikhonov import TikhonovCG
 
 __all__ = ["ADMM"]
@@ -120,9 +121,12 @@ class ADMM(RegSolver):
             out['info'] += 'Setting has no regularization parameter. '
         if not setting.is_convex:
             out['info'] += 'Setting is not convex. '
+        if setting.codomain_free:
+            out['info'] += 'ADMM requires codomain vectors. '
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
-        if not 'proximal' in setting.data_fid.methods:
+        if (not setting.codomain_free
+                and not 'proximal' in setting.data_fid.methods):
             out['info'] += 'Missing prox in data fidelity functional. '
         if regularizedInverse is None and not \
             (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==()):

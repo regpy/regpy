@@ -9,11 +9,8 @@ from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..setting import (
-    RegSolver,
-    Setting,
-    check_Hilbert_applicability_linear,
-)
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability_linear
 
 __all__ = [
     "TikhonovCG",
@@ -532,9 +529,13 @@ class TikhonovCG(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
         out = {'info':''}; par = {}
+        if setting.codomain_free:
+            out['info'] += 'TikhonovCG requires codomain vectors. '
         if not  setting.penalty.is_quadratic and setting.penalty.is_convex:
             out['info'] += 'Penalty term is not convex quadratic.'
-        if not setting.data_fid.is_quadratic and setting.data_fid.is_convex:
+        if (not setting.codomain_free
+                and not setting.data_fid.is_quadratic
+                and setting.data_fid.is_convex):
             out['info'] += 'Data fidelity term is not convex quadratic. '
         if not setting.op.linear:
             out['info'] += 'Operator is not linear.'
@@ -601,7 +602,7 @@ class TikhonovAlphaGrid(RegSolver):
         update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence        
+        from ..nonlinear.gen_tikhonov import GeometricSequence
         out, _ = self.check_applicability(setting)
         if not out['applicable']:
             raise ValueError(
@@ -626,7 +627,7 @@ class TikhonovAlphaGrid(RegSolver):
         """Initial guess and reference value in the Tikhonov functional."""
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, self.init)
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             self.y = None
             self.backprop_data = self.op.domain.empty()
             self.op.adjoint_data(self.data, out=self.backprop_data)
@@ -661,7 +662,7 @@ class TikhonovAlphaGrid(RegSolver):
             'update_setting': False,
             'logging_level': self.logging_level,
         }
-        if self.setting.without_codomain_vectors:
+        if self.setting.codomain_free:
             common['backprop_data'] = self.backprop_data
             solver_class = TikhonovCGOnlyDomain
         else:
@@ -725,7 +726,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
+        from ..nonlinear.gen_tikhonov import GeometricSequence
         out, _ = self.check_applicability(setting)
         if not out['applicable']:
             raise ValueError(
@@ -750,7 +751,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         """Initial guess."""
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, self.init)
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             self.y = None
             self.backprop_data = self.op.domain.empty()
             self.op.adjoint_data(self.data, out=self.backprop_data)
@@ -786,7 +787,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
             'update_setting': False,
             'logging_level': self.logging_level,
         }
-        if self.setting.without_codomain_vectors:
+        if self.setting.codomain_free:
             common['backprop_data'] = self.backprop_data
             solver_class = TikhonovCGOnlyDomain
         else:

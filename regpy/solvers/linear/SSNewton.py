@@ -9,7 +9,8 @@ from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, SquaredNorm, Composed
 from regpy.stoprules import CountIterations
 
-from ..setting import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemiSmoothNewton"]
 
@@ -43,7 +44,7 @@ class SemiSmoothNewton(RegSolver):
     ----------
     setting: Setting
         The setting. 
-    x0: array-like, default: None
+    x0: Vector, default: None
         Zeroth iterate. If None, x0=setting.op.doamin.zeros(). x0 must be feasible.
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
@@ -188,10 +189,13 @@ class SemiSmoothNewton(RegSolver):
             out['info'] += 'Setting has no regularization parameter.'
         if not setting.is_convex:
             out['info'] += 'Setting has not convex.'    
-        if not 'hessian' in setting.data_fid.methods:
-            out['info'] += 'Data functional not twice differentiable. '
-        elif setting.data_fid.Lipschitz==np.inf:
-            out['info'] += 'Data functional not Lipschitz continuous. '
+        if setting.codomain_free:
+            out['info'] += 'SemiSmoothNewton requires codomain vectors. '
+        else:
+            if not 'hessian' in setting.data_fid.methods:
+                out['info'] += 'Data functional not twice differentiable. '
+            elif setting.data_fid.Lipschitz==np.inf:
+                out['info'] += 'Data functional not Lipschitz continuous. '
         if not setting.penalty.is_separable:
             out['info'] += 'Penalty term not separable. '
         if not 'hessian' in setting.penalty.methods:

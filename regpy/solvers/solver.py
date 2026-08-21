@@ -1,6 +1,12 @@
 from regpy.vecsps import Vector
 from regpy.stoprules import StopRule, NoneRule
-from regpy.util import ClassLogger
+from regpy.util import ClassLogger, Errors
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .setting import Setting
+
+__all__ = ["Solver", "RegSolver"]
 
 class Solver:
     r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
@@ -76,7 +82,7 @@ class Solver:
 
         Yields
         ------
-        tuple of arrays
+        tuple of Vectors
             The (x, y) pair of the current iteration.
         """
         while self.next():
@@ -143,4 +149,82 @@ class Solver:
             self.log.info(f"Could not find a best iterate with stop rule {stoprule}!")
             return self.x, self.y
         return stoprule.best_iterate()
+
+
+class RegSolver(Solver):
+    r"""Base class for solvers operating on a regularization setting.
+
+    The import of :class:`regpy.solvers.setting.Setting` is intentionally
+    deferred until initialization. This keeps ``solver`` independent while
+    allowing ``setting`` and concrete solver modules to import ``RegSolver``
+    without creating a circular module import.
+
+    Parameters
+    ----------
+    setting : regpy.solvers.setting.Setting
+        Setting used by the solver.
+    x : Vector or None [default: None]
+        Initial domain iterate.
+    y : Vector or None [default: None]
+        Value at the initial iterate, if available.
+    """
+
+    def __init__(
+        self,
+        setting: "Setting",
+        x: Vector | None = None,
+        y: Vector | None = None,
+    ) -> None:
+        from .setting import Setting
+
+        if not isinstance(setting, Setting):
+            raise TypeError(Errors.not_instance(setting, Setting))
+        self.op = setting.op
+        self.penalty = setting.penalty
+        self.h_domain = setting.h_domain
+        if not setting.codomain_free:
+            self.data_fid = setting.data_fid
+            self.h_codomain = setting.h_codomain
+        self.setting = setting
+        if setting.is_tikhonov:
+            self.regpar = setting.regpar
+        super().__init__(x, y)
+
+    def runWithDP(
+        self,
+        data: Vector,
+        delta: float = 0,
+        tau: float = 2.1,
+        max_its: int = 1000,
+    ) -> tuple[Vector, Vector]:
+        r"""Run the solver with Morozov's discrepancy principle."""
+        from regpy.stoprules import CountIterations, Discrepancy
+
+        stoprule = (
+            CountIterations(max_iterations=max_its)
+            + Discrepancy(
+                self.h_codomain.norm,
+                data,
+                noiselevel=delta,
+                tau=tau,
+            )
+        )
+        reco, reco_data = self.run(stoprule)
+        if not isinstance(stoprule.active_rule, Discrepancy):
+            self.log.warning(
+                'Discrepancy principle not satisfied after maximum number '
+                'of iterations.'
+            )
+        return reco, reco_data
+
+    def compute_dual(self) -> None:
+        """Compute dual and primal components for a Tikhonov setting."""
+        if not self.setting.is_tikhonov:
+            raise RuntimeError(Errors.generic_message(
+                "It is not possible to compute the dual in the "
+                "implementation of this setting"
+            ))
+        self.primal, self.dual = self.setting._complete_primal_dual_tuples(
+            (self.x, self.y), self.dual
+        )
     

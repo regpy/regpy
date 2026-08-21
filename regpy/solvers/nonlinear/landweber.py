@@ -6,7 +6,8 @@ import numpy as np
 from regpy.util import Errors
 from regpy.vecsps import Vector
 
-from ..setting import RegSolver, Setting, check_Hilbert_applicability
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability
 
 __all__ = ["Landweber"]
 
@@ -22,7 +23,7 @@ class Landweber(RegSolver):
     .. math::
             x_{k+1} = x_k  -  \mu  G_X^{-1}  F'[x_k]^*  G_Y  (F(x_k) - data).
     
-    If ``setting.without_codomain_vectors`` is true, this iteration formala is evaluated
+    If ``setting.codomain_free`` is true, this iteration formala is evaluated
     through ``adjoint_eval`` and ``adjoint_data`` and no codomain vector is allocated.
 
     Parameters
@@ -91,7 +92,7 @@ class Landweber(RegSolver):
             ))
 
         self.backtracking = bool(backtracking)
-        if setting.without_codomain_vectors and self.backtracking:
+        if setting.codomain_free and self.backtracking:
             self.log.warning(
                 "Backtracking is unavailable without codomain vectors and "
                 "has been disabled."
@@ -105,7 +106,7 @@ class Landweber(RegSolver):
             ))
 
         self._update = domain.empty()
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             self.y = None
             self._adjoint_data = domain.empty()
             _, self.deriv = self.op.linearize(
@@ -127,9 +128,9 @@ class Landweber(RegSolver):
         elif stepsize is None:
             norm = self.deriv.norm(
                 setting.h_domain,
-                None if setting.without_codomain_vectors else setting.h_codomain,
+                None if setting.codomain_free else setting.h_codomain,
                 method=op_norm_method,
-                without_codomain_vectors=setting.without_codomain_vectors,
+                codomain_free=setting.codomain_free,
             )
             if norm <= 0:
                 raise ValueError(Errors.value_error(
@@ -162,8 +163,8 @@ class Landweber(RegSolver):
         self._trial_x -= self._scaled_update
 
     def _next(self) -> None:
-        if self.setting.without_codomain_vectors:
-            self._next_without_codomain_vectors()
+        if self.setting.codomain_free:
+            self._next_codomain_free()
             return
 
         if not self.backtracking:
@@ -191,7 +192,7 @@ class Landweber(RegSolver):
 
         _, self.deriv = self.op.linearize(self.x, out=self.y)
 
-    def _next_without_codomain_vectors(self) -> None:
+    def _next_codomain_free(self) -> None:
         self.deriv.adjoint_data(self.data, out=self._adjoint_data)
         self._update -= self._adjoint_data
         self.h_domain.gram_inv(self._update, out=self._update)

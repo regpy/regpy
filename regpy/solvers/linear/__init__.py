@@ -5,10 +5,10 @@ For ease of use we import all solvers here and provide them to you. So you only 
 import by
 
 ```
-from regpy.solvers.linear import *
+from regpy.solvers.linear import Landweber
 ```    
 
-to gain access to all linear operators. Moreover, for simplicity you may also use 
+to import the linear Landweber solver. Moreover, for simplicity you may also use
 
 ```
 from regpy.solvers import *

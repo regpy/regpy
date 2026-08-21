@@ -6,7 +6,8 @@ from regpy.util import Errors
 from regpy.operators import Operator
 from regpy.vecsps import Vector
 
-from ..setting import RegSolver, Setting, check_Hilbert_applicability
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability
 from ..linear import SemismoothNewton_bilateral
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
@@ -90,7 +91,7 @@ class NewtonCG(RegSolver):
     ) -> tuple[dict, dict]:
         """Check whether Newton-CG can be used for ``setting``."""
         out, par = check_Hilbert_applicability(setting)
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             out['info'] += (
                 'NewtonCG has no implementation without codomain vectors. '
             )
@@ -257,7 +258,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         Semi-Smooth Newton. (Default: None)
     """
     def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
+        from .gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))

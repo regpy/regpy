@@ -11,13 +11,11 @@ from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
 from regpy.stoprules import StopRule, DualityGapStopping, CountIterations
-from regpy.solvers.solver import Solver
-
-__setting_all__ = ["Setting", 
-                   "RegSolver",
-                   "check_Hilbert_applicability",
-                   "check_Hilbert_applicability_linear"
-                   ]
+__all__ = [
+    "Setting",
+    "check_Hilbert_applicability",
+    "check_Hilbert_applicability_linear",
+]
 
 class Setting:
     r"""A *setting* for an inverse problem, used by RegSolvers. A setting always consists at least of
@@ -73,7 +71,7 @@ class Setting:
         of these methods is called, ``exact_data`` does not affect ``data``.
     init: Vector or None [default: None]
         initial guess in op.domain
-    without_codomain_vectors: bool [default: False]
+    codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
         op.adjoint_data, op.adjoint_eval, and op.adjoint_derivative, but no evaluations of op and its derivative should be used. 
@@ -96,7 +94,7 @@ class Setting:
                  data: Vector | Any | None = None, 
                  exact_data: Vector | None = None, 
                  init: Vector | None = None,
-                 without_codomain_vectors = False,
+                 codomain_free: bool = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
                  _primal_setting =None # intended only for internal use in get_dual_setting()
@@ -104,7 +102,7 @@ class Setting:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
-        self._without_codomain_vectors = without_codomain_vectors
+        self._codomain_free = codomain_free
 
         self.set_penalty(penalty)
         if (not self.penalty.is_data_func and init is None and _primal_setting is None):
@@ -114,7 +112,7 @@ class Setting:
         if init is not None:
             self.init = init # init and penalty functional are updated
 
-        if not without_codomain_vectors:
+        if not codomain_free:
             self.set_data_fid(data_fid)    
             if (not self.data_fid.is_data_func and data is None and _primal_setting is None):
                 if exact_data is None and explicitDataWarning:
@@ -127,7 +125,7 @@ class Setting:
                     raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
                 self._exact_data = exact_data
         if data is not None:
-            self.data = data #data and (if not self.without_codomain_vectors) data fidelity functional are updated
+            self.data = data #data and (if not self.codomain_free) data fidelity functional are updated
 
         self.log.setLevel(logging_level)
         if _primal_setting is not None and not (_primal_setting.is_convex and _primal_setting.is_tikhonov):
@@ -175,9 +173,9 @@ class Setting:
         del self._init
 
     @property
-    def without_codomain_vectors(self)->bool:
+    def codomain_free(self)->bool:
         r"""If True, vectors in the codomain of the operator should be avoided. """
-        return self._without_codomain_vectors
+        return self._codomain_free
 
     @property
     def data_fid(self):
@@ -202,7 +200,7 @@ class Setting:
         if (new_data is None):
             raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
         if not (hasattr(self,"_data") and new_data is self._data):
-            if not self.without_codomain_vectors:
+            if not self.codomain_free:
                 if (self.data_fid.is_data_func):
                     self.log.warning("Existing data in data fidelity functional is overwritten.")
                 self._data_fid=self.data_fid.as_data_func(new_data)
@@ -244,11 +242,14 @@ class Setting:
     @property
     def is_convex(self):
         """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
-        return self.op.linear and self.penalty.is_convex and (self.without_codomain_vectors or self.data_fid.is_convex)
+        return self.op.linear and self.penalty.is_convex and (self.codomain_free or self.data_fid.is_convex)
     @property
     def is_hilbert(self):
         """True if penalty and data fidelity are quadratic with Hessian that are positive multiples of the corresponding Gram matrices."""
-        return self.penalty.is_norm_squared_type and self.data_fid.is_norm_squared_type
+        return (
+            self.penalty.is_norm_squared_type
+            and (self.codomain_free or self.data_fid.is_norm_squared_type)
+        )
 
     @property
     def regpar(self):
@@ -430,14 +431,16 @@ class Setting:
         if new_init is not None:
             if not new_init in self.op.domain:
                 raise TypeError(Errors.not_in_vecsp(new_init,self.op.domain,vec_name="new_init",space_name="domain"))
+            source = new_init
             if update:
                 if (self.init is not None) and (self.init is not new_init):
                     self.log.warning("Overwriting existing initial guess in setting!")
                 initial = self.op.domain.empty() if self.init is None else self.init
                 self.op.domain.copyto(initial, new_init)
                 self.init = initial # update also penalty term and other attributes
-            if out is not self.init and out is not new_init:
-                self.op.domain.copyto(out,self.init)
+                source = self.init
+            if out is not source:
+                self.op.domain.copyto(out, source)
         else: # new_init is None
             if self.init is not None:
                 if out is not self.init:
@@ -661,7 +664,14 @@ class Setting:
     ######Methods checking applicability
     def _generate_full_solver_dictionary(self)->dict:
         """This so far contains only solvers for convex Tikhonov functionals."""
-        from regpy.solvers.linear import ForwardBackwardSplitting,FISTA,PDHG,ADMM,SemiSmoothNewton,TikhonovCG
+        from .linear import (
+            ADMM,
+            FISTA,
+            ForwardBackwardSplitting,
+            PDHG,
+            SemiSmoothNewton,
+            TikhonovCG,
+        )
         method_dict={
                 'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
                 'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
@@ -885,7 +895,7 @@ def check_Hilbert_applicability(setting:Setting)->tuple[dict,dict] :
     out = {'info':''}; 
     if not setting.penalty.is_norm_squared_type:
         out['info'] += 'Penalty functional is not of squared Hilbert-norm type. '
-    if not (setting.without_codomain_vectors or setting.data_fid.is_norm_squared_type):
+    if not (setting.codomain_free or setting.data_fid.is_norm_squared_type):
         out['info'] += 'Data fidelity functional is not of squared Hilbert-norm type. '
     if setting.is_tikhonov:
         out['info'] += 'Setting has a specified regularization parameter. '
@@ -903,84 +913,3 @@ def check_Hilbert_applicability_linear(setting:Setting)->tuple[dict,dict] :
     out['applicable'] = out['info'] == ''
     return out, par
 
-class RegSolver(Solver):
-    r"""Abstract base class for solvers working with a regularization setting. Solvers do not 
-    implement loops themselves, but are driven by repeatedly calling the `next` method. They 
-    expose the current iterate stored in and value as attributes `x` and `y`, and can be iterated 
-    over, yielding the `(x, y)` tuple on every iteration (which may or may not be the same 
-    arrays as before, modified in-place).
-
-    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
-
-    Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
-    the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
-    return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
-    called again. Most solvers will probably never converge on their own, but rely on the caller or a
-    `regpy.stoprules.StopRule` for termination.
-
-    Parameters
-    ----------
-    setting: Setting
-        Setting used for solver
-    x : Vector or None [default: None]
-        Initial argument for iteration. Defaults to None.
-    y : Vector or None [default: None]
-        Initial value at current iterate. Defaults to None.
-    """
-
-    def __init__(self,
-                 setting:Setting,
-                 x:Vector | None = None,
-                 y:Vector | None = None):
-        if not isinstance(setting,Setting):
-            raise TypeError(Errors.not_instance(setting,Setting))
-        self.op=setting.op
-        """The operator."""
-        self.penalty = setting.penalty
-        """The penalty functional."""
-        self.h_domain = setting.h_domain
-        """The Hilbert space associated to penalty functional"""
-        if not setting.without_codomain_vectors:
-            self.data_fid = setting.data_fid
-            """The data misfit functional."""
-            self.h_codomain =  setting.h_codomain
-            """The Hilbert space associated to data fidelity functional"""
-        self.setting = setting
-        """The regularization setting"""
-        if setting.is_tikhonov:
-            self.regpar = setting.regpar
-            """The regularization parameter"""
-        super().__init__(x,y)
-
-    def runWithDP(self,data,delta=0, tau=2.1, max_its = 1000) -> tuple[Vector, Vector]:
-        r"""
-        Run solver with Morozov's discrepancy principle as stoprule.
-
-        Parameters
-        ----------
-        data: array-like
-            The right-hand side
-        delta: float, default:0
-            noise level
-        tau: float, default: 2.1
-            parameter in discrepancy principle
-        max_its: int, default: 1000
-            maximal number of iterations
-        """
-        from regpy.stoprules import CountIterations, Discrepancy
-        stoprule =  (CountIterations(max_iterations=max_its)
-                        + Discrepancy(self.h_codomain.norm, data,
-                        noiselevel=delta, tau=tau)
-                    )
-        reco, reco_data = self.run(stoprule)
-        if not isinstance(stoprule.active_rule, Discrepancy):
-            self.log.warning('Discrepancy principle not satisfied after maximum number of iterations.')
-        return reco, reco_data
-    
-    def compute_dual(self):
-        """computes dual and primal components. This is a generic implementation that works for settings that are tikhonov.
-        This should be reimplemented if the solver can compute the variables more effectively.
-        """
-        if not self.setting.is_tikhonov:
-            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting"))
-        self.primal,self.dual = self.setting._complete_primal_dual_tuples((self.x,self.y),self.dual)

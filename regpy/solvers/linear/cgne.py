@@ -1,11 +1,8 @@
 from regpy.util import Errors
 from regpy.vecsps import Vector
 
-from ..setting import (
-    RegSolver,
-    Setting,
-    check_Hilbert_applicability_linear,
-)
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability_linear
 
 __all__ = ["CGNE"]
 
@@ -109,7 +106,7 @@ class CGNE(RegSolver):
     def check_applicability(setting: Setting, op_norm: float | None = None) -> tuple[dict, dict]:
         """Check whether CGNE can be used for ``setting``."""
         out, par = check_Hilbert_applicability_linear(setting)
-        if setting.without_codomain_vectors:
+        if setting.codomain_free:
             out['info'] += (
                 'CGNE has no implementation without codomain vectors. '
             )

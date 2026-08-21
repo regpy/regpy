@@ -323,7 +323,7 @@ class TVUniformGridFcts(Composed):
             self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
-    from regpy.solvers.setting import RegSolver
+    from regpy.solvers.solver import RegSolver
     class Chambolle(RegSolver):
         r"""Fixed point iteration for the dual problem suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004). 
         Compared to this original reference, the free variable is rescaled by the factor (tau*grid.volume_elem)

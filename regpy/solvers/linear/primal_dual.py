@@ -4,7 +4,8 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..setting import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -138,9 +139,12 @@ class PDHG(RegSolver):
             out['info'] += 'Setting has no regularization parameter. '
         if not setting.is_convex:
             out['info'] += 'Setting is not convex. '
+        if setting.codomain_free:
+            out['info'] += 'PDHG requires codomain vectors. '
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
-        if 'proximal' not in setting.data_fid.conj.methods:
+        if (not setting.codomain_free
+                and 'proximal' not in setting.data_fid.conj.methods):
             out['info'] += 'Missing prox of conjugate data functional.'
         out['applicable'] = out['info'] == ''
         if out['applicable']:
