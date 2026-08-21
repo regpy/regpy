@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from copy import deepcopy
+from numbers import Real
 from typing import Any, TYPE_CHECKING
 
 from math import sqrt,inf
@@ -186,6 +187,7 @@ class Operator:
         a subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
         self.linear = linear
         r"""Boolean indicating whether the operator is linear."""
+        self._gram_factor = 1.
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain','lu'}
@@ -216,6 +218,29 @@ class Operator:
         to declare every current attribute as constant for deep copies.
         """
         return set(self.__dict__)
+
+    @property
+    def gram_factor(self) -> float:
+        r"""Scalar factor representing the codomain Gram operator.
+
+        Codomain-free evaluations use this factor in place of an explicitly
+        applied codomain Gram operator. The default is ``1.``.
+        """
+        return self._gram_factor
+
+    @gram_factor.setter
+    def gram_factor(self, value: float) -> None:
+        if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+            raise TypeError(util.Errors.type_error(
+                f"gram_factor must be a real scalar. Got {value!r}."
+            ))
+        self._gram_factor = float(value)
+
+    def _apply_gram_factor(self, vector: Vector) -> Vector:
+        """Scale a codomain-free result by :attr:`gram_factor`."""
+        if self.gram_factor != 1.:
+            vector *= self.gram_factor
+        return vector
 
     def reset_detect_loop(self) -> None:
         self._detect_loop = [False]*6  
@@ -315,7 +340,10 @@ class Operator:
                     self.reset_detect_loop()
                     return y, deriv
                 else:
-                    Fstar_y = self._adjoint_eval(self._insert_constants(x),**kwargs)
+                    Fstar_y = self._adjoint_eval(
+                        self._insert_constants(x), **kwargs
+                    )
+                    self._apply_gram_factor(Fstar_y)
                     if Fstar_y not in self.domain: 
                         raise RuntimeError(util.Errors.not_in_vecsp(
                             Fstar_y,
@@ -350,6 +378,7 @@ class Operator:
                     out[1] = Derivative(self.__get_handle())
                 else:
                     self._iadjoint_eval(self._insert_constants(x), out = out[0],**kwargs)
+                    self._apply_gram_factor(out[0])
                     out[1] = Derivative(self.__get_handle()) 
             self.reset_detect_loop()
             return out[0],out[1]
@@ -532,25 +561,26 @@ class Operator:
     def adjoint_data(
         self, data: Vector, out: Vector | None = None, **kwargs
     ) -> Vector:
-            self.reset_detect_loop()
-            try:
-                if out is None:
-                    try:
-                        return self._adjoint_data(data, **kwargs)
-                    except NotImplementedError:
-                        self.reset_detect_loop()
-                        return self._adjoint(data, **kwargs)
-
+        self.reset_detect_loop()
+        try:
+            if out is None:
+                try:
+                    result = self._adjoint_data(data, **kwargs)
+                except NotImplementedError:
+                    self.reset_detect_loop()
+                    result = self._adjoint(data, **kwargs)
+            else:
                 if out not in self.domain:
                     raise ValueError(...)
 
                 try:
-                    return self._iadjoint_data(data, out, **kwargs)
+                    result = self._iadjoint_data(data, out, **kwargs)
                 except NotImplementedError:
                     self.reset_detect_loop()
-                    return self._iadjoint(data, out, **kwargs)
-            finally:
-                self.reset_detect_loop()
+                    result = self._iadjoint(data, out, **kwargs)
+            return self._apply_gram_factor(result)
+        finally:
+            self.reset_detect_loop()
     
     def _adjoint_eval(self, x: Vector, **kwargs) -> Vector:
         if self._detect_loop[4]:
@@ -1131,6 +1161,7 @@ class Derivative(Operator):
         _op = op.get()
         """The underlying operator."""
         super().__init__(_op.domain, _op.codomain, linear=True)
+        self.gram_factor = _op.gram_factor
         # Setting the corresponding constants of op to zero
         if hasattr(_op,"full_domain"):
             self.full_domain = _op.full_domain
@@ -1205,11 +1236,17 @@ class AdjointEval(Operator):
 
     def _eval(self, x: Vector, **kwargs) -> Vector:
         self.op.reset_detect_loop()
-        return self._reduce_to_domain(self.op._adjoint_eval(x, **kwargs))
+        result = self._reduce_to_domain(
+            self.op._adjoint_eval(x, **kwargs)
+        )
+        return self.op._apply_gram_factor(result)
 
     def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
         self.op.reset_detect_loop()
-        return self._reduce_to_domain(self.op._iadjoint_eval(x, out, **kwargs))
+        result = self._reduce_to_domain(
+            self.op._iadjoint_eval(x, out, **kwargs)
+        )
+        return self.op._apply_gram_factor(result)
 
     def _adjoint(self, x: Vector, **kwargs) -> Vector:
         return self._eval(x, **kwargs)
