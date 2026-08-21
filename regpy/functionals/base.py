@@ -375,9 +375,11 @@ class Functional:
         names of the methods implemented by the conjugate of a given Functional instance.
         Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}  
     is_data_func: bool [default: False]
-        If true, the functional acts as a data functional. In this case it must have a `data` property with a corresponding setter.
-        Often data in a vector in domain, but this is not always the case. (Think of the realization of a point process defining
-        a Kullback-Leibler functional, for example.) 
+        If true, the functional acts as a "data functional". In this case it must have a `data` property with a corresponding setter.
+        Often data is a vector in domain, and the functional attains its infimum at this point.  
+        But this is not always the case -- think of the realization of a point process defining
+        a Kullback-Leibler functional, for example. 
+        This property is also used to incorporate an initial guess in penalty functionals. 
     """
 
     log = util.ClassLogger()
@@ -1288,7 +1290,7 @@ class SquaredNorm(Functional):
     c: float [default: 0]
         constant term
     shift: Vector [default:None]
-        If not None, then it msut be in h_space.domain, and we must have b is None and c==0. 
+        If not None, then it must be in h_space.domain, and we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     data: h_space.domain [default:None]
         If not None, then we must have b is None and c==0. 

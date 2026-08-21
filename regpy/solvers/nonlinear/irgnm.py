@@ -6,8 +6,9 @@ import numpy as np
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
 from regpy.operators import Operator
+from regpy.vecsps import Vector
 
-from ..setting import Setting, RegSolver
+from ..setting import Setting, RegSolver, check_Hilbert_applicability
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
@@ -25,38 +26,53 @@ class IrgnmCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like, default None
+    data : Vector or None [default: None]
         The measured data. If it is None it is taken from the setting.
-    regpar : float, optional
-        The initial regularization parameter. Must be positive. 
-    regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
-    init : array-like, optional
-        The initial guess. Default: the zero array.
-    cg_pars : dict
+    regpar : float [default: 1.0]
+        The initial regularization parameter. Must be positive.
+    regpar_step : float [default: 2 / 3]
+        The factor by which to reduce ``regpar`` in each iteration.
+    init : Vector or None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    cg_pars : dict or None [default: None]
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
-    cg_stop: int
-        Maximum number of inner CG iterations
-    simplified_op : regpy.operators.Operator
+    cgstop : int or None [default: 1000]
+        Maximum number of inner CG iterations.
+    inner_it_logging_level : int or str [default: "WARNING"]
+        Logging level for inner iterations.
+    simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
-        Default: None - then the derivative of setting.op is used.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level.
     """
 
     def __init__(
-                self, setting:Setting, data=None, regpar:float=1., regpar_step:float=2 / 3, 
-                init=None, 
-                cg_pars:dict={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
-                cgstop:int=1000, 
-                inner_it_logging_level:str = "WARNING", 
-                simplified_op:Operator = None,
-                update_setting:bool= True
-         ):
+                self, setting:Setting, data:Vector | None=None,
+                regpar:float=1., regpar_step:float=2 / 3,
+                init:Vector | None=None,
+                cg_pars:dict | None=None,
+                cgstop:int | None=1000,
+                inner_it_logging_level:int | str = "WARNING",
+                simplified_op:Operator | None = None,
+                update_setting:bool= True,
+                logging_level:int | str = "INFO",
+         ) -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError('IrgnmCG not applicable to this setting. ' + out['info'])
         super().__init__(setting)
+        self.log.setLevel(logging_level)
         self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
         self.data = setting.get_or_update_data(data, update_setting)
         """The measured data."""                
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
         if not (isinstance(regpar,(float,int)) and regpar>0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.x = copy(self.init)
@@ -70,7 +86,9 @@ class IrgnmCG(RegSolver):
         """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        self.cg_pars = cg_pars
+        self.cg_pars = ({'reltolx': 1/3., 'reltoly': 1/3.,
+                         'all_tol_criteria': False}
+                        if cg_pars is None else cg_pars)
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
@@ -110,6 +128,19 @@ class IrgnmCG(RegSolver):
     
     def nr_inner_its(self):
         return self._nr_inner_steps
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None
+    ) -> tuple[dict, dict]:
+        """Check whether IRGNM-CG can be used for ``setting``."""
+        out, par = check_Hilbert_applicability(setting)
+        if setting.without_codomain_vectors:
+            out['info'] += (
+                'IrgnmCG has no implementation without codomain vectors. '
+            )
+        out['applicable'] = out['info'] == ''
+        return out, par
         
 
 class LevenbergMarquardt(RegSolver):
@@ -125,39 +156,57 @@ class LevenbergMarquardt(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like, default None
+    data : Vector or None [default: None]
         The measured data. If it is None it is taken from the setting.
-    regpar : float, default None
-        The initial regularization parameter. Must be positive. If it is None it is taken from the setting.
-    regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
-    init : array-like, optional
-        The initial guess. Default: the zero array.
-    cg_pars : dict
+    regpar : float [default: 1.0]
+        The initial regularization parameter. Must be positive.
+    regpar_step : float [default: 2 / 3]
+        The factor by which to reduce ``regpar`` in each iteration.
+    init : Vector or None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    cg_pars : dict or None [default: None]
         Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
-    cg_stop: int
-        Maximum number of inner CG iterations
-    simplified_op : regpy.operators.Operator
+    cgstop : int or None [default: 1000]
+        Maximum number of inner CG iterations.
+    inner_it_logging_level : int or str [default: "WARNING"]
+        Logging level for inner iterations.
+    simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
-        Default: None - then the derivative of setting.op is used.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level.
     """
 
     def __init__(
-               self, setting:Setting, data=None, regpar:float=1., regpar_step:float=2 / 3, 
-                 init=None, 
-                 cg_pars:dict={'reltolx': 1/3., 'reltoly': 1/3.,'all_tol_criteria': False}, 
-                cgstop:int=1000, 
-                inner_it_logging_level:str = "WARNING", 
+               self, setting:Setting, data:Vector | None=None,
+                regpar:float=1., regpar_step:float=2 / 3,
+                init:Vector | None=None,
+                cg_pars:dict | None=None,
+                cgstop:int | None=1000,
+                inner_it_logging_level:int | str = "WARNING",
                 simplified_op:Operator|None = None,
-                update_setting:bool = True
-         ):
+                update_setting:bool = True,
+                logging_level:int | str = "INFO",
+         ) -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(
+                'LevenbergMarquardt not applicable to this setting. '
+                + out['info']
+            )
         super().__init__(setting)
+        self.log.setLevel(logging_level)
         self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
         self.data = setting.get_or_update_data(data, update_setting)
         """The measured data."""  
-        if not isinstance(regpar,(float,int)) and float>0:
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
+        if not (isinstance(regpar,(float,int)) and regpar > 0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.x = copy(self.init)
         if simplified_op:
@@ -170,7 +219,9 @@ class LevenbergMarquardt(RegSolver):
         """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        self.cg_pars = cg_pars
+        self.cg_pars = ({'reltolx': 1/3., 'reltoly': 1/3.,
+                         'all_tol_criteria': False}
+                        if cg_pars is None else cg_pars)
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
@@ -205,6 +256,8 @@ class LevenbergMarquardt(RegSolver):
     
     def nr_inner_its(self):
         return self._nr_inner_steps
+
+    check_applicability = staticmethod(IrgnmCG.check_applicability)
 
 
 from regpy.operators import EinSum,PtwMultiplication
@@ -254,33 +307,56 @@ class IrgnmCGPrec(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
-    data : array-like, default None
+    data : Vector or None [default: None]
         The measured data. If it is None it is taken from the setting.
-    regpar : float, optional
-        The initial regularization parameter. Must be positive. Defaults to 1.
-    regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: `2/3`.
-    init : array-like, optional
+    regpar : float [default: 1.0]
+        The initial regularization parameter. Must be positive.
+    regpar_step : float [default: 2 / 3]
+        The factor by which to reduce ``regpar`` in each iteration.
+    init : Vector or None [default: None]
         The initial guess. Defaults to None, in this case it is taken from the setting.
-    cg_pars : dict
-        Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
-    precpars : dict
-        Parameter dictionary passed to the computation of the spectral preconditioner
+    cg_pars : dict or None [default: None]
+        Parameter dictionary passed to the inner
+        :class:`regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+    cgstop : int or None [default: None]
+        Maximum number of inner CG iterations.
+    precpars : dict or None [default: None]
+        Parameters for the spectral preconditioner. The defaults are Krylov
+        order 6 and four eigenvalues.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the
+        setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level.
     """
 
     def __init__(
-        self, setting:Setting, data=None, regpar:float=1., regpar_step=2 / 3, 
-        init=None, cg_pars:dict=None,cgstop:dict =None, precpars:dict=None,update_setting:bool=True
-        ):
+        self, setting:Setting, data:Vector | None=None, regpar:float=1.,
+        regpar_step:float=2 / 3, init:Vector | None=None,
+        cg_pars:dict | None=None, cgstop:int | None=None,
+        precpars:dict | None=None, update_setting:bool=True,
+        logging_level:int | str="INFO",
+        ) -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(
+                'IrgnmCGPrec not applicable to this setting. ' + out['info']
+            )
         if(not isinstance(setting.op.domain,UniformGridFcts)):
             raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
+        self.log.setLevel(logging_level)
         self.init = setting.get_or_update_initial_guess(init, update_setting)
         """The initial guess."""
         self.data = setting.get_or_update_data(data, update_setting)
         """The measured data."""  
-        if not isinstance(regpar,(float,int)) and regpar>0:
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
+        if not (isinstance(regpar,(float,int)) and regpar > 0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
+        self.x = copy(self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularization parameter."""
@@ -312,6 +388,17 @@ class IrgnmCGPrec(RegSolver):
         """Gram matrix applied to image of the Krylov Basis"""
         self.need_prec_update = True
         """Is an update of the preconditioner needed"""
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None
+    ) -> tuple[dict, dict]:
+        """Check whether preconditioned IRGNM-CG can be used."""
+        out, par = IrgnmCG.check_applicability(setting, op_norm=op_norm)
+        if not isinstance(setting.op.domain, UniformGridFcts):
+            out['info'] += 'Operator domain is not UniformGridFcts. '
+        out['applicable'] = out['info'] == ''
+        return out, par
     
     def _next(self):
         if self.cgstop is not None:

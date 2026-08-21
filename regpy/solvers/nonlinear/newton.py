@@ -4,8 +4,9 @@ from copy import deepcopy,copy
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
 from regpy.operators import Operator
+from regpy.vecsps import Vector
 
-from ..setting import RegSolver, Setting
+from ..setting import RegSolver, Setting, check_Hilbert_applicability
 from ..linear import SemismoothNewton_bilateral
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
@@ -28,41 +29,46 @@ class NewtonCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
-        The rhs y of the equation to be solved. Must be in setting.op.codomain.
-    init : array-like, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : number, optional
-        Maximal number of inner CG iterations. (Default: 50)
-    rho : number, optional
-        A fix number related to the termination (0<rho<1). (Default: 0.8)
-    simplified_op : regpy.operators.Operator, optional
-        Simplified operator to be used for the derivative. (Default: None)
-    logging_level:str
-        logging level
+    data : Vector or None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    init : Vector or None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    cgmaxit : int [default: 50]
+        Maximum number of inner CG iterations.
+    rho : float [default: 0.8]
+        Inner discrepancy factor; must lie in ``(0, 1)``.
+    simplified_op : regpy.operators.Operator or None [default: None]
+        Optional operator used to approximate the derivative.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the
+        setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level.
     """
 
     def __init__(self, 
                  setting:Setting, 
-                 data=None, 
-                 init=None, 
+                 data:Vector | None=None,
+                 init:Vector | None=None,
                  cgmaxit:int=50, rho:float=0.8, 
-                 simplified_op:Operator = None,
-                 logging_level:str = 'INFO'):
+                 simplified_op:Operator | None = None,
+                 update_setting:bool = True,
+                 logging_level:int | str = 'INFO') -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError('NewtonCG not applicable to this setting. ' + out['info'])
         super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.data = data
+        initial = setting.get_or_update_initial_guess(init, update_setting)
+        self.data = setting.get_or_update_data(data, update_setting)
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
         """The measured data."""
 
-        self.x = init.copy() if init is not None else self.op.domain.zeros()
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, initial)
         if simplified_op:
             self.simplified_op = simplified_op
             """Simplified operator for derivative.
@@ -77,6 +83,19 @@ class NewtonCG(RegSolver):
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
         self.log.setLevel(logging_level)
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None
+    ) -> tuple[dict, dict]:
+        """Check whether Newton-CG can be used for ``setting``."""
+        out, par = check_Hilbert_applicability(setting)
+        if setting.without_codomain_vectors:
+            out['info'] += (
+                'NewtonCG has no implementation without codomain vectors. '
+            )
+        out['applicable'] = out['info'] == ''
+        return out, par
     
     def _next(self):
         self._k = 0
@@ -124,34 +143,50 @@ class NewtonCGFrozen(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
-        The rhs y of the equation to be solved. Must be in setting.op.codomain.
-    init : array-like, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : int, optional
-        Maximal number of inner CG iterations. (Default: 50)
-    rho : float, optional
-        A fix number related to the termination (0<rho<1). (Default: 0.8)
+    data : Vector or None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    init : Vector or None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    cgmaxit : int [default: 50]
+        Maximum number of inner CG iterations.
+    rho : float [default: 0.8]
+        Inner discrepancy factor; must lie in ``(0, 1)``.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the
+        setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level.
     """
-    def __init__(self, setting:Setting, 
-                 data = None, init = None, 
-                 cgmaxit:int=50, rho:float=0.8):
+    def __init__(self, setting:Setting,
+                 data:Vector | None = None, init:Vector | None = None,
+                 cgmaxit:int=50, rho:float=0.8,
+                 update_setting:bool=True,
+                 logging_level:int | str="INFO") -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(
+                'NewtonCGFrozen not applicable to this setting. ' + out['info']
+            )
         super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data is None:
-            data = setting.data
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.data = data
-        
-        self.x = init.copy() if init is not None else self.op.domain.zeros()
+        self.log.setLevel(logging_level)
+        initial = setting.get_or_update_initial_guess(init, update_setting)
+        self.data = setting.get_or_update_data(data, update_setting)
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
+
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, initial)
         _, self.deriv = self.op.linearize(self.x)
         self._n = 1
         self._op_copy = deepcopy(self.op)
         self._outer_update()
         self.rho = rho
         self.cgmaxit = cgmaxit
+
+    check_applicability = staticmethod(NewtonCG.check_applicability)
 
     def _outer_update(self):
         if int(self._n / 10) * 10 == self._n:
@@ -201,7 +236,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
+    data : Vector
         The data from which to recover. Initializes the rhs y of the equation to be solved. Must 
         be in setting.op.codomain.
     alphas: iterable object or tuple
@@ -211,9 +246,9 @@ class NewtonSemiSmoothFrozen(RegSolver):
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : scalar
         upper constraint of the minimization. Must be smaller than `psi_minus`
-    init : array-like, optional
+    init : Vector, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    xref : array-like, optional
+    xref : Vector, optional
         Reference value in the Tikhonov functional. (Default: setting.op.domain.zeros())
     inner_NSS_iter_max : int, optional
         The number of maximal iterations when solving the linearized problem. (Default: 50)
@@ -323,13 +358,13 @@ class IterativelyRegularizedNewton(RegSolver):
         Either a callable that can be applied to a setting to yield a stoprule or a Stoprule which is used for the inner solver.
     inner_solver_pars : dict, optional default: dict()
         Parameter dictionary for the inner solver. Should contain all necessary parameters which are not included in the linearized setting.
-    data : array-like, optional default: None
+    data : Vector, optional default: None
         The measured data. If None it is taken from setting.
     regpar : float, optional default: None
         The initial regularization parameter. Must be positive. If None it is taken from setting.
     regpar_step : float, optional
         The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
-    init : array-like, optional default: None
+    init : Vector, optional default: None
         The initial guess. If None it is set to the zero array.
     """
     def __init__(

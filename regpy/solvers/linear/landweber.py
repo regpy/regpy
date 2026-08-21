@@ -64,7 +64,6 @@ class Landweber(RegSolver):
         if not setting.without_codomain_vectors:
             self.y = self.op.codomain.empty()
             self.op(self.x, out=self.y)
-            self._gy_residual = self.op.codomain.empty()
             # After the Gram application this stores G_Y(Tx-data).
         else:
             self.y = None
@@ -89,11 +88,10 @@ class Landweber(RegSolver):
         if not self.setting.without_codomain_vectors:
             codomain = self.op.codomain
 
-            codomain.copyto(self._gy_residual, self.y)
-            self._gy_residual -= self.data
-            self.h_codomain.gram(self._gy_residual, out=self._gy_residual)
+            self.y -= self.data
+            self.h_codomain.gram(self.y, out=self.y)
 
-            self.op.adjoint(self._gy_residual, out=self._update)
+            self.op.adjoint(self.y, out=self._update)
 
             self.h_domain.gram_inv(self._update, out=self._update)
             self._update *= self.stepsize

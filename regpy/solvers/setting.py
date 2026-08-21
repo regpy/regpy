@@ -2,6 +2,7 @@ from __future__ import annotations
 import math as ma
 import numpy as np
 from typing import Callable, Any
+from copy import deepcopy
 
 from regpy.util import ClassLogger, Errors
 from regpy.vecsps import Vector
@@ -63,13 +64,15 @@ class Setting:
         Defaults to None. See explanations above on different meaning of solvers in this case.
     penalty_shift: Vector or None [default: None]
         If not None, the penalty functional  :math:`\mathcal{R}` is replaced by  :math:`\mathcal{R}(. - penalty_shift)`. 
-    data: array-like or None, optional
+    data: Vector or None, optional
         If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
         belong to op.codomain). Defaults to None
-    exact_data: op.codomain | None [default: None]
+    exact_data: Vector or None [default: None]
         Optional exact data used to generate synthetic noisy observations with
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
+    init: Vector or None [default: None]
+        initial guess in op.domain
     without_codomain_vectors: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -88,10 +91,11 @@ class Setting:
                  op: Operator, 
                  penalty: Functional|HilbertSpace|Callable, 
                  data_fid:Functional|HilbertSpace|Callable,
-                 regpar:float|None=None,
-                 penalty_shift= None, 
-                 data:Vector | Any | None = None, 
-                 exact_data:Vector | None = None, 
+                 regpar: float|None =None,
+                 penalty_shift = None, 
+                 data: Vector | Any | None = None, 
+                 exact_data: Vector | None = None, 
+                 init: Vector | None = None,
                  without_codomain_vectors = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
@@ -100,16 +104,24 @@ class Setting:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
-        self.set_penalty(penalty,penalty_shift=penalty_shift)
         self._without_codomain_vectors = without_codomain_vectors
+
+        self.set_penalty(penalty)
+        if (not self.penalty.is_data_func and init is None and _primal_setting is None):
+            self._init = None
+        if self.penalty.is_data_func:
+            self._init =  self.penalty.data 
+        if init is not None:
+            self.init = init # init and penalty functional are updated
+
         if not without_codomain_vectors:
             self.set_data_fid(data_fid)    
             if (not self.data_fid.is_data_func and data is None and _primal_setting is None):
                 if exact_data is None and explicitDataWarning:
                     self.log.warning("Setting does not contain any explicit data.")
-                self._data=None
+                self._data = None
             if self.data_fid.is_data_func:
-                self._data=self.data_fid.data#just update internal data, update of data functional not necessary
+                self._data=self.data_fid.data #just update internal data, update of data functional not necessary
             if exact_data is not None:
                 if not exact_data in op.codomain:
                     raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
@@ -134,12 +146,33 @@ class Setting:
         r"""The penalty functional."""        
         return self._penalty
 
-    def set_penalty(self, penalty,penalty_shift=None):
-        if penalty_shift is not None:
-            self._penalty = as_functional(penalty, self.op.domain).shift(penalty_shift)
-        else:
-            self._penalty = as_functional(penalty, self.op.domain)
+    def set_penalty(self, penalty):
+        self._penalty = as_functional(penalty, self.op.domain)
         self._init_convex_Tikhonov()
+
+    @property
+    def init(self):
+        return self._init if hasattr(self,'_init') else None
+    
+    @init.setter
+    def init(self,new_init):
+        self.change_init(new_init=new_init)
+
+    def change_init(self,new_init):
+        if new_init not in self.op.domain:
+            raise TypeError(Errors.type_error(msg='New initial guess must be in domain',obs=new_init))
+        if not (hasattr(self,"_init") and new_init is self._init):
+            if self.penalty.is_data_func:
+                self.log.warning("Existing init in penalty functional is overwritten.")
+            self._penalty=self.penalty.as_data_func(new_init)
+            if not hasattr(self, "_init") or self._init is None:
+                self._init = self.op.domain.empty()
+            self.op.domain.copyto(self._init,new_init)
+
+    @init.deleter
+    def init(self):
+        del self.penalty
+        del self._init
 
     @property
     def without_codomain_vectors(self)->bool:
@@ -158,17 +191,6 @@ class Setting:
         self._init_convex_Tikhonov()
 
     @property
-    def h_domain(self)->HilbertSpace:
-        r"""The Hilbert space associated to penalty functional"""
-        return self.penalty.h_domain
-
-    @property   
-    def h_codomain(self)->HilbertSpace:
-        r"""The Hilbert space associated to data fidelity functional"""
-        return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
-
-
-    @property
     def data(self):
         return self._data if hasattr(self,'_data') else None
     
@@ -184,7 +206,12 @@ class Setting:
                 if (self.data_fid.is_data_func):
                     self.log.warning("Existing data in data fidelity functional is overwritten.")
                 self._data_fid=self.data_fid.as_data_func(new_data)
-            self._data=new_data
+            if new_data in self.op.codomain:
+                if not hasattr(self,"_data") or self._data is None:
+                    self._data =  self.op.codomain.empty() 
+                    self.op.codomain.copyto(self._data,new_data)
+            else:
+                self._data = deepcopy(new_data)
 
     @data.deleter
     def data(self):
@@ -199,6 +226,16 @@ class Setting:
     def exact_data(self, new_exact_data):
         self._exact_data = new_exact_data
         del self.data
+
+    @property
+    def h_domain(self)->HilbertSpace:
+        r"""The Hilbert space associated to penalty functional"""
+        return self.penalty.h_domain
+
+    @property   
+    def h_codomain(self)->HilbertSpace:
+        r"""The Hilbert space associated to data fidelity functional"""
+        return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
 
     @property
     def is_tikhonov(self):
@@ -387,30 +424,29 @@ class Setting:
         --------
         new initial guess
         """
+        out = self.op.domain.empty() if out is None else out
         if out is not None and not out in self.op.domain:
             raise TypeError(Errors.not_in_vecsp(out,self.op.domain,vec_name="out",space_name="domain"))
         if new_init is not None:
             if not new_init in self.op.domain:
                 raise TypeError(Errors.not_in_vecsp(new_init,self.op.domain,vec_name="new_init",space_name="domain"))
             if update:
-                if hasattr(self,'init') and not self.init is new_init:
+                if (self.init is not None) and (self.init is not new_init):
                     self.log.warning("Overwriting existing initial guess in setting!")
-                self.init = self.op.domain.empty() if self.init is None else self.init
-                self.op.domain.copyto(self.init, new_init)
-            if out is None:
-                out = self.op.domain.empty()
+                initial = self.op.domain.empty() if self.init is None else self.init
+                self.op.domain.copyto(initial, new_init)
+                self.init = initial # update also penalty term and other attributes
             if out is not self.init and out is not new_init:
                 self.domain.copyto(out,self.init)
-        else:
-            if hasattr(self,'init'):
+        else: # new_init is None
+            if self.init is not None:
                 if out is not self.init:
-                    out = self.op.domain.empty()
                     self.op.domain.copyto(out, self.init)
             else:
-                out = self.op.domain.zeros()
-                if update:
-                    self.init = self.op.domain.empty()
-                    self.op.domain.copyto(self.init, out)
+                self.op.domain.fill(out,0.)
+            if update:
+                self.init = out
+                #raise RuntimeError(Errors.runtime_error('In order to update init in Setting, the new value must not be None.'))
         return out
 
     ######Methods exploiting duality
