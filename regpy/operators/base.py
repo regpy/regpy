@@ -1338,6 +1338,7 @@ class LinearCombination(Operator):
         return super()._iadjoint_derivative(x, out,**kwargs)
 
     def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+        self.codomain.fill(0.)
         for coeff, deriv in zip(self.coeffs, self._derivs):
             out += coeff * deriv(x,**kwargs)
         return out
@@ -1351,17 +1352,19 @@ class LinearCombination(Operator):
             ops = self.ops
         else:
             ops = self._derivs
+        self.domain.fill(out,0)
         for coeff, op in zip(self.coeffs, ops):
-            out += coeff.conjugate() * op.adjoint(y,**kwargs)
+            out += np.conjugate(coeff) * op.adjoint(y,**kwargs)
         return out
        
-    def _iadjoint_data(self, x: Vector, out: Vector, **kwargs) -> Vector:
-        if x is out:
+    def _iadjoint_data(self, y: Vector, out: Vector, **kwargs) -> Vector:
+        if y is out:
             source = self.codomain.empty()
-            self.codomain.copyto(source, x)
-            x = source
+            self.codomain.copyto(source, y)
+            y = source
+        self.domain.fill(out,0.)
         for coeff, op in zip(self.coeffs, self.ops):
-            out += coeff.conj() * op.adjoint_data(x,**kwargs)
+            out +=  op.adjoint_data(np.conjugate(coeff) * y, **kwargs)
         return out
 
     @Operator.inverse.getter
@@ -1726,14 +1729,11 @@ class Composition(Operator):
             else:
                 x = deriv.adjoint(x)
         return self._derivs[-1].adjoint(x, out=out)
-
+    
     def _iadjoint_data(self, data: Vector, out: Vector, **kwargs) -> Vector:
         ops = self.ops if self.linear else self._derivs
         if not self._use_buffers or len(ops) < 2:
-            if self.d_eq_cd[0]:
-                data = ops[0].adjoint_data(data, out=data, **kwargs)
-            else:
-                data = ops[0].adjoint_data(data, **kwargs)
+            data = ops[0].adjoint_data(data, **kwargs)
             for d_eq_cd, op in zip(self.d_eq_cd[1:-1], ops[1:-1]):
                 if d_eq_cd:
                     data = op.adjoint(data, out=data, **kwargs)
@@ -2261,7 +2261,7 @@ class PtwMultiplication(Operator):
 
     def _adjoint(self, x: Vector) -> Vector:
         if self.domain.is_complex:
-            return x * self.factor.conj()
+            return x * np.conjugate(self.factor)
         else:
             return x * self.factor
 
@@ -2269,7 +2269,7 @@ class PtwMultiplication(Operator):
         if out is not x:
             self.domain.copyto(out, x)
         if self.domain.is_complex:
-            out *= self.factor.conj()
+            out *= np.conjugate(self.factor)
         else:
             out *= self.factor
         return out
@@ -2284,7 +2284,7 @@ class PtwMultiplication(Operator):
         if out is not x:
             self.domain.copyto(out, x)
         if self.domain.is_complex:
-            out *= self.factor.conj()*self.factor
+            out *= np.conjugate(self.factor)*self.factor
         else:
             out *= self.factor**2
         return out
@@ -3119,7 +3119,7 @@ class Product(Operator):
 
     def _iadjoint(self, y: Vector, out: Vector) -> Vector:
         for i, summand in enumerate(self.domain.summands):
-            out[i] = (y*self.deriv_data[i].conj()).real if not summand.is_complex else y*self.deriv_data[i].conj()
+            out[i] = (y*np.conjugate(self.deriv_data[i])).real if not summand.is_complex else y*np.conjugate(self.deriv_data[i])
         return out
 
 
