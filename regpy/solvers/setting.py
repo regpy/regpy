@@ -437,7 +437,7 @@ class Setting:
                 self.op.domain.copyto(initial, new_init)
                 self.init = initial # update also penalty term and other attributes
             if out is not self.init and out is not new_init:
-                self.domain.copyto(out,self.init)
+                self.op.domain.copyto(out,self.init)
         else: # new_init is None
             if self.init is not None:
                 if out is not self.init:

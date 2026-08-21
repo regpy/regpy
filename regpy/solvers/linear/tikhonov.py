@@ -1,13 +1,19 @@
+from collections.abc import Iterable
 from math import sqrt,inf
 import numpy as np
 import logging
 
 from regpy.util import Errors
+from regpy.vecsps import Vector
 from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity,Operator
 from regpy.stoprules import CountIterations
 
-from ..setting import RegSolver, Setting
+from ..setting import (
+    RegSolver,
+    Setting,
+    check_Hilbert_applicability_linear,
+)
 
 __all__ = [
     "TikhonovCG",
@@ -557,44 +563,76 @@ class TikhonovAlphaGrid(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data: array-like
-        The right-hand side.
-    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+    data : Vector or None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    alphas : iterable or tuple [default: (1.0, 2 / 3)]
+        Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    max_CG_iter: integer, default 1000.
-        maximum number of CG iterations. 
-    xref: array-like, default None
-        initial guess in Tikhonov functional. Default corresponds to zeros()
-    delta = float, default None
-        data noise level
-    tol_fac: float, default 0.5
-        absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha)
+    init : Vector or None [default: None]
+        Initial guess and reference value in the Tikhonov functional. In the
+        default case, it is taken from the setting.
+    max_CG_iter : int [default: 1000]
+        Maximum number of CG iterations.
+    delta : float or None [default: None]
+        Data noise level.
+    tol_fac : float [default: 0.5]
+        Absolute tolerance for CG iterations is
+        ``tol_fac * delta / sqrt(alpha)``.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the
+        setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level for the inner CG iteration.
 
     Notes
     -----
     Further keyword arguments for TikhonovCG can be given. 
     """
-    def __init__(self,setting:Setting, data, alphas, xref=None,max_CG_iter=1000,
-                 delta=None,tol_fac:float=0.5, logging_level    :str= "INFO"):
+    def __init__(
+        self,
+        setting: Setting,
+        data: Vector | None = None,
+        alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
+        init: Vector | None = None,
+        max_CG_iter: int = 1000,
+        delta: float | None = None,
+        tol_fac: float = 0.5,
+        update_setting: bool = True,
+        logging_level: int | str = "INFO",
+    ) -> None:
         from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence        
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(
+                'TikhonovAlphaGrid not applicable to this setting. '
+                + out['info']
+            )
         super().__init__(setting)
-        if not self.op.linear:
-            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
+        self.log.setLevel(logging_level)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
-            self._alphas = alphas
-        self.data = data
+            self._alphas = iter(alphas)
+        self.data = setting.get_or_update_data(data, update_setting)
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
         """Right-hand side of the operator equation."""
-        self.xref = xref
-        """initial guess in Tikhonov functional."""
-        if self.xref is not None:
-            self.x = self.xref
-            self.y = self.op.codomain.empty()
-            self.op(self.xref, out=self.y)
+        self.init = setting.get_or_update_initial_guess(
+            init, update_setting, out=init
+        )
+        """Initial guess and reference value in the Tikhonov functional."""
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        if setting.without_codomain_vectors:
+            self.y = None
+            self.backprop_data = self.op.domain.empty()
+            self.op.adjoint_data(self.data, out=self.backprop_data)
         else:
-            self.x = self.op.domain.zeros()
-            self.y = self.op.codomain.zeros()
+            self.y = self.op.codomain.empty()
+            self.op(self.x, out=self.y)
         self.max_CG_iter = max_CG_iter
         """maximum number of CG iterations."""    
         self.delta = delta
@@ -615,18 +653,36 @@ class TikhonovAlphaGrid(RegSolver):
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")
-        if self.delta is None:
-            tikhcg =TikhonovCG(self.setting,data=self.data,regpar=alpha,xref=self.xref,x0=self.xref,
-                               reltolx = self.tol_fac / sqrt(alpha),
-                               logging_level=self.logging_level
-                               )
+        common = {
+            'setting': self.setting,
+            'regpar': alpha,
+            'xref': self.init,
+            'x0': self.init,
+            'update_setting': False,
+            'logging_level': self.logging_level,
+        }
+        if self.setting.without_codomain_vectors:
+            common['backprop_data'] = self.backprop_data
+            solver_class = TikhonovCGOnlyDomain
         else:
-            tikhcg =TikhonovCG(self.setting,data = self.data,regpar = alpha,xref=self.xref,x0=self.xref,
-                               tol= self.tol_fac * self.delta / sqrt(alpha),
-                                logging_level=self.logging_level
-                               )
+            common['data'] = self.data
+            solver_class = TikhonovCG
+        if self.delta is None:
+            common['reltolx'] = self.tol_fac / sqrt(alpha)
+        else:
+            common['tol'] = self.tol_fac * self.delta / sqrt(alpha)
+        tikhcg = solver_class(**common)
         self.x, self.y = tikhcg.run(inner_stoprule)
         self.log.info('alpha = {}, inner CG its = {}'.format(alpha,inner_stoprule.iteration))
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None
+    ) -> tuple[dict, dict]:
+        """Check whether the parameter-grid method can be used."""
+        out, par = check_Hilbert_applicability_linear(setting)
+        out['applicable'] = out['info'] == ''
+        return out, par
 
 class NonstationaryIteratedTikhonov(RegSolver):
     r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
@@ -636,38 +692,71 @@ class NonstationaryIteratedTikhonov(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data: array-like
-        The right-hand side.
-    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+    data : Vector or None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    alphas : iterable or tuple [default: (1.0, 2 / 3)]
+        Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    xref: array-like, default None
-        initial guess in Tikhonov functional. Default corresponds to zeros()
-    delta = float, default None
-        data noise level
-    tol_fac: float, default 0.5
-        absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha)
+    init : Vector or None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    max_CG_iter : int [default: 1000]
+        Maximum number of CG iterations.
+    delta : float or None [default: None]
+        Data noise level.
+    tol_fac : float [default: 0.5]
+        Absolute tolerance for CG iterations is
+        ``tol_fac * delta / sqrt(alpha)``.
+    update_setting : bool [default: True]
+        If true, explicitly supplied data and initial guess are stored in the
+        setting.
+    logging_level : int or str [default: "INFO"]
+        Logging level for the inner CG iteration.
     """
-    def __init__(self,setting, data, alphas, xref=None, max_CG_iter=1000,
-                 delta=None,tol_fac=0.5, logging_level= "INFO"):
+    def __init__(
+        self,
+        setting: Setting,
+        data: Vector | None = None,
+        alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
+        init: Vector | None = None,
+        max_CG_iter: int = 1000,
+        delta: float | None = None,
+        tol_fac: float = 0.5,
+        update_setting: bool = True,
+        logging_level: int | str = "INFO",
+    ) -> None:
         from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError(
+                'NonstationaryIteratedTikhonov not applicable to this setting. '
+                + out['info']
+            )
         super().__init__(setting)
-        if not self.op.linear:
-            raise ValueError(Errors.not_linear_op(self.op,add_info="TikhonovAlphaGrid in as a linear solver requires the operator to be linear!"))
+        self.log.setLevel(logging_level)
         if isinstance(alphas,tuple) and len(alphas)==2:
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
-            self._alphas = alphas
-        self.data = data
+            self._alphas = iter(alphas)
+        self.data = setting.get_or_update_data(data, update_setting)
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
         """Right-hand side of the operator equation."""
-        self.xref = xref
-        """initial guess in Tikhonov functional."""
-        if self.xref is not None:
-            self.x = self.xref
-            self.y = self.op.codomain.empty()
-            self.op(self.xref, out=self.y)
+        self.init = setting.get_or_update_initial_guess(
+            init, update_setting, out=init
+        )
+        """Initial guess."""
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        if setting.without_codomain_vectors:
+            self.y = None
+            self.backprop_data = self.op.domain.empty()
+            self.op.adjoint_data(self.data, out=self.backprop_data)
         else:
-            self.x = self.op.domain.zeros()
-            self.y = self.op.codomain.zeros()
+            self.y = self.op.codomain.empty()
+            self.op(self.x, out=self.y)
         self.max_CG_iter = max_CG_iter
         """maximum number of CG iterations."""    
         self.delta = delta
@@ -689,18 +778,31 @@ class NonstationaryIteratedTikhonov(RegSolver):
         inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
         inner_stoprule.log = self.log.getChild('CountIterations')
         inner_stoprule.log.setLevel("WARNING")
-        if self.delta is None:
-            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
-                               reltolx = self.tol_fac / sqrt(self.alpha_eff),
-                               logging_level=self.logging_level
-                               )
+        common = {
+            'setting': self.setting,
+            'regpar': alpha,
+            'xref': self.x,
+            'x0': self.x,
+            'update_setting': False,
+            'logging_level': self.logging_level,
+        }
+        if self.setting.without_codomain_vectors:
+            common['backprop_data'] = self.backprop_data
+            solver_class = TikhonovCGOnlyDomain
         else:
-            tikhcg =TikhonovCG(self.setting,data = self.data,regpar=alpha,xref=self.x,x0=self.x,
-                               tol= self.tol_fac * self.delta / sqrt(self.alpha_eff),
-                                logging_level=self.logging_level
-                               )
+            common['data'] = self.data
+            solver_class = TikhonovCG
+        if self.delta is None:
+            common['reltolx'] = self.tol_fac / sqrt(self.alpha_eff)
+        else:
+            common['tol'] = self.tol_fac * self.delta / sqrt(self.alpha_eff)
+        tikhcg = solver_class(**common)
         self.x, self.y = tikhcg.run(inner_stoprule)
         self.log.info('alpha_eff = {}, inner CG its = {}'.format(self.alpha_eff,inner_stoprule.iteration))
+
+    check_applicability = staticmethod(
+        TikhonovAlphaGrid.check_applicability
+    )
 
 class TikhonovCGOnlyDomain(RegSolver):
     r"""The Tikhonov method for linear inverse problems. Minimizes
@@ -770,6 +872,15 @@ class TikhonovCGOnlyDomain(RegSolver):
         update_setting:bool=True
         ):
         super().__init__(setting)
+        self.tol = tol
+        self.reltolx = reltolx
+        self.reltoly = reltoly
+        self.all_tol_criteria = all_tol_criteria
+        inactive_value = True if all_tol_criteria else False
+        self.isconverged = {
+            'tol': inactive_value if tol is None else False,
+            'reltolx': inactive_value if reltolx is None else False,
+        }
         try:
             self.log.setLevel(logging_level)
         except Exception as e:
@@ -956,6 +1067,9 @@ class TikhonovCGOnlyDomain(RegSolver):
             
             tol_report = 'it.{} kappa={} err/Tol '.format(self.iteration_step_nr,self.kappa)
             if self.reltolx is not None:
+                self.sq_norm_x = self.h_domain.norm(self.x)**2
+                if self.sq_norm_x == 0:
+                    self.sq_norm_x = 1.
                 valx = sqrt(self.sq_norm_res / self.sq_norm_x / self.kappa) / self.regpar
                 tol_report = tol_report+'rel X:{:1.1e}/{:1.1e} '.format(valx,self.reltolx / (1 + self.reltolx))
                 if valx < self.reltolx / (1 + self.reltolx):

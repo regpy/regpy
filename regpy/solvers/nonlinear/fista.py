@@ -3,6 +3,7 @@ from typing import Any
 
 import numpy as np
 
+from regpy.vecsps import Vector
 from regpy.util import Errors
 from ..setting import RegSolver, Setting
 
