@@ -1067,6 +1067,30 @@ class Adjoint(Operator):
         self.op.reset_detect_loop()
         return self.op._ieval(self._insert_constants(x), out, **kwargs)
 
+    def _adjoint_eval(self, x: Vector, **kwargs) -> Vector:
+        r"""Evaluate ``self.adjoint(self(x))``.
+
+        An operator may provide ``_eval_adjoint`` to implement its opposite
+        normal operator, ``op(op.adjoint(x))``, without materializing the
+        intermediate vector. This hook is used, for example, by Fourier
+        transforms. Operators without such a hook retain the generic
+        implementation.
+        """
+        eval_adjoint = getattr(self.op, '_eval_adjoint', None)
+        if eval_adjoint is None:
+            return super()._adjoint_eval(x, **kwargs)
+        self.op.reset_detect_loop()
+        return eval_adjoint(x, **kwargs)
+
+    def _iadjoint_eval(
+        self, x: Vector, out: Vector, **kwargs
+    ) -> Vector:
+        ieval_adjoint = getattr(self.op, '_ieval_adjoint', None)
+        if ieval_adjoint is None:
+            return super()._iadjoint_eval(x, out, **kwargs)
+        self.op.reset_detect_loop()
+        return ieval_adjoint(x, out, **kwargs)
+
     @util.memoized_property
     def adjoint(self) -> Operator:
         return self.op

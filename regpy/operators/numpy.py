@@ -897,6 +897,38 @@ class FourierTransform(Operator):
             self._rfft_inverse_adjoint_weights = (
                 1 / self._rfft_adjoint_weights
             )
+            self._rfft_axis = self.axes[-1]
+            self._rfft_spatial_size = n
+            self._rfft_boundary_indices = (
+                (0, n // 2) if n % 2 == 0 else (0,)
+            )
+
+            # The Nyquist mode is needed for direct evaluations of the
+            # spatial normal operators. It is present only for even sizes.
+            self._rfft_nyquist_pattern = None
+            if n % 2 == 0:
+                self._rfft_nyquist_pattern = (
+                    1 - 2 * (np.arange(n) % 2)
+                ).astype(real_dtype)
+
+            # At zero and Nyquist frequency of the compressed axis, an RFFT
+            # spectrum must be Hermitian with respect to all remaining FFT
+            # axes. Store the index maps k -> -k in the actual (possibly
+            # centered) frequency ordering.
+            self._rfft_negative_frequency_indices = {}
+            for axis in self.axes[:-1]:
+                size = domain.shape_domain[axis]
+                bins = np.rint(spfft.fftfreq(size) * size).astype(int)
+                if self.centered:
+                    bins = spfft.fftshift(bins)
+                index_by_residue = {
+                    int(frequency) % size: index
+                    for index, frequency in enumerate(bins)
+                }
+                self._rfft_negative_frequency_indices[axis] = np.asarray([
+                    index_by_residue[(-int(frequency)) % size]
+                    for frequency in bins
+                ], dtype=int)
 
             # Let A denote the Euclidean real adjoint of rfftn. Then
             # A(y) = irfftn(w_adj*y), where w_adj is 1 at zero/Nyquist
@@ -1046,11 +1078,89 @@ class FourierTransform(Operator):
             ).real
         return self._finish_spatial_transform(result)
 
+    def _rfft_spatial_normal(self, x, interior_factor, out):
+        r"""Apply an RFFT normal operator directly in the spatial domain.
+
+        The corresponding frequency multiplier is ``interior_factor`` at
+        interior frequencies and one at zero and Nyquist frequency.
+        """
+        axis = self._rfft_axis
+        mean = np.mean(x, axis=axis, keepdims=True)
+
+        nyquist_coefficient = None
+        if self._rfft_nyquist_pattern is not None:
+            moved = np.moveaxis(x, axis, -1)
+            nyquist_coefficient = np.einsum(
+                '...i,i->...', moved, self._rfft_nyquist_pattern,
+                optimize=True
+            ) / self._rfft_spatial_size
+
+        np.multiply(x, interior_factor, out=out)
+        correction = 1 - interior_factor
+        out += correction * mean
+        if nyquist_coefficient is not None:
+            moved_out = np.moveaxis(out, axis, -1)
+            moved_out += (
+                correction
+                * nyquist_coefficient[..., np.newaxis]
+                * self._rfft_nyquist_pattern
+            )
+        return out
+
+    def _rfft_hermitian_partner(self, boundary):
+        partner = boundary
+        for axis, indices in self._rfft_negative_frequency_indices.items():
+            partner = np.take(partner, indices, axis=axis)
+        return partner
+
+    def _rfft_spectrum_normal(self, y, interior_factor, out):
+        r"""Apply an RFFT normal operator in the stored half-spectrum.
+
+        Interior frequencies are scaled directly. The zero and Nyquist
+        slices are projected onto their Hermitian subspaces.
+        """
+        projected_boundaries = []
+        for index in self._rfft_boundary_indices:
+            boundary_slice = [slice(None)] * y.ndim
+            boundary_slice[self._rfft_axis] = slice(index, index + 1)
+            boundary_slice = tuple(boundary_slice)
+            boundary = y[boundary_slice]
+            partner = self._rfft_hermitian_partner(boundary)
+            projected = 0.5 * (boundary + np.conjugate(partner))
+            projected_boundaries.append((boundary_slice, projected))
+
+        np.multiply(y, interior_factor, out=out)
+        for boundary_slice, projected in projected_boundaries:
+            np.copyto(out[boundary_slice], projected)
+        return out
+
     def _adjoint_eval(self, x):
         if self.is_complex:
             # The allocating API must return an independent result.
             return np.array(x, dtype=self.domain.dtype, copy=True)
-        return self._adjoint(self._eval(x))
+        out = self.domain.empty()
+        return self._rfft_spatial_normal(x, 0.5, out)
+
+    def _iadjoint_eval(self, x, out):
+        if self.is_complex:
+            if out is not x:
+                self.domain.copyto(out, x)
+            return out
+        return self._rfft_spatial_normal(x, 0.5, out)
+
+    def _eval_adjoint(self, y):
+        """Efficiently evaluate ``self(self.adjoint(y))``."""
+        if self.is_complex:
+            return np.array(y, dtype=self.codomain.dtype, copy=True)
+        out = self.codomain.empty()
+        return self._rfft_spectrum_normal(y, 0.5, out)
+
+    def _ieval_adjoint(self, y, out):
+        if self.is_complex:
+            if out is not y:
+                self.codomain.copyto(out, y)
+            return out
+        return self._rfft_spectrum_normal(y, 0.5, out)
 
     @staticmethod
     def frequencies(domain, centered=False, axes=None, rfft=False):
@@ -1143,6 +1253,21 @@ class _FourierTransformLeftInverse(Operator):
         return np.multiply(
             result, self.transform._rfft_inverse_adjoint_weights
         )
+
+    def _adjoint_eval(self, y):
+        out = self.domain.empty()
+        return self.transform._rfft_spectrum_normal(y, 2., out)
+
+    def _iadjoint_eval(self, y, out):
+        return self.transform._rfft_spectrum_normal(y, 2., out)
+
+    def _eval_adjoint(self, x):
+        """Efficiently evaluate ``self(self.adjoint(x))``."""
+        out = self.codomain.empty()
+        return self.transform._rfft_spatial_normal(x, 2., out)
+
+    def _ieval_adjoint(self, x, out):
+        return self.transform._rfft_spatial_normal(x, 2., out)
 
     @property
     def invertible(self):
