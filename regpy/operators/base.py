@@ -234,7 +234,93 @@ class Operator:
             raise TypeError(util.Errors.type_error(
                 f"gram_factor must be a real scalar. Got {value!r}."
             ))
+        if value < 0:
+            raise ValueError(util.Errors.value_error(
+                f"gram_factor must be non-negative. Got {value!r}."
+            ))
         self._gram_factor = float(value)
+
+    def set_gram_factor(self, gram: Operator | HilbertSpace) -> None:
+        r"""Set :attr:`gram_factor` from a scalar Gram operator.
+
+        Parameters
+        ----------
+        gram : Operator or HilbertSpace
+            A Hilbert space, or its Gram operator. Supported Gram operators
+            are :class:`Identity`, a :class:`LinearCombination` consisting of
+            one multiple of an identity, and :class:`PtwMultiplication` with a
+            constant multiplier.
+
+        Raises
+        ------
+        TypeError
+            If ``gram`` is neither an operator nor a Hilbert space, or if the
+            extracted factor is not real.
+        ValueError
+            If the Gram operator does not act on this operator's codomain, is
+            not one of the supported forms, or yields a negative factor.
+        """
+        # Importing HilbertSpace at module level would cause a circular import:
+        # regpy.hilbert imports the operator classes used for Gram operators.
+        from regpy.hilbert import HilbertSpace
+
+        if isinstance(gram, HilbertSpace):
+            gram = gram.gram
+        if not isinstance(gram, Operator):
+            raise TypeError(util.Errors.type_error(
+                "gram must be a HilbertSpace or an Operator. "
+                f"Got {type(gram).__name__}."
+            ))
+        if gram.domain != self.codomain or gram.codomain != self.codomain:
+            raise ValueError(util.Errors.value_error(
+                "The Gram operator's domain and codomain must both equal "
+                f"the operator codomain {self.codomain}. Got domain "
+                f"{gram.domain} and codomain {gram.codomain}."
+            ))
+
+        if isinstance(gram, Identity):
+            factor = 1.
+        elif isinstance(gram, LinearCombination):
+            if len(gram.ops) != 1 or not isinstance(gram.ops[0], Identity):
+                raise ValueError(util.Errors.value_error(
+                    "A LinearCombination used as a Gram operator must contain "
+                    "exactly one Identity operator."
+                ))
+            factor = gram.coeffs[0]
+        elif isinstance(gram, PtwMultiplication):
+            ones = gram.domain.ones()
+            normalizer = gram.domain.vdot(ones, ones)
+            if normalizer == 0:
+                raise ValueError(util.Errors.value_error(
+                    "A PtwMultiplication used as a Gram operator must have a "
+                    "constant multiplier."
+                ))
+            factor = gram.domain.vdot(gram.factor, ones) / normalizer
+            residual = gram.factor - factor * ones
+            residual_norm_sq = gram.domain.vdot(residual, residual).real
+            factor_norm_sq = gram.domain.vdot(
+                gram.factor, gram.factor
+            ).real
+            tolerance = (
+                100 * np.finfo(float).eps * max(1., abs(factor_norm_sq))
+            )
+            if residual_norm_sq > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "A PtwMultiplication used as a Gram operator must have a "
+                    "constant multiplier."
+                ))
+        else:
+            raise ValueError(util.Errors.value_error(
+                "Unsupported Gram operator. Expected Identity, a "
+                "LinearCombination containing one Identity, or "
+                "PtwMultiplication with a constant multiplier. Got "
+                f"{type(gram).__name__}."
+            ))
+
+        factor = np.real_if_close(factor)
+        if np.ndim(factor) == 0:
+            factor = factor.item()
+        self.gram_factor = factor
 
     def _apply_gram_factor(self, vector: Vector) -> Vector:
         """Scale a codomain-free result by :attr:`gram_factor`."""
