@@ -64,10 +64,9 @@ class Landweber(RegSolver):
         backtracking: bool = True,
         eta: float = 0.5,
         op_norm_method: str = "lanczos",
-        update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(setting, user_data=data, user_init=init)
         if not out['applicable']:
             raise ValueError(
                 'Nonlinear Landweber not applicable to this setting. '
@@ -81,15 +80,9 @@ class Landweber(RegSolver):
                 "using the linear Landweber implementation."
             )
 
-        initial = setting.get_or_update_initial_guess(init, update_setting)
         domain = self.op.domain
-        self.x = domain.empty()
-        domain.copyto(self.x, initial)
-        self.data = setting.get_or_update_data(data, update_setting)
-        if self.data is None:
-            raise ValueError(Errors.value_error(
-                "Data have to be included in the setting or given directly."
-            ))
+        self.x = par['init'] # use memory of par['init']
+        self.data = par['data']
 
         self.backtracking = bool(backtracking)
         if setting.codomain_free and self.backtracking:

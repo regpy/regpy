@@ -60,8 +60,6 @@ class Setting:
     regpar: float or None, optional
         regularization parameter  :math:`alpha`. 
         Defaults to None. See explanations above on different meaning of solvers in this case.
-    penalty_shift: Vector or None [default: None]
-        If not None, the penalty functional  :math:`\mathcal{R}` is replaced by  :math:`\mathcal{R}(. - penalty_shift)`. 
     data: Vector or None, optional
         If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
         belong to op.codomain). Defaults to None
@@ -71,6 +69,11 @@ class Setting:
         of these methods is called, ``exact_data`` does not affect ``data``.
     init: Vector or None [default: None]
         initial guess in op.domain
+    init_is_penalty_data: bool [default: True]
+        If true, then self.penalty must be a data functional, and self.init is identical to self.penalty.data. 
+        Then init is typically the global minimum of the penalty functional. 
+        If false, the setting maintains a copy of the initial guess independent of self.penalty 
+        serving, e.g., as initial guess for iterative method. 
     codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -94,21 +97,23 @@ class Setting:
                  data: Vector | Any | None = None, 
                  exact_data: Vector | None = None, 
                  init: Vector | None = None,
+                 init_is_penalty_data: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
-                 _primal_setting =None # intended only for internal use in get_dual_setting()
+                 _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
                  ):
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
         self._codomain_free = codomain_free
 
+        self.init_is_penalty_data = init_is_penalty_data
+
         self.set_penalty(penalty)
-        if (not self.penalty.is_data_func and init is None and _primal_setting is None):
-            self._init = None
-        if self.penalty.is_data_func:
-            self._init =  self.penalty.data 
+        #if (not self.penalty.is_data_func and init is None and _primal_setting is None):
+        #    self._init = None
+
         if init is not None:
             self.init = init # init and penalty functional are updated
 
@@ -144,26 +149,33 @@ class Setting:
         r"""The penalty functional."""        
         return self._penalty
 
-    def set_penalty(self, penalty):
+    def set_penalty(self, penalty)->None :
         self._penalty = as_functional(penalty, self.op.domain)
         self._init_convex_Tikhonov()
 
     @property
-    def init(self):
-        return self._init if hasattr(self,'_init') else None
-    
+    def init(self)->Vector:
+        if not self.init_is_penalty_data:
+            return self._init if hasattr(self,'_init') else None
+        else:
+            if not hasattr(self.penalty,'data'): 
+                raise RuntimeError(Errors.runtime_error('penalty is not data functional',self.penalty))
+            toret = self.penalty.data
+            if toret not in self.op.domain:
+                raise TypeError(Errors.type_error('penalty.data must be in domain',toret))
+            return toret
+
     @init.setter
-    def init(self,new_init):
+    def init(self,new_init)->None :
         self.change_init(new_init=new_init)
 
-    def change_init(self,new_init):
+    def change_init(self,new_init)->None :
         if new_init not in self.op.domain:
             raise TypeError(Errors.type_error(msg='New initial guess must be in domain',obs=new_init))
-        if not (hasattr(self,"_init") and new_init is self._init):
-            if self.penalty.is_data_func:
-                self.log.warning("Existing init in penalty functional is overwritten.")
+        if self.init_is_penalty_data:
             self._penalty=self.penalty.as_data_func(new_init)
-            if not hasattr(self, "_init") or self._init is None:
+        else:
+            if not hasattr(self,"_init"):
                 self._init = self.op.domain.empty()
             self.op.domain.copyto(self._init,new_init)
 
@@ -877,12 +889,19 @@ class Setting:
             y = self.op(x)
         return x,y
 
-def check_Hilbert_applicability(setting:Setting)->tuple[dict,dict] :
+def check_Hilbert_applicability(setting:Setting, 
+                                user_data= None, 
+                                user_init=None,
+                                )->tuple[dict,dict] :
     """ Checks if regularization methods for operators in Hilbert spaces are applicable.
 
     Parameters:
     -----------
     setting: Setting
+    user_data: Vector or None [default: None]
+        potential initial guess provided by user
+    user_data: Vector or None [default: None]
+        data provided by user
 
     Returns:
     --------
@@ -890,26 +909,69 @@ def check_Hilbert_applicability(setting:Setting)->tuple[dict,dict] :
         out['appicable'] is a boolean specifying applicabilty. 
         If False, out['info'] specifies the reasons for this.       
     par: dict
-        Empty.
+        par['data'] contains the data to be used. If user_data is not None, these are used, 
+        otherwise the global minimum of the quadratic data functional is computed. 
+        par['init'] contains the initial guess. If user_init is not None, these are used, 
+        otherwise the global minimum of the penalty functional is computed. 
     """
-    out = {'info':''}; 
+    out = {'info':''}; par = {} 
     if not setting.penalty.is_norm_squared_type:
         out['info'] += 'Penalty functional is not of squared Hilbert-norm type. '
     if not (setting.codomain_free or setting.data_fid.is_norm_squared_type):
         out['info'] += 'Data fidelity functional is not of squared Hilbert-norm type. '
     if setting.is_tikhonov:
         out['info'] += 'Setting has a specified regularization parameter. '
-    out['applicable'] = out['info'] == ''
-    return out, {}
+    if user_data is None:
+        data = setting.op.codomain.zeros()
+        if not setting.codomain_free:
+            # compute data as global minimum of the qudaratic data fidelity term
+            S = setting.data_fid            
+            S.subgradient(data,out=data)
+            hess = S.hessian(data)
+            hess.inverse(data,out=data)
+            data *= -1.
+        elif hasattr(setting,'data'):
+            setting.op.codomain.copyto(data, setting.data)
+        else:
+            setting.log.warning('setting is codomain_free, but has no data, and no user data are provided')
 
-def check_Hilbert_applicability_linear(setting:Setting)->tuple[dict,dict] :
+        par['data'] = data 
+    else:
+        if user_data not in setting.op.codomain:
+            raise RuntimeError('If setting is codomain-free, data must be provided as argumetns')
+        par['data'] = user_data     
+
+    if user_init is None:
+        # compute data as global minimum of the qudaratic data fidelity term
+        R = setting.penalty
+        domain = setting.op.domain
+        init = domain.zeros()
+        R.subgradient(init,out=init)
+        hess = R.hessian(init)
+        hess.inverse(init,out=init)
+        init *= -1.
+
+        par['init'] = init  
+    else:
+        par['init'] = domain.empty() 
+        domain.copyto(par['init'],user_init)     
+    
+    out['applicable'] = out['info'] == ''
+    return out, par
+
+def check_Hilbert_applicability_linear(setting:Setting,
+                                        user_data= None, 
+                                        user_init=None,
+                                    )->tuple[dict,dict] :
     """ Checks if regularization methods for linear operators in Hilbert spaces are applicable.
 
     Parameters and return values as of check_Hilbert_applicability. 
     """
-    out, par = check_Hilbert_applicability(setting)
+    out, par = check_Hilbert_applicability(setting,
+                                           user_data=user_data,
+                                           user_init=user_init,
+                                           )
     if not setting.op.linear:
         out['info'] += 'Operator is not linear. '
     out['applicable'] = out['info'] == ''
     return out, par
-

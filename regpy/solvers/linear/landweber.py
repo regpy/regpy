@@ -43,12 +43,12 @@ class Landweber(RegSolver):
         setting:Setting,
         data:Vector | None  = None,
         init:Vector | None  = None,
-        change_init:bool = True,
+        change_init:bool = False,
         stepsize:float | None = None,
         op_norm:float | None = None,
         logging_level:int | str = "INFO"
     ) -> None:
-        out, _ = Landweber.check_applicability(setting)
+        out, _ = Landweber.check_applicability(setting,user_data=data,user_init=init)
         if not out['applicable']:
             raise ValueError('Landweber not applicable to this setting. '+out['info'])        
         super().__init__(setting)
