@@ -30,6 +30,7 @@ from .base import VectorSpaceBase
 class NgsBaseVector:
     vec: ngs.la.BaseVector | ngs.la.DynamicVectorExpression
     make_copy: Optional[bool] = field(default=False)
+    read_only: bool = field(default=False)
 
     __array_ufunc__ = None
 
@@ -43,6 +44,11 @@ class NgsBaseVector:
         return self.vec.is_complex
 
     def __post_init__(self):
+        if not isinstance(self.read_only, (bool, np.bool_)):
+            raise TypeError(
+                f"read_only must be boolean. Got {type(self.read_only)}."
+            )
+        self.read_only = bool(self.read_only)
         self.is_dynamic = False
         if isinstance(self.vec,ngs.la.BaseVector):
             if self.make_copy:
@@ -65,6 +71,12 @@ class NgsBaseVector:
             pass
         else:
             raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
+
+    def _require_writable(self, operation: str) -> None:
+        if self.read_only:
+            raise ValueError(
+                f"Cannot perform {operation} on a read-only NgsBaseVector."
+            )
 
     def conj(self):
         if self.is_dynamic:
@@ -128,6 +140,7 @@ class NgsBaseVector:
             return NgsBaseVector(z)
 
     def __iadd__(self,other):
+        self._require_writable("in-place addition")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -140,6 +153,7 @@ class NgsBaseVector:
         return self
 
     def __isub__(self,other):
+        self._require_writable("in-place subtraction")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -152,6 +166,7 @@ class NgsBaseVector:
         return self
     
     def __imul__(self,other):
+        self._require_writable("in-place multiplication")
         if self.is_dynamic:
             self.log.debug("To have in-place multiplication of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -162,6 +177,7 @@ class NgsBaseVector:
         return self
     
     def __itruediv__(self,other):
+        self._require_writable("in-place division")
         if self.is_dynamic:
             self.log.debug("To have in-place division of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -225,6 +241,7 @@ class NgsBaseVector:
             return NgsBaseVector(self.vec[i])
     
     def __setitem__(self,i,val):
+        self._require_writable("item assignment")
         if self.is_dynamic:
             self.log.debug("To set items the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -345,19 +362,34 @@ class NgsVectorSpace(VectorSpaceBase):
         self._no_pickle = {*self._no_pickle,"fes"}
         self.mass_matrix_cholesky = None
 
-    def zeros(self):
+    def zeros(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         vec = self._gfu_fes.vec.CreateVector()
         vec.FV().NumPy()[:] = 0
-        return NgsBaseVector(vec,make_copy=False)
+        result = NgsBaseVector(vec, make_copy=False)
+        return self.read_only(result) if read_only else result
     
-    def ones(self):
+    def ones(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         if self.codim == 1:
             self._gfu_fes.Set(1)
         else:
             for gf_i in self._gfu_fes.components:
                 gf_i.Set(tuple(1 for _ in range(gf_i.dim)))
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        return self.read_only(result) if read_only else result
+
+    def read_only(self, x: NgsBaseVector) -> NgsBaseVector:
+        """Return a read-only wrapper sharing the underlying NGSolve vector."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NgsVectorSpace."
+            ))
+        if x.read_only:
+            return x
+        return NgsBaseVector(x.vec, make_copy=False, read_only=True)
     
     def empty(self):
         return self.zeros()
@@ -479,6 +511,7 @@ class NgsVectorSpace(VectorSpaceBase):
             raise ValueError(Errors.value_error(
                 f"Cannot copy NGSolve vectors of different sizes {y.size} and {x.size}."
             ))
+        x._require_writable("copyto")
         if x.is_dynamic:
             x.vec = x.vec.Evaluate()
             x.is_dynamic = False
@@ -494,6 +527,7 @@ class NgsVectorSpace(VectorSpaceBase):
             raise TypeError(Errors.type_error(
                 f"fill value must be a scalar. Got {type(value)}."
             ))
+        x._require_writable("fill")
         if x.is_dynamic:
             x.vec = x.vec.Evaluate()
             x.is_dynamic = False
