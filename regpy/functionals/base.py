@@ -470,6 +470,32 @@ class Functional:
             ))
         return out
 
+    def _copy_vector(
+        self, x: Vector, out: Vector | None = None
+    ) -> Vector:
+        """Return ``out`` containing ``x``, allocating only if necessary."""
+        if out is None:
+            out = self.domain.empty()
+        if out is not x and self._shares_memory(out, x):
+            source = self.domain.empty()
+            self.domain.copyto(source, x)
+            x = source
+        self.domain.copyto(out, x)
+        return out
+
+    @staticmethod
+    def _shares_memory(x: Vector, y: Vector) -> bool:
+        """Whether writing to one vector can modify the other."""
+        if x is y:
+            return True
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            return np.shares_memory(x, y)
+        if isinstance(x, vecsps.TupleVector):
+            return any(Functional._shares_memory(x_i, y) for x_i in x)
+        if isinstance(y, vecsps.TupleVector):
+            return any(Functional._shares_memory(x, y_i) for y_i in y)
+        return False
+
     def __call__(self, x: Vector) -> float:
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to evaluate {self} on the given vector."))
@@ -534,8 +560,7 @@ class Functional:
         except NotImplementedError:
             _, grad = self._linearize(x)
         if out is not None:
-            self.domain.copyto(out, grad)
-            grad = out
+            grad = self._copy_vector(grad, out=out)
         if grad not in self.domain:
             raise RuntimeError(util.Errors.not_in_vecsp(
                 grad, self.domain, vec_name="gradient", space_name="domain",
@@ -555,8 +580,11 @@ class Functional:
         x: in `self.domain`
             Point at which the subdifferential is evaluated
         """
-        xi = self.subgradient(x)
-        return self.h_domain.dual_space().norm(vstar-xi)
+        residual = self.domain.empty()
+        self.subgradient(x, out=residual)
+        residual *= -1
+        residual += vstar
+        return self.h_domain.dual_space().norm(residual)
 
     def hessian(
         self, x: Vector, recursion_safeguard: bool = False
@@ -615,8 +643,7 @@ class Functional:
             except (NotInEssentialDomainError, NotImplementedError) as error:
                 raise error
         if out is not None:
-            self.domain.copyto(out, grad)
-            grad = out
+            grad = self._copy_vector(grad, out=out)
         if grad not in self.domain:
             raise RuntimeError(util.Errors.not_in_vecsp(
                 grad, self.domain, vec_name="gradient", space_name="domain",
@@ -635,8 +662,11 @@ class Functional:
         x_star: in `self.domain`
             Point at which the subdifferential is evaluated
         """
-        xi = self.conj_subgradient(xstar)
-        return self.domain.norm(v-xi)        
+        residual = self.domain.empty()
+        self.conj_subgradient(xstar, out=residual)
+        residual *= -1
+        residual += v
+        return self.domain.norm(residual)
 
     def conj_hessian(
         self, xstar: Vector, recursion_safeguard: bool = False
@@ -718,15 +748,21 @@ class Functional:
                 raise NotImplementedError("Neither proximal nor conj_proximal are implemented.")
             gram = self.h_domain.gram
             gram_inv = self.h_domain.gram_inv
-            dual_arg = gram(x) / tau
+            dual_arg = self.domain.empty()
+            gram(x, out=dual_arg)
+            dual_arg *= 1. / tau
             self.conj_proximal(
                 dual_arg, 1 / tau, recursion_safeguard=True,
                 out=dual_arg, **proximal_par
             )
-            proximal = x - tau * gram_inv(dual_arg)
+            if out is None or self._shares_memory(out, x):
+                proximal = gram_inv(dual_arg, out=dual_arg)
+            else:
+                proximal = gram_inv(dual_arg, out=out)
+            proximal *= -tau
+            proximal += x
         if out is not None:
-            self.domain.copyto(out, proximal)
-            proximal = out
+            proximal = self._copy_vector(proximal, out=out)
         if proximal not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
                 proximal, self.domain, space_name="domain",
@@ -760,15 +796,21 @@ class Functional:
                 raise NotImplementedError("Neither proximal nor conj_proximal are implemented.")
             gram = self.h_domain.gram
             gram_inv = self.h_domain.gram_inv
-            primal_arg = gram_inv(xstar / tau)
+            primal_arg = self._copy_vector(xstar)
+            primal_arg *= 1. / tau
+            gram_inv(primal_arg, out=primal_arg)
             self.proximal(
                 primal_arg, 1 / tau, recursion_safeguard=True,
                 out=primal_arg, **proximal_par
             )
-            proximal = xstar - tau * gram(primal_arg)
+            if out is None or self._shares_memory(out, xstar):
+                proximal = gram(primal_arg, out=primal_arg)
+            else:
+                proximal = gram(primal_arg, out=out)
+            proximal *= -tau
+            proximal += xstar
         if out is not None:
-            self.domain.copyto(out, proximal)
-            proximal = out
+            proximal = self._copy_vector(proximal, out=out)
         if proximal not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
                 proximal, self.domain, space_name="domain",
@@ -1135,7 +1177,8 @@ class LinearFunctional(Functional):
         if gradient_in_dual_space:
             self._gradient = gradient
         else:
-            self._gradient = h_domain.gram(gradient)
+            self._gradient = domain.empty()
+            h_domain.gram(gradient, out=self._gradient)
         super().__init__(domain=domain,h_domain=h_domain,
                          is_linear=True, is_quadratic=True, conj_is_quadratic=False,
                          Lipschitz = 0,
@@ -1163,8 +1206,7 @@ class LinearFunctional(Functional):
             gradient = self.domain.empty()
             self.domain.copyto(gradient, self._gradient)
             return gradient
-        self.domain.copyto(out, self._gradient)
-        return out
+        return self._copy_vector(self._gradient, out=out)
 
     def _hessian(self, x: Vector) -> operators.Operator:
         return operators.Zero(self.domain)
@@ -1195,11 +1237,14 @@ class LinearFunctional(Functional):
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
-        if out is None:
-            return x - tau * self._gradient
-        self.domain.copyto(out, x)
-        out -= tau * self._gradient
-        return out
+        gradient = self._gradient
+        if out is not None and self._shares_memory(out, gradient):
+            gradient = self._copy_vector(gradient)
+        result = self._copy_vector(x, out=out)
+        scaled_gradient = self._copy_vector(gradient)
+        scaled_gradient *= tau
+        result -= scaled_gradient
+        return result
 
     def _conj_proximal(
         self,
@@ -1212,11 +1257,15 @@ class LinearFunctional(Functional):
             gradient = self.domain.empty()
             self.domain.copyto(gradient, self._gradient)
             return gradient
-        self.domain.copyto(out, self._gradient)
-        return out
+        return self._copy_vector(self._gradient, out=out)
 
     def dilation(self, a: float) -> LinearFunctional:
-        return LinearFunctional(a*self.gradient,domain=self.domain,h_domain=self.h_domain,gradient_in_dual_space=True)
+        gradient = self.gradient
+        gradient *= a
+        return LinearFunctional(
+            gradient, domain=self.domain, h_domain=self.h_domain,
+            gradient_in_dual_space=True
+        )
     
     def shift(
         self, v: Vector | None = None, data_shift: Vector | None = None
@@ -1228,30 +1277,45 @@ class LinearFunctional(Functional):
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other,LinearFunctional):
-            return LinearFunctional(self.gradient+other.gradient,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+            gradient = self.gradient
+            gradient += other._gradient
+            return LinearFunctional(
+                gradient, domain=self.domain, h_domain=self.h_domain,
+                gradient_in_dual_space=True
+            )
         elif other in self.domain:
-            return LinearFunctional(self.gradient+other,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+            gradient = self.gradient
+            gradient += other
+            return LinearFunctional(
+                gradient, domain=self.domain, h_domain=self.h_domain,
+                gradient_in_dual_space=True
+            )
         elif isinstance(other,SquaredNorm):
             return other+self
         else:
             return super().__add__(other)
 
     def __iadd__(self, other: object) -> LinearFunctional | NotImplementedType:
-        if isinstance(other,LinearCombination):
-            self.gradient += other.gradient
+        if isinstance(other, LinearFunctional):
+            self._gradient += other._gradient
             return self
         else:
             return NotImplemented
         
     def __rmul__(self, other: object) -> LinearFunctional | NotImplementedType:
         if isscalar(other):
-            return LinearFunctional(other*self.gradient,domain=self.domain, h_domain=self.h_domain,gradient_in_dual_space=True)
+            gradient = self.gradient
+            gradient *= other
+            return LinearFunctional(
+                gradient, domain=self.domain, h_domain=self.h_domain,
+                gradient_in_dual_space=True
+            )
         else:
             return NotImplemented
 
     def __imul__(self, other: object) -> LinearFunctional | NotImplementedType:
         if isscalar(other):
-            self.gradient *=other
+            self._gradient *= other
             return self
         else:
             return NotImplemented
@@ -1445,7 +1509,16 @@ class SquaredNorm(Functional):
     def _subgradient(
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
-        return self.gram(self.a * x + self.b, out=out)
+        b = self.b
+        if out is not None and self._shares_memory(out, b):
+            b = self._copy_vector(b)
+        if self.a == 0:
+            argument = self._copy_vector(b, out=out)
+        else:
+            argument = self._copy_vector(x, out=out)
+            argument *= self.a
+            argument += b
+        return self.gram(argument, out=argument)
     
     def _hessian(self, x: Vector) -> operators.Operator:
         return self.a * self.gram
@@ -1461,33 +1534,47 @@ class SquaredNorm(Functional):
             raise NotImplementedError(util.Errors.generic_message(
                 f"The prox operator for the SquaredNorm functional {self} is not implemented for a = {self.a}. a<=0"
             ))
-        if out is None:
-            return (z - tau * self.b) / (tau * self.a + 1)
-        self.domain.copyto(out, z)
-        out -= tau * self.b
-        out *= 1. / (tau * self.a + 1)
-        return out
+        b = self.b
+        if out is not None and self._shares_memory(out, b):
+            b = self._copy_vector(b)
+        result = self._copy_vector(z, out=out)
+        scaled_b = self._copy_vector(b)
+        scaled_b *= tau
+        result -= scaled_b
+        result *= 1. / (tau * self.a + 1)
+        return result
     
     def _conj(self, xstar: Vector) -> float:
-        bstar = self.gram(self.b)
+        bstar = self.domain.empty()
+        self.gram(self.b, out=bstar)
+        residual = self._copy_vector(xstar)
+        residual -= bstar
         if self.a>0:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate functional.")
-            return (self.h_domain.vecsp.vdot(xstar-bstar, self.gram_inv(xstar-bstar))).real / (2.*self.a) - self.c
+            self.gram_inv(residual, out=bstar)
+            return self.h_domain.vecsp.vdot(
+                residual, bstar
+            ).real / (2. * self.a) - self.c
         elif self.a==0:
             eps = 1e-10
-            return -self.c if self.domain.norm(xstar-bstar)<=eps*(self.domain.norm(xstar)+eps) else inf
+            return -self.c if self.domain.norm(residual)<=eps*(self.domain.norm(xstar)+eps) else inf
         else:
             return -inf
 
     def _conj_subgradient(
         self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
-        bstar = self.gram(self.b)
+        argument = self.domain.empty()
+        self.gram(self.b, out=argument)
+        argument *= -1
+        argument += xstar
         if self.a > 0:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate subgradient functional.")
-            result = self.gram_inv(xstar - bstar, out=out)
+            result = self.gram_inv(
+                argument, out=argument if out is None else out
+            )
             result *= 1. / self.a
             return result
         if self.a == 0:
@@ -1527,14 +1614,13 @@ class SquaredNorm(Functional):
             raise NotImplementedError(util.Errors.generic_message(
                 f"The prox operator for the conjugate of the SquaredNorm functional {self} is not implemented for a = {self.a}. it has to satisfy a>0"
             ))
-        bstar = self.gram(self.b)
-        if out is None:
-            return (zstar - bstar) / (1. + tau / self.a) + bstar
-        self.domain.copyto(out, zstar)
-        out -= bstar
-        out *= 1. / (1. + tau / self.a)
-        out += bstar
-        return out
+        bstar = self.domain.empty()
+        self.gram(self.b, out=bstar)
+        result = self._copy_vector(zstar, out=out)
+        result -= bstar
+        result *= 1. / (1. + tau / self.a)
+        result += bstar
+        return result
 
     def dilation(self, dil: float) -> SquaredNorm:
         return SquaredNorm(self.h_domain,
@@ -1571,9 +1657,13 @@ class SquaredNorm(Functional):
         elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
+            b = self._copy_vector(self.b)
+            dual_gradient = self.domain.empty()
+            self.gram_inv(other._gradient, out=dual_gradient)
+            b += dual_gradient
             return SquaredNorm(self.h_domain,
                                a = self.a,
-                               b = self.b+self.gram_inv(other.gradient),
+                               b = b,
                                c = self.c 
                                )
         elif isscalar(other):
@@ -1586,15 +1676,17 @@ class SquaredNorm(Functional):
 
     def __iadd__(self, other: object) -> SquaredNorm | NotImplementedType:
         if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
-            self._a += other.a,
-            self._b += other.b,
+            self._a += other.a
+            self._b += other.b
             self._c += other.c
             del self.a; del self.b; del self.c
             return self
         elif isinstance(other,LinearFunctional) and other.h_domain==self.h_domain:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an addition with a LinearFunctional.")
-            self._b += self.gram_inv(other.gradient),
+            dual_gradient = self.domain.empty()
+            self.gram_inv(other._gradient, out=dual_gradient)
+            self._b += dual_gradient
             del self.b
             return self
         elif isscalar(other):
@@ -1668,9 +1760,12 @@ class LinearCombination(Functional):
 
         if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
             self.grad_sum = self.funcs[0].domain.zeros()
+            gradient = self.funcs[0].domain.empty()
             for coeff,func,is_linear in zip(self.coeffs,self.funcs,self.linear_table):
-                if is_linear:
-                    self.grad_sum += coeff * func.gradient
+                if is_linear and coeff != 0:
+                    self.funcs[0].domain.copyto(gradient, func.gradient)
+                    gradient *= coeff
+                    self.grad_sum += gradient
 
         is_separable = np.all([F.is_separable for F in self.funcs])
 
@@ -1695,25 +1790,43 @@ class LinearCombination(Functional):
 
     def _linearize(self, x: Vector, **kwargs: Any) -> tuple[float, Vector]:
         y = 0
-        grad = self.domain.zeros()
-        for coeff, func in zip(self.coeffs, self.funcs):
+        grad = self.domain.empty()
+        work = None
+        for i, (coeff, func) in enumerate(zip(self.coeffs, self.funcs)):
             f, g = func.linearize(x,**kwargs)
             y += coeff * f
-            grad += coeff * g
+            target = grad
+            if i:
+                if work is None:
+                    work = self.domain.empty()
+                target = work
+            self.domain.copyto(target, g)
+            target *= coeff
+            if i:
+                grad += target
         return y, grad
 
     def _subgradient(
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
-        if out is x:
+        grad = self.domain.empty() if out is None else out
+        if self._shares_memory(grad, x):
             source = self.domain.empty()
             self.domain.copyto(source, x)
         else:
             source = x
-        grad = self.funcs[0].subgradient(source, out=out, **subgradient_par)
+        self.funcs[0].subgradient(
+            source, out=grad, **subgradient_par
+        )
         grad *= self.coeffs[0]
-        for coeff, func in zip(self.coeffs[1:], self.funcs[1:]):
-            grad += coeff * func.subgradient(source, **subgradient_par)
+        if len(self.funcs) > 1:
+            work = self.domain.empty()
+            for coeff, func in zip(self.coeffs[1:], self.funcs[1:]):
+                func.subgradient(
+                    source, out=work, **subgradient_par
+                )
+                work *= coeff
+                grad += work
         return grad
 
     def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
@@ -1721,7 +1834,10 @@ class LinearCombination(Functional):
             return super().dist_subdiff(vstar, x,**kwargs)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j].dist_subdiff((vstar-self.grad_sum)/self.coeffs[j],x,**kwargs)
+            argument = self._copy_vector(vstar)
+            argument -= self.grad_sum
+            argument *= 1. / self.coeffs[j]
+            return self.funcs[j].dist_subdiff(argument,x,**kwargs)
         else:
             return NotImplementedError
 
@@ -1747,16 +1863,35 @@ class LinearCombination(Functional):
                 x, self.coeffs[0] * tau, out=out, **proximal_par
             )
         if self.linear_table.count(False) == 0:
-            if out is None:
-                return x - tau * self.h_domain.gram_inv(self.grad_sum)
-            self.domain.copyto(out, x)
-            out -= tau * self.h_domain.gram_inv(self.grad_sum)
-            return out
+            grad_sum = self.grad_sum
+            if out is not None and self._shares_memory(out, grad_sum):
+                grad_sum = self._copy_vector(grad_sum)
+            if out is None or self._shares_memory(out, x):
+                result = self.domain.empty()
+            else:
+                result = out
+            self.h_domain.gram_inv(grad_sum, out=result)
+            result *= -tau
+            result += x
+            if out is not None and result is not out:
+                self.domain.copyto(out, result)
+                result = out
+            return result
         if self.linear_table.count(False) == 1:
             j = self.linear_table.index(False)
-            argument = x - tau * self.h_domain.gram_inv(self.grad_sum)
+            grad_sum = self.grad_sum
+            if out is not None and self._shares_memory(out, grad_sum):
+                grad_sum = self._copy_vector(grad_sum)
+            if out is None or self._shares_memory(out, x):
+                argument = self.domain.empty()
+            else:
+                argument = out
+            self.h_domain.gram_inv(grad_sum, out=argument)
+            argument *= -tau
+            argument += x
             return self.funcs[j].proximal(
-                argument, self.coeffs[j] * tau, out=out, **proximal_par
+                argument, self.coeffs[j] * tau,
+                out=argument if out is None else out, **proximal_par
             )
         raise NotImplementedError
     
@@ -1764,12 +1899,17 @@ class LinearCombination(Functional):
         if not self.is_convex:
             raise RuntimeError('conj of non-convex LinearCombination not implemented.')
         if len(self.funcs) == 1:
-            return self.coeffs[0]*self.funcs[0]._conj(xstar/self.coeffs[0],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument *= 1. / self.coeffs[0]
+            return self.coeffs[0]*self.funcs[0]._conj(argument,**kwargs)
         elif self.linear_table.count(False)==0:
             return 0 if xstar == self.grad_sum else inf
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.coeffs[j]*self.funcs[j]._conj((xstar-self.grad_sum)/self.coeffs[j],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument -= self.grad_sum
+            argument *= 1. / self.coeffs[j]
+            return self.coeffs[j]*self.funcs[j]._conj(argument,**kwargs)
         else:
             return NotImplementedError
 
@@ -1779,9 +1919,10 @@ class LinearCombination(Functional):
         if not self.is_convex:
             raise RuntimeError('conj.subgradient of non-convex linear combination not implemented.')
         if len(self.funcs) == 1:
-            argument = xstar / self.coeffs[0]
+            argument = self._copy_vector(xstar, out=out)
+            argument *= 1. / self.coeffs[0]
             return self.funcs[0].conj_subgradient(
-                argument, out=out, **subgradient_par
+                argument, out=argument, **subgradient_par
             )
         if self.linear_table.count(False) == 0:
             if self.domain.norm(xstar - self.grad_sum) == 0:
@@ -1792,9 +1933,14 @@ class LinearCombination(Functional):
             raise NotInEssentialDomainError('Linear combination of linear functionals')
         if self.linear_table.count(False) == 1:
             j = self.linear_table.index(False)
-            argument = (xstar - self.grad_sum) / self.coeffs[j]
+            grad_sum = self.grad_sum
+            if out is not None and self._shares_memory(out, grad_sum):
+                grad_sum = self._copy_vector(grad_sum)
+            argument = self._copy_vector(xstar, out=out)
+            argument -= grad_sum
+            argument *= 1. / self.coeffs[j]
             return self.funcs[j].conj_subgradient(
-                argument, out=out, **subgradient_par
+                argument, out=argument, **subgradient_par
             )
         raise NotImplementedError
 
@@ -1802,12 +1948,19 @@ class LinearCombination(Functional):
         self, v: Vector, xstar: Vector, **kwargs: Any
     ) -> float:
         if len(self.funcs) == 1:
-            return self.funcs[0]._conj_dist_subdiff(v,xstar/self.coeffs[0],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument *= 1. / self.coeffs[0]
+            return self.funcs[0]._conj_dist_subdiff(v,argument,**kwargs)
         elif self.linear_table.count(False)==0:
-            return self.domain.norm(xstar-self.grad_sum)
+            residual = self._copy_vector(xstar)
+            residual -= self.grad_sum
+            return self.domain.norm(residual)
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return self.funcs[j]._conj_dist_subdiff(v,(xstar-self.grad_sum)/self.coeffs[j],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument -= self.grad_sum
+            argument *= 1. / self.coeffs[j]
+            return self.funcs[j]._conj_dist_subdiff(v,argument,**kwargs)
         else:
             return NotImplementedError
 
@@ -1815,12 +1968,17 @@ class LinearCombination(Functional):
         if not self.is_convex:
             raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
         if len(self.funcs) == 1:
-            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(xstar/self.coeffs[0],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument *= 1. / self.coeffs[0]
+            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(argument,**kwargs)
         elif self.linear_table.count(False)==0:
             raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
         elif self.linear_table.count(False)==1:
             j = self.linear_table.index(False)
-            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian((xstar-self.grad_sum)/self.coeffs[j],**kwargs)
+            argument = self._copy_vector(xstar)
+            argument -= self.grad_sum
+            argument *= 1. / self.coeffs[j]
+            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian(argument,**kwargs)
         else:
             return NotImplementedError
 
@@ -1835,26 +1993,29 @@ class LinearCombination(Functional):
             raise RuntimeError('conj.proximal of non-convex linear combination not implemented.')
         if len(self.funcs) == 1:
             coeff = self.coeffs[0]
-            argument = xstar / coeff
+            argument = self._copy_vector(xstar, out=out)
+            argument *= 1. / coeff
             result = self.funcs[0].conj_proximal(
-                argument, tau / coeff, out=out, **proximal_par
+                argument, tau / coeff, out=argument, **proximal_par
             )
             result *= coeff
             return result
         if self.linear_table.count(False) == 0:
-            if out is None:
-                return self.grad_sum
-            self.domain.copyto(out, self.grad_sum)
-            return out
+            return self._copy_vector(self.grad_sum, out=out)
         if self.linear_table.count(False) == 1:
             j = self.linear_table.index(False)
             coeff = self.coeffs[j]
-            argument = (xstar - self.grad_sum) / coeff
+            grad_sum = self.grad_sum
+            if out is not None and self._shares_memory(out, grad_sum):
+                grad_sum = self._copy_vector(grad_sum)
+            argument = self._copy_vector(xstar, out=out)
+            argument -= grad_sum
+            argument *= 1. / coeff
             result = self.funcs[j].conj_proximal(
-                argument, tau / coeff, out=out, **proximal_par
+                argument, tau / coeff, out=argument, **proximal_par
             )
             result *= coeff
-            result += self.grad_sum
+            result += grad_sum
             return result
         raise NotImplementedError
 
@@ -2171,26 +2332,54 @@ class HorizontalShiftDilation(Functional):
             del self.shift_val
             self.is_data_func = False
 
+    def _shifted_argument(
+        self, x: Vector, out: Vector | None = None
+    ) -> tuple[Vector, Vector | None]:
+        """Build ``dilation * (x - shift)`` in one work vector."""
+        shift = self.shift_val
+        if (
+            shift is not None and out is not None
+            and self._shares_memory(out, shift)
+        ):
+            shift = self._copy_vector(shift)
+        argument = self._copy_vector(x, out=out)
+        if shift is not None:
+            argument -= shift
+        argument *= self.dilation
+        return argument, shift
+
+    def _dual_argument(
+        self, xstar: Vector, out: Vector | None = None
+    ) -> Vector:
+        """Build ``xstar / dilation`` in one work vector."""
+        argument = self._copy_vector(xstar, out=out)
+        argument *= 1. / self.dilation
+        return argument
+
     def _eval(self, x: Vector, **kwargs: Any) -> float:
-        return self.func(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
+        argument, _ = self._shifted_argument(x)
+        return self.func(argument, **kwargs)
          
     def _subgradient(
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
-        argument = self.dilation * (
-            x if self.shift_val is None else x - self.shift_val
-        )
+        argument, _ = self._shifted_argument(x, out=out)
         result = self.func.subgradient(
-            argument, out=out, **subgradient_par
+            argument, out=argument, **subgradient_par
         )
         result *= self.dilation
         return result
 
     def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        return self.func.dist_subdiff(vstar/self.dilation, self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
+        dual_argument = self._dual_argument(vstar)
+        argument, _ = self._shifted_argument(x)
+        return self.func.dist_subdiff(
+            dual_argument, argument, **kwargs
+        )
 
     def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
-        return self.dilation**2 * self.func._hessian(self.dilation * (x if self.shift_val is None else x-self.shift_val),**kwargs)
+        argument, _ = self._shifted_argument(x)
+        return self.dilation**2 * self.func._hessian(argument, **kwargs)
 
     def _proximal(
         self,
@@ -2199,23 +2388,24 @@ class HorizontalShiftDilation(Functional):
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
-        argument = self.dilation * (
-            x if self.shift_val is None else x - self.shift_val
-        )
+        argument, shift = self._shifted_argument(x, out=out)
         result = self.func.proximal(
             argument, tau * self.dilation ** 2,
-            out=out, **proximal_par
+            out=argument, **proximal_par
         )
         result *= 1. / self.dilation
-        if self.shift_val is not None:
-            result += self.shift_val
+        if shift is not None:
+            result += shift
         return result
     
     def _conj(self, x_star: Vector, **kwargs: Any) -> float:
+        argument = self._dual_argument(x_star)
         if self.shift_val is None:
-            return self.func._conj(x_star/self.dilation,**kwargs)             
-        else:
-            return self.func._conj(x_star/self.dilation,**kwargs) + self.domain.vdot(x_star,self.shift_val).real
+            return self.func._conj(argument, **kwargs)
+        return (
+            self.func._conj(argument, **kwargs)
+            + self.domain.vdot(x_star, self.shift_val).real
+        )
 
     def _conj_subgradient(
         self,
@@ -2223,27 +2413,38 @@ class HorizontalShiftDilation(Functional):
         out: Vector | None = None,
         **subgradient_par: Any,
     ) -> Vector:
-        argument = x_star / self.dilation
+        shift = self.shift_val
+        if (
+            shift is not None and out is not None
+            and self._shares_memory(out, shift)
+        ):
+            shift = self._copy_vector(shift)
+        argument = self._dual_argument(x_star, out=out)
         result = self.func.conj_subgradient(
-            argument, out=out, **subgradient_par
+            argument, out=argument, **subgradient_par
         )
         result *= 1. / self.dilation
-        if self.shift_val is not None:
-            result += self.shift_val
+        if shift is not None:
+            result += shift
         return result
  
     def _conj_dist_subdiff(
         self, v: Vector, x_star: Vector, **kwargs: Any
     ) -> float:
-        if self.shift_val is None:
-            return self.func._conj_dist_subdiff(self.dilation *v, x_star/self.dilation, **kwargs) 
-        else:
-            return self.func._conj_dist_subdiff(self.dilation *(v - self.shift_val), x_star/self.dilation, **kwargs)
+        dual_argument = self._dual_argument(x_star)
+        primal_argument = self._copy_vector(v)
+        if self.shift_val is not None:
+            primal_argument -= self.shift_val
+        primal_argument *= self.dilation
+        return self.func._conj_dist_subdiff(
+            primal_argument, dual_argument, **kwargs
+        )
 
     def _conj_hessian(
         self, x_star: Vector, **kwargs: Any
     ) -> operators.Operator:
-        return self.dilation**(-2)*self.func._conj_hessian(x_star/self.dilation,**kwargs)
+        argument = self._dual_argument(x_star)
+        return self.dilation**(-2)*self.func._conj_hessian(argument,**kwargs)
 
     def _conj_proximal(
         self,
@@ -2252,16 +2453,18 @@ class HorizontalShiftDilation(Functional):
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
-        if self.shift_val is None:
-            argument = xstar / self.dilation
-        else:
-            argument = (
-                xstar / self.dilation
-                - (tau / self.dilation) * self.h_domain.gram(self.shift_val)
-            )
+        shift = self.shift_val
+        gram_shift = None
+        if shift is not None:
+            gram_shift = self.domain.empty()
+            self.h_domain.gram(shift, out=gram_shift)
+            gram_shift *= tau / self.dilation
+        argument = self._dual_argument(xstar, out=out)
+        if gram_shift is not None:
+            argument -= gram_shift
         result = self.func.conj_proximal(
             argument, tau / self.dilation ** 2,
-            out=out, **proximal_par
+            out=argument, **proximal_par
         )
         result *= self.dilation
         return result
@@ -2391,24 +2594,32 @@ class Composed(Functional):
         """
 
     def _eval(self, x: Vector) -> float:
-        return self.func(self.op(x))
+        argument = self.func.domain.empty()
+        self.op(x, out=argument)
+        return self.func(argument)
 
     def _linearize(self, x: Vector) -> tuple[float, Vector]:
-        y, deriv = self.op.linearize(x)
+        y = self.func.domain.empty()
+        y, deriv = self.op.linearize(x, out=y)
         z, grad = self.func.linearize(y)
         return z, deriv.adjoint(grad)
 
     def _subgradient(
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
-        y, deriv = self.op.linearize(x)
-        inner_grad = self.func.subgradient(y, **subgradient_par)
+        y = self.func.domain.empty()
+        y, deriv = self.op.linearize(x, out=y)
+        inner_grad = self.func.subgradient(
+            y, out=y, **subgradient_par
+        )
         return deriv.adjoint(inner_grad, out=out)
 
     def _hessian(self, x: Vector) -> operators.Operator:
         if self.user_defined_hessian is None:
             if self.op.linear:
-                return self.op.adjoint * self.func.hessian(self.op(x)) * self.op
+                argument = self.func.domain.empty()
+                self.op(x, out=argument)
+                return self.op.adjoint * self.func.hessian(argument) * self.op
             else:
                 return super()._hessian(x)
         else:
@@ -2416,7 +2627,9 @@ class Composed(Functional):
 
     def _conj(self, x_star: Vector) -> float:
         if self.op.linear:
-            return self.func._conj(self.op.inverse.adjoint(x_star))
+            argument = self.func.domain.empty()
+            self.op.inverse.adjoint(x_star, out=argument)
+            return self.func._conj(argument)
 
     def _conj_subgradient(
         self,
@@ -2426,15 +2639,21 @@ class Composed(Functional):
     ) -> Vector:
         if not self.op.linear:
             raise NotImplementedError
-        dual_argument = self.op.inverse.adjoint(x_star)
+        dual_argument = self.func.domain.empty()
+        self.op.inverse.adjoint(x_star, out=dual_argument)
         inner_grad = self.func.conj_subgradient(
-            dual_argument, **subgradient_par
+            dual_argument, out=dual_argument, **subgradient_par
         )
         return self.op.inverse(inner_grad, out=out)
 
     def _conj_hessian(self, x_star: Vector) -> operators.Operator:
         if self.op.linear:
-            return self.op.inverse * self.func._conj_hessian (self.op.inverse.adjoint(x_star)) * self.op.inverse.adjoint
+            argument = self.func.domain.empty()
+            self.op.inverse.adjoint(x_star, out=argument)
+            return (
+                self.op.inverse * self.func._conj_hessian(argument)
+                * self.op.inverse.adjoint
+            )
 
     def _proximal(
         self,
@@ -2529,8 +2748,19 @@ class FunctionalOnDirectSum(Functional):
                         methods=methods,conj_methods=conj_methods 
                         )
 
+    def _preserve_input_if_needed(
+        self, x: vecsps.TupleVector, out: vecsps.TupleVector
+    ) -> vecsps.TupleVector:
+        """Protect later components from writes through aliased outputs."""
+        for i, out_i in enumerate(out[:-1]):
+            if any(
+                self._shares_memory(out_i, x_j) for x_j in x[i + 1:]
+            ):
+                return self._copy_vector(x)
+        return x
+
     def _eval(self, x: vecsps.TupleVector) -> float:
-        return np.sum([f_i(x_i) for f_i,x_i in zip(self.funcs,x)])
+        return sum(f_i(x_i) for f_i, x_i in zip(self.funcs, x))
 
     def _subgradient(
         self,
@@ -2540,6 +2770,8 @@ class FunctionalOnDirectSum(Functional):
     ) -> vecsps.TupleVector:
         if out is None:
             out = self.domain.zeros()
+        else:
+            x = self._preserve_input_if_needed(x, out)
         for func, x_i, out_i in zip(self.funcs, x, out):
             func.subgradient(x_i, out=out_i, **subgradient_par)
         return out
@@ -2547,7 +2779,10 @@ class FunctionalOnDirectSum(Functional):
     def dist_subdiff(
         self, vstar: vecsps.TupleVector, x: vecsps.TupleVector
     ) -> float:
-        return sum([f_i.dist_subdiff(vstar_i,x_i) for f_i,vstar_i,x_i in zip(self.funcs,vstar,x)])
+        return sum(
+            f_i.dist_subdiff(vstar_i, x_i)
+            for f_i, vstar_i, x_i in zip(self.funcs, vstar, x)
+        )
 
     def _hessian(self, x: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
@@ -2566,6 +2801,8 @@ class FunctionalOnDirectSum(Functional):
             ))
         if out is None:
             out = self.domain.zeros()
+        else:
+            x = self._preserve_input_if_needed(x, out)
         for i, (func, x_i, out_i) in enumerate(zip(self.funcs, x, out)):
             params = dict(proximal_par)
             if proximal_par_list is not None and proximal_par_list[i] is not None:
@@ -2574,7 +2811,10 @@ class FunctionalOnDirectSum(Functional):
         return out
 
     def _conj(self, xstar: vecsps.TupleVector) -> float:
-        return sum([f_i.conj(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)])
+        return sum(
+            f_i.conj(xstar_i)
+            for f_i, xstar_i in zip(self.funcs, xstar)
+        )
 
     def _conj_subgradient(
         self,
@@ -2584,6 +2824,8 @@ class FunctionalOnDirectSum(Functional):
     ) -> vecsps.TupleVector:
         if out is None:
             out = self.domain.zeros()
+        else:
+            xstar = self._preserve_input_if_needed(xstar, out)
         for func, xstar_i, out_i in zip(self.funcs, xstar, out):
             func.conj_subgradient(
                 xstar_i, out=out_i, **subgradient_par
@@ -2593,7 +2835,10 @@ class FunctionalOnDirectSum(Functional):
     def _conj_dist_subdiff(
         self, v: vecsps.TupleVector, xstar: vecsps.TupleVector
     ) -> float:
-        return sum([f_i.conj.dist_subdiff(v_i,xstar_i) for f_i,v_i,xstar_i in zip(self.funcs,v,xstar)])
+        return sum(
+            f_i.conj.dist_subdiff(v_i, xstar_i)
+            for f_i, v_i, xstar_i in zip(self.funcs, v, xstar)
+        )
 
     def _conj_hessian(self, xstar: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))
@@ -2612,6 +2857,8 @@ class FunctionalOnDirectSum(Functional):
             ))
         if out is None:
             out = self.domain.zeros()
+        else:
+            xstar = self._preserve_input_if_needed(xstar, out)
         for i, (func, xstar_i, out_i) in enumerate(zip(self.funcs, xstar, out)):
             params = dict(proximal_par)
             if proximal_par_list is not None and proximal_par_list[i] is not None:
