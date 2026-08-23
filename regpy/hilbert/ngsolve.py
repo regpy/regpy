@@ -91,7 +91,12 @@ class L2BoundaryFESpace(HilbertSpace):
         else:
             raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression. You gave bdr = {bdr}."))
         super().__init__(vecsp)
-        self._no_pickle = {*self._no_pickle,"__memoized_L2BoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
+        self._no_pickle = {
+            *self._no_pickle,
+            "bdr",
+            "__memoized_L2BoundaryFESpace.gram",
+            "__memoized_HilbertSpace.norm_functional",
+        }
 
     @memoized_property
     def gram(self):
@@ -126,7 +131,12 @@ class SobolevBoundaryFESpace(HilbertSpace):
         else:
             raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression. You gave bdr = {bdr}."))
         super().__init__(vecsp)
-        self._no_pickle = {*self._no_pickle,"__memoized_SobolevBoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
+        self._no_pickle = {
+            *self._no_pickle,
+            "bdr",
+            "__memoized_SobolevBoundaryFESpace.gram",
+            "__memoized_HilbertSpace.norm_functional",
+        }
 
     @memoized_property
     def gram(self):
