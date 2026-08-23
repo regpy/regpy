@@ -44,8 +44,6 @@ class IrgnmCG(RegSolver):
     simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
@@ -58,17 +56,18 @@ class IrgnmCG(RegSolver):
                 cgstop:int | None=1000,
                 inner_it_logging_level:int | str = "WARNING",
                 simplified_op:Operator | None = None,
-                update_setting:bool= True,
                 logging_level:int | str = "INFO",
          ) -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError('IrgnmCG not applicable to this setting. ' + out['info'])
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        self.init = setting.get_or_update_initial_guess(init, update_setting)
+        self.init = par['init']
         """The initial guess."""
-        self.data = setting.get_or_update_data(data, update_setting)
+        self.data = par['data']
         """The measured data."""                
         if self.data is None:
             raise ValueError(Errors.value_error(
@@ -132,10 +131,18 @@ class IrgnmCG(RegSolver):
 
     @staticmethod
     def check_applicability(
-        setting: Setting, op_norm: float | None = None
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | None = None,
+        user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether IRGNM-CG can be used for ``setting``."""
-        out, par = check_Hilbert_applicability(setting)
+        out, par = check_Hilbert_applicability(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
         if setting.codomain_free:
             out['info'] += (
                 'IrgnmCG has no implementation without codomain vectors. '
@@ -174,8 +181,6 @@ class LevenbergMarquardt(RegSolver):
     simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. 
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
@@ -188,10 +193,11 @@ class LevenbergMarquardt(RegSolver):
                 cgstop:int | None=1000,
                 inner_it_logging_level:int | str = "WARNING",
                 simplified_op:Operator|None = None,
-                update_setting:bool = True,
                 logging_level:int | str = "INFO",
          ) -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError(
                 'LevenbergMarquardt not applicable to this setting. '
@@ -199,9 +205,9 @@ class LevenbergMarquardt(RegSolver):
             )
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        self.init = setting.get_or_update_initial_guess(init, update_setting)
+        self.init = par['init']
         """The initial guess."""
-        self.data = setting.get_or_update_data(data, update_setting)
+        self.data = par['data']
         """The measured data."""  
         if self.data is None:
             raise ValueError(Errors.value_error(
@@ -324,9 +330,6 @@ class IrgnmCGPrec(RegSolver):
     precpars : dict or None [default: None]
         Parameters for the spectral preconditioner. The defaults are Krylov
         order 6 and four eigenvalues.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
@@ -335,10 +338,12 @@ class IrgnmCGPrec(RegSolver):
         self, setting:Setting, data:Vector | None=None, regpar:float=1.,
         regpar_step:float=2 / 3, init:Vector | None=None,
         cg_pars:dict | None=None, cgstop:int | None=None,
-        precpars:dict | None=None, update_setting:bool=True,
+        precpars:dict | None=None,
         logging_level:int | str="INFO",
         ) -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError(
                 'IrgnmCGPrec not applicable to this setting. ' + out['info']
@@ -347,9 +352,9 @@ class IrgnmCGPrec(RegSolver):
             raise ValueError(f"Computation of preconditioner requires UniformGridFcts, but got domain of type {type(setting.op.domain)}.")
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        self.init = setting.get_or_update_initial_guess(init, update_setting)
+        self.init = par['init']
         """The initial guess."""
-        self.data = setting.get_or_update_data(data, update_setting)
+        self.data = par['data']
         """The measured data."""  
         if self.data is None:
             raise ValueError(Errors.value_error(
@@ -392,10 +397,18 @@ class IrgnmCGPrec(RegSolver):
 
     @staticmethod
     def check_applicability(
-        setting: Setting, op_norm: float | None = None
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | None = None,
+        user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether preconditioned IRGNM-CG can be used."""
-        out, par = IrgnmCG.check_applicability(setting, op_norm=op_norm)
+        out, par = IrgnmCG.check_applicability(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
         if not isinstance(setting.op.domain, UniformGridFcts):
             out['info'] += 'Operator domain is not UniformGridFcts. '
         out['applicable'] = out['info'] == ''

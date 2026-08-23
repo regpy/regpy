@@ -1,4 +1,5 @@
 from math import sqrt
+from typing import Any
 
 from regpy.vecsps import Vector
 from regpy.util import Errors
@@ -27,12 +28,14 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         Setting of the inverse problem.
-    data : Vector or None [default: None]
-        Right-hand side in op.codomain. In the default case, ``setting.data`` is used.
+    data : Vector or Any or None [default: None]
+        Right-hand side. In the default case, ``setting.data`` is used. For a
+        codomain-free setting, it may be any object accepted by
+        ``setting.op.adjoint_data``.
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting. 
-    change_init : bool or None [default: True]
-        If true, ``init`` itself is used as iteration vector. Otherwise it is copied. 
+    change_init : bool [default: True]
+        If true, ``init`` (if provided) is used as iteration vector. Otherwise it is copied. 
     op_norm : float [default: None]
         The operator norm of the forward operator. If None, it is computed numerically unless stepsize is provided
     stepsize : float or None [default: None]
@@ -41,21 +44,26 @@ class Landweber(RegSolver):
 
     def __init__(self,
         setting:Setting,
-        data:Vector | None  = None,
+        data:Vector | Any | None  = None,
         init:Vector | None  = None,
-        change_init:bool = False,
+        change_init:bool = True,
         stepsize:float | None = None,
         op_norm:float | None = None,
         logging_level:int | str = "INFO"
     ) -> None:
-        out, _ = Landweber.check_applicability(setting,user_data=data,user_init=init)
+        out, par = Landweber.check_applicability(
+            setting,
+            op_norm=op_norm,
+            user_data=data,
+            user_init=init,
+        )
         if not out['applicable']:
             raise ValueError('Landweber not applicable to this setting. '+out['info'])        
         super().__init__(setting)
         self.log.setLevel(logging_level)
 
-        self.data = setting.get_or_update_data(data)
-        init = setting.get_or_update_initial_guess(init,out=init)
+        self.data = par['data']
+        init = par['init']
         if change_init:
             self.x = init  
         else:

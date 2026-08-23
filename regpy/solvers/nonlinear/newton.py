@@ -41,9 +41,6 @@ class NewtonCG(RegSolver):
         Inner discrepancy factor; must lie in ``(0, 1)``.
     simplified_op : regpy.operators.Operator or None [default: None]
         Optional operator used to approximate the derivative.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
@@ -54,14 +51,15 @@ class NewtonCG(RegSolver):
                  init:Vector | None=None,
                  cgmaxit:int=50, rho:float=0.8, 
                  simplified_op:Operator | None = None,
-                 update_setting:bool = True,
                  logging_level:int | str = 'INFO') -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError('NewtonCG not applicable to this setting. ' + out['info'])
         super().__init__(setting)
-        initial = setting.get_or_update_initial_guess(init, update_setting)
-        self.data = setting.get_or_update_data(data, update_setting)
+        initial = par['init']
+        self.data = par['data']
         if self.data is None:
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
@@ -87,10 +85,18 @@ class NewtonCG(RegSolver):
 
     @staticmethod
     def check_applicability(
-        setting: Setting, op_norm: float | None = None
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | None = None,
+        user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether Newton-CG can be used for ``setting``."""
-        out, par = check_Hilbert_applicability(setting)
+        out, par = check_Hilbert_applicability(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
         if setting.codomain_free:
             out['info'] += (
                 'NewtonCG has no implementation without codomain vectors. '
@@ -153,26 +159,24 @@ class NewtonCGFrozen(RegSolver):
         Maximum number of inner CG iterations.
     rho : float [default: 0.8]
         Inner discrepancy factor; must lie in ``(0, 1)``.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
     def __init__(self, setting:Setting,
                  data:Vector | None = None, init:Vector | None = None,
                  cgmaxit:int=50, rho:float=0.8,
-                 update_setting:bool=True,
                  logging_level:int | str="INFO") -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError(
                 'NewtonCGFrozen not applicable to this setting. ' + out['info']
             )
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        initial = setting.get_or_update_initial_guess(init, update_setting)
-        self.data = setting.get_or_update_data(data, update_setting)
+        initial = par['init']
+        self.data = par['data']
         if self.data is None:
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."

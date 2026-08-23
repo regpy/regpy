@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from math import sqrt,inf
+from typing import Any
 import numpy as np
 import logging
 
@@ -564,9 +565,10 @@ class TikhonovAlphaGrid(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or None [default: None]
+    data : Vector or Any or None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
-        ``setting.data`` is used.
+        ``setting.data`` is used. For a codomain-free setting, it may be any
+        object accepted by ``setting.op.adjoint_data``.
     alphas : iterable or tuple [default: (1.0, 2 / 3)]
         Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
@@ -580,9 +582,6 @@ class TikhonovAlphaGrid(RegSolver):
     tol_fac : float [default: 0.5]
         Absolute tolerance for CG iterations is
         ``tol_fac * delta / sqrt(alpha)``.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level for the inner CG iteration.
 
@@ -593,17 +592,18 @@ class TikhonovAlphaGrid(RegSolver):
     def __init__(
         self,
         setting: Setting,
-        data: Vector | None = None,
+        data: Vector | Any | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
         init: Vector | None = None,
         max_CG_iter: int = 1000,
         delta: float | None = None,
         tol_fac: float = 0.5,
-        update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
         from ..nonlinear.gen_tikhonov import GeometricSequence
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError(
                 'TikhonovAlphaGrid not applicable to this setting. '
@@ -615,15 +615,13 @@ class TikhonovAlphaGrid(RegSolver):
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = iter(alphas)
-        self.data = setting.get_or_update_data(data, update_setting)
+        self.data = par['data']
         if self.data is None:
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
             ))
         """Right-hand side of the operator equation."""
-        self.init = setting.get_or_update_initial_guess(
-            init, update_setting, out=init
-        )
+        self.init = par['init']
         """Initial guess and reference value in the Tikhonov functional."""
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, self.init)
@@ -678,10 +676,18 @@ class TikhonovAlphaGrid(RegSolver):
 
     @staticmethod
     def check_applicability(
-        setting: Setting, op_norm: float | None = None
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | Any | None = None,
+        user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether the parameter-grid method can be used."""
-        out, par = check_Hilbert_applicability_linear(setting)
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
         out['applicable'] = out['info'] == ''
         return out, par
 
@@ -693,9 +699,10 @@ class NonstationaryIteratedTikhonov(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or None [default: None]
+    data : Vector or Any or None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
-        ``setting.data`` is used.
+        ``setting.data`` is used. For a codomain-free setting, it may be any
+        object accepted by ``setting.op.adjoint_data``.
     alphas : iterable or tuple [default: (1.0, 2 / 3)]
         Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
@@ -708,26 +715,24 @@ class NonstationaryIteratedTikhonov(RegSolver):
     tol_fac : float [default: 0.5]
         Absolute tolerance for CG iterations is
         ``tol_fac * delta / sqrt(alpha)``.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level for the inner CG iteration.
     """
     def __init__(
         self,
         setting: Setting,
-        data: Vector | None = None,
+        data: Vector | Any | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
         init: Vector | None = None,
         max_CG_iter: int = 1000,
         delta: float | None = None,
         tol_fac: float = 0.5,
-        update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
         from ..nonlinear.gen_tikhonov import GeometricSequence
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError(
                 'NonstationaryIteratedTikhonov not applicable to this setting. '
@@ -739,15 +744,13 @@ class NonstationaryIteratedTikhonov(RegSolver):
             self._alphas = GeometricSequence(alphas[0],alphas[1])
         else:
             self._alphas = iter(alphas)
-        self.data = setting.get_or_update_data(data, update_setting)
+        self.data = par['data']
         if self.data is None:
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
             ))
         """Right-hand side of the operator equation."""
-        self.init = setting.get_or_update_initial_guess(
-            init, update_setting, out=init
-        )
+        self.init = par['init']
         """Initial guess."""
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, self.init)

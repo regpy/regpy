@@ -33,9 +33,6 @@ class CGNE(RegSolver):
     change_init : bool [default: False]
         If true, ``init`` itself is used as iteration vector. Otherwise it is
         copied.
-    update_setting : bool [default: True]
-        If true, explicitly supplied data and initial guess are stored in the
-        setting.
     logging_level : int or str [default: "INFO"]
         Logging level.
     """
@@ -46,16 +43,17 @@ class CGNE(RegSolver):
         data: Vector | None = None,
         init: Vector | None = None,
         change_init: bool = False,
-        update_setting: bool = True,
         logging_level: int | str = "INFO",
     ) -> None:
-        out, _ = self.check_applicability(setting)
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
         if not out['applicable']:
             raise ValueError('CGNE not applicable to this setting. ' + out['info'])
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        data = setting.get_or_update_data(data, update_setting)
-        initial = setting.get_or_update_initial_guess(init, update_setting, out=init)
+        data = par['data']
+        initial = par['init']
 
         domain = self.op.domain
         codomain = self.op.codomain
@@ -103,9 +101,19 @@ class CGNE(RegSolver):
         """The domain Gram matrix applied to the search direction."""
 
     @staticmethod
-    def check_applicability(setting: Setting, op_norm: float | None = None) -> tuple[dict, dict]:
+    def check_applicability(
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | None = None,
+        user_init: Vector | None = None,
+    ) -> tuple[dict, dict]:
         """Check whether CGNE can be used for ``setting``."""
-        out, par = check_Hilbert_applicability_linear(setting)
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
         if setting.codomain_free:
             out['info'] += (
                 'CGNE has no implementation without codomain vectors. '

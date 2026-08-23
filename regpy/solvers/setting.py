@@ -953,8 +953,7 @@ def check_Hilbert_applicability(setting:Setting,
 
         par['init'] = init  
     else:
-        par['init'] = domain.empty() 
-        domain.copyto(par['init'],user_init)     
+        par['init'] = user_init     
     
     out['applicable'] = out['info'] == ''
     return out, par
