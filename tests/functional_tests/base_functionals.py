@@ -8,7 +8,7 @@ from regpy.operators import ImaginaryPart, PtwMultiplication
 from regpy.functionals import *
 from regpy.functionals.base import * 
 from regpy.functionals.base import Conj
-from regpy.functionals.numpy import LppPower
+from regpy.functionals.integral_functionals import LppPower
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed, Errors

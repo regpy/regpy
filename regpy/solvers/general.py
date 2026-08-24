@@ -585,15 +585,18 @@ class Setting:
             if update:
                 if hasattr(self,'init') and not self.init is new_init:
                     self.log.warning("Overwriting existing initial guess in setting!")
-                self.init = new_init.copy()
+                self.init = self.op.domain.empty()
+                self.op.domain.copyto(self.init, new_init)
             return new_init
         else:
             if hasattr(self,'init'):
-                toret = self.init.copy()
+                toret = self.op.domain.empty()
+                self.op.domain.copyto(toret, self.init)
             else:
                 toret = self.op.domain.zeros()
                 if update:
-                    self.init = toret.copy()
+                    self.init = self.op.domain.empty()
+                    self.op.domain.copyto(self.init, toret)
             return toret
 
     ######Methods exploiting duality

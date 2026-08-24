@@ -1,11 +1,11 @@
 r"""Vector spaces and vector-storage protocols used throughout RegPy.
 
-RegPy deliberately uses duck typing for vectors. A vector may be any object
-that implements vector addition and subtraction, scalar multiplication and
-division, unary negation, and the corresponding in-place operations. Generic
-operators, functionals, solvers, and stopping rules must not assume NumPy
-indexing, attributes such as ``dtype`` or ``shape``, a ``copy`` method, or
-componentwise arithmetic.
+RegPy deliberately uses duck typing for vectors. :class:`ReadOnlyVector`
+describes non-mutating linear operations; :class:`Vector` additionally
+provides the corresponding in-place operations. Generic operators,
+functionals, solvers, and stopping rules must not assume NumPy indexing,
+attributes such as ``dtype`` or ``shape``, a ``copy`` method, or componentwise
+arithmetic.
 
 Every vector representation is accompanied by a :class:`VectorSpaceBase`
 subclass. The vector space owns operations that depend on representation or
@@ -31,7 +31,7 @@ from .base import *
 from .numpy import *
 from .curve import *
 
-__all__ = ["TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
+__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 try:
     from .ngsolve import *

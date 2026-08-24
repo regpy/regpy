@@ -1,5 +1,4 @@
 import ngsolve as ngs
-import numpy as np
 
 from regpy.vecsps.ngsolve import NgsVectorSpace, NgsVectorSpaceWithInnerProduct
 from regpy.hilbert import HilbertSpace
@@ -39,8 +38,11 @@ class SobolevFESpace(HilbertSpace):
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
+        grad_u, grad_v = ngs.Grad(u), ngs.Grad(v)
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
-        form += ngs.SymbolicBFI(u * v + ngs.InnerProduct(ngs.Grad(u),ngs.Grad(v)))
+        form += ngs.SymbolicBFI(
+            u * v + ngs.InnerProduct(grad_u, grad_v)
+        )
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
         else:
@@ -60,8 +62,11 @@ class H10FESpace(HilbertSpace):
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
+        grad_u, grad_v = ngs.grad(u), ngs.grad(v)
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
-        form += ngs.SymbolicBFI(ngs.InnerProduct(ngs.grad(u), ngs.grad(v)))
+        form += ngs.SymbolicBFI(
+            ngs.InnerProduct(grad_u, grad_v)
+        )
         if isinstance(self.vecsp, NgsVectorSpace):
             return NgsMatrixMultiplication(self.vecsp, form)
         else:
@@ -86,14 +91,20 @@ class L2BoundaryFESpace(HilbertSpace):
         else:
             raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression. You gave bdr = {bdr}."))
         super().__init__(vecsp)
-        self._no_pickle = {*self._no_pickle,"__memoized_L2BoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
+        self._no_pickle = {
+            *self._no_pickle,
+            "bdr",
+            "__memoized_L2BoundaryFESpace.gram",
+            "__memoized_HilbertSpace.norm_functional",
+        }
 
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
+        trace_u, trace_v = u.Trace(), v.Trace()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(
-            u.Trace() * v.Trace(),
+            trace_u * trace_v,
             definedon=self.bdr
         )
         if isinstance(self.vecsp, NgsVectorSpace):
@@ -120,14 +131,22 @@ class SobolevBoundaryFESpace(HilbertSpace):
         else:
             raise TypeError(Errors.type_error(f"The given bdr can be either None, a ngsolve Region, a string regular expression. You gave bdr = {bdr}."))
         super().__init__(vecsp)
-        self._no_pickle = {*self._no_pickle,"__memoized_SobolevBoundaryFESpace.gram","__memoized_HilbertSpace.norm_functional"}
+        self._no_pickle = {
+            *self._no_pickle,
+            "bdr",
+            "__memoized_SobolevBoundaryFESpace.gram",
+            "__memoized_HilbertSpace.norm_functional",
+        }
 
     @memoized_property
     def gram(self):
         u, v = self.vecsp.fes.TnT()
+        trace_u, trace_v = u.Trace(), v.Trace()
+        deriv_u, deriv_v = trace_u.Deriv(), trace_v.Deriv()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
         form += ngs.SymbolicBFI(
-            ngs.InnerProduct(u.Trace(),v.Trace()) + ngs.InnerProduct(u.Trace().Deriv(), v.Trace().Deriv()),
+            ngs.InnerProduct(trace_u, trace_v)
+            + ngs.InnerProduct(deriv_u, deriv_v),
             definedon=self.bdr
         )
         if isinstance(self.vecsp, NgsVectorSpace):

@@ -5,7 +5,7 @@ from typing import *
 import numpy as np
 
 from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
-from .base import VectorSpaceBase
+from .base import ReadOnlyVector, VectorSpaceBase
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
@@ -31,20 +31,63 @@ class NumPyVectorSpace(VectorSpaceBase):
         super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np)
         self.dtype = dtype
 
-    def zeros(self):
-        """Return the zero vector of the space.
-        """
-        return np.zeros(shape = self.shape,dtype=self.dtype)
+    @overload
+    def zeros(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def zeros(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a zero vector, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(0, dtype=self.dtype), self.shape
+            )
+        return np.zeros(shape=self.shape, dtype=self.dtype)
     
-    def ones(self):
-        """Return the zero vector of the space.
-        """
-        return np.ones(shape = self.shape,dtype=self.dtype)
+    @overload
+    def ones(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def ones(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a vector of ones, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(1, dtype=self.dtype), self.shape
+            )
+        return np.ones(shape=self.shape, dtype=self.dtype)
+
+    def read_only(self, x: np.ndarray) -> ReadOnlyVector:
+        """Return a non-writable NumPy view sharing ``x``'s storage."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NumPyVectorSpace."
+            ))
+        view = x.view()
+        view.flags.writeable = False
+        return view
 
     def empty(self):
         """Return an uninitialized element of the space.
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
+
+    def fill(self, x: np.ndarray, value) -> None:
+        r"""Fill ``x`` in place with the scalar ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NumPyVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x.fill(value)
 
     def rand(self, distribution = "uniform", seed = None,**kwargs):
         if seed is not None:

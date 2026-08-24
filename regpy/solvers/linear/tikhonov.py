@@ -118,7 +118,11 @@ class TikhonovCG(RegSolver):
         def _complete_init_with_solver(self, solver):
             super()._complete_init_with_solver(solver)
             self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
-            self.x0 = None if self.sq_norm_x == 0. else self.solver.x.copy()
+            if self.sq_norm_x == 0.:
+                self.x0 = None
+            else:
+                self.x0 = self.solver.op.domain.empty()
+                self.solver.op.domain.copyto(self.x0, self.solver.x)
             self._delta_x = self.solver.op.domain.empty()
 
         def _stop(self):
@@ -177,8 +181,10 @@ class TikhonovCG(RegSolver):
             self.norm_y = codomain.vdot(self.solver.y, self.g_y)
             if self.norm_y != 0:
                 # These must be copies: solver.y and self.g_y are updated in-place.
-                self.y0 = self.solver.y.copy()
-                self.g_y0 = self.g_y.copy()
+                self.y0 = codomain.empty()
+                codomain.copyto(self.y0, self.solver.y)
+                self.g_y0 = codomain.empty()
+                codomain.copyto(self.g_y0, self.g_y)
             else:
                 self.g_y0 = None
 
@@ -306,21 +312,27 @@ class TikhonovCG(RegSolver):
         self.regpar = regpar
         """The regularization parameter."""
 
-        self.hessR = self.penalty.hessian(self.x)        
+        self.hessR = self.penalty.hessian(self.x)
+        domain = self.op.domain
+        codomain = self.op.codomain
         if xref is not None:
             self.log.warning("Providing xref as an argument to the CG solver is deprecated. Please provide it via the setting. Results may not be consistent!")
         else:
-            xref = -self.hessR.inverse(self.penalty.subgradient(self.penalty.domain.zeros()))
-        domain = self.op.domain
-        codomain = self.op.codomain
+            xref = domain.empty()
+            domain.fill(xref, 0)
+            self.penalty.subgradient(xref, out=xref)
+            self.hessR.inverse(xref, out=xref)
+            xref *= -1
 
         self.y = codomain.empty()
         self.op(self.x, out=self.y)
         """The image of the current iterate under the operator."""
         self.hessS = self.data_fid.hessian(self.y)
-        data = -self.hessS.inverse(
-            self.data_fid.subgradient(self.data_fid.domain.zeros())
-        )
+        data = codomain.empty()
+        codomain.fill(data, 0)
+        self.data_fid.subgradient(data, out=data)
+        self.hessS.inverse(data, out=data)
+        data *= -1
 
         if preconditioner is None:
             self.preconditioner = Identity(self.h_domain.vecsp)
@@ -785,7 +797,8 @@ class TikhonovCGOnlyDomain(RegSolver):
 
         self.x0 = setting.get_or_update_initial_guess(x0, update_setting)
         """The zero-th CG iterate."""
-        self.x = self.x0.copy()
+        self.x = setting.op.domain.empty()
+        setting.op.domain.copyto(self.x, self.x0)
         """The current iterate."""
         self.hessR = self.penalty.hessian(self.x)
 
