@@ -14,7 +14,7 @@ util.set_rng_seed(15873098306879350073259142812684978477)
 
 from . import import_example_package
 
-import_example_package("./examples/obstacle/")
+import_example_package("./examples/obstacles2d/")
 
 from dirichlet_op import DirichletOp
 

@@ -4,7 +4,7 @@ from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
 from types import NotImplementedType
-from typing import Any, Callable, Iterator, Protocol, TYPE_CHECKING
+from typing import Any, Callable, Iterator, Literal, overload, Protocol, TYPE_CHECKING
 
 from typing_extensions import Self
 
@@ -16,17 +16,46 @@ if TYPE_CHECKING:
 
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
-__all__ = ["Vector", "TupleVector", "VectorSpaceBase", "DirectSum"]
+__all__ = [
+    "ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum"
+]
 
 
 Scalar = int | float | complex | np.number
 
 
-class Vector(Protocol):
-    r"""Structural type for vectors accepted by generic RegPy code.
+class ReadOnlyVector(Protocol):
+    r"""Structural type for vectors that generic RegPy code may only read.
 
-    A vector supports only the linear operations documented by
-    :class:`VectorSpaceBase`.  Allocation, copying, scalar products and other
+    The protocol contains the non-mutating linear operations of a vector. It
+    deliberately excludes item assignment and all in-place operators. As with
+    :class:`Vector`, this is a structural typing aid and does not require
+    concrete vector classes to inherit from it.
+    """
+
+    def __add__(self, other: Self, /) -> Self: ...
+
+    def __radd__(self, other: Self, /) -> Self: ...
+
+    def __sub__(self, other: Self, /) -> Self: ...
+
+    def __rsub__(self, other: Self, /) -> Self: ...
+
+    def __mul__(self, scalar: Scalar, /) -> Self: ...
+
+    def __rmul__(self, scalar: Scalar, /) -> Self: ...
+
+    def __truediv__(self, scalar: Scalar, /) -> Self: ...
+
+    def __neg__(self) -> Self: ...
+
+
+class Vector(ReadOnlyVector, Protocol):
+    r"""Structural type for writable vectors accepted by generic RegPy code.
+
+    In addition to the non-mutating operations of :class:`ReadOnlyVector`, a
+    writable vector supports the in-place linear operations documented by
+    :class:`VectorSpaceBase`. Allocation, copying, scalar products and other
     representation-dependent operations belong to the vector space instead.
 
     Vectors are duck-typed. This class is only used for typing and for clarity,
@@ -34,33 +63,18 @@ class Vector(Protocol):
     in RegPy do not need to inherit from it. 
     """
 
-    def __add__(self, other: Self, /) -> Self: ...
-
-    def __radd__(self, other: Self, /) -> Self: ...
-
     def __iadd__(self, other: Self, /) -> Self: ...
-
-    def __sub__(self, other: Self, /) -> Self: ...
-
-    def __rsub__(self, other: Self, /) -> Self: ...
 
     def __isub__(self, other: Self, /) -> Self: ...
 
-    def __mul__(self, scalar: Scalar, /) -> Self: ...
-
-    def __rmul__(self, scalar: Scalar, /) -> Self: ...
-
     def __imul__(self, scalar: Scalar, /) -> Self: ...
 
-    def __truediv__(self, scalar: Scalar, /) -> Self: ...
-
     def __itruediv__(self, scalar: Scalar, /) -> Self: ...
-
-    def __neg__(self) -> Self: ...
 
 @dataclass 
 class TupleVector:
     v: list[Vector]
+    read_only: bool = False
 
     __array_ufunc__ = None
 
@@ -70,9 +84,20 @@ class TupleVector:
         return copy(self)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.read_only, (bool, np.bool_)):
+            raise TypeError(
+                f"read_only must be boolean. Got {type(self.read_only)}."
+            )
+        self.read_only = bool(self.read_only)
         self.v = list(self.v)
         self.types = [type(v_i) for v_i in self.v]
         self.ndim = len(self.types)
+
+    def _require_writable(self, operation: str) -> None:
+        if self.read_only:
+            raise ValueError(
+                f"Cannot perform {operation} on a read-only TupleVector."
+            )
 
     def __len__(self) -> int:
         return self.ndim
@@ -149,6 +174,7 @@ class TupleVector:
         return sum(z)
     
     def __iadd__(self, other: TupleVector) -> Self:
+        self._require_writable("in-place addition")
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error("Adding TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
@@ -156,6 +182,7 @@ class TupleVector:
         return self
 
     def __isub__(self, other: TupleVector) -> Self:
+        self._require_writable("in-place subtraction")
         if not isinstance(other,TupleVector) or other.ndim != self.ndim or any([t_o!=t_s for t_o,t_s in zip(other.types,self.types)]):
             raise ValueError(Errors.value_error("Subtracting TupleVector only supported for TupleVectors of identical dimension and identical type in each component!"))
         for k,v_o in enumerate(other.v):
@@ -180,6 +207,7 @@ class TupleVector:
         return (-1*self) + other
     
     def __imul__(self, other: Scalar) -> Self:
+        self._require_writable("in-place multiplication")
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Multiplying TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
@@ -187,11 +215,12 @@ class TupleVector:
         return self
     
     def __itruediv__(self, other: Scalar) -> Self:
+        self._require_writable("in-place division")
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Division TupleVector only supported for scalars (int, float, or complex)!"))
         for k in range(self.ndim):
             self.v[k] /= other
-            return self
+        return self
     
     def __mul__(self, other: Scalar | Operator) -> Self | Operator:
         from regpy.operators.base import Operator,PtwMultiplication
@@ -224,6 +253,7 @@ class TupleVector:
             raise KeyError(Errors.indexation(key,self,add_info=f"keys of type {type(key)} are not supported either int or list of length {self.ndim}"))
     
     def __setitem__(self, key: Any, item: Any) -> None:
+        self._require_writable("item assignment")
         if isinstance(key,slice) or isinstance(key,int):
             self.v[key] = item
         elif isinstance(key,(list,tuple)) and len(key) <= self.ndim:
@@ -318,6 +348,14 @@ class VectorSpaceBase:
         self._no_pickle = {'type', 'vec_type'}
         """A dictionary containing modules kept extra in the copy"""
 
+    @staticmethod
+    def _validate_read_only_flag(read_only: bool) -> bool:
+        if not isinstance(read_only, (bool, np.bool_)):
+            raise TypeError(
+                f"read_only must be boolean. Got {type(read_only)}."
+            )
+        return bool(read_only)
+
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         cls = type(self)
         result = cls.__new__(cls)
@@ -329,19 +367,47 @@ class VectorSpaceBase:
                 setattr(result, k, deepcopy(v, memo))
         return result
 
-    def zeros(self) -> Vector:
-        """Return the zero vector of the space.
-        """
+    @overload
+    def zeros(self, read_only: Literal[False] = False) -> Vector: ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def zeros(self, read_only: bool = False) -> ReadOnlyVector:
+        """Return the zero vector, optionally as a read-only view."""
+        read_only = self._validate_read_only_flag(read_only)
         if self.type is None:
             raise NotImplementedError
-        return self.type.zeros(shape = self.shape)
+        result = self.type.zeros(shape = self.shape)
+        return self.read_only(result) if read_only else result
     
-    def ones(self) -> Vector:
-        """Return a vector of the space containing all ones.
-        """
+    @overload
+    def ones(self, read_only: Literal[False] = False) -> Vector: ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def ones(self, read_only: bool = False) -> ReadOnlyVector:
+        """Return a vector of ones, optionally as a read-only view."""
+        read_only = self._validate_read_only_flag(read_only)
         if self.type is None:
             raise NotImplementedError
-        return self.type.ones(shape = self.shape)
+        result = self.type.ones(shape = self.shape)
+        return self.read_only(result) if read_only else result
+
+    def read_only(self, x: ReadOnlyVector) -> ReadOnlyVector:
+        r"""Return a read-only view of ``x``.
+
+        The base implementation returns ``x`` unchanged. Backends that can
+        enforce write protection should override this method. No independent
+        copy is required or implied.
+        """
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the vector space."
+            ))
+        return x
 
     def empty(self) -> Vector:
         """Return an uninitialized element of the space.
@@ -436,7 +502,9 @@ class VectorSpaceBase:
         """Like `rand`, but using a standard normal distribution."""
         return self.rand(distribution="standard_normal", **kwargs)
     
-    def vdot(self, x: Vector, y: Vector) -> float | complex:
+    def vdot(
+        self, x: ReadOnlyVector, y: ReadOnlyVector
+    ) -> float | complex:
         r"""Return the vector dot product defined by this space.
 
         For complex vectors, the second argument is conjugated.
@@ -457,7 +525,7 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.vdot(x,y)
 
-    def copyto(self, x: Vector, y: Vector) -> None:
+    def copyto(self, x: Vector, y: ReadOnlyVector) -> None:
         r"""Copy the values of ``y`` into the existing vector ``x``.
 
         The identity of ``x`` is preserved. Concrete vector spaces may
@@ -775,11 +843,30 @@ class DirectSum(VectorSpaceBase):
     def realsize(self) -> int:
         return sum([s.realsize for s in self.summands]) 
 
-    def zeros(self) -> TupleVector:
-        return TupleVector([s.zeros() for s in self.summands])
+    def zeros(self, read_only: bool = False) -> TupleVector:
+        read_only = self._validate_read_only_flag(read_only)
+        return TupleVector(
+            [s.zeros(read_only=read_only) for s in self.summands],
+            read_only=read_only,
+        )
     
-    def ones(self)-> TupleVector:
-        return TupleVector([s.ones() for s in self.summands])
+    def ones(self, read_only: bool = False) -> TupleVector:
+        read_only = self._validate_read_only_flag(read_only)
+        return TupleVector(
+            [s.ones(read_only=read_only) for s in self.summands],
+            read_only=read_only,
+        )
+
+    def read_only(self, x: TupleVector) -> TupleVector:
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the DirectSum."
+            ))
+        return TupleVector(
+            [s.read_only(x_i) for s, x_i in zip(self.summands, x)],
+            read_only=True,
+        )
     
     def empty(self)-> TupleVector:
         return TupleVector([s.empty() for s in self.summands])
@@ -812,6 +899,7 @@ class DirectSum(VectorSpaceBase):
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="destination", add_info="copyto destination is not in the DirectSum."
             ))
+        x._require_writable("copyto")
         if not isinstance(y, TupleVector) or y.ndim != self.n_components:
             raise ValueError(Errors.not_in_vecsp(
                 y, self, vec_name="source", add_info="copyto source is not compatible with the DirectSum."
@@ -825,6 +913,7 @@ class DirectSum(VectorSpaceBase):
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="vector", add_info="fill argument is not in the DirectSum."
             ))
+        x._require_writable("fill")
         if not np.isscalar(value):
             raise TypeError(Errors.type_error(
                 f"fill value must be a scalar. Got {type(value)}."
@@ -928,7 +1017,7 @@ class DirectSum(VectorSpaceBase):
         return isinstance(x,TupleVector) and x.ndim == self.n_components and all([x_i in s_i for x_i,s_i in zip(x,self.summands)])
         
 
-    def join(self, *xs: Vector) -> TupleVector:
+    def join(self, *xs: Vector, read_only: bool = False) -> TupleVector:
         r"""Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
@@ -944,7 +1033,7 @@ class DirectSum(VectorSpaceBase):
         """
         if any(x not in s for s, x in zip(self.summands, xs)):
             raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: "+"\n\t "+f"xs = {xs},"+"\n\t "+f"summands = {self.summands} "))
-        return TupleVector(list(xs))
+        return TupleVector(list(xs), read_only=read_only)
 
     def split(self, x: TupleVector) -> tuple[Vector, ...]:
         r"""Split an element of the direct sum into a tuple of elements of the summands.
