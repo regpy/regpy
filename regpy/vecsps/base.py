@@ -1017,7 +1017,7 @@ class DirectSum(VectorSpaceBase):
         return isinstance(x,TupleVector) and x.ndim == self.n_components and all([x_i in s_i for x_i,s_i in zip(x,self.summands)])
         
 
-    def join(self, *xs: Vector) -> TupleVector:
+    def join(self, *xs: Vector, read_only: bool = False) -> TupleVector:
         r"""Transform a collection of elements of the summands to an element of the direct sum.
 
         Parameters
@@ -1033,7 +1033,7 @@ class DirectSum(VectorSpaceBase):
         """
         if any(x not in s for s, x in zip(self.summands, xs)):
             raise ValueError(Errors.value_error(f"One of the given vectors to join does not belong to the corresponding summand: "+"\n\t "+f"xs = {xs},"+"\n\t "+f"summands = {self.summands} "))
-        return TupleVector(list(xs))
+        return TupleVector(list(xs), read_only=read_only)
 
     def split(self, x: TupleVector) -> tuple[Vector, ...]:
         r"""Split an element of the direct sum into a tuple of elements of the summands.
