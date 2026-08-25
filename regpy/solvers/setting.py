@@ -158,7 +158,7 @@ class Setting:
         if not self.init_is_penalty_data:
             return self._init if hasattr(self,'_init') else None
         else:
-            if not hasattr(self.penalty,'data'): 
+            if not self.penalty.is_data_func:
                 raise RuntimeError(Errors.runtime_error('penalty is not data functional',self.penalty))
             toret = self.penalty.data
             if toret not in self.op.domain:
@@ -429,8 +429,6 @@ class Setting:
         ----------
         new_init : Vector or None [default: None]
             New initial guess in op.domain
-        update: bool [default: True]
-            If True, the initial guess stored in the setting is updated to new_init. 
         out: Vector or None [default: None]
 
         Returns
@@ -445,23 +443,22 @@ class Setting:
                 raise TypeError(Errors.not_in_vecsp(new_init,self.op.domain,vec_name="new_init",space_name="domain"))
             source = new_init
             if update:
-                if (self.init is not None) and (self.init is not new_init):
+                stored_init = self.init
+                if stored_init is not None and stored_init is not new_init:
                     self.log.warning("Overwriting existing initial guess in setting!")
-                initial = self.op.domain.empty() if self.init is None else self.init
+                initial = self.op.domain.empty() if stored_init is None else stored_init
                 self.op.domain.copyto(initial, new_init)
                 self.init = initial # update also penalty term and other attributes
                 source = self.init
             if out is not source:
                 self.op.domain.copyto(out, source)
         else: # new_init is None
-            if self.init is not None:
-                if out is not self.init:
-                    self.op.domain.copyto(out, self.init)
+            stored_init = self.init
+            if stored_init is not None:
+                if out is not stored_init:
+                    self.op.domain.copyto(out, stored_init)
             else:
                 self.op.domain.fill(out,0.)
-            if update:
-                self.init = out
-                #raise RuntimeError(Errors.runtime_error('In order to update init in Setting, the new value must not be None.'))
         return out
 
     ######Methods exploiting duality
@@ -482,6 +479,7 @@ class Setting:
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
+            init_is_penalty_data=False,
             _primal_setting = self,
             logging_level=self.log.level
         )

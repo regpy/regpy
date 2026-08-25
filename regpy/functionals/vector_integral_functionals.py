@@ -308,7 +308,7 @@ class TVUniformGridFcts(Composed):
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             penalty_shift=penalty_shift, 
+                             init=penalty_shift, 
                              regpar = 1./tau,
                              explicitDataWarning=False)
 
