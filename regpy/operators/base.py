@@ -10,6 +10,7 @@ The base class is `Operator`.
 
 from __future__ import annotations
 
+from typing import TypeVar
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from copy import deepcopy
@@ -29,7 +30,28 @@ if TYPE_CHECKING:
     from regpy.functionals import Functional
     from regpy.hilbert import HilbertSpace
 
-__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum","Product", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
+__all__ = ["ObsDataT",
+           "Operator", 
+           "Pow", 
+           "Identity", 
+           "CoordinateProjection", 
+           "CoordinateMask", 
+           "PtwMultiplication", 
+           "OuterShift", 
+           "InnerShift", 
+           "DirectSum", 
+           "VectorOfOperators", 
+           "MatrixOfOperators", 
+           "Sum",
+           "Product", 
+           "RealPart", 
+           "ImaginaryPart", 
+           "SplitRealImag",
+           "SquaredModulus", 
+           "Zero", 
+           "ApproximateHessian", 
+           "SciPyLinearOperator"
+           ]
 
 
 class _Revocable:
@@ -60,6 +82,13 @@ class _Revocable:
         except AttributeError:
             return False
 
+ObsDataT = TypeVar("ObsDataT")
+"""
+ObsDataT is a placeholder for a data type. 
+In many cases, data are a :class:`Vector` in the codomain of an Operator. 
+However, data may be anything that is accepted by :meth:`Operator.adjoint_data` 
+and :meth:`Operator.adjoint_data`. 
+"""
 
 class Operator:
     r"""Base class for linear and nonlinear forward operators.
@@ -618,7 +647,7 @@ class Operator:
         self.domain.copyto(out, self._adjoint(y, **kwargs))
         return out
 
-    def _adjoint_data(self, data: Vector, **kwargs) -> Vector:
+    def _adjoint_data(self, data: ObsDataT, **kwargs) -> Vector:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -629,7 +658,7 @@ class Operator:
         out = self.domain.zeros()
         return self._iadjoint_data(data, out, **kwargs)
     
-    def _iadjoint_data(self, data: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_data(self, data: ObsDataT, out: Vector, **kwargs) -> Vector:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -645,7 +674,7 @@ class Operator:
         return out
         
     def adjoint_data(
-        self, data: Vector, out: Vector | None = None, **kwargs
+        self, data: ObsDataT, out: Vector | None = None, **kwargs
     ) -> Vector:
         self.reset_detect_loop()
         try:
@@ -1877,7 +1906,7 @@ class Composition(Operator):
                 x = deriv.adjoint(x)
         return self._derivs[-1].adjoint(x, out=out)
     
-    def _iadjoint_data(self, data: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_data(self, data: ObsDataT, out: Vector, **kwargs) -> Vector:
         ops = self.ops if self.linear else self._derivs
         if not self._use_buffers or len(ops) < 2:
             data = ops[0].adjoint_data(data, **kwargs)

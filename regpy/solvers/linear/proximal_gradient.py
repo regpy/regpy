@@ -4,6 +4,7 @@ from typing import Any
 
 from regpy.util import Errors
 from regpy.vecsps import Vector
+from regpy.operators import ObsDataT
 
 from ..solver import RegSolver
 from ..setting import Setting
@@ -33,7 +34,12 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
 
-    def __init__(self, setting, init=None, tau = None, proximal_pars = None, logging_level = "INFO"):
+    def __init__(self, 
+                 setting: Setting, 
+                 init: Vector| None =None, 
+                 tau: float = None, 
+                 proximal_pars: dict = None, 
+                 logging_level: int|str = "INFO"):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
@@ -162,7 +168,7 @@ class FISTA(RegSolver):
             tau: float | None = None,
             op_lower_bound: float = 0.,
             proximal_pars: dict | None = None,
-            data: Vector | Any | None = None,
+            data: Vector | ObsDataT | None = None,
             logging_level: int | str = "INFO",
             update_setting: bool = True):
         if not setting.is_tikhonov:
@@ -175,18 +181,18 @@ class FISTA(RegSolver):
         self.log.setLevel(logging_level)
 
         self.codomain_free = setting.codomain_free
-        self.data = setting.get_or_update_data(data, update_setting)
-        if self.data is None:
-            raise ValueError(Errors.value_error(
-                "FISTA requires data either in the setting or as an argument."
-            ))
-
+        
         if not self.codomain_free:
             self.y = self.op.codomain.empty()
             self.op(self.x, out=self.y)
         else:
+            data = setting.get_or_update_data(new_data=data, update=update_setting)
+            if data is None:
+                raise ValueError(Errors.value_error(
+                    "codomain_free FISTA requires data either in the setting or as an argument."
+            ))
             self.y = None
-            self.backpropagated_data = self.op.adjoint_data(self.data)
+            self.backpropagated_data = self.op.adjoint_data(data)
 
         self.proximal_pars = {} if proximal_pars is None else dict(proximal_pars)
         """Proximal parameters that are passed to prox-operator of penalty term. """

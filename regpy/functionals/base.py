@@ -11,9 +11,9 @@ import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps, hilbert
-from regpy.operators import Operator
+from regpy.operators import Operator, ObsDataT
 from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
-from regpy.vecsps.base import Scalar, Vector
+from regpy.vecsps.base import Scalar, Vector, ReadOnlyVector
 from regpy.hilbert import HilbertSpace
 from regpy.util import Errors
 
@@ -818,8 +818,32 @@ class Functional:
             ))
         return proximal
     
-    def as_data_func(self, data: Vector) -> Functional:
-        return HorizontalShiftDilation(self, data = data)
+    def as_data_func(self, 
+                     data: ObsDataT | None = None
+                     ) -> Functional:
+        """ 
+        Returns a modified version of the given functional as a data functional. 
+        If self is already a data functional, the method returns self with an updated data vector. 
+
+        Otherwise, self is made a data functional by shifting it by the given data vector. 
+        None results in the zero vector. 
+        Derived classes (e.g., KullbackLeibler) replace this default implementation.
+
+        Parameters:
+        ---------------
+        data: DataT or None [default: None]
+            The data. None results in the zero vector. 
+
+        Returns:
+        --------------
+        Shifted functional 
+        """
+        if self.is_data_func:
+            if data is not None:
+                self.data = data
+            return self
+        else:     
+            return HorizontalShiftDilation(self, data = data)
 
     def shift(
         self, v: Vector | None = None, data_shift: Vector | None = None
@@ -1356,7 +1380,7 @@ class SquaredNorm(Functional):
     shift: Vector [default:None]
         If not None, then it must be in h_space.domain, and we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
-    data: h_space.domain [default:None]
+    data: dataT or None [default:None]
         If not None, then we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     """
@@ -1443,11 +1467,11 @@ class SquaredNorm(Functional):
             return self._c
 
     @property
-    def data(self) -> Vector | None:
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
     
     @data.setter
-    def data(self, new_data: Vector | None) -> None:
+    def data(self, new_data: ObsDataT | None) -> None:
         if new_data is None:
             self.is_data_func = False
             del self.a; del self.b; del self.c
@@ -1499,7 +1523,7 @@ class SquaredNorm(Functional):
             self._conj_dom_u = np.inf if self.a>0 else self.h_space.gram(self.b)
         return super().conj_dom_u            
 
-    def as_data_func(self, data: Vector) -> SquaredNorm:
+    def as_data_func(self, data: ObsDataT) -> SquaredNorm:
         self.data=data
         return self
 
@@ -2298,11 +2322,11 @@ class HorizontalShiftDilation(Functional):
                 return self._shift_val
         
     @property
-    def data(self) -> Vector:
+    def data(self) -> ReadOnlyVector:
         if self._shifted_data_fid:
-            return self.func.data
+            return self.domain.read_only(self.func.data)
         else:
-            return self._data
+            return self.domain.read_only(self._data)
     
     @data.setter
     def data(self, new_data: Vector | None) -> None:

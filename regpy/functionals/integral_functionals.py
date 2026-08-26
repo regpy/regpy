@@ -4,6 +4,7 @@ import numpy as np
 from scipy.special import lambertw
 
 from regpy.util import Errors, memoized_property
+from regpy.vecsps import ReadOnlyVector
 from regpy.vecsps.numpy import *
 import regpy.operators as rop
 from regpy.hilbert import L2
@@ -2010,8 +2011,8 @@ class KullbackLeibler(IntegralFunctionalBase):
             raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
 
     @property
-    def data(self):
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
     
     @data.setter
     def data(self, new_data):
@@ -2036,7 +2037,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             self.is_data_func = False
             self._precompute_f_l(); self._precompute_f_u()
 
-    def as_data_func(self,data):
+    def as_data_func(self,data) -> Functional:
         self.data=data
         return self
 
@@ -2321,8 +2322,8 @@ class RelativeEntropy(IntegralFunctionalBase):
             raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
 
     @property
-    def data(self):
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
 
     @data.setter
     def data(self, new_data):

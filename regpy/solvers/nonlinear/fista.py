@@ -122,21 +122,20 @@ class FISTA(RegSolver):
             self._data_gradient = codomain.empty()
             if self.data_fid.Lipschitz != inf:
                 _, deriv = self.op.linearize(self.x, out=self.y)
-                self.tau = 1. / (
-                    deriv.norm(
-                        setting.h_domain,
-                        setting.h_codomain,
-                        codomain_free=False,
-                    )**2 * self.data_fid.Lipschitz
-                )
+                deriv_norm = deriv.norm(
+                                        setting.h_domain,
+                                        setting.h_codomain,
+                                        codomain_free=False,
+                                    )
+                self.tau =   1. / (np.max([1e-16,deriv_norm**2])*self.data_fid.Lipschitz)  
                 self.backtracking = False
             else:
                 self.op(self.x, out=self.y)
                 self.tau = tau
                 self.backtracking = True
-        if self.tau <= 0:
+        if self.tau <= 0 or not np.isfinite(self.tau):
             raise ValueError(Errors.value_error(
-                "The step size must be positive!"
+                "The step size must be positive and finite!",self.tau
             ))
 
         self.t = self.t_old = 0.

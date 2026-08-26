@@ -5,8 +5,8 @@ from typing import Callable, Any
 from copy import deepcopy
 
 from regpy.util import ClassLogger, Errors
-from regpy.vecsps import Vector
-from regpy.operators import Operator
+from regpy.vecsps import Vector, ReadOnlyVector
+from regpy.operators import Operator, ObsDataT
 from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
@@ -57,12 +57,12 @@ class Setting:
     data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
-    regpar: float or None, optional
+    regpar: float or None [default: None]
         regularization parameter  :math:`alpha`. 
         Defaults to None. See explanations above on different meaning of solvers in this case.
-    data: Vector or None, optional
-        If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data (which often but not necessarily 
-        belong to op.codomain). Defaults to None
+    data: Vector or ObsDataT or None [default:None]
+        If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data 
+        (which often but not necessarily belong to op.codomain). 
     exact_data: Vector or None [default: None]
         Optional exact data used to generate synthetic noisy observations with
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
@@ -94,7 +94,7 @@ class Setting:
                  data_fid:Functional|HilbertSpace|Callable,
                  regpar: float|None =None,
                  penalty_shift = None, 
-                 data: Vector | Any | None = None, 
+                 data: Vector | ObsDataT | None = None, 
                  exact_data: Vector | None = None, 
                  init: Vector | None = None,
                  init_is_penalty_data: bool = True,
@@ -154,13 +154,14 @@ class Setting:
         self._init_convex_Tikhonov()
 
     @property
-    def init(self)->Vector:
+    def init(self)->ReadOnlyVector:
         if not self.init_is_penalty_data:
-            return self._init if hasattr(self,'_init') else None
+            return self._init if hasattr(self,'_init') else self.op.domain.zeros(read_only=True)
         else:
-            if not self.penalty.is_data_func:
-                raise RuntimeError(Errors.runtime_error('penalty is not data functional',self.penalty))
-            toret = self.penalty.data
+            if self.penalty.is_data_func:
+                toret = self.penalty.data
+            else:
+                toret = self.op.domain.zeros(read_only=True)     
             if toret not in self.op.domain:
                 raise TypeError(Errors.type_error('penalty.data must be in domain',toret))
             return toret
@@ -190,25 +191,29 @@ class Setting:
         return self._codomain_free
 
     @property
-    def data_fid(self):
+    def data_fid(self) -> Functional:
         r"""The data fidelity functional."""
         return self._data_fid 
 
-    def set_data_fid(self,data_fid):
+    def set_data_fid(self,data_fid: Functional):
         if self.data is not None:
             raise RuntimeError(Errors.runtime_error("data fidelity term cannot be changed if data are set."))
         self._data_fid = as_functional(data_fid, self.op.codomain)
         self._init_convex_Tikhonov()
 
     @property
-    def data(self):
-        return self._data if hasattr(self,'_data') else None
+    def data(self) -> ReadOnlyVector | ObsDataT | None:
+        if hasattr(self, '_data'): 
+            try:
+                return self.op.codomain.read_only(self._data)
+            finally:
+                return self._data       
     
     @data.setter
-    def data(self,new_data):
+    def data(self, new_data: ObsDataT) -> None:
         self.change_data(new_data=new_data)
 
-    def change_data(self,new_data):
+    def change_data(self, new_data: ObsDataT) -> None:
         if (new_data is None):
             raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
         if not (hasattr(self,"_data") and new_data is self._data):
@@ -216,24 +221,21 @@ class Setting:
                 if (self.data_fid.is_data_func):
                     self.log.warning("Existing data in data fidelity functional is overwritten.")
                 self._data_fid=self.data_fid.as_data_func(new_data)
-            if new_data in self.op.codomain:
-                if not hasattr(self,"_data") or self._data is None:
-                    self._data =  self.op.codomain.empty() 
-                    self.op.codomain.copyto(self._data,new_data)
+                self._data = self.data_fid.data
             else:
                 self._data = deepcopy(new_data)
 
     @data.deleter
-    def data(self):
+    def data(self) -> None:
         del self.data_fid.data
         del self._data
 
     @property
-    def exact_data(self):
+    def exact_data(self)->Vector:
         return self._exact_data
     
     @exact_data.setter
-    def exact_data(self, new_exact_data):
+    def exact_data(self, new_exact_data:Vector) -> None:
         self._exact_data = new_exact_data
         del self.data
 
@@ -248,15 +250,15 @@ class Setting:
         return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
 
     @property
-    def is_tikhonov(self):
+    def is_tikhonov(self) -> bool:
         """True if a regularization parameter is set"""
         return self.regpar is not None
     @property
-    def is_convex(self):
+    def is_convex(self) -> bool:
         """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
         return self.op.linear and self.penalty.is_convex and (self.codomain_free or self.data_fid.is_convex)
     @property
-    def is_hilbert(self):
+    def is_hilbert(self) -> bool:
         """True if penalty and data fidelity are quadratic with Hessian that are positive multiples of the corresponding Gram matrices."""
         return (
             self.penalty.is_norm_squared_type
@@ -264,12 +266,12 @@ class Setting:
         )
 
     @property
-    def regpar(self):
+    def regpar(self) -> float:
         r"""The regularization parameter"""
         return self._regpar
 
     @regpar.setter
-    def regpar(self,new_regpar):
+    def regpar(self,new_regpar: float):
         if(new_regpar is not None):
             if not isinstance(new_regpar,(float,int)):
                 raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
@@ -279,7 +281,7 @@ class Setting:
         self._regpar=new_regpar
         self._init_convex_Tikhonov()
 
-    def _init_convex_Tikhonov(self):
+    def _init_convex_Tikhonov(self) -> None:
         if hasattr(self,'regpar') and self._primal_setting is None and self.is_convex and self.is_tikhonov:
             self._methods = self._generate_full_solver_dictionary()
             self.duality_gap_warning_incr = 1.        
@@ -394,14 +396,14 @@ class Setting:
         self.data = poisson_data    
 
     def get_or_update_data(self, 
-                           new_data:Vector | Any | None = None,
+                           new_data:Vector | ObsDataT | None = None,
                            update:bool = True
-                           ) -> Vector | Any:
+                           ) -> Vector | ObsDataT:
         r""" Updates the data stored in the setting or gets these data of they are not provided.
 
         Parameters
         ----------
-        new_data : Vector or any or None [default:None]
+        new_data : Vector or ObsDataT or None [default:None]
             New data to be passed to the data functional self.data_fid via the data setter.
         update: bool [default:True]
             If True, the data stored in the setting is updated to new_data. 
@@ -413,9 +415,10 @@ class Setting:
                     self.data = new_data
             return new_data
         else:
-            if self.data is None:
-                self.log.warning("No data has been provided either explicitly or as an argument of the method or in the setting!")
-            return self.data
+            toret = self.data
+            if toret is None:
+                raise RuntimeError(Errors.runtime_error("No data has been provided either explicitly or as an argument of the method or in the setting!"))
+            return toret
 
     def get_or_update_initial_guess(self, 
                                     new_init:Vector | None = None,
@@ -429,11 +432,14 @@ class Setting:
         ----------
         new_init : Vector or None [default: None]
             New initial guess in op.domain
+        update: bool [default: True]
+            If True, the initial guess in the setting is updated
         out: Vector or None [default: None]
 
         Returns
         --------
-        new initial guess
+        Vector:
+            new initial guess (as writable copy)
         """
         out = self.op.domain.empty() if out is None else out
         if out is not None and not out in self.op.domain:
@@ -446,19 +452,14 @@ class Setting:
                 stored_init = self.init
                 if stored_init is not None and stored_init is not new_init:
                     self.log.warning("Overwriting existing initial guess in setting!")
-                initial = self.op.domain.empty() if stored_init is None else stored_init
-                self.op.domain.copyto(initial, new_init)
-                self.init = initial # update also penalty term and other attributes
+                self.init = new_init # update also penalty term and other attributes
                 source = self.init
             if out is not source:
                 self.op.domain.copyto(out, source)
         else: # new_init is None
             stored_init = self.init
-            if stored_init is not None:
-                if out is not stored_init:
-                    self.op.domain.copyto(out, stored_init)
-            else:
-                self.op.domain.fill(out,0.)
+            if out is not stored_init:
+                self.op.domain.copyto(out, stored_init)
         return out
 
     ######Methods exploiting duality
@@ -888,19 +889,27 @@ class Setting:
         return x,y
 
 def check_Hilbert_applicability(setting:Setting, 
-                                user_data= None, 
-                                user_init=None,
+                                user_data: Vector | ObsDataT| None= None, 
+                                user_init: Vector | None =None,
+                                regularization_parameter_required: bool = False,
+                                check_is_norm_squared_type: bool = True,
+                                **kwargs
                                 )->tuple[dict,dict] :
     """ Checks if regularization methods for operators in Hilbert spaces are applicable.
 
     Parameters:
     -----------
     setting: Setting
-    user_data: Vector or None [default: None]
-        potential initial guess provided by user
-    user_data: Vector or None [default: None]
+    user_data: Vector or ObsDataT or None [default: None]
         data provided by user
-
+    user_init: Vector or None [default: None]
+        initial guess provided by user
+    regularization_parameter_required: bool [default: False]
+        If True, the method requires the setting to have a regularization parameter, 
+        if False it must not have a regularization parameter
+    check_is_norm_squared_type: bool [default: True]
+        If true, it is checked if data fidelity and penalty term are a shifted multiple of the square Hilbert norm
+        
     Returns:
     --------
     out: dict
@@ -913,33 +922,43 @@ def check_Hilbert_applicability(setting:Setting,
         otherwise the global minimum of the penalty functional is computed. 
     """
     out = {'info':''}; par = {} 
-    if not setting.penalty.is_norm_squared_type:
-        out['info'] += 'Penalty functional is not of squared Hilbert-norm type. '
-    if not (setting.codomain_free or setting.data_fid.is_norm_squared_type):
-        out['info'] += 'Data fidelity functional is not of squared Hilbert-norm type. '
-    if setting.is_tikhonov:
-        out['info'] += 'Setting has a specified regularization parameter. '
-    if user_data is None:
-        data = setting.op.codomain.zeros()
-        if not setting.codomain_free:
-            # compute data as global minimum of the qudaratic data fidelity term
-            S = setting.data_fid            
-            S.subgradient(data,out=data)
-            hess = S.hessian(data)
-            hess.inverse(data,out=data)
-            data *= -1.
-        elif hasattr(setting,'data'):
-            setting.op.codomain.copyto(data, setting.data)
-        else:
-            setting.log.warning('setting is codomain_free, but has no data, and no user data are provided')
-
-        par['data'] = data 
+    if check_is_norm_squared_type:
+        if not setting.penalty.is_norm_squared_type:
+            out['info'] += 'Penalty functional is not of squared Hilbert-norm type. '
+        if not (setting.codomain_free or setting.data_fid.is_norm_squared_type):
+            out['info'] += 'Data fidelity functional is not of squared Hilbert-norm type. '
     else:
-        if user_data not in setting.op.codomain:
-            raise RuntimeError('If setting is codomain-free, data must be provided as argumetns')
-        par['data'] = user_data     
+        if not setting.penalty.is_quadratic:
+            out['info'] += 'Penalty functional is not quadratic. '
+        if not (setting.codomain_free or setting.data_fid.is_quadratic):
+            out['info'] += 'Data fidelity term is not quadratic. '
+    if setting.is_tikhonov and (not regularization_parameter_required):
+        print('check error',setting.is_tikhonov,regularization_parameter_required)
+        out['info'] += 'Setting has a specified regularization parameter. '
+    if (not setting.is_tikhonov) and regularization_parameter_required:
+        out['info'] += 'Setting has no specified regularization parameter. '    
+    if setting.codomain_free or ((not setting.codomain_free) and setting.data_fid.is_quadratic):
+        if user_data is None:
+            data = setting.op.codomain.zeros()
+            if not setting.codomain_free:
+                # compute data as global minimum of the qudaratic data fidelity term
+                S = setting.data_fid            
+                S.subgradient(data,out=data)
+                hess = S.hessian(data)
+                hess.inverse(data,out=data)
+                data *= -1.
+            elif hasattr(setting,'data'):
+                setting.op.codomain.copyto(data, setting.data)
+            else:
+                setting.log.warning('setting is codomain_free, but has no data, and no user data are provided')
 
-    if user_init is None:
+            par['data'] = data 
+        else:
+            if user_data not in setting.op.codomain:
+                raise TypeError(Errors.type_error('If setting is codomain-free, data in codomain must be provided as argument.',user_data))
+            par['data'] = user_data     
+
+    if user_init is None and setting.penalty.is_quadratic:
         # compute data as global minimum of the qudaratic data fidelity term
         R = setting.penalty
         domain = setting.op.domain
@@ -952,13 +971,18 @@ def check_Hilbert_applicability(setting:Setting,
         par['init'] = init  
     else:
         par['init'] = user_init     
+    if setting.is_tikhonov:
+        par['regpar']= setting.regpar
     
     out['applicable'] = out['info'] == ''
     return out, par
 
 def check_Hilbert_applicability_linear(setting:Setting,
-                                        user_data= None, 
-                                        user_init=None,
+                                        user_data: Vector | ObsDataT | None= None, 
+                                        user_init: Vector | None =None,
+                                        regularization_parameter_required: bool = False,
+                                        check_is_norm_squared_type: bool = True,
+                                        **kwargs
                                     )->tuple[dict,dict] :
     """ Checks if regularization methods for linear operators in Hilbert spaces are applicable.
 
@@ -967,6 +991,8 @@ def check_Hilbert_applicability_linear(setting:Setting,
     out, par = check_Hilbert_applicability(setting,
                                            user_data=user_data,
                                            user_init=user_init,
+                                           regularization_parameter_required=regularization_parameter_required,
+                                           check_is_norm_squared_type = check_is_norm_squared_type
                                            )
     if not setting.op.linear:
         out['info'] += 'Operator is not linear. '

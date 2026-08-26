@@ -7,7 +7,7 @@ from regpy.hilbert import L2
 from regpy.util import Errors, memoized_property
 
 from .base import Functional, AbstractFunctional, Composed
-from .integral_functionals import LppPower, L1MeasureSpace
+from .integral_functionals import LppPower, L1MeasureSpace, Huber
 
 __all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "TVUniformGridFcts"]
 
@@ -308,7 +308,7 @@ class TVUniformGridFcts(Composed):
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             init=penalty_shift, 
+                             init = penalty_shift, 
                              regpar = 1./tau,
                              explicitDataWarning=False)
 

@@ -48,17 +48,17 @@ class TikhonovCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. Must have quadratic penalty and data fidelity terms. 
-    data : setting.op.codomain, optional
-        The measured data. Default None means that the data from setting is used.
-    regpar : float|None, optional
+    data : Vector or None [default: None]
+        The measured data, included for backward compatibility. 
+        The preffered way is to specify data in the setting.
+    regpar : float |default: None]
         The regularization parameter. Must a positive of None. 
         If None, then the regularization parameter is taken from the setting, which must be Tikhonov. 
-    xref: setting.op.domain  or None, optional
+    xref: Vector or None [default: None]
         Reference value in the Tikhonov functional. If None, it is taken from the setting. 
-    update_setting: bool, optional
+    update_setting: bool [default:True]
         Flag wheather or not values for data, regpar, and xref that are provided explicitly should be updated in the setting.
         If the setting does not have a regularization parameter, no regularization parameter will be set in the setting. 
-        Defaults to True.
     x0: setting.op.domain or None, optional
         Starting value of the CG iteration. If None (default), setting.op.domain.zeros() is used as starting value. 
     tol : float or None, default: None
@@ -66,22 +66,25 @@ class TikhonovCG(RegSolver):
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is noiselevel/2*sqrt(regpar)
+    max_it: int [default: 1000]
+        maximal number of CG iterations
     reltolx: float or None, default: 1e-2
         Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
         The motivation for the default value is similar to that given for tol, assuming a reasonable 
         signal-to-noise ratio for the Tikhonov minimizer. 
-    reltoly: float or None, default: None
+    reltoly: float or None [default: None]
         Relative tolerance in codomain.
-    all_tol_criteria: bool (default: True)
+    all_tol_criteria: bool [default: True]
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
-    krylov_basis : list or None, optional 
-        Defaults to None. Otherwise, an orthonormal basis of the Krylov subspace is computed while running CG solver
-    preconditioner : Preconditioner such that the iteration is done on 
+    krylov_basis : list or None [default: None] 
+        If not None, an orthonormal basis of the Krylov subspace is computed while running CG solver
+    preconditioner: regpy.operators.operator
+        Preconditioner such that the iteration is done on 
         :math:`\Vert TP x - data\Vert^2 + regpar * \Vert Px - xref\Vert^2`
         The iterates (self.x) still solve the original equation without preconditioner.
-    x_exact: setting.op.domain or None, optional
-    y_exact: setting.op.codomain or None, optional
+    x_exact: Vector or None [default: None]
+    y_exact: Vector or None [default: None]
         These parameters are intended for monitoring convergence of the CG iteration and the performance of the stopping rules. 
         If not None (default), they should be (an approximation of) the exact minimizer of the Tikhonov functional and its image 
         under setting.op. In this case, the internal stopping rules track the errors in the domain and/or codomain.
@@ -283,39 +286,47 @@ class TikhonovCG(RegSolver):
                 all_tol_criteria:bool = True,
                 max_it:int = 1000,
                 krylov_basis:list|None=None, 
-                preconditioner:Operator|None=None,
-                logging_level:int = logging.INFO,
+                preconditioner:Operator|None = None,
+                logging_level:int | str = logging.INFO,
                 update_setting:bool = True,
-                x_exact= None, 
-                y_exact= None
+                x_exact: Vector | None = None, 
+                y_exact: Vector | None = None
                 ):
         super().__init__(setting)
         self.tol, self.reltolx, self.reltoly = tol, reltolx, reltoly
         self.all_tol_criteria, self.max_it, self.logging_level = all_tol_criteria, max_it, logging_level
-        out,par = self.check_applicability(setting)
-        if not out['applicable']:
-            raise ValueError(Errors.not_applicable_solver("TikhonovCG",out['info']))
-        self.log.setLevel(logging_level)
-        self.x =   setting.get_or_update_initial_guess(x0, update_setting)
-        """The zero-th CG iterate."""
-        setting.get_or_update_data(data, update_setting)
-   
+
         if regpar is not None and not (isinstance(regpar,(float,int)) and regpar >0):
             raise ValueError(Errors.value_error("The regularization parameter must be None or positive!",obj=regpar))
         if regpar is not None:  
-            self.regpar = regpar 
-            if update_setting:
-                if setting.is_tikhonov and regpar !=  par['regpar']:
-                    self.log.warning(f"Changing setting.regpar from {setting.regpar:.2e} to {regpar:.2e}!")
-                    setting.regpar = regpar   
-        else:
-            if setting.is_tikhonov:
-                regpar = par['regpar']
-            else:
-                raise ValueError(Errors.value_error("If the setting is not a Tikhonov setting the regularization parameter needs to be specified in TikhonovCG!"))
-        self.regpar = regpar
+            self.log.warning('Specification of regularization parameter as argument of the solver deprecated. Set it in setting!')
+            setting.regpar = regpar  
+
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=xref
+        )
+        if not out['applicable']:
+            raise ValueError(
+                'TikhonovCG not applicable to this setting. '
+                + out['info']
+            )
+        super().__init__(setting)
+        self.log.setLevel(logging_level)
+        self.data = par['data']
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
+        """Right-hand side of the operator equation."""
+        self.init = par['init']
+        """Initial guess and reference value in the Tikhonov functional."""         
+        self.regpar = par['regpar']
         """The regularization parameter."""
 
+        self.log.setLevel(logging_level)
+        self.x = x0 if x0 is not None else self.init
+        """The current iterate."""
+   
         self.hessR = self.penalty.hessian(self.x)
         domain = self.op.domain
         codomain = self.op.codomain
@@ -329,39 +340,32 @@ class TikhonovCG(RegSolver):
             xref *= -1
 
         self.y = codomain.empty()
-        self.op(self.x, out=self.y)
         """The image of the current iterate under the operator."""
+        self.op(self.x, out=self.y)
         self.hessS = self.data_fid.hessian(self.y)
-        data = codomain.empty()
-        codomain.fill(data, 0)
-        self.data_fid.subgradient(data, out=data)
-        self.hessS.inverse(data, out=data)
-        data *= -1
 
         if preconditioner is None:
             self.preconditioner = Identity(self.h_domain.vecsp)
         else:
             self.preconditioner = preconditioner
 
-        # Reusable work vectors for all CG iterations.
-        self._Tdir = codomain.empty()
-        self.g_Tdir = codomain.empty()
-        self._domain_work = domain.empty()
-        self._domain_work2 = domain.empty()
-        self._res = domain.empty()
-        self.g_res = domain.empty()
-        self.dir = domain.empty()
-        self.g_dir = domain.empty()
+        self.dir = domain.empty()            # the direction of descent
+        self.g_dir = domain.empty()          # hessR applied to self.dir
+        self._Tdir = codomain.empty()        # T applied to self.dir
+        self.g_Tdir = codomain.empty()       # hessS applied to self.g_Tdir
+        self._res = domain.empty()           # the residual of the normal equation. 
+        self.g_res = domain.empty()          # The gram matrix applied to the residual of the normal equation:
+        # g_res = T^* hessS (data-T self.x) + regpar hessR(xref-self.x) in each iteration 
+        # with operator T and hessians hessR, hessS of the penalty and data fidelity functionals
+        self._domain_work = domain.empty()   # buffer
+        self._domain_work2 = domain.empty()  # buffer
 
-        codomain.copyto(self._Tdir, data)
+        codomain.copyto(self._Tdir, self.data)
         self._Tdir -= self.y
         self.hessS(self._Tdir, out=self.g_Tdir)
         self.op.adjoint(self.g_Tdir, out=self._domain_work)
-        """The gram matrix applied to the residual of the normal equation.
-        g_res = T^* G_Y (data-T self.x) + regpar G_X(xref-self.x) in each iteration with operator T and Gram matrices G_x, G_Y.
-        """
         if xref is not None:
-            domain.copyto(self._domain_work2, xref)
+            domain.copyto(self._domain_work2, self.init)
             self._domain_work2 -= self.x
             self.hessR(self._domain_work2, out=self._res)
             _axpy(
@@ -381,21 +385,19 @@ class TikhonovCG(RegSolver):
                 self._domain_work2,
             )
 
-        self.preconditioner.adjoint(self._domain_work, out=self.g_res)
+        self.preconditioner.adjoint(self._domain_work, out=self.g_res)       
         self.hessR.inverse(self.g_res, out=self._res)
-        """The residual of the normal equation."""
         self.sq_norm_res = domain.vdot(self.g_res, self._res).real
-        """The squared norm of the residual."""
+        # self.sq_norm_res is the squared norm of the residual.
         self.preconditioner(self._res, out=self.dir)
-        """The direction of descent."""
         if isinstance(self.preconditioner, Identity):
             domain.copyto(self.g_dir, self.g_res)
         else:
             self.hessR(self.dir, out=self.g_dir)
-        """The Gram matrix applied to the direction of descent."""
+
         self.kappa = 1
         """ratio of the squared norms of the residuals of the CG method and the MR-method.
-        Used for error estimation."""
+        kappa is used for error estimation."""
 
         if x_exact is not None and x_exact not in setting.op.domain:
             raise TypeError(Errors.type_error("x_exact must be None or in op.domain.",x_exact))
@@ -528,32 +530,33 @@ class TikhonovCG(RegSolver):
         return (self.x,self.y)
 
     @staticmethod
-    def check_applicability(setting,op_norm=None)->tuple[dict,dict]:
-        out = {'info':''}; par = {}
+    def check_applicability(
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: Vector | None = None,
+        user_init: Vector | None = None,
+    ) -> tuple[dict, dict]:
+        """Check whether TikhonovCG can be used for ``setting``."""
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            regularization_parameter_required = True,
+            check_is_norm_squared_type= False,
+            user_data = user_data,
+            user_init = user_init
+        )
         if setting.codomain_free:
-            out['info'] += 'TikhonovCG requires codomain vectors. '
-        if not  setting.penalty.is_quadratic and setting.penalty.is_convex:
-            out['info'] += 'Penalty term is not convex quadratic.'
-        if (not setting.codomain_free
-                and not setting.data_fid.is_quadratic
-                and setting.data_fid.is_convex):
-            out['info'] += 'Data fidelity term is not convex quadratic. '
-        if not setting.op.linear:
-            out['info'] += 'Operator is not linear.'
+            out['info'] += (
+                'TikhonovCG has no implementation without codomain vectors. '
+            )
         out['applicable'] = out['info'] == ''
-        if out['applicable'] and setting.is_tikhonov:
-            if hasattr(setting.penalty,'a') and hasattr(setting.data_fid,'a'):
-                par['regpar'] = setting.regpar*setting.penalty.a / setting.data_fid.a
-            else:
-                par['regpar'] = setting.regpar
-            if op_norm is not None:
-                conv_param = par['regpar']*setting.penalty.convexity_param
-                cond = (op_norm**2*setting.data_fid.Lipschitz + conv_param)/conv_param
-                out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
-            else:
-                out['rate'] = np.nan
+
+        if op_norm is not None:
+            conv_param = par['regpar']*setting.penalty.convexity_param
+            cond = (op_norm**2*setting.data_fid.Lipschitz + conv_param)/conv_param
+            out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
         else:
             out['rate'] = np.nan
+
         return out,par
 
 class TikhonovAlphaGrid(RegSolver):
