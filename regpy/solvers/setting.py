@@ -94,15 +94,15 @@ class Setting:
                  data_fid:Functional|HilbertSpace|Callable,
                  regpar: float|None =None,
                  penalty_shift = None, 
-                 data: Vector | ObsDataT | None = None, 
-                 exact_data: Vector | None = None, 
-                 init: Vector | None = None,
+                 data: ReadOnlyVector | ObsDataT | None = None, 
+                 exact_data: ReadOnlyVector | None = None, 
+                 init: ReadOnlyVector | None = None,
                  init_is_penalty_data: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
                  _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
-                 ):
+                 ) -> None:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
@@ -916,9 +916,9 @@ def check_Hilbert_applicability(setting:Setting,
         out['appicable'] is a boolean specifying applicabilty. 
         If False, out['info'] specifies the reasons for this.       
     par: dict
-        par['data'] contains the data to be used. If user_data is not None, these are used, 
+        par['data'] contains the data to be used. If user_data is not None, these are used without deep copies, 
         otherwise the global minimum of the quadratic data functional is computed. 
-        par['init'] contains the initial guess. If user_init is not None, these are used, 
+        par['init'] contains the initial guess. If user_init is not None, these are used without deep copies, 
         otherwise the global minimum of the penalty functional is computed. 
     """
     out = {'info':''}; par = {} 

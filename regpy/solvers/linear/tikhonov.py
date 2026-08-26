@@ -1,13 +1,12 @@
 from collections.abc import Iterable
 from math import sqrt,inf
-from typing import Any
 import numpy as np
 import logging
 
 from regpy.util import Errors
-from regpy.vecsps import Vector
+from regpy.vecsps import Vector, ReadOnlyVector
 from regpy.functionals.base import SquaredNorm
-from regpy.operators import Identity,Operator
+from regpy.operators import Identity, Operator, ObsDataT
 from regpy.stoprules import CountIterations
 
 from ..solver import RegSolver
@@ -48,7 +47,7 @@ class TikhonovCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem. Must have quadratic penalty and data fidelity terms. 
-    data : Vector or None [default: None]
+    data : Vector or ObsDataT or None [default: None]
         The measured data, included for backward compatibility. 
         The preffered way is to specify data in the setting.
     regpar : float |default: None]
@@ -59,16 +58,16 @@ class TikhonovCG(RegSolver):
     update_setting: bool [default:True]
         Flag wheather or not values for data, regpar, and xref that are provided explicitly should be updated in the setting.
         If the setting does not have a regularization parameter, no regularization parameter will be set in the setting. 
-    x0: setting.op.domain or None, optional
+    x0: Vector or None [default: None]
         Starting value of the CG iteration. If None (default), setting.op.domain.zeros() is used as starting value. 
-    tol : float or None, default: None
+    tol : float or None [default: None]
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is noiselevel/2*sqrt(regpar)
     max_it: int [default: 1000]
         maximal number of CG iterations
-    reltolx: float or None, default: 1e-2
+    reltolx: float or None [default: 1e-2]
         Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
         The motivation for the default value is similar to that given for tol, assuming a reasonable 
         signal-to-noise ratio for the Tikhonov minimizer. 
@@ -77,7 +76,7 @@ class TikhonovCG(RegSolver):
     all_tol_criteria: bool [default: True]
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
-    krylov_basis : list or None [default: None] 
+    krylov_basis : list[Vector] or None [default: None] 
         If not None, an orthonormal basis of the Krylov subspace is computed while running CG solver
     preconditioner: regpy.operators.operator
         Preconditioner such that the iteration is done on 
@@ -278,19 +277,21 @@ class TikhonovCG(RegSolver):
 
     def __init__(
                 self, setting:Setting, 
-                data=None, 
-                regpar:float|None=None, 
-                xref=None, 
-                x0 =None, 
-                tol:float|None=None, reltolx:float|None=1e-2, reltoly:float|None=None, 
-                all_tol_criteria:bool = True,
-                max_it:int = 1000,
-                krylov_basis:list|None=None, 
-                preconditioner:Operator|None = None,
-                logging_level:int | str = logging.INFO,
-                update_setting:bool = True,
-                x_exact: Vector | None = None, 
-                y_exact: Vector | None = None
+                data : ReadOnlyVector | ObsDataT = None, 
+                regpar: float|None = None, 
+                xref: ReadOnlyVector|None =None, 
+                x0: Vector|None = None, 
+                tol: float|None = None, 
+                reltolx: float|None = 1e-2, 
+                reltoly: float|None = None, 
+                all_tol_criteria: bool = True,
+                max_it: int = 1000,
+                krylov_basis: list[Vector] | None=None, 
+                preconditioner: Operator|None = None,
+                logging_level: int | str = logging.INFO,
+                update_setting: bool = True,
+                x_exact: ReadOnlyVector | None = None, 
+                y_exact: ReadOnlyVector | None = None
                 ):
         super().__init__(setting)
         self.tol, self.reltolx, self.reltoly = tol, reltolx, reltoly
@@ -324,8 +325,13 @@ class TikhonovCG(RegSolver):
         """The regularization parameter."""
 
         self.log.setLevel(logging_level)
-        self.x = x0 if x0 is not None else self.init
-        """The current iterate."""
+        if x0 is not None:
+            self.x = x0 
+            """The current iterate."""
+        else:
+            self.x = self.op.domain.empty() 
+            self.op.domain.copyto(self.x, self.init)
+
    
         self.hessR = self.penalty.hessian(self.x)
         domain = self.op.domain
@@ -480,6 +486,7 @@ class TikhonovCG(RegSolver):
             self.g_dir += self.g_res
         else:
             self.hessR(self.dir, out=self.g_dir)
+
     def get_stoprule(self,other_stoprule=None):
         """ Constructs the internal StopRule defined by the parameters of the constructor
         """
@@ -568,7 +575,7 @@ class TikhonovAlphaGrid(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or Any or None [default: None]
+    data : Vector or ObsDataT or None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used. For a codomain-free setting, it may be any
         object accepted by ``setting.op.adjoint_data``.
@@ -595,7 +602,7 @@ class TikhonovAlphaGrid(RegSolver):
     def __init__(
         self,
         setting: Setting,
-        data: Vector | Any | None = None,
+        data: Vector | ObsDataT | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
         init: Vector | None = None,
         max_CG_iter: int = 1000,
@@ -681,7 +688,7 @@ class TikhonovAlphaGrid(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | Any | None = None,
+        user_data: Vector | ObsDataT | None = None,
         user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether the parameter-grid method can be used."""
@@ -702,7 +709,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     ----------
     setting:  regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or Any or None [default: None]
+    data : Vector or ObsDataT or None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used. For a codomain-free setting, it may be any
         object accepted by ``setting.op.adjoint_data``.
@@ -724,7 +731,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
     def __init__(
         self,
         setting: Setting,
-        data: Vector | Any | None = None,
+        data: Vector | ObsDataT | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
         init: Vector | None = None,
         max_CG_iter: int = 1000,
@@ -847,7 +854,7 @@ class TikhonovCGOnlyDomain(RegSolver):
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
     x0: setting.op.domain  [default: None]
         Starting value of the CG iteration. If None, setting.op.domain.zeros() is used as starting value. 
-    tol : float, default: None
+    tol : float [default: None]
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
