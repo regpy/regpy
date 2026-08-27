@@ -207,11 +207,11 @@ class Setting:
 
     @property
     def data(self) -> ReadOnlyVector | ObsDataT | None:
-        if hasattr(self, '_data'): 
-            try:
-                return self.op.codomain.read_only(self._data)
-            finally:
-                return self._data       
+        if not hasattr(self, '_data'):
+            return None
+        if self._data in self.op.codomain:
+            return self.op.codomain.read_only(self._data)
+        return self._data
     
     @data.setter
     def data(self, new_data: ObsDataT) -> None:
@@ -1022,38 +1022,44 @@ def get_convex_solver_dictionary()->dict:
     return method_dict
 
 
-def check_Hilbert_applicability(setting:Setting, 
-                                user_data: Vector | ObsDataT| None= None, 
-                                user_init: Vector | None =None,
+def check_Hilbert_applicability(setting: Setting,
+                                user_data: ReadOnlyVector | ObsDataT | None = None,
+                                user_init: ReadOnlyVector | None = None,
                                 regularization_parameter_required: bool = False,
                                 check_is_norm_squared_type: bool = True,
                                 **kwargs
-                                )->tuple[dict,dict] :
-    """ Checks if regularization methods for operators in Hilbert spaces are applicable.
+                                ) -> tuple[dict, dict]:
+    """Check whether a Hilbert-space regularization method is applicable.
 
-    Parameters:
-    -----------
-    setting: Setting
-    user_data: Vector or ObsDataT or None [default: None]
-        data provided by user
-    user_init: Vector or None [default: None]
-        initial guess provided by user
-    regularization_parameter_required: bool [default: False]
-        If True, the method requires the setting to have a regularization parameter, 
-        if False it must not have a regularization parameter
-    check_is_norm_squared_type: bool [default: True]
-        If true, it is checked if data fidelity and penalty term are a shifted multiple of the square Hilbert norm
+    Parameters
+    ----------
+    setting : Setting
+        Setting to check.
+    user_data : ReadOnlyVector or ObsDataT or None, optional
+        Data supplied directly to the solver. For a codomain-free setting,
+        these may be arbitrary observational data accepted by
+        :meth:`Operator.adjoint_data`.
+    user_init : ReadOnlyVector or None, optional
+        Initial guess supplied directly to the solver.
+    regularization_parameter_required : bool, optional
+        Whether the method requires a setting with a regularization
+        parameter. If false, the setting must not have one.
+    check_is_norm_squared_type : bool, optional
+        If true, require the data-fidelity and penalty terms to be shifted
+        multiples of squared Hilbert norms. Otherwise, only quadraticity is
+        required.
         
-    Returns:
-    --------
-    out: dict
-        out['appicable'] is a boolean specifying applicabilty. 
-        If False, out['info'] specifies the reasons for this.       
-    par: dict
-        par['data'] contains the data to be used. If user_data is not None, these are used without deep copies, 
-        otherwise the global minimum of the quadratic data functional is computed. 
-        par['init'] contains the initial guess. If user_init is not None, these are used without deep copies, 
-        otherwise the global minimum of the penalty functional is computed. 
+    Returns
+    -------
+    out : dict
+        ``out['applicable']`` states whether the method is applicable. If it
+        is false, ``out['info']`` gives the reasons.
+    par : dict
+        Resolved parameters. ``par['data']`` is ``user_data`` when provided.
+        Otherwise it is the setting's stored observational data for a
+        codomain-free setting, possibly ``None``, or the minimizer of the
+        quadratic data-fidelity term. ``par['init']`` is ``user_init`` when
+        provided, otherwise the minimizer of the quadratic penalty.
     """
     out = {'info':''}; par = {} 
     if check_is_norm_squared_type:
@@ -1067,30 +1073,32 @@ def check_Hilbert_applicability(setting:Setting,
         if not (setting.codomain_free or setting.data_fid.is_quadratic):
             out['info'] += 'Data fidelity term is not quadratic. '
     if setting.is_tikhonov and (not regularization_parameter_required):
-        print('check error',setting.is_tikhonov,regularization_parameter_required)
         out['info'] += 'Setting has a specified regularization parameter. '
     if (not setting.is_tikhonov) and regularization_parameter_required:
         out['info'] += 'Setting has no specified regularization parameter. '    
-    if setting.codomain_free or ((not setting.codomain_free) and setting.data_fid.is_quadratic):
-        if user_data is None:
-            data = setting.op.codomain.zeros()
-            if not setting.codomain_free:
-                # compute data as global minimum of the qudaratic data fidelity term
-                S = setting.data_fid            
-                S.subgradient(data,out=data)
-                hess = S.hessian(data)
-                hess.inverse(data,out=data)
-                data *= -1.
-            elif hasattr(setting,'data'):
-                setting.op.codomain.copyto(data, setting.data)
-            else:
-                setting.log.warning('setting is codomain_free, but has no data, and no user data are provided')
-
-            par['data'] = data 
+    if setting.codomain_free or setting.data_fid.is_quadratic:
+        if user_data is not None:
+            if not setting.codomain_free and user_data not in setting.op.codomain:
+                raise TypeError(Errors.not_in_vecsp(
+                    user_data,
+                    setting.op.codomain,
+                    vec_name='data',
+                    space_name='codomain',
+                ))
+            par['data'] = user_data
+        elif setting.codomain_free:
+            # Missing data do not make a method structurally inapplicable:
+            # they may still be supplied when constructing the solver.
+            par['data'] = setting.data
         else:
-            if user_data not in setting.op.codomain:
-                raise TypeError(Errors.type_error('If setting is codomain-free, data in codomain must be provided as argument.',user_data))
-            par['data'] = user_data     
+            data = setting.op.codomain.zeros()
+            # Compute the global minimizer of the quadratic data fidelity.
+            S = setting.data_fid
+            S.subgradient(data, out=data)
+            hess = S.hessian(data)
+            hess.inverse(data, out=data)
+            data *= -1.
+            par['data'] = data
 
     if user_init is None and setting.penalty.is_quadratic:
         # compute data as global minimum of the qudaratic data fidelity term
