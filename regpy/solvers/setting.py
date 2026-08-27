@@ -13,9 +13,13 @@ from regpy.functionals import Functional
 from regpy.stoprules import StopRule, DualityGapStopping, CountIterations
 __all__ = [
     "Setting",
+    "get_reg_method_dictionary",
+    "get_convex_solver_dictionary",
     "check_Hilbert_applicability",
     "check_Hilbert_applicability_linear",
 ]
+
+_DEFAULT_STOPRULE = object()
 
 class Setting:
     r"""A *setting* for an inverse problem, used by RegSolvers. A setting always consists at least of
@@ -151,7 +155,7 @@ class Setting:
 
     def set_penalty(self, penalty)->None :
         self._penalty = as_functional(penalty, self.op.domain)
-        self._init_convex_Tikhonov()
+        self._init_method_dictionary()
 
     @property
     def init(self)->ReadOnlyVector:
@@ -199,7 +203,7 @@ class Setting:
         if self.data is not None:
             raise RuntimeError(Errors.runtime_error("data fidelity term cannot be changed if data are set."))
         self._data_fid = as_functional(data_fid, self.op.codomain)
-        self._init_convex_Tikhonov()
+        self._init_method_dictionary()
 
     @property
     def data(self) -> ReadOnlyVector | ObsDataT | None:
@@ -279,12 +283,25 @@ class Setting:
                 raise ValueError(Errors.value_error("The regularization parameter need to be a positive scalar"))
             new_regpar = float(new_regpar)
         self._regpar=new_regpar
-        self._init_convex_Tikhonov()
+        self._init_method_dictionary()
 
-    def _init_convex_Tikhonov(self) -> None:
-        if hasattr(self,'regpar') and self._primal_setting is None and self.is_convex and self.is_tikhonov:
-            self._methods = self._generate_full_solver_dictionary()
-            self.duality_gap_warning_incr = 1.        
+    def _init_method_dictionary(self) -> None:
+        """Initialize the solver dictionary appropriate for this setting."""
+        if not hasattr(self, '_regpar') or not hasattr(self, '_primal_setting'):
+            return
+        if self._primal_setting is not None:
+            self.__dict__.pop('_methods', None)
+            return
+        if not self.is_tikhonov:
+            self._methods = get_reg_method_dictionary()
+            self.__dict__.pop('duality_gap_warning_incr', None)
+        elif self.is_convex:
+            self._methods = get_convex_solver_dictionary()
+            self.duality_gap_warning_incr = 1.
+        else:
+            # Non-convex Tikhonov settings are intentionally not supported yet.
+            self.__dict__.pop('_methods', None)
+            self.__dict__.pop('duality_gap_warning_incr', None)
 
     ######General convenience methods
     @property
@@ -669,39 +686,10 @@ class Setting:
         return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
                self.penalty.dist_subdiff(Tsp,f) 
 
-
-
-    
-    ######Methods checking applicability
-    def _generate_full_solver_dictionary(self)->dict:
-        """This so far contains only solvers for convex Tikhonov functionals."""
-        from .linear import (
-            ADMM,
-            FISTA,
-            ForwardBackwardSplitting,
-            PDHG,
-            SemiSmoothNewton,
-            TikhonovCG,
-        )
-        method_dict={
-                'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
-                'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
-                'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
-                'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
-                'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
-                'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
-                'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
-                'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
-                'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
-                'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
-                'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
-            }
-        return method_dict
-
     def add_method(self,
                    method_abbrv:str,
                    class_name:type,
-                   primal:bool,
+                   primal:bool|None=None,
                    full_method_name:str=None)->None:
         """ Add a new method to the method dictionary
         
@@ -711,16 +699,41 @@ class Setting:
             Abbreviation of the new method by which it is called.
         class_name:type
             Class of the new method
-        primal:bool
-            Flag if the method is applied to the primal or to the dual problem
+        primal:bool or None
+            For convex Tikhonov settings, flag if the method is applied to the primal
+            or dual problem; None defaults to True. It is not used for settings
+            without a regularization parameter.
         full_method_name:str | None, optional
             Full, more descriptive name of the method. Defaults to None 
         """
-        if not self.is_convex or not self.is_tikhonov:
-            raise RuntimeError(Errors.runtime_error('So far only convex Tikhonov functional have a method dictionary.'))
+        if not self._has_method_dictionary():
+            raise RuntimeError(Errors.runtime_error(
+                'Method dictionaries are available for settings without a '
+                'regularization parameter and for convex Tikhonov settings.'
+            ))
+        if not self.is_tikhonov and primal is False:
+            raise ValueError(Errors.value_error(
+                'A setting without a regularization parameter has no dual '
+                'setting to which a method could be applied.'
+            ))
+        if not callable(getattr(class_name, 'check_applicability', None)):
+            raise TypeError(Errors.type_error(
+                'Solver classes in a method dictionary must implement '
+                'check_applicability.', class_name
+            ))
         if not hasattr(self,'_methods'):
-            self._methods = self._generate_full_solver_dictionary()
-        self._methods[method_abbrv] = {'class':class_name, 'primal':primal,'full':full_method_name}
+            self._init_method_dictionary()
+        method = {'class': class_name, 'full': full_method_name}
+        if self.is_tikhonov:
+            method['primal'] = True if primal is None else primal
+        self._methods[method_abbrv] = method
+
+    def _has_method_dictionary(self) -> bool:
+        """Whether this setting kind supports a solver dictionary."""
+        return (
+            self._primal_setting is None
+            and (not self.is_tikhonov or self.is_convex)
+        )
 
     def evaluate_methods(self,method_names = None)->None:
         """Evaluates which methods are applicable to the current setting. 
@@ -731,57 +744,79 @@ class Setting:
         method_names: List of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
-        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
-            raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for convex settings with regularization parameter."))
+        if not self._has_method_dictionary():
+            raise NotImplementedError(Errors.generic_message(
+                'Applicable methods can be computed for settings without a '
+                'regularization parameter and for primal convex Tikhonov '
+                'settings. Non-convex Tikhonov settings are not supported yet.'
+            ))
         if method_names is None:
-            method_names = self._methods.keys()
+            method_names = list(self._methods)
         else:
+            method_names = list(method_names)
             for method_name in method_names:
                 if not method_name in self._methods:
                     raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
-        if len(method_names)>0:
-            op_norm = self.op.norm()
+        # Only convex Tikhonov solvers use the global operator norm for their
+        # convergence-rate estimates. It may not exist for nonlinear methods.
+        op_norm = self.op.norm() if method_names and self.is_tikhonov else None
         for method_name in method_names:
             method = self._methods[method_name]
-            out,_ = method['class'].check_applicability(self if method['primal'] else self.get_dual_setting(),op_norm=op_norm)
-            if not method['primal'] and not 'subgradient' in self.penalty.conj.methods:
+            if self.is_tikhonov:
+                primal = method['primal']
+                target_setting = self if primal else self.get_dual_setting()
+            else:
+                target_setting = self
+            out,_ = method['class'].check_applicability(
+                target_setting, op_norm=op_norm
+            )
+            method.pop('rate', None)
+            if (self.is_tikhonov and not primal
+                    and not 'subgradient' in self.penalty.conj.methods):
                 method['info'] = ('' if out['applicable'] else out['info']) + 'Missing subgradient of conjugate penalty.'
                 method['applicable'] = False
             else:
                 method['applicable'] = out['applicable']
                 method['info'] = out['info']
-                if out['applicable']:
+                if (self.is_tikhonov and out['applicable']
+                        and 'rate' in out):
                     method['rate'] = out['rate']
 
     def applicable_methods(self):
-        """Yields subdictionary of the methods that can be applied to the given Tikhonov functional.
-        """
-        if not (self._primal_setting is None and self.is_convex and self.is_tikhonov):
-            raise NotImplementedError(Errors.generic_message("Applicable methods so far can only be computed for primal convex settings with regularization parameter."))
+        """Return the methods that can be applied to this setting."""
+        if not self._has_method_dictionary():
+            raise NotImplementedError(Errors.generic_message(
+                'Applicable methods are unavailable for this setting kind.'
+            ))
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
     def display_all_methods(self,full_names=True):
-        """
-        Displays all the methods for minimizing Tikhonov functionals together with information 
-        on their applicability to the given Tikhonov functional. 
-        """
+        """Display all registered methods and their applicability."""
         self.evaluate_methods()
         print('Applicable methods:\n')
         for name,method in self.applicable_methods().items():
-            print(name, (' ('+method['full']+'): ' if full_names else ''),
-                  method['info'],'linear rate: {:.3e}'.format(method['rate']))
+            full_name = method.get('full')
+            suffix = (
+                'linear rate: {:.3e}'.format(method['rate'])
+                if 'rate' in method else ''
+            )
+            print(name, (f' ({full_name}): ' if full_names and full_name else ''),
+                  method['info'], suffix)
         print('\n Non-applicable methods:\n')
         for name,method in self._methods.items(): 
             if method['applicable']==False:
-                print(name, (' ('+method['full']+'): ' if full_names else ''),
+                full_name = method.get('full')
+                print(name, (f' ({full_name}): ' if full_names and full_name else ''),
                       method['info'])
 
-    def set_method_parameters(self,method_name:str,params:dict={})->None:
+    def set_method_parameters(self,method_name:str,params:dict|None=None)->None:
         if method_name not in self._methods:
             raise RuntimeError(Errors.runtime_error(f"Unknown method name {method_name}. Known methods are {self._methods}. Use add_method() to add a new method."))    
-        self._methods[method_name]['parameters']=params
+        self._methods[method_name]['parameters'] = (
+            {} if params is None else dict(params)
+        )
 
     def select_best_method(self):
         """Returns the name of the applicable method with the best convergence rate predicted by theory 
@@ -789,10 +824,22 @@ class Setting:
         (Since comparisons of first and second order methods are difficult, we only choose among first 
         order methods, and to achieve this, we set convergence rates of second order method >1.)
         """
+        if not self.is_tikhonov:
+            raise RuntimeError(Errors.runtime_error(
+                'Convergence-rate estimates are not available for '
+                'non-Tikhonov regularization methods. Please specify '
+                'method_name explicitly.'
+            ))
         d = self.applicable_methods()
-        best_method_name = min(d, key=lambda name: np.abs(d[name]['rate']))
-        if isinstance(d[best_method_name]['rate'],int):
-            best_method_name = min(d, key=lambda name: np.abs(d[name]['rate']))
+        rated = {name: method for name, method in d.items() if 'rate' in method}
+        if not rated:
+            raise RuntimeError(Errors.runtime_error(
+                'No convergence-rate comparison is available for the '
+                'applicable methods. Please specify method_name explicitly.'
+            ))
+        best_method_name = min(
+            rated, key=lambda name: np.abs(rated[name]['rate'])
+        )
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
@@ -812,7 +859,8 @@ class Setting:
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
         if method_names is None:
             method_names = list(self.applicable_methods())
-        if not isinstance(method_names,list) and all([isinstance(method_name,str) for method_name in method_names]):
+        if (not isinstance(method_names,list)
+                or not all(isinstance(method_name,str) for method_name in method_names)):
             raise ValueError(Errors.value_error('method_names must be list of strings',method_names))
         for method_name in method_names:
             if method_name not in self._methods.keys():
@@ -840,7 +888,7 @@ class Setting:
             return self._methods[method_name]['stoprule']   
 
     def run(self,method_name = None,
-            stoprule:StopRule = DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG'),
+            stoprule:StopRule|None|object = _DEFAULT_STOPRULE,
             **kwargs):
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -849,9 +897,11 @@ class Setting:
         method_name: string or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
-        stoprule: StopRule | None 
-            stoprule. Defualt is  DualityGapStopping(tol = 0.1,logging_level='DEBUG') + CountIterations(1000,logging_level='DEBUG')
-            If None, 
+        stoprule: StopRule | None
+            Stopping rule. By default, convex Tikhonov methods use a duality-gap
+            rule combined with 1000 maximum iterations; regularization methods
+            use 1000 maximum iterations. If None, a previously stored stopping
+            rule is used.
         **kwargs: dict
             Arguments to be passed to the method.
 
@@ -873,7 +923,19 @@ class Setting:
         if 'parameters' in themethod:
             kwargs.update(themethod['parameters'])
 
-        thesetting = self if themethod['primal'] else self.get_dual_setting()
+        if self.is_tikhonov:
+            primal = themethod['primal']
+            thesetting = self if primal else self.get_dual_setting()
+        else:
+            thesetting = self
+        if stoprule is _DEFAULT_STOPRULE:
+            if self.is_tikhonov:
+                stoprule = (
+                    DualityGapStopping(tol=0.1, logging_level='DEBUG')
+                    + CountIterations(1000, logging_level='DEBUG')
+                )
+            else:
+                stoprule = CountIterations(1000, logging_level='DEBUG')
         if stoprule is not None:
             self.set_stopping_rule(stoprule,method_names=[method_name])
         elif 'stoprule' not in themethod or themethod['stoprule'] is None:
@@ -882,11 +944,83 @@ class Setting:
         solver = themethod['class'](thesetting,**kwargs)
         x,y = solver.run(themethod['stoprule'])
         
-        if themethod['primal']==False:
+        if self.is_tikhonov and not primal:
             x_star,y_star = x,y
             x = self.dual_to_primal((x_star,y_star))
             y = self.op(x)
         return x,y
+
+def get_reg_method_dictionary()->dict:
+    """Return the available methods for non-Tikhonov settings.
+
+    Imports are deliberately local so concrete solver modules can import
+    :class:`Setting` without creating a module-initialization cycle.
+    """
+    from .linear import (
+        CGNE,
+        Landweber as linLandweber,
+        TikhonovAlphaGrid
+    )
+    from .nonlinear import (
+        Landweber as nlLandweber,
+        IrgnmCG, 
+        LevenbergMarquardt,
+        NewtonCG,
+        NewtonCGFrozen
+    )
+    method_dict={
+            'linLW':    {'class':linLandweber, 
+                         'full': 'Landweber iteration for linear problems'
+                        },
+            'nlLW':     {'class':nlLandweber,
+                         'full': 'Landweber iteration for nonlinear problems'
+                        },
+            'CGNE':     {'class':CGNE, 
+                         'full': 'Conjugate Gradient method applied to the normal equation'
+                        },
+            'TikhOnGrid':{'class': TikhonovAlphaGrid,
+                          'full': 'Tikhonov regularization applied for a grid of regularization parameters'
+                         },
+            'IRGNM_CG':     {'class':IrgnmCG, 
+                         'full': 'Iteratively Regularized Gauss-Newton Method with inner CG solver'
+                        },
+            'LevMar':     {'class':LevenbergMarquardt, 
+                         'full': 'Levenberg-Marquardt method'
+                        },
+            'NewtonCG':     {'class':NewtonCG, 
+                         'full': 'Newton method with inner CGNE regularized by early stopping'
+                        },
+            'NewtCGFroz':     {'class':NewtonCGFrozen, 
+                         'full': 'Newton-CG method with derivative frozen at initial guess'
+                        },                        
+    }
+    return method_dict
+
+def get_convex_solver_dictionary()->dict:
+    """Returns a list of available solvers for convex Tikhonov functionals."""
+    from .linear import (
+        ADMM,
+        FISTA,
+        ForwardBackwardSplitting,
+        PDHG,
+        SemiSmoothNewton,
+        TikhonovCG,
+    )
+    method_dict={
+            'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
+            'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
+            'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
+            'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
+            'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
+            'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
+            'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
+            'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
+            'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
+            'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
+            'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+        }
+    return method_dict
+
 
 def check_Hilbert_applicability(setting:Setting, 
                                 user_data: Vector | ObsDataT| None= None, 
