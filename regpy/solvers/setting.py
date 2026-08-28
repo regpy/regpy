@@ -77,9 +77,17 @@ class Setting:
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
     init: Vector or None [default: None]
-        Initial guess in ``op.domain``. It is stored independently of the
-        penalty functional. If no initial guess is supplied, :attr:`init`
-        returns the penalty's :meth:`~regpy.functionals.Functional.reference_vector`.
+        Initial guess in ``op.domain``. Depending on
+        ``incorporate_init_in_penalty``, it is either incorporated into the
+        penalty or stored independently. If no initial guess is supplied,
+        :attr:`init` returns a writable copy of the penalty's
+        :meth:`~regpy.functionals.Functional.reference_vector`.
+    incorporate_init_in_penalty: bool [default: True]
+        If true, a supplied initial guess is incorporated into the penalty by
+        making the penalty a data functional. If false, an independent copy
+        is stored in the setting. This option applies only to the ``init``
+        argument passed to the constructor and has no effect when ``init`` is
+        ``None``. Later assignments to :attr:`init` are stored independently.
     codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -103,6 +111,7 @@ class Setting:
                  data: ReadOnlyVector | ObsDataT | None = None, 
                  exact_data: ReadOnlyVector | None = None, 
                  init: ReadOnlyVector | None = None,
+                 incorporate_init_in_penalty: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
@@ -112,11 +121,19 @@ class Setting:
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
         self._op = op
         self._codomain_free = codomain_free
+        if not isinstance(incorporate_init_in_penalty, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                'incorporate_init_in_penalty must be boolean.',
+                incorporate_init_in_penalty,
+            ))
 
         self.set_penalty(penalty)
 
         if init is not None:
-            self.init = init
+            if incorporate_init_in_penalty:
+                self.set_penalty(self.penalty.as_data_func(init))
+            else:
+                self.init = init
 
         if not codomain_free:
             self.set_data_fid(data_fid)    
@@ -155,31 +172,27 @@ class Setting:
         self._init_method_dictionary()
 
     @property
-    def init(self)->ReadOnlyVector:
-        r"""The initial guess as a read-only vector.
+    def init(self) -> Vector:
+        r"""Return the initial guess as an independent writable vector.
 
-        A user-supplied initial guess is stored independently of the penalty
-        functional. If none is stored, the penalty's
-        :meth:`~regpy.functionals.Functional.reference_vector` is used.
+        An independently stored user initialization is copied. Otherwise, the
+        penalty's :meth:`~regpy.functionals.Functional.reference_vector` is
+        written into a newly allocated vector. Consequently, modifying the
+        returned vector never modifies either the setting or its penalty.
         """
+        out = self.op.domain.empty()
         if hasattr(self, '_init'):
-            return self.op.domain.read_only(self._init)
-        reference = self.penalty.reference_vector()
-        if reference not in self.op.domain:
-            raise TypeError(Errors.not_in_vecsp(
-                reference,
-                self.op.domain,
-                vec_name='penalty reference vector',
-                space_name='domain',
-            ))
-        return self.op.domain.read_only(reference)
+            self.op.domain.copyto(out, self._init)
+        else:
+            self.penalty.reference_vector(out=out)
+        return out
 
     @init.setter
     def init(self, new_init: ReadOnlyVector) -> None:
         self.change_init(new_init=new_init)
 
     def change_init(self, new_init: ReadOnlyVector) -> None:
-        r"""Store an initial guess independently of the penalty functional."""
+        r"""Store a supplied initial guess independently of the penalty."""
         if new_init not in self.op.domain:
             raise TypeError(Errors.not_in_vecsp(
                 new_init,
