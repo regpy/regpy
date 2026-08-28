@@ -14,6 +14,8 @@ from regpy.stoprules import StopRule, DualityGapStopping, CountIterations
 __all__ = [
     "Setting",
     "get_reg_method_dictionary",
+    "get_linear_reg_method_dictionary",
+    "get_nonlinear_reg_method_dictionary",
     "get_convex_solver_dictionary",
     "check_Hilbert_applicability",
     "check_Hilbert_applicability_linear",
@@ -286,14 +288,18 @@ class Setting:
         self._init_method_dictionary()
 
     def _init_method_dictionary(self) -> None:
-        """Initialize the solver dictionary appropriate for this setting."""
+        """Initialize the solver dictionary for one of the three supported setting kinds."""
         if not hasattr(self, '_regpar') or not hasattr(self, '_primal_setting'):
             return
         if self._primal_setting is not None:
             self.__dict__.pop('_methods', None)
             return
         if not self.is_tikhonov:
-            self._methods = get_reg_method_dictionary()
+            self._methods = (
+                get_linear_reg_method_dictionary()
+                if self.op.linear
+                else get_nonlinear_reg_method_dictionary()
+            )
             self.__dict__.pop('duality_gap_warning_incr', None)
         elif self.is_convex:
             self._methods = get_convex_solver_dictionary()
@@ -950,8 +956,8 @@ class Setting:
             y = self.op(x)
         return x,y
 
-def get_reg_method_dictionary()->dict:
-    """Return the available methods for non-Tikhonov settings.
+def get_linear_reg_method_dictionary() -> dict:
+    """Return regularization methods intended for linear operators.
 
     Imports are deliberately local so concrete solver modules can import
     :class:`Setting` without creating a module-initialization cycle.
@@ -961,19 +967,9 @@ def get_reg_method_dictionary()->dict:
         Landweber as linLandweber,
         TikhonovAlphaGrid
     )
-    from .nonlinear import (
-        Landweber as nlLandweber,
-        IrgnmCG, 
-        LevenbergMarquardt,
-        NewtonCG,
-        NewtonCGFrozen
-    )
-    method_dict={
+    return {
             'linLW':    {'class':linLandweber, 
                          'full': 'Landweber iteration for linear problems'
-                        },
-            'nlLW':     {'class':nlLandweber,
-                         'full': 'Landweber iteration for nonlinear problems'
                         },
             'CGNE':     {'class':CGNE, 
                          'full': 'Conjugate Gradient method applied to the normal equation'
@@ -981,6 +977,30 @@ def get_reg_method_dictionary()->dict:
             'TikhOnGrid':{'class': TikhonovAlphaGrid,
                           'full': 'Tikhonov regularization applied for a grid of regularization parameters'
                          },
+    }
+
+
+def get_nonlinear_reg_method_dictionary() -> dict:
+    """Return regularization methods intended for nonlinear operators.
+
+    Linear operators may also satisfy the applicability conditions of these
+    methods. They are deliberately omitted from the default dictionary of a
+    linear setting because the specialized linear methods are preferable.
+
+    Imports are local to avoid module-initialization cycles with concrete
+    solver modules that import :class:`Setting`.
+    """
+    from .nonlinear import (
+        IrgnmCG,
+        Landweber as nlLandweber,
+        LevenbergMarquardt,
+        NewtonCG,
+        NewtonCGFrozen,
+    )
+    return {
+            'nlLW':     {'class':nlLandweber,
+                         'full': 'Landweber iteration for nonlinear problems'
+                        },
             'IRGNM_CG':     {'class':IrgnmCG, 
                          'full': 'Iteratively Regularized Gauss-Newton Method with inner CG solver'
                         },
@@ -994,10 +1014,23 @@ def get_reg_method_dictionary()->dict:
                          'full': 'Newton-CG method with derivative frozen at initial guess'
                         },                        
     }
-    return method_dict
 
-def get_convex_solver_dictionary()->dict:
-    """Returns a list of available solvers for convex Tikhonov functionals."""
+
+def get_reg_method_dictionary() -> dict:
+    """Return all non-Tikhonov regularization methods.
+
+    This compatibility helper combines the linear and nonlinear registries.
+    New code should normally use :func:`get_linear_reg_method_dictionary` or
+    :func:`get_nonlinear_reg_method_dictionary`. A :class:`Setting` selects
+    between those two automatically and never uses this combined dictionary.
+    """
+    return {
+        **get_linear_reg_method_dictionary(),
+        **get_nonlinear_reg_method_dictionary(),
+    }
+
+def get_convex_solver_dictionary() -> dict:
+    """Return the available solvers for convex Tikhonov settings."""
     from .linear import (
         ADMM,
         FISTA,
