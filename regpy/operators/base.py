@@ -1487,6 +1487,9 @@ class LinearCombination(Operator):
         Variable number of scalar and operators to be put in a linear combination. Each can be either:
         - A tuple `(scalar, Operator)` representing a scalar and an operator to be combined linearly.
         - An `Operator` to be included directly in the linear combination.
+
+    A linear combination is marked as self-adjoint if every constituent
+    operator is self-adjoint and every combined coefficient is real.
     """
 
     def __init__(self, *args: Operator | tuple[Scalar, Operator]) -> None:
@@ -1552,7 +1555,16 @@ class LinearCombination(Operator):
                 add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n\t"
                                                 +"\n\t".join([f"{op} with domain {op.codomain}," for op in self.ops])))
 
-        super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
+        self_adjoint = (
+            all(op.self_adjoint for op in self.ops)
+            and all(bool(np.isreal(coeff)) for coeff in self.coeffs)
+        )
+        super().__init__(
+            domain,
+            codomain,
+            linear=all(op.linear for op in self.ops),
+            self_adjoint=self_adjoint,
+        )
 
     def _eval(
         self, x: Vector, differentiate: bool = False, **kwargs
@@ -2299,6 +2311,7 @@ class Identity(Operator):
     The allocating methods return an independent vector. In-place calls copy into the
     supplied output vector. A configurable no-copy mode is intentionally not provided,
     because allocating operator results must be freely modifiable by the caller.
+    The identity operator is always self-adjoint.
 
     Parameters
     ----------
@@ -2307,7 +2320,12 @@ class Identity(Operator):
     """
 
     def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        super().__init__(domain, domain, linear=True)
+        super().__init__(
+            domain,
+            domain,
+            linear=True,
+            self_adjoint=True,
+        )
 
     def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
         if out is not x:
@@ -2483,6 +2501,9 @@ class PtwMultiplication(Operator):
         The underlying vector space
     factor : Vector or ArrayLike
         The factor by which to multiply. In case of domain being NumPyVectorSpace it can be anything that can be broadcast to `domain.shape`.
+
+    The operator is marked as self-adjoint exactly when the stored multiplier
+    is real-valued.
     """
     def __init__(
         self,
@@ -2517,7 +2538,16 @@ class PtwMultiplication(Operator):
             ))
         self.factor = domain.empty()
         domain.copyto(self.factor, factor)
-        super().__init__(domain, domain, linear=True)
+        factor_is_real = (
+            not domain.is_complex
+            or domain.norm(self.factor.imag) == 0
+        )
+        super().__init__(
+            domain,
+            domain,
+            linear=True,
+            self_adjoint=factor_is_real,
+        )
 
     def _eval(self, x: Vector) -> Vector:
         return self.factor * x
@@ -2724,6 +2754,9 @@ class DirectSum(Operator):
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
         The resulting vector space should be iterable, yielding the individual summands.
         Default: vecsps.DirectSum.
+
+    The direct sum is marked as self-adjoint if all constituent operators are
+    self-adjoint and the resulting domain and codomain coincide.
     """
 
     def __init__(
@@ -2809,7 +2842,15 @@ class DirectSum(Operator):
                 vecsps.DirectSum,
                 add_info='codomain={} is neither a VectorSpaceBase nor callable'.format(codomain)
                 ))
-        super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in self.ops))
+        super().__init__(
+            domain=domain,
+            codomain=codomain,
+            linear=all(op.linear for op in self.ops),
+            self_adjoint=(
+                domain == codomain
+                and all(op.self_adjoint for op in self.ops)
+            ),
+        )
 
     def _ieval(
         self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
@@ -3523,6 +3564,8 @@ class Zero(Operator):
         The underlying vector space.
     codomain : regpy.vecsps.VectorSpaceBase, optional
         The vector space of the codomain. Defaults to `domain`.
+
+    The zero operator is self-adjoint when domain and codomain coincide.
     """
     def __init__(
         self,
@@ -3531,7 +3574,12 @@ class Zero(Operator):
     ) -> None:
         if codomain is None:
             codomain = domain
-        super().__init__(domain, codomain, linear=True)
+        super().__init__(
+            domain,
+            codomain,
+            linear=True,
+            self_adjoint=domain == codomain,
+        )
 
     def _eval(self, x: Vector) -> Vector:
         return self.codomain.zeros()
