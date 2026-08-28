@@ -393,7 +393,7 @@ def test_adjoint(op, tolerance=1e-10):
     .. highlight:: python
     .. code:: python
 
-        inner(y, op(x)) == inner(op.adjoint(x), y)
+        inner(y, op(x)) == inner(op.adjoint(y), x)
 
     in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
 
@@ -421,6 +421,48 @@ def test_adjoint(op, tolerance=1e-10):
     else:
         op.log.warning(f'Adjoint test failed: err = {err}')
         return False
+
+
+def test_self_adjoint(op, tolerance=1e-10):
+    r"""Test the public contract of a declared self-adjoint operator.
+
+    Besides the numerical adjoint identity checked by :func:`test_adjoint`,
+    self-adjoint operators must be linear, map a vector space to itself, and
+    expose themselves through :attr:`Operator.adjoint` rather than construct
+    an adjoint proxy.
+
+    Parameters
+    ----------
+    op : regpy.operators.Operator
+        An operator whose :attr:`~regpy.operators.Operator.self_adjoint` flag
+        is expected to be true.
+    tolerance : float, optional
+        The maximum allowed error in the numerical adjoint test. Defaults to
+        1e-10.
+
+    Returns
+    -------
+    bool
+        Whether the structural and numerical self-adjointness checks pass.
+    """
+    if not op.self_adjoint:
+        op.log.warning('Self-adjointness test requested for an unmarked operator.')
+        return False
+    if not op.linear:
+        op.log.warning('A self-adjoint operator must be linear.')
+        return False
+    if op.domain != op.codomain:
+        op.log.warning(
+            'A self-adjoint operator must have identical domain and codomain.'
+        )
+        return False
+    if op.adjoint is not op:
+        op.log.warning(
+            'The adjoint property of a self-adjoint operator must return the '
+            'operator itself.'
+        )
+        return False
+    return test_adjoint(op, tolerance=tolerance)
 
 def test_adjoint_eval(op, tolerance=1e-10):
     r"""Numerically test validity of :meth:`adjoint_eval` method.
@@ -532,9 +574,13 @@ def test_operator(
         test_inplace=True, test_inplace_aliasing=True):
     """Numerically tests if operator is computed correctly.
 
-    Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
-    sequence of difference quotients and checking if they are decreasing. Checks if derivative is linear with correct adjoint.
-    Optionally checks correctness of adjoint derivative.
+    Checks if an operator is linear and if its adjoint is correct for linear
+    operators. For operators marked as self-adjoint, it additionally checks
+    that domain and codomain coincide and that :attr:`Operator.adjoint`
+    returns the operator itself. For nonlinear operators, it checks the
+    derivative by computing a sequence of difference quotients, and verifies
+    that the derivative is linear with a correct adjoint. Optionally checks
+    correctness of the adjoint derivative.
 
     Parameters
     ----------
@@ -577,6 +623,10 @@ def test_operator(
                 )
             if not test_linearity(op,tolerance) or not test_adjoint(op,tolerance):
                 raise AssertionError('Linearity or adjoint test failed for linear operator.')
+            if op.self_adjoint and not test_self_adjoint(op, tolerance):
+                raise AssertionError(
+                    'Public self-adjointness contract failed for linear operator.'
+                )
             if not test_adjoint_eval(op,tolerance):
                 raise AssertionError(f'Applying the adjoint and eval deviates more than {tolerance} from the implementation of adjoint_eval with respect to the vector space l2 norm.')
     elif test_affine_linearity(op,tolerance=tolerance):

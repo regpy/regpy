@@ -100,6 +100,161 @@ def op_evaluation_and_ot(op,x=None,res=None,rel_tol=1e-6, tol=1e-10,**kwargs):
         diff = op.codomain.norm(op(x)-res)
         assert diff == pytest.approx(0.,rel=rel_tol,abs = tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
 
+
+class _SelfAdjointMatrix(op_base.Operator):
+    """A self-adjoint linear operator without an ``_adjoint`` method."""
+
+    def __init__(self, matrix):
+        matrix = np.asarray(matrix, dtype=float)
+        self.matrix = matrix
+        space = NumPyVectorSpace(matrix.shape[0])
+        super().__init__(
+            space,
+            space,
+            linear=True,
+            self_adjoint=True,
+        )
+
+    def _eval(self, x):
+        return self.matrix @ x
+
+
+class _ExponentialQuadraticGradient(op_base.Operator):
+    r"""Gradient of :math:`f(x,y)=\exp(x+2y)+x^2` on :math:`\mathbb R^2`."""
+
+    def __init__(self):
+        space = NumPyVectorSpace(2)
+        # A nonlinear operator is not itself self-adjoint.  The flag declares
+        # that each derivative (the Hessian of f) is self-adjoint.
+        super().__init__(
+            space,
+            space,
+            self_adjoint=True,
+        )
+
+    def _eval(self, x, differentiate=False):
+        exponential = np.exp(x[0] + 2 * x[1])
+        if differentiate:
+            self._linearization_exponential = exponential
+        return np.array([
+            exponential + 2 * x[0],
+            2 * exponential,
+        ])
+
+    def _derivative(self, h):
+        exponential = self._linearization_exponential
+        return np.array([
+            (exponential + 2) * h[0] + 2 * exponential * h[1],
+            2 * exponential * h[0] + 4 * exponential * h[1],
+        ])
+
+
+class TestSelfAdjoint:
+
+    def test_constructor_contract(self):
+        space = NumPyVectorSpace(2)
+        other_space = NumPyVectorSpace(3)
+
+        with pytest.raises(TypeError):
+            op_base.Operator(
+                space, space, linear=True, self_adjoint=1
+            )
+        with pytest.raises(ValueError):
+            op_base.Operator(
+                space, other_space, linear=True, self_adjoint=True
+            )
+
+    def test_linear_operator_without_adjoint_implementation(self):
+        matrix = np.array([[2., 1.], [1., 3.]])
+        op = _SelfAdjointMatrix(matrix)
+        x = np.array([1.5, -2.])
+
+        assert op.self_adjoint is True
+        assert op.adjoint is op
+        np.testing.assert_allclose(op.adjoint(x), matrix @ x)
+
+        out = op.domain.empty()
+        returned = op.adjoint(x, out=out)
+        assert returned is out
+        np.testing.assert_allclose(out, matrix @ x)
+
+        assert ot.test_self_adjoint(op)
+        ot.test_operator(op, sample_N=2)
+        assert op.norm(method="lanczos") == pytest.approx(
+            np.linalg.norm(matrix, ord=2), rel=1e-3
+        )
+
+    def test_nonlinear_gradient_has_self_adjoint_derivative(self):
+        op = _ExponentialQuadraticGradient()
+        x = np.array([0.2, -0.1])
+        h = np.array([1.5, -0.5])
+        exponential = np.exp(x[0] + 2 * x[1])
+        expected_value = np.array([
+            exponential + 2 * x[0],
+            2 * exponential,
+        ])
+        hessian = np.array([
+            [exponential + 2, 2 * exponential],
+            [2 * exponential, 4 * exponential],
+        ])
+
+        assert op.self_adjoint is False
+        with pytest.raises(RuntimeError):
+            _ = op.adjoint
+
+        value, derivative = op.linearize(x)
+        np.testing.assert_allclose(value, expected_value)
+        assert derivative.self_adjoint is True
+        assert derivative.adjoint is derivative
+        np.testing.assert_allclose(derivative(h), hessian @ h)
+        np.testing.assert_allclose(derivative.adjoint(h), hessian @ h)
+        assert ot.test_self_adjoint(derivative)
+
+        # This invokes the generic derivative, adjoint, adjoint-evaluation,
+        # out-buffer, and aliasing checks as well.
+        ot.test_operator(
+            op,
+            sample_N=1,
+            x_s=x,
+            steps=[1e-1, 1e-2, 1e-3, 1e-4],
+        )
+
+    def test_flags_of_standard_operators(self):
+        real_space = NumPyVectorSpace(2)
+        complex_space = NumPyVectorSpace(2, dtype=complex)
+
+        identity = op_base.Identity(real_space)
+        zero = op_base.Zero(real_space)
+        rectangular_zero = op_base.Zero(
+            real_space, NumPyVectorSpace(3)
+        )
+        real_multiplier = op_base.PtwMultiplication(
+            complex_space, np.array([1., 2.])
+        )
+        complex_multiplier = op_base.PtwMultiplication(
+            complex_space, np.array([1., 2j])
+        )
+        real_combination = op_base.LinearCombination(
+            (2., identity), (-3., op_base.PtwMultiplication(real_space, 4.))
+        )
+        complex_combination = op_base.LinearCombination(
+            (1j, op_base.Identity(complex_space))
+        )
+        self_adjoint_sum = op_base.DirectSum(identity, zero)
+        non_self_adjoint_sum = op_base.DirectSum(
+            op_base.Identity(complex_space), complex_multiplier
+        )
+
+        assert identity.self_adjoint is True
+        assert zero.self_adjoint is True
+        assert rectangular_zero.self_adjoint is False
+        assert real_multiplier.self_adjoint is True
+        assert complex_multiplier.self_adjoint is False
+        assert real_combination.self_adjoint is True
+        assert complex_combination.self_adjoint is False
+        assert self_adjoint_sum.self_adjoint is True
+        assert non_self_adjoint_sum.self_adjoint is False
+
 @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((2,2),np.complex128)])
 class TestIdentity():
 
