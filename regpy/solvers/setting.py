@@ -981,11 +981,15 @@ def get_linear_reg_method_dictionary() -> dict:
     from .linear import (
         CGNE,
         Landweber as linLandweber,
+        Richardson,
         TikhonovAlphaGrid
     )
     return {
-            'linLW':    {'class':linLandweber, 
+            'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
+                        },
+            'Richardson':{'class': Richardson,
+                          'full': 'relaxed Richardson method'
                         },
             'CGNE':     {'class':CGNE, 
                          'full': 'Conjugate Gradient method applied to the normal equation'
