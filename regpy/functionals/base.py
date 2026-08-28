@@ -621,6 +621,35 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
+    def gradient_as_operator(self) -> operators.Operator:
+        r"""Return the functional's gradient as a nonlinear operator.
+
+        The returned operator maps ``self.domain`` to itself. Its evaluation
+        at :math:`x` is :meth:`subgradient`, and the derivative at :math:`x`
+        applies the Hessian returned by :meth:`hessian`. Since Hessians are
+        symmetric, derivatives of the returned operator are marked as
+        self-adjoint and do not require a separate adjoint implementation.
+
+        Returns
+        -------
+        regpy.operators.Operator
+            An operator representing :math:`x \mapsto \partial F(x)`.
+
+        Raises
+        ------
+        NotImplementedError
+            If either ``subgradient`` or ``hessian`` is not listed in
+            :attr:`methods`.
+        """
+        required = {'subgradient', 'hessian'}
+        missing = required - self.methods
+        if missing:
+            raise NotImplementedError(util.Errors.generic_message(
+                "gradient_as_operator requires the functional methods "
+                f"subgradient and hessian. Missing: {', '.join(sorted(missing))}."
+            ))
+        return _GradientAsOperator(self)
+
     def conj_subgradient(
         self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
@@ -1047,6 +1076,60 @@ class Functional:
             The adjoint as an `regpy.operators.Operator` instance.
         """
         return Conj(self)
+
+
+class _GradientAsOperator(operators.Operator):
+    r"""Operator wrapper for :meth:`Functional.gradient_as_operator`."""
+
+    def __init__(self, func: Functional) -> None:
+        self.func = func
+        self._hessian: operators.Operator | None = None
+        super().__init__(
+            func.domain,
+            func.domain,
+            linear=False,
+            self_adjoint=True,
+        )
+
+    def _eval(
+        self, x: Vector, differentiate: bool = False, **kwargs: Any
+    ) -> Vector:
+        if differentiate:
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, **kwargs)
+
+    def _ieval(
+        self,
+        x: Vector,
+        out: Vector,
+        differentiate: bool = False,
+        **kwargs: Any,
+    ) -> Vector:
+        if differentiate:
+            # Compute the Hessian before writing to out, since out may be x.
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, out=out, **kwargs)
+
+    def _derivative(self, x: Vector, **kwargs: Any) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, **kwargs)
+
+    def _iderivative(
+        self, x: Vector, out: Vector, **kwargs: Any
+    ) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, out=out, **kwargs)
+
+    def __repr__(self) -> str:
+        return util.make_repr(self, self.func)
 
 
 class Conj(Functional):
