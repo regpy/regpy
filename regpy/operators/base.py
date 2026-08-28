@@ -182,6 +182,11 @@ class Operator:
     therefore, the constructor requires identical domain and codomain whenever
     ``self_adjoint=True`` is requested.
 
+    A linear operator that was not recognized as self-adjoint during its
+    construction can be marked afterwards with
+    :meth:`declare_as_self_adjoint`. This is useful for operators assembled
+    from other operators in ways not covered by RegPy's operator algebra.
+
     Here the logic is simpler, and no sharing of precomputations is needed (unless it applies to the
     operator as a whole, in which case it should be performed in `__init__`).
 
@@ -270,6 +275,103 @@ class Operator:
         :meth:`linearize` instead.
         """
         return self._self_adjoint
+
+    def declare_as_self_adjoint(self, check: bool = True) -> None:
+        r"""Declare an existing linear operator to be self-adjoint.
+
+        This method is intended for operators assembled from other operators
+        in ways for which the operator algebra cannot infer
+        self-adjointness. After a successful declaration,
+        :attr:`self_adjoint` is true and :attr:`adjoint` returns this operator
+        itself. Any separately implemented adjoint methods are consequently
+        ignored by future access through the public :attr:`adjoint` property.
+
+        If ``check`` is true, the declaration is made only if evaluation and
+        adjoint evaluation agree, up to a dtype-dependent rounding tolerance,
+        on one random test vector. This is a useful safeguard but not a proof
+        of self-adjointness. 
+
+        Parameters
+        ----------
+        check : bool, optional
+            Whether to compare evaluation and adjoint evaluation on a random
+            vector before changing the flag. Defaults to ``True``.
+
+        Raises
+        ------
+        TypeError
+            If ``check`` is not boolean.
+        ValueError
+            If the operator is nonlinear, domain and codomain differ, or the
+            numerical check fails.
+        NotImplementedError
+            If ``check`` is true but adjoint evaluation is unavailable.
+        """
+        if not isinstance(check, bool):
+            raise TypeError(util.Errors.type_error(
+                "check must be a boolean.", check
+            ))
+        if not self.linear:
+            raise ValueError(util.Errors.value_error(
+                "Only a linear operator can be declared self-adjoint.",
+                self,
+                "declare_as_self_adjoint",
+            ))
+        if self.domain != self.codomain:
+            raise ValueError(util.Errors.value_error(
+                "A self-adjoint operator must have identical domain and "
+                "codomain.",
+                self,
+                "declare_as_self_adjoint",
+            ))
+
+        if check:
+            # Keep the old adjoint proxy: setting the flag first would make
+            # the check compare the operator with itself and hence vacuous.
+            old_adjoint = self.adjoint
+            test_vector = self.domain.randn()
+            value = self(test_vector)
+            try:
+                adjoint_value = old_adjoint(test_vector)
+            except NotImplementedError as exc:
+                raise NotImplementedError(util.Errors._compose_message(
+                    "ADJOINT NOT AVAILABLE",
+                    "The numerical self-adjointness check requires an "
+                    "implemented adjoint. Use check=False only if "
+                    "self-adjointness is known independently."
+                )) from exc
+
+            error = self.domain.norm(value - adjoint_value)
+            scale = max(
+                1.,
+                self.domain.norm(value),
+                self.domain.norm(adjoint_value),
+            )
+            try:
+                dtype = np.empty(
+                    (), dtype=getattr(self.domain, "dtype", float)
+                ).real.dtype
+                eps = np.finfo(dtype).eps
+            except (TypeError, ValueError):
+                eps = np.finfo(float).eps
+            tolerance = 1000 * eps * scale
+
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "The numerical self-adjointness check failed: "
+                    f"||A x - A* x|| = {error}, allowed tolerance = "
+                    f"{tolerance}.",
+                    self,
+                    "declare_as_self_adjoint",
+                ))
+
+        self._self_adjoint = True
+        self._derivative_self_adjoint = True
+        # ``adjoint`` is memoized. It was necessarily accessed by the check
+        # and may also have been accessed earlier by user code. Deleting the
+        # cached value makes the next access observe the new flag and return
+        # ``self``.
+        del self.adjoint
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Operator:
         cls = type(self)
@@ -918,7 +1020,7 @@ class Operator:
         codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
             adjoint_eval.
-            
+
         Returns
         -------
         scalar
