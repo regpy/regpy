@@ -60,6 +60,9 @@ class Setting:
         If a Hilbert space is given, its squared norm, represented by
         :class:`regpy.functionals.SquaredNorm`, is used as the penalty.
         If an `AbstractFunctional`, or more generally any callable is given instead of a `regpy.functionals.Functional`, it is called on the operator's domain to construct a concrete `Functional` instance.
+        The penalty need not be a data functional. Its
+        :meth:`~regpy.functionals.Functional.reference_vector` provides the
+        default initial guess.
     data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
@@ -74,12 +77,9 @@ class Setting:
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
     init: Vector or None [default: None]
-        initial guess in op.domain
-    init_is_penalty_data: bool [default: True]
-        If true, then self.penalty must be a data functional, and self.init is identical to self.penalty.data. 
-        Then init is typically the global minimum of the penalty functional. 
-        If false, the setting maintains a copy of the initial guess independent of self.penalty 
-        serving, e.g., as initial guess for iterative method. 
+        Initial guess in ``op.domain``. It is stored independently of the
+        penalty functional. If no initial guess is supplied, :attr:`init`
+        returns the penalty's :meth:`~regpy.functionals.Functional.reference_vector`.
     codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -103,7 +103,6 @@ class Setting:
                  data: ReadOnlyVector | ObsDataT | None = None, 
                  exact_data: ReadOnlyVector | None = None, 
                  init: ReadOnlyVector | None = None,
-                 init_is_penalty_data: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
                  explicitDataWarning:bool = True,                 
@@ -114,14 +113,10 @@ class Setting:
         self._op = op
         self._codomain_free = codomain_free
 
-        self.init_is_penalty_data = init_is_penalty_data
-
         self.set_penalty(penalty)
-        #if (not self.penalty.is_data_func and init is None and _primal_setting is None):
-        #    self._init = None
 
         if init is not None:
-            self.init = init # init and penalty functional are updated
+            self.init = init
 
         if not codomain_free:
             self.set_data_fid(data_fid)    
@@ -161,35 +156,46 @@ class Setting:
 
     @property
     def init(self)->ReadOnlyVector:
-        if not self.init_is_penalty_data:
-            return self._init if hasattr(self,'_init') else self.op.domain.zeros(read_only=True)
-        else:
-            if self.penalty.is_data_func:
-                toret = self.penalty.data
-            else:
-                toret = self.op.domain.zeros(read_only=True)     
-            if toret not in self.op.domain:
-                raise TypeError(Errors.type_error('penalty.data must be in domain',toret))
-            return toret
+        r"""The initial guess as a read-only vector.
+
+        A user-supplied initial guess is stored independently of the penalty
+        functional. If none is stored, the penalty's
+        :meth:`~regpy.functionals.Functional.reference_vector` is used.
+        """
+        if hasattr(self, '_init'):
+            return self.op.domain.read_only(self._init)
+        reference = self.penalty.reference_vector()
+        if reference not in self.op.domain:
+            raise TypeError(Errors.not_in_vecsp(
+                reference,
+                self.op.domain,
+                vec_name='penalty reference vector',
+                space_name='domain',
+            ))
+        return self.op.domain.read_only(reference)
 
     @init.setter
-    def init(self,new_init)->None :
+    def init(self, new_init: ReadOnlyVector) -> None:
         self.change_init(new_init=new_init)
 
-    def change_init(self,new_init)->None :
+    def change_init(self, new_init: ReadOnlyVector) -> None:
+        r"""Store an initial guess independently of the penalty functional."""
         if new_init not in self.op.domain:
-            raise TypeError(Errors.type_error(msg='New initial guess must be in domain',obs=new_init))
-        if self.init_is_penalty_data:
-            self._penalty=self.penalty.as_data_func(new_init)
-        else:
-            if not hasattr(self,"_init"):
-                self._init = self.op.domain.empty()
+            raise TypeError(Errors.not_in_vecsp(
+                new_init,
+                self.op.domain,
+                vec_name='new_init',
+                space_name='domain',
+            ))
+        if not hasattr(self, '_init'):
+            self._init = self.op.domain.empty()
+        if new_init is not self._init:
             self.op.domain.copyto(self._init,new_init)
 
     @init.deleter
-    def init(self):
-        del self.penalty
-        del self._init
+    def init(self) -> None:
+        r"""Discard the stored initial guess and use the penalty reference."""
+        self.__dict__.pop('_init', None)
 
     @property
     def codomain_free(self)->bool:
@@ -444,16 +450,18 @@ class Setting:
             return toret
 
     def get_or_update_initial_guess(self, 
-                                    new_init:Vector | None = None,
+                                    new_init:ReadOnlyVector | None = None,
                                     update:bool = True,
                                     out:Vector | None = None
                                     ) -> Vector:
-        r""" Updates the initial guess stored in the setting or gets the initial guess if it is not provided. 
-        An initial is neither provided nor stored in the setting, the zero vector is used. 
+        r"""Update or retrieve the initial guess as a writable copy.
+
+        If neither ``new_init`` nor a stored initial guess is available, the
+        penalty functional's reference vector is used.
 
         Parameters
         ----------
-        new_init : Vector or None [default: None]
+        new_init : ReadOnlyVector or None [default: None]
             New initial guess in op.domain
         update: bool [default: True]
             If True, the initial guess in the setting is updated
@@ -472,10 +480,9 @@ class Setting:
                 raise TypeError(Errors.not_in_vecsp(new_init,self.op.domain,vec_name="new_init",space_name="domain"))
             source = new_init
             if update:
-                stored_init = self.init
-                if stored_init is not None and stored_init is not new_init:
+                if hasattr(self, '_init') and self._init is not new_init:
                     self.log.warning("Overwriting existing initial guess in setting!")
-                self.init = new_init # update also penalty term and other attributes
+                self.init = new_init
                 source = self.init
             if out is not source:
                 self.op.domain.copyto(out, source)
@@ -503,7 +510,6 @@ class Setting:
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
-            init_is_penalty_data=False,
             _primal_setting = self,
             logging_level=self.log.level
         )
@@ -958,9 +964,6 @@ class Setting:
 
 def get_linear_reg_method_dictionary() -> dict:
     """Return regularization methods intended for linear operators.
-
-    Imports are deliberately local so concrete solver modules can import
-    :class:`Setting` without creating a module-initialization cycle.
     """
     from .linear import (
         CGNE,
@@ -986,9 +989,6 @@ def get_nonlinear_reg_method_dictionary() -> dict:
     Linear operators may also satisfy the applicability conditions of these
     methods. They are deliberately omitted from the default dictionary of a
     linear setting because the specialized linear methods are preferable.
-
-    Imports are local to avoid module-initialization cycles with concrete
-    solver modules that import :class:`Setting`.
     """
     from .nonlinear import (
         IrgnmCG,
@@ -1090,9 +1090,11 @@ def check_Hilbert_applicability(setting: Setting,
     par : dict
         Resolved parameters. ``par['data']`` is ``user_data`` when provided.
         Otherwise it is the setting's stored observational data for a
-        codomain-free setting, possibly ``None``, or the minimizer of the
-        quadratic data-fidelity term. ``par['init']`` is ``user_init`` when
-        provided, otherwise the minimizer of the quadratic penalty.
+        codomain-free setting, possibly ``None``, or the reference vector of
+        the quadratic data-fidelity term as returned by its
+        :meth:`~regpy.functionals.Functional.reference_vector`.
+        ``par['init']`` is ``user_init`` when provided, otherwise the
+        setting's stored initial guess or the penalty's reference vector.
     """
     out = {'info':''}; par = {} 
     if check_is_norm_squared_type:
@@ -1124,26 +1126,10 @@ def check_Hilbert_applicability(setting: Setting,
             # they may still be supplied when constructing the solver.
             par['data'] = setting.data
         else:
-            data = setting.op.codomain.zeros()
-            # Compute the global minimizer of the quadratic data fidelity.
-            S = setting.data_fid
-            S.subgradient(data, out=data)
-            hess = S.hessian(data)
-            hess.inverse(data, out=data)
-            data *= -1.
-            par['data'] = data
+            par['data'] = setting.data_fid.reference_vector()
 
     if user_init is None and setting.penalty.is_quadratic:
-        # compute data as global minimum of the qudaratic data fidelity term
-        R = setting.penalty
-        domain = setting.op.domain
-        init = domain.zeros()
-        R.subgradient(init,out=init)
-        hess = R.hessian(init)
-        hess.inverse(init,out=init)
-        init *= -1.
-
-        par['init'] = init  
+        par['init'] = setting.init
     else:
         par['init'] = user_init     
     if setting.is_tikhonov:
@@ -1153,8 +1139,8 @@ def check_Hilbert_applicability(setting: Setting,
     return out, par
 
 def check_Hilbert_applicability_linear(setting:Setting,
-                                        user_data: Vector | ObsDataT | None= None, 
-                                        user_init: Vector | None =None,
+                                        user_data: ReadOnlyVector | ObsDataT | None= None, 
+                                        user_init: ReadOnlyVector | None =None,
                                         regularization_parameter_required: bool = False,
                                         check_is_norm_squared_type: bool = True,
                                         **kwargs

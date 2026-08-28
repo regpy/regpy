@@ -327,7 +327,7 @@ class Functional:
     
     The evaluation of a specific functional on some element of the `domain` can be done by
     simply calling the functional on that element. 
-        
+    
     Functionals can be added by taking `LinearCombination` of them. The `domain` has to be the
     same for each functional. 
 
@@ -567,6 +567,76 @@ class Functional:
                 add_info=f"The computation of the gradient of functional {self} did not return an element in the domain."
             ))
         return grad
+
+    def reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the functional.
+
+        The reference vector is intended, in particular, as an initial guess
+        for iterative methods. Ideally, it is a global minimizer of the
+        functional. As a minimal requirement, it is guaranteed to be feasible, meaning
+        that the functional has a finite value at the returned vector.
+
+        The default implementation first evaluates
+
+        .. code-block:: python
+
+            self.conj.subgradient(self.domain.zeros(read_only=True))
+
+        If this conjugate subgradient is available, the result is a global
+        minimizer. If it is unavailable, or if zero is not in the domain of
+        the conjugate subgradient, the zero vector is returned provided that
+        it is feasible. If neither strategy produces a feasible vector,
+        :class:`NotInEssentialDomainError` is raised.
+
+        Derived classes may overriding :meth:`_reference_vector` if the default
+        implementation is not applicable or not appropriate. 
+
+        Parameters
+        ----------
+        out : Vector or None, optional
+            If supplied, the result is written into this vector and the same
+            object is returned.
+
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the functional is finite.
+
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible reference vector can be constructed, or if an
+            overridden :meth:`_reference_vector` returns an infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="reference", space_name="domain",
+                add_info=(
+                    f"The reference vector of functional {self} does not "
+                    "belong to its domain."
+                ),
+            ))
+        try:
+            value = self(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible: "
+                f"the functional value is {value}."
+            )
+        return reference
     
     def dist_subdiff(self, vstar: Vector, x: Vector) -> float:
         r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
@@ -984,6 +1054,33 @@ class Functional:
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         raise NotImplementedError
+
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        """Default implementation used by :meth:`reference_vector`."""
+        zero = self.domain.zeros(read_only=True)
+        try:
+            reference = self.conj.subgradient(zero, out=out)
+            try:
+                reference_is_feasible = np.isfinite(self(reference))
+            except NotInEssentialDomainError:
+                reference_is_feasible = False
+            if reference_is_feasible:
+                return reference
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            zero_is_feasible = np.isfinite(self(zero))
+        except NotInEssentialDomainError:
+            zero_is_feasible = False
+        if zero_is_feasible:
+            return self._copy_vector(zero, out=out)
+
+        raise NotInEssentialDomainError(
+            f"Could not construct a feasible reference vector for {self}: "
+            "the conjugate subgradient at zero is unavailable or undefined, "
+            "and zero is not feasible."
+        )
 
     def _hessian(self, x: Vector) -> operators.Operator:
         raise NotImplementedError
