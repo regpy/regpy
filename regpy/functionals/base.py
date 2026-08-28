@@ -627,8 +627,7 @@ class Functional:
         The returned operator maps ``self.domain`` to itself. Its evaluation
         at :math:`x` is :meth:`subgradient`, and the derivative at :math:`x`
         applies the Hessian returned by :meth:`hessian`. Since Hessians are
-        symmetric, derivatives of the returned operator are marked as
-        self-adjoint and do not require a separate adjoint implementation.
+        symmetric, derivatives of the returned operator are marked as self-adjoint.
 
         Returns
         -------
