@@ -87,7 +87,7 @@ ObsDataT = TypeVar("ObsDataT")
 ObsDataT is a placeholder for a data type. 
 In many cases, data are a :class:`Vector` in the codomain of an Operator. 
 However, data may be anything that is accepted by :meth:`Operator.adjoint_data` 
-and :meth:`Operator.adjoint_data`. 
+and :meth:`regpy.functionals.Functional.as_data_func`.
 """
 
 class Operator:
@@ -97,11 +97,16 @@ class Operator:
     Domain and codomain vectors are duck typed according to their respective
     :class:`regpy.vecsps.VectorSpaceBase` instances. 
 
-    Subclasses implementing nonlinear operators should implement the following methods:
+    Subclasses implementing nonlinear operators should normally implement the
+    following methods:
 
         _eval(self, x, differentiate=False)
         _derivative(self, x)
         _adjoint(self, y)
+
+    The ``_adjoint`` implementation may be omitted when the nonlinear operator
+    is constructed with ``self_adjoint=True``, which declares its derivatives
+    to be self-adjoint.
 
     These methods are not intended for external use, but should be invoked indirectly via calling
     the operator or using the `Operator.linearize` method. They must not modify their argument, and
@@ -163,7 +168,19 @@ class Operator:
         _iadjoint(self, y, out)
 
     or, when a genuinely better allocating algorithm exists, the corresponding ``_eval``
-    and ``_adjoint`` methods.
+    and ``_adjoint`` methods. If ``self_adjoint=True`` is passed to the
+    constructor, implementing ``_adjoint`` or ``_iadjoint`` is unnecessary:
+    adjoint evaluations use ``_eval`` or ``_ieval``, respectively.
+
+    A nonlinear operator itself is never self-adjoint. For such an operator,
+    the constructor argument ``self_adjoint=True`` instead declares that its
+    derivative is self-adjoint at every linearization point. Consequently,
+    :attr:`self_adjoint` remains false on the nonlinear operator, while the
+    :class:`Derivative` returned by :meth:`linearize` has
+    ``self_adjoint=True`` and uses ``_derivative`` for its adjoint evaluation.
+    A self-adjoint operator or derivative must map a vector space to itself;
+    therefore, the constructor requires identical domain and codomain whenever
+    ``self_adjoint=True`` is requested.
 
     Here the logic is simpler, and no sharing of precomputations is needed (unless it applies to the
     operator as a whole, in which case it should be performed in `__init__`).
@@ -189,10 +206,15 @@ class Operator:
     domain, codomain : regpy.vecsps.VectorSpaceBase
         The vector space on which the operator's arguments / values are defined.
     linear : bool [default: False]
-        Whether the operator is linear. 
+        Whether the operator is linear.
     inverse: Operator or None [default: None]
         If an explicit expression for the inverse exists, it can be provided in the constructor 
-        and will be available under op.inverse. 
+        and will be available under op.inverse.
+    self_adjoint : bool [default: False]
+        For a linear operator, whether the operator equals its adjoint. For a
+        nonlinear operator, whether all its derivatives are self-adjoint; the
+        nonlinear operator's public :attr:`self_adjoint` property nevertheless
+        remains false.
     """
 
     log = util.ClassLogger()
@@ -203,11 +225,20 @@ class Operator:
         codomain: vecsps.VectorSpaceBase | None = None,
         linear: bool = False,
         inverse: Operator | None = None,
+        self_adjoint: bool = False,
     ) -> None:
         if not isinstance(domain,vecsps.VectorSpaceBase):
             raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of vector spaces."))
         if not isinstance(codomain,vecsps.VectorSpaceBase):
             raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of vector spaces."))
+        if not isinstance(self_adjoint, bool):
+            raise TypeError(util.Errors.type_error(
+                "self_adjoint must be a boolean.", self_adjoint
+            ))
+        if self_adjoint and domain != codomain:
+            raise ValueError(util.Errors.value_error(
+                "self_adjoint=True requires identical domain and codomain."
+            ))
         self.domain = domain
         r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
@@ -216,6 +247,8 @@ class Operator:
         a subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
         self.linear = linear
         r"""Boolean indicating whether the operator is linear."""
+        self._self_adjoint = bool(linear and self_adjoint)
+        self._derivative_self_adjoint = self_adjoint
         self._gram_factor = 1.
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
@@ -226,6 +259,17 @@ class Operator:
         self._inverse = inverse
 
         self.reset_detect_loop()
+
+    @property
+    def self_adjoint(self) -> bool:
+        r"""Whether this operator is linear and equal to its adjoint.
+
+        This property is always false for nonlinear operators. If
+        ``self_adjoint=True`` was passed when constructing a nonlinear
+        operator, the flag applies to the derivatives returned by
+        :meth:`linearize` instead.
+        """
+        return self._self_adjoint
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Operator:
         cls = type(self)
@@ -501,18 +545,24 @@ class Operator:
     @util.memoized_property
     def adjoint(self) -> Operator:
         r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
-        instance. Will only be computed on demand and saved for subsequent invocations.
+        instance. For a self-adjoint operator, this property returns the
+        operator itself, so calling ``op.adjoint(x)`` is identical to calling
+        ``op(x)``. Otherwise, an :class:`Adjoint` proxy is computed on demand
+        and saved for subsequent invocations.
 
         Returns
         -------
-        Adjoint
-            The adjoint as an `Operator` instance.
+        Operator
+            The operator itself if :attr:`self_adjoint` is true; otherwise an
+            :class:`Adjoint` instance.
         """
         if not self.linear:
             raise RuntimeError(util.Errors.not_linear_op(
                 self,
                 "To construct an adjoint the Operator has to be linear!"
                 ))
+        if self.self_adjoint:
+            return self
         return Adjoint(self)
     
     @util.memoized_property
@@ -624,6 +674,9 @@ class Operator:
         return out
 
     def _adjoint(self, y: Vector, **kwargs) -> Vector:
+        if self.self_adjoint:
+            self.reset_detect_loop()
+            return self._eval(y, **kwargs)
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -634,6 +687,9 @@ class Operator:
         return self._iadjoint(y, out, **kwargs)
     
     def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+        if self.self_adjoint:
+            self.reset_detect_loop()
+            return self._ieval(y, out, **kwargs)
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -745,6 +801,10 @@ class Operator:
                 self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
             if self.linear:
                 return self._adjoint(self._eval(x))
+            elif self._derivative_self_adjoint:
+                y = self._derivative(x)
+                self.reset_detect_loop()
+                return self._derivative(y)
             else:
                 return self._adjoint(self._derivative(x))
         else:
@@ -761,6 +821,10 @@ class Operator:
                 self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
             if self.linear:
                 return self._iadjoint(self._eval(x), out)
+            elif self._derivative_self_adjoint:
+                y = self._derivative(x)
+                self.reset_detect_loop()
+                return self._iderivative(y, out)
             else:
                 return self._iadjoint(self._derivative(x), out)
         else:
@@ -1166,7 +1230,7 @@ class Operator:
 
 
 class Adjoint(Operator):
-    r"""An proxy class wrapping a linear operator. Calling it will evaluate the operator's
+    r"""A proxy class wrapping a linear operator. Calling it will evaluate the operator's
     adjoint. This class should not be instantiated directly, but rather through the
     `Operator.adjoint` property of a linear operator.
 
@@ -1189,7 +1253,12 @@ class Adjoint(Operator):
                 "An adjoint operator can only be constructed from a linear operator. Please use linearize to get the derivative and use its adjoint!"))
         self.op = op
         r"""The underlying operator."""
-        super().__init__(op.codomain, op.domain, linear=True)
+        super().__init__(
+            op.codomain,
+            op.domain,
+            linear=True,
+            self_adjoint=op.self_adjoint,
+        )
         if hasattr(self.op,"full_domain"):
             self._constants = {}
             """The constant inputs of the op need to be set in adjoint evaluation
@@ -1256,9 +1325,16 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
-    r"""An proxy class wrapping a nonlinear operator. Calling it will evaluate the operator's
+    r"""A proxy class wrapping a nonlinear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
     `Operator.linearize` method of a nonlinear operator.
+
+    If the wrapped nonlinear operator was constructed with
+    ``self_adjoint=True``, this derivative exposes :attr:`self_adjoint` as true
+    and its adjoint evaluation delegates to the wrapped operator's
+    ``_derivative`` or ``_iderivative`` implementation. The nonlinear operator
+    therefore does not need to implement ``_adjoint`` or ``_iadjoint`` in this
+    case.
 
     Parameters
     ----------
@@ -1275,7 +1351,12 @@ class Derivative(Operator):
         r"""The underlying operator."""
         _op = op.get()
         """The underlying operator."""
-        super().__init__(_op.domain, _op.codomain, linear=True)
+        super().__init__(
+            _op.domain,
+            _op.codomain,
+            linear=True,
+            self_adjoint=_op._derivative_self_adjoint,
+        )
         self.gram_factor = _op.gram_factor
         # Setting the corresponding constants of op to zero
         if hasattr(_op,"full_domain"):
@@ -1292,13 +1373,19 @@ class Derivative(Operator):
 
     def _adjoint(self, x: Vector, **kwargs) -> Vector:
         self.op.get().reset_detect_loop()
+        if self.self_adjoint:
+            return self.op.get()._derivative(x, **kwargs)
         return self._reduce_to_domain(self.op.get()._adjoint(x, **kwargs))
 
     def _iadjoint(self, x: Vector, out: Vector, **kwargs) -> Vector:
         self.op.get().reset_detect_loop()
+        if self.self_adjoint:
+            return self.op.get()._iderivative(x, out, **kwargs)
         return self._reduce_to_domain(self.op.get()._iadjoint(x, out, **kwargs))
     
     def adjoint_data(self, x: Vector, out: Vector | None  = None, **kwargs) -> Vector:
+        if self.self_adjoint:
+            return self._apply_gram_factor(self(x, out=out, **kwargs))
         if out is None:
             return self._reduce_to_domain(self.op.get().adjoint_data(x, **kwargs))
         else:
@@ -1322,7 +1409,8 @@ class AdjointEval(Operator):
      class should not be instantiated directly, but rather through the `Operator.
      adjoint_eval` method of a linear operator.
     The `_eval` and `_adjoint` require the implementation of `_adjoint_eval` note that only 
-    one implementation is needed as it is a selfadjoint operator.
+    one implementation is needed as it is a self-adjoint operator. Its
+    :attr:`self_adjoint` property is therefore always true.
 
     Parameters
     ----------
@@ -1343,7 +1431,12 @@ class AdjointEval(Operator):
                 add_info='Operator is not linear cannot create AdjointEval.'
             ))
         self.op = op
-        super().__init__(op.domain, op.domain, linear=True)
+        super().__init__(
+            op.domain,
+            op.domain,
+            linear=True,
+            self_adjoint=True,
+        )
         # Setting the corresponding constants of op to zero
         if hasattr(self.op,"full_domain"):
             self.full_domain = self.op.full_domain
