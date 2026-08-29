@@ -115,6 +115,7 @@ class IntegralFunctionalBase(Functional):
                          is_data_func = is_data_func
                          )
 
+        self._ESS_DOM_TOL = 1e-10
         self._buffer_status = {}  
         # dictionary with keys corresponding to buffer names and boolean values indicating if they are currently in use (True) 
         # or not (False). This dictionary helps to prevent accidental overwriting of buffers by recursions or multithreading. 
@@ -650,21 +651,43 @@ class IntegralFunctionalBase(Functional):
         """Evaluate a pointwise method on full arrays using a NumPy ``where`` mask."""
         return func(x, out=out, mask=mask, **kwargs)
 
-    def _assert_essential_domain(self, v, eps=1e-10, msg=None):
+    def _assert_essential_domain(self, v, msg=None):
+        msg = "" if msg is None else msg
         buf = self._get_scratch('_buf',v)
-        np.subtract(v, self.dom_u, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t" + f"diff:{np.max(self._buf)},"+"\n\t"+ f"eps={eps}"))
-        np.subtract(self.dom_l, v, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        self._free_scratch('_buf')
+        try:
+            np.subtract(v, self.dom_u, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too large in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+            np.subtract(self.dom_l, v, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too small in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+        finally:
+            self._free_scratch('_buf')
 
-    def _assert_conj_essential_domain(self, vstar, eps=1e-10, msg=None):
-        buf = self._get_scratch('_buf',vstar)        
-        np.subtract(vstar, self.conj_dom_u, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        np.subtract(self.conj_dom_l, vstar, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        self._free_scratch('_buf')
+    def _assert_conj_essential_domain(self, vstar,  msg=None):
+        msg = "" if msg is None else msg
+        buf = self._get_scratch('_buf',vstar)
+        try:
+            np.subtract(vstar, self.conj_dom_u, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too large in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+            np.subtract(self.conj_dom_l, vstar, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too small in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+        finally:
+            self._free_scratch('_buf')
 
     def _eval(self, v, func_vals=None):
         # See the comment in _conj.
@@ -712,9 +735,9 @@ class IntegralFunctionalBase(Functional):
             self._apply_pointwise(self._f, v, buf, mask=mask, **self.kwargs)
 
             if self.constr_l is not None:
-                buf[v < self.dom_l] = np.inf
+                buf[v < self.dom_l - self._ESS_DOM_TOL] = np.inf
             if self.constr_u is not None:
-                buf[v > self.dom_u] = np.inf
+                buf[v > self.dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
             buf *= self.measure
@@ -775,9 +798,9 @@ class IntegralFunctionalBase(Functional):
             self._apply_pointwise(self._f_conj, buf2, buf, mask=mask, **self.kwargs)
 
             if self.lin_taylor_l is not None:
-                buf[vstar < self.conj_dom_l] = np.inf
+                buf[vstar < self.conj_dom_l - self._ESS_DOM_TOL] = np.inf
             if self.lin_taylor_u is not None:
-                buf[vstar > self.conj_dom_u] = np.inf
+                buf[vstar > self.conj_dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
             buf *= self.measure
@@ -1841,13 +1864,11 @@ class L1MeasureSpace(IntegralFunctionalBase):
         Domain on which to define the generic L1.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
-    conj_tol : float
-        A tolerance in the coputation of the conjugate allowing a slight deviation above from 1.0. Defaults: 1e-16
     """
     def __init__(self, domain,
                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-10, **kwargs):
-        self.conj_tol = conj_tol
+                quad_taylor_l=None, quad_taylor_u=None, **kwargs):
+
         super().__init__(domain,conj_nat_dom_u=1.,conj_nat_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
@@ -1894,7 +1915,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
         np.abs(v_star, out=out, where=where)
-        outside = where & (out > 1 + self.conj_tol)
+        outside = where & (out > 1 + self._ESS_DOM_TOL)
         np.copyto(out, 0., where=where)
         np.copyto(out, np.inf, where=outside)
         return out
@@ -2103,7 +2124,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         wm = self.w
         zero = where & (u == 0)
         if np.any(zero & (wm != 0)):
-            raise ValueError(Errors.value_error(
+            raise NotInEssentialDomainError(Errors.value_error(
                 'argument cannot be 0 at positions where w is not 0'
             ))
         out = self._prepare_out(out, u)
@@ -2159,7 +2180,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         wm = self.w
         at_one = where & (u_star == 1)
         if np.any(at_one & (wm != 0)):
-            raise ValueError(Errors.value_error(
+            raise NotInEssentialDomainError(Errors.value_error(
                 'argument cannot be 1 at positions where w is not 0.'
             ))
         out = self._prepare_out(out, u_star)
@@ -2524,12 +2545,10 @@ class Huber(IntegralFunctionalBase):
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
         and precautions against an infinite recursion of conjugations are taken.
-    eps: float [default: 0.]
-        Only used for conjugate functional. See description of `QuadraticIntv`
     """
     # This could also be implemented as special case of Quadratic
 
-    def  __init__(self, domain, as_primal=True, sigma = 1., eps=1e-10, **kwargs):
+    def  __init__(self, domain, as_primal=True, sigma = 1., **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
             raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
@@ -2545,7 +2564,7 @@ class Huber(IntegralFunctionalBase):
             super().__init__(domain,Lipschitz=1.,
                              conj_nat_dom_l=-self.sigma, conj_nat_dom_u = self.sigma,                             
                              **kwargs)
-            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
+            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
         else:
             dual_domain = deepcopy(domain)
             dual_domain.measure = 1./domain.measure
@@ -2622,9 +2641,6 @@ class QuadraticIntv(IntegralFunctionalBase):
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
-    eps: float [default: 0.]
-        sigma is replace by sigma*(1+eps) on all operations except the proximal mapping to avoid np.inf return values 
-        or NotInEssentialDomain exceptions in the presence of rounding errors
     """
     # This could also be implemented as special case of Quadratic
 
@@ -2635,7 +2651,6 @@ class QuadraticIntv(IntegralFunctionalBase):
             raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if np.min(sigma)<=0:
             raise ValueError(Errors.value_error("The interval width in the QuadraticIntv needs to be positive!", self))
-        self.eps=eps
         if isinstance(sigma, (float,int)):
             self.sigma = np.broadcast_to(np.real(sigma), domain.shape)
             self.sigmaeps = np.broadcast_to(sigma*(1+eps), domain.shape)           
@@ -2815,9 +2830,6 @@ class QuadraticBilateralConstraints(LinearCombination):
         reference value default 0.5*(lb+ub)
     alpha: float [default: 1]
         regularization parameter
-    eps: real [default: 0]
-        Tolerance parameter for violations of the hard constraints (which may occur due to rounding errors).
-        If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
     # This could also be implemented as special case of Quadratic
 
