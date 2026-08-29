@@ -21,7 +21,7 @@ a Tikhonov solver.
 from .tikhonov import * 
 from .admm import *
 from .cgne import *
-from .landweber import *
+from .linear_krylov import *
 from .primal_dual import *
 from .proximal_gradient import *
 from .richardson_lucy import *
