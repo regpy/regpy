@@ -982,6 +982,8 @@ def get_linear_reg_method_dictionary() -> dict:
         CGNE,
         Landweber as linLandweber,
         Richardson,
+        NuMethod,
+        NuMethodSelfAdjoint,
         TikhonovAlphaGrid
     )
     return {
@@ -990,6 +992,12 @@ def get_linear_reg_method_dictionary() -> dict:
                         },
             'Richardson':{'class': Richardson,
                           'full': 'relaxed Richardson method'
+                        },
+            'nu':       {'class': NuMethod,
+                         'full': 'nu-method'
+                        },
+            'nu_sa':    {'class': NuMethodSelfAdjoint,
+                         'full': 'nu-method for self-adjoitn operators'
                         },
             'CGNE':     {'class':CGNE, 
                          'full': 'Conjugate Gradient method applied to the normal equation'
