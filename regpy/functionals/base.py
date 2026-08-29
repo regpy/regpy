@@ -583,12 +583,17 @@ class Functional:
             self.conj.subgradient(self.domain.zeros(read_only=True))
 
         If this conjugate subgradient is available, the result is a global
-        minimizer. If it is unavailable, or if zero is not in the domain of
-        the conjugate subgradient, the zero vector is returned provided that
-        it is feasible. If neither strategy produces a feasible vector,
-        :class:`NotInEssentialDomainError` is raised.
+        minimizer. If it is unavailable, or if zero is outside the essential
+        domain of the conjugate, the proximal map is evaluated at zero with
+        parameter ``tau=1``. Notice that zero being outside the effective
+        domain of the conjugate is equivalent to the primal functional being
+        unbounded below. An implemented proximal map always returns a feasible
+        point. Only if the proximal map is unavailable does the default
+        implementation try the zero vector itself. If none of these strategies
+        produces a feasible vector, :class:`NotInEssentialDomainError` is
+        raised.
 
-        Derived classes may overriding :meth:`_reference_vector` if the default
+        Derived classes may override :meth:`_reference_vector` if the default
         implementation is not applicable or not appropriate. 
 
         Parameters
@@ -635,6 +640,76 @@ class Functional:
             raise NotInEssentialDomainError(
                 f"The reference vector returned by {self} is not feasible: "
                 f"the functional value is {value}."
+            )
+        return reference
+
+    def conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the conjugate functional.
+
+        This method is the conjugate counterpart of :meth:`reference_vector`.
+        Ideally, it returns a global minimizer of the conjugate functional; at
+        minimum, the conjugate functional is finite at the returned vector.
+
+        The default implementation first evaluates
+
+        .. code-block:: python
+
+            self.subgradient(self.domain.zeros(read_only=True))
+
+        If this is unavailable or zero is outside the primal essential domain,
+        it evaluates the conjugate proximal map at zero with parameter
+        ``tau=1``. Only if that proximal map is unavailable does it return zero,
+        provided zero is feasible for the conjugate functional. Derived classes
+        may override :meth:`_conj_reference_vector`.
+
+        Parameters
+        ----------
+        out : Vector or None, optional
+            If supplied, the result is written into this vector and the same
+            object is returned.
+
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the conjugate functional is
+            finite.
+
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_conj_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible conjugate reference vector can be constructed, or
+            if an overridden :meth:`_conj_reference_vector` returns an
+            infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._conj_reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="conjugate reference",
+                space_name="domain",
+                add_info=(
+                    f"The conjugate reference vector of functional {self} "
+                    "does not belong to its domain."
+                ),
+            ))
+        try:
+            value = self.conj(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                "feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                f"feasible: the conjugate functional value is {value}."
             )
         return reference
     
@@ -1059,27 +1134,51 @@ class Functional:
         """Default implementation used by :meth:`reference_vector`."""
         zero = self.domain.zeros(read_only=True)
         try:
-            reference = self.conj.subgradient(zero, out=out)
-            try:
-                reference_is_feasible = np.isfinite(self(reference))
-            except NotInEssentialDomainError:
-                reference_is_feasible = False
-            if reference_is_feasible:
-                return reference
+            return self.conj.subgradient(zero, out=out)
         except (NotImplementedError, NotInEssentialDomainError):
             pass
 
         try:
-            zero_is_feasible = np.isfinite(self(zero))
-        except NotInEssentialDomainError:
-            zero_is_feasible = False
-        if zero_is_feasible:
-            return self._copy_vector(zero, out=out)
+            return self.proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
 
-        raise NotInEssentialDomainError(
+        try:
+            if np.isfinite(self(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotImplementedError(
             f"Could not construct a feasible reference vector for {self}: "
             "the conjugate subgradient at zero is unavailable or undefined, "
-            "and zero is not feasible."
+            "the proximal map is unavailable, and zero is not feasible."
+        )
+
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        """Default implementation used by :meth:`conj_reference_vector`."""
+        zero = self.domain.zeros(read_only=True)
+        try:
+            return self.subgradient(zero, out=out)
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            return self.conj_proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
+
+        try:
+            if np.isfinite(self.conj(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotInEssentialDomainError(
+            f"Could not construct a feasible conjugate reference vector for "
+            f"{self}: the primal subgradient at zero is unavailable or "
+            "undefined, the conjugate proximal map is unavailable, and zero "
+            "is not feasible for the conjugate functional."
         )
 
     def _hessian(self, x: Vector) -> operators.Operator:
@@ -1257,6 +1356,9 @@ class Conj(Functional):
     ) -> Vector:
         return self.func.conj_subgradient(x, out=out, **subgradient_par)
 
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.conj_reference_vector(out=out)
+
     def dist_subdiff(self, v: Vector, x: Vector) -> float:
         return self.func._conj_dist_subdiff(v,x,)
 
@@ -1264,6 +1366,9 @@ class Conj(Functional):
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         return self.func.subgradient(x, out=out, **subgradient_par)
+
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.reference_vector(out=out)
 
     def _conj_dist_subdiff(self, v: Vector, x: Vector) -> float:
         return self.func.dist_subdiff(v,x)

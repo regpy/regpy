@@ -35,5 +35,5 @@ def test_quadratic_positive_semidef():
     )
     assert np.abs(expected - trace_func(trace_samples[0])) < 1e-10
     ft.test_functional(
-        trace_func, u_s=trace_samples, test_second_deriv=False
+        trace_func, u_s=trace_samples, test_second_deriv=False, reference_is_minimizer=False
     )

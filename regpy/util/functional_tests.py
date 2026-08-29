@@ -102,7 +102,7 @@ def sample_vector_in_domain(func, dist = 1e-10):
     func : regpy.functionals.VectorIntegralFunctional
         The vector integral functional.
     dist : float, optional
-        Distance to the upper and lower bound. Defaults to 1e10.
+        Distance to the upper and lower bound. Defaults to 1e-10.
 
     Returns
     -------
@@ -126,14 +126,27 @@ def sample_vector_in_domain(func, dist = 1e-10):
         raise ValueError("Cannot sample vector in domain: No feasible region. upper has to be larger than lower.")
 
     u = func.domain.randn()
-    # scaling u s.t. |u| <= 1
-    u /= np.max(norm(x = u, axis = v_axes))
-    if dom_u < np.inf and dom_l > 0:
-        return u * (dom_u - dom_l) + dom_l
-    elif dom_u < np.inf:
-        return u * dom_u
+    point_norms = norm(x=u, axis=v_axes)
+    max_norm = np.max(point_norms)
+    if max_norm == 0:
+        raise RuntimeError("Cannot normalize a randomly generated zero vector.")
+
+    # Interpolate the pointwise norms, not the vector components. Adding the
+    # lower bound componentwise changes the vector norm and can move a sample
+    # outside the requested interval through rounding and cross terms.
+    if dom_u < np.inf:
+        target_norms = dom_l + (dom_u - dom_l) * point_norms / max_norm
+    elif dom_l > 0:
+        target_norms = dom_l + point_norms
     else:
-        return u        
+        return u
+
+    expanded_norms = np.expand_dims(point_norms, axis=v_axes)
+    expanded_targets = np.expand_dims(target_norms, axis=v_axes)
+    result = np.zeros_like(u)
+    np.divide(u, expanded_norms, out=result, where=expanded_norms > 0)
+    result *= expanded_targets
+    return result
 
 
 def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
@@ -259,44 +272,226 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
         func.log.warning(f"Failed subgradient test! The convexity condition is violated: err={err}, tol_convex={tol_convex}, |grad u| = {func.domain.norm(grad_u)}")
         return False
 
-def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
-    """Tests the second derivative of the functional.
+def test_gradient_as_operator(
+        func, u=None, h=None, eps=1e-8, tolerance=1e-2,
+        abs_tol=1e-6, test_inplace=True, test_inplace_aliasing=True,
+        inplace_tolerance=1e-10):
+    r"""Test :meth:`Functional.gradient_as_operator` and its derivative.
+
+    The operator evaluation is compared with :meth:`Functional.subgradient`.
+    Its derivative is checked by a difference quotient of the gradient and
+    must be marked as self-adjoint, since it represents the Hessian. When
+    requested, the generic operator tests additionally exercise allocating,
+    ``out=`` and aliasing paths of the gradient operator and its derivative.
 
     Parameters
     ----------
     func : regpy.functionals.Functional
         The functional.
     u : any, optional
-        Element in essential domain of func. If None it is chosen at random. Defaults to None.
+        Element in the essential domain of ``func``. If ``None``, it is
+        sampled automatically.
     h : any, optional
-        Perturbation to u. Defaults to None.
+        Perturbation direction. If ``None``, it is sampled automatically.
     eps : float, optional
-        Perturbation scalar. Defaults to 1e-3.
-    tolerance: float, optional
+        Perturbation length. Defaults to 1e-8.
+    tolerance : float, optional
         The maximum relative violation of the condition.
-    abs_tol: float, optional
-        the maximum absolute violation of the condition.
+    abs_tol : float, optional
+        The maximum absolute violation of the condition.
+    test_inplace : bool, optional
+        Whether to run the generic allocating/``out=`` operator tests.
+    test_inplace_aliasing : bool, optional
+        Whether the generic operator test should include ``out is input``.
+    inplace_tolerance : float, optional
+        Tolerance for allocating/``out=`` comparisons.
     
     Returns
     -------
-    boolean
-        False, if the test fails and True otherwise.
+    bool
+        ``True`` if all selected tests pass, otherwise ``False``.
     """
     if func.is_separable:
-        u,h = sample_essential_domain(func,eps_perturbation=eps)
+        u, sampled_h = sample_essential_domain(
+            func, u=u, eps_perturbation=eps
+        )
+        if h is None:
+            h = sampled_h
     else:
         if u is None:
             u = func.domain.randn()
-        h = - func.subgradient(u)
-    func_pp = func.hessian(u)(h)
-    diffq = (func.subgradient(u+eps*h)-func.subgradient(u))/eps
-    err = func.h_domain.norm(func_pp-diffq)/(1e-14+func.h_domain.norm(func_pp))
 
-    if func.h_domain.norm(func_pp-diffq)<=np.max([abs_tol,tolerance * func.h_domain.norm(func_pp)]):
-        func.log.info("Passed second derivative test!")
+    gradient_operator = func.gradient_as_operator()
+    gradient, derivative = gradient_operator.linearize(u)
+
+    # For non-separable functionals the essential domain can be a proper
+    # subset of the vector space (positive-semidefinite matrices are an
+    # important example).  The negative gradient is the same default
+    # direction used by the former second-derivative test and, for convex
+    # constraints, keeps a sufficiently short step on a feasible segment.
+    if h is None:
+        h = -gradient
+
+    expected_gradient = func.subgradient(u)
+    gradient_error = func.domain.norm(gradient - expected_gradient)
+    gradient_scale = max(1., func.domain.norm(expected_gradient))
+    if gradient_error > inplace_tolerance * gradient_scale:
+        func.log.warning(
+            "gradient_as_operator evaluation differs from subgradient: "
+            f"err={gradient_error}, tolerance="
+            f"{inplace_tolerance * gradient_scale}."
+        )
+        return False
+
+    if not derivative.self_adjoint or derivative.adjoint is not derivative:
+        func.log.warning(
+            "The derivative returned by gradient_as_operator is not marked "
+            "as self-adjoint."
+        )
+        return False
+
+    hessian_h = derivative(h)
+    difference_quotient = (
+        gradient_operator(u + eps * h) - gradient
+    ) / eps
+    difference = hessian_h - difference_quotient
+    difference_norm = func.h_domain.norm(difference)
+    hessian_norm = func.h_domain.norm(hessian_h)
+    allowed_error = max(abs_tol, tolerance * hessian_norm)
+    if difference_norm > allowed_error:
+        relative_error = difference_norm / (1e-14 + hessian_norm)
+        func.log.warning(
+            "Failed the derivative test of gradient_as_operator: "
+            f"relative error={relative_error}, tolerance={tolerance}, "
+            f"Hessian action norm={hessian_norm}."
+        )
+        return False
+
+    if test_inplace:
+        from .operator_tests import test_inplace_operator_methods
+        if not test_inplace_operator_methods(
+                gradient_operator, x=u, tolerance=inplace_tolerance,
+                test_aliasing=test_inplace_aliasing):
+            func.log.warning(
+                "Failed allocating/in-place tests for gradient_as_operator."
+            )
+            return False
+
+    func.log.info("Passed gradient_as_operator test!")
+    return True
+
+
+def test_reference_vector(
+        func, check_minimizer=True, tolerance=1e-10, test_inplace=True):
+    r"""Test :meth:`Functional.reference_vector`.
+
+    Every reference vector must belong to the functional's domain and be
+    feasible, i.e. the functional value at that vector must be finite. If
+    ``check_minimizer`` is true and :meth:`Functional.dist_subdiff` is
+    available, this function additionally checks that zero belongs to the
+    subdifferential at the reference vector. The latter is deliberately
+    optional because minimization is stronger than the public
+    reference-vector contract.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        The functional.
+    check_minimizer : bool, optional
+        Whether to check that zero belongs to the subdifferential at the
+        reference vector. Defaults to ``True``.
+    tolerance : float, optional
+        Absolute tolerance for the distance to the subdifferential. Defaults
+        to 1e-10.
+    test_inplace : bool, optional
+        Whether to test the ``out=`` variant. Defaults to ``True``.
+    Returns
+    -------
+    bool
+        ``True`` if all selected tests pass, otherwise ``False``.
+    """
+    if "eval" not in func.methods:
+        func.log.info(
+            "Skipping the reference-vector test because feasibility cannot "
+            "be verified without an advertised eval method."
+        )
         return True
-    else:
-        func.log.warning(f"Failed the second derivative test! err: {err}, tol: {tolerance}, norm second deriv. {func.h_domain.norm(func_pp)}")
+
+    reference = func.reference_vector()
+    if reference not in func.domain:
+        func.log.warning("reference_vector returned a vector outside the domain.")
+        return False
+
+    value = func(reference)
+    if not np.isfinite(value):
+        func.log.warning(
+            f"reference_vector returned an infeasible vector: F(x)={value}."
+        )
+        return False
+
+    if test_inplace:
+        out = func.domain.zeros()
+        returned = func.reference_vector(out=out)
+        if returned is not out:
+            func.log.warning(
+                "reference_vector(out=out) did not return the supplied buffer."
+            )
+            return False
+        if out not in func.domain or not np.isfinite(func(out)):
+            func.log.warning(
+                "reference_vector(out=out) returned an infeasible vector."
+            )
+            return False
+
+    if check_minimizer:
+        if "dist_subdiff" not in func.methods:
+            func.log.info(
+                "Skipping the optional reference-vector minimizer check "
+                "because dist_subdiff is not advertised."
+            )
+        else:
+            zero = func.domain.zeros(read_only=True)
+            distance = func.dist_subdiff(zero, reference)
+            if not np.isfinite(distance) or distance > tolerance:
+                func.log.warning(
+                    "The reference vector is feasible but does not pass the "
+                    "optional minimizer check: "
+                    f"dist(0, subdiff F(reference))={distance}, "
+                    f"tolerance={tolerance}."
+                )
+                return False
+
+    func.log.info("Passed reference_vector test!")
+    return True
+
+
+def zero_in_essential_domain(func):
+    r"""Return whether zero belongs to a functional's essential domain.
+
+    The check is based on finiteness of the functional value and therefore
+    also applies to nonseparable functionals for which pointwise domain bounds
+    are unavailable. If evaluation is not advertised, membership cannot be
+    verified and ``False`` is returned.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional whose essential domain is checked.
+
+    Returns
+    -------
+    bool
+        Whether the functional is finite at zero.
+    """
+    if "eval" not in func.methods:
+        return False
+
+    from regpy.functionals.base import NotInEssentialDomainError
+
+    zero = func.domain.zeros(read_only=True)
+    try:
+        return bool(np.isfinite(func(zero)))
+    except NotInEssentialDomainError:
         return False
 
 def test_Lipschitz_convexity(func,u=None,safety=1.5):
@@ -561,9 +756,14 @@ def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
                     u_stars=None,sample_conj_N=5,
-                    test_second_deriv = True, test_second_deriv_conj = True,
+                    test_second_deriv=None, test_second_deriv_conj=None,
                     test_inplace=True, test_inplace_aliasing=True,
-                    tolerance=1e-10, msg=''):
+                    tolerance=1e-10, msg='',
+                    test_gradient_operator=True,
+                    test_gradient_operator_conj=True,
+                    test_reference=True, test_reference_conj=True,
+                    reference_is_minimizer=None,
+                    reference_is_minimizer_conj=None):
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
     missing implementations are ignored.
 
@@ -584,6 +784,10 @@ def test_functional(func,u_s=None,sample_N=5,
         Same as u_s but for conjugate functional. Defaults to None.
     sample_conj_N : int, optional
         Same as sample_N but for conjugate functional. Defaults to 5.
+    test_second_deriv, test_second_deriv_conj : bool or None, optional
+        Deprecated aliases for ``test_gradient_operator`` and
+        ``test_gradient_operator_conj``. They are retained so existing test
+        suites can migrate without an immediate API break.
     test_inplace : bool, optional
         Compare allocating and ``out=`` variants of subgradient, proximal,
         conjugate subgradient, and conjugate proximal methods. Defaults to True.
@@ -592,6 +796,26 @@ def test_functional(func,u_s=None,sample_N=5,
         input vector itself. Defaults to True.
     tolerance : float, optional
         The maximum allowed relative error. Defaults to 1e-10.
+    test_gradient_operator, test_gradient_operator_conj : bool, optional
+        Test :meth:`Functional.gradient_as_operator`, especially its
+        derivative, for the functional and its conjugate. Defaults to True.
+    test_reference, test_reference_conj : bool, optional
+        Test :meth:`Functional.reference_vector` for the functional and its
+        conjugate. Defaults to True.
+    reference_is_minimizer : bool or None, optional
+        Whether the primal reference vector must minimize the primal
+        functional. If ``None`` (the default), minimality is required exactly
+        when zero belongs to the essential domain of the conjugate functional.
+        In that case a conjugate subgradient at zero, and hence a minimizer of
+        the primal functional, should be available. Explicit ``True`` or
+        ``False`` values override this automatic rule.
+    reference_is_minimizer_conj : bool or None, optional
+        Whether the conjugate reference vector must minimize the conjugate
+        functional. If ``None`` (the default), minimality is required exactly
+        when zero belongs to the essential domain of the primal functional.
+        In that case a primal subgradient at zero, and hence a minimizer of the
+        conjugate, should be available. Explicit ``True`` or ``False`` values
+        override this automatic rule.
 
     Raises
     ------
@@ -603,6 +827,30 @@ def test_functional(func,u_s=None,sample_N=5,
     The tests results are logged with further details when the tests failed 
 
     """
+    if test_second_deriv is not None:
+        test_gradient_operator = test_second_deriv
+    if test_second_deriv_conj is not None:
+        test_gradient_operator_conj = test_second_deriv_conj
+
+    if reference_is_minimizer is None:
+        reference_is_minimizer = (
+            test_reference
+            and zero_in_essential_domain(func.conj)
+        )
+
+    if reference_is_minimizer_conj is None:
+        reference_is_minimizer_conj = (
+            test_conj
+            and test_reference_conj
+            and zero_in_essential_domain(func)
+        )
+
+    if test_reference:
+        if not test_reference_vector(
+                func, check_minimizer=reference_is_minimizer,
+                tolerance=tolerance, test_inplace=test_inplace):
+            raise AssertionError(f"{func} failed reference_vector test!" + msg)
+
     if (u_s is None):
         if func.is_separable:
             u_s= [None] # [sample_essential_domain(func)]
@@ -633,10 +881,15 @@ def test_functional(func,u_s=None,sample_N=5,
         if {"subgradient"} <= func.methods and {"subgradient","is_subgradient"} <= func.conj.methods:
             if not test_subgradient_conj_subgradient_dist_subdiff(func,u):
                 raise AssertionError(f"{func} failed subgradient_conj_subgradient_dist_subdiff test"+msg)
-        if test_second_deriv:
+        if test_gradient_operator:
             if {"subgradient","hessian"} <= func.methods:
-                if not test_second_derivative(func,u):
-                    raise AssertionError(f"{func} failed second derivative test!"+msg)
+                if not test_gradient_as_operator(
+                        func, u, test_inplace=test_inplace,
+                        test_inplace_aliasing=test_inplace_aliasing,
+                        inplace_tolerance=tolerance):
+                    raise AssertionError(
+                        f"{func} failed gradient_as_operator test!" + msg
+                    )
             if func.is_separable:
                 try:
                     if not test_Lipschitz_convexity(func):
@@ -668,9 +921,15 @@ def test_functional(func,u_s=None,sample_N=5,
     if(test_conj):
         test_functional(
             func.conj, u_s=u_stars, sample_N=sample_conj_N,
-            test_conj=False, test_second_deriv=test_second_deriv_conj,
+            test_conj=False,
             test_inplace=False,
             test_inplace_aliasing=test_inplace_aliasing,
-            tolerance=tolerance, msg=msg
+            tolerance=tolerance, msg=msg,
+            test_gradient_operator=test_gradient_operator_conj,
+            test_gradient_operator_conj=False,
+            test_reference=test_reference_conj,
+            test_reference_conj=False,
+            reference_is_minimizer=reference_is_minimizer_conj,
+            reference_is_minimizer_conj=False,
         )
                 
