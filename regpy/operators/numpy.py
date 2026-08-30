@@ -11,9 +11,10 @@ import scipy.sparse.linalg as sla
 
 from regpy.util import make_repr,memoized_property,Errors
 from regpy.vecsps import *
-from .base import Operator
+from .base import Composition, Operator
 
 __all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
+           "RealFourierEmbedding", "RealFourierTransform",
            "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct","EinSum"]
 
 class MatrixMultiplication(Operator):
@@ -1273,8 +1274,284 @@ class _FourierTransformLeftInverse(Operator):
     def invertible(self):
         return False
 
+
+class RealFourierEmbedding(Operator):
+    r"""Embed one-dimensional real Fourier coordinates into an RFFT space.
+
+    Let ``F`` be a real, one-dimensional :class:`FourierTransform` of
+    spatial length :math:`n`.  Its complex half-spectrum is represented by
+    :math:`\widehat x_0,\ldots,\widehat x_{\lfloor n/2\rfloor}`.  This
+    operator maps a real vector :math:`z\in\mathbb R^n` to a valid
+    half-spectrum by
+
+    .. math::
+        \widehat x_0 &= z_0,\\
+        \widehat x_k &= (z_{2k-1}+i z_{2k})/\sqrt{2},\\
+        \widehat x_{n/2} &= z_{n-1}\quad\text{if }n\text{ is even}.
+
+    The last formula replaces the second formula at the Nyquist frequency.
+    Thus zero and Nyquist coefficients are real, while every interior complex
+    coefficient is represented by two real coordinates.  The domain is a
+    plain real :class:`~regpy.vecsps.NumPyVectorSpace` of dimension ``n``.
+
+    :attr:`left_inverse` maps a valid half-spectrum back to real coordinates
+    and multiplies the real and imaginary parts of interior coefficients by
+    :math:`\sqrt{2}`.  Consequently
+
+    .. math::
+        R = C^{-1}F
+
+    is an orthogonal real Fourier transform with respect to identity Gram
+    operators, where ``C`` denotes this embedding.  The embedding itself is
+    not onto the unrestricted complex half-spectrum; hence it has no
+    two-sided inverse.
+
+    Parameters
+    ----------
+    transform : FourierTransform
+        A real Fourier transform of a scalar-valued one-dimensional grid,
+        acting on its sole domain axis.
+    """
+
+    def __init__(self, transform: FourierTransform):
+        if not isinstance(transform, FourierTransform):
+            raise TypeError(Errors.not_instance(
+                transform,
+                FourierTransform,
+                add_info="RealFourierEmbedding requires a FourierTransform."
+            ))
+        if transform.is_complex:
+            raise ValueError(Errors.value_error(
+                "RealFourierEmbedding requires a real Fourier transform."
+            ))
+        if (transform.domain.ndim_domain != 1
+                or transform.axes != (0,)
+                or transform.domain.shape_codomain != ()):
+            raise NotImplementedError(Errors.generic_message(
+                "Real Fourier coordinates are currently implemented only "
+                "for scalar-valued one-dimensional grids transformed along "
+                "their sole domain axis."
+            ))
+
+        self.transform = transform
+        self.spatial_size = int(transform.domain.shape_domain[0])
+        self.half_size = self.spatial_size // 2 + 1
+        real_dtype = np.empty(
+            (), dtype=transform.domain.dtype
+        ).real.dtype
+        coordinate_space = NumPyVectorSpace(
+            self.spatial_size, dtype=real_dtype
+        )
+        self._sqrt_two = np.sqrt(np.asarray(2, dtype=real_dtype))
+        self._interior_stop = (
+            self.half_size - 1
+            if self.spatial_size % 2 == 0
+            else self.half_size
+        )
+        self._interior_frequencies = slice(1, self._interior_stop)
+        self._real_coordinates = slice(
+            1, 2 * self._interior_stop - 1, 2
+        )
+        self._imag_coordinates = slice(
+            2, 2 * self._interior_stop, 2
+        )
+
+        super().__init__(
+            coordinate_space,
+            transform.codomain,
+            linear=True,
+        )
+        self._consts.add('transform')
+
+    @property
+    def coordinate_space(self):
+        """The real Fourier-coordinate space."""
+        return self.domain
+
+    def _eval(self, coordinates):
+        spectrum = self.codomain.zeros()
+        spectrum[0] = coordinates[0]
+        spectrum[self._interior_frequencies] = (
+            coordinates[self._real_coordinates]
+            + 1j * coordinates[self._imag_coordinates]
+        ) / self._sqrt_two
+        if self.spatial_size % 2 == 0:
+            spectrum[-1] = coordinates[-1]
+        return spectrum
+
+    def _ieval(self, coordinates, out):
+        # The spaces have different scalar fields and shapes, so aliasing is
+        # impossible for valid arguments.
+        out.fill(0)
+        out[0] = coordinates[0]
+        out[self._interior_frequencies] = (
+            coordinates[self._real_coordinates]
+            + 1j * coordinates[self._imag_coordinates]
+        ) / self._sqrt_two
+        if self.spatial_size % 2 == 0:
+            out[-1] = coordinates[-1]
+        return out
+
+    def _adjoint(self, spectrum):
+        coordinates = self.domain.zeros()
+        coordinates[0] = spectrum[0].real
+        interior = spectrum[self._interior_frequencies]
+        coordinates[self._real_coordinates] = (
+            interior.real / self._sqrt_two
+        )
+        coordinates[self._imag_coordinates] = (
+            interior.imag / self._sqrt_two
+        )
+        if self.spatial_size % 2 == 0:
+            coordinates[-1] = spectrum[-1].real
+        return coordinates
+
+    @memoized_property
+    def left_inverse(self):
+        """Return the coordinate map from a valid RFFT half-spectrum."""
+        return _RealFourierEmbeddingLeftInverse(self)
+
+    @Operator.inverse.getter
+    def inverse(self):
+        raise NotImplementedError(Errors.generic_message(
+            "RealFourierEmbedding is not onto the unrestricted complex "
+            "half-spectrum. Use left_inverse on valid RFFT spectra."
+        ))
+
+    @property
+    def invertible(self):
+        return False
+
     def __repr__(self):
         return make_repr(self, self.transform)
+
+    def real_multiplier(self, half_spectrum_multiplier):
+        r"""Represent a real diagonal half-spectrum multiplier in coordinates.
+
+        ``half_spectrum_multiplier`` must be real-valued and have the shape of
+        the RFFT half-spectrum.  Every interior value is duplicated for its
+        real and imaginary coordinate.  This is particularly useful for the
+        non-negative absolute values in a real Fourier SVD.
+        """
+        values = np.asarray(half_spectrum_multiplier)
+        try:
+            values = np.broadcast_to(values, self.codomain.shape)
+        except ValueError as error:
+            raise ValueError(Errors.value_error(
+                "The half-spectrum multiplier must be broadcastable to "
+                f"shape {self.codomain.shape}. Got {values.shape}."
+            )) from error
+        if not np.all(np.isreal(values)):
+            raise ValueError(Errors.value_error(
+                "A multiplier represented in real Fourier coordinates must "
+                "be real-valued."
+            ))
+
+        result = self.domain.empty()
+        result[0] = values[0].real
+        interior = values[self._interior_frequencies].real
+        result[self._real_coordinates] = interior
+        result[self._imag_coordinates] = interior
+        if self.spatial_size % 2 == 0:
+            result[-1] = values[-1].real
+        return result
+
+    def __repr__(self):
+        return make_repr(self, self.transform)
+
+
+class _RealFourierEmbeddingLeftInverse(Operator):
+    """Left inverse of :class:`RealFourierEmbedding` on its range."""
+
+    def __init__(self, embedding):
+        self.embedding = embedding
+        super().__init__(
+            embedding.codomain,
+            embedding.domain,
+            linear=True,
+        )
+        self._consts.add('embedding')
+
+    def _eval(self, spectrum):
+        coordinates = self.codomain.zeros()
+        coordinates[0] = spectrum[0].real
+        interior = spectrum[self.embedding._interior_frequencies]
+        coordinates[self.embedding._real_coordinates] = (
+            self.embedding._sqrt_two * interior.real
+        )
+        coordinates[self.embedding._imag_coordinates] = (
+            self.embedding._sqrt_two * interior.imag
+        )
+        if self.embedding.spatial_size % 2 == 0:
+            coordinates[-1] = spectrum[-1].real
+        return coordinates
+
+    def _adjoint(self, coordinates):
+        spectrum = self.domain.zeros()
+        spectrum[0] = coordinates[0]
+        spectrum[self.embedding._interior_frequencies] = (
+            self.embedding._sqrt_two
+            * (
+                coordinates[self.embedding._real_coordinates]
+                + 1j * coordinates[self.embedding._imag_coordinates]
+            )
+        )
+        if self.embedding.spatial_size % 2 == 0:
+            spectrum[-1] = coordinates[-1]
+        return spectrum
+
+    @property
+    def invertible(self):
+        return False
+
+
+class RealFourierTransform(Composition):
+    r"""Orthogonal one-dimensional Fourier transform in real coordinates.
+
+    This is the composition ``C.left_inverse * F`` of a real
+    :class:`FourierTransform` ``F`` and the coordinate map associated with a
+    :class:`RealFourierEmbedding` ``C``.  Its domain is the original real grid
+    and its codomain is a real vector space of the same dimension.  Hence its
+    adjoint is its inverse.
+
+    Parameters are the same as for :class:`FourierTransform`, subject to the
+    current restriction to scalar-valued one-dimensional grids and ``axes=0``.
+    """
+
+    def __init__(self, domain: UniformGridFcts, centered: bool = False,
+                 axes=None, centered_input: bool | None = None):
+        transform = FourierTransform(
+            domain,
+            centered=centered,
+            axes=axes,
+            centered_input=centered_input,
+        )
+        embedding = RealFourierEmbedding(transform)
+        self.fourier_transform = transform
+        self.embedding = embedding
+        super().__init__(embedding.left_inverse, transform)
+        self._consts.update({'fourier_transform', 'embedding'})
+
+    @property
+    def coordinate_space(self):
+        """The real Fourier-coordinate space."""
+        return self.codomain
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
+
+    def __repr__(self):
+        return make_repr(
+            self,
+            self.domain,
+            f"centered={self.fourier_transform.centered}",
+            f"centered_input={self.fourier_transform.centered_input}",
+        )
 
 
 class PtwMatrixVectorMultiplication(Operator):

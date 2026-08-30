@@ -7,8 +7,17 @@ from regpy import util
 from regpy.util import Errors
 from regpy.vecsps import UniformGridFcts, GridFcts
 
-from .base import PtwMultiplication, Operator, Composition
-from .numpy import FourierTransform, PtwMatrixVectorMultiplication
+from .base import (
+    PtwMultiplication,
+    Operator,
+    Composition,
+    CoordinateProjection,
+)
+from .numpy import (
+    FourierTransform,
+    PtwMatrixVectorMultiplication,
+    RealFourierEmbedding,
+)
 
 __all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur", "ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator",
            "Derivative","gradient","curl","divergence", "Laplacian",
@@ -552,6 +561,15 @@ class ConvolutionOperator(Composition):
         with shape kernel_matrix_shape. 
         In this case, the input space is assumed to be vector-valued with values of shape (kernel_matrix_shape[1],),
         If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimensional. 
+    as_svd : bool or None [default: None]
+        Whether to construct and label the convolution as an explicit
+        singular-value decomposition. If ``None``, this is done automatically
+        when the scalar convolution uses either a complex grid or a supported
+        one-dimensional real grid, without padding or Fourier resizing.
+        Real Fourier SVDs use an orthogonal real-coordinate representation of
+        the RFFT half-spectrum. ``True`` requests an SVD representation
+        explicitly; unsupported configurations then raise an informative
+        exception.
         
                     
     Notes
@@ -586,9 +604,16 @@ class ConvolutionOperator(Composition):
     """
 
     def __init__(self, grid, fourier_multiplier, pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 kernel_matrix_shape=None, as_svd: bool | None = None):
         if not isinstance(grid,UniformGridFcts):
             raise TypeError(Errors.type_error(f'grid must be of type UniformGridFcts. Got {grid}'))
+        if as_svd is not None and not isinstance(as_svd, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f'as_svd must be boolean or None. Got {as_svd!r}.'
+            ))
+        if as_svd is not None:
+            as_svd = bool(as_svd)
         if kernel_matrix_shape is not None:
             if (not isinstance(kernel_matrix_shape,(tuple,list)) or len(kernel_matrix_shape) != 2
                     or not all(isinstance(size,(int,np.integer)) and size > 0 for size in kernel_matrix_shape)):
@@ -662,6 +687,44 @@ class ConvolutionOperator(Composition):
         self.Fourier_truncation_amount = normalize_amount(
             Fourier_truncation_amount,'Fourier_truncation_amount',allow_negative=True,none_allowed=True)
 
+        real_svd_supported = (
+            not grid.is_complex
+            and grid.ndim_domain == 1
+            and grid.shape_codomain == ()
+            and np.array_equal(self.convolution_axes, np.asarray([0]))
+        )
+
+        if as_svd is True:
+            if np.any(self.pad_amount != 0):
+                raise ValueError(Errors.value_error(
+                    'A convolution with spatial padding cannot be represented '
+                    'by the implemented Fourier SVD.'
+                ))
+            if self.Fourier_truncation_amount is not None:
+                raise NotImplementedError(Errors.generic_message(
+                    'Fourier-resized convolutions can in principle have an '
+                    'SVD representation, but it is not implemented yet.'
+                ))
+            if self.kernel_matrix_shape is not None:
+                raise NotImplementedError(Errors.generic_message(
+                    'SVD construction for matrix-valued Fourier multipliers '
+                    'is not implemented yet.'
+                ))
+            if not grid.is_complex and not real_svd_supported:
+                raise NotImplementedError(Errors.generic_message(
+                    'Real Fourier SVD construction is currently implemented '
+                    'only for scalar-valued one-dimensional grids transformed '
+                    'along their sole domain axis.'
+                ))
+
+        construct_as_svd = (
+            as_svd is not False
+            and np.all(self.pad_amount == 0)
+            and self.Fourier_truncation_amount is None
+            and self.kernel_matrix_shape is None
+            and (grid.is_complex or real_svd_supported)
+        )
+
         codomain = grid if kernel_matrix_shape is None else grid.vector_valued_space((kernel_matrix_shape[0],))
 
         self.kwargs = {'pad_amount' : self.pad_amount.copy(),
@@ -669,7 +732,8 @@ class ConvolutionOperator(Composition):
                        'Fourier_truncation_amount' : (None if self.Fourier_truncation_amount is None
                                                        else self.Fourier_truncation_amount.copy()),
                        'convolution_axes' : self.convolution_axes.copy(),
-                       'kernel_matrix_shape' : self.kernel_matrix_shape}
+                       'kernel_matrix_shape' : self.kernel_matrix_shape,
+                       'as_svd': as_svd}
 
         # Set only in the branch without spatial padding or Fourier resizing.
         # It contains the actually applied, fully broadcast Fourier multiplier
@@ -708,7 +772,19 @@ class ConvolutionOperator(Composition):
                     ft.codomain, multiplier_values
                 )
             self._exact_fourier_multiplier = multiplier_values
-            super().__init__(ft_codomain.left_inverse, multiplier, ft)
+            if construct_as_svd:
+                factors, singular_index, is_eig = self._svd_factors(
+                    ft, multiplier_values
+                )
+                super().__init__(*factors)
+                self.label_as_svd(
+                    singular_index,
+                    G_X=1.,
+                    G_Y=1.,
+                    is_eig=is_eig,
+                )
+            else:
+                super().__init__(ft_codomain.left_inverse, multiplier, ft)
         elif self.Fourier_truncation_amount is None: 
             pad_op = PaddingOperator(grid,self.pad_amount,pad_value=pad_value)
             pad_op_codomain = PaddingOperator(codomain,self.pad_amount,pad_value=pad_value)
@@ -898,6 +974,138 @@ class ConvolutionOperator(Composition):
                 ft,
                 pad_op
             )
+
+    @staticmethod
+    def _svd_factors(ft, multiplier_values):
+        """Return Fourier factors, singular index, and eigenvalue flag."""
+        if not ft.is_complex:
+            return ConvolutionOperator._real_svd_factors(
+                ft, multiplier_values
+            )
+
+        values = np.asarray(multiplier_values)
+        magnitudes = np.abs(values)
+        nonzero = magnitudes != 0
+
+        phase_dtype = np.result_type(values.dtype, np.complex128)
+        phases = np.ones(values.shape, dtype=phase_dtype)
+        phases[nonzero] = values[nonzero] / magnitudes[nonzero]
+        phase = PtwMultiplication(ft.codomain, phases)
+
+        is_eig = bool(
+            np.all(np.isreal(values)) and np.all(values.real >= 0)
+        )
+        if np.all(nonzero):
+            singular_values = PtwMultiplication(ft.codomain, magnitudes)
+            return (
+                (ft.left_inverse, phase, singular_values, ft),
+                3,
+                is_eig,
+            )
+
+        projection = CoordinateProjection(ft.codomain, nonzero)
+        singular_values = PtwMultiplication(
+            projection.codomain,
+            magnitudes[nonzero],
+        )
+        return (
+            (
+                ft.left_inverse,
+                phase,
+                projection.adjoint,
+                singular_values,
+                projection,
+                ft,
+            ),
+            4,
+            is_eig,
+        )
+
+    @staticmethod
+    def _real_svd_factors(ft, multiplier_values):
+        r"""Return an identity-Gram SVD using real Fourier coordinates.
+
+        For the real Fourier transform ``F`` let ``C`` embed real Fourier
+        coordinates into the complex half-spectrum. Then
+
+        ``R = C.left_inverse * F``
+
+        is orthogonal.  The absolute value of every interior Fourier
+        multiplier is duplicated for its real and imaginary coordinate,
+        whereas its phase remains a unitary complex half-spectrum
+        multiplication.  Zero singular values are removed by a coordinate
+        projection exactly as in the complex construction.
+        """
+        embedding = RealFourierEmbedding(ft)
+        values = np.array(
+            np.broadcast_to(multiplier_values, ft.codomain.shape),
+            copy=True,
+        )
+
+        # Valid one-dimensional RFFT spectra have real zero and Nyquist
+        # coefficients.  ``irfft`` discards imaginary endpoint parts, so the
+        # effective real convolution multiplier is their real part.
+        values[0] = values[0].real
+        if embedding.spatial_size % 2 == 0:
+            values[-1] = values[-1].real
+
+        magnitudes = np.abs(values)
+        phases = np.ones(values.shape, dtype=np.result_type(
+            values.dtype, np.complex128
+        ))
+        nonzero_half_spectrum = magnitudes != 0
+        phases[nonzero_half_spectrum] = (
+            values[nonzero_half_spectrum]
+            / magnitudes[nonzero_half_spectrum]
+        )
+        phase = PtwMultiplication(ft.codomain, phases)
+
+        real_singular_values = embedding.real_multiplier(magnitudes)
+        nonzero = real_singular_values != 0
+        is_eig = bool(
+            np.all(np.isreal(values)) and np.all(values.real >= 0)
+        )
+
+        if np.all(nonzero):
+            singular_values = PtwMultiplication(
+                embedding.coordinate_space,
+                real_singular_values,
+            )
+            return (
+                (
+                    ft.left_inverse,
+                    phase,
+                    embedding,
+                    singular_values,
+                    embedding.left_inverse,
+                    ft,
+                ),
+                4,
+                is_eig,
+            )
+
+        projection = CoordinateProjection(
+            embedding.coordinate_space,
+            nonzero,
+        )
+        singular_values = PtwMultiplication(
+            projection.codomain,
+            real_singular_values[nonzero],
+        )
+        return (
+            (
+                ft.left_inverse,
+                phase,
+                embedding,
+                projection.adjoint,
+                singular_values,
+                projection,
+                embedding.left_inverse,
+                ft,
+            ),
+            5,
+            is_eig,
+        )
 
     @property
     def freqs(self):

@@ -37,6 +37,7 @@ __all__ = ["ObsDataT",
            "CoordinateProjection", 
            "CoordinateMask", 
            "PtwMultiplication", 
+           "Composition",
            "OuterShift", 
            "InnerShift", 
            "DirectSum", 
@@ -1849,6 +1850,13 @@ class Composition(Operator):
         with the codomain of the following operator.
     inverse : Operator, optional
         Explicit inverse of the composition.
+
+    Notes
+    -----
+    A linear composition that explicitly represents a singular-value
+    decomposition can be marked with :meth:`label_as_svd`. The public
+    properties :attr:`is_svd` and :attr:`svd_data` then expose the verified
+    decomposition to spectral algorithms.
     """
 
     def __init__(
@@ -1902,8 +1910,275 @@ class Composition(Operator):
             linear=all(op.linear for op in self.ops),
             inverse=inverse,
         )
+        self._is_svd = False
+        self._svd_data = {}
         if use_buffers:
             self.use_buffers = True
+
+    @property
+    def is_svd(self) -> bool:
+        r"""Whether this composition has been verified and labelled as an SVD."""
+        return self._is_svd
+
+    @property
+    def svd_data(self) -> dict[str, Any]:
+        r"""Verified singular-value-decomposition data.
+
+        The dictionary is empty until :meth:`label_as_svd` succeeds. It then
+        contains ``l``, ``U``, ``V``, ``M``, ``G_X``, ``G_Y`` and
+        ``is_eig``. The index ``l`` follows the one-based mathematical
+        convention used in the method documentation.
+        """
+        return self._svd_data
+
+    @staticmethod
+    def _svd_gram_operator(
+        gram: Operator | Real,
+        space: vecsps.VectorSpaceBase,
+        name: str,
+    ) -> Operator:
+        """Normalize a Gram argument to a self-adjoint operator."""
+        if isinstance(gram, (bool, np.bool_)):
+            raise TypeError(util.Errors.type_error(
+                f"{name} must be a positive real number or an Operator."
+            ))
+        if isinstance(gram, Real):
+            if gram <= 0:
+                raise ValueError(util.Errors.value_error(
+                    f"{name} must be positive. Got {gram!r}."
+                ))
+            if gram == 1:
+                return space.identity
+            return PtwMultiplication(space, float(gram))
+        if not isinstance(gram, Operator):
+            raise TypeError(util.Errors.type_error(
+                f"{name} must be a positive real number or an Operator. "
+                f"Got {type(gram).__name__}."
+            ))
+        if gram.domain != space or gram.codomain != space:
+            raise ValueError(util.Errors.value_error(
+                f"{name} must map {space} to itself. Got domain "
+                f"{gram.domain} and codomain {gram.codomain}."
+            ))
+        if not gram.self_adjoint:
+            raise ValueError(util.Errors.value_error(
+                f"{name} must be self-adjoint."
+            ))
+        return gram
+
+    @staticmethod
+    def _svd_operator_error(
+        first: Operator,
+        second: Operator,
+        test_vector: Vector,
+    ) -> tuple[float, float]:
+        first_value = first(test_vector)
+        second_value = second(test_vector)
+        space = first.codomain
+        error = space.norm(first_value - second_value)
+        scale = max(
+            1., space.norm(first_value), space.norm(second_value)
+        )
+        return error, scale
+
+    @staticmethod
+    def _svd_tolerance(space: vecsps.VectorSpaceBase, scale: float) -> float:
+        try:
+            dtype = np.empty(
+                (), dtype=getattr(space, "dtype", float)
+            ).real.dtype
+            eps = np.finfo(dtype).eps
+        except (TypeError, ValueError):
+            eps = np.finfo(float).eps
+        return 5000 * eps * max(1., scale)
+
+    def label_as_svd(
+        self,
+        l: int,
+        G_X: Operator | Real = 1.,
+        G_Y: Operator | Real = 1.,
+        is_eig: bool = False,
+    ) -> None:
+        r"""Verify and label this composition as a singular-value decomposition.
+
+        If ``self`` represents
+
+        .. math::
+            T=A_1A_2\cdots A_k,
+
+        ``l`` identifies the positive pointwise multiplication
+        :math:`M=A_l`. The remaining factors define
+
+        .. math::
+            V=A_1\cdots A_{l-1},\qquad
+            U=A_k^*\cdots A_{l+1}^*,
+
+        so that :math:`T=VMU^*`. On one random reduced-space vector the
+        method verifies
+
+        .. math::
+            V^*G_YV=I,\qquad U^*G_XU=I.
+
+        This randomized test detects inconsistent declarations but is not a
+        proof of the identities.
+
+        Parameters
+        ----------
+        l : int
+            One-based position of the singular-value multiplier. It must lie
+            in ``{2, ..., len(self.ops) - 1}``.
+        G_X, G_Y : Operator or positive real number [default: 1]
+            Domain and codomain Gram operators. A scalar is interpreted as
+            that multiple of the corresponding identity operator.
+        is_eig : bool [default: False]
+            Whether the decomposition is also an eigenvalue decomposition.
+            In this case ``U == V`` and ``G_X == G_Y`` are checked as well.
+
+        Raises
+        ------
+        TypeError
+            If an argument has an invalid type.
+        ValueError
+            If the factorization does not satisfy the structural or numerical
+            SVD conditions.
+        """
+        if isinstance(l, (bool, np.bool_)) or not isinstance(
+                l, (int, np.integer)):
+            raise TypeError(util.Errors.type_error(
+                "l must be an integer."
+            ))
+        l = int(l)
+        if not 2 <= l <= len(self.ops) - 1:
+            raise ValueError(util.Errors.value_error(
+                "l must satisfy 2 <= l <= len(self.ops) - 1. "
+                f"Got l={l} for {len(self.ops)} factors."
+            ))
+        if not isinstance(is_eig, (bool, np.bool_)):
+            raise TypeError(util.Errors.type_error(
+                "is_eig must be boolean."
+            ))
+        is_eig = bool(is_eig)
+        if not all(op.linear for op in self.ops):
+            raise ValueError(util.Errors.value_error(
+                "Every factor of an SVD composition must be linear."
+            ))
+
+        middle_index = l - 1
+        M = self.ops[middle_index]
+        if not isinstance(M, PtwMultiplication):
+            raise ValueError(util.Errors.value_error(
+                f"The factor at position l={l} must be a "
+                "PtwMultiplication operator."
+            ))
+        multiplier = np.asarray(M.factor)
+        if not np.all(np.isreal(multiplier)) or not np.all(
+                multiplier.real > 0):
+            raise ValueError(util.Errors.value_error(
+                "The singular-value multiplier must contain only positive "
+                "real entries."
+            ))
+
+        all_spaces = [self.domain]
+        all_spaces.extend(op.codomain for op in self.ops[::-1])
+        all_complex = all(space.is_complex for space in all_spaces)
+        distinguished_real = (
+            not self.domain.is_complex
+            and not self.codomain.is_complex
+            and not M.domain.is_complex
+        )
+        if not (all_complex or distinguished_real):
+            raise ValueError(util.Errors.value_error(
+                "An SVD composition must either use complex vector spaces "
+                "throughout, or have real domain, codomain, and singular-"
+                "coordinate space."
+            ))
+
+        left_factors = self.ops[:middle_index]
+        V = (
+            left_factors[0]
+            if len(left_factors) == 1
+            else Composition(*left_factors)
+        )
+        right_adjoint_factors = [
+            op.adjoint for op in self.ops[middle_index + 1:][::-1]
+        ]
+        U = (
+            right_adjoint_factors[0]
+            if len(right_adjoint_factors) == 1
+            else Composition(*right_adjoint_factors)
+        )
+        if M.domain != M.codomain:
+            raise ValueError(util.Errors.value_error(
+                "The singular-value multiplier must map the reduced vector "
+                "space to itself."
+            ))
+        if V.domain != M.codomain or U.domain != M.domain:
+            raise ValueError(util.Errors.value_error(
+                "The U, M, and V factors use incompatible reduced spaces."
+            ))
+
+        G_X = self._svd_gram_operator(G_X, self.domain, "G_X")
+        G_Y = self._svd_gram_operator(G_Y, self.codomain, "G_Y")
+        reduced_space = M.domain
+        test_vector = reduced_space.randn()
+        identity = reduced_space.identity
+
+        V_gram_V = Composition(V.adjoint, G_Y, V)
+        error, scale = self._svd_operator_error(
+            V_gram_V, identity, test_vector
+        )
+        tolerance = self._svd_tolerance(reduced_space, scale)
+        if not np.isfinite(error) or error > tolerance:
+            raise ValueError(util.Errors.value_error(
+                "V is not isometric with respect to G_Y: "
+                f"||V* G_Y V z - z||={error}, tolerance={tolerance}."
+            ))
+
+        U_gram_U = Composition(U.adjoint, G_X, U)
+        error, scale = self._svd_operator_error(
+            U_gram_U, identity, test_vector
+        )
+        tolerance = self._svd_tolerance(reduced_space, scale)
+        if not np.isfinite(error) or error > tolerance:
+            raise ValueError(util.Errors.value_error(
+                "U is not isometric with respect to G_X: "
+                f"||U* G_X U z - z||={error}, tolerance={tolerance}."
+            ))
+
+        if is_eig:
+            if self.domain != self.codomain:
+                raise ValueError(util.Errors.value_error(
+                    "An eigenvalue decomposition requires identical domain "
+                    "and codomain."
+                ))
+            error, scale = self._svd_operator_error(U, V, test_vector)
+            tolerance = self._svd_tolerance(self.domain, scale)
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "is_eig=True requires U and V to agree. "
+                    f"||U z - V z||={error}, tolerance={tolerance}."
+                ))
+            gram_test_vector = self.domain.randn()
+            error, scale = self._svd_operator_error(
+                G_X, G_Y, gram_test_vector
+            )
+            tolerance = self._svd_tolerance(self.domain, scale)
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "is_eig=True requires G_X and G_Y to agree. "
+                    f"||G_X z - G_Y z||={error}, tolerance={tolerance}."
+                ))
+
+        self._svd_data = {
+            'l': l,
+            'U': U,
+            'V': V,
+            'M': M,
+            'G_X': G_X,
+            'G_Y': G_Y,
+            'is_eig': is_eig,
+        }
+        self._is_svd = True
 
     @property
     def use_buffers(self) -> bool:
