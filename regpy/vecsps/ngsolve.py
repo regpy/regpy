@@ -576,6 +576,48 @@ class NgsVectorSpace(VectorSpaceBase):
         else:
             raise ValueError(Errors.value_error("Provided numpy vector to unflatten must be one dimensional"))
         return x
+
+    def complex_flatten(self, x: NgsBaseVector) -> np.ndarray:
+        """Return the complex NGSolve coefficients without realification."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the NgsVectorSpace."
+            ))
+        if x.is_dynamic:
+            coefficients = x.vec.Evaluate().FV().NumPy()
+        else:
+            coefficients = x.vec.FV().NumPy()
+        return np.asarray(coefficients, dtype=complex).reshape(-1).copy()
+
+    def complex_fromflat(self, vec: np.ndarray) -> NgsBaseVector:
+        """Construct a complex NGSolve vector from complex coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        vec = np.asarray(vec)
+        if vec.ndim != 1 or vec.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {vec.shape}."
+            ))
+        if not (
+            np.issubdtype(vec.dtype, np.floating)
+            or np.issubdtype(vec.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={vec.dtype}."
+            ))
+        x = self.zeros()
+        x.vec.FV().NumPy()[:] = vec
+        return x
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other,type(self)):

@@ -143,6 +143,42 @@ class NumPyVectorSpace(VectorSpaceBase):
         else:
             return x.reshape(self.shape)
 
+    def complex_flatten(self, x: np.ndarray) -> np.ndarray:
+        """Return flattened coefficients without realifying the vector."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the vector space."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(-1)
+
+    def complex_fromflat(self, x: np.ndarray) -> np.ndarray:
+        """Construct a complex vector without splitting its coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        x = np.asarray(x)
+        if x.ndim != 1 or x.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {x.shape}."
+            ))
+        if not (
+            np.issubdtype(x.dtype, np.floating)
+            or np.issubdtype(x.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={x.dtype}."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(self.shape)
+
     def complex_space(self):
         r"""Compute the corresponding complex vector space.
 

@@ -16,179 +16,12 @@ from regpy.operators.base import (
     Operator,
     PtwMultiplication,
 )
+from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
-from regpy.vecsps import Vector
 
 from ..setting import Setting
 
 __all__ = ["SVD"]
-
-
-class _CoordinateSystem:
-    """Coordinate conversion for a real or genuinely complex vector space."""
-
-    def __init__(self, space, complex_coordinates: bool) -> None:
-        self.space = space
-        self.complex_coordinates = complex_coordinates
-        if complex_coordinates:
-            if not space.is_complex:
-                raise ValueError("Complex coordinates require a complex space.")
-            self.dimension = int(space.size)
-            self.dtype = np.dtype(complex)
-            self._numpy_space = isinstance(space, vecsps.NumPyVectorSpace)
-            self._basis = None if self._numpy_space else self._complex_basis()
-        else:
-            self.dimension = int(space.realsize)
-            self.dtype = np.dtype(float)
-            self._numpy_space = False
-            self._basis = None
-
-    def _complex_basis(self) -> list[Vector]:
-        iterator = iter(self.space)
-        basis = []
-        for _ in range(self.dimension):
-            real_basis_vector = next(iterator)
-            stored = self.space.empty()
-            self.space.copyto(stored, real_basis_vector)
-            basis.append(stored)
-            # Complex vector-space iterators return i*e_j after every e_j.
-            next(iterator)
-        return basis
-
-    def to_coordinates(self, vector: Vector) -> np.ndarray:
-        if self.complex_coordinates:
-            if self._numpy_space:
-                return np.asarray(vector).reshape(-1).astype(
-                    complex, copy=False
-                )
-            return np.asarray([
-                self.space.vdot(basis_vector, vector)
-                for basis_vector in self._basis
-            ], dtype=complex)
-        return np.asarray(self.space.flatten(vector), dtype=float)
-
-    def from_coordinates(self, coefficients: np.ndarray) -> Vector:
-        coefficients = np.asarray(coefficients, dtype=self.dtype)
-        if coefficients.size != self.dimension:
-            raise ValueError(
-                f"Expected {self.dimension} coordinates, got "
-                f"shape={coefficients.shape}."
-            )
-        coefficients = coefficients.reshape(self.dimension)
-        if self.complex_coordinates:
-            if self._numpy_space:
-                return coefficients.reshape(self.space.shape).astype(
-                    self.space.dtype, copy=False
-                )
-            result = self.space.zeros()
-            for coefficient, basis_vector in zip(
-                    coefficients, self._basis):
-                result += coefficient * basis_vector
-            return result
-        return self.space.fromflat(coefficients)
-
-
-class _CoordinateLinearOperator(SciPyLinearOperator):
-    """Matrix-free SciPy view using RegPy vector-space coordinates."""
-
-    def __init__(self, op: Operator, complex_coordinates: bool) -> None:
-        self.op = op
-        self.domain_coordinates = _CoordinateSystem(
-            op.domain, complex_coordinates
-        )
-        self.codomain_coordinates = _CoordinateSystem(
-            op.codomain, complex_coordinates
-        )
-        super().__init__(
-            dtype=(np.complex128 if complex_coordinates else np.float64),
-            shape=(
-                self.codomain_coordinates.dimension,
-                self.domain_coordinates.dimension,
-            ),
-        )
-
-    def _matvec(self, vector):
-        argument = self.domain_coordinates.from_coordinates(vector)
-        return self.codomain_coordinates.to_coordinates(self.op(argument))
-
-    def _rmatvec(self, vector):
-        argument = self.codomain_coordinates.from_coordinates(vector)
-        return self.domain_coordinates.to_coordinates(
-            self.op.adjoint(argument)
-        )
-
-
-class _MatrixOperator(Operator):
-    """RegPy operator represented by a matrix in chosen coordinates."""
-
-    def __init__(
-        self,
-        matrix: np.ndarray,
-        domain,
-        codomain,
-        complex_coordinates: bool,
-    ) -> None:
-        self.domain_coordinates = _CoordinateSystem(
-            domain, complex_coordinates
-        )
-        self.codomain_coordinates = _CoordinateSystem(
-            codomain, complex_coordinates
-        )
-        dtype = complex if complex_coordinates else float
-        matrix = np.asarray(matrix, dtype=dtype)
-        expected_shape = (
-            self.codomain_coordinates.dimension,
-            self.domain_coordinates.dimension,
-        )
-        if matrix.shape != expected_shape:
-            raise ValueError(
-                f"Matrix shape {matrix.shape} does not match "
-                f"operator shape {expected_shape}."
-            )
-        self.matrix = np.array(matrix, copy=True)
-        self.matrix.flags.writeable = False
-        self._complex_coordinates = complex_coordinates
-        self_adjoint = (
-            domain == codomain
-            and self.matrix.shape[0] == self.matrix.shape[1]
-            and np.allclose(self.matrix, self.matrix.conj().T)
-        )
-        super().__init__(
-            domain,
-            codomain,
-            linear=True,
-            self_adjoint=self_adjoint,
-        )
-
-    def _eval(self, vector):
-        coordinates = self.domain_coordinates.to_coordinates(vector)
-        return self.codomain_coordinates.from_coordinates(
-            self.matrix @ coordinates
-        )
-
-    def _adjoint(self, vector):
-        coordinates = self.codomain_coordinates.to_coordinates(vector)
-        return self.domain_coordinates.from_coordinates(
-            self.matrix.conj().T @ coordinates
-        )
-
-    @Operator.inverse.getter
-    def inverse(self):
-        if self._inverse is not None:
-            return self._inverse
-        if self.matrix.shape[0] != self.matrix.shape[1]:
-            raise NotImplementedError(
-                "Only a square coordinate matrix can be inverted."
-            )
-        inverse = _MatrixOperator(
-            np.linalg.inv(self.matrix),
-            self.codomain,
-            self.domain,
-            self._complex_coordinates,
-        )
-        self._inverse = inverse
-        inverse._inverse = self
-        return inverse
 
 
 def _positive_identity_factor(gram: Operator) -> float | None:
@@ -249,18 +82,65 @@ def _gram_operators_equal(first: Operator, second: Operator) -> bool:
     )
 
 
-def _assemble_matrix(
-    op: Operator,
-    complex_coordinates: bool,
-) -> np.ndarray:
-    linear_operator = _CoordinateLinearOperator(op, complex_coordinates)
+def _as_scipy_operator(op: Operator) -> SciPyLinearOperator:
+    """Return a SciPy view preserving a genuinely complex scalar field."""
+    if not (op.domain.is_complex and op.codomain.is_complex):
+        # The standard RegPy wrapper uses the real flatten/fromflat
+        # coordinates. Numerical SVDs with mixed scalar fields are rejected
+        # by SVD._init_numerical before this helper is reached.
+        return op.as_linear_operator()
+    domain = op.domain
+    codomain = op.codomain
+    dtype = np.result_type(
+        getattr(domain, 'dtype', complex),
+        getattr(codomain, 'dtype', complex),
+        1j,
+    )
+
+    try:
+        domain_coordinates = domain.complex_flatten(domain.zeros())
+        codomain_coordinates = codomain.complex_flatten(codomain.zeros())
+        domain.complex_fromflat(np.asarray(domain_coordinates))
+        codomain.complex_fromflat(np.asarray(codomain_coordinates))
+    except (AttributeError, NotImplementedError) as error:
+        raise TypeError(Errors.type_error(
+            "A genuinely complex numerical SVD requires both endpoint "
+            "spaces to implement complex_flatten and complex_fromflat."
+        )) from error
+
+    def matvec(vector):
+        argument = domain.complex_fromflat(
+            np.asarray(vector, dtype=dtype).reshape(-1)
+        )
+        return np.asarray(
+            codomain.complex_flatten(op(argument)), dtype=dtype
+        ).reshape(-1)
+
+    def rmatvec(vector):
+        argument = codomain.complex_fromflat(
+            np.asarray(vector, dtype=dtype).reshape(-1)
+        )
+        return np.asarray(
+            domain.complex_flatten(op.adjoint(argument)), dtype=dtype
+        ).reshape(-1)
+
+    return SciPyLinearOperator(
+        dtype=dtype,
+        shape=(int(codomain.size), int(domain.size)),
+        matvec=matvec,
+        rmatvec=rmatvec,
+    )
+
+
+def _assemble_matrix(op: Operator) -> np.ndarray:
+    linear_operator = _as_scipy_operator(op)
     identity = np.eye(
         linear_operator.shape[1], dtype=linear_operator.dtype
     )
     return np.asarray(linear_operator.matmat(identity))
 
 
-def _cholesky_factor(hilbert_space, complex_coordinates: bool) -> Operator:
+def _cholesky_factor(hilbert_space) -> Operator:
     gram = hilbert_space.gram
     scalar_factor = _positive_identity_factor(gram)
     if scalar_factor is not None:
@@ -284,7 +164,7 @@ def _cholesky_factor(hilbert_space, complex_coordinates: bool) -> Operator:
                 "For the convention G=L L*, a Hilbert-space Cholesky "
                 "factor must have the Hilbert vector space as codomain."
             ))
-        if factor.domain.is_complex != complex_coordinates:
+        if factor.domain.is_complex != hilbert_space.vecsp.is_complex:
             raise ValueError(Errors.value_error(
                 "The Cholesky factor's auxiliary domain has the wrong real "
                 "or complex scalar field."
@@ -299,17 +179,17 @@ def _cholesky_factor(hilbert_space, complex_coordinates: bool) -> Operator:
         else:
             return factor
 
-    gram_matrix = _assemble_matrix(gram, complex_coordinates)
+    gram_matrix = _assemble_matrix(gram)
     lower_factor = cholesky(
         gram_matrix,
         lower=True,
         check_finite=True,
     )
-    return _MatrixOperator(
+    return MatrixMultiplication(
         lower_factor,
-        hilbert_space.vecsp,
-        hilbert_space.vecsp,
-        complex_coordinates,
+        inverse='inv',
+        domain=hilbert_space.vecsp,
+        codomain=hilbert_space.vecsp,
     )
 
 
@@ -337,6 +217,14 @@ class SVD(Composition):
     Its Euclidean singular-vector operators :math:`U_0,V_0` are transformed
     back by :math:`U=L_X^{-*}U_0` and
     :math:`V=L_Y^{-*}V_0`.
+
+    Genuinely complex-linear operators between complex vector spaces are
+    passed to SciPy as complex operators, so their singular values are not
+    duplicated by realification. Real operators use the generic
+    :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat`` coordinates.
+    Domain and codomain must use the same scalar field. Complex backends must
+    implement the analogous :meth:`complex_flatten` and
+    :meth:`complex_fromflat` methods.
 
     Parameters
     ----------
@@ -500,9 +388,9 @@ class SVD(Composition):
                 "A numerical SVD requires both endpoint vector spaces to be "
                 "real or both to be complex."
             ))
-        complex_coordinates = bool(domain_complex)
+        complex_svd = bool(domain_complex and codomain_complex)
 
-        if complex_coordinates:
+        if complex_svd:
             for name, operator in (
                 ('forward operator', self.original_operator),
                 ('domain Gram operator', self.h_domain.gram),
@@ -524,16 +412,14 @@ class SVD(Composition):
                         "representation."
                     ))
 
-        L_X = _cholesky_factor(self.h_domain, complex_coordinates)
-        L_Y = _cholesky_factor(self.h_codomain, complex_coordinates)
+        L_X = _cholesky_factor(self.h_domain)
+        L_Y = _cholesky_factor(self.h_codomain)
         transformed = Composition(
             L_Y.adjoint,
             self.original_operator,
             L_X,
         )
-        scipy_operator = _CoordinateLinearOperator(
-            transformed, complex_coordinates
-        )
+        scipy_operator = _as_scipy_operator(transformed)
         minimum_dimension = min(scipy_operator.shape)
 
         if singular_value_tolerance is not None:
@@ -543,7 +429,7 @@ class SVD(Composition):
                 ))
 
         if k is None:
-            matrix = _assemble_matrix(transformed, complex_coordinates)
+            matrix = _assemble_matrix(transformed)
             left_vectors, singular_values, right_adjoint = np.linalg.svd(
                 matrix,
                 full_matrices=False,
@@ -618,19 +504,17 @@ class SVD(Composition):
 
         reduced_space = vecsps.NumPyVectorSpace(
             int(singular_values.size),
-            dtype=(complex if complex_coordinates else float),
+            dtype=(complex if complex_svd else float),
         )
-        V_0 = _MatrixOperator(
+        V_0 = MatrixMultiplication(
             left_vectors,
-            reduced_space,
-            transformed.codomain,
-            complex_coordinates,
+            domain=reduced_space,
+            codomain=transformed.codomain,
         )
-        U_0 = _MatrixOperator(
+        U_0 = MatrixMultiplication(
             right_adjoint.conj().T,
-            reduced_space,
-            transformed.domain,
-            complex_coordinates,
+            domain=reduced_space,
+            codomain=transformed.domain,
         )
         V = Composition(L_Y.adjoint.inverse, V_0)
         U = Composition(L_X.adjoint.inverse, U_0)

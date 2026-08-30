@@ -9,11 +9,18 @@ import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
-from regpy.util import make_repr,memoized_property,Errors
+from regpy.util import (
+    Errors,
+    complex2real as complex2real_array,
+    make_repr,
+    memoized_property,
+    real2complex as real2complex_array,
+)
 from regpy.vecsps import *
 from .base import Composition, Operator
 
-__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
+__all__ = ["MatrixMultiplication", "Complex2Real", "complex2real",
+           "CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
            "RealFourierEmbedding", "RealFourierTransform",
            "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct","EinSum"]
 
@@ -29,12 +36,13 @@ class MatrixMultiplication(Operator):
         How to implement the inverse operator. If available, this should be given as `Operator`
         or array. If `inv`, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`, a
         `CholeskyInverse` or `SuperLU` instance will be returned.
-    domain : regpy.vecsps.NumPyVectorSpace, optional
-        The underlying vector space. If not given a `regpy.vecsps.VectorSpaceBase` with same number of elements as
-        matrix columns is used. Defaults to None.
-    codomain : regpy.vecsps.NumPyVectorSpace, optional
-        The underlying vector space. If not given, a `regpy.vecsps.VectorSpaceBase` with same number of elements as
-        matrix rows is used. Defaults to None.
+    domain, codomain : regpy.vecsps.VectorSpaceBase, optional
+        Spaces represented by the matrix. Real spaces use their
+        :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat``
+        coordinates. Complex spaces implementing ``complex_flatten`` and
+        ``complex_fromflat`` may instead use genuinely complex coordinates,
+        avoiding realification. If omitted, one-dimensional NumPy spaces
+        matching the matrix dimensions are constructed.
     dtype: type or None, optional
         Data type. 
         
@@ -42,15 +50,19 @@ class MatrixMultiplication(Operator):
     -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
     The adjoint is implemented in the same way by multiplying with the adjoint matrix.
-    As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
-    codomains may also be used.
+    Multidimensional NumPy spaces and arbitrary real vector spaces are
+    supported through their flattened coordinates. A genuinely complex
+    representation is available for backends implementing
+    ``complex_flatten`` and ``complex_fromflat``; other complex backends can
+    still be represented by a real matrix of shape
+    ``(codomain.realsize, domain.realsize)``.
     """
 
     def __init__(self, 
                  matrix:np.ndarray|csc_matrix|csc_array, 
                  inverse=None, 
-                 domain:NumPyVectorSpace|None=None, 
-                 codomain:NumPyVectorSpace|None=None,
+                 domain:VectorSpaceBase|None=None, 
+                 codomain:VectorSpaceBase|None=None,
                  dtype=None):
         if not isinstance(matrix,(np.ndarray,csc_matrix,csc_array)):
             try:
@@ -66,72 +78,141 @@ class MatrixMultiplication(Operator):
 
         if domain is None:
             domain = NumPyVectorSpace(matrix.shape[1],dtype = dtype)
-        elif not isinstance(domain,NumPyVectorSpace):
-            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Domain either None or NumPyVectorSpace given was {type(domain)}"))
+        elif not isinstance(domain,VectorSpaceBase):
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Domain either None or VectorSpaceBase given was {type(domain)}"))
         if codomain is None:
             codomain = NumPyVectorSpace(matrix.shape[0],dtype = dtype)
-        elif not isinstance(codomain,NumPyVectorSpace):
-            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or NumPyVectorSpace given was {type(codomain)}"))
+        elif not isinstance(codomain,VectorSpaceBase):
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or VectorSpaceBase given was {type(codomain)}"))
         
+        complex_shape = (int(codomain.size), int(domain.size))
+        real_shape = (int(codomain.realsize), int(domain.realsize))
+        complex_coordinates = (
+            domain.is_complex
+            and codomain.is_complex
+            and matrix.shape == complex_shape
+        )
+        if complex_coordinates:
+            pass
+        elif matrix.shape == real_shape:
+            matrix_values = (
+                matrix if isinstance(matrix, np.ndarray) else matrix.data
+            )
+            if not np.all(np.isreal(matrix_values)):
+                raise ValueError(Errors.value_error(
+                    "A matrix acting on real flattened coordinates must be "
+                    "real-valued."
+                ))
+        else:
+            raise ValueError(Errors.value_error(
+                f"Matrix shape {matrix.shape} is incompatible with domain "
+                f"and codomain coordinates; expected real shape "
+                f"{real_shape}" + (
+                    f" or complex shape {complex_shape}."
+                    if domain.is_complex and codomain.is_complex
+                    else "."
+                )
+            ))
         self.matrix = matrix
+        self.complex_coordinates = complex_coordinates
+
+        def domain_coordinates(vector):
+            if self.complex_coordinates:
+                return np.asarray(domain.complex_flatten(vector)).reshape(-1)
+            return np.asarray(domain.flatten(vector)).reshape(-1)
+
+        def codomain_coordinates(vector):
+            if self.complex_coordinates:
+                return np.asarray(codomain.complex_flatten(vector)).reshape(-1)
+            return np.asarray(codomain.flatten(vector)).reshape(-1)
+
+        self._domain_coordinates = domain_coordinates
+        self._codomain_coordinates = codomain_coordinates
 
         if isinstance(matrix,np.ndarray):
-            self.matvec = lambda v: np.matvec(self.matrix, v)
-            self.rmatvec = lambda v: np.conjugate(np.vecmat(v,self.matrix))
+            self.matvec = lambda v: self.matrix @ self._domain_coordinates(v)
+            self.rmatvec = lambda v: (
+                self.matrix.conj().T @ self._codomain_coordinates(v)
+            )
         else:
             lin_op = linalg.aslinearoperator(self.matrix)
-            self.matvec = lambda v: lin_op.matvec(v)
-            self.rmatvec = lambda v: lin_op.rmatvec(v)
+            self.matvec = lambda v: lin_op.matvec(
+                self._domain_coordinates(v)
+            )
+            self.rmatvec = lambda v: lin_op.rmatvec(
+                self._codomain_coordinates(v)
+            )
+
+        self_adjoint = (
+            domain == codomain
+            and matrix.shape[0] == matrix.shape[1]
+            and (
+                np.allclose(matrix, matrix.conj().T)
+                if isinstance(matrix, np.ndarray)
+                else False
+            )
+        )
         
         super().__init__(
             domain=domain,
             codomain=codomain,
-            linear=True
+            linear=True,
+            self_adjoint=self_adjoint,
         )
         self._inverse = inverse
 
     def _eval(self, x):
-        return self.matvec(x)
+        result = np.asarray(self.matvec(x))
+        if self.complex_coordinates:
+            return self.codomain.complex_fromflat(result)
+        return self.codomain.fromflat(result)
 
     def _ieval(self, x, out):
-        if isinstance(self.matrix, np.ndarray):
-            # NumPy's matvec ufunc does not protect against overlapping input
-            # and output arrays.
-            if np.shares_memory(x, out):
-                x = x.copy()
-            return np.matvec(self.matrix, x, out=out)
-        np.copyto(out, self.matvec(x))
+        self.codomain.copyto(out, self._eval(x))
         return out
 
     def _adjoint(self, y):
-        return self.rmatvec(y)
+        result = np.asarray(self.rmatvec(y))
+        if self.complex_coordinates:
+            return self.domain.complex_fromflat(result)
+        return self.domain.fromflat(result)
 
     def _iadjoint(self, y, out):
-        if isinstance(self.matrix, np.ndarray):
-            # vecmat conjugates its vector argument. Conjugating its result
-            # therefore yields the multiplication by the adjoint matrix.
-            if np.shares_memory(y, out):
-                y = y.copy()
-            np.vecmat(y, self.matrix, out=out)
-            return np.conjugate(out, out=out)
-        np.copyto(out, self.rmatvec(y))
+        self.domain.copyto(out, self._adjoint(y))
         return out
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
-            return self._MTM @ x
-        self._MTM = self.matrix.conj().T @ self.matrix
-        return self._MTM @ x
+            matrix = self._MTM
+        else:
+            self._MTM = self.matrix.conj().T @ self.matrix
+            matrix = self._MTM
+        result = np.asarray(matrix @ self._domain_coordinates(x))
+        if self.complex_coordinates:
+            return self.domain.complex_fromflat(result)
+        return self.domain.fromflat(result)
 
     @memoized_property
     def inverse(self):
         if isinstance(self._inverse, Operator):
             return self._inverse
         elif isinstance(self._inverse, np.ndarray):
-            return MatrixMultiplication(self._inverse, inverse=self)
+            return MatrixMultiplication(
+                self._inverse,
+                inverse=self,
+                domain=self.codomain,
+                codomain=self.domain,
+            )
         elif isinstance(self._inverse, str):
             if self._inverse == 'inv':
-                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
+                inverse = MatrixMultiplication(
+                    np.linalg.inv(self.matrix),
+                    inverse=self,
+                    domain=self.codomain,
+                    codomain=self.domain,
+                )
+                self._inverse = inverse
+                return inverse
             if self._inverse == 'cholesky':
                 return CholeskyInverse(self, matrix=self.matrix)
             if self._inverse == 'superLU':
@@ -140,6 +221,104 @@ class MatrixMultiplication(Operator):
 
     def __repr__(self):
         return make_repr(self, self.matrix)
+
+
+class Complex2Real(Operator):
+    r"""Identify a complex NumPy vector space with a real one.
+
+    The operator appends an axis of length two (or inserts it at ``axis``)
+    containing real and imaginary parts.  For example, with the default
+    ``axis=-1`` it maps
+
+    .. math::
+        \mathbb C^{n_1\times\cdots\times n_d}
+        \longrightarrow
+        \mathbb R^{n_1\times\cdots\times n_d\times 2}.
+
+    This is an isometric real-linear isomorphism for the standard real inner
+    products.  Consequently its adjoint and inverse both apply
+    :func:`regpy.util.real2complex`.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.NumPyVectorSpace
+        Complex NumPy vector space to be realified.
+    axis : int [default: -1]
+        Position of the new real/imaginary axis in the codomain.
+    """
+
+    def __init__(self, domain: NumPyVectorSpace, axis: int = -1):
+        if not isinstance(domain, NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(
+                domain,
+                NumPyVectorSpace,
+                add_info="Complex2Real requires a NumPyVectorSpace."
+            ))
+        if not domain.is_complex:
+            raise ValueError(Errors.value_error(
+                "The domain of Complex2Real must be complex."
+            ))
+        if (isinstance(axis, (bool, np.bool_))
+                or not isinstance(axis, (int, np.integer))):
+            raise TypeError(Errors.type_error(
+                f"axis must be an integer. Got {axis!r}."
+            ))
+        codomain_ndim = domain.ndim + 1
+        axis = int(axis)
+        if axis < 0:
+            axis += codomain_ndim
+        if not 0 <= axis < codomain_ndim:
+            raise ValueError(Errors.value_error(
+                f"axis must lie in [-{codomain_ndim}, {codomain_ndim}). "
+                f"Got {axis}."
+            ))
+
+        shape = list(domain.shape)
+        shape.insert(axis, 2)
+        real_dtype = np.empty((), dtype=domain.dtype).real.dtype
+        codomain = NumPyVectorSpace(tuple(shape), dtype=real_dtype)
+        self.axis = axis
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        # The utility may return a view.  Allocation-returning Operator
+        # methods must return storage independent of their arguments.
+        return np.array(
+            complex2real_array(x, axis=self.axis),
+            dtype=self.codomain.dtype,
+            copy=True,
+        )
+
+    def _ieval(self, x, out):
+        np.copyto(out, complex2real_array(x, axis=self.axis))
+        return out
+
+    def _adjoint(self, y):
+        return np.array(
+            real2complex_array(y, axis=self.axis),
+            dtype=self.domain.dtype,
+            copy=True,
+        )
+
+    def _iadjoint(self, y, out):
+        np.copyto(out, real2complex_array(y, axis=self.axis))
+        return out
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
+
+    def __repr__(self):
+        return make_repr(self, self.domain, f"axis={self.axis}")
+
+
+# Lower-case alias matching the utility-function terminology and allowing
+# ``complex2real(space)`` as a constructor.
+complex2real = Complex2Real
 
 
 class CholeskyInverse(Operator):

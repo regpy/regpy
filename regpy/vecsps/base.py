@@ -673,6 +673,44 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
 
+    def complex_flatten(self, x: Vector) -> np.ndarray:
+        r"""Return one-dimensional coordinates over the complex field.
+
+        Unlike :meth:`flatten`, this method does not split complex
+        coefficients into their real and imaginary parts. It is defined only
+        for complex vector spaces and is inverse to
+        :meth:`complex_fromflat`. Backends supporting genuinely complex
+        numerical linear algebra should override both methods.
+
+        Parameters
+        ----------
+        x : Vector
+            Element of this complex vector space.
+
+        Returns
+        -------
+        numpy.ndarray
+            One-dimensional complex array of length :attr:`size`.
+        """
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        raise NotImplementedError
+
+    def complex_fromflat(self, x: np.ndarray) -> Vector:
+        r"""Construct a complex vector from complex-field coordinates.
+
+        This is inverse to :meth:`complex_flatten`. The input must contain
+        :attr:`size` coefficients; complex coefficients are retained rather
+        than represented by two real entries as in :meth:`fromflat`.
+        """
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        raise NotImplementedError
+
     def complex_space(self) -> VectorSpaceBase:
         """Compute the corresponding complex vector space.
 
@@ -942,7 +980,10 @@ class DirectSum(VectorSpaceBase):
     def flatten(self, x : TupleVector) -> np.ndarray:
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in flatten not in the VectorSpace."))
-        return np.asarray([s.flatten(x_i) for x_i,s in zip(x.v,self.summands)])
+        return np.concatenate([
+            np.asarray(s.flatten(x_i)).reshape(-1)
+            for x_i, s in zip(x.v, self.summands)
+        ])
     
     def fromflat(self, x : np.ndarray) -> TupleVector:
         if x.ndim == 1 and np.isreal(x).all() and x.size == self.realsize:
@@ -958,6 +999,41 @@ class DirectSum(VectorSpaceBase):
             return TupleVector(ret)
         else:
             raise ValueError(Errors.value_error("Construction of a vector from a flat vector only supported for x an np.ndarray not {}".format(type(x))))
+
+    def complex_flatten(self, x: TupleVector) -> np.ndarray:
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten requires every DirectSum summand to be "
+                "complex."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, add_info="Argument in complex_flatten is not in the DirectSum."
+            ))
+        return np.concatenate([
+            np.asarray(s.complex_flatten(x_i)).reshape(-1)
+            for x_i, s in zip(x.v, self.summands)
+        ])
+
+    def complex_fromflat(self, x: np.ndarray) -> TupleVector:
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires every DirectSum summand to be "
+                "complex."
+            ))
+        x = np.asarray(x)
+        if x.ndim != 1 or x.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {x.shape}."
+            ))
+        result = []
+        start = 0
+        for summand in self.summands:
+            stop = start + summand.size
+            result.append(summand.complex_fromflat(x[start:stop]))
+            start = stop
+        return TupleVector(result)
     
     def compatible(self, other: VectorSpaceBase) -> bool:
         return (
