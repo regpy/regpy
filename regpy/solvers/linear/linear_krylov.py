@@ -459,9 +459,9 @@ class NuMethodSelfAdjoint(RegSolver):
         self._update *= self.omega * self.stepsize
 
         if self.iteration_step_nr == 1:
-            # x_1 = omega_1 * mu * G^{-1}(data - A x_0).
-            self.op.domain.copyto(self._next_x, self._update)
-            self._next_x *= -1
+            # x_1 = x_0+ omega_1 * mu * G^{-1}(data - A x_0).
+            self.op.domain.copyto(self._next_x, self.x)
+            self._next_x -= self._update
         else:
             self.op.domain.copyto(self._next_x, self.x)
             self.op.domain.copyto(self._momentum, self.x)

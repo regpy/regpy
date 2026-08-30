@@ -37,7 +37,7 @@ from .admm import __all__ as mod_all
 __all__ += mod_all
 from .cgne import __all__ as mod_all
 __all__ += mod_all
-from .landweber import __all__ as mod_all
+from .linear_krylov import __all__ as mod_all
 __all__ += mod_all
 from .primal_dual import __all__ as mod_all
 __all__ += mod_all
