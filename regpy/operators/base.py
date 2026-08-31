@@ -2930,7 +2930,10 @@ class PtwMultiplication(Operator):
         The factor by which to multiply. In case of domain being NumPyVectorSpace it can be anything that can be broadcast to `domain.shape`.
 
     The operator is marked as self-adjoint exactly when the stored multiplier
-    is real-valued.
+    is real-valued. Native pointwise vector operations are used when
+    available. Otherwise the operator falls back to
+    :meth:`~regpy.vecsps.VectorSpaceBase.iter_coefficients` and
+    :meth:`~regpy.vecsps.VectorSpaceBase.set_coefficients`.
     """
     def __init__(
         self,
@@ -2965,10 +2968,16 @@ class PtwMultiplication(Operator):
             ))
         self.factor = domain.empty()
         domain.copyto(self.factor, factor)
-        factor_is_real = (
-            not domain.is_complex
-            or domain.norm(self.factor.imag) == 0
-        )
+        if not domain.is_complex:
+            factor_is_real = True
+        else:
+            try:
+                factor_is_real = domain.norm(self.factor.imag) == 0
+            except (AttributeError, TypeError, NotImplementedError):
+                factor_is_real = all(
+                    np.isreal(coefficient)
+                    for coefficient in domain.iter_coefficients(self.factor)
+                )
         super().__init__(
             domain,
             domain,
@@ -2977,42 +2986,102 @@ class PtwMultiplication(Operator):
         )
 
     def _eval(self, x: Vector) -> Vector:
-        return self.factor * x
+        try:
+            return self.factor * x
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.codomain.empty()
+            return self._icoefficientwise(x, out)
 
     def _ieval(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.codomain.copyto(out, x)
-        out *= self.factor
-        return out
+        try:
+            if out is not x:
+                self.codomain.copyto(out, x)
+            out *= self.factor
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(x, out)
 
     def _adjoint(self, x: Vector) -> Vector:
-        if self.domain.is_complex:
-            return x * np.conjugate(self.factor)
-        else:
+        try:
+            if self.domain.is_complex:
+                return x * np.conjugate(self.factor)
             return x * self.factor
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.domain.empty()
+            return self._icoefficientwise(
+                x, out, conjugate_factor=self.domain.is_complex
+            )
 
     def _iadjoint(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.domain.copyto(out, x)
-        if self.domain.is_complex:
-            out *= np.conjugate(self.factor)
-        else:
-            out *= self.factor
-        return out
+        try:
+            if out is not x:
+                self.domain.copyto(out, x)
+            if self.domain.is_complex:
+                out *= np.conjugate(self.factor)
+            else:
+                out *= self.factor
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(
+                x, out, conjugate_factor=self.domain.is_complex
+            )
 
     def _adjoint_eval(self, x: Vector) -> Vector:
-        if self.domain.is_complex:
-            return x * self.factor.conj()*self.factor
-        else:
+        try:
+            if self.domain.is_complex:
+                return x * self.factor.conj()*self.factor
             return x * self.factor**2
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.domain.empty()
+            return self._icoefficientwise(x, out, squared_modulus=True)
 
     def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.domain.copyto(out, x)
-        if self.domain.is_complex:
-            out *= np.conjugate(self.factor)*self.factor
+        try:
+            if out is not x:
+                self.domain.copyto(out, x)
+            if self.domain.is_complex:
+                out *= np.conjugate(self.factor)*self.factor
+            else:
+                out *= self.factor**2
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(x, out, squared_modulus=True)
+
+    def _icoefficientwise(
+        self,
+        x: Vector,
+        out: Vector,
+        *,
+        conjugate_factor: bool = False,
+        squared_modulus: bool = False,
+    ) -> Vector:
+        """Protocol-conforming coefficientwise fallback implementation."""
+        x_coefficients = self.domain.iter_coefficients(x)
+        factor_coefficients = self.domain.iter_coefficients(self.factor)
+        if squared_modulus:
+            result = (
+                x_coefficient
+                * np.conjugate(factor_coefficient)
+                * factor_coefficient
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
+        elif conjugate_factor:
+            result = (
+                x_coefficient * np.conjugate(factor_coefficient)
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
         else:
-            out *= self.factor**2
+            result = (
+                x_coefficient * factor_coefficient
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
+        self.domain.set_coefficients(out, result)
         return out
 
     @property
@@ -3026,7 +3095,20 @@ class PtwMultiplication(Operator):
             return self._inverse
         sav = np.seterr(divide='raise')
         try:
-            return PtwMultiplication(self.domain, 1 / self.factor)
+            try:
+                inverse_factor = 1 / self.factor
+            except (AttributeError, TypeError, ValueError, NotImplementedError):
+                inverse_factor = self.domain.empty()
+                self.domain.set_coefficients(
+                    inverse_factor,
+                    (
+                        1 / coefficient
+                        for coefficient in self.domain.iter_coefficients(
+                            self.factor
+                        )
+                    ),
+                )
+            return PtwMultiplication(self.domain, inverse_factor)
         finally:
             np.seterr(**sav)
 
@@ -3863,6 +3945,10 @@ class Product(Operator):
 class RealPart(Operator):
     r"""The pointwise real part operator.
 
+    The vectors' native ``real`` attribute is used when available. Otherwise
+    the real parts of its native coefficients are written through the vector
+    space's coefficient interface.
+
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpaceBase
@@ -3880,7 +3966,18 @@ class RealPart(Operator):
         super().__init__(domain, codomain, linear=True)
 
     def _ieval(self, x: Vector, out: Vector) -> Vector:
-        self.codomain.copyto(out, x.real)
+        try:
+            real_part = x.real
+        except (AttributeError, TypeError, NotImplementedError):
+            self.codomain.set_coefficients(
+                out,
+                (
+                    np.real(coefficient)
+                    for coefficient in self.domain.iter_coefficients(x)
+                ),
+            )
+            return out
+        self.codomain.copyto(out, real_part)
         return out
 
     def _iadjoint(self, y: Vector, out: Vector) -> Vector:
@@ -3890,6 +3987,10 @@ class RealPart(Operator):
 
 class ImaginaryPart(Operator):
     r"""The pointwise imaginary part operator.
+
+    The vector's native ``imag`` attribute is used when available. Otherwise
+    the imaginary parts of its native coefficients are written through the
+    vector space's coefficient interface.
 
     Parameters
     ----------
@@ -3909,7 +4010,18 @@ class ImaginaryPart(Operator):
         super().__init__(domain, codomain, linear=True)
 
     def _ieval(self, x: Vector, out: Vector) -> Vector:
-        self.codomain.copyto(out, x.imag)
+        try:
+            imaginary_part = x.imag
+        except (AttributeError, TypeError, NotImplementedError):
+            self.codomain.set_coefficients(
+                out,
+                (
+                    np.imag(coefficient)
+                    for coefficient in self.domain.iter_coefficients(x)
+                ),
+            )
+            return out
+        self.codomain.copyto(out, imaginary_part)
         return out
 
     def _iadjoint(self, y: Vector, out: Vector) -> Vector:
@@ -3946,6 +4058,10 @@ class SplitRealImag(VectorOfOperators):
 class SquaredModulus(Operator):
     r"""The pointwise squared modulus operator.
 
+    Native NumPy-style operations are used when the vector representation
+    provides them. Otherwise evaluation, derivative and adjoint derivative
+    fall back to the coefficient interface of the vector spaces.
+
     Parameters
     ----------
     domain : regpy.vecsps.VectorSpaceBase
@@ -3967,18 +4083,53 @@ class SquaredModulus(Operator):
     ) -> Vector:
         if differentiate:
             self._factor = 2 * x
-        np.square(x.real, out=out)
-        out += np.square(x.imag)
+        try:
+            np.square(x.real, out=out)
+            out += np.square(x.imag)
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.codomain.set_coefficients(
+                out,
+                (
+                    np.real(coefficient * np.conjugate(coefficient))
+                    for coefficient in self.domain.iter_coefficients(x)
+                ),
+            )
         return out
 
     def _iderivative(self, h: Vector, out: Vector) -> Vector:
-        np.multiply(self._factor.real, h.real, out=out)
-        if self.domain.is_complex:
-            out += self._factor.imag * h.imag
+        try:
+            np.multiply(self._factor.real, h.real, out=out)
+            if self.domain.is_complex:
+                out += self._factor.imag * h.imag
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.codomain.set_coefficients(
+                out,
+                (
+                    np.real(
+                        np.conjugate(factor_coefficient) * h_coefficient
+                    )
+                    for factor_coefficient, h_coefficient in zip(
+                        self.domain.iter_coefficients(self._factor),
+                        self.domain.iter_coefficients(h),
+                    )
+                ),
+            )
         return out
 
     def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        np.multiply(self._factor, y, out=out)
+        try:
+            np.multiply(self._factor, y, out=out)
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.domain.set_coefficients(
+                out,
+                (
+                    factor_coefficient * y_coefficient
+                    for factor_coefficient, y_coefficient in zip(
+                        self.domain.iter_coefficients(self._factor),
+                        self.codomain.iter_coefficients(y),
+                    )
+                ),
+            )
         return out
 
 

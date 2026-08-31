@@ -11,7 +11,7 @@ __all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 from warnings import warn
 
 import ngsolve as ngs
@@ -23,7 +23,7 @@ from pyngcore.pyngcore import BitArray
 
 from regpy.util import is_complex_dtype, Errors, ClassLogger
 
-from .base import VectorSpaceBase
+from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 
 
 @dataclass 
@@ -532,6 +532,62 @@ class NgsVectorSpace(VectorSpaceBase):
             x.vec = x.vec.Evaluate()
             x.is_dynamic = False
         x.vec.FV().NumPy().fill(value)
+
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Iterate over the native real or complex NGSolve coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="iter_coefficients argument is not in the NgsVectorSpace."
+            ))
+        vector = x.vec.Evaluate() if x.is_dynamic else x.vec
+        return iter(vector.FV().NumPy())
+
+    def set_coefficients(
+        self,
+        x: NgsBaseVector,
+        coefficients: Iterable[Scalar],
+    ) -> None:
+        """Overwrite an NGSolve vector from native coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="set_coefficients destination is not in the NgsVectorSpace."
+            ))
+        x._require_writable("setting coefficients")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        storage = x.vec.FV().NumPy()
+        iterator = iter(coefficients)
+        for index in range(int(self.size)):
+            try:
+                coefficient = next(iterator)
+            except StopIteration as error:
+                raise ValueError(Errors.value_error(
+                    f"Expected {self.size} coefficients, but received only "
+                    f"{index}."
+                )) from error
+            if not self.is_complex and np.iscomplexobj(coefficient):
+                coefficient = np.asarray(coefficient).item()
+                if coefficient.imag != 0:
+                    raise ValueError(Errors.value_error(
+                        "A real NgsVectorSpace cannot consume a non-real "
+                        f"coefficient {coefficient!r}."
+                    ))
+                coefficient = coefficient.real
+            storage[index] = coefficient
+        try:
+            next(iterator)
+        except StopIteration:
+            return
+        raise ValueError(Errors.value_error(
+            f"Expected {self.size} coefficients, but received more."
+        ))
     
     def complex_space(self):
         """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
