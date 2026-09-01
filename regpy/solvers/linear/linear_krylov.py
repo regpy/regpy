@@ -1,6 +1,7 @@
 from typing import Any
 
 from regpy.vecsps import Vector
+from regpy.operators import ObsDataT
 from regpy.util import Errors
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability_linear
@@ -155,10 +156,9 @@ class Landweber(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         Setting of the inverse problem.
-    data : Vector or Any or None [default: None]
-        Right-hand side. In the default case, ``setting.data`` is used. For a
-        codomain-free setting, it may be any object accepted by
-        ``setting.op.adjoint_data``.
+    data : Vector or ObsDataT or None [default: None]
+        Right-hand side. In the default case, ``setting.data`` is used. 
+        General ObsDataT objects are only admissible in a codomain-free setting.
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting. 
     change_init : bool [default: True]
@@ -177,7 +177,7 @@ class Landweber(RegSolver):
 
     def __init__(self,
         setting:Setting,
-        data:Vector | Any | None  = None,
+        data:Vector | ObsDataT | None  = None,
         init:Vector | None  = None,
         change_init:bool = True,
         stepsize:float | None = None,
@@ -503,9 +503,8 @@ class NuMethod(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         Non-Tikhonov Hilbert setting with a linear forward operator.
-    data : Vector or Any or None [default: None]
-        Right-hand side. For a codomain-free setting, this may be any object
-        accepted by ``setting.op.adjoint_data``.
+    data : Vector or ObsDataT or None [default: None]
+        Right-hand side. General ObsDataT objects are only admissible in a codomain-free setting.
     init : Vector or None [default: None]
         Initial guess :math:`x_0`. If omitted, it is resolved from the
         setting.
@@ -526,7 +525,7 @@ class NuMethod(RegSolver):
     def __init__(
         self,
         setting: Setting,
-        data: Vector | Any | None = None,
+        data: Vector | ObsDataT | None = None,
         init: Vector | None = None,
         change_init: bool = True,
         nu: float = 1.0,

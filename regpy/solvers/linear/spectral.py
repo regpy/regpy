@@ -9,6 +9,7 @@ from scipy.sparse.linalg import LinearOperator as SciPyLinearOperator
 from scipy.sparse.linalg import svds
 
 from regpy import vecsps
+from regpy.vecsps import Vector
 from regpy.operators.base import (
     Composition,
     Identity,
@@ -19,9 +20,11 @@ from regpy.operators.base import (
 from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
 
-from ..setting import Setting
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability_linear
 
-__all__ = ["SVD"]
+
+__all__ = ["SVD", "Spectral"]
 
 
 def _positive_identity_factor(gram: Operator) -> float | None:
@@ -528,3 +531,101 @@ class SVD(Composition):
             G_Y=self.h_codomain.gram,
             is_eig=False,
         )
+
+class Spectral(RegSolver):
+
+    filters = {
+                'Tikhonov': {'q': lambda lam,alpha : 1. / (lam + alpha),
+                             'r': lambda lam,alpha : alpha / (lam + alpha)
+                     },
+                'Spectral_CutOff': {'q': lambda lam,alpha : (1./lam if lam>=alpha else 0.),
+                                    'r': lambda lam,alpha : (1 if lam<alpha else 0.)
+                                    }
+              }
+
+    def __init__(self,
+                 setting: Setting,
+                 data:Vector | None  = None,
+                 init:Vector | None  = None,
+                 logging_level:int | str = "INFO",
+                 filter = 'Spectral_CutOff',
+                 regpar = 1. 
+            ) -> None:
+        out, par = Spectral.check_applicability(
+                    setting,
+                    user_data=data,
+                    user_init=init,
+                )
+        if not out['applicable']:
+            raise ValueError('Spectral methods are not applicable to this setting. '+out['info'])        
+        super().__init__(setting)
+        self.log.setLevel(logging_level)
+        
+        self.data = par['data']
+        self.init = par['init']
+
+        self.SVD = SVD(setting)
+        sv = self.SVD.singular_values
+        self.spec_domain = self.SVD.U.domain 
+        filtered_sv = self.spec_domain.empty()
+        self.aux_spec = self.spec_domain.empty()
+        self.q = Spectral.filters[filter]['q']
+        self.spec_domain.set_coefficients(
+            filtered_sv,
+            (
+                sigma * self.q(sigma**2, regpar) 
+                for sigma in self.spec_domain.iter_coefficients(sv))
+            )
+        self.filtered_sv_op = PtwMultiplication(self.spec_domain,filtered_sv) 
+        self.regpar = regpar
+        self.x = self.op.domain.empty()
+        self.y = self.op.codomain.empty()
+        self.op.domain.copyto(self.x,self.init)
+        setting.op(self.x, out=self.y)
+
+    check_applicability = staticmethod(check_Hilbert_applicability_linear)
+
+    def _next(self):
+        """
+        This method is included to allow to use spectral solvers in the same way as 
+        iterative methods. The solver is marked as converged after one iteration.
+        """
+        self.y *= -1
+        self.y += self.data
+        self.h_codomain.gram(self.y, out=self.y)
+        self.SVD.V.adjoint(self.y, out = self.aux_spec)
+        self.filtered_sv_op(self.aux_spec, out = self.aux_spec)
+        self.SVD.U(self.aux_spec, out = self.x)
+        self.h_domain.gram(self.x, out=self.x)
+        self.x += self.init
+        self.op(self.x, out=self.y)
+        self.converge()
+
+    def regularized_inverse(self) -> Operator:
+        """ The regularized inverse of the forward operator T
+        """
+        return (self.h_domain.gram_inv 
+                * self.SVD.U 
+                * self.filtered_sv_op 
+                * self.SVD.V.adjoint 
+                * self.h_codomain.gram
+        )
+
+    def residual_op(self) -> Operator:
+        """ The operator Identity - regularized_inverse * T.
+        Applied to a vector in the domain of the forward operator T it yields  
+        the bias of the estimator implemented by the method. 
+        """
+        rlambda = self.spec_domain.empty()
+        self.spec_domain.set_coefficients(
+                                self.aux_spec,
+                                (
+                                    self.q(lam,self.regpar)
+                                    for lam in self.spec_domain.iter_coefficients(self.aux_spec)
+                                ),
+                            )        
+        return (self.h_domain.gram_inv 
+                * self.SVD.U
+                * PtwMultiplication(self.spec_domain,rlambda)
+                * self.SVD.U.adjoint
+                )

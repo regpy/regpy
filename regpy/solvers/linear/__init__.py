@@ -27,6 +27,7 @@ from .proximal_gradient import *
 from .richardson_lucy import *
 from .SSNewton import *
 from .semismoothNewton import *
+from .spectral import *
 
 __all__ = []
 
