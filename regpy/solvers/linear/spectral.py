@@ -707,7 +707,7 @@ def _q_lardy(
     k = _iteration_count(k)
     if k == 0:
         return 0.
-    # The table indexes the filter by alpha/k. Therefore the alpha occurring
+    # We index the filter by alpha/k. Therefore the alpha occurring
     # in the iterated-Tikhonov formula equals k times the supplied regpar.
     base_alpha = k * alpha
     return (1. - (base_alpha / (lam + base_alpha)) ** k) / lam
@@ -901,7 +901,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
     and ``Truncated_SVD_2``. Iterative filters accept ``k`` through
     ``filter_parameters``; Landweber additionally accepts ``mu``. If ``mu``
     is omitted, :math:`\mu=1/(\alpha k)` is used. For Lardy, ``regpar`` is the
-    filter index :math:`\alpha/k` from the table.
+    filter index :math:`\alpha/k`. 
 
     The registered filters are
 
@@ -1148,7 +1148,8 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
             self.spec_domain, coefficients
         )
         self._regularized_inverse = (
-            self.SVD.U
+            self.h_domain.gram_inv
+            * self.SVD.U
             * self.filtered_sv_op
             * self.SVD.U.adjoint
             * self.h_domain.gram_inv
