@@ -755,6 +755,7 @@ class EinSum(Operator):
             super().__init__(domains[0], codomain, linear=True)
         else:
             super().__init__(DirectSum(*domains), codomain, linear=False)
+        self.conj_tensors=tuple(np.conj(tensor) for tensor in tensors)
         self._eval_opt,self._adjoint_opt=self._optimize_einsum_paths()
         '''Optimal paths for computation of einsum in evaluation and evaluation of adjoint.'''
 
@@ -860,7 +861,7 @@ class EinSum(Operator):
     
     def _adjoint(self, y):
         if(self.linear):
-            x=np.einsum(self._adjoint_subscripts[0][1],*self.tensors,y,optimize=self._adjoint_opt[0])
+            x=np.einsum(self._adjoint_subscripts[0][1],*self.conj_tensors,y,optimize=self._adjoint_opt[0])#np.conj
             if(np.issubdtype(self.domain.dtype, np.floating)):
                 x=np.real(x)
             if(self._adjoint_subscripts[0][0]):
@@ -870,7 +871,7 @@ class EinSum(Operator):
             return x_full
         xs=[]
         for j,s in enumerate(self._adjoint_subscripts):
-            x_j=np.einsum(s[1],*self._p_conj[:j],*self._p_conj[j+1:],*self.tensors,y,optimize=self._adjoint_opt[j])
+            x_j=np.einsum(s[1],*self._p_conj[:j],*self._p_conj[j+1:],*self.conj_tensors,y,optimize=self._adjoint_opt[j])
             if(np.issubdtype(self.domain[j].dtype, np.floating)):
                 x_j=np.real(x_j)
             if(s[0]):
