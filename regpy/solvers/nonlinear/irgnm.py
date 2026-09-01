@@ -1,24 +1,100 @@
-from copy import copy
 from math import sqrt,isqrt
 
 import numpy as np
 
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
-from regpy.operators import Operator
-from regpy.vecsps import Vector
+from regpy.operators import ObsDataT, Operator
+from regpy.vecsps import ReadOnlyVector, Vector
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
-from ..linear.tikhonov import TikhonovCG
+from ..linear.tikhonov import Lavrentiev, TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
+
+
+def _inner_cg_parameters(
+    cg_pars: dict | None,
+    codomain_free: bool,
+) -> dict:
+    """Return independent, compatible parameters for an inner CG solve."""
+    if cg_pars is None:
+        pars = {'reltolx': 1 / 3, 'all_tol_criteria': False}
+        if not codomain_free:
+            pars['reltoly'] = 1 / 3
+        return pars
+    pars = dict(cg_pars)
+    obsolete = {'regpar', 'update_setting'} & pars.keys()
+    if obsolete:
+        names = ', '.join(sorted(obsolete))
+        raise ValueError(Errors.value_error(
+            f"cg_pars contains obsolete TikhonovCG parameters: {names}."
+        ))
+    if codomain_free:
+        if pars.get('reltoly') is not None:
+            raise ValueError(Errors.value_error(
+                "reltoly is unavailable for codomain-free inner CG solves."
+            ))
+        pars.pop('reltoly', None)
+    return pars
+
+
+def _run_inner_cg(
+    solver: RegSolver,
+    reference: ReadOnlyVector,
+    stoprule: CountIterations,
+) -> tuple[Vector, Vector | None]:
+    """Solve one linearized Tikhonov problem."""
+    cg_pars = dict(solver.cg_pars)
+    cg_pars.setdefault(
+        'logging_level', solver.inner_it_logging_level
+    )
+    if solver.setting.codomain_free:
+        solver.deriv.adjoint_data(
+            solver.data, out=solver._adjoint_data
+        )
+        solver.op.domain.copyto(
+            solver._normal_rhs, solver._adjoint_data
+        )
+        solver._normal_rhs -= solver._adjoint_eval
+        inner_setting = Setting(
+            solver.deriv.adjoint_eval,
+            solver.h_domain,
+            solver.h_domain,
+            regpar=solver.regpar,
+            codomain_free=True,
+            explicitDataWarning=False,
+            logging_level=solver.inner_it_logging_level,
+        )
+        return Lavrentiev(
+            setting=inner_setting,
+            data=solver._normal_rhs,
+            init=reference,
+            **cg_pars,
+        ).run(stoprule=stoprule)
+
+    inner_setting = Setting(
+        solver.deriv,
+        solver.h_domain,
+        solver.h_codomain,
+        regpar=solver.regpar,
+        explicitDataWarning=False,
+        logging_level=solver.inner_it_logging_level,
+    )
+    return TikhonovCG(
+        setting=inner_setting,
+        data=solver.data - solver.y,
+        init=reference,
+        **cg_pars,
+    ).run(stoprule=stoprule)
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
 
     .. math::
-        \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
+        \Vert T(x_{n}) + T'[x_n] h - data\Vert^{2}
+        + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
 
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
@@ -27,8 +103,10 @@ class IrgnmCG(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or None [default: None]
-        The measured data. If it is None it is taken from the setting.
+    data : Vector or ObsDataT or None [default: None]
+        The measured data. If it is None it is taken from the setting. For a
+        codomain-free setting it may be any object accepted by
+        :meth:`Operator.adjoint_data`.
     regpar : float [default: 1.0]
         The initial regularization parameter. Must be positive.
     regpar_step : float [default: 2 / 3]
@@ -36,20 +114,32 @@ class IrgnmCG(RegSolver):
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting.
     cg_pars : dict or None [default: None]
-        Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+        Parameters for the inner
+        :class:`~regpy.solvers.linear.tikhonov.TikhonovCG` or, in the
+        codomain-free case,
+        :class:`~regpy.solvers.linear.tikhonov.Lavrentiev` solver. ``regpar``
+        and ``update_setting`` are not accepted.
     cgstop : int or None [default: 1000]
         Maximum number of inner CG iterations.
     inner_it_logging_level : int or str [default: "WARNING"]
         Logging level for inner iterations.
     simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
-        It is used for the derivative in the Newton equation. 
+        It is used for the derivative in the Newton equation. This option is
+        unavailable for codomain-free settings.
     logging_level : int or str [default: "INFO"]
         Logging level.
+
+    Notes
+    -----
+    In the codomain-free case the normal-equation right-hand side is formed
+    as ``deriv.adjoint_data(data) - adjoint_eval`` and the inner problem is
+    delegated to :class:`~regpy.solvers.linear.tikhonov.Lavrentiev`.
     """
 
     def __init__(
-                self, setting:Setting, data:Vector | None=None,
+                self, setting:Setting,
+                data:Vector | ObsDataT | None=None,
                 regpar:float=1., regpar_step:float=2 / 3,
                 init:Vector | None=None,
                 cg_pars:dict | None=None,
@@ -75,8 +165,20 @@ class IrgnmCG(RegSolver):
             ))
         if not (isinstance(regpar,(float,int)) and regpar>0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
-        self.x = copy(self.init)
-        if simplified_op:
+        if setting.codomain_free and simplified_op is not None:
+            raise ValueError(Errors.value_error(
+                "simplified_op is unavailable for codomain-free IrgnmCG."
+            ))
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        if setting.codomain_free:
+            self.y = None
+            self._adjoint_eval, self.deriv = self.op.linearize(
+                self.x, return_adjoint_eval=True
+            )
+            self._adjoint_data = self.op.domain.empty()
+            self._normal_rhs = self.op.domain.empty()
+        elif simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
             self.y = self.op(self.x)
@@ -86,9 +188,9 @@ class IrgnmCG(RegSolver):
         """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        self.cg_pars = ({'reltolx': 1/3., 'reltoly': 1/3.,
-                         'all_tol_criteria': False}
-                        if cg_pars is None else cg_pars)
+        self.cg_pars = _inner_cg_parameters(
+            cg_pars, setting.codomain_free
+        )
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
@@ -103,21 +205,19 @@ class IrgnmCG(RegSolver):
         # Disable info logging, but don't override log level for all CountIterations instances.
         #stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(self.inner_it_logging_level)
-        # Running Tikhonov solver
-        inner_setting = Setting(self.deriv, 
-                                penalty=self.h_domain, 
-                                data_fid = self.h_codomain,
-                                data = self.data - self.y,
-                                penalty_shift=self.init - self.x,
-                                regpar=self.regpar
-                                )
-        step, _ = TikhonovCG(
-            setting=inner_setting,
-            **self.cg_pars,
-            logging_level = self.inner_it_logging_level
-        ).run(stoprule=stoprule)
+        inner_init = self.op.domain.empty()
+        self.op.domain.copyto(inner_init, self.init)
+        inner_init -= self.x
+        step, _ = _run_inner_cg(self, inner_init, stoprule)
         self.x += step
-        if hasattr(self,'simplified_op'):
+        if self.setting.codomain_free:
+            self._adjoint_eval, self.deriv = self.op.linearize(
+                self.x,
+                out=self._adjoint_eval,
+                return_adjoint_eval=True,
+            )
+            self.y = None
+        elif hasattr(self,'simplified_op'):
             _, self.deriv = self.simplified_op.linearize(self.x)
             self.y = self.op(self.x)
         else:
@@ -133,7 +233,7 @@ class IrgnmCG(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | None = None,
+        user_data: Vector | ObsDataT | None = None,
         user_init: Vector | None = None,
     ) -> tuple[dict, dict]:
         """Check whether IRGNM-CG can be used for ``setting``."""
@@ -143,10 +243,6 @@ class IrgnmCG(RegSolver):
             user_data=user_data,
             user_init=user_init,
         )
-        if setting.codomain_free:
-            out['info'] += (
-                'IrgnmCG has no implementation without codomain vectors. '
-            )
         out['applicable'] = out['info'] == ''
         return out, par
         
@@ -155,7 +251,8 @@ class LevenbergMarquardt(RegSolver):
     r"""The Levenberg-Marquardt method. In each iteration, minimizes
 
     .. math::
-        \Vert(x_{n}) + T'[x_n] h - data\Vert^{2} + regpar_{n} \cdot \Vert h\Vert^{2}
+        \Vert T(x_{n}) + T'[x_n] h - data\Vert^{2}
+        + regpar_{n} \cdot \Vert h\Vert^{2}
 
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
@@ -164,8 +261,10 @@ class LevenbergMarquardt(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : Vector or None [default: None]
-        The measured data. If it is None it is taken from the setting.
+    data : Vector or ObsDataT or None [default: None]
+        The measured data. If it is None it is taken from the setting. For a
+        codomain-free setting it may be any object accepted by
+        :meth:`Operator.adjoint_data`.
     regpar : float [default: 1.0]
         The initial regularization parameter. Must be positive.
     regpar_step : float [default: 2 / 3]
@@ -173,20 +272,32 @@ class LevenbergMarquardt(RegSolver):
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting.
     cg_pars : dict or None [default: None]
-        Parameter dictionary for stopping of inner CG iteration passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
+        Parameters for the inner
+        :class:`~regpy.solvers.linear.tikhonov.TikhonovCG` or, in the
+        codomain-free case,
+        :class:`~regpy.solvers.linear.tikhonov.Lavrentiev` solver. ``regpar``
+        and ``update_setting`` are not accepted.
     cgstop : int or None [default: 1000]
         Maximum number of inner CG iterations.
     inner_it_logging_level : int or str [default: "WARNING"]
         Logging level for inner iterations.
     simplified_op : regpy.operators.Operator or None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
-        It is used for the derivative in the Newton equation. 
+        It is used for the derivative in the Newton equation. This option is
+        unavailable for codomain-free settings.
     logging_level : int or str [default: "INFO"]
         Logging level.
+
+    Notes
+    -----
+    In the codomain-free case the normal-equation right-hand side is formed
+    as ``deriv.adjoint_data(data) - adjoint_eval`` and the inner problem is
+    delegated to :class:`~regpy.solvers.linear.tikhonov.Lavrentiev`.
     """
 
     def __init__(
-               self, setting:Setting, data:Vector | None=None,
+               self, setting:Setting,
+                data:Vector | ObsDataT | None=None,
                 regpar:float=1., regpar_step:float=2 / 3,
                 init:Vector | None=None,
                 cg_pars:dict | None=None,
@@ -215,8 +326,21 @@ class LevenbergMarquardt(RegSolver):
             ))
         if not (isinstance(regpar,(float,int)) and regpar > 0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
-        self.x = copy(self.init)
-        if simplified_op:
+        if setting.codomain_free and simplified_op is not None:
+            raise ValueError(Errors.value_error(
+                "simplified_op is unavailable for codomain-free "
+                "LevenbergMarquardt."
+            ))
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        if setting.codomain_free:
+            self.y = None
+            self._adjoint_eval, self.deriv = self.op.linearize(
+                self.x, return_adjoint_eval=True
+            )
+            self._adjoint_data = self.op.domain.empty()
+            self._normal_rhs = self.op.domain.empty()
+        elif simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
             self.y = self.op(self.x)
@@ -226,9 +350,9 @@ class LevenbergMarquardt(RegSolver):
         """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
-        self.cg_pars = ({'reltolx': 1/3., 'reltoly': 1/3.,
-                         'all_tol_criteria': False}
-                        if cg_pars is None else cg_pars)
+        self.cg_pars = _inner_cg_parameters(
+            cg_pars, setting.codomain_free
+        )
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         self.cgstop = cgstop
         """Maximum number of iterations for inner CG solver, or None"""
@@ -243,16 +367,17 @@ class LevenbergMarquardt(RegSolver):
         # Disable info logging, but don't override log level for all CountIterations instances.
         stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel("WARNING")
-        # Running Tikhonov solver
-        step, _ = TikhonovCG(
-            setting=Setting(self.deriv, self.h_domain, self.h_codomain),
-            data=self.data - self.y,
-            regpar=self.regpar,
-            **self.cg_pars,
-            logging_level = self.inner_it_logging_level
-        ).run(stoprule=stoprule)
+        inner_init = self.op.domain.zeros(read_only=True)
+        step, _ = _run_inner_cg(self, inner_init, stoprule)
         self.x += step
-        if hasattr(self,'simplified_op'):
+        if self.setting.codomain_free:
+            self._adjoint_eval, self.deriv = self.op.linearize(
+                self.x,
+                out=self._adjoint_eval,
+                return_adjoint_eval=True,
+            )
+            self.y = None
+        elif hasattr(self,'simplified_op'):
             _, self.deriv = self.simplified_op.linearize(self.x)
             self.y = self.op(self.x)
         else:
@@ -362,15 +487,19 @@ class IrgnmCGPrec(RegSolver):
             ))
         if not (isinstance(regpar,(float,int)) and regpar > 0):
             raise ValueError(Errors.value_error('regpar must be positive.',regpar))
-        self.x = copy(self.init)
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
         self.y, self.deriv = self.op.linearize(self.x)
         self.regpar = regpar
         """The regularization parameter."""
         self.regpar_step = regpar_step
         """The `regpar` factor."""
         if cg_pars is None:
-            cg_pars = {}
-        self.cg_pars = cg_pars
+            self.cg_pars = {}
+        else:
+            self.cg_pars = _inner_cg_parameters(
+                cg_pars, codomain_free=False
+            )
         self.cgstop = cgstop
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
         
@@ -411,6 +540,11 @@ class IrgnmCGPrec(RegSolver):
         )
         if not isinstance(setting.op.domain, UniformGridFcts):
             out['info'] += 'Operator domain is not UniformGridFcts. '
+        if setting.codomain_free:
+            out['info'] += (
+                'IrgnmCGPrec requires codomain vectors for its spectral '
+                'preconditioner. '
+            )
         out['applicable'] = out['info'] == ''
         return out, par
     
@@ -428,11 +562,16 @@ class IrgnmCGPrec(RegSolver):
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=Setting(self.deriv, self.h_domain, self.h_codomain),
+                setting=Setting(
+                    self.deriv,
+                    self.h_domain,
+                    self.h_codomain,
+                    regpar=self.regpar,
+                    explicitDataWarning=False,
+                ),
                 data=self.data - self.y,
-                regpar=self.regpar,
                 krylov_basis=self.krylov_basis,
-                xref=self.init - self.x,
+                init=self.init - self.x,
                 **self.cg_pars
             ).run(stoprule=stoprule)
             for i in range(0, self.krylov_order):
@@ -444,10 +583,15 @@ class IrgnmCGPrec(RegSolver):
           
         else:
             step, _ = TikhonovCG(
-                setting=Setting(self.deriv, self.h_domain, self.h_codomain),
+                setting=Setting(
+                    self.deriv,
+                    self.h_domain,
+                    self.h_codomain,
+                    regpar=self.regpar,
+                    explicitDataWarning=False,
+                ),
                 data=self.data - self.y,
-                regpar=self.regpar,
-                xref=self.init-self.x,
+                init=self.init-self.x,
                 preconditioner=self.preconditioner,
                 **self.cg_pars
             ).run(stoprule=stoprule)
