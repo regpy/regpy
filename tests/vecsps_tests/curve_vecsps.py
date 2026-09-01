@@ -26,29 +26,22 @@ def ShapeCurves(name,n=20,der=3):
     return []
 
 @pytest.mark.parametrize("shape, der",[
-    ("kite",3),("peanut",3),("round_rect",2),("apple",3),("three_lobes",3),("pinched_ellipse",3),("smoothed_rectangle",3),("nonsym_shape",3),("circle",3)
+    ("Kite",3),("Peanut",3),("Round_rect",2),("Apple",3),("Three_lobes",3),("Pinched_ellipse",3),("Smoothed_rectangle",3),("Nonsym_shape",3),("Circle",3)
 ])
 def test_shapes(shape,der):
         ShapeCurves(shape,n=20,der=der)
   
-def test_GenTrigDiscr():
-    vecsps_basics(GenTrigDiscr,40)
+def test_GenTrigSpc():
+    vecsps_basics(GenTrigSpc,10,n=50)
 
-    vs = GenTrigDiscr(40)
-    coeff = np.asarray([1,0.5,0.25,1,0.25,0.5])
-    _ = vs.bd_eval(coeffs=coeff,nvals=40,nderivs=3)
-    _ = vs.z
-    _ = vs.zp
-    _ = vs.zpp
-    _ = vs.zppp
-    _ = vs.zpabs
-    _ = vs.normal
-    _ = vs.der_normal
-    _ = vs.adjoint_der_normal
+    vs = GenTrigSpc(4,n=40)
+    samples = np.asarray([[1.,0.],[0.25,1],[0.25,0.5],[1.,1.]])
+    _ = vs.coeff2curve(coeff=samples,nderivs=3)
+
     
-def test_StarTrigDiscr():
-    vecsps_basics(StarTrigDiscr,40)
+def test_StarTrigRadialFcts():
+    vecsps_basics(StarTrigRadialFcts,40,n=50)
 
-    vs = StarTrigDiscr(40)
-    coeff = vs.sample(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
-    _ = vs.eval_curve(coeffs=coeff)
+    vs = StarTrigRadialFcts(40,n=40)
+    curve = vs.radialfct2curve(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
+    _ = vs.coeff2curve(coeff=curve.radial())

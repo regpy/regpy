@@ -1,10 +1,13 @@
 import numpy as np
 from numpy import pi 
 from numpy.linalg import norm
+from scipy.fft import fftshift, ifftshift
+from scipy.signal import resample
 import pytest
 
 from regpy.vecsps.numpy import *
 from regpy.operators.convolution import *
+from regpy.operators.numpy import FourierTransform
 from regpy.util import Errors
 
 from .base_operator import op_basics_wrapper,op_evaluation_and_ot
@@ -12,10 +15,14 @@ from regpy.util import set_rng_seed
 
 set_rng_seed(15873098306879350073259142812684978477)
 
+
+def _centered_axis(size, spacing=1.0):
+    return np.arange(-(size // 2), (size + 1) // 2) * spacing
+
+
 class TestPaddingOperator():
 
     @pytest.mark.parametrize("vs, pad_amount",[ 
-        (UniformGridFcts(3,3),None),
         (UniformGridFcts(3,3),[2,3]),
         (UniformGridFcts(2,3,dtype=complex),2)
     ])
@@ -23,7 +30,7 @@ class TestPaddingOperator():
         op_basics_wrapper(PaddingOperator,vs,test_methods=True, pad_amount = pad_amount)
 
     @pytest.mark.parametrize("vs, pad_amount, x, res",[ 
-        (UniformGridFcts(3,3),None, np.ones((3,3)),np.ones((3,3))),
+        (UniformGridFcts(3,3),0, np.ones((3,3)),np.ones((3,3))),
         (UniformGridFcts(2,2),[1,2], np.ones((2,2)), np.asarray([[0,0,0,0,0,0],[0,0,1.,1.,0,0],[0,0,1.,1.,0,0],[0,0,0,0,0,0]])),
         (UniformGridFcts(2,3,dtype=complex),2,np.ones((2,3))*1j, np.asarray([[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,1j,1j,1j,0,0],[0,0,1j,1j,1j,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]]))
     ])
@@ -45,6 +52,161 @@ class TestConvolutionOperator():
     def test_ot_eval(self,vs,pad_amount,kernel):
         op=ConvolutionOperator(vs,fourier_multiplier=kernel,pad_amount=2)
         op_evaluation_and_ot(op)
+
+class TestConvolutionOperatorRegression:
+    @pytest.mark.parametrize("size", [1, 2, 3, 4, 7, 8])
+    def test_real_identity_convolution(self, size):
+        grid = UniformGridFcts(_centered_axis(size), dtype=float)
+        op = ConvolutionOperator(
+            grid, fourier_multiplier=lambda frequency: 1.0
+        )
+        rng = np.random.default_rng(size)
+        x = rng.normal(size=grid.shape)
+
+        op_evaluation_and_ot(op, x=x, res=x, sample_N=1)
+
+    @pytest.mark.parametrize(
+        "shape, convolution_axes",
+        [
+            ((5, 7), (0,)),
+            ((4, 6, 3), (1, 0)),
+        ],
+    )
+    def test_partial_and_reordered_transform_axes(
+            self, shape, convolution_axes):
+        grid = UniformGridFcts(
+            *[_centered_axis(size) for size in shape], dtype=float
+        )
+        ft = FourierTransform(grid, axes=convolution_axes)
+        multiplier = 1.0 / (
+            1.0 + sum(coord**2 for coord in ft.codomain.coords)
+        )
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=multiplier,
+            convolution_axes=convolution_axes,
+        )
+        rng = np.random.default_rng(sum(shape) + sum(convolution_axes))
+        x = rng.normal(size=grid.shape)
+        expected = ft.left_inverse(multiplier * ft(x))
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+
+    @pytest.mark.parametrize(
+        "source_size, target_size",
+        [
+            (2, 4),
+            (4, 2),
+            (4, 8),
+            (8, 4),
+            (5, 9),
+            (9, 5),
+            (8, 12),
+            (12, 8),
+        ],
+    )
+    def test_real_fourier_resizing_matches_scipy_resample(
+            self, source_size, target_size):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        rng = np.random.default_rng(source_size * 100 + target_size)
+        x = rng.normal(size=grid.shape)
+        expected = fftshift(resample(ifftshift(x), target_size))
+
+        assert op.codomain.shape == (target_size,)
+        op_evaluation_and_ot(
+            op, x=x, res=expected, sample_N=1,
+            rel_tol=2e-11, tol=2e-11,
+        )
+
+    @pytest.mark.parametrize(
+        "source_size, target_size",
+        [
+            pytest.param(9, 5, id="Fourier-truncation"),
+            pytest.param(5, 9, id="Fourier-zero-extension"),
+        ],
+    )
+    def test_fourier_truncation_and_zero_extension(
+            self, source_size, target_size):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        source_ft = FourierTransform(grid, centered=True)
+        target_ft = FourierTransform(op.codomain, centered=True)
+        rng = np.random.default_rng(1000 + source_size * 10 + target_size)
+        x = rng.normal(size=grid.shape)
+
+        source_spectrum = source_ft(x)
+        expected_spectrum = target_ft.codomain.zeros()
+        retained_size = min(
+            source_spectrum.shape[0], expected_spectrum.shape[0]
+        )
+        expected_spectrum[:retained_size] = (
+            np.sqrt(target_size / source_size)
+            * source_spectrum[:retained_size]
+        )
+        expected = target_ft.left_inverse(expected_spectrum)
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+        actual_spectrum = target_ft(op(x))
+        np.testing.assert_allclose(
+            actual_spectrum, expected_spectrum, rtol=2e-12, atol=2e-12
+        )
+        if target_size > source_size:
+            np.testing.assert_allclose(
+                actual_spectrum[source_spectrum.shape[0]:], 0,
+                rtol=0, atol=2e-12,
+            )
+
+    @pytest.mark.parametrize(
+        "source_size, target_size, coefficient, nyquist_factor",
+        [
+            pytest.param(4, 8, 2.0, 0.5, id="split-source-Nyquist"),
+            pytest.param(8, 4, 1.5, 2.0, id="collapse-to-target-Nyquist"),
+        ],
+    )
+    def test_even_length_nyquist_splitting_and_collapsing(
+            self, source_size, target_size, coefficient, nyquist_factor):
+        grid = UniformGridFcts(_centered_axis(source_size), dtype=float)
+        amount = (source_size - target_size) // 2
+        op = ConvolutionOperator(
+            grid,
+            fourier_multiplier=lambda frequency: 1.0,
+            Fourier_truncation_amount=amount,
+        )
+        source_ft = FourierTransform(grid, centered=True)
+        target_ft = FourierTransform(op.codomain, centered=True)
+
+        source_spectrum = source_ft.codomain.zeros()
+        retained_index = min(
+            source_ft.codomain.shape_domain[0],
+            target_ft.codomain.shape_domain[0],
+        ) - 1
+        source_spectrum[retained_index] = coefficient
+        x = source_ft.left_inverse(source_spectrum)
+
+        expected_spectrum = target_ft.codomain.zeros()
+        expected_spectrum[retained_index] = (
+            np.sqrt(target_size / source_size)
+            * nyquist_factor
+            * coefficient
+        )
+        expected = target_ft.left_inverse(expected_spectrum)
+
+        op_evaluation_and_ot(op, x=x, res=expected, sample_N=1)
+        np.testing.assert_allclose(
+            target_ft(op(x)), expected_spectrum, rtol=2e-12, atol=2e-12
+        )
+
 
 @pytest.mark.parametrize("vs, sigma, pad_amount, convolution_axes",[ 
         (UniformGridFcts(10,10),5,2,[1]),
@@ -88,20 +250,32 @@ class TestDifferentialOperators():
     grid = UniformGridFcts((-pi,pi,10), (-pi,pi,9),dtype=float,shape_codomain=(1,))
     pad_amount = [2,0]
 
-    @pytest.mark.parametrize("op, vs, pad_amount",[ 
-        (gradient,grid.vector_valued_space(1),[2,0]),
-        (divergence,grid.vector_valued_space(2),[2,0]),
-        (Laplacian,grid.scalar_space(),[2,0]),
+    @pytest.mark.parametrize("op, vs, pad_amount,Fourier_truncation_amount",[ 
+        (gradient,grid.vector_valued_space(1),[2,0],[-2,2]),
+        (divergence,grid.vector_valued_space(2),[2,0],None),
+        (Laplacian,grid.scalar_space(),[2,0],2),
     ])
-    def test_op_basic(self, op, vs, pad_amount):
-        op_basics_wrapper(op,vs,pad_amount=pad_amount)
+    def test_op_basic(self, op, vs, pad_amount,Fourier_truncation_amount):
+        op_basics_wrapper(op,vs,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
 
-    def test_compatibility(self):
-        grad =  gradient(self.grid.vector_valued_space(1),pad_amount=self.pad_amount)
-        div = divergence(self.grid.vector_valued_space(2),pad_amount=self.pad_amount)  
-        Lap = Laplacian(self.grid,pad_amount=self.pad_amount)
+    @pytest.mark.parametrize("grid, pad_amount,Fourier_truncation_amount",[
+        (grid,[0,2],0),
+        (grid.complex_space(),[0,2],0),
+        (grid,2,[-2,2]),
+        (grid.complex_space(),2,[-2,2])
+    ])
+    def test_compatibility(self,grid,pad_amount,Fourier_truncation_amount):
+        grad =  gradient(grid.vector_valued_space(1),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
+        div = divergence(grid.vector_valued_space(2),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount) 
         div_grad = div.composition(grad)
+        Lap = Laplacian(grid,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount,kernel_matrix_shape=(1,1))
         assert np.allclose(Lap.fourier_multiplier,div_grad.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to div_grad composition is not close!",meth="Differential Operators")
+
+        Lap_scal = Laplacian(grid,pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)
+        Dxsq = Derivative(grid,order=(2,0),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount) 
+        Dysq = Derivative(grid,order=(0,2),pad_amount=pad_amount,Fourier_truncation_amount=Fourier_truncation_amount)         
+        Lap_as_sum = Dxsq+Dysq
+        assert np.allclose(Lap_scal.fourier_multiplier,Lap_as_sum.fourier_multiplier), Errors.failed_test(f"Comparing the Fourier multiplier of Laplace to sum of second derivative operators is not close!",meth="Differential Operators")
 
     @pytest.mark.parametrize("op, vs, pad_amount",[ 
         (gradient,grid.vector_valued_space(1),[2,0]),
@@ -114,9 +288,9 @@ class TestDifferentialOperators():
     # test identities curl grad = 0,  div curl = 0, and \Delta = grad div - curl curl
     # different implementations of convolution operators with and without padding 
     @pytest.mark.parametrize("type,pad_amount",[ 
-        (float,None),
+        (float,0),
         (float,[2,0,3]),
-        (complex,None),
+        (complex,0),
         (complex,[2,0,3]),
     ])
     def test_identies(self,type,pad_amount):
@@ -125,7 +299,8 @@ class TestDifferentialOperators():
         grad = gradient(grid3D.vector_valued_space(1),pad_amount=pad_amount)   
         curlop = curl(grid3D.vector_valued_space(3),pad_amount=pad_amount)
         div = divergence(grid3D.vector_valued_space(3),pad_amount=pad_amount)
-        Lap3D = Laplacian(grid3D.vector_valued_space(3),pad_amount=pad_amount)
+        Lap3D = Laplacian(grid3D.vector_valued_space(3),pad_amount=pad_amount,kernel_matrix_shape=(3,3))
+    
 
         curl_grad =  curlop.composition(grad)
         assert norm(curl_grad.fourier_multiplier)==0

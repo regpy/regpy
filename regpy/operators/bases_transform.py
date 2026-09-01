@@ -6,7 +6,7 @@ from regpy.util import Errors
 
 from .base import Operator
 
-__all__ = ["chebyshev_basis","legendre_basis","bspline_basis"]
+__all__ = ["BasisTransform", "chebyshev_basis", "legendre_basis", "bspline_basis"]
 
 class BasisTransform(Operator):
     r"""
@@ -43,8 +43,8 @@ class BasisTransform(Operator):
             raise ValueError(Errors.value_error(f"The number of bases vectors need to match the domain vector dimension and codomain vector dimension. "+"\n\t" +f"len(bases) = { len(bases)}"+"\n\t"+f"eval_domain.ndim = {eval_domain.ndim} "+"\n\t"+f"coef_domain.ndim = {coef_domain.ndim}."))
         if len(bases) > 26:
             raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
-        if coef_domain.dtype != dtype or eval_domain.dtype != dtype:
-            raise ValueError(Errors.value_error("The dtypes of the different domains have to be identical with the given dtype."))
+        if not np.issubdtype(dtype,coef_domain.dtype) or not np.issubdtype(dtype,eval_domain.dtype):
+            raise ValueError(Errors.value_error(f"The dtypes of the different domains have to be identical with the given dtype. coef.dtype = {coef_domain.dtype}, eval.dtype = {eval_domain.dtype}, and dtype = {dtype}"))
         if any(basis.shape[0] != int(eval.size) for (basis,eval) in zip(bases,eval_domain)):
             raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[0] for basis in bases)}"+"\n\t"+f"eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
         if any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
@@ -54,34 +54,132 @@ class BasisTransform(Operator):
         r""" `dtype` of the vector spaces."""
         self.ndim = coef_domain.ndim
         r""" dimension of the `coef_domain`. """
-        self.bases = bases
-        r"""List of all the bases transforms as a list of `np.ndarray`\s
-        """
+        self.bases = tuple(np.asarray(basis) for basis in bases)
+        r"""All one-dimensional basis transforms as immutable tuple of arrays."""
+        self._conjugate_bases = tuple(
+            np.conjugate(basis) if np.iscomplexobj(basis) else basis
+            for basis in self.bases
+        )
 
-    def _eval(self, coef):
-        ## separate 1-D and 2-D because of performance
-        if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
-            return self.bases[0] @ coef
-        elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
-            return np.linalg.multi_dot([self.bases[0], coef, self.bases[1].T])
-        else:
-            self.sumrule = "".join(chr(k) for k in range(65,65+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(97,97+self.ndim))
-            self.einsum_path = np.einsum_path(self.sumrule,coef,*self.bases, optimize='optimal')[0]
-            return np.einsum(self.sumrule,coef,*self.bases,optimize=self.einsum_path)
+        coef_indices = "".join(chr(k) for k in range(65, 65 + self.ndim))
+        eval_indices = "".join(chr(k) for k in range(97, 97 + self.ndim))
+        basis_indices = ",".join(
+            chr(97 + axis) + chr(65 + axis)
+            for axis in range(self.ndim)
+        )
+        self._eval_sumrule = f"{coef_indices},{basis_indices}->{eval_indices}"
+        self._adjoint_sumrule = f"{eval_indices},{basis_indices}->{coef_indices}"
+        self._eval_einsum_path = None
+        self._adjoint_einsum_path = None
 
-    def _adjoint(self, G):
-        ## separate 1-D and 2-D because of performance
-        if self.ndim == 1 and self.domain[0].size*self.codomain[0].size <= 50000000:
-            return self.bases[0].H @ G
-        elif self.ndim == 2 and (self.domain[0].size+self.domain[1].size)*(self.codomain[0].size+self.codomain[1].size) <= 4000000:
-            return np.linalg.multi_dot([self.bases[0].conj().T, G, self.bases[1].conj()])
-        else:
-            self.sumrule = "".join(chr(k) for k in range(97,97+self.ndim))+","+",".join(["".join(chr(k) for k in [97+l,65+l]) for l in range(self.ndim)])+"->"+"".join(chr(k) for k in range(65,65+self.ndim))
-            self.einsum_path = np.einsum_path(self.sumrule,G,*self.bases, optimize='optimal')[0]
-            return np.einsum(self.sumrule,G,*self.bases,optimize=self.einsum_path)
+        # Basis arrays are read-only operator data and should not be duplicated when
+        # derivatives/adjoints of this linear operator are copied.
+        self._consts.update({'bases', '_conjugate_bases'})
+
+    @staticmethod
+    def _copy_if_aliased(x, out):
+        """Return an independent input only when ``out`` overlaps it."""
+        return x.copy() if np.shares_memory(x, out) else x
+
+    def _get_einsum_path(self, operand, *, adjoint):
+        """Compute each contraction path only once and reuse it afterwards."""
+        if adjoint:
+            if self._adjoint_einsum_path is None:
+                self._adjoint_einsum_path = np.einsum_path(
+                    self._adjoint_sumrule,
+                    operand,
+                    *self._conjugate_bases,
+                    optimize='optimal'
+                )[0]
+            return self._adjoint_einsum_path
+
+        if self._eval_einsum_path is None:
+            self._eval_einsum_path = np.einsum_path(
+                self._eval_sumrule,
+                operand,
+                *self.bases,
+                optimize='optimal'
+            )[0]
+        return self._eval_einsum_path
+
+    def _ieval(self, coef, out):
+        """Evaluate the tensor-product basis transform directly into ``out``."""
+        coef = self._copy_if_aliased(coef, out)
+
+        # Keep the BLAS-backed special cases used by the allocating implementation.
+        if self.ndim == 1 and self.domain[0].size * self.codomain[0].size <= 50000000:
+            np.matmul(self.bases[0], coef, out=out)
+            return out
+
+        if (self.ndim == 2 and
+                (self.domain[0].size + self.domain[1].size) *
+                (self.codomain[0].size + self.codomain[1].size) <= 4000000):
+            basis_left, basis_right = self.bases
+            n_left, n_right = coef.shape
+            m_left, m_right = out.shape
+
+            left_first_cost = (
+                m_left * n_left * n_right + m_left * n_right * m_right
+            )
+            right_first_cost = (
+                n_left * n_right * m_right + m_left * n_left * m_right
+            )
+            if left_first_cost <= right_first_cost:
+                tmp = basis_left @ coef
+                np.matmul(tmp, basis_right.T, out=out)
+            else:
+                tmp = coef @ basis_right.T
+                np.matmul(basis_left, tmp, out=out)
+            return out
+
+        return np.einsum(
+            self._eval_sumrule,
+            coef,
+            *self.bases,
+            out=out,
+            optimize=self._get_einsum_path(coef, adjoint=False)
+        )
+
+    def _iadjoint(self, values, out):
+        """Apply the real-Hilbert-space adjoint directly into ``out``."""
+        values = self._copy_if_aliased(values, out)
+
+        if self.ndim == 1 and self.domain[0].size * self.codomain[0].size <= 50000000:
+            np.matmul(self._conjugate_bases[0].T, values, out=out)
+            return out
+
+        if (self.ndim == 2 and
+                (self.domain[0].size + self.domain[1].size) *
+                (self.codomain[0].size + self.codomain[1].size) <= 4000000):
+            basis_left_h = self._conjugate_bases[0].T
+            basis_right_conj = self._conjugate_bases[1]
+            m_left, m_right = values.shape
+            n_left, n_right = out.shape
+
+            left_first_cost = (
+                n_left * m_left * m_right + n_left * m_right * n_right
+            )
+            right_first_cost = (
+                m_left * m_right * n_right + n_left * m_left * n_right
+            )
+            if left_first_cost <= right_first_cost:
+                tmp = basis_left_h @ values
+                np.matmul(tmp, basis_right_conj, out=out)
+            else:
+                tmp = values @ basis_right_conj
+                np.matmul(basis_left_h, tmp, out=out)
+            return out
+
+        return np.einsum(
+            self._adjoint_sumrule,
+            values,
+            *self._conjugate_bases,
+            out=out,
+            optimize=self._get_einsum_path(values, adjoint=True)
+        )
 
 
-def chebyshev_basis(coef_nr,eval_domain,dtype=float):
+def chebyshev_basis(coef_nr,eval_domain):
     r"""Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -117,9 +215,9 @@ def chebyshev_basis(coef_nr,eval_domain,dtype=float):
             pol = np.polynomial.chebyshev.Chebyshev(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return BasisTransform(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases)
 
-def legendre_basis(coef_nr,eval_domain,dtype=float):
+def legendre_basis(coef_nr,eval_domain):
     r"""Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -156,7 +254,7 @@ def legendre_basis(coef_nr,eval_domain,dtype=float):
             pol = np.polynomial.legendre.Legendre(Id[k,:],domain = (D_i.axes[0][0],D_i.axes[0][-1]))
             B_i[:,k] = pol(x)
         bases.append(B_i)
-    return BasisTransform(coef_domain,eval_domain,bases,dtype)
+    return BasisTransform(coef_domain,eval_domain,bases)
 
 def bspline_basis(k,t,dim=1,add_points=10):
     r"""Implements a B-Spline basis in an arbitrary Dimension (given by dim)

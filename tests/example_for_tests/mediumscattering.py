@@ -63,8 +63,7 @@ def test_mediumscattering():
         init=init,
         cg_pars=dict(
             tol=1e-8,
-            reltolx=1e-8,
-            reltoly=1e-8
+            reltolx=1e-8
         )
     )
     stoprule = (

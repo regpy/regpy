@@ -4,8 +4,8 @@ from typing import *
 
 import numpy as np
 
-from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform
-from .base import VectorSpaceBase
+from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
+from .base import ReadOnlyVector, VectorSpaceBase
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
@@ -13,7 +13,7 @@ class NumPyVectorSpace(VectorSpaceBase):
     r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
     space) without any additional structure.
 
-    VectorSpaceBases can be added, producing `DirectSum` instances.
+    `regpy.vecsps.VectorSpaceBase`s can be added, producing `DirectSum` instances.
 
     Parameters
     ----------
@@ -21,7 +21,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         The shape of the arrays representing elements of this vector space.
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
+    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
         The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
         to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
         numpy documentation.
@@ -31,22 +31,67 @@ class NumPyVectorSpace(VectorSpaceBase):
         super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np)
         self.dtype = dtype
 
-    def zeros(self):
-        """Return the zero vector of the space.
-        """
-        return np.zeros(shape = self.shape,dtype=self.dtype)
+    @overload
+    def zeros(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def zeros(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a zero vector, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(0, dtype=self.dtype), self.shape
+            )
+        return np.zeros(shape=self.shape, dtype=self.dtype)
     
-    def ones(self):
-        """Return the zero vector of the space.
-        """
-        return np.ones(shape = self.shape,dtype=self.dtype)
+    @overload
+    def ones(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def ones(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a vector of ones, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(1, dtype=self.dtype), self.shape
+            )
+        return np.ones(shape=self.shape, dtype=self.dtype)
+
+    def read_only(self, x: np.ndarray) -> ReadOnlyVector:
+        """Return a non-writable NumPy view sharing ``x``'s storage."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NumPyVectorSpace."
+            ))
+        view = x.view()
+        view.flags.writeable = False
+        return view
 
     def empty(self):
         """Return an uninitialized element of the space.
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
-    def rand(self, distribution = "uniform", **kwargs):
+    def fill(self, x: np.ndarray, value) -> None:
+        r"""Fill ``x`` in place with the scalar ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NumPyVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x.fill(value)
+
+    def rand(self, distribution = "uniform", seed = None,**kwargs):
+        if seed is not None:
+            set_rng_seed(seed)
         r = self._draw_sample(distribution=distribution,size = self.shape, **kwargs)
         if not np.can_cast(r.dtype, self.dtype):
             raise ValueError(Errors.value_error(
@@ -59,10 +104,10 @@ class NumPyVectorSpace(VectorSpaceBase):
         else:
             return np.asarray(r, dtype=self.dtype)
 
-    def poisson(self, x):
+    def poisson(self, x,seed = None,**kwargs):
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
-        return self.rand(distribution="poisson", lam = x)
+        return self.rand(distribution="poisson", lam = x,seed=seed, **kwargs)
     
     def __contains__(self, x):
         if not super().__contains__(x):
@@ -103,7 +148,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -117,7 +162,7 @@ class NumPyVectorSpace(VectorSpaceBase):
 
         Returns
         -------
-        VectorSpaceBase
+        regpy.vecsps.VectorSpaceBase
             The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -127,6 +172,18 @@ class NumPyVectorSpace(VectorSpaceBase):
         return other
     
     def masked_space(self, mask):
+        """Gives a masked space given a mask.
+
+        Parameters
+        ----------
+        mask : np.ndarray
+            mask for masking the vector space can be anything broadcastable to the shape of the vector space
+        
+        Returns
+        -------
+        regpy.vecsps.NumPyVectorSpace
+            The masked Space depending on the vector space.
+        """
         mask = np.broadcast_to(mask, self.shape)
         if mask.dtype != bool:
             raise TypeError(Errors.type_error(f"The dtype of a mask need to be boolean! was given "+"\n\t"+f"mask = {mask}"))
@@ -210,7 +267,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     Notes
     -----
 
-    The measure is stored as a numpy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
+    The measure is stored as a NumPy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
 
     Parameters
     ----------
@@ -222,10 +279,6 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. The shape of the measure has to be shape+(1,)*len(shape_codomain)
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
-    random_seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
     @overload
     def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...
@@ -451,7 +504,7 @@ class GridFcts(MeasureSpaceFcts):
 
     def _calc_cell_measure(axes,boundary_ext,ext_const=None):
         if len(axes)> 26:
-            raise ValueError(Errors.value_error(f"Computing the cell measure is only supported for less then 26 axes you have {len(axes)} axes."))
+            raise ValueError(Errors.value_error(f"Computing the cell measure is only supported for less than 26 axes. You have {len(axes)} axes."))
         ext_axes=[]
         if(boundary_ext=="sym"):
             ext_axes=[np.pad(v,(1,1),mode='reflect',reflect_type='odd') for v in axes]
@@ -472,6 +525,7 @@ class GridFcts(MeasureSpaceFcts):
                 else:
                     raise ValueError(Errors.value_error(f"The extending constants need to be a tuple of a tuple (left_bnd_val,right_bnd_val) for left and right boundary values or a scalar both_bnd_val for both sides. You defined the {i}-th value by ext_const = {ext_const[i]}"))
         ax_widths=[0.5*(ext_v[2:]-ext_v[:-2]) for ext_v in ext_axes]
+        ax_widths=[np.array([1.]) if len(aw)==1 and aw[0]==0. else aw for aw in ax_widths]#avoid all zero weights if there are axes of length 1
         ax_widths=[np.array([aw[0]]) if(np.allclose(aw[0],aw)) else aw for aw in ax_widths]#collapse constant width axis
         prod_string=','.join([chr(k) for k in range(ord('A'),ord('A')+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
@@ -489,7 +543,7 @@ class GridFcts(MeasureSpaceFcts):
 
         Returns
         -------
-            np.ndarray: Numpy array with same shape as domain containing all the distances.
+            np.ndarray: NumPy array with same shape as domain containing all the distances.
         """
         if point is None:
             point=np.zeros(self.ndim)
@@ -498,7 +552,7 @@ class GridFcts(MeasureSpaceFcts):
         if(min(axes)<0 or max(axes)>=self.ndim):
             raise ValueError(Errors.value_error(f"Axes {axes} out of bounds for grid with {self.ndim} axes."))
         if(not isinstance(point,np.ndarray) or  point.shape[0]!=self.ndim or point.ndim!=1):
-            raise ValueError(Errors.value_error(f"Point {point} not a numpy array or not compatible with domain with dimension {self.ndim}."))
+            raise ValueError(Errors.value_error(f"Point {point} not a NumPy array or not compatible with domain with dimension {self.ndim}."))
         res=self.zeros()
         for j in axes:
             res+=(self.coords[j]-point[j])**2
@@ -585,7 +639,7 @@ class Prod(NumPyVectorSpace):
 
     Parameters
     ----------
-    *factors : tuple of VectorSpaceBase instances
+    *factors : tuple of regpy.vecsps.VectorSpaceBase instances
         The vector spaces to be factored.
     flatten : bool, optional
         Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
@@ -600,7 +654,7 @@ class Prod(NumPyVectorSpace):
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
             raise TypeError(Errors.type_error("There are both complex and non-complex Factors. This is not supported in Prod!"))
         self.factors = []
-        """List of the `VectorSpaceBases` to be taken as Product."""
+        """List of the `vector spaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1.
         """Product of the `volume_elem` of all factors that have defined this property. """

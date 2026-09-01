@@ -4,6 +4,7 @@ import traceback
 from operator_tests.base_operator import *
 from operator_tests.numpy_operators import *
 from operator_tests.convolution_operator import *
+from operator_tests.basetransform_operator import *
 
 try: 
     from operator_tests.ngsolve_operator import *

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from regpy.vecsps.base import DirectSum
 from regpy.vecsps.numpy import *
 from regpy.util import Errors
 
@@ -15,9 +16,17 @@ set_rng_seed(15873098306879350073259142812684978477)
     ((2,4),float),
     ((2,4),complex)
 ])
-def test_NumPyVectorSpace(shape, dtype):
-    vecsps_basics(NumPyVectorSpace,test_methods=True,shape = shape, dtype = dtype)
-    
+class TestNumPyVectorSpace():
+    def test_vecsps_basic(self, shape, dtype):
+        vecsps_basics(NumPyVectorSpace, shape,test_methods=True, dtype = dtype)
+
+    def test_vector_basic(self, shape, dtype):
+        vector_basics(NumPyVectorSpace, shape, dtype = dtype)
+        d = NumPyVectorSpace(shape,dtype=dtype)
+        v_1 = d.randn()
+        assert v_1.imag == pytest.approx(-v_1.conj().imag),f"Tying to compare v.imag with v.conj().imag failed for {v_1}"
+
+
 class TestMeasureSpaceFcts():
     @pytest.mark.parametrize("measure, shape, dtype",[
         (3,(2,4,3,7),float),
@@ -28,6 +37,19 @@ class TestMeasureSpaceFcts():
     def test_vs_basic(self,measure,shape,dtype):
         vecsps_basics(MeasureSpaceFcts,test_methods=True, measure = measure,shape = shape, dtype = dtype)
 
+    @pytest.mark.parametrize("measure, shape, dtype",[
+        (3,(2,4,3,7),float),
+        (1.6,(2,4,3,7),complex),
+        (None,(2,4),float),
+        (None,(2,4),complex)
+    ])
+    def test_vector_basics(self,measure,shape,dtype):
+        vector_basics(MeasureSpaceFcts, measure = measure,shape = shape, dtype = dtype)
+        d = MeasureSpaceFcts(measure = measure,shape = shape, dtype = dtype)
+        v_1 = d.randn()
+        assert v_1.imag == pytest.approx(-v_1.conj().imag),f"Tying to compare v.imag with v.conj().imag failed for {v_1}"
+
+
     def test_equality(self):
         m1=MeasureSpaceFcts(shape=(3,2))
         m2=MeasureSpaceFcts(measure=3*np.ones((3,2)))
@@ -35,7 +57,19 @@ class TestMeasureSpaceFcts():
     
         m2.measure=1
         assert m1==m2, Errors.failed_test("After setting the measure to constant one the two instances should be equal are but are not.",MeasureSpaceFcts)
- 
+
+@pytest.mark.parametrize("tuples",[
+    ((3,(2,4,3,7),float),(1.6,(2,4,3,7),float)),
+    ((None,(2,4),complex),(None,(2,4),complex)),
+    ((None,(2,4),float),(None,(2,4),complex),(1.6,(2,4,3,7),float)),
+])
+def test_DirectSum_vector_basics(tuples):
+    vector_basics(DirectSum,*[MeasureSpaceFcts(measure=t[0],shape=t[1], dtype = t[2]) for t in tuples])
+    d = DirectSum(*[MeasureSpaceFcts(measure=t[0],shape=t[1], dtype = t[2]) for t in tuples])
+    v_1 = d.randn()
+    assert all(tuple(v_i.imag == pytest.approx(-v_i.conj().imag) for v_i in v_1)),f"Tying to compare v.imag with v.conj().imag failed for {v_1}"
+
+
 class TestGridFcts():
     errors = []
 

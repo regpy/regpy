@@ -13,17 +13,17 @@ class IrgnmSemiSmooth(RegSolver):
     .. math::
         x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < \psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
 
-    where :math:`T` is a Frechet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
+    where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`\alpha_n` is a decreasing geometric sequence of regularization parameters.
     
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         Setting for regularization. 
     psi_minus : np.number
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
-        upper constraint of the minimization. Must be smaller then `psi_minus`
+        upper constraint of the minimization. Must be smaller than `psi_minus`
     data : array-like, default None
         The measured data. Must be in the operators codomain. If it is None it is taken from the setting.
     regpar : float, default None

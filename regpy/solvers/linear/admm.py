@@ -7,8 +7,8 @@ from .tikhonov import TikhonovCG
 __all__ = ["ADMM"]
 
 class ADMM(RegSolver):
-    r"""The ADMM method for minimizing \(\frac{1}{\alpha}S(Tf) + R(f))\. 
-    ADMM solves the problem \(\min_{u,v}[F(u)+G(v)])\ under the constraint that \(Au+Bv=b)\. Choosing 
+    r"""The ADMM method for minimizing :math:`\frac{1}{\alpha}S(Tf) + R(f)`. 
+    ADMM solves the problem :math:`\min_{u,v}[F(u)+G(v)]` under the constraint that :math:`Au+Bv=b`. Choosing 
 
     .. math::
         A&:=\begin{pmatrix} T \\ I \end{pmatrix} ,\; \\
@@ -17,7 +17,7 @@ class ADMM(RegSolver):
         F(f)&:= 0,\; \\
         G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}&:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\; \\
 
-    leads to a nice splitting of the operator \(T)\ and the functional \(R)\ seen in the Lagrangian
+    leads to a nice splitting of the operator :math:`T` and the functional :math:`R` seen in the Lagrangian
 
     .. math::
         L_\gamma(f,v_1,v_2,p_1,p_2):=& \\
@@ -27,11 +27,11 @@ class ADMM(RegSolver):
         &+ \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2 \\
         &+ \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
 
-    The minimization for \(f)\ simply reduces to the minimization of a quadratic Tikhonov functional.  This can 
+    The minimization for :math:`f` simply reduces to the minimization of a quadratic Tikhonov functional.  This can 
     be achieved by the CG method, but ADMM is particularly efficient if a closed form expression is available for the 
     Tikhonov regularizer as for convolution operators or a matrix factorization. A corresponding `regpy.operators.operator` 
     can be passed as argument. 
-    Splitting up the minimization for \(v_1)\ and \(v_2)\ one gets the algorithm below requiring the proximal 
+    Splitting up the minimization for :math:`v_1` and :math:`v_2` one gets the algorithm below requiring the proximal 
     operators for the penalty and data fidelity functional. 
 
     Parameters
@@ -48,7 +48,7 @@ class ADMM(RegSolver):
     proximal_pars_penalty : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
     regularizedInverse: `regpy.operators.Operator` [default: None]
-        The operator \( (T^*T+\I)^{-1})\. If None, this operator is computed if T is a regpy.operators.Convolution. 
+        The operator :math:` (T^*T+\I)^{-1}`. If None, this operator is computed if T is a regpy.operators.Convolution. 
         Otherwise, the application of this inverse operator is implemented by CG.
     cg_pars : dict [default: {}]
         Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
@@ -116,6 +116,10 @@ class ADMM(RegSolver):
 
     def check_applicability(setting, regularizedInverse = None,op_norm=None):
         out = {'info': ''}; par = {}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if not 'proximal' in setting.penalty.methods:
             out['info'] += 'Missing prox in penalty. '
         if not 'proximal' in setting.data_fid.methods:
@@ -128,6 +132,13 @@ class ADMM(RegSolver):
             out['info'] += 'Ergodic rate O(1/n).'
             out['rate'] = -1
         return out, par
+
+    def primal(self):
+        return (self.x, self.y)
+
+#    def dual(self):
+#        p = self.setting.primal_to_dual(self.primal)
+#        return p,self.op.adjoint(p)
 
     def _next(self):
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)

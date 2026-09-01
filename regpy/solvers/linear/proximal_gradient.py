@@ -30,7 +30,7 @@ class ForwardBackwardSplitting(RegSolver):
         logging level
     """
 
-    def __init__(self, setting, init=None, tau = None, proximal_pars = {}, logging_level = "INFO"):
+    def __init__(self, setting, init=None, tau = None, proximal_pars = None, logging_level = "INFO"):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
@@ -38,7 +38,9 @@ class ForwardBackwardSplitting(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        self.x = self.op.domain.zeros() if init is None else init
+        self.x = self.op.domain.zeros()
+        if init is not None:
+            self.op.domain.copyto(self.x, init)
 
         out, par = ForwardBackwardSplitting.check_applicability(setting)
         if out['applicable']:
@@ -49,15 +51,23 @@ class ForwardBackwardSplitting(RegSolver):
         """The step size parameter"""
         if self.tau<=0:
             raise ValueError(Errors.value_error("tau the step size needs to be positive!"))   
-        self.proximal_pars = proximal_pars
+        self.proximal_pars = {} if proximal_pars is None else dict(proximal_pars)
         self.log.setLevel(logging_level)
 
-        self.y = self.op(self.x)
+        self.y = self.op.codomain.empty()
+        self.p = self.op.codomain.zeros()
+        self.Tp = self.op.domain.zeros()
+        self._domain_work = self.op.domain.empty()
+        self.op(self.x, out=self.y)
         self._dual_variables_computed = False
 
     @staticmethod
     def check_applicability(setting, op_norm=None, op_lower_bound=0.):
         out = {'info':''}; par={}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if 'proximal' not in setting.penalty.methods:
             out['info']+='Missing prox of penalty functional. '
         if 'subgradient' not in setting.data_fid.methods:
@@ -79,28 +89,30 @@ class ForwardBackwardSplitting(RegSolver):
                 out['rate'] = -1
         return out, par
 
-    def compute_dual(self): # for stopping rules and monitoring
+    def primal(self): # for stopping rules and monitoring
+        return (self.x,self.y)
+
+    def dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
-            if not hasattr(self,"p"): # first iteration
-                self.p = self.op.adjoint.domain.zeros()
-            else:
-                self.p *= (-1./self.regpar)
-            if not hasattr(self,"Tp"): # first iteration
-                self.Tp = self.op.adjoint.codomain.zeros()
-            else:
-                self.Tp *= (-1./self.regpar)
-            self.dual=(self.p,self.Tp)
+            scale = -1./self.regpar
+            self.p *= scale
+            self.Tp *= scale
             self._dual_variables_computed = True
-            self.primal = (self.x,self.y)
+        return (self.p,self.Tp)
+
 
     def _next(self):
         self._dual_variables_computed = False
-        self.p = self.data_fid.subgradient(self.y)
-        self.Tp = self.op.adjoint(self.p)
-        self.x -= self.tau*self.h_domain.gram_inv(self.Tp)
-        self.x = self.penalty.proximal(self.x, self.regpar*self.tau, **self.proximal_pars)
+        self.data_fid.subgradient(self.y, out=self.p)
+        self.op.adjoint(self.p, out=self.Tp)
+        self.h_domain.gram_inv(self.Tp, out=self._domain_work)
+        self._domain_work *= -self.tau
+        self.x += self._domain_work
+        self.penalty.proximal(
+            self.x, self.regpar*self.tau, out=self.x, **self.proximal_pars
+        )
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        self.y = self.op(self.x)
+        self.op(self.x, out=self.y)
  
 class FISTA(RegSolver):
     r"""
@@ -135,13 +147,16 @@ class FISTA(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        self.x = self.op.domain.zeros() if init is None else init
+        self.x = self.op.domain.zeros()
+        if init is not None:
+            self.op.domain.copyto(self.x, init)
 
         self.log.setLevel(logging_level)
 
-        self.y = self.op(self.x)
+        self.y = self.op.codomain.empty()
+        self.op(self.x, out=self.y)
 
-        self.proximal_pars = proximal_pars
+        self.proximal_pars = {} if proximal_pars is None else dict(proximal_pars)
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
         out, par = FISTA.check_applicability(setting, op_lower_bound=op_lower_bound)
@@ -161,10 +176,13 @@ class FISTA(RegSolver):
         self.t = 0
         self.t_old = 0
 
-        self.x_old = self.x
-            
+        self.x_old = self.op.domain.empty()
+        self.op.domain.copyto(self.x_old, self.x)
+        self.p = self.op.codomain.zeros()
+        self.Tp = self.op.domain.zeros()
+        self._h = self.op.domain.empty()
+        self._domain_work = self.op.domain.empty()
 
-            
         self._dual_variables_computed = False
         
     @staticmethod
@@ -193,19 +211,16 @@ class FISTA(RegSolver):
                 out['rate'] = -2
         return out, par
 
-    def compute_dual(self): # for stopping rules and monitoring
+    def primal(self): # for stopping rules and monitoring
+        return (self.x,self.y)
+    
+    def dual(self): # for stopping rules and monitoring
         if self._dual_variables_computed==False:
-            if not hasattr(self,"p"): # first iteration
-                self.p = self.op.adjoint.domain.zeros()
-            else:
-                self.p *= (-1./self.regpar)
-            if not hasattr(self,"Tp"): # first iteration
-                self.Tp = self.op.adjoint.codomain.zeros()
-            else:
-                self.Tp *= (-1./self.regpar)
-            self.dual=(self.p,self.Tp)
+            scale = -1./self.regpar
+            self.p *= scale
+            self.Tp *= scale
             self._dual_variables_computed = True
-            self.primal = (self.x,self.y)
+        return (self.p,self.Tp)
 
     def _next(self):
         if self.mu == 0:
@@ -215,15 +230,28 @@ class FISTA(RegSolver):
             self.t = (1-self.q*self.t_old**2+ma.sqrt((1-self.q*self.t_old**2)**2+4*self.t_old**2))/2
             beta = (self.t_old-1)/self.t * (1+self.tau*self.mu_penalty-self.t*self.tau*self.mu)/(1-self.tau*self.mu_data_fidelity)
 
-        h = self.x+beta*(self.x-self.x_old)
+        # h = x + beta * (x - x_old)
+        self.op.domain.copyto(self._h, self.x)
+        self.op.domain.copyto(self._domain_work, self.x)
+        self._domain_work -= self.x_old
+        self._domain_work *= beta
+        self._h += self._domain_work
 
-        self.x_old = self.x
         self.t_old = self.t
 
         self._dual_variables_computed = False
-        self.p = self.data_fid.subgradient(self.y)
-        self.Tp = self.op.adjoint(self.p)
-        grad = self.h_domain.gram_inv(self.Tp)
-        self.x = self.penalty.proximal(h-self.tau*grad, self.tau * self.regpar, self.proximal_pars)
-        self.y = self.op(self.x)
+        self.data_fid.subgradient(self.y, out=self.p)
+        self.op.adjoint(self.p, out=self.Tp)
+        self.h_domain.gram_inv(self.Tp, out=self._domain_work)
+        self._domain_work *= -self.tau
+        self._h += self._domain_work
+
+        # The old iterate is no longer needed after forming h. Reuse its
+        # buffer for the next iterate and then swap the two solution buffers.
+        self.penalty.proximal(
+            self._h, self.tau * self.regpar, out=self.x_old,
+            **self.proximal_pars
+        )
+        self.x, self.x_old = self.x_old, self.x
+        self.op(self.x, out=self.y)
 

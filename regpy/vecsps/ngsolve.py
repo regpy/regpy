@@ -1,13 +1,13 @@
 r"""Finite element vector spaces using NGSolve
 
 This module implements a `regpy.vecsps.VectorSpaceBase` instance for NGSolve spaces. This gives the basic
-interface to use FES spaces defined in `ngsolve` to be used as `VectorSpaceBases`in `regpy`.  
+interface to use FES spaces defined in `ngsolve` to be used as `regpy.vecsps.VectorSpaceBase`/s in `regpy`.  
 Operators are using such spaces are implemented in the `regpy.operators.ngsolve` module. Hilbert spaces 
 and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` and `regpy.functionals.ngsolve`
 respectively. 
 """
 
-__all__ = ['NgsBaseVector','NgsVectorSpace']
+__all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
@@ -16,21 +16,21 @@ from warnings import warn
 
 import ngsolve as ngs
 import numpy as np
+from scipy.sparse.linalg import splu
+from scipy.sparse.linalg import spsolve
+from scipy.sparse import csc_matrix, diags
 from pyngcore.pyngcore import BitArray
 
 from regpy.util import is_complex_dtype, Errors, ClassLogger
 
 from .base import VectorSpaceBase
 
-def _override_vector(vec : ngs.BaseVector, gf : ngs.GridFunction) -> None:
-    gf.vec.data = vec
-    vec = gf.vec
-    return None
 
 @dataclass 
 class NgsBaseVector:
     vec: ngs.la.BaseVector | ngs.la.DynamicVectorExpression
     make_copy: Optional[bool] = field(default=False)
+    read_only: bool = field(default=False)
 
     __array_ufunc__ = None
 
@@ -44,6 +44,11 @@ class NgsBaseVector:
         return self.vec.is_complex
 
     def __post_init__(self):
+        if not isinstance(self.read_only, (bool, np.bool_)):
+            raise TypeError(
+                f"read_only must be boolean. Got {type(self.read_only)}."
+            )
+        self.read_only = bool(self.read_only)
         self.is_dynamic = False
         if isinstance(self.vec,ngs.la.BaseVector):
             if self.make_copy:
@@ -67,14 +72,23 @@ class NgsBaseVector:
         else:
             raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
 
+    def _require_writable(self, operation: str) -> None:
+        if self.read_only:
+            raise ValueError(
+                f"Cannot perform {operation} on a read-only NgsBaseVector."
+            )
+
     def conj(self):
         if self.is_dynamic:
             self.log.debug("To make a conjugate of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
-        z = self.vec.CreateVector()
-        z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
-        return NgsBaseVector(z,)
+        if self.is_complex_dtype:
+            z = self.vec.CreateVector()
+            z.FV().NumPy()[:] = self.vec.FV().NumPy().conj()
+            return NgsBaseVector(z,)
+        else:
+            return self.copy()
     
     @property
     def real(self, convert2real_vec = True):
@@ -102,13 +116,16 @@ class NgsBaseVector:
         if self.is_complex_dtype:
             if convert2real_vec:
                 z = ngs.la.BaseVector(size = self.size)
+                z.FV().NumPy()[:] = 0
                 z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
                 return NgsBaseVector(z)
             else:
                 z = self.vec.CreateVector()
                 z.FV().NumPy()[:] = self.vec.FV().NumPy().imag 
-                return NgsBaseVector(z) 
-        return NgsBaseVector(self.vec.CreateVector())
+                return NgsBaseVector(z)
+        z = self.vec.CreateVector()
+        z.FV().NumPy()[:] = 0
+        return NgsBaseVector(z)
     
     def to_imag(self):
         if self.is_complex:
@@ -123,6 +140,7 @@ class NgsBaseVector:
             return NgsBaseVector(z)
 
     def __iadd__(self,other):
+        self._require_writable("in-place addition")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -135,6 +153,7 @@ class NgsBaseVector:
         return self
 
     def __isub__(self,other):
+        self._require_writable("in-place subtraction")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -147,8 +166,9 @@ class NgsBaseVector:
         return self
     
     def __imul__(self,other):
+        self._require_writable("in-place multiplication")
         if self.is_dynamic:
-            self.log.debug("To have inplace multiplication of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place multiplication of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):
@@ -157,8 +177,9 @@ class NgsBaseVector:
         return self
     
     def __itruediv__(self,other):
+        self._require_writable("in-place division")
         if self.is_dynamic:
-            self.log.debug("To have inplace division of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place division of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):
@@ -220,6 +241,7 @@ class NgsBaseVector:
             return NgsBaseVector(self.vec[i])
     
     def __setitem__(self,i,val):
+        self._require_writable("item assignment")
         if self.is_dynamic:
             self.log.debug("To set items the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -319,8 +341,16 @@ class NgsVectorSpace(VectorSpaceBase):
                     else:
                         l_fes.append(ngs.L2(self.fes.mesh, order=0, dim = f.dim, complex = self.is_complex))
                 self._fes_util = ngs.ProductSpace(*l_fes)
+            self.product_space = True
         except NgException:
-            self.codim = 1
+            gf = ngs.GridFunction(fes)
+            if len(gf.dims) == 0:
+                self.codim = 1
+            elif len(gf.dims) == 1:
+                self.codim = gf.dims[0]
+            else:
+                raise ValueError(Errors.value_error(f"Currently we cannot deal with matrix valued fems."))
+            self.product_space = False
             self._fes_util = ngs.L2(self.fes.mesh, order=0, complex = self.is_complex)
         except ValueError:
             self.log.warning("Tried to initialize with a product space of product spaces, which are not VectorH1, VectorL2 or VectorValued. Thus fes_util is not available and thus random generator will not work!")
@@ -330,52 +360,120 @@ class NgsVectorSpace(VectorSpaceBase):
         self._gfu_fes = ngs.GridFunction(self.fes)
         self._help_x = NgsBaseVector(self._gfu_fes.vec)
         self._no_pickle = {*self._no_pickle,"fes"}
+        self.mass_matrix_cholesky = None
 
-    def zeros(self):
+    def zeros(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         vec = self._gfu_fes.vec.CreateVector()
         vec.FV().NumPy()[:] = 0
-        return NgsBaseVector(vec,make_copy=False)
+        result = NgsBaseVector(vec, make_copy=False)
+        return self.read_only(result) if read_only else result
     
-    def ones(self):
+    def ones(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         if self.codim == 1:
             self._gfu_fes.Set(1)
         else:
             for gf_i in self._gfu_fes.components:
                 gf_i.Set(tuple(1 for _ in range(gf_i.dim)))
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        return self.read_only(result) if read_only else result
+
+    def read_only(self, x: NgsBaseVector) -> NgsBaseVector:
+        """Return a read-only wrapper sharing the underlying NGSolve vector."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NgsVectorSpace."
+            ))
+        if x.read_only:
+            return x
+        return NgsBaseVector(x.vec, make_copy=False, read_only=True)
     
     def empty(self):
         return self.zeros()
     
-    def rand(self,distribution = "uniform", **kwargs):
-        if self._fes_util is None:
-            raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
-        r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-        if self.is_complex and not is_complex_dtype(r.dtype):
-            c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-            c.real = r
-            self._gfu_util.vec.FV().NumPy()[:] = c            
+    def rand(self,distribution = "uniform", use_space_sampling = False, mass_matrix_weighting = True, **kwargs):
+        if use_space_sampling:
+            # Computes random samples in the fes via
+            # mass matrix half power scaling
+            # This is based on the isometric isomorphism
+            # M^{-1/2}: R^n (Euclidean space) -> FEM (n dofs)
+            # Can be disabled by setting mass_matrix_weighting to False,
+            # but this does not create e.g. correct normal distributions
+            
+            def draw():
+                samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                if self.is_complex and not is_complex_dtype(samp.dtype):
+                    samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                if mass_matrix_weighting:
+                    self.create_mass_matrix_cholesky()
+                    samp = spsolve(self.mass_matrix_cholesky, samp)
+
+            if self.codim == 1:
+                self._gfu_fes.vec.FV().NumPy()[:] = draw()
+            elif self.product_space:
+                for gfu_i in self._gfu_fes.components:
+                    self._gfu_i.vec.FV().NumPy()[:] = draw()
+            else:
+                v = [self._gfu,]
+                for _ in range(self.codim-1):
+                    gf = copy(self._gfu)
+                    gf.vec.FV().NumPy()[:] = draw()
+                    v.append(gf)
+                self._gfu_fes.Set(tuple(v))
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
         else:
-            self._gfu_util.vec.FV().NumPy()[:] = r
-        if self.codim == 1:
-            self._gfu_fes.Set(self._gfu_util)
-        else:
-            for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
-                gfu_i.Set(gfu_util_i)
-        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+            if self._fes_util is None:
+                raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
+            r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+            if self.is_complex and not is_complex_dtype(r.dtype):
+                c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                c.real = r
+                self._gfu_util.vec.FV().NumPy()[:] = c            
+            else:
+                self._gfu_util.vec.FV().NumPy()[:] = r
+            if self.codim == 1:
+                self._gfu_fes.Set(self._gfu_util)
+            elif self.product_space:
+                for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
+                    gfu_i.Set(gfu_util_i)
+            else:
+                v = [self._gfu_util,]
+                for _ in range(self.codim-1):
+                    gf = copy(self._gfu_util)
+                    r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                    if self.is_complex and not is_complex_dtype(r.dtype):
+                        c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
+                        c.real = r
+                        gf.vec.FV().NumPy()[:] = c            
+                    else:
+                        gf.vec.FV().NumPy()[:] = r
+                    v.append(gf)
+                self._gfu_fes.Set(tuple(v))
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+
     
-    def poisson(self,x, n = 1):
-        if self.is_complex:
+    def poisson(self,x, n = 1, tol = 3e-15):
+        if x.is_complex:
             raise NotImplemented(Errors.generic_message(f"Poisson sampling for the NgsVectorSpace {self} is not defined since it is complex."))
-        self._gfu_util.Set(self.to_gf(x))
-        if np.any(self._gfu_util.vec.FV().NumPy()<0):
-            raise ValueError(Errors.value_error(f"Not all values in {self._gfu_util.vec.FV().NumPy()} are positive. Cannot compute poisson vector!"))
-        self._gfu_util.vec.FV().NumPy()[:] =  np.sum(self._draw_sample(distribution="poisson",lam = self._gfu_util.vec.FV().NumPy(), size = (n,self._fes_util.ndof)),axis = 0)/n
-        self._gfu_fes.Set(self._gfu_util)
-        self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+        if self.is_complex:
+            vs = self.real_space()
+            return vs.poisson(x,n=n,tol=tol)
+        else:
+            self._gfu_util.Set(self.to_gf(x))
+            np_util = self._gfu_util.vec.FV().NumPy()
+            m = np.logical_and(-tol<np_util,np_util<0)
+            np_util[m] = 0
+            if np.any(np_util<0):
+                raise ValueError(Errors.value_error(f"Not all values in {np_util} are positive. Cannot compute poisson vector!"))
+            np_util[:] =  np.sum(self._draw_sample(distribution="poisson",lam = np_util, size = (n,self._fes_util.ndof)),axis = 0)/n
+            self._gfu_fes.Set(self._gfu_util)
+            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
 
     def __contains__(self,x):
         if not isinstance(x,NgsBaseVector):
@@ -388,14 +486,73 @@ class NgsVectorSpace(VectorSpaceBase):
             return True
         
     def vdot(self, x, y):
-        return ngs.InnerProduct(x.vec,y.vec)
+        return ngs.InnerProduct(y.vec,x.vec)
 
+    def copyto(self, x, y):
+        r"""Copy ``y`` into the existing :class:`NgsBaseVector` ``x``.
+
+        NGSolve performs vector assignment through the writable ``data``
+        property of the wrapped ``BaseVector``. Dynamic destination
+        expressions are evaluated once before they are used as output storage.
+        """
+        if x is y:
+            return
+        if not isinstance(x, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                x, NgsBaseVector,
+                add_info="The destination of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if not isinstance(y, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                y, NgsBaseVector,
+                add_info="The source of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if x.size != y.size:
+            raise ValueError(Errors.value_error(
+                f"Cannot copy NGSolve vectors of different sizes {y.size} and {x.size}."
+            ))
+        x._require_writable("copyto")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.data = y.vec
+
+    def fill(self, x, value) -> None:
+        r"""Fill an existing :class:`NgsBaseVector` with ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NgsVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x._require_writable("fill")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.FV().NumPy().fill(value)
+    
     def complex_space(self):
+        """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
+
+        Returns
+        -------
+        regpy.vecsps.NgsVectorSpace
+            The complex space corresponding to this vector space.
+        """
         if self.is_complex:
             return copy(self)
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
     def real_space(self):
+        """Compute the corresponding real vector space by creating a real fes from the input of the old one.
+
+        Returns
+        -------
+        regpy.vecsps.NgsVectorSpace
+            The real space corresponding to this vector space.
+        """
         if not self.is_complex:
             return copy(self)
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,dirichlet=self.bdr,complex=False),bdr=self.bdr)
@@ -507,5 +664,116 @@ class NgsVectorSpace(VectorSpaceBase):
             return NgsBaseVector(ngs_elem,make_copy=copy)
         else:
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
-            return NgsBaseVector(self._gfu_fes.vec)
+            return NgsBaseVector(self._gfu_fes.vec,make_copy = True)
+            
+    def create_mass_matrix_cholesky(self):
+        # Builds the cholesky decomposition
+        # mass = LL^T
+        # The output factor self.mass_matrix_cholesky corresponds to L (not L^T)
+        # Warning: Current method is a hack based on scipy spLU. However,
+        # correct implementation would require access to scikit.sparse.cholmod.
+        if self.mass_matrix_cholesky is not None:
+            return
+        mass = ngs.BilinearForm(self.fes)
+        u, v = self.fes.TnT()
+        mass += u * v * ngs.dx
+        mass.Assemble()
+        mass = mass.mat
+        rows,cols,vals = mass.COO()
+        mass = csc_matrix((vals, (rows, cols)), shape=(mass.height, mass.width))
+        
+        """
+        Computes sparse lower triangular B such that A ≈ B @ B.T
+        using standard scipy.sparse.linalg.splu with pivoting disabled.
+        """
+        # 1. Force LU decomposition without pivoting
+        # 'NATURAL' = No column permutations
+        # diag_pivot_thresh=0 = No row permutations
+        try:
+            lu = splu(csc_matrix(mass), permc_spec='NATURAL', diag_pivot_thresh=0, 
+                      options={'SymmetricMode': True})
+        except RuntimeError:
+            raise ValueError("Matrix is singular or not SPD enough for non-pivoted LU.")
 
+        # 2. Check if permutations were actually avoided (crucial safety check)
+        n = mass.shape[0]
+        if not (np.array_equal(lu.perm_r, np.arange(n)) and 
+                np.array_equal(lu.perm_c, np.arange(n))):
+            raise ValueError("SPLU forced permutations. Matrix is likely not well-conditioned enough.")
+
+        # 3. Construct B = L * sqrt(D)
+        # splu returns L with unit diagonal. The actual pivots are on U's diagonal.
+        d = lu.U.diagonal()
+        
+        if np.any(d <= 0):
+            raise ValueError("Matrix is not positive definite (negative or zero pivot found).")
+            
+        # Scale columns of L by sqrt(d)
+        # Efficient sparse multiplication: B = L @ diag(sqrt(d))
+        scale_matrix = diags(np.sqrt(d))
+        self.mass_matrix_cholesky = lu.L @ scale_matrix
+
+class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
+    r"""A vector space wrapping an `ngsolve.FESpace`. That defines the inner Product 
+    to include the mass matrix allowing to have easier adjoint operators.
+
+    Parameters
+    ----------
+    fes : ngsolve.FESpace
+       The wrapped NGSolve vector space.
+    bdr : 
+        Boundary of the NGSolve vector space.
+    """
+
+    def __init__(self, fes, bdr=None, **kwargs):
+        if not isinstance(fes, (ngs.L2,ngs.H1,ngs.VectorH1)):
+            raise ValueError("The given FES is neither an H1 nor VectorH1 space of ngsolve")
+        
+        super().__init__(fes,bdr=bdr)
+        if "definedon" in kwargs:
+            self._definedon = kwargs["definedon"]
+        else:
+            self._definedon = None
+
+        if "bonus_intorder" in kwargs:
+            self._bonus_intorder = kwargs["bonus_intorder"]
+        else:
+            self._bonus_intorder = 0
+
+        self.mass = self.compute_mass()
+        self.mass_vec = self.empty().vec.CreateVector()
+        self._no_pickle = {*self._no_pickle,"mass"}
+
+    def vdot(self, x, y):
+        self.mass_vec.data = self.mass * x.vec
+        return ngs.InnerProduct(y.vec,self.mass_vec)
+    
+    @property
+    def bonus_intorder(self):
+        return self._bonus_intorder
+    
+    @bonus_intorder.setter
+    def bonus_intorder(self, value):
+        self._bonus_intorder = value
+        self.mass = self.compute_mass()
+
+    @bonus_intorder.deleter
+    def bonus_intorder(self):
+        self._bonus_intorder = 0
+        self.mass = self.compute_mass()
+
+    @property
+    def definedon(self):
+        return self._definedon
+    
+    @definedon.setter
+    def definedon(self, value):
+        self._definedon = value
+        self.mass = self.compute_mass()
+    
+    def compute_mass(self):
+        u, v = self.fes.TnT()
+        mass_bf = ngs.BilinearForm(self.fes)
+        mass_bf += u*v*ngs.dx(definedon = self.definedon, bonus_intorder = self.bonus_intorder)
+        mass_bf.Assemble()
+        return mass_bf.mat

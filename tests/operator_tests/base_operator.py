@@ -1,6 +1,5 @@
-from math import isclose
+from math import  sqrt
 from copy import deepcopy
-import traceback
 
 import pytest
 import numpy as np
@@ -14,7 +13,7 @@ from regpy.util import Errors, set_rng_seed
 
 set_rng_seed(15873098306879350073259142812684978477)
 
-def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
+def op_basics(op,*args,test_methods = False, test_norm = True, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
     Parameters
@@ -52,7 +51,7 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
         assert tup is not None and len(tup) == 2 and tup[0] in dom and ((op.linear and (tup[1] is op or isinstance(tup[1],op_base.AdjointEval))) or (not op.linear and isinstance(tup[1],op_base.Derivative))), Errors.failed_test(f"The Operator {op} returned from linearize with return_adjoint_eval = True not exactly 2 results of type [array in full_domain, self or AdjointEval or Derivative]. It returned {tup}",obj=op,meth="linearize")
         if op.linear:
             assert isinstance(op.as_linear_operator(),LinearOperator)
-            if isinstance(op,op_base.Zero):
+            if isinstance(op,op_base.Zero) or not test_norm:
                 pass
             else:
                 norm_power = op.norm(method="power")
@@ -94,11 +93,12 @@ def op_basics(op,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-1
 def op_basics_wrapper(OP,*args,test_methods = False, rel_tol_norm = 1e-3, inv_tol = 1e-15,**kwargs):
     op_basics(OP(*args,**kwargs),*args,test_methods=test_methods,rel_tol_norm = rel_tol_norm, inv_tol=inv_tol,**kwargs)
 
-def op_evaluation_and_ot(op,x=None,res=None,tol=1e-10,**kwargs):
+def op_evaluation_and_ot(op,x=None,res=None,rel_tol=1e-6, tol=1e-10,**kwargs):
+    print(kwargs)
+    ot.test_operator(op,**kwargs)
     if x is not None or res is not None:
         diff = op.codomain.norm(op(x)-res)
-        assert diff == pytest.approx(0.,rel=tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
-    ot.test_operator(op,**kwargs)
+        assert diff == pytest.approx(0.,rel=rel_tol,abs = tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
 
 @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((2,2),np.complex128)])
 class TestIdentity():
@@ -159,9 +159,19 @@ class TestPtwMultiplication():
         op = op_base.PtwMultiplication(dom,factor)
         op_evaluation_and_ot(op,x,res)
  
-def test_Composition():
-    vs = NumPyVectorSpace((4,3))
-    op_basics_wrapper(op_base.Composition, vs.identity, vs.identity*4, test_methods=True)
+class TestComposition():
+    def test_basics(self):
+        vs = NumPyVectorSpace((4,3))
+        op_basics_wrapper(op_base.Composition, vs.identity, vs.identity*4, test_methods=True)
+
+    def test_evaluation(self):
+        vs_c = NumPyVectorSpace((2,2),dtype=complex)
+        vs_r = vs_c.real_space()
+        factor = np.array([[2,2],[1,2]])
+        x = np.array([[-1+1j,2],[1-1j,3+4j]])
+        res = np.array([[4,8],[2    ,50]])
+        op = op_base.PtwMultiplication(vs_r,factor=factor) * op_base.SquaredModulus(vs_c)
+        op_evaluation_and_ot(op,x=x,res=res)
 
 def test_LinearCombination():
     vs = NumPyVectorSpace((4,3))

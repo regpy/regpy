@@ -45,17 +45,37 @@ class OperatorAsWorker(mp.Process):
         """name of the process"""
         self.conn = conn
         """connection to master"""
+        self._codomain_buffer = None
+        """Reusable output buffer for evaluations and derivatives."""
+        self._domain_buffer = None
+        """Reusable output buffer for adjoint evaluations."""
+
+    def _get_codomain_buffer(self):
+        if self._codomain_buffer is None:
+            self._codomain_buffer = self.F.codomain.empty()
+        return self._codomain_buffer
+
+    def _get_domain_buffer(self):
+        if self._domain_buffer is None:
+            self._domain_buffer = self.F.domain.empty()
+        return self._domain_buffer
 
     def run(self):
         r"""Starts the process. While running the process may receive the commands:
         'eval_nodiff': evaluates the operator with differentiate=False
         'eval_diff': evaluates the operator with differentiate=True
-        'deriv': returns linearize
-        'eval_nodiff': returns adjoint
+        'deriv': evaluates the derivative
+        'adjoint': evaluates the adjoint
+        'ieval_nodiff': evaluates into a reusable worker-side codomain buffer
+        'ieval_diff': linearizes into a reusable worker-side codomain buffer
+        'ideriv': evaluates the derivative into that codomain buffer
+        'iadjoint': evaluates the adjoint into a reusable worker-side domain buffer
         'break': ends process
 
-        Raises:
-            TypeError: Error is raised if unknown command is received
+        Raises
+        ------
+        TypeError
+            Error is raised if unknown command is received
         """
         terminate=False
         while not terminate:
@@ -67,17 +87,46 @@ class OperatorAsWorker(mp.Process):
                 if command[0] ==  'eval_nodiff':
                     res=self.F(command[1])
                     exit_code=ExitCode.SUCCESS
+                elif command[0] == 'ieval_nodiff':
+                    res = self.F(command[1], out=self._get_codomain_buffer())
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'eval_diff':
                     res, self.deriv = self.F.linearize(command[1])
                     exit_code=ExitCode.SUCCESS
+                elif command[0] == 'ieval_diff':
+                    res, self.deriv = self.F.linearize(
+                        command[1], out=self._get_codomain_buffer()
+                    )
+                    exit_code=ExitCode.SUCCESS
                 elif command[0] == 'deriv':
-                    res = self.deriv(command[1])
+                    if self.F.linear:
+                        res = self.F(command[1])
+                    else:
+                        res = self.deriv(command[1])
+                    exit_code=ExitCode.SUCCESS
+                elif command[0] == 'ideriv':
+                    if self.F.linear:
+                        res = self.F(command[1], out=self._get_codomain_buffer())
+                    else:
+                        res = self.deriv(
+                            command[1], out=self._get_codomain_buffer()
+                        )
                     exit_code=ExitCode.SUCCESS
                 elif command[0] == 'adjoint':
                     if self.F.linear:
                         res = self.F.adjoint(command[1])
                     else:
                         res = self.deriv.adjoint(command[1])
+                    exit_code=ExitCode.SUCCESS
+                elif command[0] == 'iadjoint':
+                    if self.F.linear:
+                        res = self.F.adjoint(
+                            command[1], out=self._get_domain_buffer()
+                        )
+                    else:
+                        res = self.deriv.adjoint(
+                            command[1], out=self._get_domain_buffer()
+                        )
                     exit_code=ExitCode.SUCCESS
                 elif command[0] == 'break':
                     terminate=True
@@ -344,11 +393,32 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         else:
             return self.codomain.join(*self.compute_all('eval_nodiff',x))
 
+    def _ieval(self, x, out, differentiate=False):
+        command = 'ieval_diff' if differentiate else 'ieval_nodiff'
+        results = self.compute_all(command, x)
+        for summand, out_i, result_i in zip(self.codomain, out, results):
+            summand.copyto(out_i, result_i)
+        return out
+
     def _derivative(self, x):
         return self.codomain.join(*self.compute_all('deriv',x))
 
+    def _iderivative(self, x, out):
+        results = self.compute_all('ideriv', x)
+        for summand, out_i, result_i in zip(self.codomain, out, results):
+            summand.copyto(out_i, result_i)
+        return out
+
     def _adjoint(self, y):
         return sum(self.compute_all('adjoint',args_specific=y))
+
+    def _iadjoint(self, y, out):
+        results = iter(self.compute_all('iadjoint', args_specific=y))
+        first = next(results)
+        self.domain.copyto(out, first)
+        for result in results:
+            out += result
+        return out
     
 class DistributedVectorOfOperators(Operator,ParallelInterface):
     r"""Vector of operators in which all components are evaluated in parallel and the input
@@ -441,6 +511,26 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
                     elms[j] += x_j
         return elms
 
+    def _icollect(self, x_res, out):
+        touched = [False] * len(self.domain)
+        for result_i, indices in zip(x_res, self.distribution_lists):
+            if len(indices) == 1:
+                contributions = ((result_i, indices[0]),)
+            else:
+                contributions = zip(result_i, indices)
+            for contribution, j in contributions:
+                if touched[j]:
+                    out[j] += contribution
+                else:
+                    self.domain[j].copyto(out[j], contribution)
+                    touched[j] = True
+
+        # Components that are not used by any worker must still be overwritten.
+        for j, was_touched in enumerate(touched):
+            if not was_touched:
+                self.domain[j].fill(out[j], 0)
+        return out
+
     def _eval(self, x, differentiate=False):
         x_ops=self._distribute(x)
         if differentiate:
@@ -448,12 +538,31 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         else:
             return self.codomain.join(*self.compute_all('eval_nodiff',args_specific=x_ops))
 
+    def _ieval(self, x, out, differentiate=False):
+        x_ops = self._distribute(x)
+        command = 'ieval_diff' if differentiate else 'ieval_nodiff'
+        results = self.compute_all(command, args_specific=x_ops)
+        for summand, out_i, result_i in zip(self.codomain, out, results):
+            summand.copyto(out_i, result_i)
+        return out
+
     def _derivative(self, x):
         x_ops=self._distribute(x)
         return self.codomain.join(*self.compute_all('deriv',args_specific=x_ops))
 
+    def _iderivative(self, x, out):
+        x_ops = self._distribute(x)
+        results = self.compute_all('ideriv', args_specific=x_ops)
+        for summand, out_i, result_i in zip(self.codomain, out, results):
+            summand.copyto(out_i, result_i)
+        return out
+
     def _adjoint(self, y):
         return self._collect(list(self.compute_all('adjoint',args_specific=y)))
+
+    def _iadjoint(self, y, out):
+        results = self.compute_all('iadjoint', args_specific=y)
+        return self._icollect(results, out)
 
 class ParallelExecutionManager:
     r"""

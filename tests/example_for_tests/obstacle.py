@@ -7,17 +7,16 @@ from regpy.solvers.nonlinear.newton import NewtonCG
 import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import Setting
-from regpy.vecsps.curve import apple
+from regpy.vecsps.curve import Apple
 import regpy.util as util
 
 util.set_rng_seed(15873098306879350073259142812684978477)
 
 from . import import_example_package
 
-import_example_package("./examples/obstacle/")
+import_example_package("./examples/obstacles2d/")
 
-from dirichlet_op import DirichletOp, create_synthetic_data
-
+from dirichlet_op import DirichletOp
 
 def test_obstacle():
     logging.basicConfig(
@@ -28,13 +27,13 @@ def test_obstacle():
     #Forward operator
     op = DirichletOp(
         kappa = 3,
-        N_inc = 4
+        inc_waves = 4
     )
 
-    setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
+    setting = Setting(op=op, penalty=Sobolev(index=1.6), data_fid=L2)
 
     #Exact data
-    farfield, _ = create_synthetic_data(op, apple(64,der=3))
+    farfield, _ = op.create_synthetic_data(Apple)
 
     # Gaussian data 
     noiselevel=0.01
@@ -43,12 +42,11 @@ def test_obstacle():
     data = farfield+noise
 
     #Initial guess
-    t = 2*np.pi*np.arange(0, op.N_FK)/op.N_FK
-    init = 0.45*np.append(np.cos(t), np.sin(t)).reshape((2, op.N_FK))
-    init = init.flatten()
+    init = op.domain.circle(radius = 0.45)    
+
 
     solver = NewtonCG(
-        setting, data, init = init,
+        setting, data, init = init.coeff,
             cgmaxit=50, rho=0.8
     )
 

@@ -3,20 +3,20 @@ from copy import deepcopy,copy
 
 from regpy.stoprules import CountIterations
 from regpy.util import Errors
+from regpy.operators import Operator
 
 from ..general import RegSolver, Setting
 from ..linear import SemismoothNewton_bilateral
-from ..linear.tikhonov import GeometricSequence
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
 
 class NewtonCG(RegSolver):
-    r"""The Newton-CG method. Solves the potentially non-linear, ill-posed equation:
+    r"""The Newton-CG method. Solves the potentially nonlinear, ill-posed equation:
     
     .. math::
         T(x) = y,
 
-    where \(T)\ is a Frechet-differentiable operator. The Newton equations are solved by the
+    where :math:`T` is a Fréchet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
 
@@ -26,7 +26,7 @@ class NewtonCG(RegSolver):
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
@@ -38,9 +38,17 @@ class NewtonCG(RegSolver):
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     simplified_op : regpy.operators.Operator, optional
         Simplified operator to be used for the derivative. (Default: None)
+    logging_level:str
+        logging level
     """
 
-    def __init__(self, setting, data, init=None, cgmaxit=50, rho=0.8, simplified_op = None):
+    def __init__(self, 
+                 setting:Setting, 
+                 data=None, 
+                 init=None, 
+                 cgmaxit:int=50, rho:float=0.8, 
+                 simplified_op:Operator = None,
+                 logging_level:str = 'INFO'):
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -68,6 +76,7 @@ class NewtonCG(RegSolver):
         self.cgmaxit = cgmaxit
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
+        self.log.setLevel(logging_level)
     
     def _next(self):
         self._k = 0
@@ -113,21 +122,25 @@ class NewtonCGFrozen(RegSolver):
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The rhs y of the equation to be solved. Must be in setting.op.codomain.
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : number, optional
+    cgmaxit : int, optional
         Maximal number of inner CG iterations. (Default: 50)
-    rho : number, optional
+    rho : float, optional
         A fix number related to the termination (0<rho<1). (Default: 0.8)
     """
-    def __init__(self, setting, data, init = None, cgmaxit=50, rho=0.8):
+    def __init__(self, setting:Setting, 
+                 data = None, init = None, 
+                 cgmaxit:int=50, rho:float=0.8):
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
+        if data is None:
+            data = setting.data
         if data not in self.op.codomain:
             raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
         self.data = data
@@ -181,12 +194,12 @@ class NewtonCGFrozen(RegSolver):
 
 
 class NewtonSemiSmoothFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG adds constraints \(\psi_+)\ and \(\psi_-)\ and efficiently
+    r"""The frozen Newton-CG method. Like Newton-CG adds constraints :math:`\psi_+` and :math:`\psi_-` and efficiently
     only updates the parts needed to be updated. 
 
     Parameters
     ----------
-    setting : Setting
+    setting : regpy.solvers.Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
     data : array-like
         The data from which to recover. Initializes the rhs y of the equation to be solved. Must 
@@ -197,7 +210,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
     psi_minus : scalar
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : scalar
-        upper constraint of the minimization. Must be smaller then `psi_minus`
+        upper constraint of the minimization. Must be smaller than `psi_minus`
     init : array-like, optional
         Initial guess to exact solution. (Default: setting.op.domain.zeros())
     xref : array-like, optional
@@ -209,6 +222,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         Semi-Smooth Newton. (Default: None)
     """
     def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
+        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -296,12 +310,12 @@ class IterativelyRegularizedNewton(RegSolver):
     .. math::
         S_{data}(T'[x_n]h+T(x_n)) + regpar_{n} \cdot R(h+x_n)
 
-    where :math:`T` is a Frechet-differentiable operator, using the given `inner_solver`.
+    where :math:`T` is a Fréchet-differentiable operator, using the given `inner_solver`.
     :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
 
     Parameters
     ----------
-    setting : regpy.solvers.RegularizationSetting
+    setting : regpy.solvers.Setting
         The setting of the forward problem.
     inner_solver : Solver class
         Solver class used for the solution of the linearized problem.

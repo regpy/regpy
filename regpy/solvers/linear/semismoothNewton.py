@@ -5,12 +5,11 @@ from regpy.util import Errors
 from regpy.operators import CoordinateMask 
 from regpy.hilbert import GramHilbertSpace
 from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, LinearCombination
-from regpy.functionals.numpy import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
+from regpy.functionals.integral_functionals import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
 from ..general import RegSolver, Setting
-from .tikhonov import TikhonovCG,GeometricSequence
-
+from .tikhonov import TikhonovCG
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
 class SemismoothNewton_bilateral(RegSolver):
@@ -66,7 +65,7 @@ class SemismoothNewton_bilateral(RegSolver):
         if len(args)==3:
             setting, data, regpar = args
             if setting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three arguments the setting must not contain a regularization parameter"))
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with three positional arguments the setting must not contain a regularization parameter"))
             if 'psi_plus' in kwargs:
                 psi_plus = kwargs['psi_plus']
             else:
@@ -82,8 +81,8 @@ class SemismoothNewton_bilateral(RegSolver):
             alpha_fac = 1.
         elif len(args)==1:
             Tsetting = args[0]
-            if Tsetting.is_tikhonov:
-                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one argument the setting must contain a regularization parameter."))
+            if not Tsetting.is_tikhonov:
+                raise ValueError(Errors.value_error("If constructing the SemismoothNewton_bilateral with one positional argument the setting must contain a regularization parameter."))
             out, _ = SemismoothNewton_bilateral.check_applicability(Tsetting)
             if not out['applicable']:
                 raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
@@ -203,10 +202,10 @@ class SemismoothNewton_bilateral(RegSolver):
             self.x[self.inactive] = f[self.inactive]
             cg_its = tikhcg.iteration_step_nr
         self.y = self.op(self.x)
-        z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
+        self.z = self.regpar*self.x + self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.y)))
         
-        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -z[self.active_plus]
-        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+z[self.active_minus]
+        self.lam_plus[self.active_plus]  = self.b[self.active_plus] -self.z[self.active_plus]
+        self.lam_minus[self.active_minus]=-self.b[self.active_minus]+self.z[self.active_minus]
 
         #Update active and inactive sets
         self.active_plus  = (self.lam_plus +self.regpar*(self.x-self.psi_plus )) >=0 
@@ -236,7 +235,6 @@ class SemismoothNewton_bilateral(RegSolver):
 
 def isQuadratic(func):
     r"""checks if a functional is quadratic."""
-    print("")
     if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
         return True
     elif isinstance(func,LppPower):
@@ -349,7 +347,7 @@ class SemismoothNewton_nonneg(RegSolver):
         subject to x>=0
 
 
-    Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stopping rule 
+    Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stoprule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
 
     Parameters
@@ -452,11 +450,13 @@ class SemismoothNewton_nonneg(RegSolver):
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
-        out = SemismoothNewton_bilateral(setting)
-        if np.any(setting.penalty.dom_u<inf):
-            out['info'] = '' if out['applicable'] else out['info']
-            out['applicable'] = False
-            out['info'] += 'SemismoothNewton_nonneg cannot handle upper bounds.'
+        out = {'info':''}   
+        if not setting.data_fid.is_quadratic:
+            out['info'] += 'Data functional not quadratic. '
+        if not setting.penalty.is_quadratic:
+            out['info'] += 'Penalty term not quadratic. '
+        out['applicable'] = out['info']==''
+        out['rate'] = np.nan
         return out, None
 
     def _next(self):
@@ -523,7 +523,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
     data: array-like, default None
-        The right hand side. If it is None the data is taken from setting.
+        The right-hand side. If it is None the data is taken from setting.
     xref: array-like, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50
@@ -535,6 +535,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     """
     def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
+        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
@@ -554,7 +555,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         else:
             self._alphas = iter(alphas)
         self.data = data
-        """Right hand side of the operator equation."""
+        """Right-hand side of the operator equation."""
         self.xref = xref
         """initial guess in Tikhonov functional."""
         if self.xref is not None:

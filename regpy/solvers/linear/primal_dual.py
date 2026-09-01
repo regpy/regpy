@@ -4,21 +4,21 @@ import numpy as np
 from regpy.util import Errors
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver, Setting
+from ..general import RegSolver
 
 __all__ = ["PDHG","DouglasRachford"]
 
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
-    For \(\theta=0)\ this is the Arrow-Hurwicz-Uzawa algorithm.
+    For :math:`\theta=0` this is the Arrow-Hurwicz-Uzawa algorithm.
 
-    Solves the minimization problem: \(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f))\
+    Solves the minimization problem: :math:`\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f)`
     by solving the saddle-point problem: 
     
     .. math::
         \inf_f \sup_p [ - \langle Tf,p\rangle + \mathcal{R}(f)- \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) ].
 
-    Here \(\mathcal{S}_{g^{\delta}}^\ast)\ denotes the Fenchel conjugate functional.
+    Here :math:`\mathcal{S}_{g^{\delta}}^\ast` denotes the Fenchel conjugate functional.
 
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
     the original paper and most of the literature.
@@ -69,40 +69,75 @@ class PDHG(RegSolver):
 
         self.log.setLevel(logging_level)
 
-        if init_domain is None:
-            if init_codomain_star is None:
-                self.x = setting.op.domain.zeros()
-                self.pstar = setting.op.codomain.zeros()
-                self.Tpstar = setting.op.domain.zeros()
-            else:
-                self.pstar = init_codomain_star
-                self.Tpstar = self.op.adjoint(self.pstar)
-                self.x = setting.dual_to_primal(self.pstar)
+        if init_domain is None and init_codomain_star is None:
+            self.x = self.op.domain.zeros()
+            self.pstar = self.op.codomain.zeros()
         else:
-            self.x = init_domain
-            if init_codomain_star is None:
-                self.pstar = setting.primal_to_dual(self.x)
+            self.x = self.op.domain.empty()
+            self.pstar = self.op.codomain.empty()
+            if init_domain is None:
+                self.op.codomain.copyto(self.pstar, init_codomain_star)
+                self.op.domain.copyto(
+                    self.x, setting.dual_to_primal(self.pstar)
+                )
             else:
-                self.pstar = init_codomain_star
-        self.x_old = self.x
+                self.op.domain.copyto(self.x, init_domain)
+                if init_codomain_star is None:
+                    self.op.codomain.copyto(
+                        self.pstar, setting.primal_to_dual(self.x)
+                    )
+                else:
+                    self.op.codomain.copyto(self.pstar, init_codomain_star)
+
+        # Keep a second primal buffer. It is used as proximal output and then
+        # swapped with ``x``, preserving the previous iterate for extrapolation.
+        self.x_old = self.op.domain.empty()
+        self.op.domain.copyto(self.x_old, self.x)
 
         out,par = PDHG.check_applicability(setting,op_norm=op_norm,tau=tau,sigma=sigma,theta=theta)
         if out['applicable']:
             self.log.info(out['info'])
         else:
-            raise ValueError('FDHG not applicable to this setting. '+out['info'])
+            raise ValueError('PDHG not applicable to this setting. '+out['info'])
         self.tau, self.sigma, self.theta, self.muR, self.muSstar = par['tau'], par['sigma'], par['theta'], par['muR'], par['muSstar']
         self.compute_y = compute_y
-        self.y = self.op(self.x) if self.compute_y else None
 
         if tau<0 or sigma<0:
-            raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))            
-        self.proximal_pars_data_fidelity_conjugate = proximal_pars_data_fidelity_conjugate
-        self.proximal_pars_penalty = proximal_pars_penalty
+            raise ValueError(Errors.value_error("tau and sigma, the stepsize of the primal and dual step need to be non-negative!"))
+        self.proximal_pars_data_fidelity_conjugate = (
+            {} if proximal_pars_data_fidelity_conjugate is None
+            else dict(proximal_pars_data_fidelity_conjugate)
+        )
+        self.proximal_pars_penalty = (
+            {} if proximal_pars_penalty is None
+            else dict(proximal_pars_penalty)
+        )
+
+        # Persistent buffers used by every PDHG iteration.
+        self.Tpstar = self.op.domain.empty()
+        self.op.adjoint(self.pstar, out=self.Tpstar)
+        self._domain_work = self.op.domain.empty()
+        self._primal_step = self.op.domain.empty()
+        self._extrapolated = self.op.domain.empty()
+        self._op_extrapolated = self.op.codomain.empty()
+        self._codomain_gram = self.op.codomain.empty()
+        self._dual_step = self.op.codomain.empty()
+
+        if self.compute_y:
+            self.y = self.op.codomain.empty()
+            self.op(self.x, out=self.y)
+            self._primal_y = None
+        else:
+            self.y = None
+            self._primal_y = self.op.codomain.empty()
 
     @staticmethod
-    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1):
+    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1)->tuple[dict,dict]:
         out = {'info':''}; par = {}
+        if not setting.is_tikhonov:
+            out['info'] += 'Setting has no regularization parameter. '
+        if not setting.is_convex:
+            out['info'] += 'Setting is not convex. '
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
         if 'proximal' not in setting.data_fid.conj.methods:
@@ -146,30 +181,70 @@ class PDHG(RegSolver):
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
-    def compute_dual(self):
-        self.primal = (self.x, self.y if  self.compute_y else self.op(self.x))
-        self.dual = (self.pstar,self.Tpstar)
+    def primal(self):
+        if not self.compute_y:
+            self.op(self.x, out=self._primal_y)
+            return (self.x, self._primal_y)
+        return (self.x, self.y)
+
+    def dual(self):
+        return (self.pstar,self.Tpstar)
 
     def _next(self):
-        primal_step = self.x + self.tau * self.h_domain.gram_inv(self.Tpstar)
-        self.x = self.penalty.proximal(primal_step, self.tau, self.proximal_pars_penalty)
-        self.y = self.op(self.x) if self.compute_y else None
+        # primal_step = x + tau * G_X^{-1} T^* pstar
+        self.h_domain.gram_inv(self.Tpstar, out=self._domain_work)
+        self.op.domain.copyto(self._primal_step, self.x)
+        self._domain_work *= self.tau
+        self._primal_step += self._domain_work
 
-        if self.theta==0. and self.compute_y:
-            dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.y)
-        else:         
-            dual_step = -self.pstar + self.sigma * self.h_codomain.gram(self.op( self.x+self.theta*(self.x-self.x_old) ))
-        self.pstar = (-1./self.regpar)*self.data_fid.conj.proximal(self.regpar*dual_step, self.regpar*self.sigma, self.proximal_pars_data_fidelity_conjugate)
-        self.x_old = self.x        
+        # Reuse the old primal buffer for the new iterate, then swap.
+        self.penalty.proximal(
+            self._primal_step, self.tau, out=self.x_old,
+            **self.proximal_pars_penalty
+        )
+        self.x, self.x_old = self.x_old, self.x
+
+        if self.compute_y:
+            self.op(self.x, out=self.y)
+
+        if self.theta == 0.:
+            if self.compute_y:
+                self.h_codomain.gram(self.y, out=self._codomain_gram)
+            else:
+                self.op(self.x, out=self._op_extrapolated)
+                self.h_codomain.gram(
+                    self._op_extrapolated, out=self._codomain_gram
+                )
+        else:
+            # extrapolated = x + theta * (x - x_old)
+            self.op.domain.copyto(self._extrapolated, self.x)
+            self.op.domain.copyto(self._domain_work, self.x)
+            self._domain_work -= self.x_old
+            self._domain_work *= self.theta
+            self._extrapolated += self._domain_work
+            self.op(self._extrapolated, out=self._op_extrapolated)
+            self.h_codomain.gram(
+                self._op_extrapolated, out=self._codomain_gram
+            )
+
+        # dual_step = -pstar + sigma * G_Y T extrapolated
+        self.op.codomain.copyto(self._dual_step, self.pstar)
+        self._dual_step *= -1
+        self._codomain_gram *= self.sigma
+        self._dual_step += self._codomain_gram
+        self._dual_step *= self.regpar
+
+        self.data_fid.conj.proximal(
+            self._dual_step, self.regpar*self.sigma, out=self.pstar,
+            **self.proximal_pars_data_fidelity_conjugate
+        )
+        self.pstar *= -1./self.regpar
+
         if self.muR>0 and self.muSstar==0:
             self.theta = 1./ma.sqrt(1+self.muR*self.tau)
             self.tau *= self.theta
             self.sigma /= self.theta
-        self.Tpstar = self.op.adjoint(self.pstar)
-
-
- 
-
+        self.op.adjoint(self.pstar, out=self.Tpstar)
 
 
 class DouglasRachford(RegSolver):
@@ -200,7 +275,8 @@ class DouglasRachford(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="DouglasRachford requires the operator to be linear!"))
         if init_h not in self.op.domain:
             raise ValueError(Errors.value_error('init_h must be in the domain of the operator!'))
-        self.h = init_h
+        self.h = self.op.domain.empty()
+        self.op.domain.copyto(self.h, init_h)
         if setting.is_tikhonov and setting.op.domain != setting.op.codomain:
             if setting.data is None:
                 raise ValueError(Errors.value_error('If the regularization parameter is given, the data must be given!'))
@@ -215,13 +291,45 @@ class DouglasRachford(RegSolver):
 
         self.tau = tau
         self.regpar = regpar
-        self.proximal_pars_data_fidelity = proximal_pars_data_fidelity
-        self.proximal_pars_penalty = proximal_pars_penalty
+        if self.tau <= 0 or self.regpar <= 0:
+            raise ValueError(Errors.value_error(
+                "tau and regpar must be positive."
+            ))
+        self.proximal_pars_data_fidelity = (
+            {} if proximal_pars_data_fidelity is None
+            else dict(proximal_pars_data_fidelity)
+        )
+        self.proximal_pars_penalty = (
+            {} if proximal_pars_penalty is None
+            else dict(proximal_pars_penalty)
+        )
 
-        self.x = self.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
-        self.y = self.op(self.x)
+        self.x = self.op.domain.empty()
+        self.y = self.op.codomain.empty()
+        self._reflection = self.op.domain.empty()
+        self._data_prox = self.op.domain.empty()
+
+        self.penalty.proximal(
+            self.h, self.tau*self.regpar, out=self.x,
+            **self.proximal_pars_penalty
+        )
+        self.op(self.x, out=self.y)
 
     def _next(self):
-        self.h += self.data_fid_adjusted.proximal(2*self.x-self.h, self.tau, self.proximal_pars_data_fidelity) - self.x
-        self.x = self.penalty.proximal(self.h, self.tau*self.regpar, self.proximal_pars_penalty)
-        self.y = self.op(self.x)
+        # reflection = 2*x - h
+        self.op.domain.copyto(self._reflection, self.x)
+        self._reflection *= 2
+        self._reflection -= self.h
+
+        self.data_fid_adjusted.proximal(
+            self._reflection, self.tau, out=self._data_prox,
+            **self.proximal_pars_data_fidelity
+        )
+        self.h += self._data_prox
+        self.h -= self.x
+
+        self.penalty.proximal(
+            self.h, self.tau*self.regpar, out=self.x,
+            **self.proximal_pars_penalty
+        )
+        self.op(self.x, out=self.y)

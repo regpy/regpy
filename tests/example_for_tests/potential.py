@@ -32,18 +32,18 @@ def test_potential():
     setting = Setting(op=op, penalty=Sobolev, data_fid=L2)
 
     #Exact data and Poission data
-    exact_solution = op.domain.sample(lambda t: np.sqrt(3*np.cos(t)**2+1)/2)
-    exact_data = op(exact_solution)
+    exact_solution = op.domain.radialfct2curve(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
+    exact_data = op(exact_solution.radial())
     noise = op.codomain.randn()
     noise = 0.01*setting.h_codomain.norm(exact_data)/setting.h_codomain.norm(noise)*noise
     data = exact_data + noise
 
     #Initial guess
-    init = op.domain.sample(lambda t: 1)
+    init = op.domain.circle(radius=0.2)
 
     #Solver: NewtonCG or IrgnmCG
     solver = NewtonCG(
-        setting, data, init = init,
+        setting, data, init = init.coeff,
             cgmaxit=50, rho=0.6
     )
 

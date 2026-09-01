@@ -26,3 +26,4 @@ MANIFEST
 .vscode/
 .gitlab-ci-local.yml
 regpy/_version.py
+.coverage

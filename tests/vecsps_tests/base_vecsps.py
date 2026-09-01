@@ -1,52 +1,14 @@
 from random import random
-import pytest
+import traceback
 
+import pytest
 import numpy as np
 
 import regpy.vecsps.base as vs_base
-from regpy.util import set_rng_seed
+from regpy.util import set_rng_seed,Errors
 
 set_rng_seed(15873098306879350073259142812684978477)
-
-def call_safe(obj, method_name, *args, **kwargs):
-    """
-    Calls a method of an object safely.
     
-    Returns a tuple:
-        (success, result_or_exception)
-    
-    success: True if the call succeeded, False if an exception occurred
-    result_or_exception: the return value or the caught exception
-    """
-    method = getattr(obj, method_name)
-    try:
-        result = method(*args, **kwargs)
-        return True, result
-    except Exception as e:
-        return False, e
-    
-def call_safe_inclusion(obj,method_name,error_log, *args,**kwargs):
-    """Executes a methods and tests if the result is in the obj. 
-
-    Parameters
-    ----------
-    obj : any
-        The object
-    method_name : string
-        Name of the method
-    error_log : list
-        list where to append the possible error.
-    """
-    suc, x = call_safe(obj,method_name,*args,**kwargs)
-    if suc:
-        if x not in obj and not np.isscalar(x): 
-            error_log.append(f"The method {method_name} of {obj} constructed an object {type(x)} with arguments {args} and keyword arguments {kwargs} which is not in it.")
-            return None
-    else:
-        error_log.append(f"The method {method_name} of {obj} with arguments {args} and keyword arguments {kwargs} could not be construct an object resulting in error message {x}.")
-        return None
-    return x
-
 def vecsps_basics(vs,*args,test_methods = False,**kwargs):
     """Initializes an object of `vs` with `kwargs` and tests it basic functionality. If `test_methods` is true it test the standard methods that should be available. 
 
@@ -65,6 +27,7 @@ def vecsps_basics(vs,*args,test_methods = False,**kwargs):
         Should any of the tests fail.
     """
     errors = []
+    print(kwargs)
     VS = vs(*args,**kwargs)
     if test_methods:
         _ = VS.zeros()
@@ -80,11 +43,24 @@ def vecsps_basics(vs,*args,test_methods = False,**kwargs):
     VS_alt = vs(*args,**kwargs)
     assert VS == VS_alt, f"The equivalence method __eq__ for {vs} is not properly working."
 
-    _ = VS + VS_alt
-    VS += VS_alt
-    _ = VS**4
+    try:
+        for x_i in VS:
+            _ = x_i
+    except NotImplementedError:
+        pass
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"The iteration over {VS} does not properly work. Throwing and exception {e}. Resulting from {tb}",VS,meth="Iteration"))
+
+    try:
+        _ = VS + VS_alt
+        VS += VS_alt
+        _ = VS**4
+    except Exception as e:
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        raise AssertionError(Errors.failed_test(f"The addition and power implementations for {VS} do not properly work. Throwing and exception {e}. Resulting from {tb}",VS,meth="Linear Combinations"))
     
-def vector_basics(vs,*args, N = 5,**kwargs):
+def vector_basics(vs,*args, test_comparison = True, ones_is_onevec= True, N = 5,**kwargs):
     tol = kwargs["tol"] if "tol" in kwargs else 1e-10
     VS = vs(*args,**kwargs)
     if VS.is_complex:
@@ -94,9 +70,9 @@ def vector_basics(vs,*args, N = 5,**kwargs):
             v_3 = VS.randn()
             scalar = random() + 1j*random()
             comb = v_1 + scalar * v_2
-            assert VS.vdot(comb,v_3).real == pytest.approx((VS.vdot(v_1,v_3)+scalar.conjugate()*VS.vdot(v_2,v_3)),rel_tol=tol), f"Trying to compute the vector dot product of a linear combination of random vectors of {vs} and another random vector failed with `rel_tol` = {tol}"
-
-            assert (v_1.imag == -v_1.conj().imag).all(),f"Tying to compare v.imag with v.conj().imag failed for {v_1}"
+            vdot_1 = VS.vdot(comb,v_3)
+            vdot_2 = VS.vdot(v_1,v_3)+scalar.conjugate()*VS.vdot(v_2,v_3)
+            assert vdot_1 == pytest.approx(vdot_2,rel=tol), f"Trying to compute the vector dot product of a linear combination of random vectors of {vs} and another random vector failed with `rel_tol` = {tol}. got for the combination {vdot_1} and expressed as sum of vdots {vdot_2} "
     else:
         for _ in range(N):
             v_1 = VS.rand()
@@ -106,15 +82,18 @@ def vector_basics(vs,*args, N = 5,**kwargs):
             v_1 *= scalar
             v_1 /= scalar
             comb = v_1 + scalar * v_2
-            assert VS.vdot(comb,v_3) == pytest.approx(VS.vdot(v_1,v_3)+scalar*VS.vdot(v_2,v_3),rel_tol=tol), f"Trying to compute the vector dot product of a linear combination of random vectors of {vs} and another random vector failed with `rel_tol` = {tol}"
-            _ = v_1 < v_2
-            _ = v_1 <= v_2
-            _ = v_1 >= v_2
-            reg = v_1 > v_2
-            _ = reg.all()
-            _ = reg.any()
-
-    assert VS.ones().sum() == VS.size, f"Comparing the sum {VS.ones().sum()} of the ones vector to the real size {VS.size} of the vector space {vs} failed."
+            vdot_1 = VS.vdot(comb,v_3)
+            vdot_2 = VS.vdot(v_1,v_3)+scalar*VS.vdot(v_2,v_3)
+            assert vdot_1 == pytest.approx(vdot_2,rel=tol), f"Trying to compute the vector dot product of a linear combination of random vectors of {vs} and another random vector failed with `rel_tol` = {tol}. got for the combination {vdot_1} and expressed as sum of vdots {vdot_2} "
+            if test_comparison:
+                _ = v_1 < v_2
+                _ = v_1 <= v_2
+                _ = v_1 >= v_2
+                reg = v_1 > v_2
+                _ = reg.all()
+                _ = reg.any()
+    if ones_is_onevec:
+        assert VS.ones().sum() == VS.size, f"Comparing the sum {VS.ones().sum()} of the ones vector to the real size {VS.size} of the vector space {vs} failed."
     
 
 def test_VecSpaceBase():

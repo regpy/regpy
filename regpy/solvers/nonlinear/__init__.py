@@ -15,7 +15,7 @@ from regpy.solvers import *
 ```
 
 where you have access to `nonlinear` and can use for example `linear.FISTA` to define 
-a TIkhonov solver.
+a Tikhonov solver.
 """
 
 
@@ -25,6 +25,7 @@ from .irgnm_semismooth import *
 from .irgnm import *
 from .landweber import *
 from .newton import *
+from .gen_tikhonov import *
 
 __all__ = []
 

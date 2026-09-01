@@ -92,3 +92,7 @@ deploy_doc:
     - build_doc
   rules:
     - if: $CI_COMMIT_BRANCH == "release" && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: on_success
+    - when: manual
+      allow_failure: true
+    - when: never

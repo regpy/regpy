@@ -2,11 +2,7 @@ from random import uniform
 
 import numpy as np
 
-from regpy.util import Errors
-from regpy.functionals import IntegralFunctionalBase, Functional
-from regpy.functionals.base import Conj, NotTwiceDifferentiableError, FunctionalOnDirectSum, HorizontalShiftDilation
-from regpy.functionals.numpy import VectorIntegralFunctional
-from regpy.vecsps import MeasureSpaceFcts, DirectSum
+from .general import Errors
 
 def sample_essential_domain(func,u=None,eps_perturbation=None):
     r""" Returns a grid function in the essential domain of an IntegralFunctional. 
@@ -20,12 +16,14 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     eps_perturbation: float or None [default: None]
         If not None, an additional vector h is returned  
         
-    Result
-    ------
-    An element u of func.domain
-    If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
+    Returns
+    -------
+    array-like
+        An element u of func.domain
+        If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
     """
-    if not func.separable:
+    from regpy.vecsps import MeasureSpaceFcts, DirectSum
+    if not func.is_separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if isinstance(func.domain,MeasureSpaceFcts):
         dom_l = np.max(func.dom_l)
@@ -64,6 +62,7 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
         else:
             return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
     elif isinstance(func.domain, DirectSum):
+        from regpy.functionals.base import Conj, FunctionalOnDirectSum, HorizontalShiftDilation
         if not isinstance(func, (FunctionalOnDirectSum,Conj,HorizontalShiftDilation)):
             raise TypeError(Errors.type_error(f"domain of type {func.domain}, but functional of type {type(func)},{func}."))
         if isinstance(func, FunctionalOnDirectSum):
@@ -107,12 +106,11 @@ def sample_vector_in_domain(func, dist = 1e-10):
 
     Returns
     -------
-    array_like
+    array-like
         A vector in the domain satisfying the norm constraints.
 
     """
-    if not isinstance(func,VectorIntegralFunctional) and (isinstance(func,Conj) and not isinstance(func.func,VectorIntegralFunctional)):
-        raise ValueError(Errors.value_error("func has to be an instance of VectorIntegralFunctional"))
+    from regpy.functionals.base import Conj
     if isinstance(func,Conj):
         v_axes = func.func._vaxes
         norm = func.func.vector_norm
@@ -132,7 +130,7 @@ def sample_vector_in_domain(func, dist = 1e-10):
     u /= np.max(norm(x = u, axis = v_axes))
     if dom_u < np.inf and dom_l > 0:
         return u * (dom_u - dom_l) + dom_l
-    if dom_u < np.inf:
+    elif dom_u < np.inf:
         return u * dom_u
     else:
         return u        
@@ -162,10 +160,8 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -200,8 +196,6 @@ def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Moreaus identity is only supported to Functionals"))
     if u is None:
         numel = np.prod(func.domain.shape)
         u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
@@ -242,9 +236,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing subgradient is only supported to Functionals"))
-    if (not func.separable):
+    if (not func.is_separable):
         if u is None:
             u=func.domain.randn()
         h=func.domain.randn()
@@ -268,20 +260,7 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
         return False
 
 def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=1e-6):
-
-
-    """     if u is None :
-        if func.separable:
-            u=sample_essential_domain(func)
-        else:
-            u=func.domain.randn()
-    if h is None:
-        h = - func.subgradient(u)
-        if func.separable:
-            h[u+eps*h>=func.dom_u] *= -1.
-            h[u+eps*h<=func.dom_l] *= -1.
-            h[u+eps*h>=func.dom_u] = 0.
-            h[u+eps*h<=func.dom_l] = 0.
+    """Tests the second derivative of the functional.
 
     Parameters
     ----------
@@ -303,9 +282,7 @@ def test_second_derivative(func,u=None,h=None,eps=1e-8,tolerance = 1e-2,abs_tol=
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing second derivative is only supported to Functionals"))
-    if func.separable:
+    if func.is_separable:
         u,h = sample_essential_domain(func,eps_perturbation=eps)
     else:
         if u is None:
@@ -338,9 +315,8 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
-    if not func.separable:
+    from regpy.vecsps import MeasureSpaceFcts
+    if not func.is_separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
     if u is None :
         u=sample_essential_domain(func)
@@ -364,7 +340,7 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
 
 def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-6):
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.rand()
@@ -399,10 +375,8 @@ def test_young_equality(func,u=None,tolerance=1e-10):
     boolean
         False, if the test fails and True otherwise.
     """
-    if not isinstance(func,Functional):
-        raise TypeError(Errors.not_instance(func,Functional,add_info="Testing Lipschitz convexity is only supported to Functionals"))
     if(u is None):
-        if func.separable:
+        if func.is_separable:
             u=sample_essential_domain(func)
         else:
             u=func.domain.randn()
@@ -418,10 +392,177 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         func.log.warning(f"Failed Young inequality test! err={err}, F(u)={t2}, F^*(grad_u)={t3}, <u,grad_u>={t1}")
         return False
 
+
+def _copy_domain_vector(domain, x):
+    """Return an independent copy of ``x`` using the vector-space interface."""
+    result = domain.empty()
+    domain.copyto(result, x)
+    return result
+
+
+def _vector_difference_within_tolerance(domain, actual, expected, tolerance):
+    """Return ``(passed, error, scale)`` for two vectors in ``domain``."""
+    error = domain.norm(actual - expected)
+    scale = max(1., domain.norm(expected))
+    return error <= tolerance * scale, error, scale
+
+
+def _test_allocating_vs_inplace_call(func, method_name, x, method_args,
+                                     tolerance, test_aliasing=True):
+    """Compare one allocating functional call with its ``out=`` variants."""
+    method = getattr(func, method_name)
+    domain = func.domain
+
+    x_reference = _copy_domain_vector(domain, x)
+    expected = method(x, *method_args)
+
+    passed, input_error, input_scale = _vector_difference_within_tolerance(
+        domain, x, x_reference, tolerance
+    )
+    if not passed:
+        func.log.warning(
+            f"Allocating {method_name} modified its input: "
+            f"err={input_error}, tolerance={tolerance * input_scale}."
+        )
+        return False
+
+    # Initialize with arbitrary values so that incomplete writes are visible.
+    out = domain.randn()
+    result = method(x, *method_args, out=out)
+    if result is not out:
+        func.log.warning(
+            f"In-place {method_name} did not return the supplied output buffer."
+        )
+        return False
+
+    passed, error, scale = _vector_difference_within_tolerance(
+        domain, out, expected, tolerance
+    )
+    if not passed:
+        func.log.warning(
+            f"Allocating and in-place {method_name} differ: "
+            f"err={error}, tolerance={tolerance * scale}."
+        )
+        return False
+
+    passed, input_error, input_scale = _vector_difference_within_tolerance(
+        domain, x, x_reference, tolerance
+    )
+    if not passed:
+        func.log.warning(
+            f"Non-aliasing in-place {method_name} modified its input: "
+            f"err={input_error}, tolerance={tolerance * input_scale}."
+        )
+        return False
+
+    if test_aliasing:
+        alias = _copy_domain_vector(domain, x_reference)
+        result = method(alias, *method_args, out=alias)
+        if result is not alias:
+            func.log.warning(
+                f"Aliasing in-place {method_name} did not return its input/output buffer."
+            )
+            return False
+
+        passed, error, scale = _vector_difference_within_tolerance(
+            domain, alias, expected, tolerance
+        )
+        if not passed:
+            func.log.warning(
+                f"Allocating and aliasing in-place {method_name} differ: "
+                f"err={error}, tolerance={tolerance * scale}."
+            )
+            return False
+
+    return True
+
+
+def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
+                                    tolerance=1e-10, test_primal=True,
+                                    test_conjugate=True, test_aliasing=True):
+    r"""Compare allocating and ``out=`` variants of functional methods.
+
+    The following pairs are checked whenever the corresponding method is
+    advertised by the functional:
+
+    * ``subgradient(x)`` and ``subgradient(x, out=out)``
+    * ``proximal(x, tau)`` and ``proximal(x, tau, out=out)``
+    * ``conj_subgradient(xstar)`` and
+      ``conj_subgradient(xstar, out=out)``
+    * ``conj_proximal(xstar, tau)`` and
+      ``conj_proximal(xstar, tau, out=out)``
+
+    In addition, the test checks the supported aliasing case ``out is x`` and
+    verifies that non-aliasing calls leave their input unchanged.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional whose methods are tested.
+    u, ustar : element of ``func.domain``, optional
+        Test arguments for the functional and its conjugate. Missing arguments
+        are sampled from the corresponding essential domain when separable,
+        and randomly otherwise.
+    tau : float, optional
+        Positive proximal parameter. Defaults to 1.
+    tolerance : float, optional
+        Relative tolerance, with an absolute scale floor of one.
+    test_primal, test_conjugate : bool, optional
+        Select whether primal and/or conjugate methods are checked.
+    test_aliasing : bool, optional
+        Also check calls with the input itself as output buffer.
+
+    Returns
+    -------
+    bool
+        ``True`` if all available selected methods agree.
+    """
+    if tau <= 0:
+        raise ValueError(Errors.value_error(
+            f"tau must be positive in test_inplace_functional_methods. Got {tau}."
+        ))
+    if tolerance < 0:
+        raise ValueError(Errors.value_error(
+            f"tolerance must be non-negative. Got {tolerance}."
+        ))
+
+    tests = []
+
+    if test_primal:
+        if u is None:
+            u = (sample_essential_domain(func) if func.is_separable
+                 else func.domain.randn())
+        if "subgradient" in func.methods:
+            tests.append(("subgradient", u, ()))
+        if "proximal" in func.methods:
+            tests.append(("proximal", u, (tau,)))
+
+    if test_conjugate:
+        if ustar is None:
+            conj = func.conj
+            ustar = (sample_essential_domain(conj) if conj.is_separable
+                     else func.domain.randn())
+        if "subgradient" in func.conj.methods:
+            tests.append(("conj_subgradient", ustar, ()))
+        if "proximal" in func.conj.methods:
+            tests.append(("conj_proximal", ustar, (tau,)))
+
+    for method_name, argument, method_args in tests:
+        if not _test_allocating_vs_inplace_call(
+                func, method_name, argument, method_args, tolerance,
+                test_aliasing=test_aliasing):
+            return False
+
+    func.log.info(
+        "Allocating and in-place functional methods produce identical results."
+    )
+    return True
+
 def test_functional(func,u_s=None,sample_N=5,
                     test_conj=True,
                     u_stars=None,sample_conj_N=5,
                     test_second_deriv = True, test_second_deriv_conj = True,
+                    test_inplace=True, test_inplace_aliasing=True,
                     tolerance=1e-10, msg=''):
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
     missing implementations are ignored.
@@ -443,8 +584,14 @@ def test_functional(func,u_s=None,sample_N=5,
         Same as u_s but for conjugate functional. Defaults to None.
     sample_conj_N : int, optional
         Same as sample_N but for conjugate functional. Defaults to 5.
+    test_inplace : bool, optional
+        Compare allocating and ``out=`` variants of subgradient, proximal,
+        conjugate subgradient, and conjugate proximal methods. Defaults to True.
+    test_inplace_aliasing : bool, optional
+        Also test the supported aliasing case where the output buffer is the
+        input vector itself. Defaults to True.
     tolerance : float, optional
-        The maximum allowed error. Defaults to 1e-10.
+        The maximum allowed relative error. Defaults to 1e-10.
 
     Raises
     ------
@@ -457,12 +604,22 @@ def test_functional(func,u_s=None,sample_N=5,
 
     """
     if (u_s is None):
-        if func.separable:
+        if func.is_separable:
             u_s= [None] # [sample_essential_domain(func)]
         else:
             u_s = [func.domain.randn() for _ in range(sample_N)]
     func.log.info(f'Starting tests for functional!')
     for u in u_s:
+        if test_inplace:
+            tau_inplace = uniform(max(tolerance, np.finfo(float).eps), 4)
+            if not test_inplace_functional_methods(
+                    func, u=u, tau=tau_inplace, tolerance=tolerance,
+                    test_primal=True, test_conjugate=False,
+                    test_aliasing=test_inplace_aliasing):
+                raise AssertionError(
+                    f"{func} failed allocating/in-place equivalence tests!"
+                    + msg
+                )
         if "proximal" in func.methods and "proximal" in func.conj.methods:
             tau=uniform(tolerance,4)
             if not test_moreaus_identity(func,u,tau=tau,tolerance=tolerance):
@@ -480,14 +637,40 @@ def test_functional(func,u_s=None,sample_N=5,
             if {"subgradient","hessian"} <= func.methods:
                 if not test_second_derivative(func,u):
                     raise AssertionError(f"{func} failed second derivative test!"+msg)
-            if func.separable:
+            if func.is_separable:
                 try:
                     if not test_Lipschitz_convexity(func):
                         raise AssertionError(f"{func} failed Lipschitz convexity test!"+msg)
                 except (NotImplementedError):
                     func.log.info('Lipschitz constant and convexity parameter could not be checked because of missing implementation.')
         func.log.info(f'All tests passed!')
+    if test_conj and test_inplace:
+        if u_stars is None:
+            if func.conj.is_separable:
+                inplace_u_stars = [None]
+            else:
+                inplace_u_stars = [
+                    func.domain.randn() for _ in range(sample_conj_N)
+                ]
+        else:
+            inplace_u_stars = u_stars
+        for ustar in inplace_u_stars:
+            tau_inplace = uniform(max(tolerance, np.finfo(float).eps), 4)
+            if not test_inplace_functional_methods(
+                    func, ustar=ustar, tau=tau_inplace,
+                    tolerance=tolerance, test_primal=False,
+                    test_conjugate=True,
+                    test_aliasing=test_inplace_aliasing):
+                raise AssertionError(
+                    f"{func} failed allocating/in-place equivalence tests "
+                    "for conjugate methods!" + msg
+                )
     if(test_conj):
-        test_functional(func.conj,u_s=u_stars,sample_N=sample_conj_N,
-                        test_conj=False,test_second_deriv=test_second_deriv_conj,tolerance=tolerance)
+        test_functional(
+            func.conj, u_s=u_stars, sample_N=sample_conj_N,
+            test_conj=False, test_second_deriv=test_second_deriv_conj,
+            test_inplace=False,
+            test_inplace_aliasing=test_inplace_aliasing,
+            tolerance=tolerance, msg=msg
+        )
                 
