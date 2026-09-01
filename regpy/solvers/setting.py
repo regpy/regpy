@@ -986,6 +986,10 @@ def get_linear_reg_method_dictionary() -> dict:
         NuMethodSelfAdjoint,
         TikhonovAlphaGrid
     )
+    # Import the module directly instead of re-exporting its classes from
+    # ``linear.__init__``. This keeps the public solver package lightweight and
+    # avoids the setting <-> spectral circular import during module startup.
+    from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return {
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
@@ -997,7 +1001,7 @@ def get_linear_reg_method_dictionary() -> dict:
                          'full': 'nu-method'
                         },
             'nu_sa':    {'class': NuMethodSelfAdjoint,
-                         'full': 'nu-method for self-adjoitn operators'
+                         'full': 'nu-method for self-adjoint operators'
                         },
             'CGNE':     {'class':CGNE, 
                          'full': 'Conjugate Gradient method applied to the normal equation'
@@ -1005,6 +1009,13 @@ def get_linear_reg_method_dictionary() -> dict:
             'TikhOnGrid':{'class': TikhonovAlphaGrid,
                           'full': 'Tikhonov regularization applied for a grid of regularization parameters'
                          },
+            'Spectral': {'class': Spectral,
+                         'full': 'spectral regularization by an SVD filter'
+                        },
+            'Spectral_SelfAdjoint': {
+                         'class': Spectral_SelfAdjoint,
+                         'full': 'spectral regularization of a self-adjoint operator'
+                        },
     }
 
 

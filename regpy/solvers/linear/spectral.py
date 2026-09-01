@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import inspect
 from numbers import Real
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 from scipy.linalg import cholesky
 from scipy.sparse.linalg import LinearOperator as SciPyLinearOperator
-from scipy.sparse.linalg import svds
+from scipy.sparse.linalg import eigsh, svds
 
 from regpy import vecsps
-from regpy.vecsps import Vector
+from regpy.vecsps import ReadOnlyVector
 from regpy.operators.base import (
     Composition,
     Identity,
     LinearCombination,
+    ObsDataT,
     Operator,
     PtwMultiplication,
 )
@@ -24,7 +27,21 @@ from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability_linear
 
 
-__all__ = ["SVD", "Spectral"]
+__all__ = [
+    "SVD",
+    "Spectral",
+    "Spectral_SelfAdjoint",
+    "Spectral_Tikhonov",
+    "Spectral_IteratedTikhonov",
+    "Spectral_Showalter",
+    "Spectral_Landweber",
+    "Spectral_Lardy",
+    "Spectral_CutOff",
+    "Spectral_Seidman",
+    "Spectral_TruncatedSVD2",
+    "SpectralSelfAdjoint_Lavrentiev",
+    "SpectralSelfAdjoint_Richardson",
+]
 
 
 def _positive_identity_factor(gram: Operator) -> float | None:
@@ -203,7 +220,13 @@ class SVD(Composition):
 
     .. math::
         T = V M U^*,\qquad
-        V^*G_YV=I,\quad U^*G_XU=I.
+        V^*G_YV=I,\quad U^*G_X^{-1}U=I.
+
+    Here, :math:`U` maps the reduced coordinate (spectral) space into the dual Hilbert
+    space :math:`X^*`. Its Gram operator is :math:`G_X^{-1}`, which explains
+    the second normalization. The entries ``G_X`` and ``G_Y`` in
+    :attr:`svd_data` store the Gram operators actually used for ``U`` and
+    ``V``; hence the former is :attr:`setting.h_domain.gram_inv`.
 
     If ``setting.op`` is already a labelled :class:`Composition`, its factors
     are reused. Scalar identity Gram operators may differ; in that case ``U``,
@@ -215,11 +238,17 @@ class SVD(Composition):
     to
 
     .. math::
-        B=L_Y^*T L_X.
+        B=L_Y^*T L_X^{-*}.
 
     Its Euclidean singular-vector operators :math:`U_0,V_0` are transformed
-    back by :math:`U=L_X^{-*}U_0` and
+    back by :math:`U=L_XU_0` and
     :math:`V=L_Y^{-*}V_0`.
+
+    If ``as_eig=True``, the operator must be self-adjoint and positive
+    semidefinite. The codomain is interpreted as :math:`X^*`, and the
+    transformed operator :math:`L_X^{-1}TL_X^{-*}` is diagonalized with a
+    Hermitian eigensolver. This mode is also available for codomain-free
+    settings.
 
     Genuinely complex-linear operators between complex vector spaces are
     passed to SciPy as complex operators, so their singular values are not
@@ -232,7 +261,11 @@ class SVD(Composition):
     Parameters
     ----------
     setting : regpy.solvers.Setting
-        Hilbert setting with a linear, non-codomain-free operator.
+        Hilbert setting with a linear operator. A codomain-free setting is
+        accepted only when ``as_eig=True``.
+    as_eig : bool [default: False]
+        Compute or reuse an eigenvalue decomposition of a self-adjoint,
+        positive-semidefinite operator instead of a general SVD.
     k : int or None [default: None]
         If ``None``, compute a dense full SVD and retain all positive singular
         values. Otherwise compute a matrix-free partial SVD with ``k`` values.
@@ -266,6 +299,7 @@ class SVD(Composition):
         self,
         setting: Setting,
         *,
+        as_eig: bool = False,
         k: int | None = None,
         which: str = 'LM',
         solver: str = 'arpack',
@@ -288,18 +322,35 @@ class SVD(Composition):
             raise ValueError(Errors.value_error(
                 "SVD requires a linear operator."
             ))
-        if setting.codomain_free:
+        if not isinstance(as_eig, (bool, np.bool_)):
+            raise TypeError(Errors.type_error("as_eig must be boolean."))
+        self.as_eig = bool(as_eig)
+        if setting.codomain_free and not self.as_eig:
             raise ValueError(Errors.value_error(
-                "SVD requires an explicit codomain Hilbert space."
+                "A general SVD requires an explicit codomain Hilbert space."
+            ))
+        labelled_eigenoperator = _is_labelled_svd(
+            setting.op, require_eig=True
+        )
+        if self.as_eig and not (
+            setting.op.self_adjoint or labelled_eigenoperator
+        ):
+            raise ValueError(Errors.value_error(
+                "An eigenvalue decomposition requires a self-adjoint "
+                "operator."
             ))
 
         self.original_operator = setting.op
         self.h_domain = setting.h_domain
-        self.h_codomain = setting.h_codomain
+        self.h_codomain = (
+            setting.h_domain.dual_space()
+            if self.as_eig else setting.h_codomain
+        )
 
         if (
             isinstance(setting.op, Composition)
             and setting.op.is_svd
+            and (not self.as_eig or setting.op.svd_data['is_eig'])
         ):
             self._init_from_labelled(
                 setting.op,
@@ -335,10 +386,28 @@ class SVD(Composition):
         use_buffers: bool,
     ) -> None:
         data = source.svd_data
-        G_X = self.h_domain.gram
-        G_Y = self.h_codomain.gram
-        U_scale = _gram_rescaling(data['G_X'], G_X, 'domain')
-        V_scale = _gram_rescaling(data['G_Y'], G_Y, 'codomain')
+        same_domain_hilbert = getattr(source, 'h_domain', None) is self.h_domain
+        same_codomain_hilbert = (
+            getattr(source, 'h_codomain', None) is self.h_codomain
+        )
+        # Some Hilbert implementations construct a fresh inverse Operator on
+        # every ``gram_inv`` access. Reusing an SVD produced from the very same
+        # Hilbert-space object is nevertheless exact and should not fail an
+        # object-identity comparison.
+        G_X = data['G_X'] if same_domain_hilbert else self.h_domain.gram_inv
+        G_Y = (
+            data['G_Y']
+            if same_codomain_hilbert or (self.as_eig and same_domain_hilbert)
+            else self.h_codomain.gram
+        )
+        U_scale = (
+            1. if same_domain_hilbert
+            else _gram_rescaling(data['G_X'], G_X, 'domain')
+        )
+        V_scale = (
+            1. if same_codomain_hilbert or (self.as_eig and same_domain_hilbert)
+            else _gram_rescaling(data['G_Y'], G_Y, 'codomain')
+        )
 
         middle_index = data['l'] - 1
         factors = list(source.ops[:middle_index])
@@ -359,7 +428,10 @@ class SVD(Composition):
         super().__init__(*factors, use_buffers=use_buffers)
         new_is_eig = bool(
             data['is_eig']
-            and _gram_operators_equal(G_X, G_Y)
+            and (
+                _gram_operators_equal(G_X, G_Y)
+                or (self.as_eig and same_domain_hilbert)
+            )
             and np.isclose(U_scale, V_scale)
         )
         self.label_as_svd(
@@ -368,6 +440,8 @@ class SVD(Composition):
             G_Y=G_Y,
             is_eig=new_is_eig,
         )
+        if new_is_eig:
+            self.declare_as_self_adjoint(check=False)
 
     def _init_numerical(
         self,
@@ -397,6 +471,7 @@ class SVD(Composition):
             for name, operator in (
                 ('forward operator', self.original_operator),
                 ('domain Gram operator', self.h_domain.gram),
+                ('inverse domain Gram operator', self.h_domain.gram_inv),
                 ('codomain Gram operator', self.h_codomain.gram),
             ):
                 test_vector = operator.domain.randn()
@@ -416,12 +491,19 @@ class SVD(Composition):
                     ))
 
         L_X = _cholesky_factor(self.h_domain)
-        L_Y = _cholesky_factor(self.h_codomain)
-        transformed = Composition(
-            L_Y.adjoint,
-            self.original_operator,
-            L_X,
-        )
+        if self.as_eig:
+            transformed = Composition(
+                L_X.inverse,
+                self.original_operator,
+                L_X.adjoint.inverse,
+            )
+        else:
+            L_Y = _cholesky_factor(self.h_codomain)
+            transformed = Composition(
+                L_Y.adjoint,
+                self.original_operator,
+                L_X.adjoint.inverse,
+            )
         scipy_operator = _as_scipy_operator(transformed)
         minimum_dimension = min(scipy_operator.shape)
 
@@ -433,10 +515,16 @@ class SVD(Composition):
 
         if k is None:
             matrix = _assemble_matrix(transformed)
-            left_vectors, singular_values, right_adjoint = np.linalg.svd(
-                matrix,
-                full_matrices=False,
-            )
+            if self.as_eig:
+                eigenvalues, right_vectors = np.linalg.eigh(matrix)
+                left_vectors = right_vectors
+                singular_values = eigenvalues
+                right_adjoint = right_vectors.conj().T
+            else:
+                left_vectors, singular_values, right_adjoint = np.linalg.svd(
+                    matrix,
+                    full_matrices=False,
+                )
         else:
             if isinstance(k, (bool, np.bool_)) or not isinstance(
                     k, (int, np.integer)):
@@ -446,7 +534,7 @@ class SVD(Composition):
             k = int(k)
             maximum_k = (
                 minimum_dimension
-                if solver == 'propack'
+                if solver == 'propack' and not self.as_eig
                 else minimum_dimension - 1
             )
             if not 1 <= k <= maximum_k:
@@ -454,36 +542,61 @@ class SVD(Composition):
                     f"For solver={solver!r}, k must lie in [1, {maximum_k}]. "
                     f"Got k={k}."
                 ))
-            svds_kwargs = {
-                'k': k,
-                'which': which,
-                'solver': solver,
-                'tol': tol,
-                'maxiter': maxiter,
-                'ncv': ncv,
-                'v0': v0,
-                'options': options,
-            }
-            if rng is not None:
-                svds_kwargs['rng'] = rng
-            try:
-                left_vectors, singular_values, right_adjoint = svds(
+            if self.as_eig:
+                singular_values, right_vectors = eigsh(
                     scipy_operator,
-                    **svds_kwargs,
+                    k=k,
+                    which=which,
+                    tol=tol,
+                    maxiter=maxiter,
+                    ncv=ncv,
+                    v0=v0,
                 )
-            except TypeError as error:
-                # SciPy versions predating the SPEC-007 transition expose
-                # ``random_state`` instead of ``rng``.
-                if 'rng' not in svds_kwargs:
-                    raise
-                svds_kwargs['random_state'] = svds_kwargs.pop('rng')
+                left_vectors = right_vectors
+                right_adjoint = right_vectors.conj().T
+            else:
+                svds_kwargs = {
+                    'k': k,
+                    'which': which,
+                    'solver': solver,
+                    'tol': tol,
+                    'maxiter': maxiter,
+                    'ncv': ncv,
+                    'v0': v0,
+                    'options': options,
+                }
+                if rng is not None:
+                    svds_kwargs['rng'] = rng
                 try:
                     left_vectors, singular_values, right_adjoint = svds(
                         scipy_operator,
                         **svds_kwargs,
                     )
-                except TypeError:
-                    raise error
+                except TypeError as error:
+                    # SciPy versions predating the SPEC-007 transition expose
+                    # ``random_state`` instead of ``rng``.
+                    if 'rng' not in svds_kwargs:
+                        raise
+                    svds_kwargs['random_state'] = svds_kwargs.pop('rng')
+                    try:
+                        left_vectors, singular_values, right_adjoint = svds(
+                            scipy_operator,
+                            **svds_kwargs,
+                        )
+                    except TypeError:
+                        raise error
+
+        if self.as_eig and singular_values.size:
+            negative_tolerance = (
+                max(scipy_operator.shape)
+                * np.finfo(np.asarray(singular_values).dtype).eps
+                * max(1., float(np.max(np.abs(singular_values))))
+            )
+            if np.min(singular_values) < -negative_tolerance:
+                raise ValueError(Errors.value_error(
+                    "Spectral self-adjoint regularization requires a "
+                    "positive-semidefinite operator."
+                ))
 
         order = np.argsort(singular_values)[::-1]
         singular_values = np.asarray(singular_values)[order]
@@ -519,113 +632,690 @@ class SVD(Composition):
             domain=reduced_space,
             codomain=transformed.domain,
         )
-        V = Composition(L_Y.adjoint.inverse, V_0)
-        U = Composition(L_X.adjoint.inverse, U_0)
+        U = Composition(L_X, U_0)
+        V = U if self.as_eig else Composition(L_Y.adjoint.inverse, V_0)
         M = PtwMultiplication(reduced_space, singular_values)
 
         super().__init__(V, M, U.adjoint, use_buffers=use_buffers)
         middle_index = self.ops.index(M) + 1
         self.label_as_svd(
             middle_index,
-            G_X=self.h_domain.gram,
+            G_X=self.h_domain.gram_inv,
             G_Y=self.h_codomain.gram,
-            is_eig=False,
+            is_eig=self.as_eig,
         )
+        if self.as_eig:
+            self.declare_as_self_adjoint(check=False)
 
-class Spectral(RegSolver):
+def _iteration_count(k: int) -> int:
+    if isinstance(k, (bool, np.bool_)) or not isinstance(
+            k, (int, np.integer)):
+        raise TypeError(Errors.type_error("k must be a non-negative integer."))
+    if k < 0:
+        raise ValueError(Errors.value_error("k must be non-negative."))
+    return int(k)
 
-    filters = {
-                'Tikhonov': {'q': lambda lam,alpha : 1. / (lam + alpha),
-                             'r': lambda lam,alpha : alpha / (lam + alpha)
-                     },
-                'Spectral_CutOff': {'q': lambda lam,alpha : (1./lam if lam>=alpha else 0.),
-                                    'r': lambda lam,alpha : (1 if lam<alpha else 0.)
-                                    }
-              }
 
-    def __init__(self,
-                 setting: Setting,
-                 data:Vector | None  = None,
-                 init:Vector | None  = None,
-                 logging_level:int | str = "INFO",
-                 filter = 'Spectral_CutOff',
-                 regpar = 1. 
-            ) -> None:
-        out, par = Spectral.check_applicability(
-                    setting,
-                    user_data=data,
-                    user_init=init,
-                )
+def _q_tikhonov(lam: float, alpha: float, **kwargs: Any) -> float:
+    return 1. / (lam + alpha)
+
+
+def _q_iterated_tikhonov(
+    lam: float,
+    alpha: float,
+    *,
+    k: int = 1,
+    **kwargs: Any,
+) -> float:
+    k = _iteration_count(k)
+    if k == 0:
+        return 0.
+    return (1. - (alpha / (lam + alpha)) ** k) / lam
+
+
+def _q_showalter(lam: float, alpha: float, **kwargs: Any) -> float:
+    return -np.expm1(-lam / alpha) / lam
+
+
+def _q_landweber(
+    lam: float,
+    alpha: float,
+    *,
+    k: int = 1,
+    mu: float | None = None,
+    **kwargs: Any,
+) -> float:
+    k = _iteration_count(k)
+    if k == 0:
+        return 0.
+    if mu is None:
+        mu = 1. / (alpha * k)
+    if isinstance(mu, (bool, np.bool_)) or not isinstance(mu, Real):
+        raise TypeError(Errors.type_error("mu must be a positive real number."))
+    if mu <= 0:
+        raise ValueError(Errors.value_error("mu must be positive."))
+    return (1. - (1. - float(mu) * lam) ** k) / lam
+
+
+def _q_lardy(
+    lam: float,
+    alpha: float,
+    *,
+    k: int = 1,
+    **kwargs: Any,
+) -> float:
+    k = _iteration_count(k)
+    if k == 0:
+        return 0.
+    # The table indexes the filter by alpha/k. Therefore the alpha occurring
+    # in the iterated-Tikhonov formula equals k times the supplied regpar.
+    base_alpha = k * alpha
+    return (1. - (base_alpha / (lam + base_alpha)) ** k) / lam
+
+
+def _q_spectral_cutoff(lam: float, alpha: float, **kwargs: Any) -> float:
+    return 1. / lam if lam >= alpha else 0.
+
+
+def _q_seidman(lam: float, alpha: float, **kwargs: Any) -> float:
+    return min(1. / lam, 1. / np.sqrt(lam * alpha))
+
+
+def _q_truncated_svd_2(lam: float, alpha: float, **kwargs: Any) -> float:
+    return min(1. / lam, 1. / alpha)
+
+
+def _filter_entry(
+    q: Callable[..., float],
+    C_r: float,
+    C_q: float | str,
+) -> dict[str, Any]:
+    """Construct one filter entry and derive ``r`` from ``q``."""
+    return {
+        'q': q,
+        'r': lambda lam, alpha, **parameters: (
+            1. - lam * q(lam, alpha, **parameters)
+        ),
+        'C_r': C_r,
+        'C_q': C_q,
+    }
+
+
+_FILTERS = {
+    'Tikhonov': _filter_entry(_q_tikhonov, 1., .5),
+    'Iterated_Tikhonov': _filter_entry(
+        _q_iterated_tikhonov, 1., '<= sqrt(k)'
+    ),
+    'Showalter': _filter_entry(_q_showalter, 1., 1.),
+    'Landweber': _filter_entry(_q_landweber, 1., 1.),
+    'Lardy': _filter_entry(_q_lardy, 1., 1.),
+    'Spectral_CutOff': _filter_entry(_q_spectral_cutoff, 1., 1.),
+    'Seidman': _filter_entry(_q_seidman, 1., 1.),
+    'Truncated_SVD_2': _filter_entry(_q_truncated_svd_2, 1., 1.),
+}
+# Common spellings are aliases, not separate filter definitions.
+_FILTERS['TSVD'] = _FILTERS['Spectral_CutOff']
+_FILTERS['Truncated_SVD'] = _FILTERS['Spectral_CutOff']
+_FILTERS['Modified_TSVD'] = _FILTERS['Truncated_SVD_2']
+
+
+def _is_labelled_svd(op: Operator, *, require_eig: bool = False) -> bool:
+    return bool(
+        isinstance(op, Composition)
+        and op.is_svd
+        and (not require_eig or op.svd_data['is_eig'])
+    )
+
+
+class _SpectralFilterMixin:
+    """Shared filter resolution and coefficient validation."""
+
+    filters = _FILTERS
+
+    def _set_filter(
+        self,
+        filter: str | Callable[[float], float],
+        regpar: float,
+        filter_parameters: dict[str, Any] | None,
+    ) -> None:
+        if isinstance(regpar, (bool, np.bool_)) or not isinstance(regpar, Real):
+            raise TypeError(Errors.type_error(
+                "regpar must be a positive real number."
+            ))
+        if regpar <= 0:
+            raise ValueError(Errors.value_error("regpar must be positive."))
+        self.regpar = float(regpar)
+        parameters = (
+            {} if filter_parameters is None else dict(filter_parameters)
+        )
+        self.filter_parameters = parameters
+
+        if isinstance(filter, str):
+            if filter not in self.filters:
+                raise ValueError(Errors.value_error(
+                    f"Unknown spectral filter {filter!r}. Known filters are "
+                    f"{tuple(self.filters)}."
+                ))
+            self.filter_name = filter
+            filter_function = self.filters[filter]['q']
+            self.q = lambda lam: filter_function(
+                lam, self.regpar, **self.filter_parameters
+            )
+        elif callable(filter):
+            if parameters:
+                raise ValueError(Errors.value_error(
+                    "filter_parameters are only used with named filters; "
+                    "close custom parameters over the callable instead."
+                ))
+            self.filter_name = getattr(filter, '__name__', '<callable>')
+            if isinstance(filter, np.ufunc):
+                if filter.nin == 1:
+                    self.q = filter
+                elif filter.nin == 2:
+                    self.q = lambda lam: filter(lam, self.regpar)
+                else:
+                    raise TypeError(Errors.type_error(
+                        "A custom q-ufunc must have one or two inputs."
+                    ))
+            else:
+                try:
+                    signature = inspect.signature(filter)
+                except (TypeError, ValueError):
+                    signature = None
+            if not isinstance(filter, np.ufunc) and signature is not None:
+                try:
+                    signature.bind(1., self.regpar)
+                except TypeError:
+                    try:
+                        signature.bind(1.)
+                    except TypeError as error:
+                        raise TypeError(Errors.type_error(
+                            "A custom q-function must accept either lambda "
+                            "or (lambda, regpar)."
+                        )) from error
+                    self.q = filter
+                else:
+                    self.q = lambda lam: filter(lam, self.regpar)
+            elif not isinstance(filter, np.ufunc):
+                # Some extension callables expose no inspectable signature.
+                # Treat them as closed one-argument q-functions.
+                self.q = filter
+        else:
+            raise TypeError(Errors.type_error(
+                "filter must be a registered filter name or a callable q."
+            ))
+
+        # Residual functions are never independent input: r(t)=1-t*q(t).
+        self.r = lambda lam: 1. - lam * self.q(lam)
+
+    def _filter_coefficients(
+        self,
+        spectral_values: np.ndarray,
+        prefactor: Callable[[float], float],
+        q_argument: Callable[[float], float] = lambda value: value,
+    ) -> np.ndarray:
+        values = []
+        for value in np.asarray(spectral_values).reshape(-1):
+            coefficient = np.real_if_close(
+                prefactor(float(value)) * self.q(q_argument(float(value)))
+            )
+            if np.ndim(coefficient) != 0:
+                raise TypeError(Errors.type_error(
+                    "A spectral q-function must return a scalar for a "
+                    "scalar argument."
+                ))
+            coefficient = coefficient.item()
+            if isinstance(coefficient, complex) or not np.isfinite(coefficient):
+                raise ValueError(Errors.value_error(
+                    "The spectral q-function returned a non-real or "
+                    f"non-finite value at {value!r}."
+                ))
+            values.append(float(coefficient))
+        return np.asarray(values)
+
+
+class Spectral(_SpectralFilterMixin, RegSolver):
+    r"""Spectral regularization of a linear Hilbert-space equation.
+
+    For :math:`T=VMU^*`, :math:`\lambda=M^2`, and a filter function
+    :math:`q_\alpha`, the regularized inverse is
+
+    .. math::
+        R_\alpha=G_X^{-1}U\,M q_\alpha(M^2)V^*G_Y.
+
+    Starting at ``init``, the one-step solver returns
+    :math:`x_0+R_\alpha(data-Tx_0)`. The residual function is always derived
+    from the filter by :math:`r_\alpha(t)=1-tq_\alpha(t)`.
+
+    For a codomain-free setting, ``data`` may be arbitrary observational data
+    accepted by :meth:`Operator.adjoint_data`. The solver forms
+    :math:`T^*data`, delegates the computation to
+    :class:`Spectral_SelfAdjoint` with ``op.adjoint_eval`` as :math:`T^*T`,
+    and never allocates a vector in the original codomain.
+
+    ``filter`` may be a key in :attr:`filters` or a callable accepting either
+    one scalar spectral value or ``(spectral_value, regpar)``. Further custom
+    parameters should be closed over the callable.
+    Named filters are ``Tikhonov``, ``Iterated_Tikhonov``, ``Showalter``,
+    ``Landweber``, ``Lardy``, ``Spectral_CutOff`` (truncated SVD), ``Seidman``,
+    and ``Truncated_SVD_2``. Iterative filters accept ``k`` through
+    ``filter_parameters``; Landweber additionally accepts ``mu``. If ``mu``
+    is omitted, :math:`\mu=1/(\alpha k)` is used. For Lardy, ``regpar`` is the
+    filter index :math:`\alpha/k` from the table.
+
+    The registered filters are
+
+    .. math::
+        q_\alpha^{\rm Tik}(\lambda)
+            &= (\lambda+\alpha)^{-1},\\
+        q_\alpha^{\rm itTik}(\lambda)
+            &= \frac{(\lambda+\alpha)^k-\alpha^k}
+                    {\lambda(\lambda+\alpha)^k},\\
+        q_\alpha^{\rm Show}(\lambda)
+            &= \frac{1-e^{-\lambda/\alpha}}{\lambda},\\
+        q_{1/(\mu k)}^{\rm LW}(\lambda)
+            &= \mu\sum_{j=0}^{k-1}(1-\mu\lambda)^j,\\
+        q_{\alpha/k}^{\rm Lardy}(\lambda)
+            &= \frac{(\lambda+\alpha)^k-\alpha^k}
+                    {\lambda(\lambda+\alpha)^k}.
+
+    The remaining filters use respectively
+    :math:`\lambda^{-1}\mathbf 1_{[\alpha,\infty)}`,
+    :math:`\min(\lambda^{-1},(\lambda\alpha)^{-1/2})`, and
+    :math:`\min(\lambda^{-1},\alpha^{-1})`.
+    """
+
+    def __init__(
+        self,
+        setting: Setting,
+        data: ReadOnlyVector | ObsDataT | None = None,
+        init: ReadOnlyVector | None = None,
+        logging_level: int | str = "INFO",
+        filter: str | Callable[[float], float] = 'Spectral_CutOff',
+        regpar: float = 1.,
+        filter_parameters: dict[str, Any] | None = None,
+        svd_options: dict[str, Any] | None = None,
+    ) -> None:
+        out, par = self.check_applicability(
+            setting,
+            user_data=data,
+            user_init=init,
+        )
         if not out['applicable']:
-            raise ValueError('Spectral methods are not applicable to this setting. '+out['info'])        
+            raise ValueError(Errors.value_error(
+                'Spectral methods are not applicable to this setting. '
+                + out['info']
+            ))
         super().__init__(setting)
         self.log.setLevel(logging_level)
-        
         self.data = par['data']
         self.init = par['init']
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Spectral regularization requires data."
+            ))
+        if not setting.codomain_free and self.data not in self.op.codomain:
+            raise TypeError(Errors.not_in_vecsp(
+                self.data, self.op.codomain, vec_name='data',
+                space_name='codomain'
+            ))
 
-        self.SVD = SVD(setting)
-        sv = self.SVD.singular_values
-        self.spec_domain = self.SVD.U.domain 
-        filtered_sv = self.spec_domain.empty()
-        self.aux_spec = self.spec_domain.empty()
-        self.q = Spectral.filters[filter]['q']
-        self.spec_domain.set_coefficients(
-            filtered_sv,
-            (
-                sigma * self.q(sigma**2, regpar) 
-                for sigma in self.spec_domain.iter_coefficients(sv))
+        self._set_filter(filter, regpar, filter_parameters)
+        if setting.codomain_free:
+            self.backprop_data = self.op.domain.empty()
+            self.op.adjoint_data(self.data, out=self.backprop_data)
+            self._normal_setting = Setting(
+                self.op.adjoint_eval,
+                self.penalty,
+                self.penalty,
+                codomain_free=True,
+                explicitDataWarning=False,
+                logging_level=logging_level,
             )
-        self.filtered_sv_op = PtwMultiplication(self.spec_domain,filtered_sv) 
-        self.regpar = regpar
+            self._self_adjoint_method = Spectral_SelfAdjoint(
+                self._normal_setting,
+                data=self.backprop_data,
+                init=self.init,
+                logging_level=logging_level,
+                filter=filter,
+                regpar=regpar,
+                filter_parameters=filter_parameters,
+                svd_options=svd_options,
+            )
+            self.SVD = self._self_adjoint_method.SVD
+            self.spec_domain = self._self_adjoint_method.spec_domain
+            self.filtered_sv_op = self._self_adjoint_method.filtered_sv_op
+            self.x = self._self_adjoint_method.x
+            self.y = None
+            return
+
+        self.SVD = SVD(setting, **({} if svd_options is None else svd_options))
+        self.spec_domain = self.SVD.U.domain
+        coefficients = self._filter_coefficients(
+            self.SVD.singular_values,
+            lambda sigma: sigma,
+            lambda sigma: sigma ** 2,
+        )
+        self.filtered_sv_op = PtwMultiplication(
+            self.spec_domain, coefficients
+        )
+        self._regularized_inverse = (
+            self.h_domain.gram_inv
+            * self.SVD.U
+            * self.filtered_sv_op
+            * self.SVD.V.adjoint
+            * self.h_codomain.gram
+        )
+
         self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
         self.y = self.op.codomain.empty()
-        self.op.domain.copyto(self.x,self.init)
-        setting.op(self.x, out=self.y)
+        self.op(self.x, out=self.y)
 
-    check_applicability = staticmethod(check_Hilbert_applicability_linear)
+    @staticmethod
+    def check_applicability(
+        setting: Setting,
+        user_data: ReadOnlyVector | ObsDataT | None = None,
+        user_init: ReadOnlyVector | None = None,
+        **kwargs: Any,
+    ) -> tuple[dict, dict]:
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            user_data=user_data,
+            user_init=user_init,
+            **kwargs,
+        )
+        data = par.get('data')
+        if (
+            not setting.codomain_free
+            and data is not None
+            and data not in setting.op.codomain
+        ):
+            out['info'] += 'Data do not belong to the operator codomain. '
+        out['applicable'] = out['info'] == ''
+        decomposition_op = (
+            setting.op.adjoint_eval
+            if setting.codomain_free else setting.op
+        )
+        if out['applicable'] and not _is_labelled_svd(
+            decomposition_op,
+            require_eig=setting.codomain_free,
+        ):
+            out['info'] = 'requires numerical SVD. '
+        return out, par
 
-    def _next(self):
-        """
-        This method is included to allow to use spectral solvers in the same way as 
-        iterative methods. The solver is marked as converged after one iteration.
-        """
-        self.y *= -1
-        self.y += self.data
-        self.h_codomain.gram(self.y, out=self.y)
-        self.SVD.V.adjoint(self.y, out = self.aux_spec)
-        self.filtered_sv_op(self.aux_spec, out = self.aux_spec)
-        self.SVD.U(self.aux_spec, out = self.x)
-        self.h_domain.gram(self.x, out=self.x)
-        self.x += self.init
+    def _next(self) -> None:
+        if self.setting.codomain_free:
+            self._self_adjoint_method.next()
+            self.x = self._self_adjoint_method.x
+            self.y = None
+            self.converge()
+            return
+        residual = self.op.codomain.empty()
+        self.op(self.init, out=residual)
+        residual *= -1
+        residual += self.data
+        correction = self._regularized_inverse(residual)
+        self.op.domain.copyto(self.x, self.init)
+        self.x += correction
         self.op(self.x, out=self.y)
         self.converge()
 
     def regularized_inverse(self) -> Operator:
-        """ The regularized inverse of the forward operator T
+        """Return the regularized inverse.
+
+        For a codomain-free setting this is the inverse filter for the normal
+        operator, mapping the already backpropagated data to the solution.
         """
-        return (self.h_domain.gram_inv 
-                * self.SVD.U 
-                * self.filtered_sv_op 
-                * self.SVD.V.adjoint 
-                * self.h_codomain.gram
-        )
+        if self.setting.codomain_free:
+            return self._self_adjoint_method.regularized_inverse()
+        return self._regularized_inverse
 
     def residual_op(self) -> Operator:
-        """ The operator Identity - regularized_inverse * T.
-        Applied to a vector in the domain of the forward operator T it yields  
-        the bias of the estimator implemented by the method. 
-        """
-        rlambda = self.spec_domain.empty()
-        self.spec_domain.set_coefficients(
-                                self.aux_spec,
-                                (
-                                    self.q(lam,self.regpar)
-                                    for lam in self.spec_domain.iter_coefficients(self.aux_spec)
-                                ),
-                            )        
-        return (self.h_domain.gram_inv 
-                * self.SVD.U
-                * PtwMultiplication(self.spec_domain,rlambda)
-                * self.SVD.U.adjoint
-                )
+        """Return :math:`I-R_\alpha T`, the estimator's bias operator."""
+        if self.setting.codomain_free:
+            return self._self_adjoint_method.residual_op()
+        return self.op.domain.identity - self._regularized_inverse * self.op
+
+
+class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
+    r"""Spectral regularization for a self-adjoint equation :math:`Ax=b`.
+
+    If :math:`A=U\operatorname{diag}(\lambda)U^*` and
+    :math:`U^*G_X^{-1}U=I`, this solver uses
+
+    .. math::
+        R_\alpha=Uq_\alpha(M)U^*G_X^{-1},\qquad
+        x=x_0+R_\alpha(b-Ax_0).
+
+    The decomposition is reused when the operator carries an eigenvalue/SVD
+    label. Otherwise a numerical positive-semidefinite eigenvalue
+    decomposition is computed. Codomain-free settings are supported because
+    the codomain Hilbert structure is canonically interpreted as :math:`X^*`.
+    """
+
+    def __init__(
+        self,
+        setting: Setting,
+        data: ReadOnlyVector | None = None,
+        init: ReadOnlyVector | None = None,
+        logging_level: int | str = "INFO",
+        filter: str | Callable[[float], float] = 'Tikhonov',
+        regpar: float = 1.,
+        filter_parameters: dict[str, Any] | None = None,
+        svd_options: dict[str, Any] | None = None,
+    ) -> None:
+        out, par = self.check_applicability(
+            setting,
+            user_data=data,
+            user_init=init,
+        )
+        if not out['applicable']:
+            raise ValueError(Errors.value_error(
+                'Self-adjoint spectral methods are not applicable to this '
+                'setting. ' + out['info']
+            ))
+        super().__init__(setting)
+        self.log.setLevel(logging_level)
+        self.data = par['data']
+        self.init = par['init']
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Self-adjoint spectral regularization requires data."
+            ))
+        if self.data not in self.op.codomain:
+            raise TypeError(Errors.not_in_vecsp(
+                self.data, self.op.codomain, vec_name='data',
+                space_name='codomain'
+            ))
+
+        self._set_filter(filter, regpar, filter_parameters)
+        decomposition_options = (
+            {} if svd_options is None else dict(svd_options)
+        )
+        if 'as_eig' in decomposition_options:
+            raise ValueError(Errors.value_error(
+                "svd_options must not override as_eig for a self-adjoint "
+                "spectral method."
+            ))
+        self.SVD = SVD(setting, as_eig=True, **decomposition_options)
+        self.spec_domain = self.SVD.U.domain
+        coefficients = self._filter_coefficients(
+            self.SVD.singular_values,
+            lambda eigenvalue: 1.,
+        )
+        self.filtered_sv_op = PtwMultiplication(
+            self.spec_domain, coefficients
+        )
+        self._regularized_inverse = (
+            self.SVD.U
+            * self.filtered_sv_op
+            * self.SVD.U.adjoint
+            * self.h_domain.gram_inv
+        )
+
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        self.y = self.op.codomain.empty()
+        self.op(self.x, out=self.y)
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
+        **kwargs: Any,
+    ) -> tuple[dict, dict]:
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            user_data=user_data,
+            user_init=user_init,
+            **kwargs,
+        )
+        if not (
+            setting.op.self_adjoint
+            or _is_labelled_svd(setting.op, require_eig=True)
+        ):
+            out['info'] += 'Operator is not self-adjoint. '
+        data = par.get('data')
+        if data is not None and data not in setting.op.codomain:
+            out['info'] += 'Data do not belong to the operator codomain. '
+        out['applicable'] = out['info'] == ''
+        if out['applicable'] and not _is_labelled_svd(
+                setting.op, require_eig=True):
+            out['info'] = 'requires numerical SVD. '
+        return out, par
+
+    def _next(self) -> None:
+        residual = self.op.codomain.empty()
+        self.op(self.init, out=residual)
+        residual *= -1
+        residual += self.data
+        correction = self._regularized_inverse(residual)
+        self.op.domain.copyto(self.x, self.init)
+        self.x += correction
+        self.op(self.x, out=self.y)
+        self.converge()
+
+    def regularized_inverse(self) -> Operator:
+        """Return :math:`Uq_\alpha(M)U^*G_X^{-1}`."""
+        return self._regularized_inverse
+
+    def residual_op(self) -> Operator:
+        """Return :math:`I-R_\alpha A`."""
+        return self.op.domain.identity - self._regularized_inverse * self.op
+
+
+class Spectral_Tikhonov(Spectral):
+    """Spectral Tikhonov regularization."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Tikhonov', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class Spectral_IteratedTikhonov(Spectral):
+    """Spectral iterated Tikhonov regularization."""
+
+    def __init__(
+        self, setting: Setting, regpar: float = 1., k: int = 1, *,
+        svd_options=None
+    ):
+        super().__init__(
+            setting, filter='Iterated_Tikhonov', regpar=regpar,
+            filter_parameters={'k': k}, svd_options=svd_options
+        )
+
+
+class Spectral_Showalter(Spectral):
+    """Showalter's spectral method."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Showalter', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class Spectral_Landweber(Spectral):
+    """Landweber's spectral filter."""
+
+    def __init__(
+        self, setting: Setting, regpar: float = 1., k: int = 1,
+        stepsize: float | None = None, *, svd_options=None
+    ):
+        super().__init__(
+            setting, filter='Landweber', regpar=regpar,
+            filter_parameters={'k': k, 'mu': stepsize},
+            svd_options=svd_options
+        )
+
+
+class Spectral_Lardy(Spectral):
+    """Lardy's spectral method."""
+
+    def __init__(
+        self, setting: Setting, regpar: float = 1., k: int = 1, *,
+        svd_options=None
+    ):
+        super().__init__(
+            setting, filter='Lardy', regpar=regpar,
+            filter_parameters={'k': k}, svd_options=svd_options
+        )
+
+
+class Spectral_CutOff(Spectral):
+    """Truncated singular-value decomposition (spectral cut-off)."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Spectral_CutOff', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class Spectral_Seidman(Spectral):
+    """Seidman's optimal spectral filtering."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Seidman', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class Spectral_TruncatedSVD2(Spectral):
+    """Continuous truncated-SVD filter ``min(1/lambda, 1/alpha)``."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Truncated_SVD_2', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class SpectralSelfAdjoint_Lavrentiev(Spectral_SelfAdjoint):
+    """Lavrentiev regularization of a positive self-adjoint operator."""
+
+    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+        super().__init__(
+            setting, filter='Tikhonov', regpar=regpar,
+            svd_options=svd_options
+        )
+
+
+class SpectralSelfAdjoint_Richardson(Spectral_SelfAdjoint):
+    """Richardson iteration represented by its spectral filter."""
+
+    def __init__(
+        self, setting: Setting, regpar: float = 1., k: int = 1,
+        mu: float | None = None, *, svd_options=None
+    ):
+        super().__init__(
+            setting, filter='Landweber', regpar=regpar,
+            filter_parameters={'k': k, 'mu': mu},
+            svd_options=svd_options
+        )
+
