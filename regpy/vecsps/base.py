@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
 __all__ = [
-    "ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum"
+    "Scalar", "ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum"
 ]
 
 
@@ -337,13 +337,20 @@ class TupleVector:
         return deepcopy(self)
     
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        cls = self.__class__
+        cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, deepcopy(v, memo))
+
+        for key, value in self.__dict__.items():
+            if key.startswith("__memoized_"):
+                continue
+            if key in self._no_pickle:
+                setattr(result, key, value)
+            else:
+                setattr(result, key, deepcopy(value, memo))
+
         return result
-    
+        
     def component_wise(self, method: Callable[[Vector], Vector]) -> Self:
         if not callable(method):
             raise TypeError(Errors.type_error(f"To apply a method componentwise to a TupleVector the method has to be a callable. {method} is not callable"))
@@ -417,6 +424,8 @@ class VectorSpaceBase:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
+            if k.startswith("__memoized_"):
+                continue
             if k in self._no_pickle:
                 setattr(result, k, v)
             else:
@@ -727,7 +736,7 @@ class VectorSpaceBase:
             raise NotImplementedError
         return self.type.logical_xor(x,y) 
 
-    def iter_basis(self) -> Iterator[Vector]:
+    def iter_basis(self) -> Iterator[ReadOnlyVector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same vector should be returned in each step and subsequently modified in-place. If you need
         the vector longer than that, perform a copy. In case of a complex vector space, after each
@@ -736,7 +745,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def __iter__(self) -> Iterator[Vector]:
+    def __iter__(self) -> Iterator[ReadOnlyVector]:
         return self.iter_basis()
     
     @property

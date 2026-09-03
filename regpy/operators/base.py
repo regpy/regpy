@@ -379,6 +379,8 @@ class Operator:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
+            if k.startswith("__memoized_"):
+                continue            
             if k in self._consts:
                 setattr(result, k, v)
             else:

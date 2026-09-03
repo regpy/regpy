@@ -764,7 +764,7 @@ class Functional:
         if isinstance(h, operators.Operator) and h.linear and h.domain == h.codomain == self.domain:
             return h
         else:
-            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
+            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
 
     def gradient_as_operator(self) -> operators.Operator:
         r"""Return the functional's gradient as a nonlinear operator.

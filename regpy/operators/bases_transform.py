@@ -179,7 +179,7 @@ class BasisTransform(Operator):
         )
 
 
-def chebyshev_basis(coef_nr,eval_domain):
+def chebyshev_basis(coef_nr,eval_domain) -> BasisTransform:
     r"""Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -217,7 +217,7 @@ def chebyshev_basis(coef_nr,eval_domain):
         bases.append(B_i)
     return BasisTransform(coef_domain,eval_domain,bases)
 
-def legendre_basis(coef_nr,eval_domain):
+def legendre_basis(coef_nr,eval_domain) -> BasisTransform:
     r"""Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
 
@@ -256,7 +256,7 @@ def legendre_basis(coef_nr,eval_domain):
         bases.append(B_i)
     return BasisTransform(coef_domain,eval_domain,bases)
 
-def bspline_basis(k,t,dim=1,add_points=10):
+def bspline_basis(k,t,dim=1,add_points=10) -> BasisTransform:
     r"""Implements a B-Spline basis in an arbitrary Dimension (given by dim)
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.

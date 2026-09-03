@@ -9,7 +9,7 @@ from regpy.vecsps import ReadOnlyVector, Vector
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
-from ..linear.tikhonov import Lavrentiev, TikhonovCG
+from ..linear import LavrentievCG, TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 
