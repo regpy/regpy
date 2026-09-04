@@ -306,6 +306,28 @@ class Setting:
         self._regpar=new_regpar
         self._init_method_dictionary()
 
+    @regpar.deleter
+    def regpar(self) -> None:
+        r"""Remove the regularization parameter.
+
+        This turns a primal Tikhonov setting into the corresponding
+        non-Tikhonov setting and refreshes its solver dictionary.  Internally,
+        a missing regularization parameter is represented by ``None`` so that
+        :attr:`is_tikhonov` and later assignments to :attr:`regpar` continue
+        to work normally.
+
+        A regularization parameter cannot be removed from a dual setting,
+        because such settings are defined only together with their associated
+        primal Tikhonov setting.
+        """
+        if self._primal_setting is not None:
+            raise RuntimeError(Errors.runtime_error(
+                "The regularization parameter cannot be removed from a dual "
+                "setting."
+            ))
+        self._regpar = None
+        self._init_method_dictionary()
+
     def _init_method_dictionary(self) -> None:
         """Initialize the solver dictionary for one of the three supported setting kinds."""
         if not hasattr(self, '_regpar') or not hasattr(self, '_primal_setting'):
