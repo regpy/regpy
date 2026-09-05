@@ -194,7 +194,7 @@ class TikhonovCG(RegSolver):
                 self._delta_x -= self.solver.x
                 true_error = self.solver.setting.h_domain.norm(self._delta_x)
                 self.history_dict["rel_err_x_true"].append(
-                    true_error / np.sqrt(self.sq_norm_x)
+                    np.inf if self.sq_norm_x == 0 else true_error / np.sqrt(self.sq_norm_x)
                 )
             return valx < self.tolexpr
 
@@ -275,7 +275,7 @@ class TikhonovCG(RegSolver):
                 self._delta_y -= self.solver.y
                 true_error = self.solver.setting.h_codomain.norm(self._delta_y)
                 self.history_dict["rel_err_y_true"].append(
-                    true_error / self.norm_y
+                    np.inf if self.norm_y == 0 else true_error / self.norm_y
                 )
             return valy < self.tolexpr
 
@@ -583,13 +583,18 @@ class TikhonovCG(RegSolver):
         return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stoprule if other_stoprule else \
                CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) 
 
-    def run(self, stoprule=None):
+    def run(self, 
+            stoprule: StopRule | None = None, 
+            max_it: int | None = None):
         """ Runs the method with the stoprule specified by the parameters of the constructor.
 
         Parameters:
         stoprule: StopRule, optional
             Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
+        max_it: int, optional
+            Defaults to None. Otherwise, the given maximal number of iterations is used instead of the internal
         """
+        self.max_it = max_it if max_it is not None else self.max_it
         if self.setting.codomain_free:
             result = self._lavrentiev.run(stoprule)
             self.iteration_step_nr = self._lavrentiev.iteration_step_nr
