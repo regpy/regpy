@@ -88,7 +88,47 @@ class Solver:
         while self.next():
             yield self.x, self.y
 
-    def while_(self, stoprule:StopRule = NoneRule()):
+    @staticmethod
+    def _add_max_iterations(
+        stoprule: StopRule | None,
+        max_it: int | None,
+        *,
+        while_type: bool,
+    ) -> StopRule:
+        """Return ``stoprule`` augmented by an iteration limit."""
+        if stoprule is None:
+            stoprule = NoneRule()
+        elif not isinstance(stoprule, StopRule):
+            raise TypeError(Errors.type_error(
+                f'stoprule must be a StopRule or None. Got {stoprule!r}.'
+            ))
+
+        if max_it is None:
+            return stoprule
+        if isinstance(max_it, bool) or not isinstance(max_it, int):
+            raise TypeError(Errors.type_error(
+                f'max_it must be an integer or None. Got {max_it!r}.'
+            ))
+        if max_it < 0:
+            raise ValueError(Errors.value_error(
+                f'max_it must be non-negative. Got {max_it}.'
+            ))
+
+        from regpy.stoprules import CountIterations
+
+        count_rule = CountIterations(
+            max_iterations=max_it,
+            while_type=while_type,
+        )
+        if isinstance(stoprule, NoneRule):
+            return count_rule
+        return stoprule + count_rule
+
+    def while_(
+        self,
+        stoprule: StopRule | None = None,
+        max_it: int | None = None,
+    ):
         r"""Generator that runs the solver with the given stoprule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stoprule triggers.
@@ -98,13 +138,28 @@ class Solver:
         stoprule : regpy.stoprules.StopRule, optional
             The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next`.
+        max_it : int or None, optional
+            Maximum number of iterations. If provided, a
+            :class:`regpy.stoprules.CountIterations` rule is combined with
+            ``stoprule``. Must be non-negative. Defaults to ``None``.
 
         Yields
         ------
-        tuple of arrays
+        tuple of Vectors
             The (x, y) pair of the current iteration, or the solution chosen by
             the stoprule.
+
+        Raises
+        ------
+        TypeError
+            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            integer or ``None``.
+        ValueError
+            If ``max_it`` is negative.
         """
+        stoprule = self._add_max_iterations(
+            stoprule, max_it, while_type=True
+        )
         stoprule._complete_init_with_solver(self)
         while not stoprule.stop() and self.next(): 
             yield self.x, self.y
@@ -112,7 +167,11 @@ class Solver:
  
 
 
-    def until(self, stoprule:StopRule = NoneRule()):
+    def until(
+        self,
+        stoprule: StopRule | None = None,
+        max_it: int | None = None,
+    ):
         r"""Generator that runs the solver with the given stoprule. This is a convenience method
         that implements a simple generator loop running the solver until it either converges or the
         stoprule triggers.
@@ -122,13 +181,35 @@ class Solver:
         stoprule : regpy.stoprules.StopRule, optional
             The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next`.
+        max_it : int or None, optional
+            Maximum number of iterations. If provided, a
+            :class:`regpy.stoprules.CountIterations` rule is combined with
+            ``stoprule``. Must be non-negative. Defaults to ``None``.
 
         Yields
         ------
         tuple of Vectors
             The (x, y) pair of the current iteration, or the solution chosen by
             the stoprule.
+
+        Raises
+        ------
+        TypeError
+            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            integer or ``None``.
+        ValueError
+            If ``max_it`` is negative or zero. Since :meth:`until` always
+            performs an initial iteration, use :meth:`while_` or :meth:`run`
+            when zero iterations should be allowed.
         """
+        stoprule = self._add_max_iterations(
+            stoprule, max_it, while_type=False
+        )
+        if max_it == 0:
+            raise ValueError(Errors.value_error(
+                'until always performs at least one iteration and therefore '
+                'does not accept max_it=0. Use while_ or run instead.'
+            ))
         stoprule._complete_init_with_solver(self)
         self.next()
         yield self.x, self.y
@@ -137,9 +218,34 @@ class Solver:
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
-    def run(self, stoprule:StopRule = NoneRule()):
-        r"""Run the solver with the given stoprule. 
+    def run(
+        self,
+        stoprule: StopRule | None = None,
+        max_it: int | None = None,
+    ):
+        r"""Run the solver with the given stoprule.
+
+        Parameters
+        ----------
+        stoprule : regpy.stoprules.StopRule, optional
+            The stoprule to be used. If omitted, stopping will only be based
+            on convergence of the solver or ``max_it``.
+        max_it : int or None, optional
+            Maximum number of iterations. If provided, a
+            :class:`regpy.stoprules.CountIterations` rule is combined with
+            ``stoprule``. Must be non-negative. Defaults to ``None``.
+
+        Raises
+        ------
+        TypeError
+            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            integer or ``None``.
+        ValueError
+            If ``max_it`` is negative.
         """
+        stoprule = self._add_max_iterations(
+            stoprule, max_it, while_type=True
+        )
         for x, y in self.while_(stoprule):
             if not 'x' in locals(): 
                 # This happens if the stopping criterion is satisfied for the initial guess.
