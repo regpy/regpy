@@ -7,7 +7,7 @@ from regpy.util import Errors
 from regpy.vecsps import Vector, ReadOnlyVector
 from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity, Operator, ObsDataT
-from regpy.stoprules import CountIterations
+from regpy.stoprules import CountIterations, StopRule
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability_linear
@@ -592,16 +592,22 @@ class TikhonovCG(RegSolver):
         stoprule: StopRule, optional
             Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
         max_it: int, optional
-            Defaults to None. Otherwise, the given maximal number of iterations is used instead of the internal
+            Defaults to None. Otherwise, the given maximal number of
+            iterations is added to the internal stopping rule for this run.
         """
-        self.max_it = max_it if max_it is not None else self.max_it
         if self.setting.codomain_free:
-            result = self._lavrentiev.run(stoprule)
+            result = self._lavrentiev.run(
+                stoprule=stoprule,
+                max_it=max_it,
+            )
             self.iteration_step_nr = self._lavrentiev.iteration_step_nr
             self._sync_lavrentiev_state()
             return result[0], None
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(stoprule=self.stoprule)
+        return super().run(
+            stoprule=self.stoprule,
+            max_it=max_it,
+        )
         
     def get_convergence_histories(self):
         """ Yields the stoprule specified by the parameters of the constructor
@@ -1188,10 +1194,25 @@ class LavrentievCG(RegSolver):
         )
         return rule + other_stoprule if other_stoprule else rule
 
-    def run(self, stoprule=None):
-        """Run CG with the internal rule and an optional external rule."""
+    def run(
+        self,
+        stoprule: StopRule | None = None,
+        max_it: int | None = None,
+    ):
+        """Run CG with its internal rule and optional external limits.
+
+        Parameters
+        ----------
+        stoprule : StopRule or None, optional
+            An additional stopping rule combined with the internal rule.
+        max_it : int or None, optional
+            An additional maximum number of iterations for this run.
+        """
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(stoprule=self.stoprule)
+        return super().run(
+            stoprule=self.stoprule,
+            max_it=max_it,
+        )
 
     def get_convergence_histories(self):
         """Return histories recorded by the internal stopping rules."""
