@@ -73,6 +73,45 @@ def _positive_identity_factor(gram: Operator) -> float | None:
     return float(factor)
 
 
+def _real_nonnegative_singular_values(
+    multiplier: Any,
+    *,
+    name: str = "singular-value multiplier",
+) -> np.ndarray:
+    """Return a real copy of a numerically real, non-negative multiplier.
+
+    A complex storage dtype is permitted.  Its imaginary part must vanish up
+    to a scale-aware rounding tolerance consistent with the other randomized
+    SVD checks in this module.
+    """
+    values = np.asarray(multiplier)
+    if not np.all(np.isfinite(values)):
+        raise ValueError(Errors.value_error(
+            f"The {name} must contain only finite values."
+        ))
+
+    real_values = np.asarray(values.real)
+    if np.iscomplexobj(values) and values.size:
+        try:
+            eps = np.finfo(real_values.dtype).eps
+        except (TypeError, ValueError):
+            eps = np.finfo(float).eps
+        scale = max(1., float(np.max(np.abs(values))))
+        imaginary_tolerance = 5000 * eps * scale
+        if float(np.max(np.abs(values.imag))) > imaginary_tolerance:
+            raise ValueError(Errors.value_error(
+                f"The {name} must be real-valued. A complex storage dtype "
+                "is accepted only when all imaginary parts vanish up to "
+                f"rounding errors (tolerance={imaginary_tolerance})."
+            ))
+
+    if not np.all(real_values >= 0):
+        raise ValueError(Errors.value_error(
+            f"The {name} must contain only non-negative values."
+        ))
+    return np.array(real_values, copy=True)
+
+
 def _gram_rescaling(
     old_gram: Operator,
     new_gram: Operator,
@@ -231,7 +270,10 @@ class SVD(Composition):
     If ``setting.op`` is already a labelled :class:`Composition`, its factors
     are reused. Scalar identity Gram operators may differ; in that case ``U``,
     ``V``, and ``M`` are rescaled without recomputing an SVD. Non-scalar Gram
-    operators must be identical objects to those stored in the label.
+    operators must be identical objects to those stored in the label. The
+    labelled multiplier must be finite, non-negative, and real up to rounding
+    errors. A complex storage dtype is allowed; accepted imaginary parts are
+    discarded explicitly.
 
     Otherwise a numerical generalized SVD is computed. If :math:`G=LL^*`
     denotes the Cholesky convention used by RegPy, the standard SVD is applied
@@ -290,7 +332,7 @@ class SVD(Composition):
     M : regpy.operators.PtwMultiplication
         Positive singular-value multiplier on the reduced coordinate space.
     singular_values : numpy.ndarray
-        Retained singular values in descending order.
+        Retained singular values as a read-only real array.
     numerical : bool
         Whether a numerical SVD was needed.
     """
@@ -376,7 +418,9 @@ class SVD(Composition):
         self.U = self.svd_data['U']
         self.V = self.svd_data['V']
         self.M = self.svd_data['M']
-        self.singular_values = np.array(self.M.factor, copy=True).reshape(-1)
+        self.singular_values = _real_nonnegative_singular_values(
+            self.M.factor,
+        ).reshape(-1)
         self.singular_values.flags.writeable = False
 
     def _init_from_labelled(
@@ -386,6 +430,10 @@ class SVD(Composition):
         use_buffers: bool,
     ) -> None:
         data = source.svd_data
+        singular_values = _real_nonnegative_singular_values(
+            data['M'].factor,
+            name="labelled SVD multiplier",
+        )
         same_domain_hilbert = getattr(source, 'h_domain', None) is self.h_domain
         same_codomain_hilbert = (
             getattr(source, 'h_codomain', None) is self.h_codomain
@@ -416,7 +464,7 @@ class SVD(Composition):
 
         rescaled_multiplier = PtwMultiplication(
             data['M'].domain,
-            np.asarray(data['M'].factor) / (U_scale * V_scale),
+            singular_values / (U_scale * V_scale),
         )
         factors.append(rescaled_multiplier)
         new_l = len(factors)
@@ -1312,11 +1360,10 @@ class SpectralSelfAdjoint_Richardson(Spectral_SelfAdjoint):
 
     def __init__(
         self, setting: Setting, regpar: float = 1., k: int = 1,
-        mu: float | None = None, *, svd_options=None
+        stepsize: float | None = None, *, svd_options=None
     ):
         super().__init__(
             setting, filter='Landweber', regpar=regpar,
-            filter_parameters={'k': k, 'mu': mu},
+            filter_parameters={'k': k, 'mu': stepsize},
             svd_options=svd_options
         )
-
