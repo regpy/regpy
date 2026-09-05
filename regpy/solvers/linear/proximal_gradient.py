@@ -24,7 +24,7 @@ class ForwardBackwardSplitting(RegSolver):
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: None]
-        The initial guess. (domain.zeros() in the default case)
+        The initial guess. In None, the reference vector of the penalty functional is used.
     tau : float , optional
         The step size parameter. Must be positive. 
         Default is the reciprocal of the operator norm of :math:`T^*T` 
@@ -32,6 +32,8 @@ class ForwardBackwardSplitting(RegSolver):
         Parameter dictionary passed to the computation of the prox-operator.
     logging_level: int [default: logging.INFO]
         logging level
+    update_setting : bool [default: False]
+        If True, explicitly supplied data and initial guess are stored in the setting.
     """
 
     def __init__(self, 
@@ -39,7 +41,8 @@ class ForwardBackwardSplitting(RegSolver):
                  init: Vector| None =None, 
                  tau: float = None, 
                  proximal_pars: dict = None, 
-                 logging_level: int|str = "INFO"):
+                 logging_level: int|str = "INFO",
+                 update_setting: bool = False):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)
@@ -47,10 +50,8 @@ class ForwardBackwardSplitting(RegSolver):
             raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        self.x = self.op.domain.zeros()
-        if init is not None:
-            self.op.domain.copyto(self.x, init)
-
+        self.x = self.op.domain.empty()
+        self.setting.get_or_update_initial_guess(init, update_setting, out=self.x)
         out, par = ForwardBackwardSplitting.check_applicability(setting)
         if out['applicable']:
             self.log.info(out['info'])
@@ -142,8 +143,7 @@ class FISTA(RegSolver):
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals. 
     init : Vector or None [default: None]
-        The initial guess. If None, it is taken from ``setting``; if the
-        setting has no initial guess, the zero vector is used.
+        The initial guess. 
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
     op_lower_bound : float [default: 0]
@@ -151,15 +151,13 @@ class FISTA(RegSolver):
         Used to define convexity parameter of data functional.     
     proximal_pars : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
-    data : Vector or Any or None [default: None]
-        The data to be fitted. If None, the data is taken from ``setting``.
-        When ``setting.codomain_free`` is True, the data may instead be an
-        operator-specific handle accepted by ``op.adjoint_data``.
+    data : ObsDataT or None [default: None]
+        The observed data. Only relevant if ``setting.codomain_free`` is True. 
+        Can be an operator-specific handle accepted by ``op.adjoint_data``.
     logging_level: [default: logging.INFO]
         logging level
-    update_setting : bool [default: True]
-        If True, explicitly supplied data and initial guess are stored in the
-        setting.
+    update_setting : bool [default: False]
+        If True, explicitly supplied data and initial guess are stored in the setting.
     """
     def __init__(
             self,
@@ -170,7 +168,7 @@ class FISTA(RegSolver):
             proximal_pars: dict | None = None,
             data: Vector | ObsDataT | None = None,
             logging_level: int | str = "INFO",
-            update_setting: bool = True):
+            update_setting: bool = False):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("FISTA requires the setting to contain a regularization parameter!")) 
         super().__init__(setting)

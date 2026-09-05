@@ -486,7 +486,7 @@ class Setting:
 
     def get_or_update_initial_guess(self, 
                                     new_init:ReadOnlyVector | None = None,
-                                    update:bool = True,
+                                    update:bool = False,
                                     out:Vector | None = None
                                     ) -> Vector:
         r"""Update or retrieve the initial guess as a writable copy.
@@ -498,8 +498,9 @@ class Setting:
         ----------
         new_init : ReadOnlyVector or None [default: None]
             New initial guess in op.domain
-        update: bool [default: True]
-            If True, the initial guess in the setting is updated
+        update: bool [default: False]
+            If True, the initial guess in the setting is updated if ``new_init`` is not None. 
+            Otherwise, the initial guess is only copied to ``out``.
         out: Vector or None [default: None]
 
         Returns
@@ -528,7 +529,7 @@ class Setting:
         return out
 
     ######Methods exploiting duality
-    def get_dual_setting(self):
+    def get_dual_setting(self) -> Setting:
         r"""Yields the setting of the dual optimization problem
 
         .. math::
@@ -549,7 +550,10 @@ class Setting:
             logging_level=self.log.level
         )
 
-    def dual_to_primal(self,dual, own= False):
+    def dual_to_primal(self,
+                       dual: tuple[Vector|None,Vector|None], 
+                       own: bool = False
+                       ) -> Vector:
         r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
         If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
                 
@@ -561,6 +565,11 @@ class Setting:
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
+
+        Returns
+        -------
+        Vector
+            An element of the primal space corresponding to the given dual variable.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of a dual primal mapping."))
@@ -582,7 +591,10 @@ class Setting:
             Here alpha_d=1/alpha_p is the regularization parameter of the dual problem, and alpha_p the regularization parameter of the primal problem.
             """
         
-    def primal_to_dual(self,primal, own=False):
+    def primal_to_dual(self,
+                       primal: tuple[Vector|None,Vector|None], 
+                       own: bool =False
+                       ) -> Vector:
         r"""
         Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tf)` 
         If :math:`f` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
@@ -590,12 +602,17 @@ class Setting:
     
         Parameters
         ----------------------------
-        primal: tuple of self.op.domain and self.op.codomain
+        primal: tuple[Vector|None, Vector|None]
             tuple of primal variable f and Tf. Either f or Tf must not be None. If Tf is None, it will be 
-            computed. Otherwise, x will not be used.
+            computed. Otherwise, f will not be used.
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
             If true, the duality relations of the dual setting are used. 
+
+        Returns
+        -------
+        Vector
+            An element of the dual space corresponding to the given primal variable.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of a primal dual mapping."))
@@ -606,7 +623,7 @@ class Setting:
         if primal[0] is None and primal[1] is None:
             raise ValueError(Errors.value_error("Either f or Tf must be given in primal tuple!"))
         if primal[1] is None:
-            primal[1]
+            primal[1] = self.op(primal[0])
         if not primal[1] in self.op.codomain:
             raise TypeError(Errors.type_error("Tf not in codomain of operator!"))
         if self._primal_setting is None or own==True:
@@ -614,7 +631,10 @@ class Setting:
         else:
             return self._primal_setting.dual_to_primal(primal)
 
-    def _complete_primal_dual_tuples(self,primal=None,dual=None):
+    def _complete_primal_dual_tuples(self,
+                                     primal: tuple[Vector,Vector|None] | None =None,
+                                     dual: tuple[Vector,Vector|None] | None =None
+                                     ) -> tuple[tuple[Vector,Vector], tuple[Vector,Vector]]:  
         r"""Completes either the primal or dual tuple by computing the missing operator application.
         If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
 
@@ -627,8 +647,8 @@ class Setting:
 
         Returns
         -------
-        tuple of tuples
-            Completed primal and dual tuples.
+        tuple of tuples of Vectors
+            Completed primal and dual tuples, each containing the variable and its operator application.
         """
         if primal is None and dual is None:
             raise ValueError(Errors.value_error("Either a primal or dual tuple need to be given to complete both!"))
@@ -658,7 +678,10 @@ class Setting:
             dual = (p,Tsp)
         return primal,dual
 
-    def duality_gap(self, primal=None, dual=None):
+    def duality_gap(self, 
+                    primal: tuple[Vector|None,Vector|None] | None =None, 
+                    dual: tuple[Vector|None,Vector|None] | None  =None
+                    ) -> float:
         r"""Computes the value of the duality gap 
         
         .. math::
@@ -666,9 +689,9 @@ class Setting:
 
         Parameters
         ----------
-        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+        primal: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
-        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
+        dual: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
         """
         if(not self.is_tikhonov):
@@ -695,7 +718,10 @@ class Setting:
 
         return res
     
-    def violation_optimality_cond(self,primal=None,dual=None):
+    def violation_optimality_cond(self, 
+                                  primal: tuple[Vector|None,Vector|None] | None =None,
+                                  dual: tuple[Vector|None,Vector|None] | None =None
+                                  ) -> tuple[float, float]:
         r"""Returns the degree to which a pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
         violates the optimality conditions for being a saddle point of 
         :math:`-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) `
@@ -709,9 +735,9 @@ class Setting:
 
         Parameters
         ---------------------------
-        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+        primal: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
-        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
+        dual: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed. 
         If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
 
@@ -737,7 +763,8 @@ class Setting:
                    method_abbrv:str,
                    class_name:type,
                    primal:bool|None=None,
-                   full_method_name:str=None)->None:
+                   full_method_name:str=None
+                   )->None:
         """ Add a new method to the method dictionary
         
         Parameters:
@@ -776,19 +803,19 @@ class Setting:
         self._methods[method_abbrv] = method
 
     def _has_method_dictionary(self) -> bool:
-        """Whether this setting kind supports a solver dictionary."""
+        """Whether this type of setting supports a solver dictionary."""
         return (
             self._primal_setting is None
             and (not self.is_tikhonov or self.is_convex)
         )
 
-    def evaluate_methods(self,method_names = None)->None:
+    def evaluate_methods(self, method_names: list[str] | None = None)->None:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
         Parameters
         ----------
-        method_names: List of strings or None [default:None]
+        method_names: list of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
         if not self._has_method_dictionary():
@@ -829,7 +856,7 @@ class Setting:
                         and 'rate' in out):
                     method['rate'] = out['rate']
 
-    def applicable_methods(self):
+    def applicable_methods(self)->dict[str,dict]:
         """Return the methods that can be applied to this setting."""
         if not self._has_method_dictionary():
             raise NotImplementedError(Errors.generic_message(
@@ -839,7 +866,7 @@ class Setting:
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
-    def display_all_methods(self,full_names=True):
+    def display_all_methods(self, full_names:bool=True)->None:
         """Display all registered methods and their applicability."""
         self.evaluate_methods()
         print('Applicable methods:\n')
@@ -858,14 +885,16 @@ class Setting:
                 print(name, (f' ({full_name}): ' if full_names and full_name else ''),
                       method['info'])
 
-    def set_method_parameters(self,method_name:str,params:dict|None=None)->None:
+    def set_method_parameters(self,
+                              method_name:str,
+                              params:dict|None=None)->None:
         if method_name not in self._methods:
             raise RuntimeError(Errors.runtime_error(f"Unknown method name {method_name}. Known methods are {self._methods}. Use add_method() to add a new method."))    
         self._methods[method_name]['parameters'] = (
             {} if params is None else dict(params)
         )
 
-    def select_best_method(self):
+    def select_best_method(self) -> str:
         """Returns the name of the applicable method with the best convergence rate predicted by theory 
         and the convexity and Lipschitz parameters of the data and penalty functional.
         (Since comparisons of first and second order methods are difficult, we only choose among first 
@@ -892,13 +921,13 @@ class Setting:
 
     def set_stopping_rule(self,
                           rule:StopRule,
-                          method_names:list[str]|None=None):
+                          method_names:list[str]|None=None) -> None:
         """Sets a StopRule for an optimization method.
         
         Parameters
         ----------
-        method_name: string 
-            key of the method
+        method_names: list[str]|None
+            keys of the methods
         rule: StopRule
             the stoprule
         """
@@ -914,13 +943,13 @@ class Setting:
                 raise ValueError(f"{method_name} is unknown method key.")
             self._methods[method_name]['stoprule'] = rule.copy_and_reset()
 
-    def get_stopping_rule(self,method_name):
+    def get_stopping_rule(self, method_name: str) -> StopRule:
         """Retrieves a stoprule that has run an optimization method 
         (e.g. to view statistics or (intermediate) solutions)
         
         Parameters
         ----------
-        method_name: string
+        method_name: str
             Key of the method
         
         Returns
@@ -934,14 +963,15 @@ class Setting:
         else:
             return self._methods[method_name]['stoprule']   
 
-    def run(self,method_name = None,
-            stoprule:StopRule|None|object = _DEFAULT_STOPRULE,
-            **kwargs):
+    def run(self,
+            method_name: str|None = None,
+            stoprule: StopRule|None|object = _DEFAULT_STOPRULE,
+            **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
         Parameters
         ----------
-        method_name: string or None [default: None] 
+        method_name: str or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
         stoprule: StopRule | None
