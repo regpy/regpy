@@ -4,7 +4,7 @@ from math import sqrt
 import numpy as np
 
 from regpy import vecsps
-from regpy.vecsps import VectorSpaceBase
+from regpy.vecsps import VectorSpaceBase, Vector, ReadOnlyVector, Scalar
 from regpy.util import Errors, memoized_property, ClassLogger
 from regpy.operators import CholeskyInverse,PtwMultiplication, Operator
 from regpy.operators import DirectSum as DirectSumOp
@@ -14,9 +14,6 @@ from regpy.operators.bases_transform import BasisTransform
 __all__ = ["HilbertSpace","HilbertPullBack","GramHilbertSpace","DirectSum","TensorProd","L2Generic","AbstractSpace"]
 
 class HilbertSpace:
-    # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
-    #   gram property
-
     r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
     should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
     `regpy.util.memoized_property` can be used.
@@ -58,6 +55,8 @@ class HilbertSpace:
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
+            if k.startswith("__memoized_"):
+                continue
             if k in self._no_pickle:
                 setattr(result, k, v)
             else:
@@ -84,17 +83,17 @@ class HilbertSpace:
         """
         raise NotImplementedError
     
-    def inner(self, x, y)->float|complex:
+    def inner(self, x: ReadOnlyVector, y:ReadOnlyVector)->Scalar:
         r"""Compute the inner product between to elements which is linear in the first and anti-linear in the second argument.
 
         Parameters
         ----------
-        x, y : array-like
+        x, y : Vector
             The elements for which the inner product should be computed.
 
         Returns
         -------
-        float
+        Scalar
             The inner product.
         """
         gram = self.gram

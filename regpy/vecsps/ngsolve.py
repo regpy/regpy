@@ -11,7 +11,7 @@ __all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 from warnings import warn
 
 import ngsolve as ngs
@@ -23,7 +23,7 @@ from pyngcore.pyngcore import BitArray
 
 from regpy.util import is_complex_dtype, Errors, ClassLogger
 
-from .base import VectorSpaceBase
+from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 
 
 @dataclass 
@@ -532,6 +532,62 @@ class NgsVectorSpace(VectorSpaceBase):
             x.vec = x.vec.Evaluate()
             x.is_dynamic = False
         x.vec.FV().NumPy().fill(value)
+
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Iterate over the native real or complex NGSolve coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="iter_coefficients argument is not in the NgsVectorSpace."
+            ))
+        vector = x.vec.Evaluate() if x.is_dynamic else x.vec
+        return iter(vector.FV().NumPy())
+
+    def set_coefficients(
+        self,
+        x: NgsBaseVector,
+        coefficients: Iterable[Scalar],
+    ) -> None:
+        """Overwrite an NGSolve vector from native coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="set_coefficients destination is not in the NgsVectorSpace."
+            ))
+        x._require_writable("setting coefficients")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        storage = x.vec.FV().NumPy()
+        iterator = iter(coefficients)
+        for index in range(int(self.size)):
+            try:
+                coefficient = next(iterator)
+            except StopIteration as error:
+                raise ValueError(Errors.value_error(
+                    f"Expected {self.size} coefficients, but received only "
+                    f"{index}."
+                )) from error
+            if not self.is_complex and np.iscomplexobj(coefficient):
+                coefficient = np.asarray(coefficient).item()
+                if coefficient.imag != 0:
+                    raise ValueError(Errors.value_error(
+                        "A real NgsVectorSpace cannot consume a non-real "
+                        f"coefficient {coefficient!r}."
+                    ))
+                coefficient = coefficient.real
+            storage[index] = coefficient
+        try:
+            next(iterator)
+        except StopIteration:
+            return
+        raise ValueError(Errors.value_error(
+            f"Expected {self.size} coefficients, but received more."
+        ))
     
     def complex_space(self):
         """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
@@ -575,6 +631,48 @@ class NgsVectorSpace(VectorSpaceBase):
                 raise ValueError(Errors.value_error("Provided numpy vector to unflatten has non fitting shape!"))
         else:
             raise ValueError(Errors.value_error("Provided numpy vector to unflatten must be one dimensional"))
+        return x
+
+    def complex_flatten(self, x: NgsBaseVector) -> np.ndarray:
+        """Return the complex NGSolve coefficients without realification."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the NgsVectorSpace."
+            ))
+        if x.is_dynamic:
+            coefficients = x.vec.Evaluate().FV().NumPy()
+        else:
+            coefficients = x.vec.FV().NumPy()
+        return np.asarray(coefficients, dtype=complex).reshape(-1).copy()
+
+    def complex_fromflat(self, vec: np.ndarray) -> NgsBaseVector:
+        """Construct a complex NGSolve vector from complex coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        vec = np.asarray(vec)
+        if vec.ndim != 1 or vec.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {vec.shape}."
+            ))
+        if not (
+            np.issubdtype(vec.dtype, np.floating)
+            or np.issubdtype(vec.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={vec.dtype}."
+            ))
+        x = self.zeros()
+        x.vec.FV().NumPy()[:] = vec
         return x
     
     def __eq__(self, other: object) -> bool:

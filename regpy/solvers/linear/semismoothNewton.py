@@ -8,7 +8,8 @@ from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, Li
 from regpy.functionals.integral_functionals import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
@@ -23,18 +24,18 @@ class SemismoothNewton_bilateral(RegSolver):
     
     Parameters
     ----------
-    *args : [regpy.solvers.Setting,array-like,float] or [regpy.solver.Setting]
-        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `array-like`,
+    *args : [regpy.solvers.Setting,Vector,float] or [regpy.solver.Setting]
+        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `Vector`,
         regpar : `float`] consisting og the regularization setting, data and a positive float for the 
         regularization parameter or 1 positional argument [setting : regpy.solver.Setting] which 
         already binds the former arguments together.
-    xref: array-like, default: None
+    xref: Vector, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
+    x0: Vector, default: None
         Zeroth iterate. If None, x0=xref
-    psi_plus: array-like, default: None
+    psi_plus: Vector, default: None
         The upper bound. In the default case it is +inf
-    psi_minus: array-like, default: None
+    psi_minus: Vector, default: None
         The lower bound. In the default case it is -inf
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
@@ -225,7 +226,11 @@ class SemismoothNewton_bilateral(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None):
         out = {'info':''}
-        if not isQuadratic(setting.data_fid):
+        if setting.codomain_free:
+            out['info'] += (
+                'SemismoothNewton_bilateral requires codomain vectors. '
+            )
+        elif not isQuadratic(setting.data_fid):
             out['info'] += 'Data functional not quadratic. '
         if not isQuadratic(setting.penalty):
             out['info'] += 'Penalty term not quadratic. '
@@ -354,15 +359,15 @@ class SemismoothNewton_nonneg(RegSolver):
     ----------
     setting : regpy.solvers.Setting
         The setting of the forward problem.
-    data : array-like, default None
+    data : Vector, default None
         The measured data. If it is None it is taken from the setting.
     regpar : float, default None
         The regularization parameter. Must be positive. If it is None it is taken from the setting.
-    xref: array-like, default: None
+    xref: Vector, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
+    x0: Vector, default: None
         First iterate. If None, then x0=xref
-    lambda0: array-like, default: None
+    lambda0: Vector, default: None
         Initial guess for Lagrange parameter
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
@@ -451,7 +456,11 @@ class SemismoothNewton_nonneg(RegSolver):
     @staticmethod
     def check_applicability(setting,op_norm=None):
         out = {'info':''}   
-        if not setting.data_fid.is_quadratic:
+        if setting.codomain_free:
+            out['info'] += (
+                'SemismoothNewton_nonneg requires codomain vectors. '
+            )
+        elif not setting.data_fid.is_quadratic:
             out['info'] += 'Data functional not quadratic. '
         if not setting.penalty.is_quadratic:
             out['info'] += 'Penalty term not quadratic. '
@@ -522,9 +531,9 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         The setting of the forward problem.
     alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    data: array-like, default None
+    data: Vector, default None
         The right-hand side. If it is None the data is taken from setting.
-    xref: array-like, default None
+    xref: Vector, default None
         initial guess in Tikhonov functional. Default corresponds to zeros()
     max_Newton_iter: int, default: 50
         maximum number of Newton iterations
@@ -535,7 +544,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     """
     def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
+        from ..nonlinear.gen_tikhonov import GeometricSequence
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))

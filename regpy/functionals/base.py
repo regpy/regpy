@@ -11,9 +11,9 @@ import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps, hilbert
-from regpy.operators import Operator
+from regpy.operators import Operator, ObsDataT
 from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
-from regpy.vecsps.base import Scalar, Vector
+from regpy.vecsps.base import Scalar, Vector, ReadOnlyVector
 from regpy.hilbert import HilbertSpace
 from regpy.util import Errors
 
@@ -327,7 +327,7 @@ class Functional:
     
     The evaluation of a specific functional on some element of the `domain` can be done by
     simply calling the functional on that element. 
-        
+    
     Functionals can be added by taking `LinearCombination` of them. The `domain` has to be the
     same for each functional. 
 
@@ -567,6 +567,151 @@ class Functional:
                 add_info=f"The computation of the gradient of functional {self} did not return an element in the domain."
             ))
         return grad
+
+    def reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the functional.
+
+        The reference vector is intended, in particular, as an initial guess
+        for iterative methods. Ideally, it is a global minimizer of the
+        functional. As a minimal requirement, it is guaranteed to be feasible, meaning
+        that the functional has a finite value at the returned vector.
+
+        The default implementation first evaluates
+
+        .. code-block:: python
+
+            self.conj.subgradient(self.domain.zeros(read_only=True))
+
+        If this conjugate subgradient is available, the result is a global
+        minimizer. If it is unavailable, or if zero is outside the essential
+        domain of the conjugate, the proximal map is evaluated at zero with
+        parameter ``tau=1``. Notice that zero being outside the effective
+        domain of the conjugate is equivalent to the primal functional being
+        unbounded below. An implemented proximal map always returns a feasible
+        point. Only if the proximal map is unavailable does the default
+        implementation try the zero vector itself. If none of these strategies
+        produces a feasible vector, :class:`NotInEssentialDomainError` is
+        raised.
+
+        Derived classes may override :meth:`_reference_vector` if the default
+        implementation is not applicable or not appropriate. 
+
+        Parameters
+        ----------
+        out : Vector or None, optional
+            If supplied, the result is written into this vector and the same
+            object is returned.
+
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the functional is finite.
+
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible reference vector can be constructed, or if an
+            overridden :meth:`_reference_vector` returns an infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="reference", space_name="domain",
+                add_info=(
+                    f"The reference vector of functional {self} does not "
+                    "belong to its domain."
+                ),
+            ))
+        try:
+            value = self(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible: "
+                f"the functional value is {value}."
+            )
+        return reference
+
+    def conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the conjugate functional.
+
+        This method is the conjugate counterpart of :meth:`reference_vector`.
+        Ideally, it returns a global minimizer of the conjugate functional; at
+        minimum, the conjugate functional is finite at the returned vector.
+
+        The default implementation first evaluates
+
+        .. code-block:: python
+
+            self.subgradient(self.domain.zeros(read_only=True))
+
+        If this is unavailable or zero is outside the primal essential domain,
+        it evaluates the conjugate proximal map at zero with parameter
+        ``tau=1``. Only if that proximal map is unavailable does it return zero,
+        provided zero is feasible for the conjugate functional. Derived classes
+        may override :meth:`_conj_reference_vector`.
+
+        Parameters
+        ----------
+        out : Vector or None, optional
+            If supplied, the result is written into this vector and the same
+            object is returned.
+
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the conjugate functional is
+            finite.
+
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_conj_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible conjugate reference vector can be constructed, or
+            if an overridden :meth:`_conj_reference_vector` returns an
+            infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._conj_reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="conjugate reference",
+                space_name="domain",
+                add_info=(
+                    f"The conjugate reference vector of functional {self} "
+                    "does not belong to its domain."
+                ),
+            ))
+        try:
+            value = self.conj(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                "feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                f"feasible: the conjugate functional value is {value}."
+            )
+        return reference
     
     def dist_subdiff(self, vstar: Vector, x: Vector) -> float:
         r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
@@ -619,7 +764,35 @@ class Functional:
         if isinstance(h, operators.Operator) and h.linear and h.domain == h.codomain == self.domain:
             return h
         else:
-            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
+            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
+
+    def gradient_as_operator(self) -> operators.Operator:
+        r"""Return the functional's gradient as a nonlinear operator.
+
+        The returned operator maps ``self.domain`` to itself. Its evaluation
+        at :math:`x` is :meth:`subgradient`, and the derivative at :math:`x`
+        applies the Hessian returned by :meth:`hessian`. Since Hessians are
+        symmetric, derivatives of the returned operator are marked as self-adjoint.
+
+        Returns
+        -------
+        regpy.operators.Operator
+            An operator representing :math:`x \mapsto \partial F(x)`.
+
+        Raises
+        ------
+        NotImplementedError
+            If either ``subgradient`` or ``hessian`` is not listed in
+            :attr:`methods`.
+        """
+        required = {'subgradient', 'hessian'}
+        missing = required - self.methods
+        if missing:
+            raise NotImplementedError(util.Errors.generic_message(
+                "gradient_as_operator requires the functional methods "
+                f"subgradient and hessian. Missing: {', '.join(sorted(missing))}."
+            ))
+        return _GradientAsOperator(self)
 
     def conj_subgradient(
         self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
@@ -818,8 +991,32 @@ class Functional:
             ))
         return proximal
     
-    def as_data_func(self, data: Vector) -> Functional:
-        return HorizontalShiftDilation(self, data = data)
+    def as_data_func(self, 
+                     data: ObsDataT | None = None
+                     ) -> Functional:
+        """ 
+        Returns a modified version of the given functional as a data functional. 
+        If self is already a data functional, the method returns self with an updated data vector. 
+
+        Otherwise, self is made a data functional by shifting it by the given data vector. 
+        None results in the zero vector. 
+        Derived classes (e.g., KullbackLeibler) replace this default implementation.
+
+        Parameters:
+        ---------------
+        data: DataT or None [default: None]
+            The data. None results in the zero vector. 
+
+        Returns:
+        --------------
+        Shifted functional 
+        """
+        if self.is_data_func:
+            if data is not None:
+                self.data = data
+            return self
+        else:     
+            return HorizontalShiftDilation(self, data = data)
 
     def shift(
         self, v: Vector | None = None, data_shift: Vector | None = None
@@ -933,6 +1130,57 @@ class Functional:
     ) -> Vector:
         raise NotImplementedError
 
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        """Default implementation used by :meth:`reference_vector`."""
+        zero = self.domain.zeros(read_only=True)
+        try:
+            return self.conj.subgradient(zero, out=out)
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            return self.proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
+
+        try:
+            if np.isfinite(self(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotImplementedError(
+            f"Could not construct a feasible reference vector for {self}: "
+            "the conjugate subgradient at zero is unavailable or undefined, "
+            "the proximal map is unavailable, and zero is not feasible."
+        )
+
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        """Default implementation used by :meth:`conj_reference_vector`."""
+        zero = self.domain.zeros(read_only=True)
+        try:
+            return self.subgradient(zero, out=out)
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            return self.conj_proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
+
+        try:
+            if np.isfinite(self.conj(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotInEssentialDomainError(
+            f"Could not construct a feasible conjugate reference vector for "
+            f"{self}: the primal subgradient at zero is unavailable or "
+            "undefined, the conjugate proximal map is unavailable, and zero "
+            "is not feasible for the conjugate functional."
+        )
+
     def _hessian(self, x: Vector) -> operators.Operator:
         raise NotImplementedError
     
@@ -1025,6 +1273,60 @@ class Functional:
         return Conj(self)
 
 
+class _GradientAsOperator(operators.Operator):
+    r"""Operator wrapper for :meth:`Functional.gradient_as_operator`."""
+
+    def __init__(self, func: Functional) -> None:
+        self.func = func
+        self._hessian: operators.Operator | None = None
+        super().__init__(
+            func.domain,
+            func.domain,
+            linear=False,
+            self_adjoint=True,
+        )
+
+    def _eval(
+        self, x: Vector, differentiate: bool = False, **kwargs: Any
+    ) -> Vector:
+        if differentiate:
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, **kwargs)
+
+    def _ieval(
+        self,
+        x: Vector,
+        out: Vector,
+        differentiate: bool = False,
+        **kwargs: Any,
+    ) -> Vector:
+        if differentiate:
+            # Compute the Hessian before writing to out, since out may be x.
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, out=out, **kwargs)
+
+    def _derivative(self, x: Vector, **kwargs: Any) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, **kwargs)
+
+    def _iderivative(
+        self, x: Vector, out: Vector, **kwargs: Any
+    ) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, out=out, **kwargs)
+
+    def __repr__(self) -> str:
+        return util.make_repr(self, self.func)
+
+
 class Conj(Functional):
     r"""An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
@@ -1054,6 +1356,9 @@ class Conj(Functional):
     ) -> Vector:
         return self.func.conj_subgradient(x, out=out, **subgradient_par)
 
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.conj_reference_vector(out=out)
+
     def dist_subdiff(self, v: Vector, x: Vector) -> float:
         return self.func._conj_dist_subdiff(v,x,)
 
@@ -1061,6 +1366,9 @@ class Conj(Functional):
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         return self.func.subgradient(x, out=out, **subgradient_par)
+
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.reference_vector(out=out)
 
     def _conj_dist_subdiff(self, v: Vector, x: Vector) -> float:
         return self.func.dist_subdiff(v,x)
@@ -1356,7 +1664,7 @@ class SquaredNorm(Functional):
     shift: Vector [default:None]
         If not None, then it must be in h_space.domain, and we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
-    data: h_space.domain [default:None]
+    data: dataT or None [default:None]
         If not None, then we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     """
@@ -1443,11 +1751,11 @@ class SquaredNorm(Functional):
             return self._c
 
     @property
-    def data(self) -> Vector | None:
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
     
     @data.setter
-    def data(self, new_data: Vector | None) -> None:
+    def data(self, new_data: ObsDataT | None) -> None:
         if new_data is None:
             self.is_data_func = False
             del self.a; del self.b; del self.c
@@ -1499,7 +1807,7 @@ class SquaredNorm(Functional):
             self._conj_dom_u = np.inf if self.a>0 else self.h_space.gram(self.b)
         return super().conj_dom_u            
 
-    def as_data_func(self, data: Vector) -> SquaredNorm:
+    def as_data_func(self, data: ObsDataT) -> SquaredNorm:
         self.data=data
         return self
 
@@ -2298,11 +2606,11 @@ class HorizontalShiftDilation(Functional):
                 return self._shift_val
         
     @property
-    def data(self) -> Vector:
+    def data(self) -> ReadOnlyVector:
         if self._shifted_data_fid:
-            return self.func.data
+            return self.domain.read_only(self.func.data)
         else:
-            return self._data
+            return self.domain.read_only(self._data)
     
     @data.setter
     def data(self, new_data: Vector | None) -> None:

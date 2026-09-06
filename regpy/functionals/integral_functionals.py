@@ -4,6 +4,7 @@ import numpy as np
 from scipy.special import lambertw
 
 from regpy.util import Errors, memoized_property
+from regpy.vecsps import ReadOnlyVector
 from regpy.vecsps.numpy import *
 import regpy.operators as rop
 from regpy.hilbert import L2
@@ -114,6 +115,7 @@ class IntegralFunctionalBase(Functional):
                          is_data_func = is_data_func
                          )
 
+        self._ESS_DOM_TOL = 1e-10
         self._buffer_status = {}  
         # dictionary with keys corresponding to buffer names and boolean values indicating if they are currently in use (True) 
         # or not (False). This dictionary helps to prevent accidental overwriting of buffers by recursions or multithreading. 
@@ -649,21 +651,43 @@ class IntegralFunctionalBase(Functional):
         """Evaluate a pointwise method on full arrays using a NumPy ``where`` mask."""
         return func(x, out=out, mask=mask, **kwargs)
 
-    def _assert_essential_domain(self, v, eps=1e-10, msg=None):
+    def _assert_essential_domain(self, v, msg=None):
+        msg = "" if msg is None else msg
         buf = self._get_scratch('_buf',v)
-        np.subtract(v, self.dom_u, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t" + f"diff:{np.max(self._buf)},"+"\n\t"+ f"eps={eps}"))
-        np.subtract(self.dom_l, v, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        self._free_scratch('_buf')
+        try:
+            np.subtract(v, self.dom_u, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too large in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+            np.subtract(self.dom_l, v, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too small in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+        finally:
+            self._free_scratch('_buf')
 
-    def _assert_conj_essential_domain(self, vstar, eps=1e-10, msg=None):
-        buf = self._get_scratch('_buf',vstar)        
-        np.subtract(vstar, self.conj_dom_u, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too large in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        np.subtract(self.conj_dom_l, vstar, out=buf)
-        if np.any(self._buf>eps): raise  RuntimeError(Errors.generic_message(msg+f" argument too small in {self}."+"\n\t"+f"diff:{np.max(self._buf)},"+"\n\t"+f"eps={eps}"))
-        self._free_scratch('_buf')
+    def _assert_conj_essential_domain(self, vstar,  msg=None):
+        msg = "" if msg is None else msg
+        buf = self._get_scratch('_buf',vstar)
+        try:
+            np.subtract(vstar, self.conj_dom_u, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too large in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+            np.subtract(self.conj_dom_l, vstar, out=buf)
+            if np.any(buf > self._ESS_DOM_TOL):
+                raise NotInEssentialDomainError(Errors.generic_message(
+                    msg + f" argument too small in {self}." + "\n\t"
+                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
+                ))
+        finally:
+            self._free_scratch('_buf')
 
     def _eval(self, v, func_vals=None):
         # See the comment in _conj.
@@ -711,9 +735,9 @@ class IntegralFunctionalBase(Functional):
             self._apply_pointwise(self._f, v, buf, mask=mask, **self.kwargs)
 
             if self.constr_l is not None:
-                buf[v < self.dom_l] = np.inf
+                buf[v < self.dom_l - self._ESS_DOM_TOL] = np.inf
             if self.constr_u is not None:
-                buf[v > self.dom_u] = np.inf
+                buf[v > self.dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
             buf *= self.measure
@@ -774,9 +798,9 @@ class IntegralFunctionalBase(Functional):
             self._apply_pointwise(self._f_conj, buf2, buf, mask=mask, **self.kwargs)
 
             if self.lin_taylor_l is not None:
-                buf[vstar < self.conj_dom_l] = np.inf
+                buf[vstar < self.conj_dom_l - self._ESS_DOM_TOL] = np.inf
             if self.lin_taylor_u is not None:
-                buf[vstar > self.conj_dom_u] = np.inf
+                buf[vstar > self.conj_dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
             buf *= self.measure
@@ -1499,7 +1523,12 @@ class LppPower(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
-        
+
+    @property
+    def is_norm_squared_type(self):
+        return self.p==2 and all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
+                                                      self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])
+
     @property
     def Lipschitz(self):
         taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
@@ -1712,7 +1741,14 @@ class Quadratic(IntegralFunctionalBase):
     def conj_is_quadratic(self):
         return (np.min(self.a)>0)
      
-
+    @property
+    def is_norm_squared_type(self):
+        a0 = self.a.flat[0]
+        return (a0>0 and np.allclose(self.a, a0) and
+                all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
+                                         self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])             
+               )
+   
     def _f(self, v, out=None, mask=None, **kwargs):
         # out = 0.5*self._a*v**2 + self._b*v + self._c
         where = self._where(mask, v)
@@ -1828,13 +1864,11 @@ class L1MeasureSpace(IntegralFunctionalBase):
         Domain on which to define the generic L1.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
         see IntegralFunctional
-    conj_tol : float
-        A tolerance in the coputation of the conjugate allowing a slight deviation above from 1.0. Defaults: 1e-16
     """
     def __init__(self, domain,
                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None, conj_tol = 1e-10, **kwargs):
-        self.conj_tol = conj_tol
+                quad_taylor_l=None, quad_taylor_u=None, **kwargs):
+
         super().__init__(domain,conj_nat_dom_u=1.,conj_nat_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
@@ -1881,7 +1915,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
         np.abs(v_star, out=out, where=where)
-        outside = where & (out > 1 + self.conj_tol)
+        outside = where & (out > 1 + self._ESS_DOM_TOL)
         np.copyto(out, 0., where=where)
         np.copyto(out, np.inf, where=outside)
         return out
@@ -1998,8 +2032,8 @@ class KullbackLeibler(IntegralFunctionalBase):
             raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
 
     @property
-    def data(self):
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
     
     @data.setter
     def data(self, new_data):
@@ -2024,7 +2058,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             self.is_data_func = False
             self._precompute_f_l(); self._precompute_f_u()
 
-    def as_data_func(self,data):
+    def as_data_func(self,data) -> Functional:
         self.data=data
         return self
 
@@ -2090,7 +2124,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         wm = self.w
         zero = where & (u == 0)
         if np.any(zero & (wm != 0)):
-            raise ValueError(Errors.value_error(
+            raise NotInEssentialDomainError(Errors.value_error(
                 'argument cannot be 0 at positions where w is not 0'
             ))
         out = self._prepare_out(out, u)
@@ -2146,7 +2180,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         wm = self.w
         at_one = where & (u_star == 1)
         if np.any(at_one & (wm != 0)):
-            raise ValueError(Errors.value_error(
+            raise NotInEssentialDomainError(Errors.value_error(
                 'argument cannot be 1 at positions where w is not 0.'
             ))
         out = self._prepare_out(out, u_star)
@@ -2223,47 +2257,138 @@ class RelativeEntropy(IntegralFunctionalBase):
     ----------
     domain : regpy.vecsps.MeasureSpaceFcts
         Domain on which to define the Relative Entropy divergence
-    w: scalar or in domain [optional, default: 1]
-        second argument of the Relative Entropy diverengence; reference value if used as penalty functional
+    w : scalar, Vector, or None [default: None]
+        Fixed part of the second argument of the Relative Entropy divergence.
+        If neither ``w`` nor ``data`` is supplied, ``w`` defaults to 1. If
+        ``data`` is supplied and ``w`` is None, the fixed part defaults to 0.
+    data : Vector or None [default: None]
+        Data-dependent part of the second argument. If supplied, the effective
+        reference is ``w + data`` and the instance is marked as a data
+        functional.
     constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, scalar or in domain
         see IntegralFunctional  
     """
 
-    def  __init__(self, domain,w=1.,
+    def  __init__(self, domain, w=None,
                   constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                  quad_taylor_l=None, quad_taylor_u=None,
+                  quad_taylor_l=None, quad_taylor_u=None, data=None,
                   **kwargs
                   ):
+        self._w_is_default = w is None
+        if w is None:
+            w = 0. if data is not None else 1.
         if np.isscalar(w):
             w = np.broadcast_to(w,domain.shape)
         elif w not in domain:
             raise TypeError(Errors.not_in_vecsp(w,domain,vec_name="second argument",add_info=f" Error occured setting up the Relative Entropy functional."))
-        if np.min(w)<=0:
-            raise ValueError(Errors.value_error("The second argument in the RelativeEntropy needs to be positive!", self))
-        self._w= w.copy()
+        if np.min(w) < 0:
+            raise ValueError(Errors.value_error(
+                "The fixed part w of RelativeEntropy must be non-negative!",
+                self,
+            ))
+        self._w = w.copy()
 
-        super().__init__(domain,nat_dom_l = 1e-14*w,
+        if data is not None:
+            if data not in domain:
+                raise ValueError(Errors.not_in_vecsp(
+                    data, domain, vec_name="data", space_name="domain of functional"
+                ))
+            self._data = data
+            effective_w = self._w + data
+        else:
+            effective_w = self._w
+        if np.min(effective_w) <= 0:
+            raise ValueError(Errors.value_error(
+                "The second argument w + data of RelativeEntropy must be positive!",
+                self,
+            ))
+
+        super().__init__(domain,nat_dom_l = 1e-14*effective_w,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
                          quad_taylor_l=quad_taylor_l,quad_taylor_u=quad_taylor_u,
+                         is_data_func=(data is not None),
                          **kwargs
                          )
 
     @property
     def w(self):
+        if self.is_data_func:
+            return self._w + self.data
         return self._w
 
     @w.setter
     def w(self, new_w):
         if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
             if new_w in self.domain:
-                self._w = new_w.copy()
+                candidate = new_w.copy()
             else:
-                self._w = np.broadcast_to(float(new_w),self.domain.shape)
-            if np.min(self._w)<0:
-                raise ValueError(Errors.value_error('w must be non-negative.'))
+                candidate = np.broadcast_to(
+                    float(new_w), self.domain.shape
+                ).copy()
+            if np.min(candidate) < 0:
+                raise ValueError(Errors.value_error(
+                    'The fixed part w must be non-negative.'
+                ))
+            effective_w = (
+                candidate + self.data if self.is_data_func else candidate
+            )
+            if np.min(effective_w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'The second argument w + data must be positive.'
+                ))
+            self._w = candidate
+            self._w_is_default = False
             self._precompute_f_l(); self._precompute_f_u()
         else:
             raise ValueError(Errors.not_in_vecsp(new_w,self.domain,vec_name="new w vector",space_name="domain of functional"))
+
+    @property
+    def data(self) -> ReadOnlyVector:
+        return self.domain.read_only(self._data)
+
+    @data.setter
+    def data(self, new_data):
+        if new_data is None:
+            del self.data
+        elif new_data in self.domain:
+            fixed_w = (
+                np.zeros(self.domain.shape, dtype=self._w.dtype)
+                if self._w_is_default and not self.is_data_func
+                else self._w
+            )
+            effective_w = fixed_w + new_data
+            if np.min(effective_w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'The second argument w + data must be positive.'
+                ))
+            self._w = fixed_w
+            self._data = new_data
+            self.is_data_func = True
+            self._precompute_f_l(); self._precompute_f_u()
+        else:
+            raise ValueError(Errors.not_in_vecsp(
+                new_data, self.domain, vec_name="new data vector",
+                space_name="domain of functional"
+            ))
+
+    @data.deleter
+    def data(self):
+        if self.is_data_func:
+            if self._w_is_default:
+                self._w = np.ones(
+                    self.domain.shape, dtype=self._w.dtype
+                )
+            elif np.min(self._w) <= 0:
+                raise ValueError(Errors.value_error(
+                    'Cannot remove data while the fixed part w is not positive.'
+                ))
+            del self._data
+            self.is_data_func = False
+            self._precompute_f_l(); self._precompute_f_u()
+
+    def as_data_func(self, data):
+        self.data = data
+        return self
 
     @property
     def Lipschitz(self):
@@ -2420,12 +2545,10 @@ class Huber(IntegralFunctionalBase):
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
         and precautions against an infinite recursion of conjugations are taken.
-    eps: float [default: 0.]
-        Only used for conjugate functional. See description of `QuadraticIntv`
     """
     # This could also be implemented as special case of Quadratic
 
-    def  __init__(self, domain, as_primal=True, sigma = 1., eps=1e-10, **kwargs):
+    def  __init__(self, domain, as_primal=True, sigma = 1., **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
             raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
@@ -2441,7 +2564,7 @@ class Huber(IntegralFunctionalBase):
             super().__init__(domain,Lipschitz=1.,
                              conj_nat_dom_l=-self.sigma, conj_nat_dom_u = self.sigma,                             
                              **kwargs)
-            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma,eps=eps)
+            self.conjugate = QuadraticIntv(domain,as_primal=False,sigma=sigma)
         else:
             dual_domain = deepcopy(domain)
             dual_domain.measure = 1./domain.measure
@@ -2518,9 +2641,6 @@ class QuadraticIntv(IntegralFunctionalBase):
     as_primal: boolean [default:True]
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
-    eps: float [default: 0.]
-        sigma is replace by sigma*(1+eps) on all operations except the proximal mapping to avoid np.inf return values 
-        or NotInEssentialDomain exceptions in the presence of rounding errors
     """
     # This could also be implemented as special case of Quadratic
 
@@ -2531,7 +2651,6 @@ class QuadraticIntv(IntegralFunctionalBase):
             raise TypeError(Errors.type_error(f"Sigma in the QuadraticIntv needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
         if np.min(sigma)<=0:
             raise ValueError(Errors.value_error("The interval width in the QuadraticIntv needs to be positive!", self))
-        self.eps=eps
         if isinstance(sigma, (float,int)):
             self.sigma = np.broadcast_to(np.real(sigma), domain.shape)
             self.sigmaeps = np.broadcast_to(sigma*(1+eps), domain.shape)           
@@ -2711,9 +2830,6 @@ class QuadraticBilateralConstraints(LinearCombination):
         reference value default 0.5*(lb+ub)
     alpha: float [default: 1]
         regularization parameter
-    eps: real [default: 0]
-        Tolerance parameter for violations of the hard constraints (which may occur due to rounding errors).
-        If constraints are violated by less then eps times the interval width, the polynomial is evaluated, rather than returning np.inf.
     """
     # This could also be implemented as special case of Quadratic
 

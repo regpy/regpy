@@ -5,7 +5,7 @@ from typing import *
 import numpy as np
 
 from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
-from .base import ReadOnlyVector, VectorSpaceBase
+from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
@@ -89,6 +89,60 @@ class NumPyVectorSpace(VectorSpaceBase):
             ))
         x.fill(value)
 
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Iterate over native NumPy coefficients in C order."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="iter_coefficients argument is not in the NumPyVectorSpace."
+            ))
+        return iter(np.asarray(x).flat)
+
+    def set_coefficients(
+        self,
+        x: np.ndarray,
+        coefficients: Iterable[Scalar],
+    ) -> None:
+        """Overwrite an array from native coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="set_coefficients destination is not in the NumPyVectorSpace."
+            ))
+        if not x.flags.writeable:
+            raise ValueError(Errors.value_error(
+                "Cannot write coefficients into a read-only NumPy vector."
+            ))
+        iterator = iter(coefficients)
+        for index in range(int(self.size)):
+            try:
+                coefficient = next(iterator)
+            except StopIteration as error:
+                raise ValueError(Errors.value_error(
+                    f"Expected {self.size} coefficients, but received only "
+                    f"{index}."
+                )) from error
+            if not self.is_complex and np.iscomplexobj(coefficient):
+                coefficient = np.asarray(coefficient).item()
+                if coefficient.imag != 0:
+                    raise ValueError(Errors.value_error(
+                        "A real NumPyVectorSpace cannot consume a non-real "
+                        f"coefficient {coefficient!r}."
+                    ))
+                coefficient = coefficient.real
+            x.flat[index] = coefficient
+        try:
+            next(iterator)
+        except StopIteration:
+            return
+        raise ValueError(Errors.value_error(
+            f"Expected {self.size} coefficients, but received more."
+        ))
+
     def rand(self, distribution = "uniform", seed = None,**kwargs):
         if seed is not None:
             set_rng_seed(seed)
@@ -142,6 +196,42 @@ class NumPyVectorSpace(VectorSpaceBase):
             return real2complex(x.reshape(self.shape + (2,)))
         else:
             return x.reshape(self.shape)
+
+    def complex_flatten(self, x: np.ndarray) -> np.ndarray:
+        """Return flattened coefficients without realifying the vector."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the vector space."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(-1)
+
+    def complex_fromflat(self, x: np.ndarray) -> np.ndarray:
+        """Construct a complex vector without splitting its coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        x = np.asarray(x)
+        if x.ndim != 1 or x.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {x.shape}."
+            ))
+        if not (
+            np.issubdtype(x.dtype, np.floating)
+            or np.issubdtype(x.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={x.dtype}."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(self.shape)
 
     def complex_space(self):
         r"""Compute the corresponding complex vector space.

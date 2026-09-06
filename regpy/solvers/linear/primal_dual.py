@@ -2,9 +2,11 @@ import math as ma
 import numpy as np
 
 from regpy.util import Errors
+from regpy.vecsps import Vector, ReadOnlyVector
 from regpy.functionals import SquaredNorm
 
-from ..general import RegSolver
+from ..solver import RegSolver
+from ..setting import Setting
 
 __all__ = ["PDHG","DouglasRachford"]
 
@@ -28,21 +30,36 @@ class PDHG(RegSolver):
     setting : regpy.solvers.Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
-    init_domain : setting.op.domain [default: None]
-        The initial guess "f". If None, it will be either initialized by 0 or using the optimality conditions in case 
-        init_codomain_star is given.
-    init_codomain_star : setting.op.codomain [default: None]
-        The initial guess "p". Initialization is analogous to init_domain. 
-    tau : float [default: 0]
+    init_domain : ReadOnlyVector or None [default: None]
+        User-supplied initial value for the primal variable ``x``. It must
+        belong to ``setting.op.domain`` and is copied. If it is the only
+        explicitly supplied initial value, ``pstar`` is computed with
+        :meth:`Setting.primal_to_dual`.
+    init_codomain_star : ReadOnlyVector or None [default: None]
+        User-supplied initial value for the dual variable ``pstar``. It must
+        belong to ``setting.op.codomain`` and is copied. If it is the only
+        explicitly supplied initial value, ``x`` is computed with
+        :meth:`Setting.dual_to_primal`.
+
+        If neither initial value is supplied, a primal setting uses
+        ``setting.init`` for ``x`` and derives ``pstar``. For a dual setting,
+        ``pstar`` is initialized from the originating primal setting's
+        ``init`` vector and ``x`` is derived. If ``q`` denotes the dual
+        variable of the dual problem and ``f`` the primal variable of the
+        primal problem, their scaling is ``f = -alpha_d * q``. Consequently,
+        ``pstar`` is initialized as ``-f / alpha_d = -alpha_p * f``, where
+        ``alpha_d = 1 / alpha_p`` is the regularization parameter of the dual
+        setting.
+    tau : float [default: 0.]
         The parameter to compute the proximal operator of the penalty term. Stepsize of the primal step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of sigma.
-    sigma : float [default: 0]
+    sigma : float [default: 0.]
         The parameter to compute the proximal operator of the data-fidelity term. Stepsize of the dual step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of tau
-    theta : float [default: -1]
+    theta : float [default: -1.]
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
         If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
-    op_norm : float [default: None]
+    op_norm : float or None [default: None]
         The operator norm of the forward operator. If None, it is computed numerically.
     proximal_pars_data_fidelity_conjugate : dict, optional
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
@@ -52,10 +69,16 @@ class PDHG(RegSolver):
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
         so this may considerably increase computational costs. If False, None is returned for y_k. 
     """
-    def __init__(self,  setting, init_domain=None, init_codomain_star=None, 
-                 tau = 0, sigma = 0, theta= -1, op_norm = None, 
-                 proximal_pars_data_fidelity_conjugate = None, proximal_pars_penalty = None, 
-                 compute_y = True, logging_level = "INFO"
+    def __init__(self,  
+                 setting : Setting, 
+                 init_domain: ReadOnlyVector | None = None,
+                 init_codomain_star: ReadOnlyVector | None = None,
+                 tau :float= 0., sigma:float = 0., theta:float= -1., 
+                 op_norm:float|None = None, 
+                 proximal_pars_data_fidelity_conjugate: dict|None = None, 
+                 proximal_pars_penalty: dict|None = None, 
+                 compute_y: bool = True, 
+                 logging_level: str = "INFO"
                  ):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("PDHG requires the setting to contain a regularization parameter!"))
@@ -63,31 +86,44 @@ class PDHG(RegSolver):
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
         if init_codomain_star is not None and init_codomain_star not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(init_codomain_star,self.op.codomain,vec_name="initial guess p",space_name="codomain"))
+            raise ValueError(Errors.not_in_vecsp(init_codomain_star,
+                                                 self.op.codomain,
+                                                 vec_name="initial guess p",
+                                                 space_name="codomain")
+                                                 )
         if init_domain is not None and init_domain not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init_domain,self.op.domain,vec_name="initial guess f",space_name="domain"))
+            raise ValueError(Errors.not_in_vecsp(init_domain,
+                                                 self.op.domain,
+                                                 vec_name="initial guess f",
+                                                 space_name="domain"))
 
         self.log.setLevel(logging_level)
 
+        self.x = self.op.domain.empty()
+        self.pstar = self.op.codomain.empty()
+
+        if init_domain is not None:
+            self.op.domain.copyto(self.x, init_domain)
+        if init_codomain_star is not None:
+            self.op.codomain.copyto(self.pstar, init_codomain_star)
+
         if init_domain is None and init_codomain_star is None:
-            self.x = self.op.domain.zeros()
-            self.pstar = self.op.codomain.zeros()
-        else:
-            self.x = self.op.domain.empty()
-            self.pstar = self.op.codomain.empty()
-            if init_domain is None:
-                self.op.codomain.copyto(self.pstar, init_codomain_star)
-                self.op.domain.copyto(
-                    self.x, setting.dual_to_primal(self.pstar)
-                )
+            if setting._primal_setting is None:
+                self.op.domain.copyto(self.x, setting.init)
+                self._initialize_pstar_from_x(setting)
             else:
-                self.op.domain.copyto(self.x, init_domain)
-                if init_codomain_star is None:
-                    self.op.codomain.copyto(
-                        self.pstar, setting.primal_to_dual(self.x)
-                    )
-                else:
-                    self.op.codomain.copyto(self.pstar, init_codomain_star)
+                # If q is the dual variable of the dual problem and f the
+                # primal variable of the primal problem, then
+                # f = -alpha_d * q. Hence q = -f / alpha_d = -alpha_p * f.
+                self.op.codomain.copyto(
+                    self.pstar, setting._primal_setting.init
+                )
+                self.pstar *= -1. / setting.regpar
+                self._initialize_x_from_pstar(setting)
+        elif init_domain is None:
+            self._initialize_x_from_pstar(setting)
+        elif init_codomain_star is None:
+            self._initialize_pstar_from_x(setting)
 
         # Keep a second primal buffer. It is used as proximal output and then
         # swapped with ``x``, preserving the previous iterate for extrapolation.
@@ -131,6 +167,18 @@ class PDHG(RegSolver):
             self.y = None
             self._primal_y = self.op.codomain.empty()
 
+    def _initialize_pstar_from_x(self, setting: Setting) -> None:
+        """Initialize ``pstar`` from ``x`` through the setting's duality map."""
+        image = self.op(self.x)
+        pstar = setting.primal_to_dual((self.x, image))
+        self.op.codomain.copyto(self.pstar, pstar)
+
+    def _initialize_x_from_pstar(self, setting: Setting) -> None:
+        """Initialize ``x`` from ``pstar`` through the setting's duality map."""
+        adjoint_image = self.op.adjoint(self.pstar)
+        x = setting.dual_to_primal((self.pstar, adjoint_image))
+        self.op.domain.copyto(self.x, x)
+
     @staticmethod
     def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1)->tuple[dict,dict]:
         out = {'info':''}; par = {}
@@ -138,9 +186,12 @@ class PDHG(RegSolver):
             out['info'] += 'Setting has no regularization parameter. '
         if not setting.is_convex:
             out['info'] += 'Setting is not convex. '
+        if setting.codomain_free:
+            out['info'] += 'PDHG requires codomain vectors. '
         if 'proximal' not in setting.penalty.methods:
             out['info'] += 'Missing prox of penalty. '
-        if 'proximal' not in setting.data_fid.conj.methods:
+        if (not setting.codomain_free
+                and 'proximal' not in setting.data_fid.conj.methods):
             out['info'] += 'Missing prox of conjugate data functional.'
         out['applicable'] = out['info'] == ''
         if out['applicable']:
@@ -258,7 +309,7 @@ class DouglasRachford(RegSolver):
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.
-    init_h : array_like
+    init_h : Vector
         The initial guess "f". Must be in setting.op.domain.
     tau : float , optional
         The parameter to compute the proximal operator of the penalty term. Must be positive. (Default: 1)

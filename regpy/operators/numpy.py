@@ -9,11 +9,19 @@ import scipy.fft as spfft
 import scipy.sparse._csc as CSC
 import scipy.sparse.linalg as sla
 
-from regpy.util import make_repr,memoized_property,Errors
+from regpy.util import (
+    Errors,
+    complex2real as complex2real_array,
+    make_repr,
+    memoized_property,
+    real2complex as real2complex_array,
+)
 from regpy.vecsps import *
-from .base import Operator
+from .base import Composition, Operator
 
-__all__ = ["MatrixMultiplication","CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
+__all__ = ["MatrixMultiplication", "Complex2Real", "complex2real",
+           "CholeskyInverse","SuperLUInverse","Power","NemytskiiOperator","Exponential","FourierTransform",
+           "RealFourierEmbedding", "RealFourierTransform",
            "PtwMatrixVectorMultiplication","PtwScalarMultiplication","AddSingletonVectorDimension","ForwardFDGradient","OuterProduct","EinSum"]
 
 class MatrixMultiplication(Operator):
@@ -28,12 +36,13 @@ class MatrixMultiplication(Operator):
         How to implement the inverse operator. If available, this should be given as `Operator`
         or array. If `inv`, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`, a
         `CholeskyInverse` or `SuperLU` instance will be returned.
-    domain : regpy.vecsps.NumPyVectorSpace, optional
-        The underlying vector space. If not given a `regpy.vecsps.VectorSpaceBase` with same number of elements as
-        matrix columns is used. Defaults to None.
-    codomain : regpy.vecsps.NumPyVectorSpace, optional
-        The underlying vector space. If not given, a `regpy.vecsps.VectorSpaceBase` with same number of elements as
-        matrix rows is used. Defaults to None.
+    domain, codomain : regpy.vecsps.VectorSpaceBase, optional
+        Spaces represented by the matrix. Real spaces use their
+        :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat``
+        coordinates. Complex spaces implementing ``complex_flatten`` and
+        ``complex_fromflat`` may instead use genuinely complex coordinates,
+        avoiding realification. If omitted, one-dimensional NumPy spaces
+        matching the matrix dimensions are constructed.
     dtype: type or None, optional
         Data type. 
         
@@ -41,15 +50,19 @@ class MatrixMultiplication(Operator):
     -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
     The adjoint is implemented in the same way by multiplying with the adjoint matrix.
-    As long as this dot product is possible and the matrix is two-dimensional, multidimensional domains and
-    codomains may also be used.
+    Multidimensional NumPy spaces and arbitrary real vector spaces are
+    supported through their flattened coordinates. A genuinely complex
+    representation is available for backends implementing
+    ``complex_flatten`` and ``complex_fromflat``; other complex backends can
+    still be represented by a real matrix of shape
+    ``(codomain.realsize, domain.realsize)``.
     """
 
     def __init__(self, 
                  matrix:np.ndarray|csc_matrix|csc_array, 
                  inverse=None, 
-                 domain:NumPyVectorSpace|None=None, 
-                 codomain:NumPyVectorSpace|None=None,
+                 domain:VectorSpaceBase|None=None, 
+                 codomain:VectorSpaceBase|None=None,
                  dtype=None):
         if not isinstance(matrix,(np.ndarray,csc_matrix,csc_array)):
             try:
@@ -65,72 +78,141 @@ class MatrixMultiplication(Operator):
 
         if domain is None:
             domain = NumPyVectorSpace(matrix.shape[1],dtype = dtype)
-        elif not isinstance(domain,NumPyVectorSpace):
-            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Domain either None or NumPyVectorSpace given was {type(domain)}"))
+        elif not isinstance(domain,VectorSpaceBase):
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Domain either None or VectorSpaceBase given was {type(domain)}"))
         if codomain is None:
             codomain = NumPyVectorSpace(matrix.shape[0],dtype = dtype)
-        elif not isinstance(codomain,NumPyVectorSpace):
-            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or NumPyVectorSpace given was {type(codomain)}"))
+        elif not isinstance(codomain,VectorSpaceBase):
+            raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or VectorSpaceBase given was {type(codomain)}"))
         
+        complex_shape = (int(codomain.size), int(domain.size))
+        real_shape = (int(codomain.realsize), int(domain.realsize))
+        complex_coordinates = (
+            domain.is_complex
+            and codomain.is_complex
+            and matrix.shape == complex_shape
+        )
+        if complex_coordinates:
+            pass
+        elif matrix.shape == real_shape:
+            matrix_values = (
+                matrix if isinstance(matrix, np.ndarray) else matrix.data
+            )
+            if not np.all(np.isreal(matrix_values)):
+                raise ValueError(Errors.value_error(
+                    "A matrix acting on real flattened coordinates must be "
+                    "real-valued."
+                ))
+        else:
+            raise ValueError(Errors.value_error(
+                f"Matrix shape {matrix.shape} is incompatible with domain "
+                f"and codomain coordinates; expected real shape "
+                f"{real_shape}" + (
+                    f" or complex shape {complex_shape}."
+                    if domain.is_complex and codomain.is_complex
+                    else "."
+                )
+            ))
         self.matrix = matrix
+        self.complex_coordinates = complex_coordinates
+
+        def domain_coordinates(vector):
+            if self.complex_coordinates:
+                return np.asarray(domain.complex_flatten(vector)).reshape(-1)
+            return np.asarray(domain.flatten(vector)).reshape(-1)
+
+        def codomain_coordinates(vector):
+            if self.complex_coordinates:
+                return np.asarray(codomain.complex_flatten(vector)).reshape(-1)
+            return np.asarray(codomain.flatten(vector)).reshape(-1)
+
+        self._domain_coordinates = domain_coordinates
+        self._codomain_coordinates = codomain_coordinates
 
         if isinstance(matrix,np.ndarray):
-            self.matvec = lambda v: np.matvec(self.matrix, v)
-            self.rmatvec = lambda v: np.conjugate(np.vecmat(v,self.matrix))
+            self.matvec = lambda v: self.matrix @ self._domain_coordinates(v)
+            self.rmatvec = lambda v: (
+                self.matrix.conj().T @ self._codomain_coordinates(v)
+            )
         else:
             lin_op = linalg.aslinearoperator(self.matrix)
-            self.matvec = lambda v: lin_op.matvec(v)
-            self.rmatvec = lambda v: lin_op.rmatvec(v)
+            self.matvec = lambda v: lin_op.matvec(
+                self._domain_coordinates(v)
+            )
+            self.rmatvec = lambda v: lin_op.rmatvec(
+                self._codomain_coordinates(v)
+            )
+
+        self_adjoint = (
+            domain == codomain
+            and matrix.shape[0] == matrix.shape[1]
+            and (
+                np.allclose(matrix, matrix.conj().T)
+                if isinstance(matrix, np.ndarray)
+                else False
+            )
+        )
         
         super().__init__(
             domain=domain,
             codomain=codomain,
-            linear=True
+            linear=True,
+            self_adjoint=self_adjoint,
         )
         self._inverse = inverse
 
     def _eval(self, x):
-        return self.matvec(x)
+        result = np.asarray(self.matvec(x))
+        if self.complex_coordinates:
+            return self.codomain.complex_fromflat(result)
+        return self.codomain.fromflat(result)
 
     def _ieval(self, x, out):
-        if isinstance(self.matrix, np.ndarray):
-            # NumPy's matvec ufunc does not protect against overlapping input
-            # and output arrays.
-            if np.shares_memory(x, out):
-                x = x.copy()
-            return np.matvec(self.matrix, x, out=out)
-        np.copyto(out, self.matvec(x))
+        self.codomain.copyto(out, self._eval(x))
         return out
 
     def _adjoint(self, y):
-        return self.rmatvec(y)
+        result = np.asarray(self.rmatvec(y))
+        if self.complex_coordinates:
+            return self.domain.complex_fromflat(result)
+        return self.domain.fromflat(result)
 
     def _iadjoint(self, y, out):
-        if isinstance(self.matrix, np.ndarray):
-            # vecmat conjugates its vector argument. Conjugating its result
-            # therefore yields the multiplication by the adjoint matrix.
-            if np.shares_memory(y, out):
-                y = y.copy()
-            np.vecmat(y, self.matrix, out=out)
-            return np.conjugate(out, out=out)
-        np.copyto(out, self.rmatvec(y))
+        self.domain.copyto(out, self._adjoint(y))
         return out
         
     def _adjoint_eval(self, x):
         if hasattr(self,'_MTM'):
-            return self._MTM @ x
-        self._MTM = self.matrix.conj().T @ self.matrix
-        return self._MTM @ x
+            matrix = self._MTM
+        else:
+            self._MTM = self.matrix.conj().T @ self.matrix
+            matrix = self._MTM
+        result = np.asarray(matrix @ self._domain_coordinates(x))
+        if self.complex_coordinates:
+            return self.domain.complex_fromflat(result)
+        return self.domain.fromflat(result)
 
     @memoized_property
     def inverse(self):
         if isinstance(self._inverse, Operator):
             return self._inverse
         elif isinstance(self._inverse, np.ndarray):
-            return MatrixMultiplication(self._inverse, inverse=self)
+            return MatrixMultiplication(
+                self._inverse,
+                inverse=self,
+                domain=self.codomain,
+                codomain=self.domain,
+            )
         elif isinstance(self._inverse, str):
             if self._inverse == 'inv':
-                return MatrixMultiplication(np.linalg.inv(self.matrix), inverse=self)
+                inverse = MatrixMultiplication(
+                    np.linalg.inv(self.matrix),
+                    inverse=self,
+                    domain=self.codomain,
+                    codomain=self.domain,
+                )
+                self._inverse = inverse
+                return inverse
             if self._inverse == 'cholesky':
                 return CholeskyInverse(self, matrix=self.matrix)
             if self._inverse == 'superLU':
@@ -139,6 +221,104 @@ class MatrixMultiplication(Operator):
 
     def __repr__(self):
         return make_repr(self, self.matrix)
+
+
+class Complex2Real(Operator):
+    r"""Identify a complex NumPy vector space with a real one.
+
+    The operator appends an axis of length two (or inserts it at ``axis``)
+    containing real and imaginary parts.  For example, with the default
+    ``axis=-1`` it maps
+
+    .. math::
+        \mathbb C^{n_1\times\cdots\times n_d}
+        \longrightarrow
+        \mathbb R^{n_1\times\cdots\times n_d\times 2}.
+
+    This is an isometric real-linear isomorphism for the standard real inner
+    products.  Consequently its adjoint and inverse both apply
+    :func:`regpy.util.real2complex`.
+
+    Parameters
+    ----------
+    domain : regpy.vecsps.NumPyVectorSpace
+        Complex NumPy vector space to be realified.
+    axis : int [default: -1]
+        Position of the new real/imaginary axis in the codomain.
+    """
+
+    def __init__(self, domain: NumPyVectorSpace, axis: int = -1):
+        if not isinstance(domain, NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(
+                domain,
+                NumPyVectorSpace,
+                add_info="Complex2Real requires a NumPyVectorSpace."
+            ))
+        if not domain.is_complex:
+            raise ValueError(Errors.value_error(
+                "The domain of Complex2Real must be complex."
+            ))
+        if (isinstance(axis, (bool, np.bool_))
+                or not isinstance(axis, (int, np.integer))):
+            raise TypeError(Errors.type_error(
+                f"axis must be an integer. Got {axis!r}."
+            ))
+        codomain_ndim = domain.ndim + 1
+        axis = int(axis)
+        if axis < 0:
+            axis += codomain_ndim
+        if not 0 <= axis < codomain_ndim:
+            raise ValueError(Errors.value_error(
+                f"axis must lie in [-{codomain_ndim}, {codomain_ndim}). "
+                f"Got {axis}."
+            ))
+
+        shape = list(domain.shape)
+        shape.insert(axis, 2)
+        real_dtype = np.empty((), dtype=domain.dtype).real.dtype
+        codomain = NumPyVectorSpace(tuple(shape), dtype=real_dtype)
+        self.axis = axis
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        # The utility may return a view.  Allocation-returning Operator
+        # methods must return storage independent of their arguments.
+        return np.array(
+            complex2real_array(x, axis=self.axis),
+            dtype=self.codomain.dtype,
+            copy=True,
+        )
+
+    def _ieval(self, x, out):
+        np.copyto(out, complex2real_array(x, axis=self.axis))
+        return out
+
+    def _adjoint(self, y):
+        return np.array(
+            real2complex_array(y, axis=self.axis),
+            dtype=self.domain.dtype,
+            copy=True,
+        )
+
+    def _iadjoint(self, y, out):
+        np.copyto(out, real2complex_array(y, axis=self.axis))
+        return out
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
+
+    def __repr__(self):
+        return make_repr(self, self.domain, f"axis={self.axis}")
+
+
+# Lower-case alias matching the utility-function terminology and allowing
+# ``complex2real(space)`` as a constructor.
+complex2real = Complex2Real
 
 
 class CholeskyInverse(Operator):
@@ -897,6 +1077,38 @@ class FourierTransform(Operator):
             self._rfft_inverse_adjoint_weights = (
                 1 / self._rfft_adjoint_weights
             )
+            self._rfft_axis = self.axes[-1]
+            self._rfft_spatial_size = n
+            self._rfft_boundary_indices = (
+                (0, n // 2) if n % 2 == 0 else (0,)
+            )
+
+            # The Nyquist mode is needed for direct evaluations of the
+            # spatial normal operators. It is present only for even sizes.
+            self._rfft_nyquist_pattern = None
+            if n % 2 == 0:
+                self._rfft_nyquist_pattern = (
+                    1 - 2 * (np.arange(n) % 2)
+                ).astype(real_dtype)
+
+            # At zero and Nyquist frequency of the compressed axis, an RFFT
+            # spectrum must be Hermitian with respect to all remaining FFT
+            # axes. Store the index maps k -> -k in the actual (possibly
+            # centered) frequency ordering.
+            self._rfft_negative_frequency_indices = {}
+            for axis in self.axes[:-1]:
+                size = domain.shape_domain[axis]
+                bins = np.rint(spfft.fftfreq(size) * size).astype(int)
+                if self.centered:
+                    bins = spfft.fftshift(bins)
+                index_by_residue = {
+                    int(frequency) % size: index
+                    for index, frequency in enumerate(bins)
+                }
+                self._rfft_negative_frequency_indices[axis] = np.asarray([
+                    index_by_residue[(-int(frequency)) % size]
+                    for frequency in bins
+                ], dtype=int)
 
             # Let A denote the Euclidean real adjoint of rfftn. Then
             # A(y) = irfftn(w_adj*y), where w_adj is 1 at zero/Nyquist
@@ -1046,11 +1258,89 @@ class FourierTransform(Operator):
             ).real
         return self._finish_spatial_transform(result)
 
+    def _rfft_spatial_normal(self, x, interior_factor, out):
+        r"""Apply an RFFT normal operator directly in the spatial domain.
+
+        The corresponding frequency multiplier is ``interior_factor`` at
+        interior frequencies and one at zero and Nyquist frequency.
+        """
+        axis = self._rfft_axis
+        mean = np.mean(x, axis=axis, keepdims=True)
+
+        nyquist_coefficient = None
+        if self._rfft_nyquist_pattern is not None:
+            moved = np.moveaxis(x, axis, -1)
+            nyquist_coefficient = np.einsum(
+                '...i,i->...', moved, self._rfft_nyquist_pattern,
+                optimize=True
+            ) / self._rfft_spatial_size
+
+        np.multiply(x, interior_factor, out=out)
+        correction = 1 - interior_factor
+        out += correction * mean
+        if nyquist_coefficient is not None:
+            moved_out = np.moveaxis(out, axis, -1)
+            moved_out += (
+                correction
+                * nyquist_coefficient[..., np.newaxis]
+                * self._rfft_nyquist_pattern
+            )
+        return out
+
+    def _rfft_hermitian_partner(self, boundary):
+        partner = boundary
+        for axis, indices in self._rfft_negative_frequency_indices.items():
+            partner = np.take(partner, indices, axis=axis)
+        return partner
+
+    def _rfft_spectrum_normal(self, y, interior_factor, out):
+        r"""Apply an RFFT normal operator in the stored half-spectrum.
+
+        Interior frequencies are scaled directly. The zero and Nyquist
+        slices are projected onto their Hermitian subspaces.
+        """
+        projected_boundaries = []
+        for index in self._rfft_boundary_indices:
+            boundary_slice = [slice(None)] * y.ndim
+            boundary_slice[self._rfft_axis] = slice(index, index + 1)
+            boundary_slice = tuple(boundary_slice)
+            boundary = y[boundary_slice]
+            partner = self._rfft_hermitian_partner(boundary)
+            projected = 0.5 * (boundary + np.conjugate(partner))
+            projected_boundaries.append((boundary_slice, projected))
+
+        np.multiply(y, interior_factor, out=out)
+        for boundary_slice, projected in projected_boundaries:
+            np.copyto(out[boundary_slice], projected)
+        return out
+
     def _adjoint_eval(self, x):
         if self.is_complex:
             # The allocating API must return an independent result.
             return np.array(x, dtype=self.domain.dtype, copy=True)
-        return self._adjoint(self._eval(x))
+        out = self.domain.empty()
+        return self._rfft_spatial_normal(x, 0.5, out)
+
+    def _iadjoint_eval(self, x, out):
+        if self.is_complex:
+            if out is not x:
+                self.domain.copyto(out, x)
+            return out
+        return self._rfft_spatial_normal(x, 0.5, out)
+
+    def _eval_adjoint(self, y):
+        """Efficiently evaluate ``self(self.adjoint(y))``."""
+        if self.is_complex:
+            return np.array(y, dtype=self.codomain.dtype, copy=True)
+        out = self.codomain.empty()
+        return self._rfft_spectrum_normal(y, 0.5, out)
+
+    def _ieval_adjoint(self, y, out):
+        if self.is_complex:
+            if out is not y:
+                self.codomain.copyto(out, y)
+            return out
+        return self._rfft_spectrum_normal(y, 0.5, out)
 
     @staticmethod
     def frequencies(domain, centered=False, axes=None, rfft=False):
@@ -1144,12 +1434,303 @@ class _FourierTransformLeftInverse(Operator):
             result, self.transform._rfft_inverse_adjoint_weights
         )
 
+    def _adjoint_eval(self, y):
+        out = self.domain.empty()
+        return self.transform._rfft_spectrum_normal(y, 2., out)
+
+    def _iadjoint_eval(self, y, out):
+        return self.transform._rfft_spectrum_normal(y, 2., out)
+
+    def _eval_adjoint(self, x):
+        """Efficiently evaluate ``self(self.adjoint(x))``."""
+        out = self.codomain.empty()
+        return self.transform._rfft_spatial_normal(x, 2., out)
+
+    def _ieval_adjoint(self, x, out):
+        return self.transform._rfft_spatial_normal(x, 2., out)
+
+    @property
+    def invertible(self):
+        return False
+
+
+class RealFourierEmbedding(Operator):
+    r"""Embed one-dimensional real Fourier coordinates into an RFFT space.
+
+    Let ``F`` be a real, one-dimensional :class:`FourierTransform` of
+    spatial length :math:`n`.  Its complex half-spectrum is represented by
+    :math:`\widehat x_0,\ldots,\widehat x_{\lfloor n/2\rfloor}`.  This
+    operator maps a real vector :math:`z\in\mathbb R^n` to a valid
+    half-spectrum by
+
+    .. math::
+        \widehat x_0 &= z_0,\\
+        \widehat x_k &= (z_{2k-1}+i z_{2k})/\sqrt{2},\\
+        \widehat x_{n/2} &= z_{n-1}\quad\text{if }n\text{ is even}.
+
+    The last formula replaces the second formula at the Nyquist frequency.
+    Thus zero and Nyquist coefficients are real, while every interior complex
+    coefficient is represented by two real coordinates.  The domain is a
+    plain real :class:`~regpy.vecsps.NumPyVectorSpace` of dimension ``n``.
+
+    :attr:`left_inverse` maps a valid half-spectrum back to real coordinates
+    and multiplies the real and imaginary parts of interior coefficients by
+    :math:`\sqrt{2}`.  Consequently
+
+    .. math::
+        R = C^{-1}F
+
+    is an orthogonal real Fourier transform with respect to identity Gram
+    operators, where ``C`` denotes this embedding.  The embedding itself is
+    not onto the unrestricted complex half-spectrum; hence it has no
+    two-sided inverse.
+
+    Parameters
+    ----------
+    transform : FourierTransform
+        A real Fourier transform of a scalar-valued one-dimensional grid,
+        acting on its sole domain axis.
+    """
+
+    def __init__(self, transform: FourierTransform):
+        if not isinstance(transform, FourierTransform):
+            raise TypeError(Errors.not_instance(
+                transform,
+                FourierTransform,
+                add_info="RealFourierEmbedding requires a FourierTransform."
+            ))
+        if transform.is_complex:
+            raise ValueError(Errors.value_error(
+                "RealFourierEmbedding requires a real Fourier transform."
+            ))
+        if (transform.domain.ndim_domain != 1
+                or transform.axes != (0,)
+                or transform.domain.shape_codomain != ()):
+            raise NotImplementedError(Errors.generic_message(
+                "Real Fourier coordinates are currently implemented only "
+                "for scalar-valued one-dimensional grids transformed along "
+                "their sole domain axis."
+            ))
+
+        self.transform = transform
+        self.spatial_size = int(transform.domain.shape_domain[0])
+        self.half_size = self.spatial_size // 2 + 1
+        real_dtype = np.empty(
+            (), dtype=transform.domain.dtype
+        ).real.dtype
+        coordinate_space = NumPyVectorSpace(
+            self.spatial_size, dtype=real_dtype
+        )
+        self._sqrt_two = np.sqrt(np.asarray(2, dtype=real_dtype))
+        self._interior_stop = (
+            self.half_size - 1
+            if self.spatial_size % 2 == 0
+            else self.half_size
+        )
+        self._interior_frequencies = slice(1, self._interior_stop)
+        self._real_coordinates = slice(
+            1, 2 * self._interior_stop - 1, 2
+        )
+        self._imag_coordinates = slice(
+            2, 2 * self._interior_stop, 2
+        )
+
+        super().__init__(
+            coordinate_space,
+            transform.codomain,
+            linear=True,
+        )
+        self._consts.add('transform')
+
+    @property
+    def coordinate_space(self):
+        """The real Fourier-coordinate space."""
+        return self.domain
+
+    def _eval(self, coordinates):
+        spectrum = self.codomain.zeros()
+        spectrum[0] = coordinates[0]
+        spectrum[self._interior_frequencies] = (
+            coordinates[self._real_coordinates]
+            + 1j * coordinates[self._imag_coordinates]
+        ) / self._sqrt_two
+        if self.spatial_size % 2 == 0:
+            spectrum[-1] = coordinates[-1]
+        return spectrum
+
+    def _ieval(self, coordinates, out):
+        # The spaces have different scalar fields and shapes, so aliasing is
+        # impossible for valid arguments.
+        out.fill(0)
+        out[0] = coordinates[0]
+        out[self._interior_frequencies] = (
+            coordinates[self._real_coordinates]
+            + 1j * coordinates[self._imag_coordinates]
+        ) / self._sqrt_two
+        if self.spatial_size % 2 == 0:
+            out[-1] = coordinates[-1]
+        return out
+
+    def _adjoint(self, spectrum):
+        coordinates = self.domain.zeros()
+        coordinates[0] = spectrum[0].real
+        interior = spectrum[self._interior_frequencies]
+        coordinates[self._real_coordinates] = (
+            interior.real / self._sqrt_two
+        )
+        coordinates[self._imag_coordinates] = (
+            interior.imag / self._sqrt_two
+        )
+        if self.spatial_size % 2 == 0:
+            coordinates[-1] = spectrum[-1].real
+        return coordinates
+
+    @memoized_property
+    def left_inverse(self):
+        """Return the coordinate map from a valid RFFT half-spectrum."""
+        return _RealFourierEmbeddingLeftInverse(self)
+
+    @Operator.inverse.getter
+    def inverse(self):
+        raise NotImplementedError(Errors.generic_message(
+            "RealFourierEmbedding is not onto the unrestricted complex "
+            "half-spectrum. Use left_inverse on valid RFFT spectra."
+        ))
+
     @property
     def invertible(self):
         return False
 
     def __repr__(self):
         return make_repr(self, self.transform)
+
+    def real_multiplier(self, half_spectrum_multiplier):
+        r"""Represent a real diagonal half-spectrum multiplier in coordinates.
+
+        ``half_spectrum_multiplier`` must be real-valued and have the shape of
+        the RFFT half-spectrum.  Every interior value is duplicated for its
+        real and imaginary coordinate.  This is particularly useful for the
+        non-negative absolute values in a real Fourier SVD.
+        """
+        values = np.asarray(half_spectrum_multiplier)
+        try:
+            values = np.broadcast_to(values, self.codomain.shape)
+        except ValueError as error:
+            raise ValueError(Errors.value_error(
+                "The half-spectrum multiplier must be broadcastable to "
+                f"shape {self.codomain.shape}. Got {values.shape}."
+            )) from error
+        if not np.all(np.isreal(values)):
+            raise ValueError(Errors.value_error(
+                "A multiplier represented in real Fourier coordinates must "
+                "be real-valued."
+            ))
+
+        result = self.domain.empty()
+        result[0] = values[0].real
+        interior = values[self._interior_frequencies].real
+        result[self._real_coordinates] = interior
+        result[self._imag_coordinates] = interior
+        if self.spatial_size % 2 == 0:
+            result[-1] = values[-1].real
+        return result
+
+    def __repr__(self):
+        return make_repr(self, self.transform)
+
+
+class _RealFourierEmbeddingLeftInverse(Operator):
+    """Left inverse of :class:`RealFourierEmbedding` on its range."""
+
+    def __init__(self, embedding):
+        self.embedding = embedding
+        super().__init__(
+            embedding.codomain,
+            embedding.domain,
+            linear=True,
+        )
+        self._consts.add('embedding')
+
+    def _eval(self, spectrum):
+        coordinates = self.codomain.zeros()
+        coordinates[0] = spectrum[0].real
+        interior = spectrum[self.embedding._interior_frequencies]
+        coordinates[self.embedding._real_coordinates] = (
+            self.embedding._sqrt_two * interior.real
+        )
+        coordinates[self.embedding._imag_coordinates] = (
+            self.embedding._sqrt_two * interior.imag
+        )
+        if self.embedding.spatial_size % 2 == 0:
+            coordinates[-1] = spectrum[-1].real
+        return coordinates
+
+    def _adjoint(self, coordinates):
+        spectrum = self.domain.zeros()
+        spectrum[0] = coordinates[0]
+        spectrum[self.embedding._interior_frequencies] = (
+            self.embedding._sqrt_two
+            * (
+                coordinates[self.embedding._real_coordinates]
+                + 1j * coordinates[self.embedding._imag_coordinates]
+            )
+        )
+        if self.embedding.spatial_size % 2 == 0:
+            spectrum[-1] = coordinates[-1]
+        return spectrum
+
+    @property
+    def invertible(self):
+        return False
+
+
+class RealFourierTransform(Composition):
+    r"""Orthogonal one-dimensional Fourier transform in real coordinates.
+
+    This is the composition ``C.left_inverse * F`` of a real
+    :class:`FourierTransform` ``F`` and the coordinate map associated with a
+    :class:`RealFourierEmbedding` ``C``.  Its domain is the original real grid
+    and its codomain is a real vector space of the same dimension.  Hence its
+    adjoint is its inverse.
+
+    Parameters are the same as for :class:`FourierTransform`, subject to the
+    current restriction to scalar-valued one-dimensional grids and ``axes=0``.
+    """
+
+    def __init__(self, domain: UniformGridFcts, centered: bool = False,
+                 axes=None, centered_input: bool | None = None):
+        transform = FourierTransform(
+            domain,
+            centered=centered,
+            axes=axes,
+            centered_input=centered_input,
+        )
+        embedding = RealFourierEmbedding(transform)
+        self.fourier_transform = transform
+        self.embedding = embedding
+        super().__init__(embedding.left_inverse, transform)
+        self._consts.update({'fourier_transform', 'embedding'})
+
+    @property
+    def coordinate_space(self):
+        """The real Fourier-coordinate space."""
+        return self.codomain
+
+    @Operator.inverse.getter
+    def inverse(self):
+        return self.adjoint
+
+    @property
+    def invertible(self):
+        return True
+
+    def __repr__(self):
+        return make_repr(
+            self,
+            self.domain,
+            f"centered={self.fourier_transform.centered}",
+            f"centered_input={self.fourier_transform.centered_input}",
+        )
 
 
 class PtwMatrixVectorMultiplication(Operator):

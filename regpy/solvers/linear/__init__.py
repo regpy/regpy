@@ -5,10 +5,10 @@ For ease of use we import all solvers here and provide them to you. So you only 
 import by
 
 ```
-from regpy.solvers.linear import *
+from regpy.solvers.linear import Landweber
 ```    
 
-to gain access to all linear operators. Moreover, for simplicity you may also use 
+to import the linear Landweber solver. Moreover, for simplicity you may also use
 
 ```
 from regpy.solvers import *
@@ -21,12 +21,13 @@ a Tikhonov solver.
 from .tikhonov import * 
 from .admm import *
 from .cgne import *
-from .landweber import *
+from .linear_krylov import *
 from .primal_dual import *
 from .proximal_gradient import *
 from .richardson_lucy import *
 from .SSNewton import *
 from .semismoothNewton import *
+from .spectral import *
 
 __all__ = []
 
@@ -37,7 +38,9 @@ from .admm import __all__ as mod_all
 __all__ += mod_all
 from .cgne import __all__ as mod_all
 __all__ += mod_all
-from .landweber import __all__ as mod_all
+from .linear_krylov import __all__ as mod_all
+__all__ += mod_all
+from .spectral import __all__ as mod_all
 __all__ += mod_all
 from .primal_dual import __all__ as mod_all
 __all__ += mod_all

@@ -1,7 +1,8 @@
 from regpy.operators import CoordinateMask
 from regpy.util import Errors
 
-from ..general import Setting, RegSolver
+from ..solver import RegSolver
+from ..setting import Setting
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmSemiSmooth"]
@@ -24,13 +25,13 @@ class IrgnmSemiSmooth(RegSolver):
         lower constraint of the minimization. Must be larger then `psi_plus`
     psi_plus : np.number
         upper constraint of the minimization. Must be smaller than `psi_minus`
-    data : array-like, default None
+    data : Vector, default None
         The measured data. Must be in the operators codomain. If it is None it is taken from the setting.
     regpar : float, default None
         Initial regularization parameter :math:`\alpha`. Must be positive. If it is None it is taken from the setting.
     regpar_step : np.number, optional
         Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
-    init : array-like, optional
+    init : Vector, optional
         An element of operator domain that is an initial guess. (Default: None)
     inner_it_count : int, optional
         Number of inner iterations for the `TikhonovCG` solver. (Default: 20)

@@ -7,7 +7,7 @@ from regpy.hilbert import L2
 from regpy.util import Errors, memoized_property
 
 from .base import Functional, AbstractFunctional, Composed
-from .integral_functionals import LppPower, L1MeasureSpace
+from .integral_functionals import LppPower, L1MeasureSpace, Huber
 
 __all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "TVUniformGridFcts"]
 
@@ -74,11 +74,16 @@ class VectorIntegralFunctional(Functional):
             methods -= {'subgradient','hessian','proximal'}
             conj_methods =  {'subgradient','hessian','proximal'}
 
-        super().__init__(vdomain, L2(vecsp=vdomain), 
+        super().__init__(vdomain, 
+                         L2(vecsp=vdomain), 
                          convexity_param = convexity_param, 
                          Lipschitz = Lipschitz, 
-                         is_separable= False, is_linear= False,
-                         methods = methods, conj_methods = conj_methods)
+                         is_separable = False, 
+                         is_linear = self.scalar_func.is_linear,
+                         is_quadratic = self.scalar_func.is_quadratic,
+                         methods = methods, 
+                         conj_methods = conj_methods
+                         )
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
         self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
@@ -201,6 +206,10 @@ class VectorIntegralFunctional(Functional):
 
         return scal_mult + proj.adjoint * ptw_mult * proj   
 
+    @property
+    def is_norm_squared_type(self):
+        return self.scalar_func.is_norm_squared_type
+
 class LppL2(VectorIntegralFunctional):
     """
     VectorIntegralFunctional with :math:`f_i(x):=(1/p)|x|^p`.
@@ -274,7 +283,7 @@ class TVUniformGridFcts(Composed):
     """
 
     ###############################################################################
-    from regpy.solvers import Setting
+    from regpy.solvers.setting import Setting
     class TV_prox_setting(Setting):
         r""" Rockafellar-Fenchel type setting for computing the proximal mapping of the TV functional: 
 
@@ -299,7 +308,7 @@ class TVUniformGridFcts(Composed):
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             penalty_shift=penalty_shift, 
+                             init = penalty_shift, 
                              regpar = 1./tau,
                              explicitDataWarning=False)
 
@@ -314,7 +323,7 @@ class TVUniformGridFcts(Composed):
             self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
-    from regpy.solvers.general import RegSolver
+    from regpy.solvers.solver import RegSolver
     class Chambolle(RegSolver):
         r"""Fixed point iteration for the dual problem suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004). 
         Compared to this original reference, the free variable is rescaled by the factor (tau*grid.volume_elem)
@@ -415,6 +424,7 @@ class TVUniformGridFcts(Composed):
             raise ValueError(Errors.value_error(f"{prox_method} not in list of applicable methods of the TV_pvrox_setting, which is {self.prox_setting.applicable_methods()}."))
         else:
             self.prox_method = prox_method      
+        self._fista_zero_data = {}
         if prox_stop_rule is None:
             prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
         elif not isinstance(prox_stop_rule,StopRule):
@@ -459,10 +469,20 @@ class TVUniformGridFcts(Composed):
         return func
       
     def _proximal(self, x, tau: float, out=None, **kwargs):
-        self.prox_setting.set_penalty_shift(x)
+        self.prox_setting.init = x
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
+        if self.prox_method in {'FISTA', 'dual_FISTA'} and 'data' not in prox_method_param:
+            data_space = (
+                self.grad.domain
+                if self.prox_method == 'dual_FISTA'
+                else self.grad.codomain
+            )
+            if self.prox_method not in self._fista_zero_data:
+                self._fista_zero_data[self.prox_method] = data_space.zeros()
+            prox_method_param['data'] = self._fista_zero_data[self.prox_method]
+            prox_method_param.setdefault('update_setting', False)
         result = self.prox_setting.run(
             self.prox_method, stoprule=self.prox_stop_rule,
             **prox_method_param

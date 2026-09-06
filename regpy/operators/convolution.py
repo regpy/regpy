@@ -7,8 +7,17 @@ from regpy import util
 from regpy.util import Errors
 from regpy.vecsps import UniformGridFcts, GridFcts
 
-from .base import PtwMultiplication, Operator, Composition
-from .numpy import FourierTransform, PtwMatrixVectorMultiplication
+from .base import (
+    PtwMultiplication,
+    Operator,
+    Composition,
+    CoordinateProjection,
+)
+from .numpy import (
+    FourierTransform,
+    PtwMatrixVectorMultiplication,
+    RealFourierEmbedding,
+)
 
 __all__ = ["PaddingOperator","TruncationOperator","ConvolutionOperator","GaussianBlur", "ExponentialConvolution","FourierInterpolationOperator","FresnelPropagator",
            "Derivative","gradient","curl","divergence", "Laplacian",
@@ -552,6 +561,24 @@ class ConvolutionOperator(Composition):
         with shape kernel_matrix_shape. 
         In this case, the input space is assumed to be vector-valued with values of shape (kernel_matrix_shape[1],),
         If fourier_multiplier is given by a function, the output of this function must be matrix-valued, i.e. the codomain must be two-dimensional. 
+    as_svd : bool or None [default: None]
+        Whether to construct and label the convolution as an explicit
+        singular-value decomposition. If ``None``, this is done automatically
+        when the scalar convolution uses either a complex grid or a supported
+        one-dimensional real grid, without padding or Fourier resizing.
+        Real Fourier SVDs use an orthogonal real-coordinate representation of
+        the RFFT half-spectrum. ``True`` requests an SVD representation
+        explicitly; unsupported configurations then raise an informative
+        exception.
+    self_adjoint : bool or None [default: None]
+        Whether to mark the resulting linear convolution as self-adjoint. If
+        ``None``, self-adjointness is detected automatically: Fourier-domain
+        resizing must be absent and the scalar multiplier must be real-valued,
+        or the pointwise matrix multiplier must be Hermitian. Imaginary or
+        skew-Hermitian parts on the scale of rounding errors are ignored.
+        ``False`` disables the mark even when it could be inferred. ``True``
+        requests the mark explicitly and raises an exception when the stated
+        conditions are not satisfied.
         
                     
     Notes
@@ -586,9 +613,25 @@ class ConvolutionOperator(Composition):
     """
 
     def __init__(self, grid, fourier_multiplier, pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 kernel_matrix_shape=None, as_svd: bool | None = None,
+                 self_adjoint: bool | None = None):
         if not isinstance(grid,UniformGridFcts):
             raise TypeError(Errors.type_error(f'grid must be of type UniformGridFcts. Got {grid}'))
+        if as_svd is not None and not isinstance(as_svd, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                f'as_svd must be boolean or None. Got {as_svd!r}.'
+            ))
+        if as_svd is not None:
+            as_svd = bool(as_svd)
+        if self_adjoint is not None and not isinstance(
+                self_adjoint, (bool, np.bool_)):
+            raise TypeError(Errors.type_error(
+                'self_adjoint must be boolean or None. '
+                f'Got {self_adjoint!r}.'
+            ))
+        if self_adjoint is not None:
+            self_adjoint = bool(self_adjoint)
         if kernel_matrix_shape is not None:
             if (not isinstance(kernel_matrix_shape,(tuple,list)) or len(kernel_matrix_shape) != 2
                     or not all(isinstance(size,(int,np.integer)) and size > 0 for size in kernel_matrix_shape)):
@@ -662,6 +705,44 @@ class ConvolutionOperator(Composition):
         self.Fourier_truncation_amount = normalize_amount(
             Fourier_truncation_amount,'Fourier_truncation_amount',allow_negative=True,none_allowed=True)
 
+        real_svd_supported = (
+            not grid.is_complex
+            and grid.ndim_domain == 1
+            and grid.shape_codomain == ()
+            and np.array_equal(self.convolution_axes, np.asarray([0]))
+        )
+
+        if as_svd is True:
+            if np.any(self.pad_amount != 0):
+                raise ValueError(Errors.value_error(
+                    'A convolution with spatial padding cannot be represented '
+                    'by the implemented Fourier SVD.'
+                ))
+            if self.Fourier_truncation_amount is not None:
+                raise NotImplementedError(Errors.generic_message(
+                    'Fourier-resized convolutions can in principle have an '
+                    'SVD representation, but it is not implemented yet.'
+                ))
+            if self.kernel_matrix_shape is not None:
+                raise NotImplementedError(Errors.generic_message(
+                    'SVD construction for matrix-valued Fourier multipliers '
+                    'is not implemented yet.'
+                ))
+            if not grid.is_complex and not real_svd_supported:
+                raise NotImplementedError(Errors.generic_message(
+                    'Real Fourier SVD construction is currently implemented '
+                    'only for scalar-valued one-dimensional grids transformed '
+                    'along their sole domain axis.'
+                ))
+
+        construct_as_svd = (
+            as_svd is not False
+            and np.all(self.pad_amount == 0)
+            and self.Fourier_truncation_amount is None
+            and self.kernel_matrix_shape is None
+            and (grid.is_complex or real_svd_supported)
+        )
+
         codomain = grid if kernel_matrix_shape is None else grid.vector_valued_space((kernel_matrix_shape[0],))
 
         self.kwargs = {'pad_amount' : self.pad_amount.copy(),
@@ -669,7 +750,13 @@ class ConvolutionOperator(Composition):
                        'Fourier_truncation_amount' : (None if self.Fourier_truncation_amount is None
                                                        else self.Fourier_truncation_amount.copy()),
                        'convolution_axes' : self.convolution_axes.copy(),
-                       'kernel_matrix_shape' : self.kernel_matrix_shape}
+                       'kernel_matrix_shape' : self.kernel_matrix_shape,
+                       'as_svd': as_svd,
+                       # Preserve an explicit opt-out in convolution algebra;
+                       # otherwise derived multipliers are detected afresh.
+                       'self_adjoint': (
+                           False if self_adjoint is False else None
+                       )}
 
         # Set only in the branch without spatial padding or Fourier resizing.
         # It contains the actually applied, fully broadcast Fourier multiplier
@@ -708,7 +795,19 @@ class ConvolutionOperator(Composition):
                     ft.codomain, multiplier_values
                 )
             self._exact_fourier_multiplier = multiplier_values
-            super().__init__(ft_codomain.left_inverse, multiplier, ft)
+            if construct_as_svd:
+                factors, singular_index, is_eig = self._svd_factors(
+                    ft, multiplier_values
+                )
+                super().__init__(*factors)
+                self.label_as_svd(
+                    singular_index,
+                    G_X=1.,
+                    G_Y=1.,
+                    is_eig=is_eig,
+                )
+            else:
+                super().__init__(ft_codomain.left_inverse, multiplier, ft)
         elif self.Fourier_truncation_amount is None: 
             pad_op = PaddingOperator(grid,self.pad_amount,pad_value=pad_value)
             pad_op_codomain = PaddingOperator(codomain,self.pad_amount,pad_value=pad_value)
@@ -725,10 +824,20 @@ class ConvolutionOperator(Composition):
             else:
                 self._otf = fourier_multiplier
             if self.kernel_matrix_shape is None:
-                multiplier = PtwMultiplication(ft.codomain, np.broadcast_to(self._otf,ft.codomain.shape))
+                multiplier_values = np.broadcast_to(
+                    self._otf, ft.codomain.shape
+                )
+                multiplier = PtwMultiplication(
+                    ft.codomain, multiplier_values
+                )
             else:
                 extended_shape = ft.codomain.shape_domain+self.kernel_matrix_shape
-                multiplier = PtwMatrixVectorMultiplication(ft.codomain, np.broadcast_to(self._otf,extended_shape))
+                multiplier_values = np.broadcast_to(
+                    self._otf, extended_shape
+                )
+                multiplier = PtwMatrixVectorMultiplication(
+                    ft.codomain, multiplier_values
+                )
             trunc_op = TruncationOperator(ft_codomain.domain, self.pad_amount)
 
             super().__init__(trunc_op, ft_codomain.left_inverse, multiplier, ft, pad_op)
@@ -898,6 +1007,234 @@ class ConvolutionOperator(Composition):
                 ft,
                 pad_op
             )
+
+        self._initialize_self_adjointness(
+            requested=self_adjoint,
+            multiplier_values=(
+                multiplier_values
+                if self.Fourier_truncation_amount is None else None
+            ),
+        )
+
+    @staticmethod
+    def _multiplier_rounding_tolerance(values):
+        """Return a scale-aware tolerance for a Fourier multiplier."""
+        values = np.asarray(values)
+        try:
+            eps = np.finfo(values.real.dtype).eps
+        except (TypeError, ValueError):
+            eps = np.finfo(float).eps
+        scale = (
+            max(1., float(np.max(np.abs(values))))
+            if values.size else 1.
+        )
+        return 1000 * eps * scale
+
+    def _multiplier_is_self_adjoint(self, multiplier_values):
+        """Check scalar reality or pointwise matrix Hermiticity."""
+        values = np.asarray(multiplier_values)
+        if not np.all(np.isfinite(values)):
+            return False, 'the Fourier multiplier contains non-finite values'
+
+        tolerance = self._multiplier_rounding_tolerance(values)
+        if self.kernel_matrix_shape is None:
+            error = (
+                float(np.max(np.abs(values.imag)))
+                if np.iscomplexobj(values) and values.size else 0.
+            )
+            if error > tolerance:
+                return (
+                    False,
+                    'the scalar Fourier multiplier is not real-valued up to '
+                    f'rounding errors (error={error}, tolerance={tolerance})',
+                )
+            return True, ''
+
+        rows, columns = self.kernel_matrix_shape
+        if rows != columns:
+            return False, 'the pointwise Fourier multiplier matrices are not square'
+        hermitian_difference = values - np.conjugate(
+            np.swapaxes(values, -2, -1)
+        )
+        error = (
+            float(np.max(np.abs(hermitian_difference)))
+            if hermitian_difference.size else 0.
+        )
+        if error > tolerance:
+            return (
+                False,
+                'the pointwise Fourier multiplier matrices are not '
+                'Hermitian up to rounding errors '
+                f'(error={error}, tolerance={tolerance})',
+            )
+        return True, ''
+
+    def _initialize_self_adjointness(self, requested, multiplier_values):
+        """Infer, validate, and install the public self-adjoint flag."""
+        if requested is False:
+            return
+
+        if self.Fourier_truncation_amount is not None:
+            detected = False
+            reason = 'Fourier-domain truncation or resizing is active'
+        elif not self.linear:
+            detected = False
+            reason = 'the convolution is not linear'
+        elif self.domain != self.codomain:
+            detected = False
+            reason = 'domain and codomain do not coincide'
+        else:
+            detected, reason = self._multiplier_is_self_adjoint(
+                multiplier_values
+            )
+
+        if not detected:
+            if requested is True:
+                raise ValueError(Errors.value_error(
+                    'The convolution cannot be marked self-adjoint because '
+                    f'{reason}.'
+                ))
+            return
+
+        try:
+            self.declare_as_self_adjoint(check=True)
+        except (NotImplementedError, ValueError):
+            if requested is True:
+                raise
+            # In automatic mode a failed numerical safeguard means that the
+            # conservative answer is to leave the flag disabled.
+
+    @staticmethod
+    def _svd_factors(ft, multiplier_values):
+        """Return Fourier factors, singular index, and eigenvalue flag."""
+        if not ft.is_complex:
+            return ConvolutionOperator._real_svd_factors(
+                ft, multiplier_values
+            )
+
+        values = np.asarray(multiplier_values)
+        magnitudes = np.abs(values)
+        nonzero = magnitudes != 0
+
+        phase_dtype = np.result_type(values.dtype, np.complex128)
+        phases = np.ones(values.shape, dtype=phase_dtype)
+        phases[nonzero] = values[nonzero] / magnitudes[nonzero]
+        phase = PtwMultiplication(ft.codomain, phases)
+
+        is_eig = bool(
+            np.all(np.isreal(values)) and np.all(values.real >= 0)
+        )
+        if np.all(nonzero):
+            singular_values = PtwMultiplication(ft.codomain, magnitudes)
+            return (
+                (ft.left_inverse, phase, singular_values, ft),
+                3,
+                is_eig,
+            )
+
+        projection = CoordinateProjection(ft.codomain, nonzero)
+        singular_values = PtwMultiplication(
+            projection.codomain,
+            magnitudes[nonzero],
+        )
+        return (
+            (
+                ft.left_inverse,
+                phase,
+                projection.adjoint,
+                singular_values,
+                projection,
+                ft,
+            ),
+            4,
+            is_eig,
+        )
+
+    @staticmethod
+    def _real_svd_factors(ft, multiplier_values):
+        r"""Return an identity-Gram SVD using real Fourier coordinates.
+
+        For the real Fourier transform ``F`` let ``C`` embed real Fourier
+        coordinates into the complex half-spectrum. Then
+
+        ``R = C.left_inverse * F``
+
+        is orthogonal.  The absolute value of every interior Fourier
+        multiplier is duplicated for its real and imaginary coordinate,
+        whereas its phase remains a unitary complex half-spectrum
+        multiplication.  Zero singular values are removed by a coordinate
+        projection exactly as in the complex construction.
+        """
+        embedding = RealFourierEmbedding(ft)
+        values = np.array(
+            np.broadcast_to(multiplier_values, ft.codomain.shape),
+            copy=True,
+        )
+
+        # Valid one-dimensional RFFT spectra have real zero and Nyquist
+        # coefficients.  ``irfft`` discards imaginary endpoint parts, so the
+        # effective real convolution multiplier is their real part.
+        values[0] = values[0].real
+        if embedding.spatial_size % 2 == 0:
+            values[-1] = values[-1].real
+
+        magnitudes = np.abs(values)
+        phases = np.ones(values.shape, dtype=np.result_type(
+            values.dtype, np.complex128
+        ))
+        nonzero_half_spectrum = magnitudes != 0
+        phases[nonzero_half_spectrum] = (
+            values[nonzero_half_spectrum]
+            / magnitudes[nonzero_half_spectrum]
+        )
+        phase = PtwMultiplication(ft.codomain, phases)
+
+        real_singular_values = embedding.real_multiplier(magnitudes)
+        nonzero = real_singular_values != 0
+        is_eig = bool(
+            np.all(np.isreal(values)) and np.all(values.real >= 0)
+        )
+
+        if np.all(nonzero):
+            singular_values = PtwMultiplication(
+                embedding.coordinate_space,
+                real_singular_values,
+            )
+            return (
+                (
+                    ft.left_inverse,
+                    phase,
+                    embedding,
+                    singular_values,
+                    embedding.left_inverse,
+                    ft,
+                ),
+                4,
+                is_eig,
+            )
+
+        projection = CoordinateProjection(
+            embedding.coordinate_space,
+            nonzero,
+        )
+        singular_values = PtwMultiplication(
+            projection.codomain,
+            real_singular_values[nonzero],
+        )
+        return (
+            (
+                ft.left_inverse,
+                phase,
+                embedding,
+                projection.adjoint,
+                singular_values,
+                projection,
+                embedding.left_inverse,
+                ft,
+            ),
+            5,
+            is_eig,
+        )
 
     @property
     def freqs(self):
@@ -1242,15 +1579,20 @@ class Derivative(ConvolutionOperator):
         See Convolution Operator.
     convolution_axes
         See Convolution Operator
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     def __init__(self,grid, order, pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
         if not (isinstance(order,tuple) and (len(order)==grid.ndim_domain if convolution_axes is None else len(convolution_axes)) and all(isinstance(val,int) for val in order)):
             raise ValueError(Errors.value_error(f'order must be a d tuple of ints. Got {order}.'))
         super().__init__(grid,
                             lambda *x : prod((2j*np.pi*y)**k for y,k in zip(x,order)),
                             pad_amount=pad_amount,pad_value=pad_value,
-                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            Fourier_truncation_amount=Fourier_truncation_amount,
+                            convolution_axes=convolution_axes,
+                            self_adjoint=self_adjoint,
                             )
 
 def _Lap_in_FD(*freq,dim_codomain=None):
@@ -1283,16 +1625,22 @@ class Laplacian(ConvolutionOperator):
         See Convolution Operator
     kernel_matrix_shape:  [optional, default: None] None or pair of integers
         See description above
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     def __init__(self,grid, pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None,kernel_matrix_shape=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 kernel_matrix_shape=None,
+                 self_adjoint: bool | None = None):
         if grid.shape_codomain == () or kernel_matrix_shape is None:
             if  grid.shape_codomain == () and kernel_matrix_shape is not None:
                 raise ValueError(Errors.value_error("For scalar domain kernel_matrix_shape must be None"))
             super().__init__(grid,
                             lambda *x : -sum((2*np.pi*y)**2 for y in x),
                             pad_amount=pad_amount,pad_value=pad_value,
-                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            Fourier_truncation_amount=Fourier_truncation_amount,
+                            convolution_axes=convolution_axes,
+                            self_adjoint=self_adjoint,
                             )
         else:
             d = grid.shape_codomain[0]
@@ -1304,10 +1652,13 @@ class Laplacian(ConvolutionOperator):
                             lambda *x : _Lap_in_FD(*x,dim_codomain=grid.shape_codomain[0]),
                             kernel_matrix_shape=kernel_matrix_shape,
                             pad_amount=pad_amount,pad_value=pad_value,
-                            Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                            Fourier_truncation_amount=Fourier_truncation_amount,
+                            convolution_axes=convolution_axes,
+                            self_adjoint=self_adjoint,
                             )
 
-def gradient(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+def gradient(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,
+             convolution_axes=None, self_adjoint: bool | None = None):
     """Gradient operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.   
     
@@ -1323,16 +1674,21 @@ def gradient(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,convo
         See Convolution Operator.
     convolution_axes
         See Convolution Operator.
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     grad = ConvolutionOperator(grid.vector_valued_space((1,)) if grid.shape_codomain==() else grid,
                                lambda *x : 2j*np.pi* np.stack(list(y[...,np.newaxis] for y in x),axis=-2),
                                kernel_matrix_shape=(len(grid.shape_domain),1),
                                pad_amount=pad_amount,pad_value=pad_value,
-                               Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                               Fourier_truncation_amount=Fourier_truncation_amount,
+                               convolution_axes=convolution_axes,
+                               self_adjoint=self_adjoint,
                             )
     return grad
 
-def divergence(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+def divergence(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,
+               convolution_axes=None, self_adjoint: bool | None = None):
     """Divergence operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.
     
@@ -1348,12 +1704,17 @@ def divergence(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,con
         See Convolution Operator.
     convolution_axes
         See Convolution Operator.
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     grad = gradient(grid.vector_valued_space(1),pad_amount=pad_amount,pad_value=pad_value,
-                                Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
+                                Fourier_truncation_amount=Fourier_truncation_amount,
+                                convolution_axes=convolution_axes,
+                                self_adjoint=self_adjoint)
     return - grad.conv_adjoint()
 
-def curl(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,convolution_axes=None):
+def curl(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,
+         convolution_axes=None, self_adjoint: bool | None = None):
     """Curl operator with periodic boundary conditions, implemented as convolution operator.
     The first derivatives are computed with respect to the coordinates of the given grid.
     
@@ -1369,12 +1730,17 @@ def curl(grid,pad_amount=0,pad_value=0.,Fourier_truncation_amount=None,convoluti
         See Convolution Operator.
     convolution_axes
         See Convolution Operator.
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     if not ((convolution_axes is None and len(grid.shape_domain)==3) or (convolution_axes is not None and len(convolution_axes)==3)):
         raise ValueError(Errors.value_error('grid must be three-dimensional'))
     return ConvolutionOperator(grid.vector_valued_space(3),
                                _curl_in_FD,kernel_matrix_shape=(3,3),
-                               pad_amount=pad_amount,pad_value=pad_value,Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                               pad_amount=pad_amount,pad_value=pad_value,
+                               Fourier_truncation_amount=Fourier_truncation_amount,
+                               convolution_axes=convolution_axes,
+                               self_adjoint=self_adjoint,
                                )
 
 def _curl_in_FD(Dx,Dy,Dz):
@@ -1389,10 +1755,17 @@ def _curl_in_FD(Dx,Dy,Dz):
     toret[...,2,1] =   2j*np.pi*Dx
     return toret
 
-def BesselPotential(grid,s, convolution_axes=None):
+def BesselPotential(grid,s, convolution_axes=None,
+                    self_adjoint: bool | None = None):
     r"""Differential operator :math:`(1-\Delta)^{s/2}`.
+
+    ``self_adjoint`` has the meaning documented for
+    :class:`ConvolutionOperator`.
     """
-    Lap = Laplacian(grid,convolution_axes=convolution_axes)
+    Lap = Laplacian(
+        grid, convolution_axes=convolution_axes,
+        self_adjoint=self_adjoint,
+    )
     return Lap.functional_calculus(lambda t: (1-t)**(s/2.))
 
 ###################### other convolution operators ##########################################
@@ -1413,17 +1786,23 @@ class PeriodicShift(ConvolutionOperator):
         See Convolution Operator.
     convolution_axes
         See Convolution Operator.
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     def __init__(self,grid, shift,pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
         super().__init__(grid,
                         lambda *x : np.exp(sum(2j*np.pi*sh*y for y,sh in zip(x,shift))),
                         pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                        Fourier_truncation_amount=Fourier_truncation_amount,
+                        convolution_axes=convolution_axes,
+                        self_adjoint=self_adjoint,
                         )  
 
 def GaussianBlur(grid,sigma=1.,pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
     """Convolution with a Gaussian kernel
     
     Parameters
@@ -1439,36 +1818,53 @@ def GaussianBlur(grid,sigma=1.,pad_amount=0,pad_value=0.,
         See Convolution Operator.
     convolution_axes
         See Convolution Operator.
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
     """
     if not np.isscalar(sigma):
         raise TypeError(Errors.type_error("To define a Gaussian blur the width of the Gaussian kernel has to be a scalar!"))
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
+                        Fourier_truncation_amount=Fourier_truncation_amount,
+                        convolution_axes=convolution_axes,
+                        self_adjoint=self_adjoint)
     return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))
 
                                    
 class ExponentialConvolution(ConvolutionOperator):
     r"""Convolution with an exponential function :math:`exp(-|x|_1/a)`.
+
+    ``self_adjoint`` has the meaning documented for
+    :class:`ConvolutionOperator`.
     """
     def __init__(self,grid,a,pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
                         pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes
+                        Fourier_truncation_amount=Fourier_truncation_amount,
+                        convolution_axes=convolution_axes,
+                        self_adjoint=self_adjoint,
                         )
 
 class FourierInterpolationOperator(ConvolutionOperator):
     r"""Interpolation operator implemented as Fourier multiplier with the constant 1 function, 
     using Fourier_truncation_amount to change the grid in the spatial domain.
+
+    ``self_adjoint`` has the meaning documented for
+    :class:`ConvolutionOperator`.
     """
     def __init__(self,grid,pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
         super().__init__(grid,lambda *freqs: 1.,pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
+                        Fourier_truncation_amount=Fourier_truncation_amount,
+                        convolution_axes=convolution_axes,
+                        self_adjoint=self_adjoint)
 
 def FresnelPropagator(grid,fresnel_number, pad_amount=0,pad_value=0.,
-                 Fourier_truncation_amount=None,convolution_axes=None):
+                 Fourier_truncation_amount=None,convolution_axes=None,
+                 self_adjoint: bool | None = None):
     r"""Time evolution operator over the unit a interval for the Schrödinger equation
     
     .. math::
@@ -1491,6 +1887,8 @@ def FresnelPropagator(grid,fresnel_number, pad_amount=0,pad_value=0.,
         amount of padding to avoid aliasing artifacts, see ConvolutionOperator for details
     Fourier_domain_truncation: [optional: Default None]: None or integer or tuple of pairs of integers]
         amount of truncation of Fourier domain, see ConvolutionOperator for details
+    self_adjoint : bool or None, optional
+        See :class:`ConvolutionOperator`.
 
     Notes
     -----
@@ -1514,8 +1912,18 @@ def FresnelPropagator(grid,fresnel_number, pad_amount=0,pad_value=0.,
     if not grid.is_complex:
         raise ValueError(Errors.value_error("The grid for a Fresnel propagation needs to be complex!"))
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
-                        Fourier_truncation_amount=Fourier_truncation_amount,convolution_axes=convolution_axes)
-    return Lap.functional_calculus(lambda t: np.exp(1j / (4*np.pi* fresnel_number) * t))
+                        Fourier_truncation_amount=Fourier_truncation_amount,
+                        convolution_axes=convolution_axes,
+                        self_adjoint=self_adjoint)
+    result = Lap.functional_calculus(
+        lambda t: np.exp(1j / (4*np.pi* fresnel_number) * t)
+    )
+    if self_adjoint is True and not result.self_adjoint:
+        raise ValueError(Errors.value_error(
+            'The Fresnel propagator is not self-adjoint for the given '
+            'multiplier.'
+        ))
+    return result
 
 class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):   
     """Implements the convolution with a periodized version of the outgoing fundamental solution to the Helmholtz equation. 
@@ -1528,8 +1936,12 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
     Analytic expressions for the Fourier coefficients of the convolution kernel were computed in 
     Vainikko, Gennadi M. "Fast Solvers of the Lippmann-Schwinger equation" 2000 
     Gilbert, R. P. / Kajiwara, J. / Xu, Y. S. (Eds.) Direct and Inverse Problems of Mathematical Physics Kluwer Acad. Publ.: Dordrecht
+
+    ``self_adjoint`` has the meaning documented for
+    :class:`ConvolutionOperator`.
     """
-    def __init__(self,grid, kappa):
+    def __init__(self,grid, kappa,
+                 self_adjoint: bool | None = None):
         if not grid.is_complex:
             raise ValueError(Errors.value_error("The grid for a periodized Helmholtz volume potential need to be complex!"))
         if not (grid.ndim_domain ==2 or grid.ndim_domain==3):
@@ -1551,7 +1963,8 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
         self.a = self.N * grid.spacing[0]/2.  # half of the periodicity length of the grid
 
         super().__init__(grid,
-                        compute_kernel(self.kappa * self.a, grid.shape))
+                        compute_kernel(self.kappa * self.a, grid.shape),
+                        self_adjoint=self_adjoint)
 
     # noinspection PyPep8Naming 
     @staticmethod
