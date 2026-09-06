@@ -92,7 +92,7 @@ class Richardson(RegSolver):
         self._update = self.op.domain.empty()
 
         if stepsize is None:
-            norm = setting.op.norm(h_domain=setting.h_domain) if op_norm is None else op_norm
+            norm = setting.op.norm_sa(h_domain=setting.h_domain) if op_norm is None else op_norm
             if norm <= 0:
                 raise ValueError(Errors.value_error(
                     "op_norm must be positive."
@@ -379,7 +379,7 @@ class NuMethodSelfAdjoint(RegSolver):
                 space_name='codomain',
             ))
 
-        norm = setting.op.norm(h_domain = setting.h_domain) if op_norm is None else op_norm
+        norm = setting.op.norm_sa(h_domain = setting.h_domain) if op_norm is None else op_norm
         if norm <= 0:
             raise ValueError(Errors.value_error("op_norm must be positive."))
         self.stepsize = 1 / norm if stepsize is None else stepsize

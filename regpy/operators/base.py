@@ -999,35 +999,35 @@ class Operator:
         method: str | None = None,
         codomain_free: bool = False,
     ) -> float:
-        r"""Approximate the norm of a linear operator.
+        r"""Approximate the norm of a linear operator between Hilbert spaces.
 
-        For a general operator, this is its norm between ``h_domain`` and
-        ``h_codomain`` and is computed from the largest eigenvalue of
-        :math:`T^*G_YT`. For a self-adjoint operator :math:`A`, the method
-        instead computes the largest absolute generalized eigenvalue of
+        This method always interprets the operator as a map from
+        ``h_domain`` to ``h_codomain``. Its norm is computed from the largest
+        eigenvalue of :math:`G_X^{-1}T^*G_YT`, followed by a square root. This also
+        applies when the operator is labelled self-adjoint and the two Hilbert
+        spaces are identical.
 
-        .. math::
-            A x = \lambda G_X x.
-
-        Thus it returns the norm of :math:`G_X^{-1}A`. In this case
-        ``h_codomain`` is not used.
+        If ``codomain_free`` is true, the same norm is computed without
+        constructing codomain vectors: the self-adjoint normal operator
+        :attr:`adjoint_eval` is passed to :meth:`norm_sa`, and the square root
+        of the resulting value is returned.
  
         Parameters
         ----------
         h_domain: Hilbert space on the domain. Defaults to L2 if None.
         h_codomain: Hilbert space on the codomain. Defaults to L2 if None.
-            Ignored for self-adjoint operators.
+            Not used if ``codomain_free`` is true.
         method: string [default: None]
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
               if this is not set. Alternative: "power" for power method
         codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
-            adjoint_eval.
+            :attr:`adjoint_eval` and :meth:`norm_sa`.
 
         Returns
         -------
         scalar
-            Approximation of the operator norm described above.
+            Approximation of the norm from ``h_domain`` to ``h_codomain``.
 
         Raises
         ------
@@ -1048,47 +1048,24 @@ class Operator:
                 h_domain.vecsp,
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."))
+        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+        if codomain_free:
+            return sqrt(self.adjoint_eval.norm_sa(
+                h_domain=h_domain,
+                method=method,
+            ))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
-        elif not (codomain_free or self.self_adjoint) and h_codomain.vecsp != self.codomain:
+        elif h_codomain.vecsp != self.codomain:
             raise ValueError(util.Errors.not_equal(
-                h_domain.vecsp,
-                self.domain,
-                add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_domain} on codomain."))
-        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+                h_codomain.vecsp,
+                self.codomain,
+                add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_codomain} on codomain."))
         if method == "power":
-            return self._power_method(h_domain,h_codomain,codomain_free=codomain_free)
+            return self._power_method(h_domain,h_codomain)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
-            if self.self_adjoint:
-                shifted_op = SciPyLinearOperator(self + h_domain.gram)
-                gram = SciPyLinearOperator(h_domain.gram)
-                gram_inv = SciPyLinearOperator(h_domain.gram_inv)
-                largest = eigsh(
-                    shifted_op,
-                    1,
-                    M=gram,
-                    Minv=gram_inv,
-                    which='LA',
-                    return_eigenvectors=False,
-                    tol=0.01,
-                )[0] - 1.
-                smallest = eigsh(
-                    shifted_op,
-                    1,
-                    M=gram,
-                    Minv=gram_inv,
-                    which='SA',
-                    return_eigenvectors=False,
-                    tol=0.01,
-                )[0] - 1.
-                estimate = max(abs(largest), abs(smallest))
-                roundoff = 100 * np.finfo(float).eps
-                return 0. if estimate <= roundoff else estimate
-            if codomain_free:
-                op = self.adjoint_eval
-            else:
-                op = self.adjoint * h_codomain.gram * self
+            op = self.adjoint * h_codomain.gram * self
             # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
             return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
                               Minv=SciPyLinearOperator(h_domain.gram_inv),
@@ -1099,20 +1076,119 @@ class Operator:
                 f"The method {method} is unknown to compute the norm of an Operator {self}!"
             ))
 
+    def norm_sa(
+        self,
+        h_domain: HilbertSpace | None = None,
+        method: str | None = None,
+    ) -> float:
+        r"""Approximate the norm of a self-adjoint map into a dual space.
+
+        The operator must be linear and explicitly labelled self-adjoint. It
+        is interpreted as a map :math:`A:X\to X^*`, where ``h_domain`` is the
+        Hilbert space :math:`X`. The method computes the largest absolute
+        generalized eigenvalue of
+
+        .. math::
+            A x = \lambda G_X x,
+
+        and hence the norm of :math:`G_X^{-1}A:X\to X`.
+
+        This interpretation differs from :meth:`norm`, even if that method is
+        called for a self-adjoint operator with identical domain and codomain
+        Hilbert spaces. In that case :meth:`norm` treats the operator as a map
+        :math:`X\to X`, whereas this method treats its values as elements of
+        :math:`X^*`.
+
+        Parameters
+        ----------
+        h_domain: Hilbert space on the domain. Defaults to L2 if None.
+        method: string [default: None]
+            Method by which an approximation of the operator norm is
+            computed. If None, uses ``self.default_norm_method`` or
+            ``'lanczos'`` if this is not set. Alternative: ``'power'`` for
+            power iteration.
+
+        Returns
+        -------
+        scalar
+            Approximation of the norm of :math:`G_X^{-1}A`.
+
+        Raises
+        ------
+        NotImplementedError
+            If the operator is nonlinear or the method is not implemented.
+        ValueError
+            If the operator is not labelled self-adjoint or ``h_domain`` does
+            not belong to its domain.
+        """
+        if not self.linear:
+            raise NotImplementedError(util.Errors.not_linear_op(
+                self,
+                f"To compute the norm of the Operator {self} it has to be linear!"
+            ))
+        if not self.self_adjoint:
+            raise ValueError(util.Errors.value_error(
+                "norm_sa requires an operator labelled as self-adjoint.",
+                self,
+                "norm_sa",
+            ))
+
+        from regpy.hilbert import L2
+        if h_domain is None:
+            h_domain = L2(self.domain)
+        elif h_domain.vecsp != self.domain:
+            raise ValueError(util.Errors.not_equal(
+                h_domain.vecsp,
+                self.domain,
+                add_info=f"Trying to compute the self-adjoint norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."
+            ))
+
+        method = getattr(self, 'default_norm_method', 'lanczos') if method is None else method
+        if method == "power":
+            return self._power_method_sa(h_domain)
+        elif method == "lanczos":
+            from scipy.sparse.linalg import eigsh
+            shifted_op = SciPyLinearOperator(self + h_domain.gram)
+            gram = SciPyLinearOperator(h_domain.gram)
+            gram_inv = SciPyLinearOperator(h_domain.gram_inv)
+            largest = eigsh(
+                shifted_op,
+                1,
+                M=gram,
+                Minv=gram_inv,
+                which='LA',
+                return_eigenvectors=False,
+                tol=0.01,
+            )[0] - 1.
+            smallest = eigsh(
+                shifted_op,
+                1,
+                M=gram,
+                Minv=gram_inv,
+                which='SA',
+                return_eigenvectors=False,
+                tol=0.01,
+            )[0] - 1.
+            estimate = max(abs(largest), abs(smallest))
+            roundoff = 100 * np.finfo(float).eps
+            return 0. if estimate <= roundoff else estimate
+        else:
+            raise NotImplementedError(util.Errors._compose_message(
+                "NOT DEFINED METHOD",
+                f"The method {method} is unknown to compute the self-adjoint norm of an Operator {self}!"
+            ))
+
     def _power_method(
         self,
         h_domain: HilbertSpace,
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
         stopping_rule: float = 1e-12,
-        codomain_free: bool = False,
     ) -> float:
         r"""Approximate the operator norm by power iteration.
 
-        Self-adjoint operators are applied directly and yield the norm of
-        :math:`G_X^{-1}A`. Other operators use their normal operator and take
-        the final square root. This method should be called through
-        :meth:`norm`.
+        The operator's normal operator is used and the final square root is
+        taken. This method should be called through :meth:`norm`.
 
         Parameters
         ----------
@@ -1120,17 +1196,10 @@ class Operator:
         h_codomain: Hilbert space on the codomain.
         max_iter: int maximum number of iterations
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
-        codomain_free: bool [default: False]
-            see method norm        
         """
         x = self.domain.rand()
         relative_residual = inf
-        if self.self_adjoint:
-            op = self
-        elif codomain_free:
-            op = self.adjoint_eval
-        else:
-            op = self.adjoint * h_codomain.gram * self
+        op = self.adjoint * h_codomain.gram * self
         for _ in range(max_iter):
             if relative_residual < stopping_rule:
                 break
@@ -1139,14 +1208,43 @@ class Operator:
             lmb = sqrt(self.domain.vdot(y, ystar).real)
             if lmb == 0:
                 return 0.
-            if self.self_adjoint:
-                rayleigh = self.domain.vdot(x, ystar).real
-                signed_lmb = -lmb if rayleigh < 0 else lmb
-                relative_residual = h_domain.norm(y - signed_lmb * x)
-            else:
-                relative_residual = h_domain.norm(y - lmb * x)
+            relative_residual = h_domain.norm(y - lmb * x)
             x = y/lmb
-        return lmb if self.self_adjoint else sqrt(lmb)
+        return sqrt(lmb)
+
+    def _power_method_sa(
+        self,
+        h_domain: HilbertSpace,
+        max_iter: int = int(1e2),
+        stopping_rule: float = 1e-12,
+    ) -> float:
+        r"""Approximate the self-adjoint norm by power iteration.
+
+        The operator is applied directly and yields the norm of
+        :math:`G_X^{-1}A`. This method should be called through
+        :meth:`norm_sa`.
+
+        Parameters
+        ----------
+        h_domain: Hilbert space on the domain.
+        max_iter: int maximum number of iterations
+        stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
+        """
+        x = self.domain.rand()
+        relative_residual = inf
+        for _ in range(max_iter):
+            if relative_residual < stopping_rule:
+                break
+            ystar = self(x)
+            y = h_domain.gram_inv(ystar)
+            lmb = sqrt(self.domain.vdot(y, ystar).real)
+            if lmb == 0:
+                return 0.
+            rayleigh = self.domain.vdot(x, ystar).real
+            signed_lmb = -lmb if rayleigh < 0 else lmb
+            relative_residual = h_domain.norm(y - signed_lmb * x)
+            x = y/lmb
+        return lmb
     
     def set_constant(self, c: Vector | Scalar, index: int) -> None:
         """Assuming the operator you defined has a domain that is composed of multiple

@@ -131,18 +131,13 @@ def _make_case(name):
     case["h_codomain"] = standard_setting.h_codomain
     operator.set_gram_factor(standard_setting.h_codomain)
 
+    case["op_norm"] = operator.norm(
+        standard_setting.h_domain,
+        standard_setting.h_codomain,
+    )
     if self_adjoint:
-        case["self_adjoint_op_norm"] = operator.norm(
+        case["self_adjoint_op_norm"] = operator.norm_sa(
             standard_setting.h_domain
-        )
-        normal_operator_norm = operator.adjoint_eval.norm(
-            standard_setting.h_domain
-        )
-        case["op_norm"] = np.sqrt(normal_operator_norm)
-    else:
-        case["op_norm"] = operator.norm(
-            standard_setting.h_domain,
-            standard_setting.h_codomain,
         )
     case["landweber_stepsize"] = (
         STEPSIZE_SAFETY / case["op_norm"] ** 2
