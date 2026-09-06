@@ -129,11 +129,9 @@ class CGNE(RegSolver):
         self.h_codomain.gram(self._Tdir, out=self._g_Tdir)
 
         denominator = codomain.vdot(self._g_Tdir, self._Tdir).real
-        if denominator == 0:
-            raise RuntimeError(
-                "The CGNE step size is undefined because the search direction "
-                "has zero image norm."
-            )
+        if denominator <=1e-15:
+            self.log.info(f'CGNE: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()
         alpha = self.sq_norm_res / denominator
 
         _axpy(domain, self.x, alpha, self.dir, self._domain_work)

@@ -474,6 +474,9 @@ class TikhonovCG(RegSolver):
             self.krylov_basis[self.iteration_number, :] /= sqrt(
                 self.sq_norm_res
             )
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info('TikhonovCG: stopped at iteration 0 as residual is 0 to machine precision.')
+            self.converge()            
 
     def _sync_lavrentiev_state(self) -> None:
         """Mirror the public state of the delegated codomain-free solver."""
@@ -557,6 +560,10 @@ class TikhonovCG(RegSolver):
             self.g_dir += self.g_res
         else:
             self.hessR(self.dir, out=self.g_dir)
+
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info(f'TikhonovCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()
 
     def get_stoprule(self,other_stoprule=None):
         """ Constructs the internal StopRule defined by the parameters of the constructor
@@ -1079,7 +1086,8 @@ class LavrentievCG(RegSolver):
                 self.krylov_basis[self.iteration_number, :] /= sqrt(
                     self.sq_norm_res
                 )
-        if self.sq_norm_res <= 0:
+        if np.sqrt(self.sq_norm_res) < 1e-15:
+            self.log.info(f'LavrentievCG: stopped at iteration 0 as residual is 0 to machine precision.')
             self.converge()
 
     def _next(self):
@@ -1128,7 +1136,7 @@ class LavrentievCG(RegSolver):
         self._domain_work2 *= self.stepsize
         self.g_res -= self._domain_work2
         self.hessR.inverse(self.g_res, out=self._res)
-
+       
         sq_norm_res_old = self.sq_norm_res
         self.sq_norm_res = domain.vdot(self.g_res, self._res).real
         beta = self.sq_norm_res / sq_norm_res_old
@@ -1147,6 +1155,10 @@ class LavrentievCG(RegSolver):
         self.dir *= beta
         self.dir += self._domain_work
         self.hessR(self.dir, out=self.g_dir)
+
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info(f'LavrentievCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()         
 
     def get_stoprule(self, other_stoprule=None):
         """Construct the MR-based internal stopping rule."""
