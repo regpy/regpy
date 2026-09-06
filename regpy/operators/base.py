@@ -50,7 +50,6 @@ __all__ = ["ObsDataT",
            "SplitRealImag",
            "SquaredModulus", 
            "Zero", 
-           "ApproximateHessian", 
            "SciPyLinearOperator"
            ]
 
@@ -4279,51 +4278,6 @@ class Zero(Operator):
     def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
         self.domain.fill(out, 0)
         return out
-
-class ApproximateHessian(Operator):
-    r"""An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
-    using finite differences of it `gradient` if it is implemented for that functional.
-
-    Parameters
-    ----------
-    func : regpy.functionals.Functional
-        The functional.
-    x : Vector
-        The point at which to evaluate the Hessian.
-    stepsize : float, optional
-        The stepsize for the finite difference approximation.
-    """
-    def __init__(
-        self, func: Functional, x: Vector, stepsize: float = 1e-8
-    ) -> None:
-        from regpy.functionals import Functional
-        if not isinstance(func,Functional):
-            raise ValueError(util.Errors.not_instance(
-                func,
-                Functional,
-            ))
-        if not hasattr(func,"gradient"):
-            raise ValueError(util.Errors._compose_message(
-                    "MISSING ATTRIBUTE",
-                f"The given functional {func} does not have a defined gradient. Making it impossible to approximate a Hessian operator."
-            ))
-        self.gradx = func.gradient(x)
-        """The gradient at `x`"""
-        self.func = func
-        self.x = func.domain.empty()
-        func.domain.copyto(self.x, x)
-        self.stepsize = stepsize
-        # linear=True is a necessary lie
-        super().__init__(func.domain, func.domain, linear=True)
-        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
-
-    def _eval(self, h: Vector) -> Vector:
-        grad = self.func.subgradient(self.x + self.stepsize * h)
-        return grad - self.gradx
-
-    def _adjoint(self, x: Vector) -> Vector:
-        return self._eval(x)
-
 
 class SciPyLinearOperator(LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
