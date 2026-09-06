@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
+from regpy.hilbert import GramHilbertSpace, L2
 from regpy.vecsps import NumPyVectorSpace, TupleVector
 import regpy.operators.base as op_base
 from regpy.operators.graph_operator import OperatorGraph
@@ -149,6 +150,22 @@ class _ExponentialQuadraticGradient(op_base.Operator):
         ])
 
 
+class _MatrixWithAdjoint(op_base.Operator):
+    """Small matrix operator whose self-adjointness is not inferred."""
+
+    def __init__(self, matrix):
+        self.matrix = np.asarray(matrix, dtype=float)
+        domain = NumPyVectorSpace(self.matrix.shape[1])
+        codomain = NumPyVectorSpace(self.matrix.shape[0])
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        return self.matrix @ x
+
+    def _adjoint(self, y):
+        return self.matrix.T @ y
+
+
 class TestSelfAdjoint:
 
     def test_constructor_contract(self):
@@ -219,6 +236,33 @@ class TestSelfAdjoint:
             steps=[1e-1, 1e-2, 1e-3, 1e-4],
         )
 
+    def test_declare_as_self_adjoint(self):
+        matrix = np.array([[2., 1.], [1., 3.]])
+        op = _MatrixWithAdjoint(matrix)
+        old_adjoint = op.adjoint
+
+        assert old_adjoint is not op
+        op.declare_as_self_adjoint()
+
+        assert op.self_adjoint is True
+        assert op.adjoint is op
+        assert op.adjoint is not old_adjoint
+        np.testing.assert_allclose(op(np.array([1., -2.])), [-0., -5.])
+
+        nonsymmetric = _MatrixWithAdjoint([[1., 2.], [0., 1.]])
+        with pytest.raises(ValueError):
+            nonsymmetric.declare_as_self_adjoint()
+        assert nonsymmetric.self_adjoint is False
+
+        with pytest.raises(TypeError):
+            op.declare_as_self_adjoint(check=1)
+        with pytest.raises(ValueError):
+            _MatrixWithAdjoint(np.ones((3, 2))).declare_as_self_adjoint(
+                check=False
+            )
+        with pytest.raises(ValueError):
+            _ExponentialQuadraticGradient().declare_as_self_adjoint()
+
     def test_flags_of_standard_operators(self):
         real_space = NumPyVectorSpace(2)
         complex_space = NumPyVectorSpace(2, dtype=complex)
@@ -254,6 +298,99 @@ class TestSelfAdjoint:
         assert complex_combination.self_adjoint is False
         assert self_adjoint_sum.self_adjoint is True
         assert non_self_adjoint_sum.self_adjoint is False
+
+
+class TestOperatorNorm:
+
+    @pytest.mark.parametrize("method", ("power", "lanczos"))
+    def test_general_and_self_adjoint_interpretations(self, method):
+        matrix = np.diag([2., -1., 0.5, 0.25])
+        op = _SelfAdjointMatrix(matrix)
+        gram = op_base.PtwMultiplication(op.domain, 4.)
+        h_domain = GramHilbertSpace(gram)
+        l2 = L2(op.domain)
+
+        # As a map H -> H, the scalar Gram factors cancel.
+        assert op.norm(h_domain, h_domain, method=method) == pytest.approx(
+            2., rel=2e-2
+        )
+        # As a map H -> H*, norm_sa computes ||G^-1 A||.
+        assert op.norm_sa(h_domain, method=method) == pytest.approx(
+            0.5, rel=2e-2
+        )
+        # The codomain-free forward norm delegates to the self-adjoint norm
+        # of A* A and then takes its square root.
+        forward_norm = op.norm(h_domain, l2, method=method)
+        codomain_free_norm = op.norm(
+            h_domain, method=method, codomain_free=True
+        )
+        assert codomain_free_norm == pytest.approx(
+            forward_norm, rel=2e-2
+        )
+
+    def test_codomain_free_delegates_to_norm_sa(self, monkeypatch):
+        op = _SelfAdjointMatrix(np.diag([2., 1.]))
+        h_domain = L2(op.domain)
+        normal_operator = op.adjoint_eval
+        call = {}
+
+        def fake_norm_sa(h_domain=None, method=None):
+            call["h_domain"] = h_domain
+            call["method"] = method
+            return 25.
+
+        monkeypatch.setattr(normal_operator, "norm_sa", fake_norm_sa)
+        assert op.norm(
+            h_domain, method="power", codomain_free=True
+        ) == pytest.approx(5.)
+        assert call == {"h_domain": h_domain, "method": "power"}
+
+    def test_validation(self):
+        self_adjoint = _SelfAdjointMatrix(np.diag([2., 1.]))
+        non_self_adjoint = _MatrixWithAdjoint([[1., 2.], [0., 1.]])
+        h_domain = L2(self_adjoint.domain)
+
+        with pytest.raises(ValueError):
+            non_self_adjoint.norm_sa(L2(non_self_adjoint.domain))
+        with pytest.raises(NotImplementedError):
+            _ExponentialQuadraticGradient().norm(h_domain, h_domain)
+        with pytest.raises(ValueError):
+            self_adjoint.norm_sa(L2(NumPyVectorSpace(3)))
+        with pytest.raises(NotImplementedError):
+            self_adjoint.norm(h_domain, h_domain, method="unknown")
+        with pytest.raises(NotImplementedError):
+            self_adjoint.norm_sa(h_domain, method="unknown")
+
+
+class TestCodomainFreeGramFactor:
+
+    def test_factor_and_supported_gram_operators(self):
+        op = _MatrixWithAdjoint([[1., 2.], [3., 4.]])
+        x = np.array([0.5, -1.])
+        unscaled = op.adjoint_eval(x)
+
+        op.gram_factor = 2.5
+        np.testing.assert_allclose(op.adjoint_eval(x), 2.5 * unscaled)
+
+        op.set_gram_factor(op_base.PtwMultiplication(op.codomain, 3.))
+        assert op.gram_factor == pytest.approx(3.)
+        np.testing.assert_allclose(op.adjoint_eval(x), 3. * unscaled)
+
+        op.set_gram_factor(op.codomain.identity)
+        assert op.gram_factor == pytest.approx(1.)
+
+    def test_validation(self):
+        op = _MatrixWithAdjoint([[1., 0.], [0., 1.]])
+        with pytest.raises(TypeError):
+            op.gram_factor = True
+        with pytest.raises(TypeError):
+            op.gram_factor = 1j
+        with pytest.raises(ValueError):
+            op.gram_factor = -1.
+        with pytest.raises(ValueError):
+            op.set_gram_factor(
+                op_base.PtwMultiplication(op.codomain, [1., 2.])
+            )
 
 @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((2,2),np.complex128)])
 class TestIdentity():

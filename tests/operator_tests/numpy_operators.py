@@ -27,6 +27,130 @@ class TestMatrixMultiplication():
         vec = np.sum(matrix,axis=1)
         op = MatrixMultiplication(matrix=matrix)
         assert vec == pytest.approx(op(op.domain.ones()))
+
+    def test_multidimensional_real_coordinates(self):
+        domain = NumPyVectorSpace((2, 2))
+        codomain = NumPyVectorSpace((2, 3))
+        matrix = np.arange(24., dtype=float).reshape(6, 4) / 10
+        op = MatrixMultiplication(
+            matrix, domain=domain, codomain=codomain
+        )
+        x = np.arange(4., dtype=float).reshape(2, 2)
+        y = np.arange(6., dtype=float).reshape(2, 3)
+
+        expected = codomain.fromflat(matrix @ domain.flatten(x))
+        expected_adjoint = domain.fromflat(
+            matrix.T @ codomain.flatten(y)
+        )
+        np.testing.assert_allclose(op(x), expected)
+        np.testing.assert_allclose(op.adjoint(y), expected_adjoint)
+        assert op.complex_coordinates is False
+        op_evaluation_and_ot(op, sample_N=2)
+
+    def test_genuinely_complex_coordinates(self):
+        domain = NumPyVectorSpace((2, 2), dtype=complex)
+        codomain = NumPyVectorSpace(3, dtype=complex)
+        matrix = (
+            np.arange(12.).reshape(3, 4)
+            + 1j * np.arange(12., 24.).reshape(3, 4)
+        ) / 10
+        op = MatrixMultiplication(
+            matrix, domain=domain, codomain=codomain
+        )
+        x = (
+            np.arange(4.).reshape(2, 2)
+            + 1j * np.arange(4., 8.).reshape(2, 2)
+        )
+        y = np.array([1 + 2j, -0.5j, 3 - 1j])
+
+        expected = codomain.complex_fromflat(
+            matrix @ domain.complex_flatten(x)
+        )
+        expected_adjoint = domain.complex_fromflat(
+            matrix.conj().T @ codomain.complex_flatten(y)
+        )
+        assert op.complex_coordinates is True
+        np.testing.assert_allclose(op(x), expected)
+        np.testing.assert_allclose(op.adjoint(y), expected_adjoint)
+        op_evaluation_and_ot(op, sample_N=2)
+
+    def test_realified_complex_coordinates(self):
+        space = NumPyVectorSpace(2, dtype=complex)
+        matrix = np.diag([1., 2., 3., 4.])
+        op = MatrixMultiplication(
+            matrix, domain=space, codomain=space
+        )
+        x = np.array([1 + 2j, 3 + 4j])
+        expected = space.fromflat(matrix @ space.flatten(x))
+
+        assert op.complex_coordinates is False
+        assert op.self_adjoint is True
+        assert op.adjoint is op
+        np.testing.assert_allclose(op(x), expected)
+
+    def test_self_adjoint_inference_for_complex_matrix(self):
+        space = NumPyVectorSpace(2, dtype=complex)
+        hermitian = np.array([
+            [2., 1 + 2j],
+            [1 - 2j, 3.],
+        ])
+        self_adjoint = MatrixMultiplication(
+            hermitian, domain=space, codomain=space
+        )
+        not_self_adjoint = MatrixMultiplication(
+            np.array([[1., 2j], [0., 1.]]),
+            domain=space,
+            codomain=space,
+        )
+
+        assert self_adjoint.self_adjoint is True
+        assert self_adjoint.adjoint is self_adjoint
+        assert not_self_adjoint.self_adjoint is False
+
+    def test_coordinate_validation(self):
+        real_space = NumPyVectorSpace((2, 2))
+        complex_space = NumPyVectorSpace(2, dtype=complex)
+
+        with pytest.raises(ValueError):
+            MatrixMultiplication(
+                np.eye(3), domain=real_space, codomain=real_space
+            )
+        with pytest.raises(ValueError):
+            MatrixMultiplication(
+                np.eye(4, dtype=complex) * (1 + 1j),
+                domain=complex_space,
+                codomain=complex_space,
+            )
+
+
+@pytest.mark.parametrize("axis", (0, 1, -1))
+def test_complex2real(axis):
+    domain = NumPyVectorSpace((2, 3), dtype=complex)
+    op = Complex2Real(domain, axis=axis)
+    x = (
+        np.arange(6.).reshape(2, 3)
+        + 1j * np.arange(6., 12.).reshape(2, 3)
+    )
+    expected = np.stack((x.real, x.imag), axis=axis)
+
+    assert complex2real is Complex2Real
+    np.testing.assert_allclose(op(x), expected)
+    np.testing.assert_allclose(op.adjoint(expected), x)
+    np.testing.assert_allclose(op.inverse(expected), x)
+    assert op.inverse is op.adjoint
+    assert op.invertible
+    op_evaluation_and_ot(op, x=x, res=expected, sample_N=2)
+
+
+def test_complex2real_validation():
+    with pytest.raises(TypeError):
+        Complex2Real(object())
+    with pytest.raises(ValueError):
+        Complex2Real(NumPyVectorSpace(4))
+    with pytest.raises(TypeError):
+        Complex2Real(NumPyVectorSpace(4, dtype=complex), axis=True)
+    with pytest.raises(ValueError):
+        Complex2Real(NumPyVectorSpace(4, dtype=complex), axis=2)
     
 class TestCholeskyInverse():
     op_mat = MatrixMultiplication(np.array([[9, 3, 1, 5], [3, 7, 5, 1], [1, 5, 9, 2], [5, 1, 2, 6]]),domain= UniformGridFcts(4),codomain=UniformGridFcts(4))
@@ -178,6 +302,92 @@ class TestNemytskiiOperator():
         op_evaluation_and_ot(
             op, x=x, res=x[..., 0] + x[..., 1], sample_N=2
         )
+
+
+@pytest.mark.parametrize("size", (7, 8))
+def test_real_fourier_embedding(size):
+    grid = UniformGridFcts((-1, 1, size), periodic=True)
+    transform = FourierTransform(grid, centered_input=False)
+    embedding = RealFourierEmbedding(transform)
+    coordinates = np.linspace(-0.7, 1.1, size)
+    spectrum = embedding(coordinates)
+
+    assert embedding.coordinate_space == embedding.domain
+    assert spectrum[0].imag == pytest.approx(0.)
+    if size % 2 == 0:
+        assert spectrum[-1].imag == pytest.approx(0.)
+    np.testing.assert_allclose(
+        embedding.left_inverse(spectrum), coordinates,
+        rtol=1e-14, atol=1e-14,
+    )
+    with pytest.raises(NotImplementedError):
+        _ = embedding.inverse
+
+    multiplier = np.linspace(0.5, 2., transform.codomain.shape[0])
+    coordinate_multiplier = embedding.real_multiplier(multiplier)
+    np.testing.assert_allclose(
+        embedding(coordinate_multiplier * coordinates),
+        multiplier * spectrum,
+        rtol=1e-14,
+        atol=1e-14,
+    )
+    with pytest.raises(ValueError):
+        embedding.real_multiplier(multiplier + 1j)
+    op_evaluation_and_ot(embedding, sample_N=2)
+
+
+@pytest.mark.parametrize("size", (7, 8))
+def test_real_fourier_transform(size):
+    grid = UniformGridFcts((-1, 1, size), periodic=True)
+    op = RealFourierTransform(
+        grid, centered=True, centered_input=True
+    )
+    x = grid.randn()
+    coefficients = op(x)
+
+    assert not coefficients.dtype.kind == "c"
+    assert coefficients.shape == (size,)
+    assert op.coordinate_space == op.codomain
+    assert op.invertible
+    assert op.inverse is op.adjoint
+    np.testing.assert_allclose(
+        op.adjoint(coefficients), x, rtol=1e-13, atol=1e-13
+    )
+    op_evaluation_and_ot(op, sample_N=2)
+
+
+def test_fourier_transform_inverse_contract():
+    real_grid = UniformGridFcts((-1, 1, 8), periodic=True)
+    real_transform = FourierTransform(
+        real_grid, centered=True, centered_input=True
+    )
+    x = real_grid.randn()
+
+    assert real_transform.invertible is False
+    with pytest.raises(NotImplementedError):
+        _ = real_transform.inverse
+    np.testing.assert_allclose(
+        real_transform.left_inverse(real_transform(x)),
+        x,
+        rtol=1e-13,
+        atol=1e-13,
+    )
+    op_evaluation_and_ot(real_transform, sample_N=2)
+
+    complex_grid = real_grid.complex_space()
+    complex_transform = FourierTransform(
+        complex_grid, centered=True, centered_input=True
+    )
+    z = complex_grid.randn()
+    assert complex_transform.invertible
+    assert complex_transform.inverse is complex_transform.adjoint
+    np.testing.assert_allclose(
+        complex_transform.inverse(complex_transform(z)),
+        z,
+        rtol=1e-13,
+        atol=1e-13,
+    )
+    op_evaluation_and_ot(complex_transform, sample_N=2)
 
 @pytest.mark.parametrize("vs",[ 
         (NumPyVectorSpace((2,4),dtype=complex),NumPyVectorSpace(3,dtype=complex),NumPyVectorSpace((5,2),dtype=complex)),
