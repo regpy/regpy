@@ -12,7 +12,7 @@ import numpy as np
 from regpy.operators import ObsDataT
 from regpy.util import Errors
 from regpy.vecsps import ReadOnlyVector, Vector
-from .general import MissingValueError, StopRule, _copy_vector
+from .general import Schedule, MissingValueError, StopRule, _copy_vector
 
 if TYPE_CHECKING:
     from regpy.solvers import RegSolver, Setting
@@ -57,6 +57,9 @@ class Discrepancy(StopRule):
     noise_level_is_relative : bool, optional
         Whether ``noiselevel`` is relative to the norm of the observations.
         Defaults to ``False``.
+    schedule : iterable of int or None, optional
+        Iterations at which the rule is evaluated. If ``None`` (default), it
+        is evaluated at every iteration.
     """
     @overload
     def __init__(
@@ -68,6 +71,7 @@ class Discrepancy(StopRule):
         data: ReadOnlyVector | ObsDataT | None = None,
         norm: Norm | None = None,
         noise_level_is_relative: bool = False,
+        schedule: Schedule = None,
     ) -> None: ...
 
     @overload
@@ -80,6 +84,7 @@ class Discrepancy(StopRule):
         tau: float = 2.,
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
+        schedule: Schedule = None,
     ) -> None: ...
 
     @overload
@@ -92,27 +97,28 @@ class Discrepancy(StopRule):
         tau: float = 2.,
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
+        schedule: Schedule = None,
     ) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         defaults: dict[str, Any] = {
             'tau': 2., 'setting': None, 'data': None, 'norm': None,
-            'noise_level_is_relative': False,
+            'noise_level_is_relative': False, 'schedule': None,
         }
         if len(args)==3: 
             self.log.warning('Initialization of Discrepancy with three positional arguments (norm, data, noise_level) deprecated. Use one positional argument (noiselevel) and specifiy norm and data via a keyword argument setting!')
             norm,data,noiselevel = args
             p = {**defaults, **kwargs}
-            tau,noise_level_is_relative,setting = p['tau'],p['noise_level_is_relative'],p['setting']
+            tau,noise_level_is_relative,setting,schedule = p['tau'],p['noise_level_is_relative'],p['setting'],p['schedule']
         elif len(args)==2:
             self.log.warning('Initialization of Discrepancy with two positional arguments (norm, data) deprecated. Use one positional argument (noiselevel) and specifiy norm and data via a keyword argument setting!')
             norm,data = args
             p = {**defaults, **kwargs}
-            tau,noise_level_is_relative,setting,noiselevel = p['tau'],p['noise_level_is_relative'],p['setting'],p['noiselevel']          
+            tau,noise_level_is_relative,setting,noiselevel,schedule = p['tau'],p['noise_level_is_relative'],p['setting'],p['noiselevel'],p['schedule']
         elif len(args)==1:
             noiselevel = args[0]
             p = {**defaults, **kwargs}
-            tau,noise_level_is_relative,setting,norm,data = p['tau'],p['noise_level_is_relative'],p['setting'],p['norm'],p['data']
+            tau,noise_level_is_relative,setting,norm,data,schedule = p['tau'],p['noise_level_is_relative'],p['setting'],p['norm'],p['data'],p['schedule']
         else:
             raise ValueError(Errors.value_error(
                 'Discrepancy must have one recommended positional argument '
@@ -136,7 +142,7 @@ class Discrepancy(StopRule):
             if setting is None:
                 raise ValueError(Errors.value_error('If setting is not provided, then norm must be provided.')) 
             self.norm = setting.h_codomain.norm
-        super().__init__()
+        super().__init__(schedule=schedule)
         if data is not None:
             self.data: ReadOnlyVector | ObsDataT = data
         else:
@@ -188,14 +194,18 @@ class LCurve(StopRule):
         Solver used for computing the reconstructions.
     max_iter : int, optional
         Maximum number of regularization parameters. Defaults to ``1000``.
+    schedule : iterable of int or None, optional
+        Iterations at which the rule records and evaluates a parameter. If
+        ``None`` (default), every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         solver: RegSolver,
         max_iter: int = 1000,
+        schedule: Schedule = None,
     ) -> None:
-        super().__init__()
+        super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.setting: Setting = setting
         self.data_norm: Norm = setting.h_codomain.norm
@@ -265,14 +275,18 @@ class QuasiOpt(StopRule):
         Solver used for computing the reconstructions.
     max_iter : int, optional
         Maximum number of regularization parameters. Defaults to ``1000``.
+    schedule : iterable of int or None, optional
+        Iterations at which the rule records and evaluates a parameter. If
+        ``None`` (default), every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         solver: RegSolver,
         max_iter: int = 1000,
+        schedule: Schedule = None,
     ) -> None:
-        super().__init__()
+        super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.norm: Norm = setting.h_domain.norm
         self.solver = solver
@@ -330,6 +344,9 @@ class Lepskii(StopRule):
         automatic estimation is not implemented.
     max_iter : int, optional
         Maximum number of regularization parameters. Defaults to ``100``.
+    schedule : iterable of int or None, optional
+        Iterations at which the rule records and evaluates a parameter. If
+        ``None`` (default), every iteration is used.
     """
 
     def __init__(
@@ -338,8 +355,9 @@ class Lepskii(StopRule):
         solver: RegSolver,
         error_prop: ErrorPropagation | None = None,
         max_iter: int = 100,
+        schedule: Schedule = None,
     ) -> None:
-        super().__init__()
+        super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.norm: Norm = setting.h_domain.norm
         self.solver = solver
@@ -411,14 +429,18 @@ class Oracle(StopRule):
         The distance function to measure the distance between the current iterate and the exact solution. 
         distance_function(x, exact_solution) -> float
         Defaults to None, in which case the norm of the operator's domain is applied to x-exact_solution.
+    schedule : iterable of int or None, optional
+        Iterations at which errors and reconstructions are recorded. If
+        ``None`` (default), every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         exact_solution: ReadOnlyVector | None = None,
         distance_function: DistanceFunction | None = None,
+        schedule: Schedule = None,
     ) -> None:
-        super().__init__()
+        super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.history_dict["error"] = []
         self.history_dict["alphas"] = []
