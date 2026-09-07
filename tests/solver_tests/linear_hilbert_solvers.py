@@ -1,8 +1,6 @@
 """Tests for linear solvers on real and complex Hilbert spaces.
 
-The tests are converted from ``test_linear_Hilbert_solvers.ipynb``.  Tests of
-alternative minimizers for quadratic Tikhonov functionals are intentionally
-not included yet.
+The tests are converted from ``test_linear_Hilbert_solvers.ipynb``.
 """
 
 import logging
@@ -28,8 +26,9 @@ from regpy.solvers.linear.spectral import (
     Spectral_Tikhonov,
     SpectralSelfAdjoint_Richardson,
 )
-from regpy.solvers.linear.tikhonov import TikhonovCG
+from regpy.solvers.linear.tikhonov import LavrentievCG, TikhonovCG
 from regpy.solvers.setting import Setting
+from regpy.stoprules import DualityGapStopping
 from regpy.util import set_rng_seed
 from regpy.vecsps import UniformGridFcts
 
@@ -47,6 +46,8 @@ STEPSIZE_SAFETY = 1.0
 TIKHONOV_EQ_RELTOL = 1e-12
 TIKHONOV_ABS_TOL = 1e-4
 TIKHONOV_REL_TOL = 1e-4
+ALTERNATIVE_REGPAR = 1e-2
+ALTERNATIVE_ERROR_LIMIT = 1e-1
 
 CASE_NAMES = (
     "real, self-adjoint",
@@ -171,6 +172,17 @@ def _difference_norm(hspace, left, right):
     return hspace.norm(difference)
 
 
+def _quadratic_difference_norm(functional, vecsp, left, right):
+    """Return the norm of ``left - right`` induced by a Hessian."""
+    difference = vecsp.empty()
+    vecsp.copyto(difference, left)
+    difference -= right
+    hessian_difference = vecsp.empty()
+    functional.hessian(right)(difference, out=hessian_difference)
+    squared_norm = vecsp.vdot(difference, hessian_difference).real
+    return np.sqrt(max(squared_norm, 0.0))
+
+
 def _relative_difference(hspace, left, right):
     denominator = max(
         hspace.norm(left),
@@ -198,6 +210,24 @@ def _assert_strictly_close(hspace, left, right, label):
     assert error < STRICT_TOL, (
         f"{label}: relative difference {error:.3e} is not below "
         f"{STRICT_TOL:.1e}."
+    )
+
+
+def _assert_internal_bound(
+    solver, history_key, measured_error, requested_tolerance
+):
+    histories = solver.get_convergence_histories()
+    estimates = histories.get(history_key, ())
+    assert len(estimates), f"No convergence history found for {history_key!r}."
+    estimated_error = estimates[-1]
+    permitted = requested_tolerance * (1 + 1e-12)
+    assert measured_error <= permitted, (
+        f"Measured error {measured_error:.3e} exceeds the promised "
+        f"bound {requested_tolerance:.1e}."
+    )
+    assert estimated_error <= permitted, (
+        f"Internal estimate {estimated_error:.3e} exceeds the promised "
+        f"bound {requested_tolerance:.1e}."
     )
 
 
@@ -372,6 +402,7 @@ def test_tikhonov_cg_stopping_rule_guarantee(
 
     if rule_name == "absolute domain":
         requested_tolerance = TIKHONOV_ABS_TOL
+        history_key = "abs_err"
         solver_parameters = {
             "tol": requested_tolerance,
             "reltolx": None,
@@ -379,6 +410,7 @@ def test_tikhonov_cg_stopping_rule_guarantee(
         }
     elif rule_name == "relative domain":
         requested_tolerance = TIKHONOV_REL_TOL
+        history_key = "rel_err_x"
         solver_parameters = {
             "tol": None,
             "reltolx": requested_tolerance,
@@ -386,16 +418,18 @@ def test_tikhonov_cg_stopping_rule_guarantee(
         }
     else:
         requested_tolerance = TIKHONOV_REL_TOL
+        history_key = "rel_err_y"
         solver_parameters = {
             "tol": None,
             "reltolx": None,
             "reltoly": requested_tolerance,
         }
 
+    setting = _make_setting(
+        case, codomain_free=codomain_free, regpar=REGPAR
+    )
     solver = TikhonovCG(
-        _make_setting(
-            case, codomain_free=codomain_free, regpar=REGPAR
-        ),
+        setting,
         logging_level=logging.WARNING,
         x_exact=reference_solution,
         y_exact=reference_image,
@@ -404,34 +438,286 @@ def test_tikhonov_cg_stopping_rule_guarantee(
     approximation, image, _ = _run_steps(solver, TIKHONOV_MAX_IT)
 
     if rule_name == "absolute domain":
-        measured_error = _difference_norm(
-            case["h_domain"], approximation, reference_solution
+        measured_error = _quadratic_difference_norm(
+            setting.penalty,
+            setting.op.domain,
+            approximation,
+            reference_solution,
         )
     elif rule_name == "relative domain":
-        reference_increment = _difference_norm(
-            case["h_domain"], reference_solution, case["init"]
+        reference_increment = _quadratic_difference_norm(
+            setting.penalty,
+            setting.op.domain,
+            reference_solution,
+            setting.init,
         )
         measured_error = (
-            _difference_norm(
-                case["h_domain"], approximation, reference_solution
+            _quadratic_difference_norm(
+                setting.penalty,
+                setting.op.domain,
+                approximation,
+                reference_solution,
             )
             / max(reference_increment, np.finfo(float).tiny)
         )
     else:
-        initial_image = case["op"](case["init"])
-        reference_increment = _difference_norm(
-            case["h_codomain"], reference_image, initial_image
+        initial_image = setting.op(setting.init)
+        reference_increment = _quadratic_difference_norm(
+            setting.data_fid,
+            setting.op.codomain,
+            reference_image,
+            initial_image,
         )
         measured_error = (
-            _difference_norm(
-                case["h_codomain"], image, reference_image
+            _quadratic_difference_norm(
+                setting.data_fid,
+                setting.op.codomain,
+                image,
+                reference_image,
             )
             / max(reference_increment, np.finfo(float).tiny)
         )
 
-    assert measured_error <= requested_tolerance * (1 + 1e-12), (
-        f"{rule_name} error {measured_error:.3e} exceeds the promised "
-        f"bound {requested_tolerance:.1e}."
+    _assert_internal_bound(
+        solver,
+        history_key,
+        measured_error,
+        requested_tolerance,
+    )
+
+
+DUAL_TIKHONOV_STOPPING_CASES = (
+    pytest.param(
+        "absolute domain",
+        TIKHONOV_ABS_TOL,
+        "abs_err",
+        {"tol": TIKHONOV_ABS_TOL, "reltolx": None, "reltoly": None},
+        id="absolute-domain",
+    ),
+    pytest.param(
+        "relative domain",
+        TIKHONOV_REL_TOL,
+        "rel_err_x",
+        {"tol": None, "reltolx": TIKHONOV_REL_TOL, "reltoly": None},
+        id="relative-domain",
+    ),
+    pytest.param(
+        "relative codomain",
+        TIKHONOV_REL_TOL,
+        "rel_err_y",
+        {"tol": None, "reltolx": None, "reltoly": TIKHONOV_REL_TOL},
+        id="relative-codomain",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "rule_name, tolerance, history_key, solver_parameters",
+    DUAL_TIKHONOV_STOPPING_CASES,
+)
+def test_dual_tikhonov_cg_internal_stopping_rule(
+    linear_case,
+    rule_name,
+    tolerance,
+    history_key,
+    solver_parameters,
+):
+    """Check direct CG bounds in the transformed dual Hessian norms."""
+    case = linear_case
+    primal_setting = _make_setting(case, regpar=REGPAR)
+    reference_solver = Spectral_Tikhonov(
+        _make_setting(case), regpar=REGPAR
+    )
+    reference_solution, _, _ = _run_steps(reference_solver, 1)
+    reference_image = case["op"](reference_solution)
+
+    dual_setting = primal_setting.get_dual_setting()
+    dual_reference = primal_setting.primal_to_dual(
+        (reference_solution, reference_image)
+    )
+    dual_reference_image = dual_setting.op(dual_reference)
+    solver = TikhonovCG(
+        dual_setting,
+        logging_level=logging.WARNING,
+        x_exact=dual_reference,
+        y_exact=dual_reference_image,
+        **solver_parameters,
+    )
+    approximation, image, _ = _run_steps(solver, TIKHONOV_MAX_IT)
+
+    if rule_name == "absolute domain":
+        measured_error = _quadratic_difference_norm(
+            dual_setting.penalty,
+            dual_setting.op.domain,
+            approximation,
+            dual_reference,
+        )
+    elif rule_name == "relative domain":
+        numerator = _quadratic_difference_norm(
+            dual_setting.penalty,
+            dual_setting.op.domain,
+            approximation,
+            dual_reference,
+        )
+        denominator = _quadratic_difference_norm(
+            dual_setting.penalty,
+            dual_setting.op.domain,
+            dual_reference,
+            dual_setting.init,
+        )
+        measured_error = numerator / max(
+            denominator, np.finfo(float).tiny
+        )
+    else:
+        initial_image = dual_setting.op(dual_setting.init)
+        numerator = _quadratic_difference_norm(
+            dual_setting.data_fid,
+            dual_setting.op.codomain,
+            image,
+            dual_reference_image,
+        )
+        denominator = _quadratic_difference_norm(
+            dual_setting.data_fid,
+            dual_setting.op.codomain,
+            dual_reference_image,
+            initial_image,
+        )
+        measured_error = numerator / max(
+            denominator, np.finfo(float).tiny
+        )
+
+    _assert_internal_bound(
+        solver, history_key, measured_error, tolerance
+    )
+
+
+LAVRENTIEV_STOPPING_CASES = (
+    pytest.param(
+        "absolute domain",
+        TIKHONOV_ABS_TOL,
+        "abs_err",
+        {"tol": TIKHONOV_ABS_TOL, "reltolx": None},
+        id="absolute-domain",
+    ),
+    pytest.param(
+        "relative domain",
+        TIKHONOV_REL_TOL,
+        "rel_err_x",
+        {"tol": None, "reltolx": TIKHONOV_REL_TOL},
+        id="relative-domain",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "rule_name, tolerance, history_key, solver_parameters",
+    LAVRENTIEV_STOPPING_CASES,
+)
+def test_lavrentiev_cg_internal_stopping_rule(
+    linear_case,
+    rule_name,
+    tolerance,
+    history_key,
+    solver_parameters,
+):
+    """Exercise the inner solver used by codomain-free TikhonovCG."""
+    case = linear_case
+    reference_solver = Spectral_Tikhonov(
+        _make_setting(case, codomain_free=True), regpar=REGPAR
+    )
+    reference_solution, _, _ = _run_steps(reference_solver, 1)
+    free_setting = _make_setting(
+        case, codomain_free=True, regpar=REGPAR
+    )
+    normal_template = TikhonovCG(
+        free_setting,
+        tol=None,
+        reltolx=TIKHONOV_REL_TOL,
+        reltoly=None,
+        logging_level=logging.WARNING,
+    )
+    normal_setting = normal_template._normal_setting
+    solver = LavrentievCG(
+        normal_setting,
+        data=normal_template.backprop_data,
+        init=normal_template.init,
+        x0=free_setting.init,
+        x_exact=reference_solution,
+        logging_level=logging.WARNING,
+        **solver_parameters,
+    )
+    approximation, _, _ = _run_steps(solver, TIKHONOV_MAX_IT)
+
+    numerator = _quadratic_difference_norm(
+        normal_setting.penalty,
+        normal_setting.op.domain,
+        approximation,
+        reference_solution,
+    )
+    if rule_name == "absolute domain":
+        measured_error = numerator
+    else:
+        denominator = _quadratic_difference_norm(
+            normal_setting.penalty,
+            normal_setting.op.domain,
+            reference_solution,
+            free_setting.init,
+        )
+        measured_error = numerator / max(
+            denominator, np.finfo(float).tiny
+        )
+
+    _assert_internal_bound(
+        solver, history_key, measured_error, tolerance
+    )
+
+
+ALTERNATIVE_TIKHONOV_METHODS = (
+    "FB",
+    "dual_FB",
+    "FISTA",
+    "dual_FISTA",
+    "PDHG",
+    "dual_PDHG",
+)
+
+
+@pytest.fixture(scope="module")
+def alternative_tikhonov_problem():
+    """Return a spectral reference for a representative real problem."""
+    case = _make_case("real, non-self-adjoint")
+    reference_solver = Spectral_Tikhonov(
+        _make_setting(case), regpar=ALTERNATIVE_REGPAR
+    )
+    reference_solution, _, _ = _run_steps(reference_solver, 1)
+    return case, reference_solution
+
+
+@pytest.mark.parametrize("method_name", ALTERNATIVE_TIKHONOV_METHODS)
+def test_alternative_tikhonov_minimizer(
+    alternative_tikhonov_problem, method_name
+):
+    case, reference_solution = alternative_tikhonov_problem
+    setting = _make_setting(case, regpar=ALTERNATIVE_REGPAR)
+    setting.set_stoprule(
+        DualityGapStopping(
+            tol=ALTERNATIVE_ERROR_LIMIT,
+            logging_level=logging.DEBUG,
+        )
+    )
+
+    approximation, _ = setting.run(
+        method_name,
+        ref_sol=reference_solution,
+        max_it=TIKHONOV_MAX_IT,
+    )
+    relative_error = (
+        np.linalg.norm(approximation - reference_solution)
+        / np.linalg.norm(reference_solution)
+    )
+    assert relative_error <= ALTERNATIVE_ERROR_LIMIT, (
+        f"{method_name} relative error {relative_error:.3e} exceeds "
+        f"{ALTERNATIVE_ERROR_LIMIT:.1e}."
     )
 
 
