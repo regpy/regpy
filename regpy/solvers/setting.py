@@ -17,6 +17,7 @@ __all__ = [
     "get_linear_reg_method_dictionary",
     "get_nonlinear_reg_method_dictionary",
     "get_convex_solver_dictionary",
+    "get_non_convex_solver_dictionary",
     "check_Hilbert_applicability",
     "check_Hilbert_applicability_linear",
 ]
@@ -345,10 +346,8 @@ class Setting:
         elif self.is_convex:
             self._methods = get_convex_solver_dictionary()
             self.duality_gap_warning_incr = 1.
-        else:
-            # Non-convex Tikhonov settings are intentionally not supported yet.
-            self.__dict__.pop('_methods', None)
-            self.__dict__.pop('duality_gap_warning_incr', None)
+        else: # Non-convex Tikhonov settings
+            self._methods = get_non_convex_solver_dictionary()
 
     ######General convenience methods
     @property
@@ -748,16 +747,25 @@ class Setting:
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
-        if not "dist_subdiff" in self.penalty.methods or not "dist_subdiff" in self.data_fid.conj.methods:
-            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
-        if not self.is_convex:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
+        if not "dist_subdiff" in self.penalty.methods:
+            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of penalty functional."))
+        if self.is_convex:
+            if not "dist_subdiff" in self.data_fid.conj.methods:
+                raise RuntimeError(Errors.generic_message("Need dist_subdiff method of conjugate data fidelity functional."))                            
+            (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
 
-        (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
-
-        alpha = self.regpar
-        return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
+            alpha = self.regpar
+            return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
                self.penalty.dist_subdiff(Tsp,f) 
+        else:
+            if not "subgradient" in self.data_fid.methods:
+                            raise RuntimeError(Errors.generic_message("Need subgradient method of data fidelity functional."))
+            (f,Tf)= primal
+            p = self.data_fid.subgradient(Tf)
+            _, deriv = self.op.linearize(f)
+            Fstar_p = deriv.adjoint(p)
+            Fstar_p *= (-1/self.regpar)
+            return self.penalty.dist_subdiff(Fstar_p,f)
 
     def add_method(self,
                    method_abbrv:str,
@@ -780,11 +788,6 @@ class Setting:
         full_method_name:str | None, optional
             Full, more descriptive name of the method. Defaults to None 
         """
-        if not self._has_method_dictionary():
-            raise RuntimeError(Errors.runtime_error(
-                'Method dictionaries are available for settings without a '
-                'regularization parameter and for convex Tikhonov settings.'
-            ))
         if not self.is_tikhonov and primal is False:
             raise ValueError(Errors.value_error(
                 'A setting without a regularization parameter has no dual '
@@ -802,13 +805,6 @@ class Setting:
             method['primal'] = True if primal is None else primal
         self._methods[method_abbrv] = method
 
-    def _has_method_dictionary(self) -> bool:
-        """Whether this type of setting supports a solver dictionary."""
-        return (
-            self._primal_setting is None
-            and (not self.is_tikhonov or self.is_convex)
-        )
-
     def evaluate_methods(self, method_names: list[str] | None = None)->None:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
@@ -818,12 +814,7 @@ class Setting:
         method_names: list of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
-        if not self._has_method_dictionary():
-            raise NotImplementedError(Errors.generic_message(
-                'Applicable methods can be computed for settings without a '
-                'regularization parameter and for primal convex Tikhonov '
-                'settings. Non-convex Tikhonov settings are not supported yet.'
-            ))
+
         if method_names is None:
             method_names = list(self._methods)
         else:
@@ -833,7 +824,7 @@ class Setting:
                     raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
         # Only convex Tikhonov solvers use the global operator norm for their
         # convergence-rate estimates. It may not exist for nonlinear methods.
-        op_norm = self.op.norm() if method_names and self.is_tikhonov else None
+        op_norm = self.op.norm() if method_names and self.is_tikhonov and self.is_convex else None
         for method_name in method_names:
             method = self._methods[method_name]
             if self.is_tikhonov:
@@ -841,9 +832,10 @@ class Setting:
                 target_setting = self if primal else self.get_dual_setting()
             else:
                 target_setting = self
-            out,_ = method['class'].check_applicability(
-                target_setting, op_norm=op_norm
-            )
+            out,_ = (method['class'].check_applicability(target_setting, op_norm=op_norm)
+                     if op_norm is not None else
+                     method['class'].check_applicability(target_setting)
+                    )
             method.pop('rate', None)
             if (self.is_tikhonov and not primal
                     and not 'subgradient' in self.penalty.conj.methods):
@@ -858,10 +850,6 @@ class Setting:
 
     def applicable_methods(self)->dict[str,dict]:
         """Return the methods that can be applied to this setting."""
-        if not self._has_method_dictionary():
-            raise NotImplementedError(Errors.generic_message(
-                'Applicable methods are unavailable for this setting kind.'
-            ))
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
@@ -965,7 +953,8 @@ class Setting:
 
     def run(self,
             method_name: str|None = None,
-            stoprule: StopRule|None|object = _DEFAULT_STOPRULE,
+            max_it: int | None = None,
+            stoprule: StopRule|object = _DEFAULT_STOPRULE,
             **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -974,6 +963,8 @@ class Setting:
         method_name: str or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
+        max_it: int [default: 1000]
+            maximal number of iterations
         stoprule: StopRule | None
             Stopping rule. By default, convex Tikhonov methods use a duality-gap
             rule combined with 1000 maximum iterations; regularization methods
@@ -1006,16 +997,17 @@ class Setting:
         else:
             thesetting = self
         if stoprule is _DEFAULT_STOPRULE:
-            if self.is_tikhonov:
+            if self.is_tikhonov and self.is_convex:
                 stoprule = (
                     DualityGapStopping(tol=0.1, logging_level='DEBUG')
-                    + CountIterations(1000, logging_level='DEBUG')
+                    + CountIterations(max_it, logging_level='DEBUG')
                 )
             else:
-                stoprule = CountIterations(1000, logging_level='DEBUG')
-        if stoprule is not None:
-            self.set_stopping_rule(stoprule,method_names=[method_name])
-        elif 'stoprule' not in themethod or themethod['stoprule'] is None:
+                stoprule = CountIterations(max_it, logging_level='DEBUG')
+        if max_it>=0:
+            stoprule = stoprule + CountIterations(max_it, logging_level='DEBUG')
+        self.set_stopping_rule(stoprule,method_names=[method_name])
+        if 'stoprule' not in themethod or themethod['stoprule'] is None:
             raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stopping_rule.')
         
         solver = themethod['class'](thesetting,**kwargs)
@@ -1142,6 +1134,14 @@ def get_convex_solver_dictionary() -> dict:
         }
     return method_dict
 
+def get_non_convex_solver_dictionary() -> dict:
+    """Return the available solvers for non-convex Tikhonov settings."""
+    from .nonlinear import FISTA as genFISTA
+
+    method_dict={
+            'genFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
+    }
+    return method_dict
 
 def check_Hilbert_applicability(setting: Setting,
                                 user_data: ReadOnlyVector | ObsDataT | None = None,

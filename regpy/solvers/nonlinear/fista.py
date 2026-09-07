@@ -1,4 +1,6 @@
-from math import inf, sqrt
+from collections.abc import Iterable, Iterator
+from math import sqrt
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -9,6 +11,14 @@ from ..solver import RegSolver
 from ..setting import Setting
 
 __all__ = ["FISTA"]
+
+
+def _powers_of_two() -> Iterator[int]:
+    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
+    n = 0
+    while True:
+        yield 2**n
+        n += 1
 
 
 class FISTA(RegSolver):
@@ -30,9 +40,21 @@ class FISTA(RegSolver):
     init : setting.op.domain [default: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: 10**16]
-        Initial step size of minimization procedure. Has to be sufficiently large.
+        Initial step size for backtracking when the data-fidelity gradient has
+        no finite Lipschitz constant. Has to be sufficiently large.
     eta : float [default 0.8]
         Step size reduction constant.
+    stepsize_selection_steps : iterable of int | None, optional
+        Iterates at which the derivative norm is reestimated. Norm estimation
+        is always performed once at the initial iterate. By default, it is
+        repeated at iterations ``1, 2, 4, 8, ...``. Passing ``[0]`` therefore
+        estimates the norm only initially. Values must be nonnegative and
+        strictly increasing. This option is ignored when backtracking is used.
+    stepsize_safety : float, optional
+        Safety factor for norm-based step sizes. Must lie in ``(0, 1]`` and
+        defaults to ``0.9``.
+    op_norm_method : str, optional
+        Method used to estimate the derivative norm. Defaults to ``"lanczos"``.
     op_lower_bound : float [default: 0]
         lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\|`\.
         Used to define convexity parameter of data functional.     
@@ -53,16 +75,23 @@ class FISTA(RegSolver):
             init: Vector | None =None, 
             tau: float = 10**16,
             eta: float = 0.8, 
+            stepsize_selection_steps: Iterable[int] | None = None,
+            stepsize_safety: float = 0.9,
+            op_norm_method: str = "lanczos",
             op_lower_bound: float = 0.,
             proximal_pars: dict | None = None, 
             logging_level: int | str = "INFO",
             update_setting: bool = True
             ):
-        if not setting.is_tikhonov:
-            raise ValueError(Errors.value_error(
-                "FISTA requires the setting to contain a regularization parameter!"
-            ))
+        out, _ = self.check_applicability(setting)
+        if not out["applicable"]:
+            raise ValueError(
+                "FISTA not applicable to this setting. " + out["info"]
+            )
         super().__init__(setting)
+        self.log.setLevel(logging_level)
+        if out["warning"]:
+            self.log.warning(out["warning"])
 
         initial = setting.get_or_update_initial_guess(init, update_setting)
         self.x = self.op.domain.empty()
@@ -78,7 +107,6 @@ class FISTA(RegSolver):
                 "Using non-linear FISTA with a linear Operator! Consider using "
                 "the linear FISTA in solvers.linear."
             )
-        self.log.setLevel(logging_level)
         self.regpar = self.setting.regpar
         self.codomain_free = setting.codomain_free
         self.mu_penalty = self.regpar * self.penalty.convexity_param
@@ -95,6 +123,17 @@ class FISTA(RegSolver):
             raise ValueError(Errors.value_error(
                 "The step size reduction constant must be between 0 and 1!"
             ))
+        if (isinstance(stepsize_safety, bool)
+                or not isinstance(stepsize_safety, Real)):
+            raise TypeError(Errors.type_error(
+                "stepsize_safety must be a real scalar."
+            ))
+        self.stepsize_safety = float(stepsize_safety)
+        if not 0 < self.stepsize_safety <= 1:
+            raise ValueError(Errors.value_error(
+                "stepsize_safety must lie in (0, 1]."
+            ))
+        self.op_norm_method = op_norm_method
 
         domain, codomain = self.op.domain, self.op.codomain
         self.x_old = domain.empty()
@@ -106,33 +145,46 @@ class FISTA(RegSolver):
         if self.codomain_free:
             self._adjoint_eval_h = domain.empty()
             self._adjoint_data = domain.empty()
-            _, deriv = self.op.linearize(
+            _, self.deriv = self.op.linearize(
                 self.x, out=self._adjoint_eval_h,
                 return_adjoint_eval=True
             )
             self.y = None
-            self.tau = 1. / deriv.norm(
-                setting.h_domain,
-                None,
-                codomain_free=True,
-            )**2
             self.backtracking = False
         else:
             self.y = codomain.empty()
             self._data_gradient = codomain.empty()
-            if self.data_fid.Lipschitz != inf:
-                _, deriv = self.op.linearize(self.x, out=self.y)
-                deriv_norm = deriv.norm(
-                                        setting.h_domain,
-                                        setting.h_codomain,
-                                        codomain_free=False,
-                                    )
-                self.tau =   1. / (np.max([1e-16,deriv_norm**2])*self.data_fid.Lipschitz)  
+            if np.isfinite(self.data_fid.Lipschitz):
+                _, self.deriv = self.op.linearize(self.x, out=self.y)
                 self.backtracking = False
             else:
                 self.op(self.x, out=self.y)
                 self.tau = tau
                 self.backtracking = True
+
+        self._stepsize_selection_steps: Iterator[int] | None = None
+        self._last_stepsize_selection_step = -1
+        self._next_stepsize_selection_step: int | None = None
+        if not self.backtracking:
+            try:
+                self._stepsize_selection_steps = iter(
+                    _powers_of_two()
+                    if stepsize_selection_steps is None
+                    else stepsize_selection_steps
+                )
+            except TypeError as error:
+                raise TypeError(Errors.type_error(
+                    "stepsize_selection_steps must be an iterable of integers."
+                )) from error
+            self._advance_stepsize_selection_step()
+            self._estimate_stepsize()
+            if self._next_stepsize_selection_step == 0:
+                self._advance_stepsize_selection_step()
+        elif stepsize_selection_steps is not None:
+            self.log.warning(
+                "stepsize_selection_steps is ignored because backtracking "
+                "is used."
+            )
         if self.tau <= 0 or not np.isfinite(self.tau):
             raise ValueError(Errors.value_error(
                 "The step size must be positive and finite!",self.tau
@@ -140,6 +192,88 @@ class FISTA(RegSolver):
 
         self.t = self.t_old = 0.
         self.q = self.tau * self.mu / (1 + self.tau * self.mu_penalty)
+
+    @staticmethod
+    def check_applicability(setting) -> tuple[dict, dict]:
+        """Check whether ``setting`` provides the operations FISTA needs."""
+        out = {"info": "", "warning": ""}
+        par = {}
+
+        if not setting.is_tikhonov:
+            out["info"] += "Setting has no regularization parameter. "
+        if "proximal" not in setting.penalty.methods:
+            out["info"] += "Missing prox of penalty functional. "
+        if not setting.codomain_free:
+            if "subgradient" not in setting.data_fid.methods:
+                out["info"] += "Missing subgradient of data fidelity functional. "
+            if not np.isfinite(setting.data_fid.Lipschitz):
+                out["warning"] += (
+                    "Lipschitz constant of data fidelity functional is not "
+                    "finite; backtracking will be used for step-size "
+                    "selection."
+                )
+
+        out["applicable"] = out["info"] == ""
+        return out, par
+
+    def _advance_stepsize_selection_step(self) -> None:
+        """Read and validate the next norm-reestimation step."""
+        if self._stepsize_selection_steps is None:
+            self._next_stepsize_selection_step = None
+            return
+        try:
+            step = next(self._stepsize_selection_steps)
+        except StopIteration:
+            self._next_stepsize_selection_step = None
+            return
+        if (isinstance(step, bool)
+                or not isinstance(step, (int, np.integer))):
+            raise TypeError(Errors.type_error(
+                "stepsize_selection_steps must contain integers."
+            ))
+        step = int(step)
+        if step < 0:
+            raise ValueError(Errors.value_error(
+                "Step-size selection steps must be nonnegative."
+            ))
+        if step <= self._last_stepsize_selection_step:
+            raise ValueError(Errors.value_error(
+                "Step-size selection steps must be strictly increasing."
+            ))
+        self._last_stepsize_selection_step = step
+        self._next_stepsize_selection_step = step
+
+    def _estimate_stepsize(self) -> None:
+        """Estimate the current derivative norm and update ``tau``."""
+        norm = self.deriv.norm(
+            self.setting.h_domain,
+            None if self.codomain_free else self.setting.h_codomain,
+            method=self.op_norm_method,
+            codomain_free=self.codomain_free,
+        )
+        if not np.isfinite(norm) or norm <= 0:
+            raise ValueError(Errors.value_error(
+                "The derivative norm must be finite and positive."
+            ))
+        lipschitz = 1. if self.codomain_free else self.data_fid.Lipschitz
+        self.tau = self.stepsize_safety / (norm**2 * lipschitz)
+        self.log.debug(
+            f"it. {self.iteration_step_nr}: Step size changed by norm "
+            f"estimation to {self.tau}"
+        )
+
+    def _update_norm_based_stepsize(self) -> None:
+        """Refresh a norm-based step size at the current iteration."""
+        step = self._next_stepsize_selection_step
+        if step is None:
+            return
+        if step < self.iteration_step_nr:
+            raise RuntimeError(Errors.runtime_error(
+                "A scheduled step-size selection step was skipped."
+            ))
+        if step == self.iteration_step_nr:
+            self._estimate_stepsize()
+            self._advance_stepsize_selection_step()
 
     def _write_candidate(self):
         """Write ``prox(h - tau * gradient)`` into ``x_old``."""
@@ -217,5 +351,14 @@ class FISTA(RegSolver):
 
         # ``x_old`` now contains the accepted next iterate.
         self.x, self.x_old = self.x_old, self.x
-        if not self.codomain_free and not self.backtracking:
+        if self.codomain_free:
+            _, self.deriv = self.op.linearize(
+                self.x, out=self._adjoint_eval_h,
+                return_adjoint_eval=True,
+            )
+            self._update_norm_based_stepsize()
+        elif self.backtracking:
             self.op(self.x, out=self.y)
+        else:
+            _, self.deriv = self.op.linearize(self.x, out=self.y)
+            self._update_norm_based_stepsize()

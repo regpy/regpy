@@ -565,6 +565,9 @@ class TikhonovCG(RegSolver):
             self.log.info(f'TikhonovCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
             self.converge()
 
+    def primal(self): # for duality-based stopping rules
+        return (self.x,self.y)
+
     def get_stoprule(self,other_stoprule=None):
         """ Constructs the internal StopRule defined by the parameters of the constructor
         """
