@@ -91,12 +91,14 @@ class TikhonovCG(RegSolver):
         The measured data, included for backward compatibility. 
         The preferred way is to specify data in the setting.
     init: Vector or None [default: None]
-        Initial guess and reference value in the Tikhonov functional. If
-        omitted, it is resolved from the setting.
+        Reference value in the Tikhonov functional. If omitted, the penalty
+        functional's reference vector is used.
     xref : Vector or None [default: None]
         Deprecated alias for ``init``.
     x0: Vector or None [default: None]
-        Starting value of the CG iteration. If None (default), setting.op.domain.zeros() is used as starting value. 
+        Starting value of the CG iteration. If omitted, ``setting.init`` is
+        used. This can differ from the penalty reference, in particular for
+        automatically constructed dual settings.
     tol : float or None [default: None]
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
@@ -413,8 +415,11 @@ class TikhonovCG(RegSolver):
             ))
         """Right-hand side of the operator equation."""
         self.init = self.op.domain.empty()
-        self.op.domain.copyto(self.init, par['init'])
-        """Initial guess and reference value in the Tikhonov functional."""         
+        if init is None:
+            self.penalty.reference_vector(out=self.init)
+        else:
+            self.op.domain.copyto(self.init, par['init'])
+        """Reference value in the Tikhonov functional."""
         self.regpar = par['regpar']
         """The regularization parameter."""
 
@@ -428,8 +433,9 @@ class TikhonovCG(RegSolver):
             self.op.domain.copyto(self.x, x0)
             """The current iterate."""
         else:
-            self.x = self.op.domain.empty() 
-            self.op.domain.copyto(self.x, self.init)
+            self.x = self.op.domain.empty()
+            initial_iterate = setting.init if init is None else self.init
+            self.op.domain.copyto(self.x, initial_iterate)
 
         if setting.codomain_free:
             if reltoly is not None or y_exact is not None:
@@ -448,7 +454,7 @@ class TikhonovCG(RegSolver):
                 self._normal_setting,
                 data=self.backprop_data,
                 init=self.init,
-                x0=x0,
+                x0=self.x,
                 tol=tol,
                 reltolx=reltolx,
                 all_tol_criteria=all_tol_criteria,
@@ -1019,10 +1025,11 @@ class LavrentievCG(RegSolver):
         Right-hand side in ``setting.op.codomain``. If omitted, it is resolved
         from the setting.
     init : ReadOnlyVector or None [default: None]
-        Reference vector and default initial CG iterate. If omitted, it is
-        resolved from the setting.
+        Reference vector in the Lavrentiev functional. If omitted, the
+        penalty functional's reference vector is used.
     x0 : ReadOnlyVector or None [default: None]
-        Optional initial CG iterate independent of ``init``.
+        Initial CG iterate. If omitted, ``setting.init`` is used independently
+        of the functional's reference vector.
     tol, reltolx : float or None
         Absolute and relative domain tolerances for the internal stopping
         rule. If both are ``None``, the same fallback as in
@@ -1086,10 +1093,14 @@ class LavrentievCG(RegSolver):
             ))
 
         self.init = domain.empty()
-        domain.copyto(self.init, par['init'])
+        if init is None:
+            self.penalty.reference_vector(out=self.init)
+        else:
+            domain.copyto(self.init, par['init'])
         self.x = domain.empty()
         if x0 is None:
-            domain.copyto(self.x, self.init)
+            initial_iterate = setting.init if init is None else self.init
+            domain.copyto(self.x, initial_iterate)
         else:
             if x0 not in domain:
                 raise TypeError(Errors.not_in_vecsp(

@@ -555,11 +555,19 @@ class Setting:
         if(not self.is_convex):
             raise RuntimeError(Errors.generic_message("The setting has to be convex for the computation of a dual setting."))
 
+        dual_op = self.op.adjoint
         return Setting(
-            self.op.adjoint,
+            dual_op,
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
+            # The reference of S*(-alpha p) is part of the transformed
+            # objective, but is generally a poor starting point: for a
+            # shifted quadratic data term it is of order data/alpha.  Keep
+            # the functional unchanged and store p=0 independently as the
+            # initial iterate.  It maps back to the primal penalty reference.
+            init=dual_op.domain.zeros(),
+            incorporate_init_in_penalty=False,
             _primal_setting = self,
             logging_level=self.log.level
         )

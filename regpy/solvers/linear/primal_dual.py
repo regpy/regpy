@@ -41,15 +41,14 @@ class PDHG(RegSolver):
         explicitly supplied initial value, ``x`` is computed with
         :meth:`Setting.dual_to_primal`.
 
-        If neither initial value is supplied, a primal setting uses
-        ``setting.init`` for ``x`` and derives ``pstar``. For a dual setting,
-        ``pstar`` is initialized from the originating primal setting's
-        ``init`` vector and ``x`` is derived. If ``q`` denotes the dual
-        variable of the dual problem and ``f`` the primal variable of the
-        primal problem, their scaling is ``f = -alpha_d * q``. Consequently,
-        ``pstar`` is initialized as ``-f / alpha_d = -alpha_p * f``, where
-        ``alpha_d = 1 / alpha_p`` is the regularization parameter of the dual
-        setting.
+        If neither initial value is supplied, the neutral primal-dual pair is
+        used. For a primal setting this is ``x = setting.init`` and
+        ``pstar = 0``. For a transformed dual setting the equivalent pair is
+        ``x = 0`` and ``pstar = -f_0 / alpha_d``, where ``f_0`` is the
+        originating primal setting's initial vector and
+        ``alpha_d = 1 / alpha_p``. This avoids initial dual variables of size
+        ``1 / alpha_p`` while representing the same original saddle pair in
+        primal and transformed-dual coordinates.
     tau : float [default: 0.]
         The parameter to compute the proximal operator of the penalty term. Stepsize of the primal step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of sigma.
@@ -110,16 +109,21 @@ class PDHG(RegSolver):
         if init_domain is None and init_codomain_star is None:
             if setting._primal_setting is None:
                 self.op.domain.copyto(self.x, setting.init)
-                self._initialize_pstar_from_x(setting)
+                self.op.codomain.copyto(
+                    self.pstar, self.op.codomain.zeros()
+                )
             else:
-                # If q is the dual variable of the dual problem and f the
-                # primal variable of the primal problem, then
-                # f = -alpha_d * q. Hence q = -f / alpha_d = -alpha_p * f.
+                # In the transformed dual setting, x is the original dual
+                # variable and pstar = -f / alpha_d.  Thus x=0 together with
+                # the scaled original primal initial value represents the
+                # same neutral saddle pair as (f_0, p=0) above.
+                self.op.domain.copyto(
+                    self.x, self.op.domain.zeros()
+                )
                 self.op.codomain.copyto(
                     self.pstar, setting._primal_setting.init
                 )
                 self.pstar *= -1. / setting.regpar
-                self._initialize_x_from_pstar(setting)
         elif init_domain is None:
             self._initialize_x_from_pstar(setting)
         elif init_codomain_star is None:
