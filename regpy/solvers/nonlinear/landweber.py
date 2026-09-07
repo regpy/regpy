@@ -10,17 +10,9 @@ from regpy.vecsps import ReadOnlyVector, Vector
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
+from ..util import powers_of_two
 
 __all__ = ["Landweber"]
-
-
-def _powers_of_two() -> Iterator[int]:
-    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
-    n = 0
-    while True:
-        yield 2**n
-        n += 1
-
 
 class Landweber(RegSolver):
     r"""The nonlinear Landweber method for the ill-posed equation
@@ -141,7 +133,7 @@ class Landweber(RegSolver):
         if stepsize is None:
             try:
                 self._stepsize_selection_steps = iter(
-                    _powers_of_two()
+                    powers_of_two()
                     if stepsize_selection_steps is None
                     else stepsize_selection_steps
                 )

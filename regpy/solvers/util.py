@@ -21,7 +21,50 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ['plot_convergence_curves']
+__all__ = ['plot_convergence_curves','GeometricSequence', 'powers_of_two', 'squares']
+
+def powers_of_two() -> Iterator[int]:
+    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
+    n = 0
+    while True:
+        yield 2**n
+        n += 1
+
+def squares() -> Iterator[int]:
+    """Yield ``0, 1, 4, 9, ...`` indefinitely."""
+    n = 0
+    while True:
+        yield n**2
+        n += 1
+
+class GeometricSequence:
+    r"""Iterator generating a geometric sequence
+    
+    Parameters
+    ----------
+    alpha0 : float
+        :math:`\alpha_0` the initial regularization parameter 
+    q : float
+        Rate of the geometric sequence
+
+    Notes
+    ----- 
+    Sequence defined recursively by
+    
+    .. math::
+        \alpha_0 &= \alpha_0 \\
+        \alpha_{n+1} &= q*\alpha_n
+    """    
+    def __init__(self, alpha0:float=1.0,q:float=0.5):
+        self.alpha, self.alpha0, self.q = alpha0, alpha0, q
+
+    def __iter__(self):
+        return self
+
+    def __next__(self)->float:
+        result = self.alpha
+        self.alpha *= self.q
+        return result
 
 _PLOT_SPECS = (
     ("Error in x", ErrorMonitor, ("error_x",)),

@@ -1,38 +1,11 @@
 from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
 from ..solver import RegSolver
 from ..setting import Setting
+from ..util import GeometricSequence
 from typing import Iterable, Tuple
 from regpy.util import Errors
 
-__all__ =["GeneralizedTikhonov","GeometricSequence"]
-class GeometricSequence:
-    r"""Iterator generating a geometric sequence
-    
-    Parameters
-    ----------
-    alpha0 : float
-        :math:`\alpha_0` the initial regularization parameter 
-    q : float
-        Rate of the geometric sequence
-
-    Notes
-    ----- 
-    Sequence defined recursively by
-    
-    .. math::
-        \alpha_0 &= \alpha_0 \\
-        \alpha_{n+1} &= q*\alpha_n
-    """    
-    def __init__(self, alpha0:float=1.0,q:float=0.5):
-        self.alpha, self.alpha0, self.q = alpha0, alpha0, q
-
-    def __iter__(self):
-        return self
-
-    def __next__(self)->float:
-        result = self.alpha
-        self.alpha *= self.q
-        return result
+__all__ =["GeneralizedTikhonov"]
 
 class GeneralizedTikhonov(RegSolver):
     r"""Class running generalized Tikhonov regularization with some inner solver for different regularization parameters.

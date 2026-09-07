@@ -785,7 +785,7 @@ class TikhonovAlphaGrid(RegSolver):
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
     ) -> None:
-        from ..nonlinear.gen_tikhonov import GeometricSequence
+        from ..util import GeometricSequence
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
         )
