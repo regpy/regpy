@@ -67,7 +67,7 @@ def _run_inner_cg(
             explicitDataWarning=False,
             logging_level=solver.inner_it_logging_level,
         )
-        return Lavrentiev(
+        return LavrentievCG(
             setting=inner_setting,
             data=solver._normal_rhs,
             init=reference,

@@ -182,7 +182,7 @@ class Landweber(RegSolver):
         self._residual -= self.data
         self.h_codomain.gram(self._residual, out=self._gy_residual)  
         if self.iteration_step_nr<=10 or (self.iteration_step_nr<=100 and self.iteration_step_nr%10==0) or self.iteration_step_nr%50 ==0:
-            self.log.info(f'it. {self.iteration_step_nr}: residual = {self.op.codomain.vdot(self._residual,self._gy_residual)}')
+            self.log.info(f'it. {self.iteration_step_nr}: residual = {np.sqrt(self.op.codomain.vdot(self._residual,self._gy_residual))}')
         self.deriv.adjoint(self._gy_residual, out=self._update)
         self.h_domain.gram_inv(self._update, out=self._update)
 

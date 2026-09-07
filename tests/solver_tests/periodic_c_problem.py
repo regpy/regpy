@@ -8,6 +8,8 @@ from regpy.operators.numpy import ForwardFDGradient
 from regpy.vecsps import UniformGridFcts
 from regpy.operators import Operator
 
+__all__ = ['PeriodicCProblem']
+
 class PeriodicCProblem(Operator):
     """A simple forward operator for testing purposes.
     The operator maps a periodic function c to the solution of the periodic differential equation
