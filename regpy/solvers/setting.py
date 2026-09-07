@@ -714,6 +714,16 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
+
+        if self._primal_setting is not None and primal is not None:
+            # A primal variable of the transformed dual setting is precisely
+            # a dual variable of the original setting.  Evaluate the gap
+            # there directly.  This is algebraically equivalent to computing
+            # the transformed gap and multiplying it by
+            # self.regpar**2, but avoids magnifying cancellation errors by
+            # alpha_primal**(-2).
+            return self._primal_setting.duality_gap(dual=primal)
+
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
 
@@ -1086,10 +1096,66 @@ class Setting:
                 max_it, timing=True, logging_level='DEBUG'
             )
         if ref_sol is not None:
+            monitor_ref_sol = ref_sol
+            monitor_dist_x = dist_x
+            monitor_dist_y = dist_y
+
+            if self.is_tikhonov and not primal:
+                # The solver's x and y are (p, T*p), whereas Setting.run()
+                # returns the corresponding primal pair (f, Tf).  Convert
+                # both the reference and the monitored iterates so that all
+                # methods report errors in the same primal variables.
+                if isinstance(ref_sol, tuple):
+                    ref_x, ref_y = ref_sol
+                else:
+                    ref_x, ref_y = ref_sol, None
+
+                ref_Tx = self.op(ref_x) if ref_y is None else ref_y
+                ref_p = self.primal_to_dual((ref_x, ref_Tx))
+                ref_Tsp = self.op.adjoint(ref_p)
+
+                if ref_x is not None:
+                    primal_dist_x = (
+                        dist_x
+                        if dist_x is not None
+                        else ErrorMonitor._norm_distance(self.h_domain.norm)
+                    )
+
+                    def monitor_dist_x(pair):
+                        current_p, _ = pair
+                        current_Tsp = self.op.adjoint(current_p)
+                        current_x = self.dual_to_primal(
+                            (current_p, current_Tsp)
+                        )
+                        return primal_dist_x((current_x, ref_x))
+
+                if ref_y is not None:
+                    primal_dist_y = (
+                        dist_y
+                        if dist_y is not None
+                        else ErrorMonitor._norm_distance(
+                            self.h_codomain.norm
+                        )
+                    )
+
+                    def monitor_dist_y(pair):
+                        current_Tsp, _ = pair
+                        current_x = self.penalty.conj.subgradient(
+                            current_Tsp
+                        )
+                        current_y = self.op(current_x)
+                        return primal_dist_y((current_y, ref_y))
+
+                monitor_ref_sol = (
+                    (ref_p if ref_x is not None else None, ref_Tsp)
+                    if ref_y is not None
+                    else ref_p
+                )
+
             stoprule = stoprule + ErrorMonitor(
-                ref_sol,
-                dist_x=dist_x,
-                dist_y=dist_y,
+                monitor_ref_sol,
+                dist_x=monitor_dist_x,
+                dist_y=monitor_dist_y,
                 logging_level='DEBUG',
             )
         elif dist_x is not None or dist_y is not None:

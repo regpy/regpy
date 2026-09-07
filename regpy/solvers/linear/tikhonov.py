@@ -172,21 +172,36 @@ class TikhonovCG(RegSolver):
         
         def _complete_init_with_solver(self, solver):
             super()._complete_init_with_solver(solver)
-            self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+            domain = self.solver.op.domain
+            self._g_delta_x = domain.empty()
+            self.solver.hessR(
+                self.solver.x, out=self._g_delta_x
+            )
+            self.sq_norm_x = max(
+                domain.vdot(self._g_delta_x, self.solver.x).real,
+                0.,
+            )
             if self.sq_norm_x == 0.:
                 self.x0 = None
             else:
-                self.x0 = self.solver.op.domain.empty()
-                self.solver.op.domain.copyto(self.x0, self.solver.x)
-            self._delta_x = self.solver.op.domain.empty()
+                self.x0 = domain.empty()
+                domain.copyto(self.x0, self.solver.x)
+            self._delta_x = domain.empty()
 
         def _stop(self):
             if self.x0 is None:
-                self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+                delta_x = self.solver.x
             else:
                 self.solver.op.domain.copyto(self._delta_x, self.solver.x)
                 self._delta_x -= self.x0
-                self.sq_norm_x = self.solver.h_domain.norm(self._delta_x)**2
+                delta_x = self._delta_x
+            self.solver.hessR(delta_x, out=self._g_delta_x)
+            self.sq_norm_x = max(
+                self.solver.op.domain.vdot(
+                    self._g_delta_x, delta_x
+                ).real,
+                0.,
+            )
 
             if self.sq_norm_x == 0.:
                 valx = 2*self.tolexpr
@@ -204,7 +219,15 @@ class TikhonovCG(RegSolver):
             if self.x_exact is not None:
                 self.solver.op.domain.copyto(self._delta_x, self.x_exact)
                 self._delta_x -= self.solver.x
-                true_error = self.solver.setting.h_domain.norm(self._delta_x)
+                self.solver.hessR(
+                    self._delta_x, out=self._g_delta_x
+                )
+                true_error = sqrt(max(
+                    self.solver.op.domain.vdot(
+                        self._g_delta_x, self._delta_x
+                    ).real,
+                    0.,
+                ))
                 self.history_dict["rel_err_x_true"].append(
                     np.inf if self.sq_norm_x == 0 else true_error / np.sqrt(self.sq_norm_x)
                 )
@@ -232,6 +255,7 @@ class TikhonovCG(RegSolver):
             self._work = codomain.empty()
             self._delta_g = codomain.empty()
             self._delta_y = codomain.empty()
+            self._g_delta_y = codomain.empty()
             self.solver.hessS(self.solver.y, out=self.g_y)
             self.norm_y = codomain.vdot(self.solver.y, self.g_y)
             if self.norm_y != 0:
@@ -285,9 +309,19 @@ class TikhonovCG(RegSolver):
             if self.y_exact is not None:
                 codomain.copyto(self._delta_y, self.y_exact)
                 self._delta_y -= self.solver.y
-                true_error = self.solver.setting.h_codomain.norm(self._delta_y)
+                self.solver.hessS(
+                    self._delta_y, out=self._g_delta_y
+                )
+                true_error = sqrt(max(
+                    codomain.vdot(
+                        self._g_delta_y, self._delta_y
+                    ).real,
+                    0.,
+                ))
                 self.history_dict["rel_err_y_true"].append(
-                    np.inf if self.norm_y == 0 else true_error / self.norm_y
+                    np.inf
+                    if self.norm_y == 0
+                    else true_error / sqrt(self.norm_y)
                 )
             return valy < self.tolexpr
 
@@ -308,6 +342,7 @@ class TikhonovCG(RegSolver):
         def _complete_init_with_solver(self, solver):
             super()._complete_init_with_solver(solver)
             self._delta_x = self.solver.op.domain.empty()
+            self._g_delta_x = self.solver.op.domain.empty()
 
         def _stop(self):
             val = (
@@ -318,8 +353,16 @@ class TikhonovCG(RegSolver):
             if self.x_exact is not None:
                 self.solver.op.domain.copyto(self._delta_x, self.x_exact)
                 self._delta_x -= self.solver.x
+                self.solver.hessR(
+                    self._delta_x, out=self._g_delta_x
+                )
                 self.history_dict["abs_err_true"].append(
-                    self.solver.setting.h_domain.norm(self._delta_x)
+                    sqrt(max(
+                        self.solver.op.domain.vdot(
+                            self._g_delta_x, self._delta_x
+                        ).real,
+                        0.,
+                    ))
                 )
             self.log_info = "abs X:{:1.1e}>={:1.1e}".format(val, self.tol)
             return val < self.tol
