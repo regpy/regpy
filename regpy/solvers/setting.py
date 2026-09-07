@@ -952,7 +952,12 @@ class Setting:
         for method_name in method_names:
             if method_name not in self._methods.keys():
                 raise ValueError(f"{method_name} is unknown method key.")
-            self._methods[method_name]['stoprule'] = rule.copy_and_reset()
+            # Keep the configured rule separate from the rule used by the
+            # latest run.  The latter accumulates histories and may contain
+            # run-local additions such as an iteration limit or ErrorMonitor.
+            configured_rule = rule.copy_and_reset()
+            self._methods[method_name]['configured_stoprule'] = configured_rule
+            self._methods[method_name]['stoprule'] = configured_rule.copy_and_reset()
 
     def get_stopping_rule(self, method_name: str) -> StopRule:
         """Retrieves a stoprule that has run an optimization method 
@@ -994,10 +999,12 @@ class Setting:
         max_it: int [default: 1000]
             maximal number of iterations
         stoprule: StopRule | None
-            Stopping rule. By default, convex Tikhonov methods use a duality-gap
-            rule combined with 1000 maximum iterations; regularization methods
-            use 1000 maximum iterations. If None, a previously stored stopping
-            rule is used.
+            Stopping rule. An explicit value overrides a rule configured by
+            :meth:`set_stoprule` for this run only. By default, a configured
+            rule is used if present; otherwise convex Tikhonov methods use a
+            duality-gap rule combined with 1000 maximum iterations and other
+            methods use 1000 maximum iterations. If None, a previously stored
+            stopping rule is required and used.
         ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
             Reference solution used to monitor iteration errors. A single
             vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
@@ -1033,16 +1040,51 @@ class Setting:
             thesetting = self if primal else self.get_dual_setting()
         else:
             thesetting = self
-        if stoprule is _DEFAULT_STOPRULE:
+        if max_it is not None:
+            if not isinstance(max_it, (int, np.integer)):
+                raise TypeError(Errors.type_error(
+                    'max_it must be an integer or None.', max_it
+                ))
+            if max_it < 0:
+                raise ValueError(Errors.value_error(
+                    'max_it must be nonnegative.', max_it
+                ))
+            max_it = int(max_it)
+
+        configured_stoprule = themethod.get('configured_stoprule')
+        if stoprule is _DEFAULT_STOPRULE and configured_stoprule is not None:
+            stoprule = configured_stoprule.copy_and_reset()
+        elif stoprule is None:
+            stored_stoprule = configured_stoprule or themethod.get('stoprule')
+            if stored_stoprule is None:
+                raise RuntimeError(
+                    'No StopRule given either as argument of run or set '
+                    'explicitly by set_stoprule.'
+                )
+            stoprule = stored_stoprule.copy_and_reset()
+        elif stoprule is _DEFAULT_STOPRULE:
+            default_max_it = 1000 if max_it is None else max_it
+            iteration_limit = CountIterations(
+                default_max_it, timing=True, logging_level='DEBUG'
+            )
             if self.is_tikhonov and self.is_convex:
                 stoprule = (
                     DualityGapStopping(tol=1e-10, logging_level='DEBUG')
-                    + CountIterations(max_it, timing=True, logging_level='DEBUG')
+                    + iteration_limit
                 )
             else:
-                stoprule = CountIterations(max_it, timing=True, logging_level='DEBUG')
-        if max_it is not None and max_it>=0:
-            stoprule = stoprule + CountIterations(max_it, timing=True, logging_level='DEBUG')
+                stoprule = iteration_limit
+            # The requested limit is already part of the new default rule.
+            max_it = None
+        elif not isinstance(stoprule, StopRule):
+            raise TypeError(Errors.type_error(
+                'stoprule must be a StopRule or None.', stoprule
+            ))
+
+        if max_it is not None:
+            stoprule = stoprule + CountIterations(
+                max_it, timing=True, logging_level='DEBUG'
+            )
         if ref_sol is not None:
             stoprule = stoprule + ErrorMonitor(
                 ref_sol,
@@ -1054,9 +1096,10 @@ class Setting:
             raise ValueError(Errors.value_error(
                 "dist_x and dist_y require ref_sol."
             ))
-        self.set_stoprule(stoprule,method_names=[method_name])
-        if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stoprule.')
+        # Store the actual rule used by this run so that its histories remain
+        # available through get_stopping_rule().  Do not call set_stoprule()
+        # here: doing so would overwrite the independently configured rule.
+        themethod['stoprule'] = stoprule.copy_and_reset()
         
         solver = themethod['class'](thesetting,**kwargs)
         x,y = solver.run(themethod['stoprule'])

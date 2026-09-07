@@ -163,9 +163,14 @@ def plot_convergence_curves(
         if not isinstance(method_data, dict):
             continue
         stoprule = method_data.get("stoprule")
-        if not isinstance(stoprule, StopRule) or stoprule.solver is None:
+        if not isinstance(stoprule, StopRule):
             continue
 
+        # Do not use ``stoprule.solver`` to decide whether the method ran.
+        # TikhonovCG combines the setting's rule with its internal rules.
+        # CombineRules flattens that nested rule, so the root retained by the
+        # setting is not attached to the solver, although its child rules are
+        # attached and contain the recorded histories.
         components = list(_rule_components(stoprule))
         has_requested_history = any(
             isinstance(component, rule_type)

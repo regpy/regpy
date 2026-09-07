@@ -28,6 +28,18 @@ def _axpy(space, target, scalar, direction, work):
     return target
 
 
+def _contains_count_iterations(stoprule):
+    """Return whether a possibly combined rule contains an iteration cap."""
+    if stoprule is None:
+        return False
+    if isinstance(stoprule, CountIterations):
+        return True
+    return any(
+        _contains_count_iterations(rule)
+        for rule in getattr(stoprule, 'rules', ())
+    )
+
+
 def _regularized_inner_setting(
     setting: Setting,
     regpar: float,
@@ -590,8 +602,19 @@ class TikhonovCG(RegSolver):
         combined_rule = AndCombineRules(stoprule_list) if self.all_tol_criteria else CombineRules(stoprule_list)
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(self.krylov_basis.shape[0] if self.krylov_basis is not None else 0, 
                                                     logging_level= self.logging_level)
-        return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stoprule if other_stoprule else \
-               CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) 
+        internal_rule = combined_rule & self.kappa_track
+        if not _contains_count_iterations(other_stoprule):
+            internal_rule = (
+                CountIterations(
+                    self.max_it, logging_level=self.logging_level
+                )
+                + internal_rule
+            )
+        return (
+            internal_rule + other_stoprule
+            if other_stoprule is not None
+            else internal_rule
+        )
 
     def run(self, 
             stoprule: StopRule | None = None, 
@@ -613,11 +636,17 @@ class TikhonovCG(RegSolver):
             self.iteration_step_nr = self._lavrentiev.iteration_step_nr
             self._sync_lavrentiev_state()
             return result[0], None
+        if max_it is not None:
+            iteration_limit = CountIterations(
+                max_it, logging_level=self.logging_level
+            )
+            stoprule = (
+                iteration_limit
+                if stoprule is None
+                else iteration_limit + stoprule
+            )
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(
-            stoprule=self.stoprule,
-            max_it=max_it,
-        )
+        return super().run(stoprule=self.stoprule)
         
     def get_convergence_histories(self):
         """ Yields the stoprule specified by the parameters of the constructor
@@ -1203,11 +1232,15 @@ class LavrentievCG(RegSolver):
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(
             min_it, logging_level=self.logging_level
         )
-        rule = (
-            CountIterations(self.max_it, logging_level=self.logging_level)
-            + (combined_rule & self.kappa_track)
-        )
-        return rule + other_stoprule if other_stoprule else rule
+        rule = combined_rule & self.kappa_track
+        if not _contains_count_iterations(other_stoprule):
+            rule = (
+                CountIterations(
+                    self.max_it, logging_level=self.logging_level
+                )
+                + rule
+            )
+        return rule + other_stoprule if other_stoprule is not None else rule
 
     def run(
         self,
@@ -1223,11 +1256,17 @@ class LavrentievCG(RegSolver):
         max_it : int or None, optional
             An additional maximum number of iterations for this run.
         """
+        if max_it is not None:
+            iteration_limit = CountIterations(
+                max_it, logging_level=self.logging_level
+            )
+            stoprule = (
+                iteration_limit
+                if stoprule is None
+                else iteration_limit + stoprule
+            )
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(
-            stoprule=self.stoprule,
-            max_it=max_it,
-        )
+        return super().run(stoprule=self.stoprule)
 
     def get_convergence_histories(self):
         """Return histories recorded by the internal stopping rules."""
