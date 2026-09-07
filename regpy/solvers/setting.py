@@ -10,7 +10,9 @@ from regpy.operators import Operator, ObsDataT
 from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
-from regpy.stoprules import StopRule, DualityGapStopping, CountIterations
+from regpy.stoprules import (
+    StopRule, DualityGapStopping, CountIterations, ErrorMonitor,
+)
 __all__ = [
     "Setting",
     "get_reg_method_dictionary",
@@ -694,10 +696,12 @@ class Setting:
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None
                     ) -> float:
-        r"""Computes the value of the duality gap 
+        r"""Computes the value of the duality gap. 
+        This is scaled by 1/\alpha since with the scaling it is a bound on the Bregman distance 
+        of the iterates to the exact minimizer  
         
         .. math::
-            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
+            \frac{1}{\alpha}\left(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)\right)
 
         Parameters
         ----------
@@ -728,7 +732,13 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
             self.duality_gap_warning_incr *=10.
 
-        return res
+        return (res/alpha 
+                if self._primal_setting is None else
+                res * alpha**2 
+                # For dual settings alpha=alpha_dual = 1/alpha_primal.
+                # Moreover, since the dual objective functional is multiplied by alpha_primal to match the 
+                # form of the primal objective functional, another factor 1/alpha_primal appears. 
+        ) 
     
     def violation_optimality_cond(self, 
                                   primal: tuple[Vector|None,Vector|None] | None =None,
@@ -920,17 +930,17 @@ class Setting:
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
-    def set_stopping_rule(self,
+    def set_stoprule(self,
                           rule:StopRule,
                           method_names:list[str]|None=None) -> None:
         """Sets a StopRule for an optimization method.
         
         Parameters
         ----------
-        method_names: list[str]|None
-            keys of the methods
         rule: StopRule
             the stoprule
+        method_names: list[str] or None [default: None]
+            keys of the methods. In the default case the StopRule is attached to all applicable solvers. 
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
@@ -968,6 +978,11 @@ class Setting:
             method_name: str|None = None,
             max_it: int | None = None,
             stoprule: StopRule|object = _DEFAULT_STOPRULE,
+            ref_sol: (ReadOnlyVector
+                        | tuple[ReadOnlyVector | None, ReadOnlyVector]
+                        | None) = None,
+            dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
+            dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -983,6 +998,15 @@ class Setting:
             rule combined with 1000 maximum iterations; regularization methods
             use 1000 maximum iterations. If None, a previously stored stopping
             rule is used.
+        ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
+            Reference solution used to monitor iteration errors. A single
+            vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
+            ``(None, y)`` to monitor only ``y``. The monitor never stops the
+            iteration.
+        dist_x, dist_y: callable, optional
+            Custom distances called as ``dist((current, reference))`` by the
+            error monitor. If omitted, the corresponding Hilbert-space norm is
+            used when available.
         **kwargs: dict
             Arguments to be passed to the method.
 
@@ -1012,16 +1036,27 @@ class Setting:
         if stoprule is _DEFAULT_STOPRULE:
             if self.is_tikhonov and self.is_convex:
                 stoprule = (
-                    DualityGapStopping(tol=0.1, logging_level='DEBUG')
-                    + CountIterations(max_it, logging_level='DEBUG')
+                    DualityGapStopping(tol=1e-10, logging_level='DEBUG')
+                    + CountIterations(max_it, timing=True, logging_level='DEBUG')
                 )
             else:
-                stoprule = CountIterations(max_it, logging_level='DEBUG')
-        if max_it>=0:
-            stoprule = stoprule + CountIterations(max_it, logging_level='DEBUG')
-        self.set_stopping_rule(stoprule,method_names=[method_name])
+                stoprule = CountIterations(max_it, timing=True, logging_level='DEBUG')
+        if max_it is not None and max_it>=0:
+            stoprule = stoprule + CountIterations(max_it, timing=True, logging_level='DEBUG')
+        if ref_sol is not None:
+            stoprule = stoprule + ErrorMonitor(
+                ref_sol,
+                dist_x=dist_x,
+                dist_y=dist_y,
+                logging_level='DEBUG',
+            )
+        elif dist_x is not None or dist_y is not None:
+            raise ValueError(Errors.value_error(
+                "dist_x and dist_y require ref_sol."
+            ))
+        self.set_stoprule(stoprule,method_names=[method_name])
         if 'stoprule' not in themethod or themethod['stoprule'] is None:
-            raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stopping_rule.')
+            raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stoprule.')
         
         solver = themethod['class'](thesetting,**kwargs)
         x,y = solver.run(themethod['stoprule'])
@@ -1043,9 +1078,6 @@ def get_linear_reg_method_dictionary() -> dict:
         NuMethodSelfAdjoint,
         TikhonovAlphaGrid
     )
-    # Import the module directly instead of re-exporting its classes from
-    # ``linear.__init__``. This keeps the public solver package lightweight and
-    # avoids the setting <-> spectral circular import during module startup.
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return {
             'linLW':    {'class': linLandweber, 

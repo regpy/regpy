@@ -8,7 +8,7 @@ from __future__ import annotations
 from copy import deepcopy
 import logging
 import time
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from itertools import tee
 from numbers import Integral
 from types import NotImplementedType
@@ -26,10 +26,14 @@ LoggingLevel: TypeAlias = int | str
 Schedule: TypeAlias = Iterable[int] | None
 Iterate: TypeAlias = tuple[ReadOnlyVector, ReadOnlyVector | None]
 BestIterate: TypeAlias = Iterate | Vector
+Distance: TypeAlias = Callable[
+    [tuple[ReadOnlyVector, ReadOnlyVector]], float
+]
 
 __all__: list[str] = [
     "LoggingLevel", "Schedule", "MissingValueError", "StopRule",
     "NoneRule", "CombineRules", "AndCombineRules", "CountIterations",
+    "ErrorMonitor",
 ]
 
 class MissingValueError(Exception):
@@ -398,6 +402,167 @@ class NoneRule(StopRule):
             )
         return self.solver.x, self.solver.y if hasattr(self.solver,"y") else None
 
+
+class ErrorMonitor(StopRule):
+    r"""Record errors to a known reference solution without stopping.
+
+    Parameters
+    ----------
+    exact_sol : ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector]
+        A reference for the solver iterates ``x``, or references ``(x, y)``
+        for both the iterates and their operator values.  In the tuple form,
+        the first entry may be ``None`` to monitor only ``y``.
+    dist_x, dist_y : callable, optional
+        Distance functions called as ``dist((current, reference))``.  If a
+        required distance is omitted, the norm of ``solver.setting.h_domain``
+        or ``solver.setting.h_codomain``, respectively, is used.
+    logging_level : int or str, optional
+        Logging level. Defaults to ``"INFO"``.
+    schedule : iterable of int or None, optional
+        Iterations at which errors are recorded. If ``None`` (default), errors
+        are recorded at every call.
+
+    Notes
+    -----
+    This rule always returns ``False`` and therefore never stops a solver.
+    Recorded values are available as ``history_dict['error_x']`` and/or
+    ``history_dict['error_y']``.
+    """
+
+    def __init__(
+        self,
+        exact_sol: (
+            ReadOnlyVector
+            | tuple[ReadOnlyVector | None, ReadOnlyVector]
+        ),
+        dist_x: Distance | None = None,
+        dist_y: Distance | None = None,
+        logging_level: LoggingLevel = "INFO",
+        schedule: Schedule = None,
+    ) -> None:
+        super().__init__(logging_level=logging_level, schedule=schedule)
+        if isinstance(exact_sol, tuple):
+            if len(exact_sol) != 2:
+                raise TypeError(Errors.type_error(
+                    "exact_sol must be a vector or a pair (x, y). "
+                    f"Got a tuple of length {len(exact_sol)}."
+                ))
+            self.reference_x, self.reference_y = exact_sol
+            if self.reference_y is None:
+                raise TypeError(Errors.type_error(
+                    "The y entry of exact_sol=(x, y) must be a vector."
+                ))
+        elif exact_sol is None:
+            raise TypeError(Errors.type_error(
+                "exact_sol must be a vector or a pair (x, y)."
+            ))
+        else:
+            self.reference_x = exact_sol
+            self.reference_y = None
+
+        if dist_x is not None and not callable(dist_x):
+            raise TypeError(Errors.type_error("dist_x must be callable."))
+        if dist_y is not None and not callable(dist_y):
+            raise TypeError(Errors.type_error("dist_y must be callable."))
+        self._user_dist_x = dist_x
+        self._user_dist_y = dist_y
+        self.dist_x: Distance | None = dist_x
+        self.dist_y: Distance | None = dist_y
+
+        if self.reference_x is not None:
+            self.history_dict["error_x"] = []
+        if self.reference_y is not None:
+            self.history_dict["error_y"] = []
+
+    def __repr__(self) -> str:
+        monitored = []
+        if self.reference_x is not None:
+            monitored.append("x")
+        if self.reference_y is not None:
+            monitored.append("y")
+        return f"ErrorMonitor({', '.join(monitored)})"
+
+    @staticmethod
+    def _norm_distance(norm: Callable[[ReadOnlyVector], float]) -> Distance:
+        return lambda pair: float(norm(pair[0] - pair[1]))
+
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        super()._complete_init_with_solver(solver)
+        setting = getattr(solver, "setting", None)
+        if setting is None:
+            raise RuntimeError(Errors.runtime_error(
+                "ErrorMonitor requires a solver with a setting."
+            ))
+
+        if self.reference_x is not None:
+            if self.reference_x not in setting.op.domain:
+                raise ValueError(Errors.value_error(
+                    "The x reference does not belong to the operator domain."
+                ))
+            self.dist_x = self._user_dist_x
+            if self.dist_x is None:
+                try:
+                    norm_x = setting.h_domain.norm
+                except (AttributeError, NotImplementedError) as error:
+                    raise RuntimeError(Errors.runtime_error(
+                        "No domain Hilbert norm is available; supply dist_x."
+                    )) from error
+                self.dist_x = self._norm_distance(norm_x)
+
+        if self.reference_y is not None:
+            if self.reference_y not in setting.op.codomain:
+                raise ValueError(Errors.value_error(
+                    "The y reference does not belong to the operator codomain."
+                ))
+            self.dist_y = self._user_dist_y
+            if self.dist_y is None:
+                try:
+                    norm_y = setting.h_codomain.norm
+                except (AttributeError, NotImplementedError) as error:
+                    raise RuntimeError(Errors.runtime_error(
+                        "No codomain Hilbert norm is available; supply dist_y."
+                    )) from error
+                self.dist_y = self._norm_distance(norm_y)
+
+    def _stop(self) -> bool:
+        if self.solver is None or self.solver.x is None:
+            raise MissingValueError(
+                "ErrorMonitor requires a current solver iterate."
+            )
+        if self.reference_y is not None and (
+            not hasattr(self.solver, "y") or self.solver.y is None
+        ):
+            raise MissingValueError(
+                "ErrorMonitor requires the current operator value to monitor y."
+            )
+
+        error_x = None
+        error_y = None
+        if self.reference_x is not None:
+            if self.dist_x is None:
+                raise RuntimeError(Errors.runtime_error(
+                    "ErrorMonitor has not resolved dist_x."
+                ))
+            error_x = float(self.dist_x((self.solver.x, self.reference_x)))
+        if self.reference_y is not None:
+            if self.dist_y is None:
+                raise RuntimeError(Errors.runtime_error(
+                    "ErrorMonitor has not resolved dist_y."
+                ))
+            error_y = float(self.dist_y((self.solver.y, self.reference_y)))
+
+        messages = []
+        if error_x is not None:
+            self.history_dict["error_x"].append(error_x)
+            messages.append(f"error_x: {error_x:.3e}")
+        if error_y is not None:
+            self.history_dict["error_y"].append(error_y)
+            messages.append(f"error_y: {error_y:.3e}")
+        self.log_info = " | ".join(messages)
+        if self.is_main_rule:
+            self.log.debug(self.log_info)
+        return False
+
 class CombineRules(StopRule):
     r"""Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
 
@@ -660,10 +825,10 @@ class CountIterations(StopRule):
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = None,
     ) -> None:
-        if not isinstance(max_iterations,int):
-            raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!"))
+        if not isinstance(max_iterations,Integral):
+            raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!",max_iterations))
         if max_iterations<0:
-            raise ValueError(Errors.value_error("The maximal iteration in CountIteration needs to be at least zero (for no iteration)!"))
+            raise ValueError(Errors.value_error("The maximal iteration in CountIteration needs to be at least zero (for no iteration)!",max_iterations))
         super().__init__(
             logging_level=logging_level,
             schedule=schedule,
