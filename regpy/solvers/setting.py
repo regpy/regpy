@@ -705,11 +705,10 @@ class Setting:
                     dual: tuple[Vector|None,Vector|None] | None  =None
                     ) -> float:
         r"""Computes the value of the duality gap. 
-        This is scaled by 1/\alpha since with the scaling it is a bound on the Bregman distance 
-        of the iterates to the exact minimizer  
+    
         
         .. math::
-            \frac{1}{\alpha}\left(\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)\right)
+            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
 
         Parameters
         ----------
@@ -750,12 +749,12 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
             self.duality_gap_warning_incr *=10.
 
-        return (res/alpha 
+        return (res
                 if self._primal_setting is None else
-                res * alpha**2 
+                res * alpha 
                 # For dual settings alpha=alpha_dual = 1/alpha_primal.
-                # Moreover, since the dual objective functional is multiplied by alpha_primal to match the 
-                # form of the primal objective functional, another factor 1/alpha_primal appears. 
+                # Since the dual objective functional is multiplied by alpha_primal to match the 
+                # form of the primal objective functional, a factor 1/alpha_primal appears. 
         ) 
     
     def violation_optimality_cond(self, 

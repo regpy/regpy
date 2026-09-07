@@ -15,8 +15,8 @@ The structure is as follows
 
 from .solver import RegSolver, Solver
 from .setting import Setting
-from .util import plot_convergence_curves
+from .util import convergence_plots
 from . import linear
 from . import nonlinear
 
-__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", "plot_convergence_curves"]
+__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", "convergence_plots"]

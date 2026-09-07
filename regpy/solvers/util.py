@@ -21,7 +21,7 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ['plot_convergence_curves','GeometricSequence', 'powers_of_two', 'squares']
+__all__ = ["convergence_plots", "GeometricSequence", "powers_of_two", "squares"]
 
 def powers_of_two() -> Iterator[int]:
     """Yield ``1, 2, 4, 8, ...`` indefinitely."""
@@ -153,11 +153,13 @@ def _times_for_history(
     )
 
 
-def plot_convergence_curves(
+def convergence_plots(
     setting: Setting,
     plot_over_time: bool = False,
+    methods: list[str] | None = None,
+    title: str | None = None,
 ) -> tuple[Figure, np.ndarray]:
-    """Plot convergence histories for all methods that have been run.
+    """Plot convergence histories for selected methods that have been run.
 
     The function inspects the stopping rule stored for every method in
     ``setting._methods``. Nested combined rules are searched recursively for
@@ -174,6 +176,12 @@ def plot_convergence_curves(
         Plot against iteration numbers if ``False`` (default). If ``True``,
         plot against CPU time recorded by a ``CountIterations(timing=True)``
         component in each method's stopping rule.
+    methods : list of str or None, optional
+        Short names of methods to plot. If omitted, all methods with recorded
+        histories are plotted. The order of the list determines the order of
+        curves in each legend.
+    title : str or None, optional
+        Figure title. If omitted, no figure-level title is added.
 
     Returns
     -------
@@ -186,23 +194,43 @@ def plot_convergence_curves(
     ------
     TypeError
         If ``plot_over_time`` is not boolean or the setting has no method
-        dictionary.
+        dictionary, or if ``methods`` or ``title`` has the wrong type.
     ValueError
-        If no requested histories are available, or if time plotting was
-        requested but a history cannot be aligned with a timing counter.
+        If a requested method name is unknown, if no requested histories are
+        available, or if time plotting was requested but a history cannot be
+        aligned with a timing counter.
     """
     if not isinstance(plot_over_time, (bool, np.bool_)):
         raise TypeError("plot_over_time must be boolean.")
 
-    methods = getattr(setting, "_methods", None)
-    if not isinstance(methods, dict):
+    method_registry = getattr(setting, "_methods", None)
+    if not isinstance(method_registry, dict):
         raise TypeError("setting must provide a dictionary attribute _methods.")
+    if methods is not None:
+        if not isinstance(methods, list) or not all(
+            isinstance(method, str) for method in methods
+        ):
+            raise TypeError("methods must be a list of strings or None.")
+        unknown_methods = [
+            method for method in methods if method not in method_registry
+        ]
+        if unknown_methods:
+            raise ValueError(
+                "Unknown method name(s): " + ", ".join(unknown_methods)
+            )
+        selected_methods = [
+            (method, method_registry[method]) for method in methods
+        ]
+    else:
+        selected_methods = list(method_registry.items())
+    if title is not None and not isinstance(title, str):
+        raise TypeError("title must be a string or None.")
 
     series: dict[str, list[tuple[str, np.ndarray, np.ndarray]]] = {
-        title: [] for title, _, _ in _PLOT_SPECS
+        subplot_title: [] for subplot_title, _, _ in _PLOT_SPECS
     }
 
-    for method_name, method_data in methods.items():
+    for method_name, method_data in selected_methods:
         if not isinstance(method_data, dict):
             continue
         stoprule = method_data.get("stoprule")
@@ -235,7 +263,7 @@ def plot_convergence_curves(
                 "data."
             )
 
-        for title, rule_type, history_keys in _PLOT_SPECS:
+        for subplot_title, rule_type, history_keys in _PLOT_SPECS:
             matching_rules = [
                 component
                 for component in components
@@ -264,10 +292,14 @@ def plot_convergence_curves(
                         else _history_steps(component, key, len(values))
                     )
                     label = f"{method_name}{rule_suffix}: {key}"
-                    series[title].append((label, horizontal, values))
+                    series[subplot_title].append(
+                        (label, horizontal, values)
+                    )
 
     active_series = [
-        (title, curves) for title, curves in series.items() if curves
+        (subplot_title, curves)
+        for subplot_title, curves in series.items()
+        if curves
     ]
     if not active_series:
         raise ValueError(
@@ -285,18 +317,21 @@ def plot_convergence_curves(
     axes: np.ndarray = axes_grid[:, 0]
     x_label = "CPU time" if plot_over_time else "Iteration"
 
-    for axis, (title, curves) in zip(axes, active_series, strict=True):
+    for axis, (subplot_title, curves) in zip(
+        axes, active_series, strict=True
+    ):
         axis.set_yscale("log")
         for label, horizontal, values in curves:
             axis.plot(horizontal, values, label=label)
-        axis.set_title(title)
+        axis.set_title(subplot_title)
         axis.set_xlabel(x_label)
         axis.set_ylabel("Value")
         axis.grid(True, which="both", alpha=0.3)
         axis.legend()
 
-    figure.tight_layout()
+    if title is not None:
+        figure.suptitle(title)
+        figure.tight_layout(rect=(0, 0, 1, 0.97))
+    else:
+        figure.tight_layout()
     return figure, axes
-
-
-__all__ = ["plot_convergence_curves"]
