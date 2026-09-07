@@ -50,8 +50,6 @@ def _make_setting(
         codomain_free=codomain_free,
         regpar=regpar,
     )
-    if codomain_free:
-        problem.operator.set_gram_factor(L2(setting.op.codomain))
     return setting
 
 

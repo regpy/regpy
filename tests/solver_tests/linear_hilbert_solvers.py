@@ -129,7 +129,6 @@ def _make_case(name):
     standard_setting = _make_setting(case)
     case["h_domain"] = standard_setting.h_domain
     case["h_codomain"] = standard_setting.h_codomain
-    operator.set_gram_factor(standard_setting.h_codomain)
 
     case["op_norm"] = operator.norm(
         standard_setting.h_domain,

@@ -64,9 +64,10 @@ class Setting:
         The penalty need not be a data functional. Its
         :meth:`~regpy.functionals.Functional.reference_vector` provides the
         default initial guess.
-    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable or None
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
+        None is only admissible if codomain_free = True.
     regpar: float or None [default: None]
         regularization parameter  :math:`alpha`. 
         Defaults to None. See explanations above on different meaning of solvers in this case.
@@ -93,8 +94,8 @@ class Setting:
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
         op.adjoint_data, op.adjoint_eval, and op.adjoint_derivative, but no evaluations of op and its derivative should be used. 
-        The data fidelity term is inactive in this case, and op.data typically contains raw data, from which the full data 
-        in op.codomain could be computed in principle, but instead, these data are backpropagated by op.adjoint_data.
+        The data fidelity term is inactive in this case, and op.data contains raw data, 
+        typically not in the codomain, which are backpropagated by op.adjoint_data.
     logging_level: int or str [default: logging.INFO]
         logging level
     explicitDataWarning: bool [default: True]
@@ -106,7 +107,7 @@ class Setting:
     def __init__(self, 
                  op: Operator, 
                  penalty: Functional|HilbertSpace|Callable, 
-                 data_fid:Functional|HilbertSpace|Callable,
+                 data_fid:Functional|HilbertSpace|Callable|None,
                  regpar: float|None =None,
                  penalty_shift = None, 
                  data: ReadOnlyVector | ObsDataT | None = None, 
@@ -137,6 +138,8 @@ class Setting:
                 self.init = init
 
         if not codomain_free:
+            if data_fid is None:
+                raise ValueError(Errors.value_error('data_fid must not be None unless codomain_free is True'))
             self.set_data_fid(data_fid)    
             if (not self.data_fid.is_data_func and data is None and _primal_setting is None):
                 if exact_data is None and explicitDataWarning:
@@ -148,6 +151,16 @@ class Setting:
                 if not exact_data in op.codomain:
                     raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
                 self._exact_data = exact_data
+        elif data_fid is not None:
+            _data_fid = as_functional(data_fid, self.op.codomain)
+            hilb = _data_fid.h_domain
+            if not _data_fid.is_norm_squared_type:
+                raise ValueError(Errors.value_error('Can only treat norm_squared_type functionals in the codomain_free case.', _data_fid))
+            try:
+                self.op.set_gram_factor(hilb)
+            except ValueError:
+                self.log.warning("The given data fidelity functional cannot be incorporated into the operator's forward-backward methods.")
+
         if data is not None:
             self.data = data #data and (if not self.codomain_free) data fidelity functional are updated
 
