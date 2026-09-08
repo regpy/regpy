@@ -29,6 +29,11 @@ class ForwardBackwardSplitting(RegSolver):
     tau : float , optional
         The step size parameter. Must be positive. 
         Default is the reciprocal of the operator norm of :math:`T^*T` 
+    op_norm : float or None [default: None]
+        Norm of the forward operator. If supplied, it is used to compute the
+        default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
+        estimating the norm numerically. An explicitly supplied ``tau`` takes
+        precedence.
     proximal_pars: dict, optional
         Parameter dictionary passed to the computation of the prox-operator.
     logging_level: int [default: logging.INFO]
@@ -54,7 +59,9 @@ class ForwardBackwardSplitting(RegSolver):
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.empty()
         self.setting.get_or_update_initial_guess(init, update_setting, out=self.x)
-        out, par = ForwardBackwardSplitting.check_applicability(setting)
+        out, par = ForwardBackwardSplitting.check_applicability(
+            setting, op_norm=op_norm
+        )
         if out['applicable']:
             self.log.info(out['info'])
         else:
@@ -157,6 +164,12 @@ class FISTA(RegSolver):
         The initial guess. 
     tau : float [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
+    op_norm : float or None [default: None]
+        Norm of the forward operator. If supplied, it is used to compute the
+        default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
+        estimating the norm numerically. For codomain-free settings, the data
+        fidelity Lipschitz factor is one. An explicitly supplied ``tau`` takes
+        precedence.
     op_lower_bound : float [default: 0]
         lower bound of the operator: :math:`|op(f)|\geq op_lower_bound * |f|`\.
         Used to define convexity parameter of data functional.     
@@ -225,7 +238,9 @@ class FISTA(RegSolver):
         """Proximal parameters that are passed to prox-operator of penalty term. """
 
         out, par = FISTA.check_applicability(
-            setting, op_lower_bound=op_lower_bound
+            setting,
+            op_lower_bound=op_lower_bound,
+            op_norm=op_norm,
         )
         if out['applicable']:
             self.log.info(out['info'])

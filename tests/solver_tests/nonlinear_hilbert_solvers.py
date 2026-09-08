@@ -143,42 +143,6 @@ def test_codomain_free_matches_standard(
     )
     assert error <= tolerance
 
-
-def test_fista_reduces_exact_data_residual(
-    inverse_problem: InverseProblem,
-) -> None:
-    setting = _make_setting(
-        inverse_problem,
-        codomain_free=False,
-        regpar=1e-5,
-    )
-    initial_image = inverse_problem.operator(
-        inverse_problem.operator.domain.ones()
-    )
-    initial_error = _relative_image_error(
-        setting,
-        initial_image,
-        inverse_problem.exact_data,
-    )
-
-    reconstruction, reconstructed_data = setting.run(
-        "genFISTA",
-        max_it=150,
-        logging_level="DEBUG",
-    )
-    final_error = _relative_image_error(
-        setting,
-        reconstructed_data,
-        inverse_problem.exact_data,
-    )
-
-    assert np.isfinite(_relative_l2_error(
-        reconstruction,
-        inverse_problem.exact_solution,
-    ))
-    assert final_error < initial_error
-
-
 @pytest.mark.parametrize(
     (
         "method",
@@ -189,6 +153,7 @@ def test_fista_reduces_exact_data_residual(
     ),
     [
         pytest.param("nlLW", 400, {}, 1e-1, 1e-2, id="landweber"),
+        pytest.param("genFISTA", 100, {}, 1e-1, 1e-2, id="FISTA"),        
         pytest.param(
             "IRGNM_CG",
             25,
