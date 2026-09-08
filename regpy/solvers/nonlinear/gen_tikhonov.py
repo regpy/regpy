@@ -111,4 +111,12 @@ class GeneralizedTikhonov(RegSolver):
             self._external_alpha_call = True
         self.setting.regpar = alpha
         return False
-     
+
+    @staticmethod
+    def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        out = {"info": "",  "warning": ""}
+        par = {}
+        if setting.is_tikhonov:
+            out["info"] += "Setting must not have a regularization parameter. "
+        out["applicable"] = out['info'] == ''
+        return out, par     

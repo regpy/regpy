@@ -151,3 +151,30 @@ class ForwardBackwardSplitting(RegSolver):
             _, self.deriv = self.op.linearize(
                 self.x, out=self.y
             )
+
+    @staticmethod
+    def check_applicability(setting) -> tuple[dict, dict]:
+        """Check whether ``setting`` provides the operations ForwardBackwardSplitting needs.
+        """
+
+        out = {"info": "",  "warning": ""}
+        par = {}
+
+        if not setting.is_tikhonov:
+            out["info"] += "Setting has no regularization parameter. "
+        if "proximal" not in setting.penalty.methods:
+            out["info"] += "Penalty has no prox method. "
+        if "subgradient" not in setting.data_fid.methods:
+            out["info"] += "Data fidelity term has no gradient. "
+        if not setting.codomain_free:
+            if "subgradient" not in setting.data_fid.methods:
+                out["info"] += "Missing subgradient of data fidelity functional. "
+            if not np.isfinite(setting.data_fid.Lipschitz):
+                out["warning"] += (
+                    "Lipschitz constant of data fidelity functional is not "
+                    "finite; backtracking will be used for step-size "
+                    "selection."
+                )
+
+        out["applicable"] = out["info"] == ""
+        return out, par

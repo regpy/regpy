@@ -80,6 +80,11 @@ class Setting:
         Optional exact data used to generate synthetic noisy observations with
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
+    noise_pars: dict or None [default: None]
+        A dictionary containing parameters of the data noise model. 
+        This information is required by parameter choice rules.
+        If you work with synthetic data, you can use methods of this class to 
+        "add noise" to your data 
     init: Vector or None [default: None]
         Initial guess in ``op.domain``. Depending on
         ``incorporate_init_in_penalty``, it is either incorporated into the
@@ -102,6 +107,14 @@ class Setting:
         logging level
     explicitDataWarning: bool [default: True]
         If True, a warning will be given if the setting is initialized without explicit data or exact_data. 
+    default_linear_regmethod: str [default: 'genTikh']
+        Default solver if the setting has a regularization parameter and the operator is linear.    
+    default_nonlinear_regmethod: str [default: 'IRN']
+        Default solver if the setting has a regularization parameter and the operator is linear.  
+    default_inner_solver: str or None [default: None]
+        Default inner solver if the setting has a regularization parameter and the Tikhonov functional is convex. 
+    default_nl_minimizer: str|None [default: None]
+        Name of default method for minimizing non-convex Tikhonov functional. 
     """
     
     log = ClassLogger()
@@ -111,15 +124,18 @@ class Setting:
                  penalty: Functional|HilbertSpace|Callable, 
                  data_fid:Functional|HilbertSpace|Callable|None,
                  regpar: float|None =None,
-                 penalty_shift = None, 
                  data: ReadOnlyVector | ObsDataT | None = None, 
                  exact_data: ReadOnlyVector | None = None, 
                  init: ReadOnlyVector | None = None,
                  incorporate_init_in_penalty: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
-                 explicitDataWarning:bool = True,                 
-                 _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
+                 explicitDataWarning: bool = True,                 
+                 default_linear_regmethod: str = 'genTikh', 
+                 default_nonlinear_regmethod: str = 'IRN', 
+                 default_inner_solver: str|None = None, 
+                 default_nl_minimizer: str|None = None,             
+                 _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()                 
                  ) -> None:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
@@ -171,6 +187,12 @@ class Setting:
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
         self._primal_setting = _primal_setting
         self.regpar=regpar#The flags are set by setting the regularization parameter
+
+        self._default_linear_regmethod = default_linear_regmethod
+        self._default_nonlinear_regmethod = default_nonlinear_regmethod
+        self._default_inner_solver = default_inner_solver
+        self._default_nl_minimizer = default_nl_minimizer
+
         self._noise_model_param = {}
 
     @property
@@ -700,6 +722,42 @@ class Setting:
             dual = (p,Tsp)
         return primal,dual
 
+    def violation_optimality_cond(self,
+                                  iterate: tuple[Vector,Vector|None], 
+                                  deriv: Operator|None = None
+                                  ) -> float:
+        r""" For a Tikhonov functional with a Gateaux differentiable data fidelity 
+        functional :math:`\mathcal{S}_{g^{\delta}}`, the first order optimality condition for a minimizer is 
+
+        .. math::
+            z:=\frac{-1}{\alpha} F'[f]^*\mathcal{S}_{g^{\delta}}'(F(f)) \in \partial \mathcal{R}(f)
+ 
+        This function returns the distance of :math:`z` from :math:`\partial \mathcal{R}(f)`.
+
+        Parameters:
+
+        iterate:  tuple of Vectors
+            tuple of primal variable :math:`f` and :math:`Tf`. If :math:`F(f)` is None, it will be computed from :math:`f`.
+        deriv: Operator | None [default: None]
+            If provided, deriv must be the derivative of self.op at :math:`f`. 
+
+        """
+
+        if not isinstance(iterate,tuple) or not len(iterate)==2:
+            raise ValueError(Errors.value_error('iterate must be a tuple of length two', iterate))
+        f,Ff = iterate
+        if not f in self.op.domain:
+            raise TypeError(Errors.type_error('iterate[0] must be in operator domain'), f)
+        if Ff is not None and (not Ff in self.op.codomain):
+            raise TypeError(Errors.type_error('iterate[1] must be None or in operator codomain'), Ff)
+        if deriv is not None and not (isinstance(deriv,Operator) and deriv.linear):
+            raise TypeError(Errors.type_error('deriv must be a linear operator'), deriv)
+        if deriv is None or iterate[1] is None:
+            deriv, Ff = self.op.linearize(f)
+        z = - deriv.adjoint(self.data_fid.subgradient(Ff))
+
+        return self.penalty.dist_subdiff(z,f)
+
     def duality_gap(self, 
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None
@@ -712,7 +770,7 @@ class Setting:
 
         Parameters
         ----------
-        primal: tuple[Vector|None,Vector|None] | None [default: None]
+        primal: tuple[Vector,Vector|None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
         dual: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
@@ -897,7 +955,7 @@ class Setting:
     def display_all_methods(self, full_names:bool=True)->None:
         """Display all registered methods and their applicability."""
         self.evaluate_methods()
-        print('Applicable methods:\n')
+        print('Applicable methods: (default =',self.get_default_method(),')\n')
         for name,method in self.applicable_methods().items():
             full_name = method.get('full')
             suffix = (
@@ -996,6 +1054,21 @@ class Setting:
         else:
             return self._methods[method_name]['stoprule']   
 
+    def get_default_method(self):
+        if not self.is_tikhonov:
+            return (self._default_linear_regmethod
+                            if self.op.linear else
+                            self._default_nonlinear_regmethod
+            )
+        else:
+            if self._default_inner_solver is None: 
+                self._default_inner_solver = self.select_best_method()
+            return (
+                self._default_inner_solver
+                if self.is_convex else
+                self._default_nl_minimizer
+            )
+
     def run(self,
             method_name: str|None = None,
             max_it: int | None = None,
@@ -1039,7 +1112,7 @@ class Setting:
             x,y: x is the minimizer of the appproximate solution and y its value under the operator.         
         """
         if method_name is None:
-            method_name = self.select_best_method()
+            method_name = self.get_default_method()
         if not method_name in self._methods:
             raise ValueError(Errors.value_error(f"{method_name} not in list of methods: {self._methods}."))
         themethod= self._methods[method_name]
@@ -1200,6 +1273,7 @@ def get_linear_reg_method_dictionary() -> dict:
         NuMethodSelfAdjoint,
         TikhonovAlphaGrid
     )
+    from .nonlinear import GeneralizedTikhonov
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return {
             'FISTA':   {'class': FISTA,
@@ -1222,8 +1296,11 @@ def get_linear_reg_method_dictionary() -> dict:
                          'full': 'Conjugate Gradient method applied to the normal equation'
                         },
             'TikhOnGrid':{'class': TikhonovAlphaGrid,
-                          'full': 'Tikhonov regularization applied for a grid of regularization parameters'
+                          'full': 'Tikhonov regularization applied for a grid of regularization parameters (special case of genTikh)'
                          },
+            'genTikh':   {'class': GeneralizedTikhonov,
+                          'full': 'Generalized Tikhonov regularization applied for a grid of regularization parameters'
+                        },
             'Spectral': {'class': Spectral,
                          'full': 'spectral regularization by an SVD filter'
                         },
@@ -1248,27 +1325,31 @@ def get_nonlinear_reg_method_dictionary() -> dict:
         LevenbergMarquardt,
         NewtonCG,
         NewtonCGFrozen,
+        IterativelyRegularizedNewton
     )
     return {
             'genFISTA': {'class': genFISTA,
                          'primal': True,
                          'full': 'Fast Iterative Thresholding for nonlinear problems'
                         },
-            'nlLW':     {'class':nlLandweber,
+            'nlLW':     {'class': nlLandweber,
                          'full': 'Landweber iteration for nonlinear problems'
                         },
-            'IRGNM_CG':     {'class':IrgnmCG, 
+            'IRGNM_CG':     {'class': IrgnmCG, 
                          'full': 'Iteratively Regularized Gauss-Newton Method with inner CG solver'
                         },
-            'LevMar':     {'class':LevenbergMarquardt, 
+            'LevMar':     {'class': LevenbergMarquardt, 
                          'full': 'Levenberg-Marquardt method'
                         },
-            'NewtonCG':     {'class':NewtonCG, 
+            'NewtonCG':     {'class': NewtonCG, 
                          'full': 'Newton method with inner CGNE regularized by early stopping'
                         },
-            'NewtCGFroz':     {'class':NewtonCGFrozen, 
+            'NewtCGFroz':     {'class': NewtonCGFrozen, 
                          'full': 'Newton-CG method with derivative frozen at initial guess'
-                        },                        
+                        },
+            'IRN' :      {'class': IterativelyRegularizedNewton,
+                          'full': 'Iteratively regularized Newton methods (generalized IRGNM)'
+                          }
     }
 
 
@@ -1313,8 +1394,10 @@ def get_convex_solver_dictionary() -> dict:
 def get_non_convex_solver_dictionary() -> dict:
     """Return the available solvers for non-convex Tikhonov settings."""
     from .nonlinear import FISTA as genFISTA
+    from .nonlinear import ForwardBackwardSplitting as genFB
 
     method_dict={
+            'genFB': {'class':genFB, 'primal': True, 'full':'generalized forward-backward splitting'},
             'genFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
     }
     return method_dict

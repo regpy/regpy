@@ -422,3 +422,12 @@ class IterativelyRegularizedNewton(RegSolver):
         self.y , self.deriv = self.op.linearize(self.x)
         self.regpar *= self.regpar_step
         self.log.info(f"its.{self.iteration_step_nr}: alpha={self.regpar}")
+
+    @staticmethod
+    def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        out = {"info": "",  "warning": ""}
+        par = {}
+        if setting.is_tikhonov:
+            out["info"] += "Setting must not have a regularization parameter. "
+        out['applicable'] = out['info'] == ''
+        return out, par  
