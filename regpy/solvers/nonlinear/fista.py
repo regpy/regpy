@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 
+from regpy.functionals.base import NullFunctional
 from regpy.vecsps import Vector
 from regpy.util import Errors
 from ..solver import RegSolver
@@ -28,7 +29,15 @@ class FISTA(RegSolver):
     .. math::
         \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
 
-    Gradient steps are performed on the first term, and proximal steps on the second term. 
+    Gradient steps are performed on the first term, and proximal steps on the second term.
+    For a setting without a regularization parameter, FISTA instead minimizes
+    only the data-fidelity term. This is admissible when the setting's penalty
+    is of squared-norm type (and hence specifies the domain Hilbert geometry)
+    or is a :class:`~regpy.functionals.base.NullFunctional`; internally, the
+    penalty term :math:`\mathcal{R}` is then replaced by a null functional. This has been justified 
+    by Hubmer and Ramlau, Inverse Problems, 2017 where the regularizing property 
+    of this scheme is shown under the tangential cone condition. 
+
     The step sizes for the gradient steps are determined using a backtracking method introduced in
     A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for
     linear inverse problems. SIAM J. Imaging Sci., 2(1):183–202, 2009.
@@ -36,7 +45,14 @@ class FISTA(RegSolver):
     Parameters
     ----------
     setting : regpy.solvers.Setting
-        The setting of the forward problem. Includes the penalty and data fidelity functionals. 
+        The setting of the forward problem. Includes the penalty and data
+        fidelity functionals. If ``setting.regpar`` is not ``None``, FISTA
+        minimizes the Tikhonov functional displayed above. If
+        ``setting.regpar`` is ``None``, the setting penalty must either be of
+        squared-norm type or be a
+        :class:`~regpy.functionals.base.NullFunctional`. In that case FISTA
+        minimizes the unregularized data-fidelity term and uses an internal
+        null functional for its proximal step.
     init : setting.op.domain [default: setting.op.domain.zeros()]
         The initial guess
     tau : float [default: 10**16]
@@ -66,6 +82,13 @@ class FISTA(RegSolver):
         The data to be fitted. If None, the data is taken from the setting.
     update_setting : bool [default: True]   
         If True, the setting is updated with the initial guess and data. This can be used to save memory if the initial guess and data are very large.
+
+    Notes
+    -----
+    In the unregularized mode, a squared-norm setting penalty is not included
+    in the objective. Its Hilbert space is still used as
+    ``setting.h_domain`` for gradients, norm estimates, and step-size
+    selection. 
     """
 
     def __init__(
@@ -107,7 +130,14 @@ class FISTA(RegSolver):
                 "Using non-linear FISTA with a linear Operator! Consider using "
                 "the linear FISTA in solvers.linear."
             )
-        self.regpar = self.setting.regpar
+        if self.setting.is_tikhonov:
+            self.regpar = self.setting.regpar
+            self.penalty = self.setting.penalty
+        else:
+            # The setting's penalty supplies the domain Hilbert geometry in
+            # this case, but is not part of the minimized objective.
+            self.regpar = 1.
+            self.penalty = NullFunctional(self.op.domain)
         self.codomain_free = setting.codomain_free
         self.mu_penalty = self.regpar * self.penalty.convexity_param
         self.mu_data_fidelity = (
@@ -195,13 +225,26 @@ class FISTA(RegSolver):
 
     @staticmethod
     def check_applicability(setting) -> tuple[dict, dict]:
-        """Check whether ``setting`` provides the operations FISTA needs."""
+        """Check whether ``setting`` provides the operations FISTA needs.
+
+        Both the use as minimizer of possibly non-convex Tikhonov functionals 
+        with externally chosen regularization parameter and the use as regularization 
+        method are possible. 
+        """
         out = {"info": "", "warning": ""}
         par = {}
 
-        if not setting.is_tikhonov:
-            out["info"] += "Setting has no regularization parameter. "
-        if "proximal" not in setting.penalty.methods:
+        without_regpar = not setting.is_tikhonov
+        admissible_without_regpar = (
+            setting.penalty.is_norm_squared_type
+            or isinstance(setting.penalty, NullFunctional)
+        )
+        if without_regpar and not admissible_without_regpar:
+            out["info"] += (
+                "Without a regularization parameter, the penalty must be "
+                "of squared-norm type or a NullFunctional. "
+            )
+        if not without_regpar and "proximal" not in setting.penalty.methods:
             out["info"] += "Missing prox of penalty functional. "
         if not setting.codomain_free:
             if "subgradient" not in setting.data_fid.methods:

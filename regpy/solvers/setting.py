@@ -1234,11 +1234,16 @@ def get_nonlinear_reg_method_dictionary() -> dict:
     from .nonlinear import (
         IrgnmCG,
         Landweber as nlLandweber,
+        FISTA as genFISTA,
         LevenbergMarquardt,
         NewtonCG,
         NewtonCGFrozen,
     )
     return {
+            'genFISTA': {'class': genFISTA,
+                         'primal': True,
+                         'full': 'Fast Iterative Thresholding for nonlinear problems'
+                        },
             'nlLW':     {'class':nlLandweber,
                          'full': 'Landweber iteration for nonlinear problems'
                         },
