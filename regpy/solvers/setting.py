@@ -1185,9 +1185,15 @@ class Setting:
 
 def get_linear_reg_method_dictionary() -> dict:
     """Return regularization methods intended for linear operators.
+
+    ``FISTA`` is available without a regularization parameter when the
+    setting penalty is of squared-norm type or is a null functional. In that
+    mode the penalty determines the domain Hilbert geometry but is not part of
+    the minimized objective.
     """
     from .linear import (
         CGNE,
+        FISTA,
         Landweber as linLandweber,
         Richardson,
         NuMethod,
@@ -1196,6 +1202,10 @@ def get_linear_reg_method_dictionary() -> dict:
     )
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return {
+            'FISTA':   {'class': FISTA,
+                        'primal': True,
+                        'full': 'Fast Iterative Thresholding for linear problems'
+                       },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
                         },

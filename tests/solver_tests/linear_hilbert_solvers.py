@@ -15,6 +15,7 @@ from regpy.operators import (
     PtwMultiplication,
 )
 from regpy.solvers.linear import (
+    FISTA,
     Landweber,
     NuMethod,
     NuMethodSelfAdjoint,
@@ -34,7 +35,7 @@ from regpy.vecsps import UniformGridFcts
 
 
 LANDWEBER_STEPS = 300
-OTHER_ITERATION_STEPS = 50
+OTHER_ITERATION_STEPS = 200
 EQUIVALENCE_STEPS = 3
 TIKHONOV_MAX_IT = 1000
 STRICT_TOL = 1e-12
@@ -77,7 +78,7 @@ def _make_case(name):
         self_adjoint = True
     elif name == "real, non-self-adjoint":
         operator = (
-            0.01 * ExponentialConvolution(grid, a=0.05)
+            50.0 * ExponentialConvolution(grid, a=0.05)
             * PeriodicShift(grid, shift=(0.3,), self_adjoint=False)
         )
         exact_solution = (
@@ -724,6 +725,7 @@ def test_alternative_tikhonov_minimizer(
 APPROXIMATION_METHODS = (
     pytest.param("Landweber", LANDWEBER_STEPS, id="Landweber"),
     pytest.param("NuMethod", OTHER_ITERATION_STEPS, id="NuMethod"),
+    pytest.param("FISTA", OTHER_ITERATION_STEPS, id="FISTA"),
     pytest.param("CGNE", OTHER_ITERATION_STEPS, id="CGNE"),
     pytest.param("Richardson", OTHER_ITERATION_STEPS, id="Richardson"),
     pytest.param(
@@ -763,6 +765,13 @@ def test_approximation_quality(linear_case, method_name, max_steps):
             stepsize=case["landweber_stepsize"],
             op_norm=case["op_norm"],
             change_init=False,
+            logging_level=logging.WARNING,
+        )
+    elif method_name == "FISTA":
+        solver_class = FISTA
+        solver = solver_class(
+            setting,
+            op_norm=case["op_norm"],
             logging_level=logging.WARNING,
         )
     elif method_name == "CGNE":

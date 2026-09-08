@@ -10,16 +10,9 @@ from regpy.vecsps import Vector
 from regpy.util import Errors
 from ..solver import RegSolver
 from ..setting import Setting
+from ..util import powers_of_two
 
 __all__ = ["FISTA"]
-
-
-def _powers_of_two() -> Iterator[int]:
-    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
-    n = 0
-    while True:
-        yield 2**n
-        n += 1
 
 
 class FISTA(RegSolver):
@@ -65,7 +58,9 @@ class FISTA(RegSolver):
         is always performed once at the initial iterate. By default, it is
         repeated at iterations ``1, 2, 4, 8, ...``. Passing ``[0]`` therefore
         estimates the norm only initially. Values must be nonnegative and
-        strictly increasing. This option is ignored when backtracking is used.
+        strictly increasing. Whenever reestimation changes the step size, the
+        accelerated three-term recursion is restarted. This option is ignored
+        when backtracking is used.
     stepsize_safety : float, optional
         Safety factor for norm-based step sizes. Must lie in ``(0, 1]`` and
         defaults to ``0.9``.
@@ -88,7 +83,12 @@ class FISTA(RegSolver):
     In the unregularized mode, a squared-norm setting penalty is not included
     in the objective. Its Hilbert space is still used as
     ``setting.h_domain`` for gradients, norm estimates, and step-size
-    selection. 
+    selection.
+
+    Whenever norm estimation or backtracking changes the step size, the next
+    accelerated step starts afresh from the accepted current iterate. In
+    particular, the previous iterate is discarded as a momentum state and the
+    acceleration parameters are reset to their initial values.
     """
 
     def __init__(
@@ -198,7 +198,7 @@ class FISTA(RegSolver):
         if not self.backtracking:
             try:
                 self._stepsize_selection_steps = iter(
-                    _powers_of_two()
+                    powers_of_two()
                     if stepsize_selection_steps is None
                     else stepsize_selection_steps
                 )
@@ -300,23 +300,34 @@ class FISTA(RegSolver):
             ))
         lipschitz = 1. if self.codomain_free else self.data_fid.Lipschitz
         self.tau = self.stepsize_safety / (norm**2 * lipschitz)
-        self.log.debug(
+        self.log.info(
             f"it. {self.iteration_step_nr}: Step size changed by norm "
             f"estimation to {self.tau}"
         )
 
-    def _update_norm_based_stepsize(self) -> None:
-        """Refresh a norm-based step size at the current iteration."""
+    def _update_norm_based_stepsize(self) -> bool:
+        """Refresh the norm-based step size and report whether it changed."""
         step = self._next_stepsize_selection_step
         if step is None:
-            return
+            return False
         if step < self.iteration_step_nr:
             raise RuntimeError(Errors.runtime_error(
                 "A scheduled step-size selection step was skipped."
             ))
         if step == self.iteration_step_nr:
+            old_tau = self.tau
             self._estimate_stepsize()
             self._advance_stepsize_selection_step()
+            return self.tau != old_tau
+        return False
+
+    def _restart_three_term_recursion(self) -> None:
+        """Discard momentum and restart FISTA at the current iterate."""
+        self.op.domain.copyto(self.x_old, self.x)
+        self.t = self.t_old = 0.
+        self.q = self.tau * self.mu / (
+            1 + self.tau * self.mu_penalty
+        )
 
     def _write_candidate(self):
         """Write ``prox(h - tau * gradient)`` into ``x_old``."""
@@ -329,6 +340,7 @@ class FISTA(RegSolver):
         )
 
     def _next(self):
+        tau_at_iteration_start = self.tau
         if self.mu == 0:
             self.t = (1 + sqrt(1 + 4 * self.t_old**2)) / 2
             beta = (self.t_old - 1) / self.t
@@ -394,14 +406,18 @@ class FISTA(RegSolver):
 
         # ``x_old`` now contains the accepted next iterate.
         self.x, self.x_old = self.x_old, self.x
+        stepsize_changed = self.tau != tau_at_iteration_start
         if self.codomain_free:
             _, self.deriv = self.op.linearize(
                 self.x, out=self._adjoint_eval_h,
                 return_adjoint_eval=True,
             )
-            self._update_norm_based_stepsize()
+            stepsize_changed |= self._update_norm_based_stepsize()
         elif self.backtracking:
             self.op(self.x, out=self.y)
         else:
             _, self.deriv = self.op.linearize(self.x, out=self.y)
-            self._update_norm_based_stepsize()
+            stepsize_changed |= self._update_norm_based_stepsize()
+
+        if stepsize_changed:
+            self._restart_three_term_recursion()
