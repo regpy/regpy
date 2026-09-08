@@ -11,7 +11,7 @@ import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps, hilbert
-from regpy.operators import Operator, ObsDataT
+from regpy.operators import Operator, Zero, ObsDataT
 from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
 from regpy.vecsps.base import Scalar, Vector, ReadOnlyVector
 from regpy.hilbert import HilbertSpace
@@ -1637,6 +1637,12 @@ class NullFunctional(LinearFunctional):
     def __init__(self, domain: VectorSpaceBase) -> None:
         zeros = np.broadcast_to([0.],domain.shape) if isinstance(domain,NumPyVectorSpace) else domain.zeros()
         super().__init__(zeros,domain=domain)
+
+    def _proximal(self, x, tau, out = None, **proximal_par):
+        out = self.domain.empty() if out is None else out
+        if out is not x:
+            self.domain.copyto(out,x)
+        return out
 
 class SquaredNorm(Functional):
     r"""Functionals of the form 
