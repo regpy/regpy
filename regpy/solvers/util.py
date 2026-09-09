@@ -21,13 +21,20 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ["convergence_plots", "GeometricSequence", "powers_of_two", "squares"]
+__all__ = ["convergence_plots", "GeometricSequence", "powers_of_two", "natural_numbers", "squares"]
 
 def powers_of_two() -> Iterator[int]:
     """Yield ``1, 2, 4, 8, ...`` indefinitely."""
     n = 0
     while True:
         yield 2**n
+        n += 1
+
+def natural_numbers() -> Iterator[int]:
+    """Yield ``1, 2, 3, ...`` indefinitely."""
+    n = 1
+    while True:
+        yield n
         n += 1
 
 def squares() -> Iterator[int]:
