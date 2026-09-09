@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from regpy.vecsps import Vector
+import numpy as np
+
+from regpy.vecsps import Vector, ReadOnlyVector
 from regpy.stoprules import StopRule, NoneRule
 from regpy.util import ClassLogger, Errors
 from typing import TYPE_CHECKING
@@ -28,8 +30,9 @@ class Solver:
     does not itself implement ``__next__``. Use ``solver.next()`` for a single
     step or ``next(iter(solver))`` to obtain a pair after a step.
 
-    Yielded vectors are not copied. Copy them when retaining snapshots of
-    the iteration history. Both components may be ``None``.
+    Yielded vectors are read-only views, not copies. Solver updates may
+    still change their contents. Copy them when retaining snapshots of the
+    iteration history. Both components may be ``None``.
 
     Convenience methods run the solver with a `regpy.stoprules.StopRule`.
 
@@ -98,20 +101,49 @@ class Solver:
         """
         raise NotImplementedError
 
-    def __iter__(self) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+    def _read_only_iterate(
+        self,
+    ) -> tuple[ReadOnlyVector | None, ReadOnlyVector | None]:
+        """Expose the current pair without making solver buffers read-only.
+
+        Operator-based solvers use their vector spaces' ``read_only`` API.
+        Plain solvers support NumPy arrays directly. 
+        For solver without an operator using non-NumPy vectors the iterates 
+        are returned as writable vectors (at the risk that they are accidentally modified).        
+        """
+        op = getattr(self, "op", None)
+
+        def view(value: Vector | None, component: str) -> ReadOnlyVector | None:
+            if value is None:
+                return None
+            if op is not None:
+                return getattr(op, component).read_only(value)
+            if isinstance(value, np.ndarray):
+                result = value.view()
+                result.flags.writeable = False
+                return result
+            return result
+            #raise TypeError(
+            #    "A solver without an operator using non-NumPy vectors must "
+            #    "implement _read_only_iterate()."
+            #)
+
+        return view(self.x, "domain"), view(self.y, "codomain")
+
+    def __iter__(self) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate pairs after successive solver steps, excluding the initial pair.
 
         Execution starts when the generator is advanced. It ends when
         :meth:`next` returns ``False``. A step that marks convergence still
-        yields its resulting pair. No vector copies are made.
+        yields its resulting pair as read-only views. No vector copies are made.
 
         Yields
         ------
-        tuple[Vector | None, Vector | None]
+        tuple[ReadOnlyVector | None, ReadOnlyVector | None]
             The current pair, with either component possibly unavailable.
         """
         while self.next():
-            yield self.x, self.y
+            yield self._read_only_iterate()
 
     @staticmethod
     def _add_max_iterations(
@@ -153,15 +185,23 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+    ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
+
+        A typical use is:
+
+        for x,y in mysolver.while_(mystoprule,max_it=100):
+            plot x,y
+            save x,y
+            etc.
 
         The rule is checked before each attempted step, including at the
         initial state. Every completed step is yielded before the next rule
         check. An initially satisfied rule yields nothing. Calling this method
         creates a generator: initialization and argument validation occur only
-        when it is advanced. It accepts no meaningful sent values and returns
-        no final value. Yielded vectors are references, not snapshots.
+        when it is advanced. 
+        Yielded vectors are read-only views, not snapshots to prevent accidental 
+        modifications by the user.
 
         Parameters
         ----------
@@ -175,7 +215,7 @@ class Solver:
 
         Yields
         ------
-        tuple[Vector | None, Vector | None]
+        tuple[ReadOnlyVector | None, ReadOnlyVector | None]
             The current ``(x, y)`` pair after a step. The stopping rule's best
             iterate is not substituted here; use :meth:`run` to select it.
 
@@ -192,7 +232,7 @@ class Solver:
         )
         stoprule._complete_init_with_solver(self)
         while not stoprule.stop() and self.next(): 
-            yield self.x, self.y
+            yield self._read_only_iterate()
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
  
 
@@ -201,7 +241,7 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+    ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
 
         One step is attempted and the current pair is yielded before the
@@ -210,7 +250,8 @@ class Solver:
         checked and yielded as in :meth:`while_`. Calling this method creates
         a generator; validation is deferred until it is advanced. It accepts
         no meaningful sent values and returns no final value. Vectors are
-        yielded by reference.
+        yielded as read-only views, not snapshots if possible to prevent accidental 
+        modifications by the user.
 
         Parameters
         ----------
@@ -224,7 +265,7 @@ class Solver:
 
         Yields
         ------
-        tuple[Vector | None, Vector | None]
+        tuple[ReadOnlyVector | None, ReadOnlyVector | None]
             The current ``(x, y)`` pair after a step. The stopping rule's best
             iterate is not substituted here; use :meth:`run` to select it.
 
@@ -248,9 +289,9 @@ class Solver:
             ))
         stoprule._complete_init_with_solver(self)
         self.next()
-        yield self.x, self.y
+        yield self._read_only_iterate()
         while not stoprule.stop() and self.next(): 
-            yield self.x, self.y
+            yield self._read_only_iterate()
 
         self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
 
@@ -289,15 +330,13 @@ class Solver:
         stoprule = self._add_max_iterations(
             stoprule, max_it, while_type=True
         )
-        for x, y in self.while_(stoprule):
-            if not 'x' in locals(): 
-                # This happens if the stopping criterion is satisfied for the initial guess.
-                x = self.x
-                y = self.y
-        if stoprule.best_iterate() is None:
+        for _ in self.while_(stoprule):
+            pass
+        best = stoprule.best_iterate()
+        if best is None:
             self.log.info(f"Could not find a best iterate with stop rule {stoprule}!")
             return self.x, self.y
-        return stoprule.best_iterate()
+        return best
 
 
 class RegSolver(Solver):

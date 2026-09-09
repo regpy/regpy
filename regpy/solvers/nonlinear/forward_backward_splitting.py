@@ -6,6 +6,7 @@ from regpy.vecsps import Vector
 from ..solver import RegSolver
 from ..setting import Setting
 
+from numpy import isfinite
 __all__ = ["ForwardBackwardSplitting"]
 
 
@@ -169,7 +170,7 @@ class ForwardBackwardSplitting(RegSolver):
         if not setting.codomain_free:
             if "subgradient" not in setting.data_fid.methods:
                 out["info"] += "Missing subgradient of data fidelity functional. "
-            if not np.isfinite(setting.data_fid.Lipschitz):
+            if not isfinite(setting.data_fid.Lipschitz):
                 out["warning"] += (
                     "Lipschitz constant of data fidelity functional is not "
                     "finite; backtracking will be used for step-size "
