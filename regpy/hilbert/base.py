@@ -4,7 +4,7 @@ from math import sqrt
 import numpy as np
 
 from regpy import vecsps
-from regpy.vecsps import VectorSpaceBase
+from regpy.vecsps import VectorSpaceBase, Vector, ReadOnlyVector, Scalar
 from regpy.util import Errors, memoized_property, ClassLogger
 from regpy.operators import CholeskyInverse,PtwMultiplication, Operator
 from regpy.operators import DirectSum as DirectSumOp
@@ -14,9 +14,6 @@ from regpy.operators.bases_transform import BasisTransform
 __all__ = ["HilbertSpace","HilbertPullBack","GramHilbertSpace","DirectSum","TensorProd","L2Generic","AbstractSpace"]
 
 class HilbertSpace:
-    # TODO Make inheritance interface non-public (_gram), provide memoization and checks in public
-    #   gram property
-
     r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
     should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
     `regpy.util.memoized_property` can be used.
@@ -42,19 +39,24 @@ class HilbertSpace:
 
     def __init__(self, vecsp:VectorSpaceBase,as_real_space = False):
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are only defined on vector spaces defined on subsidies of the RegPy VectorSpaceBase"))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are defined only on subclasses of regpy.vecsps.VectorSpaceBase."))
         self.vecsp = vecsp
         """The underlying vector space."""
         if not isinstance(as_real_space,bool):
             raise TypeError(Errors.type_error('as_real_space must be bool',as_real_space))
         self.as_real_space = as_real_space
         self._no_pickle = {}
+        # Allocated lazily because many Hilbert spaces are only used through
+        # their Gram operator and never evaluate inner products directly.
+        self._inner_buffer = None
 
     def __deepcopy__(self, memo):
         cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
+            if k.startswith("__memoized_"):
+                continue
             if k in self._no_pickle:
                 setattr(result, k, v)
             else:
@@ -81,20 +83,28 @@ class HilbertSpace:
         """
         raise NotImplementedError
     
-    def inner(self, x, y)->float|complex:
+    def inner(self, x: ReadOnlyVector, y:ReadOnlyVector)->Scalar:
         r"""Compute the inner product between to elements which is linear in the first and anti-linear in the second argument.
 
         Parameters
         ----------
-        x, y : array-like
+        x, y : Vector
             The elements for which the inner product should be computed.
 
         Returns
         -------
-        float
+        Scalar
             The inner product.
         """
-        prod =  self.vecsp.vdot(self.gram(y),x) 
+        gram = self.gram
+        if gram is self.vecsp.identity:
+            # Avoid copying ``y`` through an identity operator.
+            prod = self.vecsp.vdot(y, x)
+        else:
+            if self._inner_buffer is None:
+                self._inner_buffer = self.vecsp.empty()
+            gram(y, out=self._inner_buffer)
+            prod = self.vecsp.vdot(self._inner_buffer, x)
         return prod.real if self.as_real_space else prod
 
     def norm(self, x):
@@ -435,16 +445,32 @@ class TensorProd(HilbertSpace):
     def gram(self)->Operator:
         bases = []
         domains = []
-        for w, s in zip(self.weights, self.factors):
-            basis =[]
-            domains.append(s.gram.domain)
-            for v in s.gram.domain.real_space().iter_basis():
-                if w == 1:
-                    basis.append(s.vecsp.real_space().flatten(s.gram(v)))
-                else:
-                    basis.append(s.vecsp.real_space().flatten((w**2 * s.gram)(v)))
-            bases.append(np.array(basis))
-        return BasisTransform(vecsps.Prod(*domains),vecsps.Prod(*domains),bases,dtype=self.vecsp.dtype)
+        for weight, space in zip(self.weights, self.factors):
+            gram = space.gram
+            domain_real = gram.domain.real_space()
+            codomain_real = space.vecsp.real_space()
+            domains.append(gram.domain)
+
+            # Fill the matrix row by row. This avoids allocating one Gram
+            # result per basis vector and repeatedly constructing a scaled
+            # operator for weighted factors.
+            basis = np.empty(
+                (domain_real.size, codomain_real.size),
+                dtype=codomain_real.dtype,
+            )
+            gram_value = codomain_real.empty()
+            scale = weight**2
+            for row, vector in enumerate(domain_real.iter_basis()):
+                gram(vector, out=gram_value)
+                if scale != 1:
+                    gram_value *= scale
+                basis[row] = codomain_real.flatten(gram_value)
+            bases.append(basis)
+
+        product = vecsps.Prod(*domains)
+        return BasisTransform(
+            product, product, bases, dtype=self.vecsp.dtype
+        )
 
     def __getitem__(self, item):
         return self.factors[item]

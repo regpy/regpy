@@ -11,7 +11,7 @@ __all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
 from copy import copy,deepcopy
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 from warnings import warn
 
 import ngsolve as ngs
@@ -23,13 +23,14 @@ from pyngcore.pyngcore import BitArray
 
 from regpy.util import is_complex_dtype, Errors, ClassLogger
 
-from .base import VectorSpaceBase
+from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 
 
 @dataclass 
 class NgsBaseVector:
     vec: ngs.la.BaseVector | ngs.la.DynamicVectorExpression
     make_copy: Optional[bool] = field(default=False)
+    read_only: bool = field(default=False)
 
     __array_ufunc__ = None
 
@@ -43,6 +44,11 @@ class NgsBaseVector:
         return self.vec.is_complex
 
     def __post_init__(self):
+        if not isinstance(self.read_only, (bool, np.bool_)):
+            raise TypeError(
+                f"read_only must be boolean. Got {type(self.read_only)}."
+            )
+        self.read_only = bool(self.read_only)
         self.is_dynamic = False
         if isinstance(self.vec,ngs.la.BaseVector):
             if self.make_copy:
@@ -65,6 +71,12 @@ class NgsBaseVector:
             pass
         else:
             raise TypeError(Errors.type_error("Could not treat {} type only ngs.la.BaseVector or ngs.la.DynamicVectorExpression".format(type(self.vec))))
+
+    def _require_writable(self, operation: str) -> None:
+        if self.read_only:
+            raise ValueError(
+                f"Cannot perform {operation} on a read-only NgsBaseVector."
+            )
 
     def conj(self):
         if self.is_dynamic:
@@ -128,6 +140,7 @@ class NgsBaseVector:
             return NgsBaseVector(z)
 
     def __iadd__(self,other):
+        self._require_writable("in-place addition")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -140,6 +153,7 @@ class NgsBaseVector:
         return self
 
     def __isub__(self,other):
+        self._require_writable("in-place subtraction")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -152,8 +166,9 @@ class NgsBaseVector:
         return self
     
     def __imul__(self,other):
+        self._require_writable("in-place multiplication")
         if self.is_dynamic:
-            self.log.debug("To have inplace multiplication of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place multiplication of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):
@@ -162,8 +177,9 @@ class NgsBaseVector:
         return self
     
     def __itruediv__(self,other):
+        self._require_writable("in-place division")
         if self.is_dynamic:
-            self.log.debug("To have inplace division of a Dynamic VectorExpression it has to be evaluated")
+            self.log.debug("To have in-place division of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         if not isinstance(other,(float,int,complex)):
@@ -225,6 +241,7 @@ class NgsBaseVector:
             return NgsBaseVector(self.vec[i])
     
     def __setitem__(self,i,val):
+        self._require_writable("item assignment")
         if self.is_dynamic:
             self.log.debug("To set items the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -345,19 +362,34 @@ class NgsVectorSpace(VectorSpaceBase):
         self._no_pickle = {*self._no_pickle,"fes"}
         self.mass_matrix_cholesky = None
 
-    def zeros(self):
+    def zeros(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         vec = self._gfu_fes.vec.CreateVector()
         vec.FV().NumPy()[:] = 0
-        return NgsBaseVector(vec,make_copy=False)
+        result = NgsBaseVector(vec, make_copy=False)
+        return self.read_only(result) if read_only else result
     
-    def ones(self):
+    def ones(self, read_only: bool = False):
+        read_only = self._validate_read_only_flag(read_only)
         if self.codim == 1:
             self._gfu_fes.Set(1)
         else:
             for gf_i in self._gfu_fes.components:
                 gf_i.Set(tuple(1 for _ in range(gf_i.dim)))
         self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-        return NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+        return self.read_only(result) if read_only else result
+
+    def read_only(self, x: NgsBaseVector) -> NgsBaseVector:
+        """Return a read-only wrapper sharing the underlying NGSolve vector."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NgsVectorSpace."
+            ))
+        if x.read_only:
+            return x
+        return NgsBaseVector(x.vec, make_copy=False, read_only=True)
     
     def empty(self):
         return self.zeros()
@@ -456,6 +488,107 @@ class NgsVectorSpace(VectorSpaceBase):
     def vdot(self, x, y):
         return ngs.InnerProduct(y.vec,x.vec)
 
+    def copyto(self, x, y):
+        r"""Copy ``y`` into the existing :class:`NgsBaseVector` ``x``.
+
+        NGSolve performs vector assignment through the writable ``data``
+        property of the wrapped ``BaseVector``. Dynamic destination
+        expressions are evaluated once before they are used as output storage.
+        """
+        if x is y:
+            return
+        if not isinstance(x, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                x, NgsBaseVector,
+                add_info="The destination of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if not isinstance(y, NgsBaseVector):
+            raise TypeError(Errors.not_instance(
+                y, NgsBaseVector,
+                add_info="The source of NgsVectorSpace.copyto must be an NgsBaseVector."
+            ))
+        if x.size != y.size:
+            raise ValueError(Errors.value_error(
+                f"Cannot copy NGSolve vectors of different sizes {y.size} and {x.size}."
+            ))
+        x._require_writable("copyto")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.data = y.vec
+
+    def fill(self, x, value) -> None:
+        r"""Fill an existing :class:`NgsBaseVector` with ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NgsVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x._require_writable("fill")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        x.vec.FV().NumPy().fill(value)
+
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Iterate over the native real or complex NGSolve coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="iter_coefficients argument is not in the NgsVectorSpace."
+            ))
+        vector = x.vec.Evaluate() if x.is_dynamic else x.vec
+        return iter(vector.FV().NumPy())
+
+    def set_coefficients(
+        self,
+        x: NgsBaseVector,
+        coefficients: Iterable[Scalar],
+    ) -> None:
+        """Overwrite an NGSolve vector from native coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="set_coefficients destination is not in the NgsVectorSpace."
+            ))
+        x._require_writable("setting coefficients")
+        if x.is_dynamic:
+            x.vec = x.vec.Evaluate()
+            x.is_dynamic = False
+        storage = x.vec.FV().NumPy()
+        iterator = iter(coefficients)
+        for index in range(int(self.size)):
+            try:
+                coefficient = next(iterator)
+            except StopIteration as error:
+                raise ValueError(Errors.value_error(
+                    f"Expected {self.size} coefficients, but received only "
+                    f"{index}."
+                )) from error
+            if not self.is_complex and np.iscomplexobj(coefficient):
+                coefficient = np.asarray(coefficient).item()
+                if coefficient.imag != 0:
+                    raise ValueError(Errors.value_error(
+                        "A real NgsVectorSpace cannot consume a non-real "
+                        f"coefficient {coefficient!r}."
+                    ))
+                coefficient = coefficient.real
+            storage[index] = coefficient
+        try:
+            next(iterator)
+        except StopIteration:
+            return
+        raise ValueError(Errors.value_error(
+            f"Expected {self.size} coefficients, but received more."
+        ))
+    
     def complex_space(self):
         """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
 
@@ -498,6 +631,48 @@ class NgsVectorSpace(VectorSpaceBase):
                 raise ValueError(Errors.value_error("Provided numpy vector to unflatten has non fitting shape!"))
         else:
             raise ValueError(Errors.value_error("Provided numpy vector to unflatten must be one dimensional"))
+        return x
+
+    def complex_flatten(self, x: NgsBaseVector) -> np.ndarray:
+        """Return the complex NGSolve coefficients without realification."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the NgsVectorSpace."
+            ))
+        if x.is_dynamic:
+            coefficients = x.vec.Evaluate().FV().NumPy()
+        else:
+            coefficients = x.vec.FV().NumPy()
+        return np.asarray(coefficients, dtype=complex).reshape(-1).copy()
+
+    def complex_fromflat(self, vec: np.ndarray) -> NgsBaseVector:
+        """Construct a complex NGSolve vector from complex coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        vec = np.asarray(vec)
+        if vec.ndim != 1 or vec.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {vec.shape}."
+            ))
+        if not (
+            np.issubdtype(vec.dtype, np.floating)
+            or np.issubdtype(vec.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={vec.dtype}."
+            ))
+        x = self.zeros()
+        x.vec.FV().NumPy()[:] = vec
         return x
     
     def __eq__(self, other: object) -> bool:

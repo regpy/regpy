@@ -1,21 +1,21 @@
 r"""This module provides solvers for ill-posed and inverse problems that are modelled 
-by non- forward operators.
+by nonlinear forward operators.
 
 For ease of use we import all solvers here and provide them to you. So you only need to
 import by
 
 ```
-from regpy.solvers.nonlinear import *
+from regpy.solvers.nonlinear import Landweber
 ```    
 
-to gain access to all linear operators. Moreover, for simplicity you may also use 
+to import the nonlinear Landweber solver. Moreover, for simplicity you may also use
 
 ```
 from regpy.solvers import *
 ```
 
-where you have access to `nonlinear` and can use for example `linear.FISTA` to define 
-a TIkhonov solver.
+where you have access to `nonlinear` and can use for example `nonlinear.FISTA` to define
+a Tikhonov solver.
 """
 
 

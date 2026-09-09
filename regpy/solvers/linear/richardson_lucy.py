@@ -1,6 +1,6 @@
 from regpy.util import Errors
 
-from ..general import Solver 
+from ..solver import Solver
 
 __all__ = ["RichardsonLucy"]
 
@@ -13,9 +13,9 @@ class RichardsonLucy(Solver):
     ----------
     op : regpy.operators.Operator
         The linear forward operator.
-    data : array-like
+    data : Vector
         The non-negative data
-    x_init : array_like, optional
+    x_init : Vector, optional
         The initial guess "f". Must be in setting.op.domain. (Default: None)
     sigma : float , optional
         Non-negative parameter to shift the data and operator result to avoid division by zero or appearance of negative numbers. (Default: 0)
@@ -45,6 +45,5 @@ class RichardsonLucy(Solver):
         multiplier=self.op.adjoint((self.data+self.sigma)/(self.y+self.sigma))
         self.x=multiplier*self.x/self.adj_ones
         self.y=self.op(self.x)
-
 
 

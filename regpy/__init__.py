@@ -44,7 +44,7 @@ r"""RegPy: Python tools for regularization methods
 ``RegPy`` is a Python library for implementing and solving ill-posed inverse problems,
 developed at the
 `Institute for Numerical and Applied Mathematics Goettingen <https://num.math.uni-goettingen.de>`_.
-It provides tools to implement your own forward models, both linear and non-linear,
+It provides tools to implement your own forward models, both linear and nonlinear,
 and a variety of regularization methods that can be stopped using common stopping rules.
 
 This project is currently in an almost beta-quality state. However, it is still under

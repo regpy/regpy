@@ -9,6 +9,7 @@
 
    Operators
    Spaces
+   Functionals
    Solvers
 
 .. toctree::

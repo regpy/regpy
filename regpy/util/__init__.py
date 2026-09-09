@@ -16,7 +16,7 @@ Moreover the general testing methods `test_operator` and `test_functional` are a
 """
 
 from .general import *
-from .operator_tests import test_operator
+from .operator_tests import test_operator, test_derivative,test_adjoint
 from .functional_tests import test_functional
 
-__all__ = ["test_operator","test_functional","ClassLogger","memoized_property","set_defaults","complex2real","real2complex","is_complex_dtype","is_real_dtype","is_uniform","linspace_circle","make_repr"]
+__all__ = ["test_operator","test_derivative","test_adjoint","test_functional","ClassLogger","memoized_property","set_defaults","complex2real","real2complex","is_complex_dtype","is_real_dtype","is_uniform","linspace_circle","make_repr"]

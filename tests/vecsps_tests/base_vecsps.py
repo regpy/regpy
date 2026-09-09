@@ -85,6 +85,9 @@ def vector_basics(vs,*args, test_comparison = True, ones_is_onevec= True, N = 5,
             vdot_1 = VS.vdot(comb,v_3)
             vdot_2 = VS.vdot(v_1,v_3)+scalar*VS.vdot(v_2,v_3)
             assert vdot_1 == pytest.approx(vdot_2,rel=tol), f"Trying to compute the vector dot product of a linear combination of random vectors of {vs} and another random vector failed with `rel_tol` = {tol}. got for the combination {vdot_1} and expressed as sum of vdots {vdot_2} "
+            v_1 += v_2
+            v_1 -= v_2
+            comb = v_1/scalar - v_2
             if test_comparison:
                 _ = v_1 < v_2
                 _ = v_1 <= v_2

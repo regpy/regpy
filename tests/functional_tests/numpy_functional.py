@@ -6,7 +6,8 @@ import pytest
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
-from regpy.functionals.numpy import QuadraticBilateralConstraints, VectorIntegralFunctional, LppL2, L1L2, HuberL2
+from regpy.functionals.integral_functionals import Quadratic 
+from regpy.functionals.vector_integral_functionals import  LppL2, L1L2
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed
@@ -102,7 +103,7 @@ class TestKullbackLeibler():
 
     def test_quad_taylor(self):
         w=1.+0.5*np.sin(self.dom.coords[0]*self.dom.coords[1])   
-        F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.)
+        F = KL(self.dom,w=w,quad_taylor_l=0.5,quad_taylor_u=5.,omit_normalization=True)
         ft.test_functional(F)
         F.data = 0.2*self.dom.ones()
         ft.test_functional(F)
@@ -160,7 +161,7 @@ class TestRelativeEntropy():
         ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()),test_second_deriv=False)
 
 class TestHuber():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     sigma=np.real(dom.ones())
     sigma[0,0]=4
     F=Hub(dom,sigma=sigma,eps=1e-10)
@@ -177,8 +178,13 @@ class TestHuber():
                        test_second_deriv=False,test_second_deriv_conj=False
                        )    
 
+def test_quadratic():
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    F=Quadratic(dom,a=2.,b0=1.,c=-2.)
+    ft.test_functional(F)
+
 def test_quadratic_intv():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
+    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     sigma=np.real(dom.ones())
     sigma[0,0]=4
     F=QuadIntv(dom,sigma=sigma,eps=1e-10)

@@ -490,24 +490,23 @@ class Circle(StarCurve):
 ######################### parameterized curves ##############################
 
 class ParameterizedCurve():
-    r""" This is an abstract class for GenCurves parameterized by coefficients in some vector space.
+    r"""Curve represented by coefficients in a vector space.
 
-    Typical forward operators are naturally defined on a (shape) space of curves. In particular, they 
-    are invariant under re-parametrizations of the curve. However, such shape spaces are not vector spaces, and we define forward operators on some vector space of coefficients paraemeterizing a certain class of curves (e.g., star-shape curves with radial functions given by trigonometric 
-    polynomials of a cetrain degree, see `StarTrigRadialFcts`).  
+    Many forward maps are naturally defined on a shape space and are invariant
+    under reparameterization. Because a shape space is not itself a vector
+    space, RegPy represents a chosen class of curves by coefficient vectors;
+    for example, :class:`StarTrigRadialFcts` represents radial functions by
+    trigonometric polynomials of a fixed degree.
 
-    One may think of the mapping taking coefficients to curves as an operator, and of the parameterized forward operators as compositions of this operator with the actual forward operator defined 
-    on a shape space. However, as mentioned above, shape spaces aren't vector spaces, and it is often  
-    computationally more convenient, not to implement the discrete Frechet derivative of the parameterized forward operator, but to discretize a continuous characterization of the Frechet derivative. For this reason the forward operators on curve spaces in this toolbox are not implemented as such compositions.
-
-    Due to invariance under reparameterizations, Frechet derivatives of operators on curve spaces only 
-    depend on the normal component of a perturbation of the curve, and this quantity is used 
-    in our implementations of the derivatives of parameterized forward operators. More precisely, 
-    these derivatives are compositions of a discretization of the continuous derivative on curve space 
-    and the operator `self.der_normal`.
+    Rather than differentiating a discrete coefficient-to-curve composition,
+    implementations commonly discretize a continuous shape derivative. Such a
+    derivative depends only on the normal component of a curve perturbation.
+    Consequently, derivatives of parameterized forward maps are composed with
+    ``self.der_normal``, which maps coefficient perturbations to their normal
+    components.
     """
-    def __init__(self,coeff:np.ndarray,der_normal,**kwargs):
-        from regpy.operators import Operator
+    from regpy.operators import Operator
+    def __init__(self,coeff:np.ndarray,der_normal:Operator,**kwargs):
         if not coeff in der_normal.domain:
             raise ValueError(Errors.not_a_vecsp(coeff,der_normal.domain))
         if not isinstance(der_normal.domain,ParameterizedCurveSpc):
@@ -524,8 +523,7 @@ class ParameterizedCurve():
 
 
 class ParameterizedCurveSpc(ABC):
-    r""" Abstract base class of vector spaces of coefficients of `ParameterizedCurve`s. 
-    """
+    r"""Base class for coefficient spaces of :class:`ParameterizedCurve`."""
     def __init__(self,**kwargs):
         pass
 

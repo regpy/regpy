@@ -1,26 +1,28 @@
-r"""VectorSpaceBases on which operators are defined.
+r"""Vector spaces and vector-storage protocols used throughout RegPy.
 
-The classes in this module implement various vector spaces on which the
-`regpy.operators.Operator` implementations are defined. The base class is `VectorSpaceBase`\,
-which represents plain numpy arrays of some shape and dtype. So far it is assumed that 
-vectors are always represented by numpy arrays. 
+RegPy deliberately uses duck typing for vectors. :class:`ReadOnlyVector`
+describes non-mutating linear operations; :class:`Vector` additionally
+provides the corresponding in-place operations. Generic operators,
+functionals, solvers, and stopping rules must not assume NumPy indexing,
+attributes such as ``dtype`` or ``shape``, a ``copy`` method, or componentwise
+arithmetic.
 
-VectorSpaceBases serve the following main purposes:
+Every vector representation is accompanied by a :class:`VectorSpaceBase`
+subclass. The vector space owns operations that depend on representation or
+storage, including membership tests, allocation, copying, inner products,
+random sampling, flattening, and reconstruction. Generic code should therefore
+use, for example, ``space.empty()`` and ``space.copyto(target, source)`` rather
+than ``source.copy()``.
 
- * Derived classes can contain additional data like grid coordinates, bundling metadata in one
-   place instead of having every operator generate linspaces / basis functions / whatever on their
-   own.
- * Providing methods for generating elements of the proper shape and dtype, like zero arrays,
-   random arrays or iterators over a basis.
- * Checking whether a given array is an element of the vector space. This is used for
-   consistency checks, e.g. when evaluating operators. The check is only based on shape and dtype,
-   elements do not need to carry additional structure. Real arrays are considered as elements of
-   complex vector spaces.
- * Checking whether two vector spaces are considered equal. This is used in consistency checks
-   e.g. for operator compositions.
+Specialized code may require additional vector operations. Such requirements
+must be part of the specialized vector-space or algorithm contract; NumPy- and
+NGSolve-specific implementations may naturally use their native APIs.
 
-All vector spaces are considered as real vector spaces, even if the dtype is complex. This
-affects iteration over a basis as well as functions returning the dimension or flattening arrays.
+Vector-space classes also carry metadata such as grid coordinates and define
+space equality for consistency checks. All spaces are treated as real vector
+spaces, even when their vectors have complex coefficients. This convention
+affects basis iteration, dimensions, inner products, and flattened real
+representations.
 """
 
 import logging
@@ -29,11 +31,11 @@ from .base import *
 from .numpy import *
 from .curve import *
 
-__all__ = ["TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
+__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 try:
     from .ngsolve import *
 
     __all__ += ["NgsVectorSpace"]
 except ImportError:
-    logging.info("Ngsolve appears to be not installed not importing the respective vector spaces")
+    logging.info("NGSolve is not installed; its vector spaces are not imported.")

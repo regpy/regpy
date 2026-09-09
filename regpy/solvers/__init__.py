@@ -1,27 +1,21 @@
 r"""# Solvers for inverse problems.
 
-This module provides the full variety of solvers for linear and non-linear inverse problems and all the framework.
+This module provides the full variety of solvers for linear and nonlinear inverse problems and all the framework.
 
 The structure is as follows
 
-- `general` module containing the base class for solvers and regularization settings
-- `linear` is the module that provides linear solvers 
-- `nonlinear` is the module that provides non-linear solvers.
+- ``setting`` contains :class:`Setting`, which binds together operator, data,
+  and the data fidelity and penalty functionals.
+- ``solver`` contains :class:`Solver` and :class:`RegSolver`, the base classes
+  for concrete solvers.
+- `linear` is a submodule that provides linear solvers 
+- `nonlinear` is a submodule that provides nonlinear solvers.
 
-Note that for convenience you may use 
-
-```
-from regpy.solvers import *
-```
-
-Which provides the regularization class `Setting`  which is
-used to define a setting binds together operator, data fidelity and regularization functional. This setting is 
-used by solvers to compute the regularized solution. Moreover, with this import you get access to all linear and
-non-linear solvers since `linear` and `nonlinear` are also provided as submodules.
 """
 
-from .general import Setting
+from .solver import RegSolver, Solver
+from .setting import Setting
 from . import linear
 from . import nonlinear
 
-__all__ = ["Setting","linear","nonlinear"]
+__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear"]

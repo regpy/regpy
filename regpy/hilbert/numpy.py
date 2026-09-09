@@ -23,29 +23,35 @@ class L2MeasureSpaceFcts(HilbertSpace):
     def __init__(self, vecsp:vecsps.MeasureSpaceFcts, 
                  weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.MeasureSpaceFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or a derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
     @memoized_property
-    def gram(self)-> PtwMultiplication:
+    def _gram_weights(self):
         if self.weights is None:
-            if np.all(self.vecsp.measure==1):
-                return self.vecsp.identity
-            else:
-                return PtwMultiplication(self.vecsp,self.vecsp.measure)
-        else:
-            return PtwMultiplication(self.vecsp, self.weights*self.vecsp.measure)
+            if np.all(self.vecsp.measure == 1):
+                return None
+            return self.vecsp.measure
+        return np.multiply(self.weights, self.vecsp.measure)
+
+    @memoized_property
+    def gram(self)->PtwMultiplication:
+        weights = self._gram_weights
+        if weights is None:
+            return self.vecsp.identity
+        return PtwMultiplication(self.vecsp, weights)
 
     @memoized_property
     def cholesky(self):
-        if self.weights is None:
-            if np.all(self.vecsp.measure==1):
-                return self.vecsp.identity
-            else:
-                return PtwMultiplication(self.vecsp,np.sqrt(self.vecsp.measure))
-        else:
-            return PtwMultiplication(self.vecsp, np.sqrt(self.weights*self.vecsp.measure))
+        weights = self._gram_weights
+        if weights is None:
+            return self.vecsp.identity
+        sqrt_weights = np.empty_like(
+            weights, dtype=np.result_type(weights.dtype, float)
+        )
+        np.sqrt(weights, out=sqrt_weights)
+        return PtwMultiplication(self.vecsp, sqrt_weights)
 
 class L2UniformGridFcts(HilbertSpace):
     r"""`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
@@ -54,7 +60,7 @@ class L2UniformGridFcts(HilbertSpace):
 
     def __init__(self, vecsp:vecsps.UniformGridFcts, weights:np.ndarray|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
@@ -89,7 +95,7 @@ class SobolevUniformGridFcts(HilbertSpace):
                  index:float=1., 
                  axes:list[int]|None=None):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or an derivative of it."))
+            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
         self.index = index
         if axes is None:
@@ -126,7 +132,7 @@ class HmDomain(HilbertSpace):
     The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
 
     By default it is assumed that the lengths in grid are given in physical dimensions,
-    and a non-dimensionalization is carried out such that the largest side length (extent) of grid is 1.
+    and a non-dimensionalization is carried out such that the largest side length (extent) of the grid is 1.
 
     If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
 
@@ -165,7 +171,7 @@ class HmDomain(HilbertSpace):
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"The underlying vecsp has to be of type UniformGridFcts"))
         if mask is None:
-            mask = vecsp.ones() == 1
+            mask = np.ones(vecsp.shape, dtype=bool)
         elif vecsp.shape != mask.shape:
             raise ValueError(Errors.value_error("mask has to have the same shape as the vector space"),self)
         if not isinstance(index,int):
@@ -195,7 +201,7 @@ class HmDomain(HilbertSpace):
         self.alpha = alpha
         """Regularizer for Gram matrix.
         """
-        self.mask = (mask==1)
+        self.mask = np.equal(mask, 1)
         """Mask to determine the subspace D.
         """
         self.dtype = vecsp.dtype if vecsp else dtype
@@ -207,12 +213,18 @@ class HmDomain(HilbertSpace):
                 self.mask
             )
 
-        mask_padded = np.pad(mask.astype(int),1,'constant',constant_values= -1 if ext_bd_cond=='Neum' else 0)
-        
-        self.G = np.zeros(mask_padded.shape,dtype=int)
-        interior_ind = mask_padded==1
-        self.G[interior_ind] = 1+np.arange(np.count_nonzero(interior_ind))
-        self.G[mask_padded==-1] = -1
+        mask_values = np.asarray(mask, dtype=np.int8)
+        mask_padded = np.pad(
+            mask_values, 1, mode="constant",
+            constant_values=-1 if ext_bd_cond == "Neum" else 0,
+        )
+
+        self.G = np.zeros(mask_padded.shape, dtype=np.intp)
+        interior_ind = mask_padded == 1
+        self.G[interior_ind] = 1 + np.arange(
+            np.count_nonzero(interior_ind), dtype=np.intp
+        )
+        self.G[mask_padded == -1] = -1
 
         if weight is None:
             self.weight = None
@@ -221,75 +233,108 @@ class HmDomain(HilbertSpace):
         else:
             raise ValueError(Errors.value_error("weight has to have the same shape as the vector space or be None",self))
 
-    def I_minus_Delta(self)-> csc_matrix:
-        r"""
-        I_minus_Delta is the sparse form of the sum of the `alpha*identity` and the negative Laplacian on the domain D 
-        defined by masking with `mask`.
+    @memoized_property
+    def _I_minus_Delta_matrix(self)->csc_matrix:
+        r"""Assemble ``alpha * I - Delta`` on the masked domain.
+
+        Index and value chunks are collected separately and concatenated once.
+        This avoids the quadratic copying caused by repeatedly extending NumPy
+        arrays inside the neighbor loop.
         """
-        if not self.weight is None:
-            w = self.weight.ravel()
-        # Indices of interior points
-        G1 = self.G.ravel()
-        p = np.where(G1>0)[0] # list of numbers of interior points in flattened array
-        N = len(p)
-        # Connect interior points to themselves with 4's.
-        i = []   # row indices of matrix entries
-        j = []   # column indices of matrix entries
-        s = []   # values of matrix entries
-        dia = self.alpha * np.ones((len(p),))   # values of diagonal matrix entries; ones correspond to identity matrix
-        # for k = north, east, south, west
+        weights = None if self.weight is None else self.weight.ravel()
+        labels = self.G.ravel()
+        points = np.flatnonzero(labels > 0)
+        size = points.size
 
-        kval= [1]
-        for d in range(self.ndim-1,0,-1):
-            kval = np.concatenate([kval,[kval[-1]*self.G.shape[d]] ])
-        # If G.shape = [m,n], then kval= [1,n].
-        # If G.shape = [l,m,n], then kval = [1,n,m*n]
+        row_chunks = []
+        column_chunks = []
+        value_chunks = []
+        diagonal = np.full(size, self.alpha, dtype=float)
 
-        for dir,h in enumerate(self.h_val):
-            for k in  kval[dir]*np.array([-1,1]):
-                # Possible neighbors in k-th direction
-                Q=np.zeros_like(p)
-                Q = G1[p+k]
-                # Indices of points with interior neighbors
-                q = np.where(Q>0)[0]
-                # Connect interior points to neighbors
-                i = np.concatenate([i, G1[p[q]]-1])
-                j = np.concatenate([j,Q[q]-1])
-                entries = np.ones(q.shape)/h**2
-                if not self.weight is None:
-                    entries = entries * np.sqrt(w[p[q]]*w[p[q]+k])
-                s = np.concatenate([s,-entries ])
-                dia[G1[p[q]]-1] += entries
-                # Indices of points with neighbors on Dirichlet boundary
-                q_diri = np.where(Q==0)[0]
-                entries = np.ones(q_diri.shape)/h**2
-                if not self.weight is None:
-                    entries = entries * np.sqrt(w[p[q_diri]]*w[p[q_diri]+k])
-                dia[G1[p[q_diri]]-1] += entries
-        i = np.concatenate([i, G1[p]-1])
-        j = np.concatenate([j, G1[p]-1])
-        s = np.concatenate([s,dia])
-        return csc_matrix((s, (i,j)),(N,N))
+        strides = [1]
+        for axis in range(self.ndim - 1, 0, -1):
+            strides.append(strides[-1] * self.G.shape[axis])
+
+        for direction, spacing in enumerate(self.h_val):
+            inv_spacing_sq = 1.0 / spacing**2
+            for offset in (-strides[direction], strides[direction]):
+                neighbors = labels[points + offset]
+
+                interior = np.flatnonzero(neighbors > 0)
+                if interior.size:
+                    point_indices = points[interior]
+                    rows = labels[point_indices] - 1
+                    columns = neighbors[interior] - 1
+                    if weights is None:
+                        entries = np.full(
+                            interior.size, inv_spacing_sq, dtype=float
+                        )
+                    else:
+                        entries = np.asarray(
+                            weights[point_indices], dtype=float
+                        ).copy()
+                        entries *= weights[point_indices + offset]
+                        np.sqrt(entries, out=entries)
+                        entries *= inv_spacing_sq
+
+                    row_chunks.append(rows)
+                    column_chunks.append(columns)
+                    value_chunks.append(-entries)
+                    diagonal[rows] += entries
+
+                dirichlet = np.flatnonzero(neighbors == 0)
+                if dirichlet.size:
+                    point_indices = points[dirichlet]
+                    rows = labels[point_indices] - 1
+                    if weights is None:
+                        entries = np.full(
+                            dirichlet.size, inv_spacing_sq, dtype=float
+                        )
+                    else:
+                        entries = np.asarray(
+                            weights[point_indices], dtype=float
+                        ).copy()
+                        entries *= weights[point_indices + offset]
+                        np.sqrt(entries, out=entries)
+                        entries *= inv_spacing_sq
+                    diagonal[rows] += entries
+
+        diagonal_indices = labels[points] - 1
+        row_chunks.append(diagonal_indices)
+        column_chunks.append(diagonal_indices)
+        value_chunks.append(diagonal)
+
+        rows = np.concatenate(row_chunks)
+        columns = np.concatenate(column_chunks)
+        values = np.concatenate(value_chunks)
+        return csc_matrix((values, (rows, columns)), shape=(size, size))
+
+    def I_minus_Delta(self)->csc_matrix:
+        """Return the cached sparse matrix ``alpha * I - Delta``."""
+        return self._I_minus_Delta_matrix
 
     @memoized_property
-    def gram(self)-> Operator:
-        mat = Pow(
-            MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),
-            self.index
-            )
+    def _I_minus_Delta_operator(self)->Operator:
+        return MatrixMultiplication(
+            self.I_minus_Delta(),
+            inverse="superLU",
+            domain=self.proj.codomain,
+            codomain=self.proj.codomain,
+            dtype=self.dtype,
+        )
+
+    @memoized_property
+    def gram(self)->Operator:
+        mat = Pow(self._I_minus_Delta_operator, self.index)
         gram = self.proj.adjoint * mat * self.proj
         gram.inverse = self.proj.adjoint * mat.inverse * self.proj
         return gram
-    
+
     @memoized_property
     def cholesky(self):
-        if self.index %2 ==0:
-            half_index = self.index//2
-            mat = Pow(
-                MatrixMultiplication(self.I_minus_Delta(),inverse='superLU',domain=self.proj.codomain,codomain=self.proj.codomain,dtype = self.dtype),
-                half_index
-                )
-            chol = self.proj.adjoint * mat * self.proj
-            return chol
-        else:
-            raise NotImplementedError("Cholesky factorization is only implemented for even indices so far.")   
+        if self.index % 2 == 0:
+            mat = Pow(self._I_minus_Delta_operator, self.index // 2)
+            return self.proj.adjoint * mat * self.proj
+        raise NotImplementedError(
+            "Cholesky factorization is only implemented for even indices so far."
+        )

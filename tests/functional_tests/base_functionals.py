@@ -8,7 +8,7 @@ from regpy.operators import ImaginaryPart, PtwMultiplication
 from regpy.functionals import *
 from regpy.functionals.base import * 
 from regpy.functionals.base import Conj
-from regpy.functionals.numpy import LppPower
+from regpy.functionals.integral_functionals import LppPower
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed, Errors
@@ -117,7 +117,7 @@ def test_AbstractSpace():
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         raise AssertionError(Errors.failed_test(f"Trying to create a new Abstract space failed with exception {e} from: {tb}",AbstractFunctional,meth="Creation"))
-    vs = MeasureSpaceFcts(shape=(4,2),dtype=complex)
+    vs = MeasureSpaceFcts(shape=(4,2),dtype=float)
     try:
         ab_sp.register(MeasureSpaceFcts,LppPower)
     except Exception as e:

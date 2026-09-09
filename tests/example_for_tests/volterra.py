@@ -33,9 +33,9 @@ def test_volterra():
     noise = 0.03 * op.domain.randn()
     data = exact_data + noise
 
-    setting = Setting(op, L2, L2)
+    setting = Setting(op, L2, L2, data = data,  regpar=0.01)
 
-    solver = TikhonovCG(setting, data, regpar=0.01)
+    solver = TikhonovCG(setting)
     stoprule = (
         rules.CountIterations(1000) +
         rules.Discrepancy(
@@ -54,9 +54,9 @@ def test_volterra():
     data = exact_data + noise
     init = op.domain.ones()*0.05
 
-    setting = Setting(op, Sobolev, L2)
+    setting = Setting(op, Sobolev, L2, data = data, init = init)
 
-    solver = Landweber(setting, init,data, stepsize=0.01)
+    solver = Landweber(setting,  stepsize=0.01)
     stoprule = (
         # Landweber is slow, so need to use large number of iterations
         rules.CountIterations(max_iterations=100000) +
@@ -89,16 +89,12 @@ def test_volterra():
         regpar = 0.01
     )
 
-    proximal_pars = {
-            'stepsize' : 0.001,
-            'maxiter' : 100
-            }
     # """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
-    solver = FISTA(setting, init, proximal_pars=proximal_pars)
+    solver = FISTA(setting, init)
     stoprule = (
         # Method is slow, so need to use large number of iterations
-        rules.CountIterations(max_iterations=100000) +
+        rules.CountIterations(max_iterations=100) +
         rules.Discrepancy(
             setting.h_codomain.norm, data,
             noiselevel=setting.h_codomain.norm(noise),

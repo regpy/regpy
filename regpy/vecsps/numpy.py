@@ -5,7 +5,7 @@ from typing import *
 import numpy as np
 
 from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
-from .base import VectorSpaceBase
+from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
@@ -31,20 +31,117 @@ class NumPyVectorSpace(VectorSpaceBase):
         super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np)
         self.dtype = dtype
 
-    def zeros(self):
-        """Return the zero vector of the space.
-        """
-        return np.zeros(shape = self.shape,dtype=self.dtype)
+    @overload
+    def zeros(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def zeros(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a zero vector, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(0, dtype=self.dtype), self.shape
+            )
+        return np.zeros(shape=self.shape, dtype=self.dtype)
     
-    def ones(self):
-        """Return the zero vector of the space.
-        """
-        return np.ones(shape = self.shape,dtype=self.dtype)
+    @overload
+    def ones(self, read_only: Literal[False] = False) -> np.ndarray: ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
+
+    def ones(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
+        """Return a vector of ones, optionally as a broadcast read-only array."""
+        read_only = self._validate_read_only_flag(read_only)
+        if read_only:
+            return np.broadcast_to(
+                np.asarray(1, dtype=self.dtype), self.shape
+            )
+        return np.ones(shape=self.shape, dtype=self.dtype)
+
+    def read_only(self, x: np.ndarray) -> ReadOnlyVector:
+        """Return a non-writable NumPy view sharing ``x``'s storage."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector",
+                add_info="read_only argument is not in the NumPyVectorSpace."
+            ))
+        view = x.view()
+        view.flags.writeable = False
+        return view
 
     def empty(self):
         """Return an uninitialized element of the space.
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
+
+    def fill(self, x: np.ndarray, value) -> None:
+        r"""Fill ``x`` in place with the scalar ``value``."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, vec_name="vector", add_info="fill argument is not in the NumPyVectorSpace."
+            ))
+        if not np.isscalar(value):
+            raise TypeError(Errors.type_error(
+                f"fill value must be a scalar. Got {type(value)}."
+            ))
+        x.fill(value)
+
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Iterate over native NumPy coefficients in C order."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="iter_coefficients argument is not in the NumPyVectorSpace."
+            ))
+        return iter(np.asarray(x).flat)
+
+    def set_coefficients(
+        self,
+        x: np.ndarray,
+        coefficients: Iterable[Scalar],
+    ) -> None:
+        """Overwrite an array from native coefficients."""
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                vec_name="vector",
+                add_info="set_coefficients destination is not in the NumPyVectorSpace."
+            ))
+        if not x.flags.writeable:
+            raise ValueError(Errors.value_error(
+                "Cannot write coefficients into a read-only NumPy vector."
+            ))
+        iterator = iter(coefficients)
+        for index in range(int(self.size)):
+            try:
+                coefficient = next(iterator)
+            except StopIteration as error:
+                raise ValueError(Errors.value_error(
+                    f"Expected {self.size} coefficients, but received only "
+                    f"{index}."
+                )) from error
+            if not self.is_complex and np.iscomplexobj(coefficient):
+                coefficient = np.asarray(coefficient).item()
+                if coefficient.imag != 0:
+                    raise ValueError(Errors.value_error(
+                        "A real NumPyVectorSpace cannot consume a non-real "
+                        f"coefficient {coefficient!r}."
+                    ))
+                coefficient = coefficient.real
+            x.flat[index] = coefficient
+        try:
+            next(iterator)
+        except StopIteration:
+            return
+        raise ValueError(Errors.value_error(
+            f"Expected {self.size} coefficients, but received more."
+        ))
 
     def rand(self, distribution = "uniform", seed = None,**kwargs):
         if seed is not None:
@@ -99,6 +196,42 @@ class NumPyVectorSpace(VectorSpaceBase):
             return real2complex(x.reshape(self.shape + (2,)))
         else:
             return x.reshape(self.shape)
+
+    def complex_flatten(self, x: np.ndarray) -> np.ndarray:
+        """Return flattened coefficients without realifying the vector."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_flatten is defined only for complex vector spaces."
+            ))
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x,
+                self,
+                add_info="Argument in complex_flatten is not in the vector space."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(-1)
+
+    def complex_fromflat(self, x: np.ndarray) -> np.ndarray:
+        """Construct a complex vector without splitting its coefficients."""
+        if not self.is_complex:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat is defined only for complex vector spaces."
+            ))
+        x = np.asarray(x)
+        if x.ndim != 1 or x.size != self.size:
+            raise ValueError(Errors.value_error(
+                "complex_fromflat requires a one-dimensional array of "
+                f"length {self.size}. Got shape {x.shape}."
+            ))
+        if not (
+            np.issubdtype(x.dtype, np.floating)
+            or np.issubdtype(x.dtype, np.complexfloating)
+        ):
+            raise TypeError(Errors.type_error(
+                "complex_fromflat requires real or complex floating-point "
+                f"coefficients. Got dtype={x.dtype}."
+            ))
+        return np.asarray(x, dtype=self.dtype).reshape(self.shape)
 
     def complex_space(self):
         r"""Compute the corresponding complex vector space.
@@ -224,7 +357,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     Notes
     -----
 
-    The measure is stored as a numpy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
+    The measure is stored as a NumPy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
 
     Parameters
     ----------
@@ -500,7 +633,7 @@ class GridFcts(MeasureSpaceFcts):
 
         Returns
         -------
-            np.ndarray: Numpy array with same shape as domain containing all the distances.
+            np.ndarray: NumPy array with same shape as domain containing all the distances.
         """
         if point is None:
             point=np.zeros(self.ndim)
@@ -509,7 +642,7 @@ class GridFcts(MeasureSpaceFcts):
         if(min(axes)<0 or max(axes)>=self.ndim):
             raise ValueError(Errors.value_error(f"Axes {axes} out of bounds for grid with {self.ndim} axes."))
         if(not isinstance(point,np.ndarray) or  point.shape[0]!=self.ndim or point.ndim!=1):
-            raise ValueError(Errors.value_error(f"Point {point} not a numpy array or not compatible with domain with dimension {self.ndim}."))
+            raise ValueError(Errors.value_error(f"Point {point} not a NumPy array or not compatible with domain with dimension {self.ndim}."))
         res=self.zeros()
         for j in axes:
             res+=(self.coords[j]-point[j])**2
@@ -611,7 +744,7 @@ class Prod(NumPyVectorSpace):
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
             raise TypeError(Errors.type_error("There are both complex and non-complex Factors. This is not supported in Prod!"))
         self.factors = []
-        """List of the `VectorSpaceBases` to be taken as Product."""
+        """List of the `vector spaces` to be taken as Product."""
         shape = ()
         self.volume_elem = 1.
         """Product of the `volume_elem` of all factors that have defined this property. """
