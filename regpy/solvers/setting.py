@@ -722,42 +722,6 @@ class Setting:
             dual = (p,Tsp)
         return primal,dual
 
-    def violation_optimality_cond(self,
-                                  iterate: tuple[Vector,Vector|None], 
-                                  deriv: Operator|None = None
-                                  ) -> float:
-        r""" For a Tikhonov functional with a Gateaux differentiable data fidelity 
-        functional :math:`\mathcal{S}_{g^{\delta}}`, the first order optimality condition for a minimizer is 
-
-        .. math::
-            z:=\frac{-1}{\alpha} F'[f]^*\mathcal{S}_{g^{\delta}}'(F(f)) \in \partial \mathcal{R}(f)
- 
-        This function returns the distance of :math:`z` from :math:`\partial \mathcal{R}(f)`.
-
-        Parameters:
-
-        iterate:  tuple of Vectors
-            tuple of primal variable :math:`f` and :math:`Tf`. If :math:`F(f)` is None, it will be computed from :math:`f`.
-        deriv: Operator | None [default: None]
-            If provided, deriv must be the derivative of self.op at :math:`f`. 
-
-        """
-
-        if not isinstance(iterate,tuple) or not len(iterate)==2:
-            raise ValueError(Errors.value_error('iterate must be a tuple of length two', iterate))
-        f,Ff = iterate
-        if not f in self.op.domain:
-            raise TypeError(Errors.type_error('iterate[0] must be in operator domain'), f)
-        if Ff is not None and (not Ff in self.op.codomain):
-            raise TypeError(Errors.type_error('iterate[1] must be None or in operator codomain'), Ff)
-        if deriv is not None and not (isinstance(deriv,Operator) and deriv.linear):
-            raise TypeError(Errors.type_error('deriv must be a linear operator'), deriv)
-        if deriv is None or iterate[1] is None:
-            deriv, Ff = self.op.linearize(f)
-        z = - deriv.adjoint(self.data_fid.subgradient(Ff))
-
-        return self.penalty.dist_subdiff(z,f)
-
     def duality_gap(self, 
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None
@@ -817,18 +781,30 @@ class Setting:
     
     def violation_optimality_cond(self, 
                                   primal: tuple[Vector|None,Vector|None] | None =None,
-                                  dual: tuple[Vector|None,Vector|None] | None =None
-                                  ) -> tuple[float, float]:
-        r"""Returns the degree to which a pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
-        violates the optimality conditions for being a saddle point of 
+                                  dual: tuple[Vector|None,Vector|None] | None =None,
+                                  deriv: Operator | None = None,
+                                  ) -> tuple[float, float] | float:
+        r"""Returns the degree to which an iterate violates the optimality conditions for a minimum of the Tikhonov functional :math:`\frac{1}{\alpha}\mathcal{S}(f) + \mathcal{R}(f)`. 
+
+        For convex Tikhonov functionals (self.is_convex): 
+        A pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
+        is a saddle point of 
         :math:`-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) `
-        These optimality conditions are:
+        (and hence :math:`f` a primal and :math:`p` a dual solution) iff
 
         .. math::
             Tf \in \partial \mathcal{S}^\ast(-\alpha p), \qquad T^\ast p \in \partial \mathcal{R}(f).
 
-        This violation is measured by the distances of the left-hand sides to the respective 
-        subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
+        The violations are returned as a pair of distances of the left-hand sides to the respective 
+        subdifferentials. 
+
+        For non-convex Tikhonov functionals (not self.is_convex):
+        The violation of the optimality condition
+
+        .. math::
+            \frac{-1}{\alpha} F'[f]^*\mathcal{S}_{g^{\delta}}'(F(f)) \in \partial \mathcal{R}(f)
+ 
+        is returned as single distance to the subdifferential. 
 
         Parameters
         ---------------------------
@@ -840,14 +816,18 @@ class Setting:
 
         Returns
         -------
-        tuple of floats
-            Distances to the subdifferentials in the two optimality conditions.
+        tuple of floats or float
+            Distance(s) to the subdifferential(s) in the optimality condition(s).
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
         if not "dist_subdiff" in self.penalty.methods:
             raise RuntimeError(Errors.generic_message("Need dist_subdiff method of penalty functional."))
         if self.is_convex:
+            if deriv is not None:
+                raise ValueError(Errors.value_error(
+                    "deriv is only used for nonconvex settings.", deriv
+                ))
             if not "dist_subdiff" in self.data_fid.conj.methods:
                 raise RuntimeError(Errors.generic_message("Need dist_subdiff method of conjugate data fidelity functional."))                            
             (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
@@ -857,10 +837,36 @@ class Setting:
                self.penalty.dist_subdiff(Tsp,f) 
         else:
             if not "subgradient" in self.data_fid.methods:
-                            raise RuntimeError(Errors.generic_message("Need subgradient method of data fidelity functional."))
-            (f,Tf)= primal
+                raise RuntimeError(Errors.generic_message("Need subgradient method of data fidelity functional."))
+            if dual is not None:
+                raise ValueError(Errors.value_error(
+                    "dual is only used for convex settings.", dual
+                ))
+            if not isinstance(primal, tuple) or len(primal) != 2:
+                raise ValueError(Errors.value_error(
+                    "primal must be a tuple of length two.", primal
+                ))
+            f, Tf = primal
+            if not f in self.op.domain:
+                raise TypeError(Errors.type_error(
+                    "primal[0] must be in operator domain.", f
+                ))
+            if Tf is not None and not Tf in self.op.codomain:
+                raise TypeError(Errors.type_error(
+                    "primal[1] must be None or in operator codomain.", Tf
+                ))
+            if deriv is not None and not (
+                    isinstance(deriv, Operator) and deriv.linear):
+                raise TypeError(Errors.type_error(
+                    "deriv must be a linear operator.", deriv
+                ))
+            if deriv is None:
+                evaluated, deriv = self.op.linearize(f)
+                if Tf is None:
+                    Tf = evaluated
+            elif Tf is None:
+                Tf = self.op(f)
             p = self.data_fid.subgradient(Tf)
-            _, deriv = self.op.linearize(f)
             Fstar_p = deriv.adjoint(p)
             Fstar_p *= (-1/self.regpar)
             return self.penalty.dist_subdiff(Fstar_p,f)

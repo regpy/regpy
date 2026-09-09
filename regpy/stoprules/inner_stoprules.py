@@ -27,7 +27,8 @@ _EVERY_TENTH_STEP = range(0, 10**18, 10)
 
 __all__: list[str] = [
     "RelativeChangeData", "RelativeChangeSol", "LinearSequence",
-    "OptimalityCondStopping", "DualityGapStopping",
+    "OptimalityCondStopping", "OptimalityCondStoppingNonConvex",
+    "DualityGapStopping",
 ]
 
 class RelativeChangeData(StopRule):
@@ -257,6 +258,76 @@ class OptimalityCondStopping(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered 
+
+class OptimalityCondStoppingNonConvex(StopRule):
+    r"""Stop when the nonconvex first-order optimality violation is small.
+
+    This rule evaluates :meth:`Setting.violation_optimality_cond` at the
+    solver's current primal iterate and stops when the returned violation is
+    at most ``tol``. The solver must provide a callable ``primal`` method.
+
+    If the solver has an attribute ``deriv``, it is passed to the setting to
+    avoid computing the derivative again. Such an attribute is expected to
+    contain the derivative of the forward operator at the *current* iterate;
+    a stale derivative makes the stopping criterion invalid.
+
+    Parameters
+    ----------
+    tol : float, optional
+        Tolerance for the optimality-condition violation. Defaults to ``0``.
+    schedule : iterable of int or None, optional
+        Iterations at which the condition is evaluated. By default it is
+        evaluated at iterations ``0, 10, 20, ...``. Pass ``None`` to evaluate
+        it at every iteration.
+    logging_level : int | str, optional
+        Logging level. Defaults to ``"INFO"``.
+    """
+
+    def __init__(self, tol: float = 0.,
+                 logging_level: LoggingLevel = "INFO",
+                 schedule: Schedule = _EVERY_TENTH_STEP) -> None:
+        super().__init__(logging_level=logging_level, schedule=schedule)
+        self.tol: float = float(tol)
+        self.history_dict["optimality condition violation"] = []
+
+    def __repr__(self) -> str:
+        return 'OptimalityCondStoppingNonConvex(tol={})'.format(self.tol)
+
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        reg_solver = cast("RegSolver", solver)
+        if not (reg_solver.setting.is_tikhonov
+                and not reg_solver.setting.is_convex):
+            raise RuntimeError(Errors.generic_message(
+                "This stopping rule requires a nonconvex setting with a "
+                "regularization parameter."
+            ))
+        if not (hasattr(reg_solver, "primal")
+                and callable(reg_solver.primal)):
+            raise RuntimeError(Errors.generic_message(
+                "The solver needs to provide the method 'primal'."
+            ))
+        super()._complete_init_with_solver(solver)
+
+    def _stop(self) -> bool:
+        if self.solver is None:
+            raise MissingValueError("No solver is attached to this rule.")
+        solver = cast("RegSolver", self.solver)
+        primal = solver.primal()
+        if primal is None:
+            raise RuntimeError(Errors.generic_message(
+                "The solver's 'primal' method must return the current iterate."
+            ))
+        deriv = solver.deriv if hasattr(solver, "deriv") else None
+        violation = solver.setting.violation_optimality_cond(
+            primal, deriv=deriv
+        )
+        self.history_dict["optimality condition violation"].append(violation)
+        triggered = violation <= self.tol
+        self.log_info = '{:.2e} <= {:.1e}'.format(violation, self.tol)
+        if self.is_main_rule:
+            self.log.log(logging.INFO if triggered else logging.DEBUG,
+                         self.log_info)
+        return triggered
     
 class DualityGapStopping(StopRule):
     r"""Stopping rule based on duality gap.

@@ -35,6 +35,8 @@ avoid loss of accuracy by cancellation effects.
 """
 
 class HilbertSetting(Setting):
+    r""" Class of settings in which both the penalty and the data fidelity functional are squared Hilbert norms.
+    """
     def  __init__(self,
             op: Operator, 
             penalty: Functional|HilbertSpace|Callable|None = None, 
@@ -70,7 +72,82 @@ class HilbertSetting(Setting):
         if not self.data_fid.is_norm_squared_type:
             raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
 
-    def duality_gap(self, primal = None, dual = None):
-
+    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
         return super().duality_gap(primal,dual)
 
+
+class HilbertNonNegSetting(Setting):
+    r""" Class of settings in which the data fidelity functional is a squared Hilbert norm and 
+    the penalty functional is a squared L^2 norm with nonnegativity constraint.
+    """
+    def  __init__(self,
+            op: Operator, 
+            penalty: Functional|HilbertSpace|Callable|None = None, 
+            data_fid:Functional|HilbertSpace|Callable|None = None,
+            regpar: float|None =None,
+            data: ReadOnlyVector | ObsDataT | None = None, 
+            exact_data: ReadOnlyVector | None = None, 
+            init: ReadOnlyVector | None = None,
+            incorporate_init_in_penalty: bool = True,
+            codomain_free: bool = False,
+            logging_level = "INFO",
+            explicitDataWarning:bool = True,                 
+            _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
+             )->None:
+        from regpy.functionals import QuadNonneg
+
+        penalty = QuadNonneg(op.domain) if penalty is None else penalty
+        data_fid = L2(op.codomain) if data_fid is None else data_fid
+        super().__init__(op, penalty, data_fid, regpar, 
+                              data = data, 
+                              exact_data = exact_data, 
+                              init=init, 
+                              incorporate_init_in_penalty=incorporate_init_in_penalty,
+                              codomain_free=codomain_free, 
+                              logging_level=logging_level, 
+                              explicitDataWarning=explicitDataWarning, 
+                              _primal_setting=_primal_setting,
+                              default_inner_solver = 'FISTA'
+                              )
+        if self.penalty.lb is None or (not self.op.domain(self.penalty.lb) == 0):
+            raise RuntimeError(Errors.runtime_error('penalty must have lower bound 0',self.penalty.lb))
+        if not self.data_fid.is_norm_squared_type:
+            raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
+
+    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
+        return super().duality_gap(primal,dual)
+
+
+class HuberXSetting(Setting):
+    def  __init__(self,
+            op: Operator, 
+            penalty: Functional|HilbertSpace|Callable|None = None, 
+            data_fid:Functional|HilbertSpace|Callable|None = None,
+            regpar: float|None =None,
+            data: ReadOnlyVector | ObsDataT | None = None, 
+            exact_data: ReadOnlyVector | None = None, 
+            init: ReadOnlyVector | None = None,
+            incorporate_init_in_penalty: bool = True,
+            codomain_free: bool = False,
+            logging_level = "INFO",
+            explicitDataWarning:bool = True,                 
+            _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
+             )->None:
+              
+        from regpy.functionals import L1
+        penalty = L2(op.domain) if penalty is None else penalty
+        data_fid = L1(op.codomain) if data_fid is None else data_fid
+        super().__init__(op, penalty, data_fid, regpar, 
+                              data = data, 
+                              exact_data = exact_data, 
+                              init=init, 
+                              incorporate_init_in_penalty=incorporate_init_in_penalty,
+                              codomain_free=codomain_free, 
+                              logging_level=logging_level, 
+                              explicitDataWarning=explicitDataWarning, 
+                              _primal_setting=_primal_setting,
+                              default_inner_solver = 'dual_FISTA'
+                              )
+  
+    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
+        return super().duality_gap(primal,dual)
