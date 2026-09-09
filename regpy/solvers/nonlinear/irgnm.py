@@ -1,4 +1,6 @@
 from math import sqrt,isqrt
+from numbers import Real
+from typing import Iterable, Iterator
 
 import numpy as np
 
@@ -10,8 +12,43 @@ from regpy.vecsps import ReadOnlyVector, Vector
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
 from ..linear import LavrentievCG, TikhonovCG
+from ..util import GeometricSequence
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
+
+
+def _regularization_parameter_iterator(
+    regpars: Iterable[float] | None,
+    regpar: float,
+    regpar_step: float,
+) -> Iterator[float]:
+    """Create the regularization-parameter iterator.
+
+    ``regpar`` and ``regpar_step`` retain their historical meaning when no
+    explicit iterator is supplied.
+    """
+    if regpars is None:
+        return iter(GeometricSequence(regpar, regpar_step))
+    try:
+        return iter(regpars)
+    except TypeError as error:
+        raise TypeError(Errors.value_error(
+            "regpars must be an iterable of positive real numbers.",
+            regpars,
+        )) from error
+
+
+def _next_regularization_parameter(
+    regpar_iterator: Iterator[float],
+) -> float:
+    """Read and validate one regularization parameter."""
+    value = next(regpar_iterator)
+    if not isinstance(value, Real) or value <= 0:
+        raise ValueError(Errors.value_error(
+            "All regularization parameters must be positive real numbers.",
+            value,
+        ))
+    return float(value)
 
 
 def _inner_cg_parameters(
@@ -67,7 +104,7 @@ def _run_inner_cg(
             explicitDataWarning=False,
             logging_level=solver.inner_it_logging_level,
         )
-        return Lavrentiev(
+        return LavrentievCG(
             setting=inner_setting,
             data=solver._normal_rhs,
             init=reference,
@@ -97,7 +134,8 @@ class IrgnmCG(RegSolver):
         + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
 
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
+    By default, :math:`regpar_n` is a decreasing geometric sequence of
+    regularization parameters. An arbitrary iterable can be supplied instead.
 
     Parameters
     ----------
@@ -110,7 +148,8 @@ class IrgnmCG(RegSolver):
     regpar : float [default: 1.0]
         The initial regularization parameter. Must be positive.
     regpar_step : float [default: 2 / 3]
-        The factor by which to reduce ``regpar`` in each iteration.
+        The factor by which to reduce ``regpar`` in each iteration when
+        ``regpars`` is not supplied.
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting.
     cg_pars : dict or None [default: None]
@@ -129,6 +168,11 @@ class IrgnmCG(RegSolver):
         unavailable for codomain-free settings.
     logging_level : int or str [default: "INFO"]
         Logging level.
+    regpars : iterable of float or None [default: None]
+        Regularization parameters for the outer iterations. If omitted, a
+        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
+        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        are ignored. Iteration ends after the last supplied parameter.
 
     Notes
     -----
@@ -147,6 +191,7 @@ class IrgnmCG(RegSolver):
                 inner_it_logging_level:int | str = "WARNING",
                 simplified_op:Operator | None = None,
                 logging_level:int | str = "INFO",
+                regpars:Iterable[float] | None = None,
          ) -> None:
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
@@ -163,8 +208,6 @@ class IrgnmCG(RegSolver):
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
             ))
-        if not (isinstance(regpar,(float,int)) and regpar>0):
-            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         if setting.codomain_free and simplified_op is not None:
             raise ValueError(Errors.value_error(
                 "simplified_op is unavailable for codomain-free IrgnmCG."
@@ -184,10 +227,21 @@ class IrgnmCG(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar = regpar
+        self._regpar_iterator = _regularization_parameter_iterator(
+            regpars, regpar, regpar_step
+        )
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration as error:
+            raise ValueError(Errors.value_error(
+                "regpars must provide at least one regularization parameter.",
+                regpars,
+            )) from error
         """The regularization parameter."""
         self.regpar_step = regpar_step
-        """The `regpar` factor."""
+        """The geometric factor used when ``regpars`` is not supplied."""
         self.cg_pars = _inner_cg_parameters(
             cg_pars, setting.codomain_free
         )
@@ -222,9 +276,14 @@ class IrgnmCG(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y , self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
         self._nr_inner_steps = stoprule.iteration
         self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration:
+            self.converge()
     
     def nr_inner_its(self):
         return self._nr_inner_steps
@@ -255,7 +314,8 @@ class LevenbergMarquardt(RegSolver):
         + regpar_{n} \cdot \Vert h\Vert^{2}
 
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
-    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
+    By default, :math:`regpar_n` is a decreasing geometric sequence of
+    regularization parameters. An arbitrary iterable can be supplied instead.
 
     Parameters
     ----------
@@ -268,7 +328,8 @@ class LevenbergMarquardt(RegSolver):
     regpar : float [default: 1.0]
         The initial regularization parameter. Must be positive.
     regpar_step : float [default: 2 / 3]
-        The factor by which to reduce ``regpar`` in each iteration.
+        The factor by which to reduce ``regpar`` in each iteration when
+        ``regpars`` is not supplied.
     init : Vector or None [default: None]
         Initial guess. In the default case, it is taken from the setting.
     cg_pars : dict or None [default: None]
@@ -287,6 +348,11 @@ class LevenbergMarquardt(RegSolver):
         unavailable for codomain-free settings.
     logging_level : int or str [default: "INFO"]
         Logging level.
+    regpars : iterable of float or None [default: None]
+        Regularization parameters for the outer iterations. If omitted, a
+        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
+        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        are ignored. Iteration ends after the last supplied parameter.
 
     Notes
     -----
@@ -305,6 +371,7 @@ class LevenbergMarquardt(RegSolver):
                 inner_it_logging_level:int | str = "WARNING",
                 simplified_op:Operator|None = None,
                 logging_level:int | str = "INFO",
+                regpars:Iterable[float] | None = None,
          ) -> None:
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
@@ -324,8 +391,6 @@ class LevenbergMarquardt(RegSolver):
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
             ))
-        if not (isinstance(regpar,(float,int)) and regpar > 0):
-            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         if setting.codomain_free and simplified_op is not None:
             raise ValueError(Errors.value_error(
                 "simplified_op is unavailable for codomain-free "
@@ -346,10 +411,21 @@ class LevenbergMarquardt(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar = regpar
+        self._regpar_iterator = _regularization_parameter_iterator(
+            regpars, regpar, regpar_step
+        )
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration as error:
+            raise ValueError(Errors.value_error(
+                "regpars must provide at least one regularization parameter.",
+                regpars,
+            )) from error
         """The regularization parameter."""
         self.regpar_step = regpar_step
-        """The `regpar` factor."""
+        """The geometric factor used when ``regpars`` is not supplied."""
         self.cg_pars = _inner_cg_parameters(
             cg_pars, setting.codomain_free
         )
@@ -382,9 +458,14 @@ class LevenbergMarquardt(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y , self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
         self._nr_inner_steps = stoprule.iteration
         self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration:
+            self.converge()
     
     def nr_inner_its(self):
         return self._nr_inner_steps
@@ -409,6 +490,8 @@ class IrgnmCGPrec(RegSolver):
         \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
 
     with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner :math:`M`.
+    By default, :math:`regpar_n` is a decreasing geometric sequence of
+    regularization parameters. An arbitrary iterable can be supplied instead.
     The spectral preconditioner :math:`M` is chosen, such that:
 
     .. math::
@@ -444,7 +527,8 @@ class IrgnmCGPrec(RegSolver):
     regpar : float [default: 1.0]
         The initial regularization parameter. Must be positive.
     regpar_step : float [default: 2 / 3]
-        The factor by which to reduce ``regpar`` in each iteration.
+        The factor by which to reduce ``regpar`` in each iteration when
+        ``regpars`` is not supplied.
     init : Vector or None [default: None]
         The initial guess. Defaults to None, in this case it is taken from the setting.
     cg_pars : dict or None [default: None]
@@ -457,6 +541,11 @@ class IrgnmCGPrec(RegSolver):
         order 6 and four eigenvalues.
     logging_level : int or str [default: "INFO"]
         Logging level.
+    regpars : iterable of float or None [default: None]
+        Regularization parameters for the outer iterations. If omitted, a
+        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
+        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        are ignored. Iteration ends after the last supplied parameter.
     """
 
     def __init__(
@@ -465,6 +554,7 @@ class IrgnmCGPrec(RegSolver):
         cg_pars:dict | None=None, cgstop:int | None=None,
         precpars:dict | None=None,
         logging_level:int | str="INFO",
+        regpars:Iterable[float] | None = None,
         ) -> None:
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
@@ -485,15 +575,24 @@ class IrgnmCGPrec(RegSolver):
             raise ValueError(Errors.value_error(
                 "Data have to be included in the setting or given directly."
             ))
-        if not (isinstance(regpar,(float,int)) and regpar > 0):
-            raise ValueError(Errors.value_error('regpar must be positive.',regpar))
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, self.init)
         self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar = regpar
+        self._regpar_iterator = _regularization_parameter_iterator(
+            regpars, regpar, regpar_step
+        )
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration as error:
+            raise ValueError(Errors.value_error(
+                "regpars must provide at least one regularization parameter.",
+                regpars,
+            )) from error
         """The regularization parameter."""
         self.regpar_step = regpar_step
-        """The `regpar` factor."""
+        """The geometric factor used when ``regpars`` is not supplied."""
         if cg_pars is None:
             self.cg_pars = {}
         else:
@@ -599,11 +698,16 @@ class IrgnmCGPrec(RegSolver):
             
         self.x += step
         self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
         
         self.k+=1
         if (isqrt(self.k))**2 == self.k:
             self.need_prec_update = True
+        try:
+            self.regpar = _next_regularization_parameter(
+                self._regpar_iterator
+            )
+        except StopIteration:
+            self.converge()
                        
     def _preconditioner_update(self):
         """perform lanzcos method to calculate the preconditioner"""

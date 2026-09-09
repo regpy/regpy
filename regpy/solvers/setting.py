@@ -10,13 +10,16 @@ from regpy.operators import Operator, ObsDataT
 from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
-from regpy.stoprules import StopRule, DualityGapStopping, CountIterations
+from regpy.stoprules import (
+    StopRule, DualityGapStopping, CountIterations, ErrorMonitor,
+)
 __all__ = [
     "Setting",
     "get_reg_method_dictionary",
     "get_linear_reg_method_dictionary",
     "get_nonlinear_reg_method_dictionary",
     "get_convex_solver_dictionary",
+    "get_non_convex_solver_dictionary",
     "check_Hilbert_applicability",
     "check_Hilbert_applicability_linear",
 ]
@@ -63,9 +66,10 @@ class Setting:
         The penalty need not be a data functional. Its
         :meth:`~regpy.functionals.Functional.reference_vector` provides the
         default initial guess.
-    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable or None
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
+        None is only admissible if codomain_free = True.
     regpar: float or None [default: None]
         regularization parameter  :math:`alpha`. 
         Defaults to None. See explanations above on different meaning of solvers in this case.
@@ -76,6 +80,11 @@ class Setting:
         Optional exact data used to generate synthetic noisy observations with
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
+    noise_pars: dict or None [default: None]
+        A dictionary containing parameters of the data noise model. 
+        This information is required by parameter choice rules.
+        If you work with synthetic data, you can use methods of this class to 
+        "add noise" to your data 
     init: Vector or None [default: None]
         Initial guess in ``op.domain``. Depending on
         ``incorporate_init_in_penalty``, it is either incorporated into the
@@ -92,12 +101,20 @@ class Setting:
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
         op.adjoint_data, op.adjoint_eval, and op.adjoint_derivative, but no evaluations of op and its derivative should be used. 
-        The data fidelity term is inactive in this case, and op.data typically contains raw data, from which the full data 
-        in op.codomain could be computed in principle, but instead, these data are backpropagated by op.adjoint_data.
+        The data fidelity term is inactive in this case, and op.data contains raw data, 
+        typically not in the codomain, which are backpropagated by op.adjoint_data.
     logging_level: int or str [default: logging.INFO]
         logging level
     explicitDataWarning: bool [default: True]
         If True, a warning will be given if the setting is initialized without explicit data or exact_data. 
+    default_linear_regmethod: str [default: 'genTikh']
+        Default solver if the setting has a regularization parameter and the operator is linear.    
+    default_nonlinear_regmethod: str [default: 'IRN']
+        Default solver if the setting has a regularization parameter and the operator is linear.  
+    default_inner_solver: str or None [default: None]
+        Default inner solver if the setting has a regularization parameter and the Tikhonov functional is convex. 
+    default_nl_minimizer: str|None [default: None]
+        Name of default method for minimizing non-convex Tikhonov functional. 
     """
     
     log = ClassLogger()
@@ -105,17 +122,20 @@ class Setting:
     def __init__(self, 
                  op: Operator, 
                  penalty: Functional|HilbertSpace|Callable, 
-                 data_fid:Functional|HilbertSpace|Callable,
+                 data_fid:Functional|HilbertSpace|Callable|None,
                  regpar: float|None =None,
-                 penalty_shift = None, 
                  data: ReadOnlyVector | ObsDataT | None = None, 
                  exact_data: ReadOnlyVector | None = None, 
                  init: ReadOnlyVector | None = None,
                  incorporate_init_in_penalty: bool = True,
                  codomain_free: bool = False,
                  logging_level = "INFO",
-                 explicitDataWarning:bool = True,                 
-                 _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
+                 explicitDataWarning: bool = True,                 
+                 default_linear_regmethod: str = 'genTikh', 
+                 default_nonlinear_regmethod: str = 'IRN', 
+                 default_inner_solver: str|None = None, 
+                 default_nl_minimizer: str|None = None,             
+                 _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()                 
                  ) -> None:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,add_info="Setting requires op to be a RegPy operator."))
@@ -136,6 +156,8 @@ class Setting:
                 self.init = init
 
         if not codomain_free:
+            if data_fid is None:
+                raise ValueError(Errors.value_error('data_fid must not be None unless codomain_free is True'))
             self.set_data_fid(data_fid)    
             if (not self.data_fid.is_data_func and data is None and _primal_setting is None):
                 if exact_data is None and explicitDataWarning:
@@ -147,6 +169,16 @@ class Setting:
                 if not exact_data in op.codomain:
                     raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
                 self._exact_data = exact_data
+        elif data_fid is not None:
+            _data_fid = as_functional(data_fid, self.op.codomain)
+            hilb = _data_fid.h_domain
+            if not _data_fid.is_norm_squared_type:
+                raise ValueError(Errors.value_error('Can only treat norm_squared_type functionals in the codomain_free case.', _data_fid))
+            try:
+                self.op.set_gram_factor(hilb)
+            except ValueError:
+                self.log.warning("The given data fidelity functional cannot be incorporated into the operator's forward-backward methods.")
+
         if data is not None:
             self.data = data #data and (if not self.codomain_free) data fidelity functional are updated
 
@@ -155,6 +187,12 @@ class Setting:
             raise ValueError(Errors.value_error("The primal_setting needs to be convex and contain a regularization parameter!"))
         self._primal_setting = _primal_setting
         self.regpar=regpar#The flags are set by setting the regularization parameter
+
+        self._default_linear_regmethod = default_linear_regmethod
+        self._default_nonlinear_regmethod = default_nonlinear_regmethod
+        self._default_inner_solver = default_inner_solver
+        self._default_nl_minimizer = default_nl_minimizer
+
         self._noise_model_param = {}
 
     @property
@@ -345,10 +383,8 @@ class Setting:
         elif self.is_convex:
             self._methods = get_convex_solver_dictionary()
             self.duality_gap_warning_incr = 1.
-        else:
-            # Non-convex Tikhonov settings are intentionally not supported yet.
-            self.__dict__.pop('_methods', None)
-            self.__dict__.pop('duality_gap_warning_incr', None)
+        else: # Non-convex Tikhonov settings
+            self._methods = get_non_convex_solver_dictionary()
 
     ######General convenience methods
     @property
@@ -541,11 +577,19 @@ class Setting:
         if(not self.is_convex):
             raise RuntimeError(Errors.generic_message("The setting has to be convex for the computation of a dual setting."))
 
+        dual_op = self.op.adjoint
         return Setting(
-            self.op.adjoint,
+            dual_op,
             self.data_fid.conj.dilation(-self.regpar),
             self.penalty.conj,
             regpar= 1/self.regpar,
+            # The reference of S*(-alpha p) is part of the transformed
+            # objective, but is generally a poor starting point: for a
+            # shifted quadratic data term it is of order data/alpha.  Keep
+            # the functional unchanged and store p=0 independently as the
+            # initial iterate.  It maps back to the primal penalty reference.
+            init=dual_op.domain.zeros(),
+            incorporate_init_in_penalty=False,
             _primal_setting = self,
             logging_level=self.log.level
         )
@@ -682,14 +726,15 @@ class Setting:
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None
                     ) -> float:
-        r"""Computes the value of the duality gap 
+        r"""Computes the value of the duality gap. 
+    
         
         .. math::
             \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
 
         Parameters
         ----------
-        primal: tuple[Vector|None,Vector|None] | None [default: None]
+        primal: tuple[Vector,Vector|None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
         dual: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
@@ -698,6 +743,16 @@ class Setting:
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
+
+        if self._primal_setting is not None and primal is not None:
+            # A primal variable of the transformed dual setting is precisely
+            # a dual variable of the original setting.  Evaluate the gap
+            # there directly.  This is algebraically equivalent to computing
+            # the transformed gap and multiplying it by
+            # self.regpar**2, but avoids magnifying cancellation errors by
+            # alpha_primal**(-2).
+            return self._primal_setting.duality_gap(dual=primal)
+
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
 
@@ -716,22 +771,40 @@ class Setting:
             self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
             self.duality_gap_warning_incr *=10.
 
-        return res
+        return (res
+                if self._primal_setting is None else
+                res * alpha 
+                # For dual settings alpha=alpha_dual = 1/alpha_primal.
+                # Since the dual objective functional is multiplied by alpha_primal to match the 
+                # form of the primal objective functional, a factor 1/alpha_primal appears. 
+        ) 
     
     def violation_optimality_cond(self, 
                                   primal: tuple[Vector|None,Vector|None] | None =None,
-                                  dual: tuple[Vector|None,Vector|None] | None =None
-                                  ) -> tuple[float, float]:
-        r"""Returns the degree to which a pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
-        violates the optimality conditions for being a saddle point of 
+                                  dual: tuple[Vector|None,Vector|None] | None =None,
+                                  deriv: Operator | None = None,
+                                  ) -> tuple[float, float] | float:
+        r"""Returns the degree to which an iterate violates the optimality conditions for a minimum of the Tikhonov functional :math:`\frac{1}{\alpha}\mathcal{S}(f) + \mathcal{R}(f)`. 
+
+        For convex Tikhonov functionals (self.is_convex): 
+        A pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
+        is a saddle point of 
         :math:`-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) `
-        These optimality conditions are:
+        (and hence :math:`f` a primal and :math:`p` a dual solution) iff
 
         .. math::
             Tf \in \partial \mathcal{S}^\ast(-\alpha p), \qquad T^\ast p \in \partial \mathcal{R}(f).
 
-        This violation is measured by the distances of the left-hand sides to the respective 
-        subdifferentials on the right-hand sides, and the function returns a tuple of these two distances.
+        The violations are returned as a pair of distances of the left-hand sides to the respective 
+        subdifferentials. 
+
+        For non-convex Tikhonov functionals (not self.is_convex):
+        The violation of the optimality condition
+
+        .. math::
+            \frac{-1}{\alpha} F'[f]^*\mathcal{S}_{g^{\delta}}'(F(f)) \in \partial \mathcal{R}(f)
+ 
+        is returned as single distance to the subdifferential. 
 
         Parameters
         ---------------------------
@@ -743,21 +816,60 @@ class Setting:
 
         Returns
         -------
-        tuple of floats
-            Distances to the subdifferentials in the two optimality conditions.
+        tuple of floats or float
+            Distance(s) to the subdifferential(s) in the optimality condition(s).
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for this check."))
-        if not "dist_subdiff" in self.penalty.methods or not "dist_subdiff" in self.data_fid.conj.methods:
-            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of both penalty and conjugate data fidelity functional."))
-        if not self.is_convex:
-            raise RuntimeError(Errors.not_linear_op(self.op,add_info="This check requires a convex setting with a linear operator!"))
+        if not "dist_subdiff" in self.penalty.methods:
+            raise RuntimeError(Errors.generic_message("Need dist_subdiff method of penalty functional."))
+        if self.is_convex:
+            if deriv is not None:
+                raise ValueError(Errors.value_error(
+                    "deriv is only used for nonconvex settings.", deriv
+                ))
+            if not "dist_subdiff" in self.data_fid.conj.methods:
+                raise RuntimeError(Errors.generic_message("Need dist_subdiff method of conjugate data fidelity functional."))                            
+            (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
 
-        (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
-
-        alpha = self.regpar
-        return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
+            alpha = self.regpar
+            return (1./alpha)*self.data_fid.conj.dist_subdiff(Tf,(-alpha)*p), \
                self.penalty.dist_subdiff(Tsp,f) 
+        else:
+            if not "subgradient" in self.data_fid.methods:
+                raise RuntimeError(Errors.generic_message("Need subgradient method of data fidelity functional."))
+            if dual is not None:
+                raise ValueError(Errors.value_error(
+                    "dual is only used for convex settings.", dual
+                ))
+            if not isinstance(primal, tuple) or len(primal) != 2:
+                raise ValueError(Errors.value_error(
+                    "primal must be a tuple of length two.", primal
+                ))
+            f, Tf = primal
+            if not f in self.op.domain:
+                raise TypeError(Errors.type_error(
+                    "primal[0] must be in operator domain.", f
+                ))
+            if Tf is not None and not Tf in self.op.codomain:
+                raise TypeError(Errors.type_error(
+                    "primal[1] must be None or in operator codomain.", Tf
+                ))
+            if deriv is not None and not (
+                    isinstance(deriv, Operator) and deriv.linear):
+                raise TypeError(Errors.type_error(
+                    "deriv must be a linear operator.", deriv
+                ))
+            if deriv is None:
+                evaluated, deriv = self.op.linearize(f)
+                if Tf is None:
+                    Tf = evaluated
+            elif Tf is None:
+                Tf = self.op(f)
+            p = self.data_fid.subgradient(Tf)
+            Fstar_p = deriv.adjoint(p)
+            Fstar_p *= (-1/self.regpar)
+            return self.penalty.dist_subdiff(Fstar_p,f)
 
     def add_method(self,
                    method_abbrv:str,
@@ -780,11 +892,6 @@ class Setting:
         full_method_name:str | None, optional
             Full, more descriptive name of the method. Defaults to None 
         """
-        if not self._has_method_dictionary():
-            raise RuntimeError(Errors.runtime_error(
-                'Method dictionaries are available for settings without a '
-                'regularization parameter and for convex Tikhonov settings.'
-            ))
         if not self.is_tikhonov and primal is False:
             raise ValueError(Errors.value_error(
                 'A setting without a regularization parameter has no dual '
@@ -802,13 +909,6 @@ class Setting:
             method['primal'] = True if primal is None else primal
         self._methods[method_abbrv] = method
 
-    def _has_method_dictionary(self) -> bool:
-        """Whether this type of setting supports a solver dictionary."""
-        return (
-            self._primal_setting is None
-            and (not self.is_tikhonov or self.is_convex)
-        )
-
     def evaluate_methods(self, method_names: list[str] | None = None)->None:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
@@ -818,12 +918,7 @@ class Setting:
         method_names: list of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
         """
-        if not self._has_method_dictionary():
-            raise NotImplementedError(Errors.generic_message(
-                'Applicable methods can be computed for settings without a '
-                'regularization parameter and for primal convex Tikhonov '
-                'settings. Non-convex Tikhonov settings are not supported yet.'
-            ))
+
         if method_names is None:
             method_names = list(self._methods)
         else:
@@ -833,7 +928,7 @@ class Setting:
                     raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
         # Only convex Tikhonov solvers use the global operator norm for their
         # convergence-rate estimates. It may not exist for nonlinear methods.
-        op_norm = self.op.norm() if method_names and self.is_tikhonov else None
+        op_norm = self.op.norm() if method_names and self.is_tikhonov and self.is_convex else None
         for method_name in method_names:
             method = self._methods[method_name]
             if self.is_tikhonov:
@@ -841,9 +936,10 @@ class Setting:
                 target_setting = self if primal else self.get_dual_setting()
             else:
                 target_setting = self
-            out,_ = method['class'].check_applicability(
-                target_setting, op_norm=op_norm
-            )
+            out,_ = (method['class'].check_applicability(target_setting, op_norm=op_norm)
+                     if op_norm is not None else
+                     method['class'].check_applicability(target_setting)
+                    )
             method.pop('rate', None)
             if (self.is_tikhonov and not primal
                     and not 'subgradient' in self.penalty.conj.methods):
@@ -858,10 +954,6 @@ class Setting:
 
     def applicable_methods(self)->dict[str,dict]:
         """Return the methods that can be applied to this setting."""
-        if not self._has_method_dictionary():
-            raise NotImplementedError(Errors.generic_message(
-                'Applicable methods are unavailable for this setting kind.'
-            ))
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
@@ -869,7 +961,7 @@ class Setting:
     def display_all_methods(self, full_names:bool=True)->None:
         """Display all registered methods and their applicability."""
         self.evaluate_methods()
-        print('Applicable methods:\n')
+        print('Applicable methods: (default =',self.get_default_method(),')\n')
         for name,method in self.applicable_methods().items():
             full_name = method.get('full')
             suffix = (
@@ -919,17 +1011,17 @@ class Setting:
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
-    def set_stopping_rule(self,
+    def set_stoprule(self,
                           rule:StopRule,
                           method_names:list[str]|None=None) -> None:
         """Sets a StopRule for an optimization method.
         
         Parameters
         ----------
-        method_names: list[str]|None
-            keys of the methods
         rule: StopRule
             the stoprule
+        method_names: list[str] or None [default: None]
+            keys of the methods. In the default case the StopRule is attached to all applicable solvers. 
         """
         if not isinstance(rule,StopRule):
             raise TypeError(f"rule must be of class StopRule. Got{rule}.")
@@ -941,7 +1033,12 @@ class Setting:
         for method_name in method_names:
             if method_name not in self._methods.keys():
                 raise ValueError(f"{method_name} is unknown method key.")
-            self._methods[method_name]['stoprule'] = rule.copy_and_reset()
+            # Keep the configured rule separate from the rule used by the
+            # latest run.  The latter accumulates histories and may contain
+            # run-local additions such as an iteration limit or ErrorMonitor.
+            configured_rule = rule.copy_and_reset()
+            self._methods[method_name]['configured_stoprule'] = configured_rule
+            self._methods[method_name]['stoprule'] = configured_rule.copy_and_reset()
 
     def get_stopping_rule(self, method_name: str) -> StopRule:
         """Retrieves a stoprule that has run an optimization method 
@@ -963,9 +1060,30 @@ class Setting:
         else:
             return self._methods[method_name]['stoprule']   
 
+    def get_default_method(self):
+        if not self.is_tikhonov:
+            return (self._default_linear_regmethod
+                            if self.op.linear else
+                            self._default_nonlinear_regmethod
+            )
+        else:
+            if self._default_inner_solver is None: 
+                self._default_inner_solver = self.select_best_method()
+            return (
+                self._default_inner_solver
+                if self.is_convex else
+                self._default_nl_minimizer
+            )
+
     def run(self,
             method_name: str|None = None,
-            stoprule: StopRule|None|object = _DEFAULT_STOPRULE,
+            max_it: int | None = None,
+            stoprule: StopRule|object = _DEFAULT_STOPRULE,
+            ref_sol: (ReadOnlyVector
+                        | tuple[ReadOnlyVector | None, ReadOnlyVector]
+                        | None) = None,
+            dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
+            dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -974,11 +1092,24 @@ class Setting:
         method_name: str or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
+        max_it: int [default: 1000]
+            maximal number of iterations
         stoprule: StopRule | None
-            Stopping rule. By default, convex Tikhonov methods use a duality-gap
-            rule combined with 1000 maximum iterations; regularization methods
-            use 1000 maximum iterations. If None, a previously stored stopping
-            rule is used.
+            Stopping rule. An explicit value overrides a rule configured by
+            :meth:`set_stoprule` for this run only. By default, a configured
+            rule is used if present; otherwise convex Tikhonov methods use a
+            duality-gap rule combined with 1000 maximum iterations and other
+            methods use 1000 maximum iterations. If None, a previously stored
+            stopping rule is required and used.
+        ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
+            Reference solution used to monitor iteration errors. A single
+            vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
+            ``(None, y)`` to monitor only ``y``. The monitor never stops the
+            iteration.
+        dist_x, dist_y: callable, optional
+            Custom distances called as ``dist((current, reference))`` by the
+            error monitor. If omitted, the corresponding Hilbert-space norm is
+            used when available.
         **kwargs: dict
             Arguments to be passed to the method.
 
@@ -987,7 +1118,7 @@ class Setting:
             x,y: x is the minimizer of the appproximate solution and y its value under the operator.         
         """
         if method_name is None:
-            method_name = self.select_best_method()
+            method_name = self.get_default_method()
         if not method_name in self._methods:
             raise ValueError(Errors.value_error(f"{method_name} not in list of methods: {self._methods}."))
         themethod= self._methods[method_name]
@@ -1005,18 +1136,122 @@ class Setting:
             thesetting = self if primal else self.get_dual_setting()
         else:
             thesetting = self
-        if stoprule is _DEFAULT_STOPRULE:
-            if self.is_tikhonov:
+        if max_it is not None:
+            if not isinstance(max_it, (int, np.integer)):
+                raise TypeError(Errors.type_error(
+                    'max_it must be an integer or None.', max_it
+                ))
+            if max_it < 0:
+                raise ValueError(Errors.value_error(
+                    'max_it must be nonnegative.', max_it
+                ))
+            max_it = int(max_it)
+
+        configured_stoprule = themethod.get('configured_stoprule')
+        if stoprule is _DEFAULT_STOPRULE and configured_stoprule is not None:
+            stoprule = configured_stoprule.copy_and_reset()
+        elif stoprule is None:
+            stored_stoprule = configured_stoprule or themethod.get('stoprule')
+            if stored_stoprule is None:
+                raise RuntimeError(
+                    'No StopRule given either as argument of run or set '
+                    'explicitly by set_stoprule.'
+                )
+            stoprule = stored_stoprule.copy_and_reset()
+        elif stoprule is _DEFAULT_STOPRULE:
+            default_max_it = 1000 if max_it is None else max_it
+            iteration_limit = CountIterations(
+                default_max_it, timing=True, logging_level='DEBUG'
+            )
+            if self.is_tikhonov and self.is_convex:
                 stoprule = (
-                    DualityGapStopping(tol=0.1, logging_level='DEBUG')
-                    + CountIterations(1000, logging_level='DEBUG')
+                    DualityGapStopping(tol=1e-10, logging_level='DEBUG')
+                    + iteration_limit
                 )
             else:
-                stoprule = CountIterations(1000, logging_level='DEBUG')
-        if stoprule is not None:
-            self.set_stopping_rule(stoprule,method_names=[method_name])
-        elif 'stoprule' not in themethod or themethod['stoprule'] is None:
-            raise RuntimeError('No StopRule given either as argument of run or set explicitly by set_stopping_rule.')
+                stoprule = iteration_limit
+            # The requested limit is already part of the new default rule.
+            max_it = None
+        elif not isinstance(stoprule, StopRule):
+            raise TypeError(Errors.type_error(
+                'stoprule must be a StopRule or None.', stoprule
+            ))
+
+        if max_it is not None:
+            stoprule = stoprule + CountIterations(
+                max_it, timing=True, logging_level='DEBUG'
+            )
+        if ref_sol is not None:
+            monitor_ref_sol = ref_sol
+            monitor_dist_x = dist_x
+            monitor_dist_y = dist_y
+
+            if self.is_tikhonov and not primal:
+                # The solver's x and y are (p, T*p), whereas Setting.run()
+                # returns the corresponding primal pair (f, Tf).  Convert
+                # both the reference and the monitored iterates so that all
+                # methods report errors in the same primal variables.
+                if isinstance(ref_sol, tuple):
+                    ref_x, ref_y = ref_sol
+                else:
+                    ref_x, ref_y = ref_sol, None
+
+                ref_Tx = self.op(ref_x) if ref_y is None else ref_y
+                ref_p = self.primal_to_dual((ref_x, ref_Tx))
+                ref_Tsp = self.op.adjoint(ref_p)
+
+                if ref_x is not None:
+                    primal_dist_x = (
+                        dist_x
+                        if dist_x is not None
+                        else ErrorMonitor._norm_distance(self.h_domain.norm)
+                    )
+
+                    def monitor_dist_x(pair):
+                        current_p, _ = pair
+                        current_Tsp = self.op.adjoint(current_p)
+                        current_x = self.dual_to_primal(
+                            (current_p, current_Tsp)
+                        )
+                        return primal_dist_x((current_x, ref_x))
+
+                if ref_y is not None:
+                    primal_dist_y = (
+                        dist_y
+                        if dist_y is not None
+                        else ErrorMonitor._norm_distance(
+                            self.h_codomain.norm
+                        )
+                    )
+
+                    def monitor_dist_y(pair):
+                        current_Tsp, _ = pair
+                        current_x = self.penalty.conj.subgradient(
+                            current_Tsp
+                        )
+                        current_y = self.op(current_x)
+                        return primal_dist_y((current_y, ref_y))
+
+                monitor_ref_sol = (
+                    (ref_p if ref_x is not None else None, ref_Tsp)
+                    if ref_y is not None
+                    else ref_p
+                )
+
+            stoprule = stoprule + ErrorMonitor(
+                monitor_ref_sol,
+                dist_x=monitor_dist_x,
+                dist_y=monitor_dist_y,
+                logging_level='DEBUG',
+            )
+        elif dist_x is not None or dist_y is not None:
+            raise ValueError(Errors.value_error(
+                "dist_x and dist_y require ref_sol."
+            ))
+        # Store the actual rule used by this run so that its histories remain
+        # available through get_stopping_rule().  Do not call set_stoprule()
+        # here: doing so would overwrite the independently configured rule.
+        themethod['stoprule'] = stoprule.copy_and_reset()
         
         solver = themethod['class'](thesetting,**kwargs)
         x,y = solver.run(themethod['stoprule'])
@@ -1029,20 +1264,28 @@ class Setting:
 
 def get_linear_reg_method_dictionary() -> dict:
     """Return regularization methods intended for linear operators.
+
+    ``FISTA`` is available without a regularization parameter when the
+    setting penalty is of squared-norm type or is a null functional. In that
+    mode the penalty determines the domain Hilbert geometry but is not part of
+    the minimized objective.
     """
     from .linear import (
         CGNE,
+        FISTA,
         Landweber as linLandweber,
         Richardson,
         NuMethod,
         NuMethodSelfAdjoint,
         TikhonovAlphaGrid
     )
-    # Import the module directly instead of re-exporting its classes from
-    # ``linear.__init__``. This keeps the public solver package lightweight and
-    # avoids the setting <-> spectral circular import during module startup.
+    from .nonlinear import GeneralizedTikhonov
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return {
+            'FISTA':   {'class': FISTA,
+                        'primal': True,
+                        'full': 'Fast Iterative Thresholding for linear problems'
+                       },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
                         },
@@ -1059,8 +1302,11 @@ def get_linear_reg_method_dictionary() -> dict:
                          'full': 'Conjugate Gradient method applied to the normal equation'
                         },
             'TikhOnGrid':{'class': TikhonovAlphaGrid,
-                          'full': 'Tikhonov regularization applied for a grid of regularization parameters'
+                          'full': 'Tikhonov regularization applied for a grid of regularization parameters (special case of genTikh)'
                          },
+            'genTikh':   {'class': GeneralizedTikhonov,
+                          'full': 'Generalized Tikhonov regularization applied for a grid of regularization parameters'
+                        },
             'Spectral': {'class': Spectral,
                          'full': 'spectral regularization by an SVD filter'
                         },
@@ -1081,26 +1327,35 @@ def get_nonlinear_reg_method_dictionary() -> dict:
     from .nonlinear import (
         IrgnmCG,
         Landweber as nlLandweber,
+        FISTA as genFISTA,
         LevenbergMarquardt,
         NewtonCG,
         NewtonCGFrozen,
+        IterativelyRegularizedNewton
     )
     return {
-            'nlLW':     {'class':nlLandweber,
+            'genFISTA': {'class': genFISTA,
+                         'primal': True,
+                         'full': 'Fast Iterative Thresholding for nonlinear problems'
+                        },
+            'nlLW':     {'class': nlLandweber,
                          'full': 'Landweber iteration for nonlinear problems'
                         },
-            'IRGNM_CG':     {'class':IrgnmCG, 
+            'IRGNM_CG':     {'class': IrgnmCG, 
                          'full': 'Iteratively Regularized Gauss-Newton Method with inner CG solver'
                         },
-            'LevMar':     {'class':LevenbergMarquardt, 
+            'LevMar':     {'class': LevenbergMarquardt, 
                          'full': 'Levenberg-Marquardt method'
                         },
-            'NewtonCG':     {'class':NewtonCG, 
+            'NewtonCG':     {'class': NewtonCG, 
                          'full': 'Newton method with inner CGNE regularized by early stopping'
                         },
-            'NewtCGFroz':     {'class':NewtonCGFrozen, 
+            'NewtCGFroz':     {'class': NewtonCGFrozen, 
                          'full': 'Newton-CG method with derivative frozen at initial guess'
-                        },                        
+                        },
+            'IRN' :      {'class': IterativelyRegularizedNewton,
+                          'full': 'Iteratively regularized Newton methods (generalized IRGNM)'
+                          }
     }
 
 
@@ -1142,6 +1397,16 @@ def get_convex_solver_dictionary() -> dict:
         }
     return method_dict
 
+def get_non_convex_solver_dictionary() -> dict:
+    """Return the available solvers for non-convex Tikhonov settings."""
+    from .nonlinear import FISTA as genFISTA
+    from .nonlinear import ForwardBackwardSplitting as genFB
+
+    method_dict={
+            'genFB': {'class':genFB, 'primal': True, 'full':'generalized forward-backward splitting'},
+            'genFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
+    }
+    return method_dict
 
 def check_Hilbert_applicability(setting: Setting,
                                 user_data: ReadOnlyVector | ObsDataT | None = None,

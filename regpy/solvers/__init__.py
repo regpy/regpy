@@ -15,7 +15,11 @@ The structure is as follows
 
 from .solver import RegSolver, Solver
 from .setting import Setting
+from .special_settings import *
+#from .util import convergence_plots
+from .util import  GeometricSequence, powers_of_two, natural_numbers, squares
 from . import linear
 from . import nonlinear
 
-__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear"]
+__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", "HilbertSetting",
+            "GeometricSequence", "powers_of_two", "natural_numbers", "squares"]

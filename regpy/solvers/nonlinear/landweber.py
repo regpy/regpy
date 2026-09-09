@@ -10,17 +10,9 @@ from regpy.vecsps import ReadOnlyVector, Vector
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
+from ..util import powers_of_two
 
 __all__ = ["Landweber"]
-
-
-def _powers_of_two() -> Iterator[int]:
-    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
-    n = 0
-    while True:
-        yield 2**n
-        n += 1
-
 
 class Landweber(RegSolver):
     r"""The nonlinear Landweber method for the ill-posed equation
@@ -141,7 +133,7 @@ class Landweber(RegSolver):
         if stepsize is None:
             try:
                 self._stepsize_selection_steps = iter(
-                    _powers_of_two()
+                    powers_of_two()
                     if stepsize_selection_steps is None
                     else stepsize_selection_steps
                 )
@@ -180,7 +172,9 @@ class Landweber(RegSolver):
 
         self.op.codomain.copyto(self._residual, self.y)
         self._residual -= self.data
-        self.h_codomain.gram(self._residual, out=self._gy_residual)        
+        self.h_codomain.gram(self._residual, out=self._gy_residual)  
+        if self.iteration_step_nr<=10 or (self.iteration_step_nr<=100 and self.iteration_step_nr%10==0) or self.iteration_step_nr%50 ==0:
+            self.log.debug(f'it. {self.iteration_step_nr}: residual = {np.sqrt(self.op.codomain.vdot(self._residual,self._gy_residual))}')
         self.deriv.adjoint(self._gy_residual, out=self._update)
         self.h_domain.gram_inv(self._update, out=self._update)
 

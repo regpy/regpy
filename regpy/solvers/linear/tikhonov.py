@@ -28,6 +28,18 @@ def _axpy(space, target, scalar, direction, work):
     return target
 
 
+def _contains_count_iterations(stoprule):
+    """Return whether a possibly combined rule contains an iteration cap."""
+    if stoprule is None:
+        return False
+    if isinstance(stoprule, CountIterations):
+        return True
+    return any(
+        _contains_count_iterations(rule)
+        for rule in getattr(stoprule, 'rules', ())
+    )
+
+
 def _regularized_inner_setting(
     setting: Setting,
     regpar: float,
@@ -79,12 +91,14 @@ class TikhonovCG(RegSolver):
         The measured data, included for backward compatibility. 
         The preferred way is to specify data in the setting.
     init: Vector or None [default: None]
-        Initial guess and reference value in the Tikhonov functional. If
-        omitted, it is resolved from the setting.
+        Reference value in the Tikhonov functional. If omitted, the penalty
+        functional's reference vector is used.
     xref : Vector or None [default: None]
         Deprecated alias for ``init``.
     x0: Vector or None [default: None]
-        Starting value of the CG iteration. If None (default), setting.op.domain.zeros() is used as starting value. 
+        Starting value of the CG iteration. If omitted, ``setting.init`` is
+        used. This can differ from the penalty reference, in particular for
+        automatically constructed dual settings.
     tol : float or None [default: None]
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
@@ -160,21 +174,36 @@ class TikhonovCG(RegSolver):
         
         def _complete_init_with_solver(self, solver):
             super()._complete_init_with_solver(solver)
-            self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+            domain = self.solver.op.domain
+            self._g_delta_x = domain.empty()
+            self.solver.hessR(
+                self.solver.x, out=self._g_delta_x
+            )
+            self.sq_norm_x = max(
+                domain.vdot(self._g_delta_x, self.solver.x).real,
+                0.,
+            )
             if self.sq_norm_x == 0.:
                 self.x0 = None
             else:
-                self.x0 = self.solver.op.domain.empty()
-                self.solver.op.domain.copyto(self.x0, self.solver.x)
-            self._delta_x = self.solver.op.domain.empty()
+                self.x0 = domain.empty()
+                domain.copyto(self.x0, self.solver.x)
+            self._delta_x = domain.empty()
 
         def _stop(self):
             if self.x0 is None:
-                self.sq_norm_x = self.solver.h_domain.norm(self.solver.x)**2
+                delta_x = self.solver.x
             else:
                 self.solver.op.domain.copyto(self._delta_x, self.solver.x)
                 self._delta_x -= self.x0
-                self.sq_norm_x = self.solver.h_domain.norm(self._delta_x)**2
+                delta_x = self._delta_x
+            self.solver.hessR(delta_x, out=self._g_delta_x)
+            self.sq_norm_x = max(
+                self.solver.op.domain.vdot(
+                    self._g_delta_x, delta_x
+                ).real,
+                0.,
+            )
 
             if self.sq_norm_x == 0.:
                 valx = 2*self.tolexpr
@@ -192,7 +221,15 @@ class TikhonovCG(RegSolver):
             if self.x_exact is not None:
                 self.solver.op.domain.copyto(self._delta_x, self.x_exact)
                 self._delta_x -= self.solver.x
-                true_error = self.solver.setting.h_domain.norm(self._delta_x)
+                self.solver.hessR(
+                    self._delta_x, out=self._g_delta_x
+                )
+                true_error = sqrt(max(
+                    self.solver.op.domain.vdot(
+                        self._g_delta_x, self._delta_x
+                    ).real,
+                    0.,
+                ))
                 self.history_dict["rel_err_x_true"].append(
                     np.inf if self.sq_norm_x == 0 else true_error / np.sqrt(self.sq_norm_x)
                 )
@@ -220,6 +257,7 @@ class TikhonovCG(RegSolver):
             self._work = codomain.empty()
             self._delta_g = codomain.empty()
             self._delta_y = codomain.empty()
+            self._g_delta_y = codomain.empty()
             self.solver.hessS(self.solver.y, out=self.g_y)
             self.norm_y = codomain.vdot(self.solver.y, self.g_y)
             if self.norm_y != 0:
@@ -273,9 +311,19 @@ class TikhonovCG(RegSolver):
             if self.y_exact is not None:
                 codomain.copyto(self._delta_y, self.y_exact)
                 self._delta_y -= self.solver.y
-                true_error = self.solver.setting.h_codomain.norm(self._delta_y)
+                self.solver.hessS(
+                    self._delta_y, out=self._g_delta_y
+                )
+                true_error = sqrt(max(
+                    codomain.vdot(
+                        self._g_delta_y, self._delta_y
+                    ).real,
+                    0.,
+                ))
                 self.history_dict["rel_err_y_true"].append(
-                    np.inf if self.norm_y == 0 else true_error / self.norm_y
+                    np.inf
+                    if self.norm_y == 0
+                    else true_error / sqrt(self.norm_y)
                 )
             return valy < self.tolexpr
 
@@ -296,6 +344,7 @@ class TikhonovCG(RegSolver):
         def _complete_init_with_solver(self, solver):
             super()._complete_init_with_solver(solver)
             self._delta_x = self.solver.op.domain.empty()
+            self._g_delta_x = self.solver.op.domain.empty()
 
         def _stop(self):
             val = (
@@ -306,8 +355,16 @@ class TikhonovCG(RegSolver):
             if self.x_exact is not None:
                 self.solver.op.domain.copyto(self._delta_x, self.x_exact)
                 self._delta_x -= self.solver.x
+                self.solver.hessR(
+                    self._delta_x, out=self._g_delta_x
+                )
                 self.history_dict["abs_err_true"].append(
-                    self.solver.setting.h_domain.norm(self._delta_x)
+                    sqrt(max(
+                        self.solver.op.domain.vdot(
+                            self._g_delta_x, self._delta_x
+                        ).real,
+                        0.,
+                    ))
                 )
             self.log_info = "abs X:{:1.1e}>={:1.1e}".format(val, self.tol)
             return val < self.tol
@@ -358,8 +415,11 @@ class TikhonovCG(RegSolver):
             ))
         """Right-hand side of the operator equation."""
         self.init = self.op.domain.empty()
-        self.op.domain.copyto(self.init, par['init'])
-        """Initial guess and reference value in the Tikhonov functional."""         
+        if init is None:
+            self.penalty.reference_vector(out=self.init)
+        else:
+            self.op.domain.copyto(self.init, par['init'])
+        """Reference value in the Tikhonov functional."""
         self.regpar = par['regpar']
         """The regularization parameter."""
 
@@ -373,8 +433,9 @@ class TikhonovCG(RegSolver):
             self.op.domain.copyto(self.x, x0)
             """The current iterate."""
         else:
-            self.x = self.op.domain.empty() 
-            self.op.domain.copyto(self.x, self.init)
+            self.x = self.op.domain.empty()
+            initial_iterate = setting.init if init is None else self.init
+            self.op.domain.copyto(self.x, initial_iterate)
 
         if setting.codomain_free:
             if reltoly is not None or y_exact is not None:
@@ -393,7 +454,7 @@ class TikhonovCG(RegSolver):
                 self._normal_setting,
                 data=self.backprop_data,
                 init=self.init,
-                x0=x0,
+                x0=self.x,
                 tol=tol,
                 reltolx=reltolx,
                 all_tol_criteria=all_tol_criteria,
@@ -474,6 +535,9 @@ class TikhonovCG(RegSolver):
             self.krylov_basis[self.iteration_number, :] /= sqrt(
                 self.sq_norm_res
             )
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info('TikhonovCG: stopped at iteration 0 as residual is 0 to machine precision.')
+            self.converge()            
 
     def _sync_lavrentiev_state(self) -> None:
         """Mirror the public state of the delegated codomain-free solver."""
@@ -558,6 +622,13 @@ class TikhonovCG(RegSolver):
         else:
             self.hessR(self.dir, out=self.g_dir)
 
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info(f'TikhonovCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()
+
+    def primal(self): # for duality-based stopping rules
+        return (self.x,self.y)
+
     def get_stoprule(self,other_stoprule=None):
         """ Constructs the internal StopRule defined by the parameters of the constructor
         """
@@ -580,8 +651,19 @@ class TikhonovCG(RegSolver):
         combined_rule = AndCombineRules(stoprule_list) if self.all_tol_criteria else CombineRules(stoprule_list)
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(self.krylov_basis.shape[0] if self.krylov_basis is not None else 0, 
                                                     logging_level= self.logging_level)
-        return CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) + other_stoprule if other_stoprule else \
-               CountIterations(self.max_it,logging_level=self.logging_level) + (combined_rule & self.kappa_track) 
+        internal_rule = combined_rule & self.kappa_track
+        if not _contains_count_iterations(other_stoprule):
+            internal_rule = (
+                CountIterations(
+                    self.max_it, logging_level=self.logging_level
+                )
+                + internal_rule
+            )
+        return (
+            internal_rule + other_stoprule
+            if other_stoprule is not None
+            else internal_rule
+        )
 
     def run(self, 
             stoprule: StopRule | None = None, 
@@ -603,11 +685,17 @@ class TikhonovCG(RegSolver):
             self.iteration_step_nr = self._lavrentiev.iteration_step_nr
             self._sync_lavrentiev_state()
             return result[0], None
+        if max_it is not None:
+            iteration_limit = CountIterations(
+                max_it, logging_level=self.logging_level
+            )
+            stoprule = (
+                iteration_limit
+                if stoprule is None
+                else iteration_limit + stoprule
+            )
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(
-            stoprule=self.stoprule,
-            max_it=max_it,
-        )
+        return super().run(stoprule=self.stoprule)
         
     def get_convergence_histories(self):
         """ Yields the stoprule specified by the parameters of the constructor
@@ -697,7 +785,7 @@ class TikhonovAlphaGrid(RegSolver):
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
     ) -> None:
-        from ..nonlinear.gen_tikhonov import GeometricSequence
+        from ..util import GeometricSequence
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
         )
@@ -937,10 +1025,11 @@ class LavrentievCG(RegSolver):
         Right-hand side in ``setting.op.codomain``. If omitted, it is resolved
         from the setting.
     init : ReadOnlyVector or None [default: None]
-        Reference vector and default initial CG iterate. If omitted, it is
-        resolved from the setting.
+        Reference vector in the Lavrentiev functional. If omitted, the
+        penalty functional's reference vector is used.
     x0 : ReadOnlyVector or None [default: None]
-        Optional initial CG iterate independent of ``init``.
+        Initial CG iterate. If omitted, ``setting.init`` is used independently
+        of the functional's reference vector.
     tol, reltolx : float or None
         Absolute and relative domain tolerances for the internal stopping
         rule. If both are ``None``, the same fallback as in
@@ -1004,10 +1093,14 @@ class LavrentievCG(RegSolver):
             ))
 
         self.init = domain.empty()
-        domain.copyto(self.init, par['init'])
+        if init is None:
+            self.penalty.reference_vector(out=self.init)
+        else:
+            domain.copyto(self.init, par['init'])
         self.x = domain.empty()
         if x0 is None:
-            domain.copyto(self.x, self.init)
+            initial_iterate = setting.init if init is None else self.init
+            domain.copyto(self.x, initial_iterate)
         else:
             if x0 not in domain:
                 raise TypeError(Errors.not_in_vecsp(
@@ -1079,7 +1172,8 @@ class LavrentievCG(RegSolver):
                 self.krylov_basis[self.iteration_number, :] /= sqrt(
                     self.sq_norm_res
                 )
-        if self.sq_norm_res <= 0:
+        if np.sqrt(self.sq_norm_res) < 1e-15:
+            self.log.info(f'LavrentievCG: stopped at iteration 0 as residual is 0 to machine precision.')
             self.converge()
 
     def _next(self):
@@ -1128,7 +1222,7 @@ class LavrentievCG(RegSolver):
         self._domain_work2 *= self.stepsize
         self.g_res -= self._domain_work2
         self.hessR.inverse(self.g_res, out=self._res)
-
+       
         sq_norm_res_old = self.sq_norm_res
         self.sq_norm_res = domain.vdot(self.g_res, self._res).real
         beta = self.sq_norm_res / sq_norm_res_old
@@ -1147,6 +1241,10 @@ class LavrentievCG(RegSolver):
         self.dir *= beta
         self.dir += self._domain_work
         self.hessR(self.dir, out=self.g_dir)
+
+        if np.sqrt(self.sq_norm_res) <=1e-15:
+            self.log.info(f'LavrentievCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()         
 
     def get_stoprule(self, other_stoprule=None):
         """Construct the MR-based internal stopping rule."""
@@ -1188,11 +1286,15 @@ class LavrentievCG(RegSolver):
         self.kappa_track = TikhonovCG.KappaTrackAndMinIt(
             min_it, logging_level=self.logging_level
         )
-        rule = (
-            CountIterations(self.max_it, logging_level=self.logging_level)
-            + (combined_rule & self.kappa_track)
-        )
-        return rule + other_stoprule if other_stoprule else rule
+        rule = combined_rule & self.kappa_track
+        if not _contains_count_iterations(other_stoprule):
+            rule = (
+                CountIterations(
+                    self.max_it, logging_level=self.logging_level
+                )
+                + rule
+            )
+        return rule + other_stoprule if other_stoprule is not None else rule
 
     def run(
         self,
@@ -1208,11 +1310,17 @@ class LavrentievCG(RegSolver):
         max_it : int or None, optional
             An additional maximum number of iterations for this run.
         """
+        if max_it is not None:
+            iteration_limit = CountIterations(
+                max_it, logging_level=self.logging_level
+            )
+            stoprule = (
+                iteration_limit
+                if stoprule is None
+                else iteration_limit + stoprule
+            )
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
-        return super().run(
-            stoprule=self.stoprule,
-            max_it=max_it,
-        )
+        return super().run(stoprule=self.stoprule)
 
     def get_convergence_histories(self):
         """Return histories recorded by the internal stopping rules."""

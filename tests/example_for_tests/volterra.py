@@ -86,12 +86,13 @@ def test_volterra():
         penalty=TV(grid), 
         data_fid=HilbertNorm(h_space=L2), 
         data = data,
-        regpar = 0.01
+        regpar = 0.01,
+        init = init
     )
 
     # """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
 
-    solver = FISTA(setting, init)
+    solver = FISTA(setting)
     stoprule = (
         # Method is slow, so need to use large number of iterations
         rules.CountIterations(max_iterations=100) +

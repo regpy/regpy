@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from numbers import Real
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import numpy as np
@@ -23,6 +23,7 @@ from regpy.operators.base import (
 from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
 
+from ..util import GeometricSequence, powers_of_two
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability_linear
 
@@ -730,14 +731,12 @@ def _q_landweber(
     alpha: float,
     *,
     k: int = 1,
-    mu: float | None = None,
+    mu: float = 1.,
     **kwargs: Any,
 ) -> float:
     k = _iteration_count(k)
     if k == 0:
         return 0.
-    if mu is None:
-        mu = 1. / (alpha * k)
     if isinstance(mu, (bool, np.bool_)) or not isinstance(mu, Real):
         raise TypeError(Errors.type_error("mu must be a positive real number."))
     if mu <= 0:
@@ -755,9 +754,8 @@ def _q_lardy(
     k = _iteration_count(k)
     if k == 0:
         return 0.
-    # We index the filter by alpha/k. Therefore the alpha occurring
-    # in the iterated-Tikhonov formula equals k times the supplied regpar.
-    base_alpha = k * alpha
+    # Alpha is fixed; the iteration count k indexes the regularization path.
+    base_alpha = alpha
     return (1. - (base_alpha / (lam + base_alpha)) ** k) / lam
 
 
@@ -820,6 +818,42 @@ class _SpectralFilterMixin:
 
     filters = _FILTERS
 
+    def _init_parameters(self, filter, regpar, filter_parameters):
+        self._filter_spec = filter
+        self._parameters = dict(filter_parameters or {})
+        self._count_parameter = isinstance(filter, str) and filter in ('Landweber', 'Lardy')
+        if self._count_parameter:
+            source = self._parameters.pop('k', None)
+            source = powers_of_two() if source is None else source
+            self._fixed_alpha = 1. if regpar is None else regpar
+        else:
+            source = GeometricSequence() if regpar is None else regpar
+        self.regpars = iter((source,)) if isinstance(source, Real) else iter(source)
+        try:
+            self._pending_parameter = next(self.regpars)
+        except StopIteration as error:
+            raise ValueError("The regularization-parameter sequence must not be empty.") from error
+        self._activate_parameter()
+
+    def _activate_parameter(self):
+        value = self._pending_parameter
+        parameters = dict(self._parameters)
+        if self._count_parameter:
+            self.k = _iteration_count(value)
+            parameters['k'] = self.k
+            self._set_filter(self._filter_spec, self._fixed_alpha, parameters)
+            self.regpar = self.k
+        else:
+            self._set_filter(self._filter_spec, value, parameters)
+
+    def _advance_parameters(self):
+        # Look ahead only after producing a solution, so the last finite
+        # parameter terminates without emitting a duplicate iterate.
+        try:
+            self._pending_parameter = next(self.regpars)
+        except StopIteration:
+            self.converge()
+
     def _set_filter(
         self,
         filter: str | Callable[[float], float],
@@ -830,9 +864,10 @@ class _SpectralFilterMixin:
             raise TypeError(Errors.type_error(
                 "regpar must be a positive real number."
             ))
-        if regpar <= 0:
+        if not np.isfinite(regpar) or regpar <= 0:
             raise ValueError(Errors.value_error("regpar must be positive."))
         self.regpar = float(regpar)
+        self._filter_alpha = float(regpar)
         parameters = (
             {} if filter_parameters is None else dict(filter_parameters)
         )
@@ -847,7 +882,7 @@ class _SpectralFilterMixin:
             self.filter_name = filter
             filter_function = self.filters[filter]['q']
             self.q = lambda lam: filter_function(
-                lam, self.regpar, **self.filter_parameters
+                lam, self._filter_alpha, **self.filter_parameters
             )
         elif callable(filter):
             if parameters:
@@ -860,7 +895,7 @@ class _SpectralFilterMixin:
                 if filter.nin == 1:
                     self.q = filter
                 elif filter.nin == 2:
-                    self.q = lambda lam: filter(lam, self.regpar)
+                    self.q = lambda lam: filter(lam, self._filter_alpha)
                 else:
                     raise TypeError(Errors.type_error(
                         "A custom q-ufunc must have one or two inputs."
@@ -883,7 +918,7 @@ class _SpectralFilterMixin:
                         )) from error
                     self.q = filter
                 else:
-                    self.q = lambda lam: filter(lam, self.regpar)
+                    self.q = lambda lam: filter(lam, self._filter_alpha)
             elif not isinstance(filter, np.ufunc):
                 # Some extension callables expose no inspectable signature.
                 # Treat them as closed one-argument q-functions.
@@ -931,7 +966,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
     .. math::
         R_\alpha=G_X^{-1}U\,M q_\alpha(M^2)V^*G_Y.
 
-    Starting at ``init``, the one-step solver returns
+    Starting at ``init``, each solver step returns
     :math:`x_0+R_\alpha(data-Tx_0)`. The residual function is always derived
     from the filter by :math:`r_\alpha(t)=1-tq_\alpha(t)`.
 
@@ -946,10 +981,16 @@ class Spectral(_SpectralFilterMixin, RegSolver):
     parameters should be closed over the callable.
     Named filters are ``Tikhonov``, ``Iterated_Tikhonov``, ``Showalter``,
     ``Landweber``, ``Lardy``, ``Spectral_CutOff`` (truncated SVD), ``Seidman``,
-    and ``Truncated_SVD_2``. Iterative filters accept ``k`` through
-    ``filter_parameters``; Landweber additionally accepts ``mu``. If ``mu``
-    is omitted, :math:`\mu=1/(\alpha k)` is used. For Lardy, ``regpar`` is the
-    filter index :math:`\alpha/k`. 
+    and ``Truncated_SVD_2``. For alpha-based filters, ``regpar`` accepts
+    a positive scalar (one solution), an iterable, or ``None`` (a fresh
+    ``GeometricSequence(1., 0.5)``). Iterated Tikhonov keeps ``k`` fixed.
+    Landweber and Lardy instead accept an integer or iterable through ``k``
+    in ``filter_parameters``; the default is ``powers_of_two()``. Their
+    ``regpar`` is a fixed alpha (default 1). Lardy uses this fixed alpha in
+    every iteration; Landweber uses a fixed ``mu``, defaulting to ``1``.
+    Choose ``mu`` within the usual Landweber stability range for the operator.
+    ``self.regpar`` is the alpha or k of the current solution. Finite
+    sequences terminate after their final solution. The SVD is computed once.
 
     The registered filters are
 
@@ -980,7 +1021,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         init: ReadOnlyVector | None = None,
         logging_level: int | str = "INFO",
         filter: str | Callable[[float], float] = 'Spectral_CutOff',
-        regpar: float = 1.,
+        regpar: float | Iterable[float] | None = None,
         filter_parameters: dict[str, Any] | None = None,
         svd_options: dict[str, Any] | None = None,
     ) -> None:
@@ -1008,7 +1049,6 @@ class Spectral(_SpectralFilterMixin, RegSolver):
                 space_name='codomain'
             ))
 
-        self._set_filter(filter, regpar, filter_parameters)
         if setting.codomain_free:
             self.backprop_data = self.op.domain.empty()
             self.op.adjoint_data(self.data, out=self.backprop_data)
@@ -1035,10 +1075,21 @@ class Spectral(_SpectralFilterMixin, RegSolver):
             self.filtered_sv_op = self._self_adjoint_method.filtered_sv_op
             self.x = self._self_adjoint_method.x
             self.y = None
+            self.regpar = self._self_adjoint_method.regpar
+            self.regpars = self._self_adjoint_method.regpars
             return
 
+        self._init_parameters(filter, regpar, filter_parameters)
         self.SVD = SVD(setting, **({} if svd_options is None else svd_options))
         self.spec_domain = self.SVD.U.domain
+        self._update_inverse()
+
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        self.y = self.op.codomain.empty()
+        self.op(self.x, out=self.y)
+
+    def _update_inverse(self):
         coefficients = self._filter_coefficients(
             self.SVD.singular_values,
             lambda sigma: sigma,
@@ -1055,10 +1106,6 @@ class Spectral(_SpectralFilterMixin, RegSolver):
             * self.h_codomain.gram
         )
 
-        self.x = self.op.domain.empty()
-        self.op.domain.copyto(self.x, self.init)
-        self.y = self.op.codomain.empty()
-        self.op(self.x, out=self.y)
 
     @staticmethod
     def check_applicability(
@@ -1097,8 +1144,13 @@ class Spectral(_SpectralFilterMixin, RegSolver):
             self._self_adjoint_method.next()
             self.x = self._self_adjoint_method.x
             self.y = None
-            self.converge()
+            self.filtered_sv_op = self._self_adjoint_method.filtered_sv_op
+            self.regpar = self._self_adjoint_method.regpar
+            if self._self_adjoint_method.is_converged():
+                self.converge()
             return
+        self._activate_parameter()
+        self._update_inverse()
         residual = self.op.codomain.empty()
         self.op(self.init, out=residual)
         residual *= -1
@@ -1107,7 +1159,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         self.op.domain.copyto(self.x, self.init)
         self.x += correction
         self.op(self.x, out=self.y)
-        self.converge()
+        self._advance_parameters()
 
     def regularized_inverse(self) -> Operator:
         """Return the regularized inverse.
@@ -1149,7 +1201,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         init: ReadOnlyVector | None = None,
         logging_level: int | str = "INFO",
         filter: str | Callable[[float], float] = 'Tikhonov',
-        regpar: float = 1.,
+        regpar: float | Iterable[float] | None = None,
         filter_parameters: dict[str, Any] | None = None,
         svd_options: dict[str, Any] | None = None,
     ) -> None:
@@ -1177,7 +1229,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
                 space_name='codomain'
             ))
 
-        self._set_filter(filter, regpar, filter_parameters)
+        self._init_parameters(filter, regpar, filter_parameters)
         decomposition_options = (
             {} if svd_options is None else dict(svd_options)
         )
@@ -1188,6 +1240,14 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
             ))
         self.SVD = SVD(setting, as_eig=True, **decomposition_options)
         self.spec_domain = self.SVD.U.domain
+        self._update_inverse()
+
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        self.y = self.op.codomain.empty()
+        self.op(self.x, out=self.y)
+
+    def _update_inverse(self):
         coefficients = self._filter_coefficients(
             self.SVD.singular_values,
             lambda eigenvalue: 1.,
@@ -1203,10 +1263,6 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
             * self.h_domain.gram_inv
         )
 
-        self.x = self.op.domain.empty()
-        self.op.domain.copyto(self.x, self.init)
-        self.y = self.op.codomain.empty()
-        self.op(self.x, out=self.y)
 
     @staticmethod
     def check_applicability(
@@ -1236,6 +1292,8 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         return out, par
 
     def _next(self) -> None:
+        self._activate_parameter()
+        self._update_inverse()
         residual = self.op.codomain.empty()
         self.op(self.init, out=residual)
         residual *= -1
@@ -1244,7 +1302,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         self.op.domain.copyto(self.x, self.init)
         self.x += correction
         self.op(self.x, out=self.y)
-        self.converge()
+        self._advance_parameters()
 
     def regularized_inverse(self) -> Operator:
         """Return :math:`Uq_\alpha(M)U^*G_X^{-1}`."""
@@ -1258,7 +1316,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
 class Spectral_Tikhonov(Spectral):
     """Spectral Tikhonov regularization."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options=None):
         super().__init__(
             setting, filter='Tikhonov', regpar=regpar,
             svd_options=svd_options
@@ -1268,8 +1326,10 @@ class Spectral_Tikhonov(Spectral):
 class Spectral_IteratedTikhonov(Spectral):
     """Spectral iterated Tikhonov regularization."""
 
-    def __init__(
-        self, setting: Setting, regpar: float = 1., k: int = 1, *,
+    def __init__(self, 
+        setting: Setting, 
+        regpar: float | Iterable[float] | None = None, 
+        k: int = 1, *,
         svd_options=None
     ):
         super().__init__(
@@ -1281,7 +1341,11 @@ class Spectral_IteratedTikhonov(Spectral):
 class Spectral_Showalter(Spectral):
     """Showalter's spectral method."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 *, 
+                 svd_options=None):
         super().__init__(
             setting, filter='Showalter', regpar=regpar,
             svd_options=svd_options
@@ -1289,25 +1353,39 @@ class Spectral_Showalter(Spectral):
 
 
 class Spectral_Landweber(Spectral):
-    """Landweber's spectral filter."""
+    """Landweber filter with fixed stepsize and a sequence of counts ``k``.
 
-    def __init__(
-        self, setting: Setting, regpar: float = 1., k: int = 1,
-        stepsize: float | None = None, *, svd_options=None
+    ``k=None`` uses powers_of_two(), mimicing the standard sampling of regularization parameters alpha in other spectral methods; pass natural_numbers() to mimic the behavior of the non-spectral Landweber iterator
+    Each scalar k produces one solution. 
+
+    """
+
+    def __init__(self, 
+                 setting: Setting, 
+                 k: int | Iterable[int] | None = None,
+                stepsize: float | None = None, *, 
+                svd_options=None
     ):
         super().__init__(
-            setting, filter='Landweber', regpar=regpar,
+            setting, filter='Landweber', 
             filter_parameters={'k': k, 'mu': stepsize},
             svd_options=svd_options
         )
 
 
 class Spectral_Lardy(Spectral):
-    """Lardy's spectral method."""
+    """Lardy filter with fixed alpha ``regpar`` (default 1) and varying ``k``.
 
-    def __init__(
-        self, setting: Setting, regpar: float = 1., k: int = 1, *,
-        svd_options=None
+    ``k=None`` uses powers_of_two(); pass natural_numbers() for every count.
+    A scalar k produces one solution.
+    """
+
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 k: int | Iterable[int] | None = None, 
+                 *,
+                svd_options=None
     ):
         super().__init__(
             setting, filter='Lardy', regpar=regpar,
@@ -1318,7 +1396,7 @@ class Spectral_Lardy(Spectral):
 class Spectral_CutOff(Spectral):
     """Truncated singular-value decomposition (spectral cut-off)."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options=None):
         super().__init__(
             setting, filter='Spectral_CutOff', regpar=regpar,
             svd_options=svd_options
@@ -1328,7 +1406,10 @@ class Spectral_CutOff(Spectral):
 class Spectral_Seidman(Spectral):
     """Seidman's optimal spectral filtering."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 *, svd_options=None):
         super().__init__(
             setting, filter='Seidman', regpar=regpar,
             svd_options=svd_options
@@ -1338,7 +1419,10 @@ class Spectral_Seidman(Spectral):
 class Spectral_TruncatedSVD2(Spectral):
     """Continuous truncated-SVD filter ``min(1/lambda, 1/alpha)``."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 *, svd_options=None):
         super().__init__(
             setting, filter='Truncated_SVD_2', regpar=regpar,
             svd_options=svd_options
@@ -1348,7 +1432,10 @@ class Spectral_TruncatedSVD2(Spectral):
 class SpectralSelfAdjoint_Lavrentiev(Spectral_SelfAdjoint):
     """Lavrentiev regularization of a positive self-adjoint operator."""
 
-    def __init__(self, setting: Setting, regpar: float = 1., *, svd_options=None):
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 *, svd_options=None):
         super().__init__(
             setting, filter='Tikhonov', regpar=regpar,
             svd_options=svd_options
@@ -1358,9 +1445,11 @@ class SpectralSelfAdjoint_Lavrentiev(Spectral_SelfAdjoint):
 class SpectralSelfAdjoint_Richardson(Spectral_SelfAdjoint):
     """Richardson iteration represented by its spectral filter."""
 
-    def __init__(
-        self, setting: Setting, regpar: float = 1., k: int = 1,
-        stepsize: float | None = None, *, svd_options=None
+    def __init__(self, 
+                 setting: Setting, 
+                 regpar: float | Iterable[float] | None = None, 
+                 k: int | Iterable[int] | None = None,
+                stepsize: float | None = None, *, svd_options=None
     ):
         super().__init__(
             setting, filter='Landweber', regpar=regpar,
