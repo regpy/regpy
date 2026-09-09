@@ -6,8 +6,6 @@ from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 
 from regpy.stoprules import (
     CountIterations,
@@ -164,7 +162,7 @@ def convergence_plots(
     plot_over_time: bool = False,
     methods: list[str] | None = None,
     title: str | None = None,
-) -> tuple[Figure, np.ndarray]:
+) :
     """Plot convergence histories for selected methods that have been run.
 
     The function inspects the stopping rule stored for every method in
@@ -207,6 +205,8 @@ def convergence_plots(
         aligned with a timing counter.
     """
     import matplotlib.pyplot as plt    
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
     if not isinstance(plot_over_time, (bool, np.bool_)):
         raise TypeError("plot_over_time must be boolean.")
 
