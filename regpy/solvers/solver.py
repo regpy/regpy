@@ -1,20 +1,37 @@
+"""Solver lifecycle, generator-based iteration, and stopping-rule drivers."""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+
 from regpy.vecsps import Vector
 from regpy.stoprules import StopRule, NoneRule
 from regpy.util import ClassLogger, Errors
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from regpy.operators import Operator
+    from regpy.functionals import Functional
+    from regpy.hilbert import HilbertSpace
     from .setting import Setting
 
 __all__ = ["Solver", "RegSolver"]
 
 class Solver:
     r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate stored in and value as attributes
+    repeatedly calling the `next` method. They expose the current iterate and its value as attributes
     `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
     may or may not be the same arrays as before, modified in-place).
 
-    There are some convenience methods to run the solver with a `regpy.stoprules.StopRule`.
+    Each call to ``iter(solver)`` creates a generator driving the same mutable
+    solver state; it does not restart the solver. The solver is iterable but
+    does not itself implement ``__next__``. Use ``solver.next()`` for a single
+    step or ``next(iter(solver))`` to obtain a pair after a step.
+
+    Yielded vectors are not copied. Copy them when retaining snapshots of
+    the iteration history. Both components may be ``None``.
+
+    Convenience methods run the solver with a `regpy.stoprules.StopRule`.
 
     Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
     the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
@@ -34,14 +51,14 @@ class Solver:
 
     def __init__(self, 
                  x:Vector | None = None,
-                 y:Vector | None = None):
-        self.x = x
+                 y:Vector | None = None) -> None:
+        self.x: Vector | None = x
         """The current iterate."""
-        self.y = y
+        self.y: Vector | None = y
         """The value at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
-        self.__converged = False
-        self.iteration_step_nr = 0
+        self.__converged: bool = False
+        self.iteration_step_nr: int = 0
         """Current number of iterations performed."""
 
     def converge(self) -> None:
@@ -51,6 +68,10 @@ class Solver:
         self.__converged = True
 
     def is_converged(self) -> bool:
+        """Return whether :meth:`converge` has been called.
+
+        An external stopping rule does not by itself set this flag.
+        """
         return self.__converged
 
     def next(self) -> bool:
@@ -68,7 +89,7 @@ class Solver:
         self._next()
         return True
 
-    def _next(self):
+    def _next(self) -> None:
         r"""Perform a single iteration. This is an abstract method called from the public method
         `next`. Child classes should override it.
 
@@ -77,13 +98,17 @@ class Solver:
         """
         raise NotImplementedError
 
-    def __iter__(self):
-        r"""Return an iterator on the iterates of the solver.
+    def __iter__(self) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+        r"""Generate pairs after successive solver steps, excluding the initial pair.
+
+        Execution starts when the generator is advanced. It ends when
+        :meth:`next` returns ``False``. A step that marks convergence still
+        yields its resulting pair. No vector copies are made.
 
         Yields
         ------
-        tuple of Vectors
-            The (x, y) pair of the current iteration.
+        tuple[Vector | None, Vector | None]
+            The current pair, with either component possibly unavailable.
         """
         while self.next():
             yield self.x, self.y
@@ -128,16 +153,21 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ):
-        r"""Generator that runs the solver with the given stoprule. This is a convenience method
-        that implements a simple generator loop running the solver until it either converges or the
-        stoprule triggers.
+    ) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+        r"""Generate current iterates under control of a stopping rule.
+
+        The rule is checked before each attempted step, including at the
+        initial state. Every completed step is yielded before the next rule
+        check. An initially satisfied rule yields nothing. Calling this method
+        creates a generator: initialization and argument validation occur only
+        when it is advanced. It accepts no meaningful sent values and returns
+        no final value. Yielded vectors are references, not snapshots.
 
         Parameters
         ----------
         stoprule : regpy.stoprules.StopRule, optional
             The stoprule to be used. If omitted, stopping will only be
-            based on the return value of `next`.
+            based on the return value of `next` and on ``max_it``.
         max_it : int or None, optional
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
@@ -145,9 +175,9 @@ class Solver:
 
         Yields
         ------
-        tuple of Vectors
-            The (x, y) pair of the current iteration, or the solution chosen by
-            the stoprule.
+        tuple[Vector | None, Vector | None]
+            The current ``(x, y)`` pair after a step. The stopping rule's best
+            iterate is not substituted here; use :meth:`run` to select it.
 
         Raises
         ------
@@ -171,16 +201,22 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ):
-        r"""Generator that runs the solver with the given stoprule. This is a convenience method
-        that implements a simple generator loop running the solver until it either converges or the
-        stoprule triggers.
+    ) -> Generator[tuple[Vector | None, Vector | None], None, None]:
+        r"""Generate current iterates under control of a stopping rule.
+
+        One step is attempted and the current pair is yielded before the
+        first stopping-rule check. If already converged, the solver performs
+        no step but still yields its current pair once. Subsequent steps are
+        checked and yielded as in :meth:`while_`. Calling this method creates
+        a generator; validation is deferred until it is advanced. It accepts
+        no meaningful sent values and returns no final value. Vectors are
+        yielded by reference.
 
         Parameters
         ----------
         stoprule : regpy.stoprules.StopRule, optional
             The stoprule to be used. If omitted, stopping will only be
-            based on the return value of `next`.
+            based on the return value of `next` and on ``max_it``.
         max_it : int or None, optional
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
@@ -188,9 +224,9 @@ class Solver:
 
         Yields
         ------
-        tuple of Vectors
-            The (x, y) pair of the current iteration, or the solution chosen by
-            the stoprule.
+        tuple[Vector | None, Vector | None]
+            The current ``(x, y)`` pair after a step. The stopping rule's best
+            iterate is not substituted here; use :meth:`run` to select it.
 
         Raises
         ------
@@ -199,7 +235,7 @@ class Solver:
             integer or ``None``.
         ValueError
             If ``max_it`` is negative or zero. Since :meth:`until` always
-            performs an initial iteration, use :meth:`while_` or :meth:`run`
+            attempts an initial iteration, use :meth:`while_` or :meth:`run`
             when zero iterations should be allowed.
         """
         stoprule = self._add_max_iterations(
@@ -222,7 +258,7 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ):
+    ) -> tuple[Vector | None, Vector | None]:
         r"""Run the solver with the given stoprule.
 
         Parameters
@@ -234,6 +270,13 @@ class Solver:
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
             ``stoprule``. Must be non-negative. Defaults to ``None``.
+
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            The pair selected by ``stoprule.best_iterate()``, or the current
+            pair if no best iterate is available. No copies are made. With
+            zero permitted steps the initial state can be returned.
 
         Raises
         ------
@@ -285,15 +328,15 @@ class RegSolver(Solver):
 
         if not isinstance(setting, Setting):
             raise TypeError(Errors.not_instance(setting, Setting))
-        self.op = setting.op
-        self.penalty = setting.penalty
-        self.h_domain = setting.h_domain
+        self.op: Operator = setting.op
+        self.penalty: Functional = setting.penalty
+        self.h_domain: HilbertSpace = setting.h_domain
         if not setting.codomain_free:
-            self.data_fid = setting.data_fid
-            self.h_codomain = setting.h_codomain
-        self.setting = setting
+            self.data_fid: Functional = setting.data_fid
+            self.h_codomain: HilbertSpace = setting.h_codomain
+        self.setting: Setting = setting
         if setting.is_tikhonov:
-            self.regpar = setting.regpar
+            self.regpar: float | None = setting.regpar
         super().__init__(x, y)
 
     def runWithDP(
@@ -302,8 +345,29 @@ class RegSolver(Solver):
         delta: float = 0,
         tau: float = 2.1,
         max_its: int = 1000,
-    ) -> tuple[Vector, Vector]:
-        r"""Run the solver with Morozov's discrepancy principle."""
+    ) -> tuple[Vector | None, Vector | None]:
+        r"""Run the solver with Morozov's discrepancy principle.
+
+        Requires an explicit codomain Hilbert space. The discrepancy rule is
+        combined with an iteration cap; :meth:`run` returns the selected pair.
+        A warning is logged if the active rule is not the discrepancy rule.
+
+        Parameters
+        ----------
+        data : Vector
+            Observed data used to measure the residual in ``h_codomain``.
+        delta : float, optional
+            Noise-level bound. Defaults to zero.
+        tau : float, optional
+            Discrepancy multiplier. Defaults to 2.1.
+        max_its : int, optional
+            Iteration cap. Defaults to 1000.
+
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Selected reconstruction and its forward value, when available.
+        """
         from regpy.stoprules import CountIterations, Discrepancy
 
         stoprule = (
@@ -324,7 +388,19 @@ class RegSolver(Solver):
         return reco, reco_data
 
     def compute_dual(self) -> None:
-        """Compute dual and primal components for a Tikhonov setting."""
+        """Complete and store primal and dual tuples for a Tikhonov setting.
+
+        Uses ``(self.x, self.y)`` and an existing ``self.dual`` tuple (or
+        ``None``). Assigns the completed tuples to ``self.primal`` and
+        ``self.dual``; these attributes are data, not accessor methods.
+        Subclasses using callable primal/dual accessors should not use this
+        helper without adapting it.
+
+        Raises
+        ------
+        RuntimeError
+            If the setting has no regularization parameter.
+        """
         if not self.setting.is_tikhonov:
             raise RuntimeError(Errors.generic_message(
                 "It is not possible to compute the dual in the "
