@@ -17,7 +17,7 @@ from .solver import RegSolver, Solver
 from .setting import Setting
 from .special_settings import *
 #from .util import convergence_plots
-from util import  GeometricSequence, powers_of_two, natural_numbers, squares
+from .util import  GeometricSequence, powers_of_two, natural_numbers, squares
 from . import linear
 from . import nonlinear
 
