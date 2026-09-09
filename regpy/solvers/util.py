@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -207,6 +206,7 @@ def convergence_plots(
         available, or if time plotting was requested but a history cannot be
         aligned with a timing counter.
     """
+    import matplotlib.pyplot as plt    
     if not isinstance(plot_over_time, (bool, np.bool_)):
         raise TypeError("plot_over_time must be boolean.")
 
