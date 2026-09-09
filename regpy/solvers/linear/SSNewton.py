@@ -138,7 +138,8 @@ class SemiSmoothNewton(RegSolver):
                                             op = projection.adjoint,
                                             hessian = lambda x: Composition(projection.adjoint, hess_R_full, projection,
                                                                             inverse = projection.adjoint * hess_R_full.inverse * projection
-                                                                            )
+                                                                            ),
+                                            h_domain=self.h_domain,
                                             )
             """Define a quadratic approximation of the setting at the current iterate restricted to the inactive set, 
                which respects the solution on the active set that we have already computed.
@@ -158,7 +159,7 @@ class SemiSmoothNewton(RegSolver):
             self.x[self.inactive] = aux[self.inactive]
         self.y = self.op(self.x)
 
-        S_taylor.data = 0.*self.y # Has been changed by data in quad_setting!
+        S_taylor.data = self.op.codomain.zeros() # Has been changed by data in quad_setting!
         residual = self.op.adjoint(S_taylor.subgradient(self.y))
         residual += self.regpar*full_R_taylor.subgradient(self.x)
         residual = self.setting.h_domain.gram_inv(residual)
