@@ -328,22 +328,26 @@ class TestOperatorNorm:
             forward_norm, rel=2e-2
         )
 
-    def test_codomain_free_delegates_to_norm_sa(self, monkeypatch):
+    @pytest.mark.parametrize("reltol", (1e-3, 0.05))
+    def test_codomain_free_delegates_to_norm_sa(self, monkeypatch, reltol):
         op = _SelfAdjointMatrix(np.diag([2., 1.]))
         h_domain = L2(op.domain)
         normal_operator = op.adjoint_eval
         call = {}
 
-        def fake_norm_sa(h_domain=None, method=None):
+        def fake_norm_sa(h_domain=None, method=None, reltol=None):
             call["h_domain"] = h_domain
             call["method"] = method
+            call["reltol"] = reltol
             return 25.
 
         monkeypatch.setattr(normal_operator, "norm_sa", fake_norm_sa)
         assert op.norm(
-            h_domain, method="power", codomain_free=True
+            h_domain, method="power", codomain_free=True, reltol=reltol
         ) == pytest.approx(5.)
-        assert call == {"h_domain": h_domain, "method": "power"}
+        assert call == {
+            "h_domain": h_domain, "method": "power", "reltol": reltol,
+        }
 
     def test_validation(self):
         self_adjoint = _SelfAdjointMatrix(np.diag([2., 1.]))

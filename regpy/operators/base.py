@@ -997,6 +997,7 @@ class Operator:
         h_codomain: HilbertSpace | None = None,
         method: str | None = None,
         codomain_free: bool = False,
+        reltol: float = 1e-2,
     ) -> float:
         r"""Approximate the norm of a linear operator between Hilbert spaces.
 
@@ -1023,6 +1024,15 @@ class Operator:
             If true, the method avoids any use of vectors in the image space of the operator by using 
             :attr:`adjoint_eval` and :meth:`norm_sa`.
 
+        reltol: float [default: 1e-2]
+            Positive, finite relative convergence tolerance. Passed to
+            Lanczos as its eigenvalue tolerance; for power iteration it
+            bounds the residual divided by the current eigenvalue magnitude.
+            A looser value such as 0.05 can reduce operator evaluations.
+            This is an iterative convergence criterion, not a guaranteed
+            relative error bound for the returned norm (in particular,
+            Lanczos works with a shifted operator).
+
         Returns
         -------
         scalar
@@ -1033,6 +1043,15 @@ class Operator:
         NotImplementedError
             If the operator is nonlinear or the method is not implemented.
         """
+
+        if isinstance(reltol, (bool, np.bool_)) or not np.isscalar(reltol) or not np.isrealobj(reltol):
+            raise ValueError("reltol must be a positive, finite real scalar.")
+        try:
+            reltol = float(reltol)
+        except (TypeError, ValueError) as error:
+            raise ValueError("reltol must be a positive, finite real scalar.") from error
+        if not np.isfinite(reltol) or reltol <= 0:
+            raise ValueError("reltol must be a positive, finite real scalar.")
 
         if(not self.linear):
             raise NotImplementedError(util.Errors.not_linear_op(
@@ -1052,6 +1071,7 @@ class Operator:
             return sqrt(self.adjoint_eval.norm_sa(
                 h_domain=h_domain,
                 method=method,
+                reltol=reltol,
             ))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
@@ -1061,14 +1081,14 @@ class Operator:
                 self.codomain,
                 add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_codomain} on codomain."))
         if method == "power":
-            return self._power_method(h_domain,h_codomain)
+            return self._power_method(h_domain, h_codomain, stopping_rule=reltol)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
             op = self.adjoint * h_codomain.gram * self
             # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
             return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
                               Minv=SciPyLinearOperator(h_domain.gram_inv),
-                              tol=0.01)[0][0]-1.)
+                              tol=reltol)[0][0]-1.)
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -1079,6 +1099,7 @@ class Operator:
         self,
         h_domain: HilbertSpace | None = None,
         method: str | None = None,
+        reltol: float = 1e-2,
     ) -> float:
         r"""Approximate the norm of a self-adjoint map into a dual space.
 
@@ -1107,6 +1128,11 @@ class Operator:
             ``'lanczos'`` if this is not set. Alternative: ``'power'`` for
             power iteration.
 
+        reltol: float [default: 1e-2]
+            Positive, finite relative convergence tolerance. Passed to
+            Lanczos as its eigenvalue tolerance; for power iteration it
+            bounds the residual divided by the current eigenvalue magnitude.    
+
         Returns
         -------
         scalar
@@ -1120,6 +1146,15 @@ class Operator:
             If the operator is not labelled self-adjoint or ``h_domain`` does
             not belong to its domain.
         """
+        if isinstance(reltol, (bool, np.bool_)) or not np.isscalar(reltol) or not np.isrealobj(reltol):
+            raise ValueError("reltol must be a positive, finite real scalar.")
+        try:
+            reltol = float(reltol)
+        except (TypeError, ValueError) as error:
+            raise ValueError("reltol must be a positive, finite real scalar.") from error
+        if not np.isfinite(reltol) or reltol <= 0:
+            raise ValueError("reltol must be a positive, finite real scalar.")
+
         if not self.linear:
             raise NotImplementedError(util.Errors.not_linear_op(
                 self,
@@ -1144,7 +1179,7 @@ class Operator:
 
         method = getattr(self, 'default_norm_method', 'lanczos') if method is None else method
         if method == "power":
-            return self._power_method_sa(h_domain)
+            return self._power_method_sa(h_domain, stopping_rule=reltol)
         elif method == "lanczos":
             from scipy.sparse.linalg import eigsh
             shifted_op = SciPyLinearOperator(self + h_domain.gram)
@@ -1157,7 +1192,7 @@ class Operator:
                 Minv=gram_inv,
                 which='LA',
                 return_eigenvectors=False,
-                tol=0.01,
+                tol=reltol,
             )[0] - 1.
             smallest = eigsh(
                 shifted_op,
@@ -1166,7 +1201,7 @@ class Operator:
                 Minv=gram_inv,
                 which='SA',
                 return_eigenvectors=False,
-                tol=0.01,
+                tol=reltol,
             )[0] - 1.
             estimate = max(abs(largest), abs(smallest))
             roundoff = 100 * np.finfo(float).eps
@@ -1182,7 +1217,7 @@ class Operator:
         h_domain: HilbertSpace,
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-12,
+        stopping_rule: float = 1e-2
     ) -> float:
         r"""Approximate the operator norm by power iteration.
 
@@ -1197,6 +1232,10 @@ class Operator:
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
         """
         x = self.domain.rand()
+        x_norm = h_domain.norm(x)
+        if x_norm == 0:
+            raise ValueError("Power iteration requires a nonzero initial vector.")
+        x = x / x_norm
         relative_residual = inf
         op = self.adjoint * h_codomain.gram * self
         for _ in range(max_iter):
@@ -1207,7 +1246,7 @@ class Operator:
             lmb = sqrt(self.domain.vdot(y, ystar).real)
             if lmb == 0:
                 return 0.
-            relative_residual = h_domain.norm(y - lmb * x)
+            relative_residual = h_domain.norm(y - lmb * x) / lmb
             x = y/lmb
         return sqrt(lmb)
 
@@ -1215,7 +1254,7 @@ class Operator:
         self,
         h_domain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-12,
+        stopping_rule: float = 1e-2,
     ) -> float:
         r"""Approximate the self-adjoint norm by power iteration.
 
@@ -1230,6 +1269,10 @@ class Operator:
         stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
         """
         x = self.domain.rand()
+        x_norm = h_domain.norm(x)
+        if x_norm == 0:
+            raise ValueError("Power iteration requires a nonzero initial vector.")
+        x = x / x_norm
         relative_residual = inf
         for _ in range(max_iter):
             if relative_residual < stopping_rule:
@@ -1241,7 +1284,7 @@ class Operator:
                 return 0.
             rayleigh = self.domain.vdot(x, ystar).real
             signed_lmb = -lmb if rayleigh < 0 else lmb
-            relative_residual = h_domain.norm(y - signed_lmb * x)
+            relative_residual = h_domain.norm(y - signed_lmb * x) / lmb
             x = y/lmb
         return lmb
     
