@@ -3,6 +3,7 @@ import numpy as np
 import logging as log
 
 from regpy.util import Errors
+from regpy.vecsps import NumPyVectorSpace
 from regpy.operators import CoordinateMask
 from regpy.operators.base import Composition
 from regpy.hilbert import GramHilbertSpace
@@ -34,18 +35,23 @@ class SemiSmoothNewton(RegSolver):
     r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
 
     .. math::
-        S_{g^{\delta}}(Tf) + regpar * R(f) 
+        \mathcal{S}_{g^{\delta}}(Tf) + \alpha * \mathcal{R}(f) 
 
-    subject to bilateral constraints :math:`psi_{minus} \leq f \leq psi_{plus}` 
-    for a separable smooth penalty functional :math:`R` and a smooth, strongly convex data functional :math:`S_{g^{\delta}}` 
+    subject to bilateral constraints 
+
+    ..math::
+        psi_{minus} \leq f \leq psi_{plus} 
+    
+    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth, strongly convex data functional :math:`\mathcal{S}_{g^{\delta}}` 
     and a linear operator :math:`T`.
     
     Parameters
     ----------
     setting: Setting
-        The setting. 
-    x0: Vector, default: None
-        Zeroth iterate. If None, x0=setting.op.doamin.zeros(). x0 must be feasible.
+        The setting. The operator domain must be a NumPyVectorSpace. 
+    init: np.ndarray or None, default: None
+        Zeroth iterate. If None, it is taken from the setting. 
+        init must be feasible.
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
     logging_level: Loglevel
@@ -54,9 +60,14 @@ class SemiSmoothNewton(RegSolver):
         default: logging.INFO
     """
 
-    def __init__(self, setting,
-                 cg_pars = None, logging_level = "INFO", cg_logging_level = "WARNING",x0=None,
-                 psi_plus = None, psi_minus=None,
+    def __init__(self, 
+                 setting: Setting,
+                 init: np.ndarray | None = None,
+                 psi_plus: np.ndarray | None = None, 
+                 psi_minus: np.ndarray | None = None,
+                 cg_pars = None, 
+                 logging_level = "INFO", 
+                 cg_logging_level = "WARNING",
                  **kwargs
                  ):
         super().__init__(setting)
@@ -76,9 +87,7 @@ class SemiSmoothNewton(RegSolver):
             self.psi_minus = np.broadcast_to(self.R.dom_l, setting.op.domain.shape) if isinstance(self.R.dom_l,(float,int)) else self.R.dom_l
         self.Rpp_plus, self.Rpp_minus = self._get_second_R_derivatives_at_bound_constraints()
         regpar= setting.regpar
-        x0 = x0 if x0 is not None else np.clip(self.op.domain.zeros(),a_min=self.psi_minus,a_max= self.psi_plus)
-        if not x0 in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp('x0 must be in op.domain',x0))
+        x0 = setting.get_or_update_initial_guess(init, update_setting=False)
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         y0 = self.op(x0)
@@ -103,10 +112,10 @@ class SemiSmoothNewton(RegSolver):
         if not (self.active_plus).any() and not (self.active_minus).any():
             self.log.info('Stopped at 0th iterate.')
             self.converge()
-        self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(self.iteration_step_nr,self.tikhcg.iteration_step_nr,
-                                                                            (1.*self.active_minus+self.active_plus).sum(),0 )
+        self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(
+            self.iteration_step_nr,self.tikhcg.iteration_step_nr,
+            (1.*self.active_minus+self.active_plus).sum(),0 )
         )
-
 
     def _next(self):
         """compute active and inactive sets"""
@@ -133,18 +142,20 @@ class SemiSmoothNewton(RegSolver):
             S_taylor = quadTaylor(self.S,self.y)
             """... and a quadratic Taylor approximation of the full penalty functional"""
             full_R_taylor = quadTaylor(self.R,self.x)            
-            """ ... as wel as its restriction to the inactive set.""" 
+            """ ... as well as its restriction to the inactive set.""" 
             hess_R_full =  full_R_taylor.gram
-            constr_R_taylor = Composed(full_R_taylor,
-                                            op = projection.adjoint,
-                                            hessian = lambda x: Composition(projection.adjoint, hess_R_full, projection,
-                                                                            inverse = projection.adjoint * hess_R_full.inverse * projection
-                                                                            ),
-                                            h_domain=self.h_domain,
-                                            )
+            constr_R_taylor = Composed(
+                full_R_taylor,
+                op = projection.adjoint,
+                hessian = lambda x: Composition(projection.adjoint, 
+                    hess_R_full, projection,
+                    inverse = projection.adjoint * hess_R_full.inverse * projection
+                    ),
+                h_domain=self.h_domain,
+                )
             """Define a quadratic approximation of the setting at the current iterate restricted to the inactive set, 
-               which respects the solution on the active set that we have already computed.
-               Since we assume separability of the penalty term, the solution on the active set only affects the data term.
+            which respects the solution on the active set that we have already computed.
+            Since we assume separability of the penalty term, the solution on the active set only affects the data term.
             """
             quad_setting = Setting(self.op * projection, 
                                   constr_R_taylor,
@@ -175,13 +186,21 @@ class SemiSmoothNewton(RegSolver):
                   + (self.op.domain.logical_and(self.active_minus, self.op.domain.logical_not(self.active_minus_old))).sum() 
         removed_ind = (self.op.domain.logical_and(self.active_plus_old, self.op.domain.logical_not(self.active_plus))).sum() \
                 + (self.op.domain.logical_and(self.active_minus_old, self.op.domain.logical_not(self.active_minus))).sum()
-        self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(self.iteration_step_nr,
-                                                                            tikhcg.iteration_step_nr if not self.active.all() else 0,
-                                                                            added_ind, removed_ind
-                                                                            )
-                        )
+        self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(
+            self.iteration_step_nr,
+            tikhcg.iteration_step_nr if not self.active.all() else 0,
+            added_ind, 
+            removed_ind
+            )
+        )
         if added_ind+removed_ind==0:
             self.converge()
+
+    def primal(self):
+        projected_x = self.x.copy()
+        projected_x[self.active_minus] = self.psi_minus
+        projected_x[self.active_plus] = self.psi_plus
+        return (projected_x, self.op(projected_x))
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
@@ -201,6 +220,8 @@ class SemiSmoothNewton(RegSolver):
             out['info'] += 'Penalty term not separable. '
         if not 'hessian' in setting.penalty.methods:
             out['info'] += 'Penalty term not twice differentiable. '
+        if not isinstance(setting.op.domain, NumPyVectorSpace):
+            out['info'] += 'Operator domain not a NumPyVectorSpace. '
         out['applicable'] = out['info']==''
         out['rate'] = np.nan
         return out, None
