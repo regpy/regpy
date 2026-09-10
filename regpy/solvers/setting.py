@@ -134,7 +134,7 @@ class Setting:
                  default_linear_regmethod: str = 'genTikh', 
                  default_nonlinear_regmethod: str = 'IRN', 
                  default_inner_solver: str|None = None, 
-                 default_nl_minimizer: str|None = None,             
+                 default_nl_minimizer: str|None = 'genFISTA',             
                  _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()                 
                  ) -> None:
         if not isinstance(op,Operator):
@@ -1067,7 +1067,7 @@ class Setting:
                             self._default_nonlinear_regmethod
             )
         else:
-            if self._default_inner_solver is None: 
+            if self._default_inner_solver is None and self.is_convex: 
                 self._default_inner_solver = self.select_best_method()
             return (
                 self._default_inner_solver
@@ -1110,6 +1110,11 @@ class Setting:
             Custom distances called as ``dist((current, reference))`` by the
             error monitor. If omitted, the corresponding Hilbert-space norm is
             used when available.
+        logging_level: int or str, optional
+            Logging level for the solver and the stopping-rule tree used by
+            this run, including iteration limits and error monitors. Defaults
+            to ``self.log.level``. An explicit value takes precedence over
+            registered method parameters and configured rule levels.
         **kwargs: dict
             Arguments to be passed to the method.
 
@@ -1126,10 +1131,10 @@ class Setting:
             self.evaluate_methods([method_name]) 
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting: '+themethod['info'])
-        if 'logging_level' not in kwargs: 
-            kwargs['logging_level'] = self.log.level
+        logging_level = kwargs.get('logging_level', self.log.level)
         if 'parameters' in themethod:
             kwargs.update(themethod['parameters'])
+        kwargs['logging_level'] = logging_level
 
         if self.is_tikhonov:
             primal = themethod['primal']
@@ -1161,11 +1166,11 @@ class Setting:
         elif stoprule is _DEFAULT_STOPRULE:
             default_max_it = 1000 if max_it is None else max_it
             iteration_limit = CountIterations(
-                default_max_it, timing=True, logging_level='DEBUG'
+                default_max_it, timing=True, logging_level=logging_level
             )
             if self.is_tikhonov and self.is_convex:
                 stoprule = (
-                    DualityGapStopping(tol=1e-10, logging_level='DEBUG')
+                    DualityGapStopping(tol=1e-10, logging_level=logging_level)
                     + iteration_limit
                 )
             else:
@@ -1179,7 +1184,7 @@ class Setting:
 
         if max_it is not None:
             stoprule = stoprule + CountIterations(
-                max_it, timing=True, logging_level='DEBUG'
+                max_it, timing=True, logging_level=logging_level
             )
         if ref_sol is not None:
             monitor_ref_sol = ref_sol
@@ -1242,7 +1247,7 @@ class Setting:
                 monitor_ref_sol,
                 dist_x=monitor_dist_x,
                 dist_y=monitor_dist_y,
-                logging_level='DEBUG',
+                logging_level=logging_level,
             )
         elif dist_x is not None or dist_y is not None:
             raise ValueError(Errors.value_error(
@@ -1254,6 +1259,18 @@ class Setting:
         themethod['stoprule'] = stoprule.copy_and_reset()
         
         solver = themethod['class'](thesetting,**kwargs)
+        # Configure the executed copy, including nested combined rules.
+        # Instance logger overrides require the instance-local ClassLogger.
+        pending_rules = [themethod['stoprule']]
+        seen_rules = set()
+        while pending_rules:
+            rule = pending_rules.pop()
+            if id(rule) in seen_rules:
+                continue
+            seen_rules.add(id(rule))
+            rule.log = solver.log.getChild(type(rule).__name__)
+            rule.log.setLevel(logging_level)
+            pending_rules.extend(getattr(rule, 'rules', ()))
         x,y = solver.run(themethod['stoprule'])
         
         if self.is_tikhonov and not primal:

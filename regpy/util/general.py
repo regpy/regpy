@@ -1,5 +1,5 @@
 from functools import wraps
-from logging import getLogger, INFO, StreamHandler, Formatter, WARNING
+from logging import Logger, getLogger, INFO, StreamHandler, Formatter, WARNING
 
 import numpy as np
 
@@ -169,25 +169,40 @@ class Errors:
 
 
 class ClassLogger:
-    """The [`logging.Logger`][1] instance. Every subclass has a separate instance, named by its
-    fully qualified name. Subclasses should use it instead of `print` for any kind of status
-    information to allow users to control output formatting, verbosity and persistence.
+    """Provide a default class logger with optional instance overrides.
 
-    [1]: https://docs.python.org/3/library/logging.html#logging.Logger
+    The default logger is named by the concrete class's ``__qualname__``.
+    Its cache is local to that class rather than inherited from a base class.
+    Instances of the same class share this default logger, including its
+    level and handlers.
 
-    Descriptor that provides a per-class `logging.Logger`.
+    Assigning ``obj.log = logger`` overrides the logger for that object only.
+    ``del obj.log`` removes this override and restores the class default.
+    This allows an inner stopping rule to use a solver's child logger without
+    changing the loggers used by unrelated rules.
 
-    - Default name: "<module>.<qualname>"
-    - Can be overridden by assigning a logger to `MyClass.log`.
+    Assigning ``MyClass.log = logger`` replaces the descriptor on that class
+    through normal Python class assignment; it does not call ``__set__``.
+    Use instance assignment when retaining descriptor behavior is desired.
     """
 
-    def __get__(self,instance, owner):
-        logger = getattr(owner, "_log", None)
-        if logger is None:
-            # Otherwise build a default logger for the class
-            logger = getLogger(f"{owner.__qualname__}")
-            logger.setLevel(WARNING)
+    def __get__(
+        self, instance: object | None, owner: type | None = None
+    ) -> Logger:
+        if owner is None:
+            if instance is None:
+                raise TypeError("ClassLogger requires an instance or owner.")
+            owner = type(instance)
+        if instance is not None:
+            logger = vars(instance).get("_log")
+            if logger is not None:
+                return logger
 
+        # Do not inherit a logger cached on a base class.
+        logger = vars(owner).get("_log")
+        if logger is None:
+            logger = getLogger(owner.__qualname__)
+            logger.setLevel(WARNING)
             if logger.handlers:
                 logger.handlers = []
             handler = StreamHandler()
@@ -200,9 +215,15 @@ class ClassLogger:
             owner._log = logger
         return logger
 
-    def __set__(self, instance, value):
-        # Allow replacing the class logger
-        type(instance)._log = value
+    def __set__(self, instance: object, value: Logger) -> None:
+        """Override the logger for one instance without modifying its class."""
+        if not isinstance(value, Logger):
+            raise TypeError("log must be a logging.Logger instance.")
+        vars(instance)["_log"] = value
+
+    def __delete__(self, instance: object) -> None:
+        """Remove an instance override and restore the default class logger."""
+        vars(instance).pop("_log", None)
 
 class memoized_property:
     def __init__(self, func):

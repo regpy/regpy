@@ -223,6 +223,9 @@ class FISTA(RegSolver):
         self.t = self.t_old = 0.
         self.q = self.tau * self.mu / (1 + self.tau * self.mu_penalty)
 
+    def primal(self):
+        return (self.x, self.y)
+
     @staticmethod
     def check_applicability(setting) -> tuple[dict, dict]:
         """Check whether ``setting`` provides the operations FISTA needs.

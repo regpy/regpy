@@ -8,7 +8,7 @@ from regpy.vecsps import Vector
 
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
-from ..linear import SemismoothNewton_bilateral
+from ..linear import SemiSmoothNewton
 
 __all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
 

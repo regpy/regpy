@@ -165,8 +165,6 @@ class ForwardBackwardSplitting(RegSolver):
             out["info"] += "Setting has no regularization parameter. "
         if "proximal" not in setting.penalty.methods:
             out["info"] += "Penalty has no prox method. "
-        if "subgradient" not in setting.data_fid.methods:
-            out["info"] += "Data fidelity term has no gradient. "
         if not setting.codomain_free:
             if "subgradient" not in setting.data_fid.methods:
                 out["info"] += "Missing subgradient of data fidelity functional. "
