@@ -11,7 +11,7 @@ from regpy.hilbert import HilbertSpace
 from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
 from regpy.stoprules import (
-    StopRule, DualityGapStopping, CountIterations, ErrorMonitor,
+    StopRule, DualityGapStopping, Discrepancy, CountIterations, ErrorMonitor,
 )
 __all__ = [
     "Setting",
@@ -1109,8 +1109,12 @@ class Setting:
             Stopping rule. An explicit value overrides a rule configured by
             :meth:`set_stoprule` for this run only. By default, a configured
             rule is used if present; otherwise convex Tikhonov methods use a
-            duality-gap rule combined with 1000 maximum iterations and other
-            methods use 1000 maximum iterations. If None, a previously stored
+            duality-gap rule combined with 1000 maximum iterations. Settings
+            without a regularization parameter and with deterministic noise
+            use a discrepancy rule with the stored absolute noise level and
+            tau=2.5, combined with 1000 maximum iterations. Other settings use
+            only the iteration limit. An explicit max_it overrides the default
+            limit. If None, a previously stored
             stopping rule is required and used.
         ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
             Reference solution used to monitor iteration errors. A single
@@ -1182,6 +1186,19 @@ class Setting:
             if self.is_tikhonov and self.is_convex:
                 stoprule = (
                     DualityGapStopping(tol=1e-10, logging_level=logging_level)
+                    + iteration_limit
+                )
+            elif (
+                not self.is_tikhonov
+                and self._noise_model_param.get('model_name') == 'deterministic'
+            ):
+                stoprule = (
+                    Discrepancy(
+                        self._noise_model_param['absolute_noise_level'],
+                        setting=self,
+                        tau=2.1,
+                        logging_level=logging_level,
+                    )
                     + iteration_limit
                 )
             else:
