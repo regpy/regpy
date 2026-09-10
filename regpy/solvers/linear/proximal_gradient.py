@@ -362,6 +362,7 @@ class FISTA(RegSolver):
              self.op.adjoint_eval(self._h, out=self.Tp)
              self.Tp -= self.backpropagated_data
         else:
+            self.op(self._h, out=self.y)
             self.data_fid.subgradient(self.y, out=self.p)
             self.op.adjoint(self.p, out=self.Tp)
 
