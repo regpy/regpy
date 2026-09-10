@@ -420,7 +420,7 @@ class Setting:
         elif model['model_name'] == 'Poisson':
             self.generate_Poisson_data(expected_nr_counts=model['expected_nr_counts'])
 
-    def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None):
+    def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None) -> None:
         r""" generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
         
         Parameters:
@@ -456,19 +456,30 @@ class Setting:
                 raise NotImplementedError("Cholesky factorization is not implemented for the codomain Hilbert space.")
             noise = chol.domain.randn(seed=seed)
             if relative_noise_level is not None:
-                noise *= relative_noise_level/self.h_codomain.norm(self._exact_data)
+                noise *= relative_noise_level * self.h_codomain.norm(self._exact_data)
             else:
                 noise *= absolute_noise_level
             noise = chol.inverse.adjoint(noise) 
+            self._noise_model_param = {'model_name':'Gaussian',
+                        'absolute_noise_level':absolute_noise_level
+                        if absolute_noise_level is not None else   
+                        relative_noise_level * self.h_codomain.norm(self._exact_data)
+            }                                   
         else:
             noise = self.op.codomain.randn(seed=seed)
             if relative_noise_level is not None:
                 noise *= relative_noise_level*self.h_codomain.norm(self._exact_data)/self.h_codomain.norm(noise)
             else:
                 noise *= absolute_noise_level/self.h_codomain.norm(noise)
+            self._noise_model_param = {'model_name':'deterministic',
+                        'absolute_noise_level':absolute_noise_level
+                        if absolute_noise_level is not None else   
+                        relative_noise_level * self.h_codomain.norm(self._exact_data)
+            }                       
+
         self.data = self._exact_data + noise 
 
-    def generate_Poisson_data(self,expected_nr_counts=None,seed=None):
+    def generate_Poisson_data(self, expected_nr_counts=None, seed=None):
         r"""Generate and store Poisson-distributed data.
 
         Sampling is delegated to :meth:`self.op.codomain.poisson`.
