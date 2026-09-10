@@ -64,7 +64,6 @@ class Landweber(RegSolver):
     op_norm_method : str, optional
         Method used to estimate the derivative norm.
         Norm estimates use ``reltol=0.05 / sqrt(1 + iteration_step_nr)``.
-        Thus the initial tolerance is 0.05 and decreases with iteration count.
         Defaults to ``"lanczos"``.
     logging_level : int | str, optional
         Logging level.
