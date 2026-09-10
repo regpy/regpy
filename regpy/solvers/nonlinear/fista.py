@@ -66,6 +66,8 @@ class FISTA(RegSolver):
         defaults to ``0.9``.
     op_norm_method : str, optional
         Method used to estimate the derivative norm. Defaults to ``"lanczos"``.
+        Norm estimates use ``reltol=0.05 / sqrt(1 + iteration_step_nr)``.
+        Thus the initial tolerance is 0.05 and decreases with iteration count.
     op_lower_bound : float [default: 0]
         lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\|`\.
         Used to define convexity parameter of data functional.     
@@ -295,6 +297,7 @@ class FISTA(RegSolver):
             self.setting.h_domain,
             None if self.codomain_free else self.setting.h_codomain,
             method=self.op_norm_method,
+            reltol=0.05 / np.sqrt(1 + self.iteration_step_nr),
             codomain_free=self.codomain_free,
         )
         if not np.isfinite(norm) or norm <= 0:

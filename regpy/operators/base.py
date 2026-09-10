@@ -1028,10 +1028,13 @@ class Operator:
             Positive, finite relative convergence tolerance. Passed to
             Lanczos as its eigenvalue tolerance; for power iteration it
             bounds the residual divided by the current eigenvalue magnitude.
-            A looser value such as 0.05 can reduce operator evaluations.
             This is an iterative convergence criterion, not a guaranteed
-            relative error bound for the returned norm (in particular,
-            Lanczos works with a shifted operator).
+            relative error bound for the returned norm. Lanczos uses the
+            unshifted generalized eigenvalue problem. Two independent random
+            probes detect zero operators before calling ARPACK; this is a
+            probabilistic check, not a certificate that the operator is zero.
+            ARPACK factorization breakdown for singular operators triggers
+            an unshifted squared-power fallback with the same tolerance.
 
         Returns
         -------
@@ -1083,12 +1086,9 @@ class Operator:
         if method == "power":
             return self._power_method(h_domain, h_codomain, stopping_rule=reltol)
         elif method == "lanczos":
-            from scipy.sparse.linalg import eigsh
             op = self.adjoint * h_codomain.gram * self
-            # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
-            return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
-                              Minv=SciPyLinearOperator(h_domain.gram_inv),
-                              tol=reltol)[0][0]-1.)
+            eigenvalue = op._unshifted_norm_eigenvalue(h_domain, reltol, 'LA')
+            return sqrt(max(0., eigenvalue))
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -1131,7 +1131,14 @@ class Operator:
         reltol: float [default: 1e-2]
             Positive, finite relative convergence tolerance. Passed to
             Lanczos as its eigenvalue tolerance; for power iteration it
-            bounds the residual divided by the current eigenvalue magnitude.    
+            bounds the residual divided by the current eigenvalue magnitude..
+            This is an iterative convergence criterion, not a guaranteed
+            relative error bound for the returned norm. Lanczos uses the
+            unshifted generalized eigenvalue problem. Two independent random
+            probes detect zero operators before calling ARPACK; this is a
+            probabilistic check, not a certificate that the operator is zero.
+            ARPACK factorization breakdown for singular operators triggers
+            an unshifted squared-power fallback with the same tolerance.
 
         Returns
         -------
@@ -1181,43 +1188,96 @@ class Operator:
         if method == "power":
             return self._power_method_sa(h_domain, stopping_rule=reltol)
         elif method == "lanczos":
-            from scipy.sparse.linalg import eigsh
-            shifted_op = SciPyLinearOperator(self + h_domain.gram)
-            gram = SciPyLinearOperator(h_domain.gram)
-            gram_inv = SciPyLinearOperator(h_domain.gram_inv)
-            largest = eigsh(
-                shifted_op,
-                1,
-                M=gram,
-                Minv=gram_inv,
-                which='LA',
-                return_eigenvectors=False,
-                tol=reltol,
-            )[0] - 1.
-            smallest = eigsh(
-                shifted_op,
-                1,
-                M=gram,
-                Minv=gram_inv,
-                which='SA',
-                return_eigenvectors=False,
-                tol=reltol,
-            )[0] - 1.
-            estimate = max(abs(largest), abs(smallest))
-            roundoff = 100 * np.finfo(float).eps
-            return 0. if estimate <= roundoff else estimate
+            return abs(self._unshifted_norm_eigenvalue(h_domain, reltol, 'LM'))
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
                 f"The method {method} is unknown to compute the self-adjoint norm of an Operator {self}!"
             ))
 
+    def _unshifted_norm_eigenvalue(self, h_domain, reltol, which):
+        """Estimate an extremal generalized eigenvalue without a shift.
+
+        Two zero probe images are treated as a zero operator. No absolute
+        threshold is used, so small nonzero operators are not deliberately
+        rounded to zero. ARPACK factorization breakdown (-9999), which can
+        also occur for nonzero singular operators, falls back to power
+        iteration on the squared Hilbert-space operator. Other failures
+        propagate. Here 'LA' is used only for positive semidefinite operators;
+        for 'LM' only the absolute value of the result is used by the caller.
+        """
+        from scipy.sparse.linalg import eigsh, ArpackError
+
+        op = SciPyLinearOperator(self)
+        gram = SciPyLinearOperator(h_domain.gram)
+        # ARPACK requires k < n (and complex eigsh requires k < n - 1).
+        if op.shape[0] <= 2:
+            from scipy.linalg import eigvalsh
+            basis = np.eye(op.shape[0], dtype=op.dtype)
+            matrix = np.column_stack([op @ e for e in basis.T])
+            metric = np.column_stack([gram @ e for e in basis.T])
+            values = eigvalsh(matrix, metric)
+            return float(values[-1] if which == 'LA'
+                         else values[np.argmax(np.abs(values))])
+
+        for _ in range(2):
+            v = self.domain.randn()
+            v_norm = h_domain.norm(v)
+            if v_norm == 0:
+                raise ValueError("Norm estimation requires a nonzero random probe.")
+            v = v / v_norm
+            v0 = self.domain.flatten(v)
+            image = op @ v0
+            if not np.all(np.isfinite(image)):
+                raise ValueError("Norm estimation produced a nonfinite probe image.")
+            if np.any(image != 0):
+                break
+        else:
+            return 0.
+
+        try:
+            return float(eigsh(
+                op, k=1, M=gram,
+                Minv=SciPyLinearOperator(h_domain.gram_inv),
+                which=which, v0=v0, tol=reltol,
+                return_eigenvectors=False,
+            )[0])
+        except ArpackError as error:
+            if not str(error).startswith("ARPACK error -9999:"):
+                raise
+            # A nonzero image does not prevent breakdown when the Krylov
+            # space is exhausted, e.g. for projections. Do not classify
+            # this as a zero operator or introduce a spectral shift.
+            for _ in range(1000):
+                y = h_domain.gram_inv(self(v))
+                estimate = h_domain.norm(y)
+                if not np.isfinite(estimate) or estimate == 0:
+                    raise RuntimeError(
+                        "Norm fallback encountered a zero or nonfinite image."
+                    ) from error
+                # Apply B twice, normalizing between applications to avoid
+                # explicitly squaring its scale. Squaring also handles
+                # eigenvalues +lambda and -lambda of equal magnitude.
+                z = h_domain.gram_inv(self(y / estimate))
+                residual = h_domain.norm(z - estimate * v) / estimate
+                if np.isfinite(residual) and residual <= reltol:
+                    return float(estimate)
+                z_norm = h_domain.norm(z)
+                if not np.isfinite(z_norm) or z_norm == 0:
+                    raise RuntimeError(
+                        "Norm fallback encountered a zero or nonfinite iterate."
+                    ) from error
+                v = z / z_norm
+            raise RuntimeError(
+                "Norm fallback did not converge within 1000 iterations."
+            ) from error
+
     def _power_method(
         self,
         h_domain: HilbertSpace,
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-2
+        stopping_rule: float = 1e-2,
     ) -> float:
         r"""Approximate the operator norm by power iteration.
 
