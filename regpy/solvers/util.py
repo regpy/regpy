@@ -18,7 +18,7 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ["convergence_plots", "GeometricSequence", "powers_of_two", "natural_numbers", "squares"]
+__all__ = ["plot_operator_evaluations", "convergence_plots", "GeometricSequence", "powers_of_two", "natural_numbers", "squares"]
 
 def powers_of_two() -> Iterator[int]:
     """Yield ``1, 2, 4, 8, ...`` indefinitely."""
@@ -157,9 +157,28 @@ def _times_for_history(
     )
 
 
+def _evals_for_history(rule, key, length, components) -> np.ndarray:
+    """Match cumulative weighted evaluation counts by recorded solver step."""
+    target_steps = _history_steps(rule, key, length)
+    for counter in components:
+        if not isinstance(counter, CountIterations):
+            continue
+        totals = getattr(counter, "eval_counts", {}).get("total", ())
+        steps = getattr(counter, "eval_count_steps", ())
+        if not totals or len(totals) != len(steps):
+            continue
+        by_step = dict(zip(steps, totals, strict=True))
+        if all(int(step) in by_step for step in target_steps):
+            return np.asarray([by_step[int(step)] for step in target_steps])
+    raise ValueError(
+        f"Cannot align history {key!r} with operator evaluation counts. "
+        "Rerun with CountIterations(eval_count=True)."
+    )
+
+
 def convergence_plots(
     setting: Setting,
-    plot_over_time: bool = False,
+    x_axis: str = "its",
     methods: list[str] | None = None,
     title: str | None = None,
 ) :
@@ -176,10 +195,13 @@ def convergence_plots(
     ----------
     setting : regpy.solvers.Setting
         Setting whose method histories should be plotted.
-    plot_over_time : bool, optional
-        Plot against iteration numbers if ``False`` (default). If ``True``,
-        plot against CPU time recorded by a ``CountIterations(timing=True)``
-        component in each method's stopping rule.
+    x_axis : {'its', 'time', 'op_evals'}, optional
+        Horizontal axis: iteration numbers (default), elapsed CPU time, or
+        cumulative weighted operator evaluations. Time requires a
+        CountIterations(timing=True) history; op_evals requires
+        CountIterations(eval_count=True). Histories are aligned by solver
+        iteration number. Normal-operator calls count twice. Counts exclude
+        solver construction before the counting rule was attached.
     methods : list of str or None, optional
         Short names of methods to plot. If omitted, all methods with recorded
         histories are plotted. The order of the list determines the order of
@@ -197,18 +219,20 @@ def convergence_plots(
     Raises
     ------
     TypeError
-        If ``plot_over_time`` is not boolean or the setting has no method
+        If ``x_axis`` is not a string or the setting has no method
         dictionary, or if ``methods`` or ``title`` has the wrong type.
     ValueError
         If a requested method name is unknown, if no requested histories are
-        available, or if time plotting was requested but a history cannot be
-        aligned with a timing counter.
+        available, if x_axis is unknown, or if a history cannot be aligned
+        with the requested timing or evaluation counter.
     """
     import matplotlib.pyplot as plt    
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
-    if not isinstance(plot_over_time, (bool, np.bool_)):
-        raise TypeError("plot_over_time must be boolean.")
+    if not isinstance(x_axis, str):
+        raise TypeError("x_axis must be a string.")
+    if x_axis not in {"its", "time", "op_evals"}:
+        raise ValueError("x_axis must be 'its', 'time', or 'op_evals'.")
 
     method_registry = getattr(setting, "_methods", None)
     if not isinstance(method_registry, dict):
@@ -262,8 +286,8 @@ def convergence_plots(
         if not has_requested_history:
             continue
 
-        clocks = _timing_components(components) if plot_over_time else []
-        if plot_over_time and not clocks:
+        clocks = _timing_components(components) if x_axis == "time" else []
+        if x_axis == "time" and not clocks:
             raise ValueError(
                 f"Method {method_name!r} has been run but its stopping rule "
                 "has no CountIterations(timing=True) component with timing "
@@ -295,7 +319,9 @@ def convergence_plots(
                         _times_for_history(
                             component, key, len(values), clocks
                         )
-                        if plot_over_time
+                        if x_axis == "time"
+                        else _evals_for_history(component, key, len(values), components)
+                        if x_axis == "op_evals"
                         else _history_steps(component, key, len(values))
                     )
                     label = f"{method_name}{rule_suffix}: {key}"
@@ -322,7 +348,8 @@ def convergence_plots(
         sharex=False,
     )
     axes: np.ndarray = axes_grid[:, 0]
-    x_label = "CPU time" if plot_over_time else "Iteration"
+    x_label = {"its": "Iteration", "time": "CPU time [s]",
+               "op_evals": "Operator evaluations (weighted)"}[x_axis]
 
     for axis, (subplot_title, curves) in zip(
         axes, active_series, strict=True
@@ -342,3 +369,111 @@ def convergence_plots(
     else:
         figure.tight_layout()
     return figure, axes
+
+
+def op_eval_over_time_plot(
+    setting: Setting,
+    methods: list[str] | None = None,
+    title: str | None = None,
+):
+    """Plot cumulative weighted operator evaluations against elapsed CPU time.
+
+    Parameters
+    ----------
+    setting : Setting
+        Setting containing executed stopping-rule histories.
+    methods : list of str or None, optional
+        Short method names in plotting order. None selects all executed
+        methods. Selected methods that have not run are skipped.
+    title : str or None, optional
+        Optional figure title.
+
+    Returns
+    -------
+    figure : matplotlib.figure.Figure
+        Created figure.
+    axis : matplotlib.axes.Axes
+        Axes containing one curve per method, with linear scales.
+
+    Notes
+    -----
+    Requires CountIterations histories with timing=True and eval_count=True.
+    Counts and times are matched by solver iteration, using only steps at
+    which both are recorded (no interpolation). Normal-operator applications
+    count twice. Counts exclude work before the counter was attached.
+    Missing or unalignable histories raise ValueError; rerun the solver with
+    both recording options enabled. Methods and title follow the validation
+    rules of convergence_plots.
+    """
+    import matplotlib.pyplot as plt
+    method_registry = getattr(setting, "_methods", None)
+    if not isinstance(method_registry, dict):
+        raise TypeError("setting must provide a dictionary attribute _methods.")
+    if methods is not None:
+        if not isinstance(methods, list) or not all(
+            isinstance(method, str) for method in methods
+        ):
+            raise TypeError("methods must be a list of strings or None.")
+        unknown_methods = [
+            method for method in methods if method not in method_registry
+        ]
+        if unknown_methods:
+            raise ValueError(
+                "Unknown method name(s): " + ", ".join(unknown_methods)
+            )
+        selected_methods = [
+            (method, method_registry[method]) for method in methods
+        ]
+    else:
+        selected_methods = list(method_registry.items())
+    if title is not None and not isinstance(title, str):
+        raise TypeError("title must be a string or None.")
+
+    curves = []
+    for method_name, method_data in selected_methods:
+        if not isinstance(method_data, dict):
+            continue
+        rule = method_data.get("stoprule")
+        if not isinstance(rule, StopRule):
+            continue
+        components = list(_rule_components(rule))
+        clocks = _timing_components(components)
+        aligned = None
+        for counter in components:
+            if not isinstance(counter, CountIterations):
+                continue
+            totals = getattr(counter, "eval_counts", {}).get("total", ())
+            steps = getattr(counter, "eval_count_steps", ())
+            if len(totals) == 0 or len(totals) != len(steps):
+                continue
+            for clock in clocks:
+                times = np.asarray(clock.history_dict["time"], dtype=float)
+                time_steps = _history_steps(clock, "time", len(times))
+                time_at_step = dict(zip(time_steps, times, strict=True))
+                pairs = [(time_at_step[step], total)
+                         for step, total in zip(steps, totals, strict=True)
+                         if step in time_at_step]
+                if pairs:
+                    aligned = np.asarray(pairs)
+                    break
+            if aligned is not None:
+                break
+        if aligned is None:
+            raise ValueError(
+                f"Method {method_name!r} has no aligned CPU-time and evaluation "
+                "histories. Rerun with CountIterations(timing=True, eval_count=True)."
+            )
+        curves.append((method_name, aligned))
+    if not curves:
+        raise ValueError("No recorded operator-evaluation histories were found.")
+    figure, axis = plt.subplots(figsize=(8., 4.5))
+    for method_name, values in curves:
+        axis.plot(values[:, 0], values[:, 1], label=method_name)
+    axis.set_xlabel("CPU time [s]")
+    axis.set_ylabel("Operator evaluations (weighted)")
+    axis.grid(True, alpha=0.3)
+    axis.legend()
+    if title is not None:
+        figure.suptitle(title)
+    figure.tight_layout()
+    return figure, axis

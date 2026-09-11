@@ -814,7 +814,9 @@ class CountIterations(StopRule):
         with the six Operator keys and 'total'. eval_count_steps records the
         corresponding solver steps, including step zero in while-style runs.
         Snapshots are recorded even on steps omitted by schedule. Constructor
-        work before attachment is excluded. Counting remains enabled after
+        work is included when Setting.run prepares the rule before solver
+        construction. Direct solver.run calls start measurements at attachment
+        unless prepare_run was called beforehand. Counting remains enabled after
         the run for inspection; use solver.op.disable_eval_count() to remove
         instrumentation. False leaves existing operator counting unchanged.
         Defaults to False.
@@ -839,6 +841,7 @@ class CountIterations(StopRule):
     ) -> None:
         if not isinstance(eval_count, bool):
             raise TypeError("eval_count must be a bool.")
+        self._prepared_operator = None
         self.eval_count = eval_count
         self.eval_counts: dict[str, list[int]] = {}
         self.eval_count_steps: list[int] = []
@@ -865,17 +868,36 @@ class CountIterations(StopRule):
     
     def reset(self) -> None:
         super().reset()
+        self._prepared_operator = None
         self.iteration = 0
         self.eval_counts = {}
         self.eval_count_steps = []
         if self.timing:
             self.start_time = time.process_time()
 
+    def prepare_run(self, operator) -> None:
+        """Start measurements before constructing a solver (used by Setting).
+
+        Attachment to the same operator preserves construction-time work.
+        Direct solver.run calls instead start measurements at attachment.
+        """
+        if self.timing:
+            self.start_time = time.process_time()
+        if self.eval_count:
+            operator.enable_eval_count(reset=True)
+        self._prepared_operator = operator
+
     def _complete_init_with_solver(self, solver: Solver) -> None:
         super()._complete_init_with_solver(solver)
+        operator = getattr(solver, 'op', None)
+        if self._prepared_operator is None or self._prepared_operator is not operator:
+            if self.timing:
+                self.start_time = time.process_time()
+            if self.eval_count:
+                operator.enable_eval_count(reset=True)
+        self._prepared_operator = None
         if self.eval_count:
-            solver.op.enable_eval_count(reset=True)
-            self.eval_counts = {key: [] for key in solver.op.eval_counts}
+            self.eval_counts = {key: [] for key in operator.eval_counts}
             self.eval_counts['total'] = []
             self.eval_count_steps = []
 

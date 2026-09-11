@@ -1114,7 +1114,8 @@ class Setting:
             use a discrepancy rule with the stored absolute noise level and
             tau=2.5, combined with 1000 maximum iterations. Other settings use
             only the iteration limit. An explicit max_it overrides the default
-            limit. If None, a previously stored
+            limit. Default iteration counters record CPU time and cumulative
+            operator evaluation counts. If None, a previously stored
             stopping rule is required and used.
         ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
             Reference solution used to monitor iteration errors. A single
@@ -1181,7 +1182,7 @@ class Setting:
         elif stoprule is _DEFAULT_STOPRULE:
             default_max_it = 1000 if max_it is None else max_it
             iteration_limit = CountIterations(
-                default_max_it, timing=True, logging_level=logging_level
+                default_max_it, timing=True, eval_count=True, logging_level=logging_level
             )
             if self.is_tikhonov and self.is_convex:
                 stoprule = (
@@ -1286,6 +1287,19 @@ class Setting:
         # here: doing so would overwrite the independently configured rule.
         themethod['stoprule'] = stoprule.copy_and_reset()
         
+        # Start both measurements before constructor-time evaluations and
+        # norm estimation. Attachment must preserve these initial counts.
+        pending_counters = [themethod['stoprule']]
+        seen_counters = set()
+        while pending_counters:
+            rule = pending_counters.pop()
+            if id(rule) in seen_counters:
+                continue
+            seen_counters.add(id(rule))
+            if isinstance(rule, CountIterations):
+                rule.prepare_run(thesetting.op)
+            pending_counters.extend(getattr(rule, 'rules', ()))
+
         solver = themethod['class'](thesetting,**kwargs)
         # Configure the executed copy, including nested combined rules.
         # Instance logger overrides require the instance-local ClassLogger.
