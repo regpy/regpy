@@ -235,23 +235,36 @@ def test_count_iterations_zero_stops_immediately():
 
 
 def test_count_iterations_records_and_resets_timing(monkeypatch):
-    times = iter((10.0, 10.25, 10.75, 12.0))
+    # An explicit clock tests elapsed times without depending on how often
+    # construction, attachment, and reset consult process_time().
+    now = [10.0]
     monkeypatch.setattr(
         "regpy.stoprules.general.time.process_time",
-        lambda: next(times),
+        lambda: now[0],
     )
     rule = CountIterations(
         10, timing=True, logging_level=logging.CRITICAL
     )
+    now[0] = 20.0
     _attach(rule, x=np.array([1.0]), y=np.array([2.0]))
+    assert rule.start_time == 20.0
 
+    now[0] = 20.25
     assert not rule.stop()
+    now[0] = 20.75
     assert not rule.stop()
     assert rule.history_dict["time"] == pytest.approx([0.25, 0.75])
 
+    now[0] = 22.0
     rule.reset()
     assert rule.history_dict == {"time": []}
-    assert rule.start_time == 12.0
+    assert rule.start_time == 22.0
+
+    now[0] = 30.0
+    _attach(rule, x=np.array([1.0]), y=np.array([2.0]))
+    now[0] = 30.5
+    assert not rule.stop()
+    assert rule.history_dict["time"] == pytest.approx([0.5])
 
 
 @pytest.mark.parametrize("combiner", (CombineRules, AndCombineRules))
