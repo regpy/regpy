@@ -87,7 +87,7 @@ class SemiSmoothNewton(RegSolver):
             self.psi_minus = np.broadcast_to(self.R.dom_l, setting.op.domain.shape) if isinstance(self.R.dom_l,(float,int)) else self.R.dom_l
         self.Rpp_plus, self.Rpp_minus = self._get_second_R_derivatives_at_bound_constraints()
         regpar= setting.regpar
-        x0 = setting.get_or_update_initial_guess(init, update_setting=False)
+        x0 = setting.get_or_update_initial_guess(init, update=False)
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         y0 = self.op(x0)

@@ -147,9 +147,8 @@ class SemismoothNewton_bilateral(RegSolver):
         self.lam_minus = self.op.domain.zeros()
 
         tikhcg=TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data, 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = self.x,
                 logging_level=self.cg_logging_level,
@@ -191,9 +190,8 @@ class SemismoothNewton_bilateral(RegSolver):
             self.log.info('all indices active!')
         else:
             tikhcg = TikhonovCG(
-                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data-self.op(self.x-projection(self.x)), 
-                regpar=self.regpar,
                 xref=projection(self.xref),
                 x0 = projection(self.x),
                 logging_level=self.cg_logging_level,
@@ -435,9 +433,8 @@ class SemismoothNewton_nonneg(RegSolver):
 
         self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data, 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = self.xref,
                 logging_level=self.cg_logging_level,
@@ -486,9 +483,8 @@ class SemismoothNewton_nonneg(RegSolver):
             self.log.debug('all indices active!')
         else:
             tikhcg=TikhonovCG(
-                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain, regpar=self.regpar),
                 data=self.data-self.op(self.x-projection(self.x)), 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = projection(self.x),
                 logging_level=self.cg_logging_level,
