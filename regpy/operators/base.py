@@ -14,7 +14,9 @@ from typing import TypeVar
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from copy import deepcopy
-from numbers import Real
+from numbers import Real, Integral
+from functools import wraps
+from types import MethodType
 from typing import Any, TYPE_CHECKING
 
 from math import sqrt,inf
@@ -89,6 +91,37 @@ In many cases, data are a :class:`Vector` in the codomain of an Operator.
 However, data may be anything that is accepted by :meth:`Operator.adjoint_data` 
 and :meth:`regpy.functionals.Functional.as_data_func`.
 """
+
+_EVAL_METHOD_KEYS = {
+    '_eval': 'eval', '_ieval': 'eval',
+    '_derivative': 'deriv', '_iderivative': 'deriv',
+    '_adjoint': 'adjoint', '_iadjoint': 'adjoint',
+    '_adjoint_eval': 'adjoint_eval', '_iadjoint_eval': 'adjoint_eval',
+    '_adjoint_derivative': 'adjoint_deriv', '_iadjoint_derivative': 'adjoint_deriv',
+    '_adjoint_data': 'adjoint_data', '_iadjoint_data': 'adjoint_data',
+    'adjoint_data': 'adjoint_data',
+}
+
+
+def _count_evaluation(key):
+    """Count an outer operation once, including in-place fallback dispatch."""
+    def decorate(method):
+        if getattr(method, '_counts_evaluation', False):
+            return method
+        @wraps(method)
+        def counted(self, *args, **kwargs):
+            depth = getattr(self, '_eval_count_depth', 0)
+            if depth == 0:
+                self._eval_counts[key] += 1
+            self._eval_count_depth = depth + 1
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                self._eval_count_depth = depth
+        counted._counts_evaluation = True
+        return counted
+    return decorate
+
 
 class Operator:
     r"""Base class for linear and nonlinear forward operators.
@@ -223,6 +256,74 @@ class Operator:
     """
 
     log = util.ClassLogger()
+
+    @property
+    def eval_count_enabled(self) -> bool:
+        """Whether counting is enabled on this instance (never recursively)."""
+        return '_eval_count_originals' in self.__dict__
+
+    def enable_eval_count(self, reset: bool = True) -> None:
+        """Instrument this operator only; components remain unchanged.
+
+        Disabled operators use their original methods without a counting
+        wrapper or counter dictionary. Derivative/adjoint wrappers dispatch
+        back to the instrumented methods of this operator. Enabling twice
+        does not stack wrappers. Counts are reset by default.
+        """
+        if not isinstance(reset, bool):
+            raise TypeError("reset must be a bool.")
+        if not self.eval_count_enabled:
+            originals = {}
+            for name, key in _EVAL_METHOD_KEYS.items():
+                method = getattr(self, name)
+                if not isinstance(method, MethodType):
+                    raise TypeError(f"Cannot instrument non-bound method {name}.")
+                originals[name] = self.__dict__.get(name)
+            self._eval_count_originals = originals
+            self._eval_counts = dict.fromkeys(set(_EVAL_METHOD_KEYS.values()), 0)
+            for name, key in _EVAL_METHOD_KEYS.items():
+                method = getattr(self, name)
+                setattr(self, name, MethodType(_count_evaluation(key)(method.__func__), self))
+        if reset:
+            self.reset_eval_counts()
+
+    def disable_eval_count(self) -> None:
+        """Restore uninstrumented methods and discard counters on this instance."""
+        for name, original in self.__dict__.pop('_eval_count_originals', {}).items():
+            if original is None:
+                self.__dict__.pop(name, None)
+            else:
+                setattr(self, name, original)
+        self.__dict__.pop('_eval_counts', None)
+        self.__dict__.pop('_eval_count_depth', None)
+
+    @property
+    def eval_counts(self) -> dict[str, int]:
+        """Snapshot of this operator's logical operation counts.
+
+        Counting is opt-in via enable_eval_count(). Reading this property
+        while disabled returns zeros without allocating persistent counters.
+        Components are not enabled automatically. Counts include attempts
+        through derivative/adjoint wrappers, but nested fallback calls on the
+        same instance count only once. Self-adjoint aliases count as eval.
+        Modifying the snapshot does not alter counters. Serial use only.
+        """
+        if not self.eval_count_enabled:
+            return dict.fromkeys(('eval', 'deriv', 'adjoint', 'adjoint_eval',
+                                  'adjoint_deriv', 'adjoint_data'), 0)
+        return dict(self._eval_counts)
+
+    def reset_eval_counts(self) -> None:
+        """Zero enabled counters without enabling counting or touching children."""
+        if self.eval_count_enabled:
+            self._eval_counts = dict.fromkeys(
+                ('eval', 'deriv', 'adjoint', 'adjoint_eval', 'adjoint_deriv', 'adjoint_data'), 0
+            )
+
+    def total_eval_count(self) -> int:
+        """Return counts weighted by two for adjoint_eval and adjoint_deriv."""
+        counts = self.eval_counts
+        return sum(counts.values()) + counts['adjoint_eval'] + counts['adjoint_deriv']
 
     def __init__(
         self,
@@ -922,7 +1023,7 @@ class Operator:
                 self.log.warning(f"The default implementation of _iadjoint_derivative is not optimised to exclude constructing elements in the codomain!")
                 self._warning_adjoint_derivative_issued = True
             if len(kwargs) != 0:
-                self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+                self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments. Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
             if self.linear:
                 return self._iadjoint(self._eval(x), out)
             elif self._derivative_self_adjoint:
@@ -997,7 +1098,8 @@ class Operator:
         h_codomain: HilbertSpace | None = None,
         method: str | None = None,
         codomain_free: bool = False,
-        reltol: float = 1e-2,
+        reltol: float = 1e-3,
+        max_op_eval: int | None = None,
     ) -> float:
         r"""Approximate the norm of a linear operator between Hilbert spaces.
 
@@ -1018,23 +1120,28 @@ class Operator:
         h_codomain: Hilbert space on the codomain. Defaults to L2 if None.
             Not used if ``codomain_free`` is true.
         method: string [default: None]
+            'lanczos' uses the capped, fully reorthogonalized implementation;
+            'eigs' uses SciPy/ARPACK with the existing breakdown fallback.
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
-              if this is not set. Alternative: "power" for power method
+              if this is not set. Alternatives: "power" for power iteration; "eigs" for the SciPy implementation.
         codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
             :attr:`adjoint_eval` and :meth:`norm_sa`.
 
-        reltol: float [default: 1e-2]
-            Positive, finite relative convergence tolerance. Passed to
-            Lanczos as its eigenvalue tolerance; for power iteration it
-            bounds the residual divided by the current eigenvalue magnitude.
-            This is an iterative convergence criterion, not a guaranteed
-            relative error bound for the returned norm. Lanczos uses the
-            unshifted generalized eigenvalue problem. Two independent random
-            probes detect zero operators before calling ARPACK; this is a
-            probabilistic check, not a certificate that the operator is zero.
-            ARPACK factorization breakdown for singular operators triggers
-            an unshifted squared-power fallback with the same tolerance.
+        reltol: float [default: 1e-3]
+            Positive, finite relative residual tolerance (default 1e-3).
+            The custom Lanczos method stops when its selected Ritz residual
+            is small relative to its Ritz value. At the evaluation cap it
+            returns its best current estimate even if this criterion fails.
+            SciPy uses its eigenvalue tolerance; power uses a relative
+            residual. None of these is a certified norm error bound.
+        max_op_eval: int or None, optional
+            Budget of forward/adjoint-equivalent evaluations. A normal
+            application costs two; an ordinary self-adjoint application one.
+            Gram operations are excluded. Unused odd budget units are ignored
+            for normal operators. Defaults to 100 evaluations when omitted.
+            Must allow at least one application. An explicit budget is not
+            supported by method='eigs' and raises ValueError.
 
         Returns
         -------
@@ -1070,11 +1177,13 @@ class Operator:
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."))
         method=getattr(self,'default_norm_method','lanczos') if method is None else method
+        self._validate_norm_budget(method, max_op_eval)
         if codomain_free:
             return sqrt(self.adjoint_eval.norm_sa(
                 h_domain=h_domain,
                 method=method,
                 reltol=reltol,
+                **({} if max_op_eval is None else {"max_op_eval": max_op_eval}),
             ))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
@@ -1084,10 +1193,16 @@ class Operator:
                 self.codomain,
                 add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_codomain} on codomain."))
         if method == "power":
-            return self._power_method(h_domain, h_codomain, stopping_rule=reltol)
-        elif method == "lanczos":
+            return self._power_method(h_domain, h_codomain, stopping_rule=reltol,
+                                      max_iter=self._norm_budget_steps(max_op_eval, 2))
+        elif method in ("lanczos", "eigs"):
             op = self.adjoint * h_codomain.gram * self
-            eigenvalue = op._unshifted_norm_eigenvalue(h_domain, reltol, 'LA')
+            if method == "lanczos":
+                eigenvalue = op._capped_lanczos(
+                    h_domain, reltol, self._norm_budget_steps(max_op_eval, 2), 'LA'
+                )
+            else:
+                eigenvalue = op._unshifted_norm_eigenvalue(h_domain, reltol, 'LA')
             return sqrt(max(0., eigenvalue))
         else:
             raise NotImplementedError(util.Errors._compose_message(
@@ -1099,7 +1214,8 @@ class Operator:
         self,
         h_domain: HilbertSpace | None = None,
         method: str | None = None,
-        reltol: float = 1e-2,
+        reltol: float = 1e-3,
+        max_op_eval: int | None = None,
     ) -> float:
         r"""Approximate the norm of a self-adjoint map into a dual space.
 
@@ -1123,22 +1239,27 @@ class Operator:
         ----------
         h_domain: Hilbert space on the domain. Defaults to L2 if None.
         method: string [default: None]
+            'lanczos' uses the capped, fully reorthogonalized implementation;
+            'eigs' uses SciPy/ARPACK with the existing breakdown fallback.
             Method by which an approximation of the operator norm is
             computed. If None, uses ``self.default_norm_method`` or
             ``'lanczos'`` if this is not set. Alternative: ``'power'`` for
-            power iteration.
+            power iteration; ``'eigs'`` retains the SciPy implementation.
 
-        reltol: float [default: 1e-2]
-            Positive, finite relative convergence tolerance. Passed to
-            Lanczos as its eigenvalue tolerance; for power iteration it
-            bounds the residual divided by the current eigenvalue magnitude..
-            This is an iterative convergence criterion, not a guaranteed
-            relative error bound for the returned norm. Lanczos uses the
-            unshifted generalized eigenvalue problem. Two independent random
-            probes detect zero operators before calling ARPACK; this is a
-            probabilistic check, not a certificate that the operator is zero.
-            ARPACK factorization breakdown for singular operators triggers
-            an unshifted squared-power fallback with the same tolerance.
+        reltol: float [default: 1e-3]
+            Positive, finite relative residual tolerance (default 1e-3).
+            The custom Lanczos method stops when its selected Ritz residual
+            is small relative to its Ritz value. At the evaluation cap it
+            returns its best current estimate even if this criterion fails.
+            SciPy uses its eigenvalue tolerance; power uses a relative
+            residual. None of these is a certified norm error bound.
+        max_op_eval: int or None, optional
+            Budget of forward/adjoint-equivalent evaluations. A normal
+            application costs two; an ordinary self-adjoint application one.
+            Gram operations are excluded. Unused odd budget units are ignored
+            for normal operators. Defaults to 100 evaluations when omitted.
+            Must allow at least one application. An explicit budget is not
+            supported by method='eigs' and raises ValueError.
 
         Returns
         -------
@@ -1185,15 +1306,107 @@ class Operator:
             ))
 
         method = getattr(self, 'default_norm_method', 'lanczos') if method is None else method
+        self._validate_norm_budget(method, max_op_eval)
         if method == "power":
-            return self._power_method_sa(h_domain, stopping_rule=reltol)
+            return self._power_method_sa(h_domain, stopping_rule=reltol,
+                                         max_iter=self._norm_budget_steps(max_op_eval,
+                                             2 if isinstance(self, AdjointEval) else 1))
         elif method == "lanczos":
+            cost = 2 if isinstance(self, AdjointEval) else 1
+            return abs(self._capped_lanczos(
+                h_domain, reltol, self._norm_budget_steps(max_op_eval, cost), 'LM'
+            ))
+        elif method == "eigs":
             return abs(self._unshifted_norm_eigenvalue(h_domain, reltol, 'LM'))
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
                 f"The method {method} is unknown to compute the self-adjoint norm of an Operator {self}!"
             ))
+
+    @staticmethod
+    def _validate_norm_budget(method, max_op_eval):
+        if max_op_eval is not None:
+            if isinstance(max_op_eval, (bool, np.bool_)) or not isinstance(max_op_eval, Integral):
+                raise TypeError("max_op_eval must be a positive integer or None.")
+            if max_op_eval <= 0:
+                raise ValueError("max_op_eval must be positive.")
+            if method == 'eigs':
+                raise ValueError("method='eigs' does not support max_op_eval.")
+
+    @staticmethod
+    def _norm_budget_steps(max_op_eval, cost):
+        budget = 100 if max_op_eval is None else int(max_op_eval)
+        if budget < cost:
+            raise ValueError(f"max_op_eval must be at least {cost} for this norm.")
+        return budget // cost
+
+    def _capped_lanczos(self, h_domain, reltol, max_steps, which):
+        """Unshifted Hilbert-space Lanczos with full reorthogonalization.
+
+        Each loop performs exactly one application of self. A null initial
+        direction is retried within the same budget. Invariant-subspace
+        breakdown terminates normally. As with other Krylov estimators, a
+        starting vector can miss a dominant eigenspace; estimates are not
+        certified upper bounds. Memory use grows with the Krylov dimension.
+        """
+        op = SciPyLinearOperator(self)
+        gram = SciPyLinearOperator(h_domain.gram)
+        gram_inv = SciPyLinearOperator(h_domain.gram_inv)
+        n = op.shape[0]
+        if n == 0:
+            return 0.
+        def inner(x, y):
+            return np.vdot(x, gram @ y)
+        def norm(x):
+            return sqrt(max(0., float(inner(x, x).real)))
+        def random_unit():
+            x = self.domain.flatten(self.domain.randn()).copy()
+            length = norm(x)
+            if not np.isfinite(length) or length == 0:
+                raise ValueError("Lanczos requires a finite nonzero starting vector.")
+            return x / length
+        q = random_unit()
+        basis, diagonal, offdiagonal = [], [], []
+        previous = None
+        beta_old = 0.
+        estimate = 0.
+        eps = np.finfo(q.real.dtype).eps
+        for step in range(max_steps):
+            z = gram_inv @ (op @ q)
+            if not np.all(np.isfinite(z)):
+                raise ValueError("Lanczos produced a nonfinite operator image.")
+            image_norm = norm(z)
+            if image_norm == 0 and not basis:
+                if step + 1 < min(2, max_steps):
+                    q = random_unit()
+                    continue
+                return 0.
+            alpha = float(inner(q, z).real)
+            basis.append(q.copy())
+            diagonal.append(alpha)
+            z = z - alpha * q
+            if previous is not None:
+                z -= beta_old * previous
+            # Two passes suppress loss of orthogonality and spurious Ritz values.
+            for _ in range(2):
+                for v in basis:
+                    z -= inner(v, z) * v
+            beta = norm(z)
+            matrix = np.diag(diagonal)
+            if offdiagonal:
+                matrix += np.diag(offdiagonal, 1) + np.diag(offdiagonal, -1)
+            values, vectors = np.linalg.eigh(matrix)
+            index = len(values) - 1 if which == 'LA' else int(np.argmax(abs(values)))
+            estimate = float(values[index])
+            residual = beta * abs(vectors[-1, index])
+            if (beta <= 100 * eps * image_norm or len(basis) == n
+                    or (estimate != 0 and residual <= reltol * abs(estimate))):
+                return estimate
+            offdiagonal.append(beta)
+            previous, q = q, z / beta
+            beta_old = beta
+        return estimate
 
     def _unshifted_norm_eigenvalue(self, h_domain, reltol, which):
         """Estimate an extremal generalized eigenvalue without a shift.
@@ -1277,7 +1490,7 @@ class Operator:
         h_domain: HilbertSpace,
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-2,
+        stopping_rule: float = 1e-3,
     ) -> float:
         r"""Approximate the operator norm by power iteration.
 
@@ -1314,7 +1527,7 @@ class Operator:
         self,
         h_domain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-2,
+        stopping_rule: float = 1e-3,
     ) -> float:
         r"""Approximate the self-adjoint norm by power iteration.
 

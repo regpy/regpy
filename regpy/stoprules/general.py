@@ -807,6 +807,17 @@ class CountIterations(StopRule):
     timing : bool, optional
         If ``True``, the CPU time elapsed since the start of the iteration is
         saved in :attr:`history_dict`. Defaults to ``False``.
+    eval_count : bool, optional
+        If True, enable counting only on solver.op and reset its counters
+        when attaching the rule, then store
+        cumulative snapshots in eval_counts, a dictionary of integer lists
+        with the six Operator keys and 'total'. eval_count_steps records the
+        corresponding solver steps, including step zero in while-style runs.
+        Snapshots are recorded even on steps omitted by schedule. Constructor
+        work before attachment is excluded. Counting remains enabled after
+        the run for inspection; use solver.op.disable_eval_count() to remove
+        instrumentation. False leaves existing operator counting unchanged.
+        Defaults to False.
     logging_level : int | str, optional
         Logging level. Defaults to ``"INFO"``.
     schedule : iterable of int or None, optional
@@ -824,7 +835,13 @@ class CountIterations(StopRule):
         timing: bool = False,
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = None,
+        eval_count: bool = False,
     ) -> None:
+        if not isinstance(eval_count, bool):
+            raise TypeError("eval_count must be a bool.")
+        self.eval_count = eval_count
+        self.eval_counts: dict[str, list[int]] = {}
+        self.eval_count_steps: list[int] = []
         if not isinstance(max_iterations,Integral):
             raise TypeError(Errors.type_error("The maximal iteration in the CountIterations should be an integer!",max_iterations))
         if max_iterations<0:
@@ -849,10 +866,31 @@ class CountIterations(StopRule):
     def reset(self) -> None:
         super().reset()
         self.iteration = 0
+        self.eval_counts = {}
+        self.eval_count_steps = []
         if self.timing:
             self.start_time = time.process_time()
 
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        super()._complete_init_with_solver(solver)
+        if self.eval_count:
+            solver.op.enable_eval_count(reset=True)
+            self.eval_counts = {key: [] for key in solver.op.eval_counts}
+            self.eval_counts['total'] = []
+            self.eval_count_steps = []
+
+    def _record_eval_counts(self) -> None:
+        if self.eval_count:
+            if self.solver is None:
+                raise RuntimeError("Evaluation counting requires an attached solver.")
+            snapshot = self.solver.op.eval_counts
+            snapshot['total'] = self.solver.op.total_eval_count()
+            for key, value in snapshot.items():
+                self.eval_counts[key].append(value)
+            self.eval_count_steps.append(self._current_step)
+
     def _stop(self) -> bool:
+        self._record_eval_counts()
         if self.timing:
             if self.start_time is None:
                 self.start_time = time.process_time()
@@ -877,6 +915,7 @@ class CountIterations(StopRule):
 
     def _skip(self) -> None:
         """Count an iteration without checking the limit or storing timing."""
+        self._record_eval_counts()
         self.iteration += 1
         self._log_current_step = False
         self.log_info = (
