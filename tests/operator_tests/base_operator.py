@@ -366,6 +366,103 @@ class TestOperatorNorm:
             self_adjoint.norm_sa(h_domain, method="unknown")
 
 
+
+class TestEvaluationCounts:
+    KEYS = {"eval", "deriv", "adjoint", "adjoint_eval", "adjoint_deriv", "adjoint_data"}
+
+    def test_opt_in_reset_disable_and_snapshot(self):
+        op = _MatrixWithAdjoint([[1., 2.], [0., 3.]])
+        x = np.array([1., -1.])
+        original_eval = op._eval.__func__
+        op(x)
+        assert not op.eval_count_enabled
+        assert "_eval_counts" not in vars(op)
+        assert op._eval.__func__ is original_eval
+        assert set(op.eval_counts) == self.KEYS
+        assert all(type(value) is int and value == 0 for value in op.eval_counts.values())
+        assert "_eval_counts" not in vars(op)  # Reading must not enable counting.
+
+        op.enable_eval_count()
+        op(x)
+        op.enable_eval_count(reset=False)  # Must not install a second wrapper.
+        op(x)
+        assert op.eval_counts["eval"] == 2
+        snapshot = op.eval_counts
+        snapshot["eval"] = 100
+        assert op.eval_counts["eval"] == 2
+        op.reset_eval_counts()
+        assert op.eval_count_enabled
+        assert op.total_eval_count() == 0
+        op(x)
+        op.disable_eval_count()
+        assert not op.eval_count_enabled
+        assert "_eval_counts" not in vars(op)
+        assert op._eval.__func__ is original_eval
+        op(x)
+        assert op.total_eval_count() == 0
+        op.enable_eval_count()
+        op(x)
+        assert op.eval_counts["eval"] == 1
+
+    @pytest.mark.parametrize("in_place", [False, True])
+    def test_linear_operations_and_weighted_total(self, in_place):
+        op = _MatrixWithAdjoint([[1., 2.], [0., 3.]])
+        x = np.array([1., -1.])
+        op.enable_eval_count()
+
+        def evaluate(operator, vector):
+            if in_place:
+                return operator(vector, out=operator.codomain.empty())
+            return operator(vector)
+
+        np.testing.assert_allclose(evaluate(op, x), op.matrix @ x)
+        np.testing.assert_allclose(evaluate(op.adjoint, x), op.matrix.T @ x)
+        np.testing.assert_allclose(
+            evaluate(op.adjoint_eval, x), op.matrix.T @ op.matrix @ x,
+        )
+        out = op.domain.empty() if in_place else None
+        np.testing.assert_allclose(op.adjoint_data(x, out=out), op.matrix.T @ x)
+        # Generic/in-place fallbacks must not count nested calls twice.
+        assert op.eval_counts == {
+            "eval": 1, "deriv": 0, "adjoint": 1,
+            "adjoint_eval": 1, "adjoint_deriv": 0, "adjoint_data": 1,
+        }
+        assert op.total_eval_count() == 5
+
+    def test_derivative_wrappers_count_on_original_operator(self):
+        op = _ExponentialQuadraticGradient()
+        op.enable_eval_count()
+        _, derivative = op.linearize(np.array([0.2, -0.1]))
+        h = np.array([1., -0.5])
+        derivative(h)
+        derivative.adjoint_eval(h)
+        assert op.eval_counts == {
+            "eval": 1, "deriv": 1, "adjoint": 0,
+            "adjoint_eval": 0, "adjoint_deriv": 1, "adjoint_data": 0,
+        }
+        assert op.total_eval_count() == 4
+        assert not derivative.eval_count_enabled
+
+    def test_composition_counting_does_not_enable_components(self):
+        left = _MatrixWithAdjoint([[2., 1.], [0., 1.]])
+        right = _MatrixWithAdjoint([[1., 0.], [3., 2.]])
+        op = left * right
+        op.enable_eval_count()
+        x = np.array([1., -1.])
+        np.testing.assert_allclose(op(x), left.matrix @ right.matrix @ x)
+        assert op.eval_counts["eval"] == 1
+        assert op.total_eval_count() == 1
+        for component in (left, right):
+            assert not component.eval_count_enabled
+            assert "_eval_counts" not in vars(component)
+            assert component.total_eval_count() == 0
+        # Component-level profiling remains possible when explicitly enabled.
+        right.enable_eval_count()
+        op(x)
+        assert op.eval_counts["eval"] == 2
+        assert right.eval_counts["eval"] == 1
+        assert not left.eval_count_enabled
+
 class TestCodomainFreeGramFactor:
 
     def test_factor_and_supported_gram_operators(self):

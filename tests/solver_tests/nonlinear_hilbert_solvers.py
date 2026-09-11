@@ -87,7 +87,20 @@ def _relative_image_error(
 
 def test_fista_codomain_free_matches_standard(
     inverse_problem: InverseProblem,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Compare iteration paths with identical, fixed step lengths."""
+    fixed_tau = 2e6
+    estimates = []
+
+    def fixed_stepsize(solver):
+        # Finite-Lipschitz genFISTA estimates tau during construction rather
+        # than using its tau argument. Replace only that estimator for this
+        # equivalence test; the actual iteration code remains unchanged.
+        solver.tau = fixed_tau
+        estimates.append(solver)
+
+    monkeypatch.setattr(GeneralizedFISTA, "_estimate_stepsize", fixed_stepsize)
     standard = _make_setting(
         inverse_problem,
         codomain_free=False,
@@ -102,13 +115,18 @@ def test_fista_codomain_free_matches_standard(
     standard_reconstruction, _ = standard.run(
         "genFISTA",
         max_it=2,
+        stepsize_selection_steps=[0],
         logging_level="DEBUG",
     )
     codomain_free_reconstruction, _ = codomain_free.run(
         "genFISTA",
         max_it=2,
+        stepsize_selection_steps=[0],
         logging_level="DEBUG",
     )
+
+    assert len(estimates) == 2  # One initialization per run, no reestimation.
+    assert all(solver.tau == fixed_tau for solver in estimates)
 
     error = _relative_domain_error(
         standard,
