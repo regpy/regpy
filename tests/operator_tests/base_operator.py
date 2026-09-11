@@ -302,7 +302,7 @@ class TestSelfAdjoint:
 
 class TestOperatorNorm:
 
-    @pytest.mark.parametrize("method", ("power", "lanczos"))
+    @pytest.mark.parametrize("method", ("power", "lanczos", "eigs"))
     def test_general_and_self_adjoint_interpretations(self, method):
         matrix = np.diag([2., -1., 0.5, 0.25])
         op = _SelfAdjointMatrix(matrix)
@@ -364,6 +364,79 @@ class TestOperatorNorm:
             self_adjoint.norm(h_domain, h_domain, method="unknown")
         with pytest.raises(NotImplementedError):
             self_adjoint.norm_sa(h_domain, method="unknown")
+
+
+    @pytest.mark.parametrize("mode", ("standard", "codomain_free", "self_adjoint"))
+    @pytest.mark.parametrize("scale", (1e-10, 1., 1e10))
+    def test_lanczos_weighted_norm_accuracy(self, monkeypatch, mode, scale):
+        op = _SelfAdjointMatrix(scale * np.diag([-3., -1., 0., 2.]))
+        h_domain = GramHilbertSpace(op_base.PtwMultiplication(op.domain, 4.))
+        # A fixed start with nonzero components in every eigendirection makes
+        # this an algorithm test independent of the global random stream.
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        if mode == "self_adjoint":
+            value = op.norm_sa(h_domain, method="lanczos", reltol=1e-12, max_op_eval=4)
+            expected, budget = 0.75 * scale, 4
+        else:
+            value = op.norm(
+                h_domain, L2(op.codomain), method="lanczos",
+                codomain_free=mode == "codomain_free",
+                reltol=1e-12, max_op_eval=8,
+            )
+            expected, budget = 1.5 * scale, 8
+        assert value == pytest.approx(expected, rel=1e-10, abs=0.)
+        assert 0 < op.total_eval_count() <= budget
+
+    @pytest.mark.parametrize("mode", ("standard", "codomain_free", "self_adjoint"))
+    @pytest.mark.parametrize("budget", (2, 3, 5))
+    def test_lanczos_hard_evaluation_cap(self, monkeypatch, mode, budget):
+        op = _SelfAdjointMatrix(np.diag(np.arange(1., 21.)))
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        if mode == "self_adjoint":
+            value = op.norm_sa(method="lanczos", reltol=1e-14, max_op_eval=budget)
+            expected_calls = budget
+        else:
+            value = op.norm(
+                method="lanczos", codomain_free=mode == "codomain_free",
+                reltol=1e-14, max_op_eval=budget,
+            )
+            expected_calls = 2 * (budget // 2)
+        # Return a finite Ritz estimate at the cap, even without convergence.
+        assert np.isfinite(value) and 0 < value <= 20. * (1 + 1e-12)
+        assert op.total_eval_count() == expected_calls
+        assert op.total_eval_count() <= budget
+
+    @pytest.mark.parametrize("zero", (False, True))
+    @pytest.mark.parametrize("codomain_free", (False, True))
+    def test_lanczos_zero_and_projection(self, monkeypatch, zero, codomain_free):
+        diagonal = np.zeros(8) if zero else np.array([1., 0.] * 4)
+        op = _SelfAdjointMatrix(np.diag(diagonal))
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        value = op.norm(
+            method="lanczos", codomain_free=codomain_free,
+            reltol=1e-12, max_op_eval=8,
+        )
+        assert value == pytest.approx(0. if zero else 1., abs=1e-12)
+        assert op.total_eval_count() <= 8
+
+    @pytest.mark.parametrize("budget, exception", [
+        (0, ValueError), (-1, ValueError), (True, TypeError), (2.5, TypeError),
+    ])
+    def test_lanczos_invalid_evaluation_cap(self, budget, exception):
+        op = _SelfAdjointMatrix(np.diag([1., 2., 3., 4.]))
+        with pytest.raises(exception):
+            op.norm(method="lanczos", max_op_eval=budget)
+        with pytest.raises(exception):
+            op.norm_sa(method="lanczos", max_op_eval=budget)
+
+    def test_lanczos_normal_operator_needs_two_evaluations(self):
+        op = _SelfAdjointMatrix(np.diag([1., 2., 3., 4.]))
+        for codomain_free in (False, True):
+            with pytest.raises(ValueError, match="at least 2"):
+                op.norm(method="lanczos", codomain_free=codomain_free, max_op_eval=1)
 
 
 
