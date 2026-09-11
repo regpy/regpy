@@ -93,7 +93,9 @@ class SemiSmoothNewton(RegSolver):
         y0 = self.op(x0)
         quad_setting = Setting(self.op, quadTaylor(self.R,x0),quadTaylor(self.S,y0),regpar=regpar)
 
-        cg_pars = {'tol': 0.001/sqrt(self.regpar)}
+        cg_pars = cg_pars if cg_pars is not None else {}
+        if 'tol' not in cg_pars.keys():
+            cg_pars['tol'] =  0.001/sqrt(self.regpar)
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
 
@@ -104,7 +106,11 @@ class SemiSmoothNewton(RegSolver):
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
 
-        self.tikhcg=TikhonovCG(quad_setting, x0 = x0, logging_level=self.cg_logging_level, **self.cg_pars)
+        self.tikhcg=TikhonovCG(quad_setting, 
+                               x0 = x0, 
+                               logging_level=self.cg_logging_level, 
+                               **self.cg_pars
+                               )
         self.x, self.y = self.tikhcg.run()
 
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
@@ -164,9 +170,11 @@ class SemiSmoothNewton(RegSolver):
                                   data = self.op(projection(self.x)-self.x)
                                   )         
             tikhcg = TikhonovCG(quad_setting, 
+                                init=projection(full_R_taylor.reference_vector()),                                
                                 x0 = projection(self.x), 
                                 logging_level=self.cg_logging_level,
-                                **self.cg_pars)
+                                **self.cg_pars
+                                )
             aux, _ = tikhcg.run()
             self.x[self.inactive] = aux[self.inactive]
         self.y = self.op(self.x)
