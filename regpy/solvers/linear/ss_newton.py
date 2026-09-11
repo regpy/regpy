@@ -1,14 +1,16 @@
 from math import sqrt,inf
 import numpy as np
 import logging as log
+from copy import deepcopy
 
 from regpy.util import Errors
 from regpy.vecsps import NumPyVectorSpace
 from regpy.operators import CoordinateMask
 from regpy.operators.base import Composition
-from regpy.hilbert import GramHilbertSpace
+from regpy.hilbert import GramHilbertSpace, HilbertSpace
 from regpy.functionals.base import Functional, SquaredNorm, Composed
 from regpy.stoprules import CountIterations
+from regpy.functionals.integral_functionals import IntegralFunctionalBase
 
 from ..solver import RegSolver
 from ..setting import Setting
@@ -32,7 +34,7 @@ def quadTaylor(func:Functional,x):
     return SquaredNorm(h_space,a=1.,b=b,c=c)
 
 class SemiSmoothNewton(RegSolver):
-    r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
+    r"""Semi-smooth Newton method for minimizing smooth Tikhonov functionals
 
     .. math::
         \mathcal{S}_{g^{\delta}}(Tf) + \alpha * \mathcal{R}(f) 
@@ -48,16 +50,33 @@ class SemiSmoothNewton(RegSolver):
     Parameters
     ----------
     setting: Setting
-        The setting. The operator domain must be a NumPyVectorSpace. 
+        The setting. The operator domain must be a real NumPyVectorSpace
+        equipped with a Hilbert space. 
     init: np.ndarray or None, default: None
         Zeroth iterate. If None, it is taken from the setting. 
         init must be feasible.
+    psi_plus, psi_minus : real scalar or array, optional
+        Bound constraints, defaulting to the penalty's essential-domain bounds
+        (including constr_u/constr_l). Finite bounds must be in its essential
+        domain; infinite bounds require an unbounded domain in that direction.
+
     cg_pars: dictionary, default: None
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
     logging_level: Loglevel
         default: logging:INFO
     cg_logging_level: Loglevel
         default: logging.INFO
+
+    Notes
+    -----
+    A penalty with restricted essential domain must be an IntegralFunctionalBase.
+    The operator domain must have real Hilbert geometry. Integral penalties are
+    copied; their hard constraints are handled by the active-set method. At
+    finite natural endpoints, quadratic extensions start at the midpoint of
+    the constraint and natural endpoint. Values and first and second derivatives
+    must be finite there, including when the midpoint equals the endpoint.
+    The original setting penalty is not modified.
+
     """
 
     def __init__(self, 
@@ -75,17 +94,18 @@ class SemiSmoothNewton(RegSolver):
         out, _ = SemiSmoothNewton.check_applicability(self.setting)
         if not out['applicable']:
             raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
-        self.R = self.setting.penalty
         self.S = self.setting.data_fid
-        if psi_plus is not None:
-            self.psi_plus = psi_plus
-        else:
-            self.psi_plus  = np.broadcast_to(self.R.dom_u, setting.op.domain.shape) if isinstance(self.R.dom_u,(float,int)) else self.R.dom_u
-        if psi_minus is not None:
-            self.psi_minus = psi_minus
-        else:
-            self.psi_minus = np.broadcast_to(self.R.dom_l, setting.op.domain.shape) if isinstance(self.R.dom_l,(float,int)) else self.R.dom_l
-        self.Rpp_plus, self.Rpp_minus = self._get_second_R_derivatives_at_bound_constraints()
+        original_penalty = self.setting.penalty
+        self.psi_plus = self._constraint_vector(
+            original_penalty.dom_u if psi_plus is None else psi_plus, 'psi_plus'
+        )
+        self.psi_minus = self._constraint_vector(
+            original_penalty.dom_l if psi_minus is None else psi_minus, 'psi_minus'
+        )
+        if np.any(self.psi_minus >= self.psi_plus):
+            raise ValueError("psi_minus must be strictly below psi_plus.")
+        self._validate_constraints(original_penalty)
+        self.R = self._extended_penalty(original_penalty)
         regpar= setting.regpar
         x0 = setting.get_or_update_initial_guess(init, update=False)
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
@@ -93,7 +113,7 @@ class SemiSmoothNewton(RegSolver):
         y0 = self.op(x0)
         quad_setting = Setting(self.op, quadTaylor(self.R,x0),quadTaylor(self.S,y0),regpar=regpar)
 
-        cg_pars = cg_pars if cg_pars is not None else {}
+        cg_pars = dict(cg_pars) if cg_pars is not None else {}
         if 'tol' not in cg_pars.keys():
             cg_pars['tol'] =  0.001/sqrt(self.regpar)
         self.cg_pars = cg_pars
@@ -123,6 +143,72 @@ class SemiSmoothNewton(RegSolver):
             (1.*self.active_minus+self.active_plus).sum(),0 )
         )
 
+    def _constraint_vector(self, value, name):
+        array = np.asarray(value)
+        if np.iscomplexobj(array):
+            raise TypeError(f"{name} must be real.")
+        if array.ndim != 0 and array.shape != self.op.domain.shape:
+            raise ValueError(f"{name} must be scalar or have the domain shape.")
+        result = np.array(np.broadcast_to(array, self.op.domain.shape), dtype=float, copy=True)
+        if np.any(np.isnan(result)):
+            raise ValueError(f"{name} must not contain NaN.")
+        return result
+
+    def _validate_constraints(self, penalty):
+        lower, upper = np.asarray(penalty.dom_l), np.asarray(penalty.dom_u)
+        for name, bound in [('psi_minus', self.psi_minus), ('psi_plus', self.psi_plus)]:
+            if np.any(bound < lower) or np.any(bound > upper):
+                raise ValueError(f"{name} is outside the penalty's essential domain.")
+            if name == 'psi_minus' and np.any(np.isposinf(bound)):
+                raise ValueError("psi_minus cannot be +infinity.")
+            if name == 'psi_plus' and np.any(np.isneginf(bound)):
+                raise ValueError("psi_plus cannot be -infinity.")
+            # Check finite boundary values, including open natural endpoints.
+            # Unbounded coordinates are filled by a feasible reference.
+            finite = np.isfinite(bound)
+            if np.any(finite):
+                probe = np.array(penalty.reference_vector(), copy=True)
+                probe[finite] = bound[finite]
+                try:
+                    valid = np.isfinite(penalty(probe))
+                except (ValueError, NotImplementedError) as error:
+                    raise ValueError(f"{name} is not in the penalty's essential domain.") from error
+                if not valid:
+                    raise ValueError(f"{name} is not in the penalty's essential domain.")
+
+    def _extended_penalty(self, penalty):
+        """Make a solver-owned extension, retaining constraints separately."""
+        if not isinstance(penalty, IntegralFunctionalBase):
+            return penalty
+        result = deepcopy(penalty)
+        # Constraints belong to the active-set method, not the smooth model.
+        result.constr_l = None
+        result.constr_u = None
+        for side, bound in [('l', self.psi_minus), ('u', self.psi_plus)]:
+            natural = np.asarray(getattr(result, '_nat_dom_' + side))
+            mask = np.isfinite(natural) & np.isfinite(bound)
+            if not np.any(mask):
+                continue
+            existing = getattr(result, 'quad_taylor_' + side)
+            threshold = (np.array(existing, copy=True) if existing is not None
+                         else np.full(self.op.domain.shape, -np.inf if side == 'l' else np.inf))
+            threshold[mask] = 0.5 * bound[mask] + 0.5 * np.broadcast_to(natural, bound.shape)[mask]
+            # Check the natural integrand, not a constraint/extension Hessian.
+            for method in ('_f', '_f_deriv', '_f_second_deriv'):
+                values = self.op.domain.zeros()
+                try:
+                    with np.errstate(all='ignore'):
+                        getattr(result, method)(threshold, out=values, mask=mask, **result.kwargs)
+                except (ValueError, NotImplementedError, FloatingPointError) as error:
+                    raise ValueError(f"Cannot construct {side} quadratic extension: {method} unavailable at the extension point.") from error
+                if not np.all(np.isfinite(values[mask])):
+                    raise ValueError(f"Cannot construct {side} quadratic extension: {method} is nonfinite at the extension point.")
+            setattr(result, 'lin_taylor_' + side, None)
+            setattr(result, 'quad_taylor_' + side, threshold)
+        if not result.everywhere_finite:
+            raise ValueError("The penalty could not be extended to the full domain space.")
+        return result
+
     def _next(self):
         """compute active and inactive sets"""
         self.active_plus_old=self.active_plus
@@ -141,13 +227,15 @@ class SemiSmoothNewton(RegSolver):
         self.lam_minus[self.active_plus]=0
 
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
+        # Clamping changes x; linearize the fidelity at its current image.
+        self.y = self.op(self.x)
+        S_taylor = quadTaylor(self.S, self.y)
+        full_R_taylor = quadTaylor(self.R, self.x)
         if self.active.all():
             self.log.info('all indices active!')
         else:
             """Define quadratic Taylor approximation of the data fidelity functional at the current iterate"""
-            S_taylor = quadTaylor(self.S,self.y)
             """... and a quadratic Taylor approximation of the full penalty functional"""
-            full_R_taylor = quadTaylor(self.R,self.x)            
             """ ... as well as its restriction to the inactive set.""" 
             hess_R_full =  full_R_taylor.gram
             constr_R_taylor = Composed(
@@ -206,13 +294,20 @@ class SemiSmoothNewton(RegSolver):
 
     def primal(self):
         projected_x = self.x.copy()
-        projected_x[self.active_minus] = self.psi_minus
-        projected_x[self.active_plus] = self.psi_plus
+        projected_x[self.active_minus] = self.psi_minus[self.active_minus]
+        projected_x[self.active_plus] = self.psi_plus[self.active_plus]
         return (projected_x, self.op(projected_x))
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
         out = {'info':''}
+        if not setting.op.linear:
+            out['info'] += 'Operator must be linear. '
+        if (not isinstance(setting.h_domain, HilbertSpace)
+                or setting.h_domain.vecsp != setting.op.domain
+                or not isinstance(setting.op.domain, NumPyVectorSpace)
+                or not np.issubdtype(setting.op.domain.dtype, np.floating)):
+            out['info'] += 'Operator domain must carry a real Hilbert space. '
         if not setting.is_tikhonov:
             out['info'] += 'Setting has no regularization parameter.'
         if not setting.is_convex:
@@ -224,8 +319,24 @@ class SemiSmoothNewton(RegSolver):
                 out['info'] += 'Data functional not twice differentiable. '
             elif setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '
-        if not setting.penalty.is_separable:
+        penalty = setting.penalty
+        if not penalty.is_separable:
             out['info'] += 'Penalty term not separable. '
+        else:
+            # everywhere_finite is not part of the general Functional API.
+            # Essential-domain bounds are available for separable functionals.
+            lower, upper = penalty.dom_l, penalty.dom_u
+            full_domain = (
+                lower is not None
+                and upper is not None
+                and np.all(np.isneginf(lower))
+                and np.all(np.isposinf(upper))
+            )
+            if not full_domain and not isinstance(penalty, IntegralFunctionalBase):
+                out['info'] += (
+                    'A penalty with restricted or unspecified essential domain '
+                    'must be an IntegralFunctionalBase. '
+                )
         if not 'hessian' in setting.penalty.methods:
             out['info'] += 'Penalty term not twice differentiable. '
         if not isinstance(setting.op.domain, NumPyVectorSpace):

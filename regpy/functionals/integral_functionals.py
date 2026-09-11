@@ -322,7 +322,7 @@ class IntegralFunctionalBase(Functional):
             )
             self._if_constant_broadcast(self.conj_f_l, mask=conj_active_ind_l)
         elif self.quad_taylor_l is not None:
-            taylor_active_l = self._taylor_l >= self.dom_l
+            taylor_active_l = np.isfinite(self._taylor_l) & (self._taylor_l >= self.dom_l)
             if np.any(taylor_active_l):
                 self.conj_taylor_l = np.full(self.domain.shape, -np.inf)
                 self._f_deriv(
@@ -411,7 +411,7 @@ class IntegralFunctionalBase(Functional):
             )
             self._if_constant_broadcast(self.conj_f_u, mask=conj_active_ind_u)
         elif self.quad_taylor_u is not None:
-            taylor_active_u = self._taylor_u <= self.dom_u
+            taylor_active_u = np.isfinite(self._taylor_u) & (self._taylor_u <= self.dom_u)
             if np.any(taylor_active_u):
                 self.conj_taylor_u = np.full(self.domain.shape, np.inf)
                 self._f_deriv(
