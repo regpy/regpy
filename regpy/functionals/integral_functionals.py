@@ -2546,7 +2546,9 @@ class Huber(IntegralFunctionalBase):
         If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
         and precautions against an infinite recursion of conjugations are taken.
     """
-    # This could also be implemented as special case of Quadratic
+    # Keep the historical constructor and attributes; use the integral
+    # functional's native constraints so SemiSmoothNewton can remove them
+    # on its private copy and evaluate the smooth quadratic everywhere.
 
     def  __init__(self, domain, as_primal=True, sigma = 1., **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
@@ -2642,7 +2644,9 @@ class QuadraticIntv(IntegralFunctionalBase):
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
     """
-    # This could also be implemented as special case of Quadratic
+    # Keep the historical constructor and attributes; use the integral
+    # functional's native constraints so SemiSmoothNewton can remove them
+    # on its private copy and evaluate the smooth quadratic everywhere.
 
     def  __init__(self, domain, as_primal=True, sigma=1., eps=1e-10, **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): 
@@ -2740,7 +2744,9 @@ class QuadraticNonneg(IntegralFunctionalBase):
         domain on which functional is defined 
 
     """
-    # This could also be implemented as special case of Quadratic
+    # Keep the historical constructor and attributes; use the integral
+    # functional's native constraints so SemiSmoothNewton can remove them
+    # on its private copy and evaluate the smooth quadratic everywhere.
 
     def  __init__(self, domain, **kwargs):
         super().__init__(domain,convexity_param = 1., nat_dom_l=0.,
@@ -2810,7 +2816,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
     def _ptw_dist_subdiff(self, vstar, x):
         raise NotImplementedError
 
-class QuadraticBilateralConstraints(LinearCombination):
+class QuadraticBilateralConstraints(Quadratic):
     r""" Returns `Functional` defined by 
 
     .. math::
@@ -2822,30 +2828,36 @@ class QuadraticBilateralConstraints(LinearCombination):
     ----------
     domain: regpy.vecsps.MeasureSpaceFcts
         domain on which functional is defined
-    lb: domain, optional
+    lb: scalar or domain element, optional
         lower bound, default:0
-    ub: domain, optional
+    ub: scalar or domain element, optional
         upper bound, default:1
-    x0: domain, optional
+    x0: scalar or domain element, optional
         reference value default 0.5*(lb+ub)
     alpha: float [default: 1]
         regularization parameter
+
+    Notes
+    -----
+    This is a Quadratic subclass with coefficients a=alpha, b=-alpha*x0,
+    and c=alpha*x0**2/2. The bounds are represented by constr_l and constr_u.
+    Thus it is also an IntegralFunctionalBase, suitable for SemiSmoothNewton,
+    which handles the bounds separately from the smooth quadratic.
     """
-    # This could also be implemented as special case of Quadratic
 
     def __init__(self,domain:MeasureSpaceFcts, 
                  lb=None, ub=None, x0=None, alpha:float=1., **kwargs):
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSpaceFcts instance."))
         if isinstance(lb,(float,int)):
-            lb = lb*domain.ones()
+            lb = lb*domain.ones(read_only=True)
         elif lb is None:
-            lb = domain.zeros()
+            lb = domain.zeros(read_only=True)
         elif lb not in domain:
             raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
         if isinstance(ub,(float,int)):
-            ub = ub*domain.ones()
+            ub = ub*domain.ones(read_only=True)
         elif ub is None:
-            ub = domain.ones()
+            ub = domain.ones(read_only=True)
         elif ub not in domain:
             raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"ub = {ub}"))
         if np.any(lb>=ub):
@@ -2853,7 +2865,7 @@ class QuadraticBilateralConstraints(LinearCombination):
         if x0 is None:
             x0 =0.5*(lb+ub)
         elif isinstance(x0,(float,int)):
-            x0 = x0*domain.ones()
+            x0 = x0*domain.ones(read_only=True)
         elif x0 not in domain:
             raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
 
@@ -2861,17 +2873,13 @@ class QuadraticBilateralConstraints(LinearCombination):
             raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
 
         self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        F = QuadraticIntv(domain,sigma=(ub-lb)/2., **kwargs)
-        center = (ub+lb)/2
-        lin = LinearFunctional(center-x0,
-                            domain=domain,
-                            gradient_in_dual_space=False
-                            )
-        offset = 0.5*(np.sum((x0**2-center**2)*domain.measure))
-        # return  alpha*HorizontalShiftDilation(F,shift=center) + alpha*lin + alpha*offset
-        super().__init__((alpha,HorizontalShiftDilation(F,shift=center)+offset),
-                          (alpha,lin)
-                          )
+        # Install coefficients before constraints: boundary precomputation
+        # evaluates the quadratic and its derivative.
+        super().__init__(
+            domain, a=alpha, b=-alpha*x0, c=0.5*alpha*x0**2, **kwargs
+        )
+        self.constr_l = lb
+        self.constr_u = ub
 
 def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     r""" Returns `Functional` defined by 
