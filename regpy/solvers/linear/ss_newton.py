@@ -44,7 +44,7 @@ class SemiSmoothNewton(RegSolver):
     ..math::
         psi_{minus} \leq f \leq psi_{plus} 
     
-    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth, strongly convex data functional :math:`\mathcal{S}_{g^{\delta}}` 
+    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth, strictly convex data functional :math:`\mathcal{S}_{g^{\delta}}` 
     and a linear operator :math:`T`.
     
     Parameters
@@ -115,7 +115,7 @@ class SemiSmoothNewton(RegSolver):
 
         cg_pars = dict(cg_pars) if cg_pars is not None else {}
         if 'tol' not in cg_pars.keys():
-            cg_pars['tol'] =  0.001/sqrt(self.regpar)
+            cg_pars['reltolx'] =  1
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
 
@@ -257,6 +257,7 @@ class SemiSmoothNewton(RegSolver):
                                   regpar=self.regpar,
                                   data = self.op(projection(self.x)-self.x)
                                   )         
+            self.cg_pars['reltolx'] /= 3.
             tikhcg = TikhonovCG(quad_setting, 
                                 init=projection(full_R_taylor.reference_vector()),                                
                                 x0 = projection(self.x), 
@@ -317,10 +318,10 @@ class SemiSmoothNewton(RegSolver):
         else:
             if not 'hessian' in setting.data_fid.methods:
                 out['info'] += 'Data functional not twice differentiable. '
-            elif setting.data_fid.Lipschitz==np.inf:
-                out['info'] += 'Data functional not Lipschitz continuous. '
-        if setting.data_fid.convexity_param == 0:
-            out['info'] += 'Data fidelity term is not strictly convex.'
+            if not setting.data_fid.is_strictly_convex:
+                out['info'] += 'Data fidelity term is not strictly convex.'
+            if setting.data_fid.Lipschitz==np.inf:
+                out['info'] += 'Data functional not Lipschitz continuous. '                
         penalty = setting.penalty
         if not penalty.is_separable:
             out['info'] += 'Penalty term not separable. '

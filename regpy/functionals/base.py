@@ -1041,6 +1041,25 @@ class Functional:
         return self._convexity_param
 
     @property
+    def is_strictly_convex(self) -> bool:
+        """Whether strict convexity on the essential domain is certified.
+
+        The default uses positive strong-convexity parameter. Subclasses may
+        certify strict convexity even when no positive uniform bound exists.
+        False means that strict convexity is not certified by this property.
+        """
+        return bool(self.convexity_param > 0)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        """Whether the conjugate is strictly convex on its essential domain.
+
+        By default this is certified by a finite Lipschitz constant of the
+        primal gradient. Subclasses may provide a sharper criterion.
+        """
+        return bool(np.isfinite(self.Lipschitz))
+
+    @property
     def is_convex(self)->bool:
         """ Flag if the functional is convex.
         """
@@ -1412,6 +1431,14 @@ class Conj(Functional):
     @property
     def convexity_param(self)->float:
         return 1/self.func.Lipschitz if self.func.Lipschitz>0 else inf
+
+    @property
+    def is_strictly_convex(self) -> bool:
+        return bool(self.func.conj_is_strictly_convex)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        return bool(self.func.is_strictly_convex)
 
     @property
     def is_quadratic(self) -> bool:
@@ -2502,6 +2529,14 @@ class VerticalShift(Functional):
         return self.func.Lipschitz
     
     @property
+    def is_strictly_convex(self) -> bool:
+        return bool(self.func.is_strictly_convex)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        return bool(self.func.conj_is_strictly_convex)
+
+    @property
     def is_convex(self) -> bool:
         return self.func.is_convex
 
@@ -2790,6 +2825,14 @@ class HorizontalShiftDilation(Functional):
     def convexity_param(self) -> float:
         return self.func.convexity_param  * self.dilation**2
     
+    @property
+    def is_strictly_convex(self) -> bool:
+        return bool(self.func.is_strictly_convex)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        return bool(self.func.conj_is_strictly_convex)
+
     @property
     def is_convex(self) -> bool:
         return self.func.is_convex
@@ -3205,6 +3248,14 @@ class FunctionalOnDirectSum(Functional):
     def Lipschitz(self) -> float:
         return max([func.Lipschitz for func in self.funcs])
     
+    @property
+    def is_strictly_convex(self) -> bool:
+        return all(func.is_strictly_convex for func in self.funcs)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        return all(func.conj_is_strictly_convex for func in self.funcs)
+
     @property
     def is_convex(self) -> bool:
         return all([func.is_convex for func in self.funcs])

@@ -1508,6 +1508,28 @@ class LppPower(IntegralFunctionalBase):
         see IntegralFunctional  
     """
 
+    @property
+    def is_strictly_convex(self) -> bool:
+        """Strict convexity without linear tails; constraints are allowed."""
+        return bool(
+            True
+            and self.lin_taylor_l is None
+            and self.lin_taylor_u is None
+        )
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        """Strict convexity of the conjugate without primal hard constraints.
+
+        Primal constraints can generate affine tails in the conjugate.
+        Linear primal extensions instead restrict its essential domain.
+        """
+        return bool(
+            True
+            and self.constr_l is None
+            and self.constr_u is None
+        )
+
     def __init__(self, domain, p=2.,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                   quad_taylor_l=None, quad_taylor_u=None,
@@ -1977,6 +1999,28 @@ class KullbackLeibler(IntegralFunctionalBase):
         a continuous Poisson process, and it is irrelevant and large for large discrete data. 
     """
 
+    @property
+    def is_strictly_convex(self) -> bool:
+        """Strict convexity without linear tails; constraints are allowed."""
+        return bool(
+            np.all(self.w > 0)
+            and self.lin_taylor_l is None
+            and self.lin_taylor_u is None
+        )
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        """Strict convexity of the conjugate without primal hard constraints.
+
+        Primal constraints can generate affine tails in the conjugate.
+        Linear primal extensions instead restrict its essential domain.
+        """
+        return bool(
+            np.all(self.w > 0)
+            and self.constr_l is None
+            and self.constr_u is None
+        )
+
     def __init__(self, domain, w=None,
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                  quad_taylor_l=None, quad_taylor_u=None, data = None,
@@ -2309,6 +2353,28 @@ class RelativeEntropy(IntegralFunctionalBase):
                          is_data_func=(data is not None),
                          **kwargs
                          )
+
+    @property
+    def is_strictly_convex(self) -> bool:
+        """Strict convexity without linear tails; constraints are allowed."""
+        return bool(
+            True
+            and self.lin_taylor_l is None
+            and self.lin_taylor_u is None
+        )
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        """Strict convexity of the conjugate without primal hard constraints.
+
+        Primal constraints can generate affine tails in the conjugate.
+        Linear primal extensions instead restrict its essential domain.
+        """
+        return bool(
+            np.all(self.w > 0)
+            and self.constr_l is None
+            and self.constr_u is None
+        )
 
     @property
     def w(self):
@@ -2816,7 +2882,10 @@ class QuadraticNonneg(IntegralFunctionalBase):
     def _ptw_dist_subdiff(self, vstar, x):
         raise NotImplementedError
 
-class QuadraticBilateralConstraints(Quadratic):
+def QuadraticBilateralConstraints(
+    domain: MeasureSpaceFcts, lb=None, ub=None, x0=None, alpha: float = 1.,
+    **kwargs,
+) -> Quadratic:
     r""" Returns `Functional` defined by 
 
     .. math::
@@ -2837,51 +2906,58 @@ class QuadraticBilateralConstraints(Quadratic):
     alpha: float [default: 1]
         regularization parameter
 
+    Returns
+    -------
+    Quadratic
+        Quadratic integral functional with bilateral constraints.
+
     Notes
     -----
-    This is a Quadratic subclass with coefficients a=alpha, b=-alpha*x0,
+    Returns a Quadratic instance with coefficients a=alpha, b=-alpha*x0,
     and c=alpha*x0**2/2. The bounds are represented by constr_l and constr_u.
     Thus it is also an IntegralFunctionalBase, suitable for SemiSmoothNewton,
     which handles the bounds separately from the smooth quadratic.
     """
 
-    def __init__(self,domain:MeasureSpaceFcts, 
-                 lb=None, ub=None, x0=None, alpha:float=1., **kwargs):
-        if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSpaceFcts instance."))
-        if isinstance(lb,(float,int)):
-            lb = lb*domain.ones(read_only=True)
-        elif lb is None:
-            lb = domain.zeros(read_only=True)
-        elif lb not in domain:
-            raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
-        if isinstance(ub,(float,int)):
-            ub = ub*domain.ones(read_only=True)
-        elif ub is None:
-            ub = domain.ones(read_only=True)
-        elif ub not in domain:
-            raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"ub = {ub}"))
-        if np.any(lb>=ub):
-            raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint:"+"\n\t "+f"lb = {lb},"+"\n\t "+f"ub = {ub}"))
-        if x0 is None:
-            x0 =0.5*(lb+ub)
-        elif isinstance(x0,(float,int)):
-            x0 = x0*domain.ones(read_only=True)
-        elif x0 not in domain:
-            raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
+    if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticBilateralConstraints domain needs to be a MeasureSpaceFcts instance."))
+    if isinstance(lb,(float,int)):
+        lb = lb*domain.ones(read_only=True)
+    elif lb is None:
+        lb = domain.zeros(read_only=True)
+    elif lb not in domain:
+        raise TypeError(Errors.type_error(f"Lower bound lb in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"lb = {lb}"))
+    if isinstance(ub,(float,int)):
+        ub = ub*domain.ones(read_only=True)
+    elif ub is None:
+        ub = domain.ones(read_only=True)
+    elif ub not in domain:
+        raise TypeError(Errors.type_error(f"Upper bound ub in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"ub = {ub}"))
+    if np.any(lb>=ub):
+        raise TypeError(Errors.type_error(f"The lower bound needs to be below the upper bound in QuadraticBilateralCOnstraint:"+"\n\t "+f"lb = {lb},"+"\n\t "+f"ub = {ub}"))
+    if x0 is None:
+        x0 =0.5*(lb+ub)
+    elif isinstance(x0,(float,int)):
+        x0 = x0*domain.ones(read_only=True)
+    elif x0 not in domain:
+        raise TypeError(Errors.type_error(f"Reference value x0 in QuadraticBilateralConstraints needs to be a scalar or element in the domain! Given:"+"\n\t "+f"x0 = {x0}"))
 
-        if not isinstance(alpha,(float,int)):
-            raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
+    if not isinstance(alpha,(float,int)):
+        raise TypeError(Errors.not_instance(alpha,float,add_info="Regularization parameter alpha in QuadraticBilateralConstraints needs to be a scalar!"))
 
-        self.lb = lb; self.ub = ub; self.x0 =x0; self.alpha = alpha
-        # Install coefficients before constraints: boundary precomputation
-        # evaluates the quadratic and its derivative.
-        super().__init__(
-            domain, a=alpha, b=-alpha*x0, c=0.5*alpha*x0**2, **kwargs
-        )
-        self.constr_l = lb
-        self.constr_u = ub
+    # Install coefficients before constraints: boundary precomputation
+    # evaluates the quadratic and its derivative.
+    functional = Quadratic(
+        domain, a=alpha, b=-alpha*x0, c=0.5*alpha*x0**2, **kwargs
+    )
+    functional.constr_l = lb
+    functional.constr_u = ub
 
-def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
+    # Preserve the attributes exposed by the previous implementation.
+    functional.lb, functional.ub = lb, ub
+    functional.x0, functional.alpha = x0, alpha
+    return functional
+
+def QuadraticLowerBound(domain, lb=None, x0=None, a=1.) -> Quadratic:
     r""" Returns `Functional` defined by 
 
     .. math::
@@ -2896,9 +2972,15 @@ def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     lb: domain or float [default: None]
         lower bound (zero in the default case)
     x0: domain or float [default: None]
-        lower bound (zero in the default case)
+        reference value (zero in the default case)
     a : float or int
         scaling factor
+
+    Returns
+    -------
+    Quadratic
+        Quadratic integral functional with coefficients a, -a*x0,
+        a*x0**2/2 and native lower constraint constr_l=lb.
     """
 
     if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticLowerBound domain needs to be a MeasureSPaceFcts isntance."))
@@ -2917,11 +2999,12 @@ def QuadraticLowerBound(domain, lb=None, x0=None, a=1.):
     if not isinstance(a,(float,int)):
             raise TypeError(Errors.not_instance(a,float,add_info="Scaling factor a in QuadraticLowerBound needs to be a scalar!"))
 
-    F = QuadraticNonneg(domain)
-    lin = LinearFunctional(lb-x0,domain=domain,gradient_in_dual_space=False)
-    offset = 0.5*(np.sum((x0**2-lb**2)*domain.measure))
-    return a*HorizontalShiftDilation(F,shift=lb)+ a*lin + a*offset
- 
+    # Coefficients must exist before constraint boundary precomputation.
+    functional = Quadratic(domain, a=a, b=-a*x0, c=0.5*a*x0**2)
+    functional.constr_l = lb
+    return functional
+
+
 class L1Generic(Functional):
     r"""Generic :math:`L ^1` Functional. Proximal implemented for default :math:`L^2` as `h_domain`.
 
