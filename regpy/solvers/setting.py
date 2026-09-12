@@ -1109,7 +1109,9 @@ class Setting:
             Stopping rule. An explicit value overrides a rule configured by
             :meth:`set_stoprule` for this run only. By default, a configured
             rule is used if present; otherwise convex Tikhonov methods use a
-            duality-gap rule combined with 1000 maximum iterations. Settings
+            duality-gap rule combined with 1000 maximum iterations. For
+            SSNewton and dual_SSNewton, this rule evaluates and records the
+            gap at every iteration, including iteration zero. Settings
             without a regularization parameter and with deterministic noise
             use a discrepancy rule with the stored absolute noise level and
             tau=2.5, combined with 1000 maximum iterations. Other settings use
@@ -1185,8 +1187,16 @@ class Setting:
                 default_max_it, timing=True, eval_count=True, logging_level=logging_level
             )
             if self.is_tikhonov and self.is_convex:
+                # Newton methods typically need only a few outer steps.
+                # Record/check every step, including iteration zero.
+                gap_options = (
+                    {'schedule': None}
+                    if method_name in ('SSNewton', 'dual_SSNewton') else {}
+                )
                 stoprule = (
-                    DualityGapStopping(tol=1e-10, logging_level=logging_level)
+                    DualityGapStopping(
+                        tol=1e-10, logging_level=logging_level, **gap_options
+                    )
                     + iteration_limit
                 )
             elif (

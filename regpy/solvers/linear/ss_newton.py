@@ -135,7 +135,7 @@ class SemiSmoothNewton(RegSolver):
 
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
-        if not (self.active_plus).any() and not (self.active_minus).any():
+        if not (self.active_plus).any() and not (self.active_minus).any() and self.data_fid.is_quadratic:
             self.log.info('Stopped at 0th iterate.')
             self.converge()
         self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(
@@ -289,7 +289,7 @@ class SemiSmoothNewton(RegSolver):
             removed_ind
             )
         )
-        if added_ind+removed_ind==0:
+        if added_ind+removed_ind==0 and self.data_fid.is_quadratic:
             self.converge()
 
     def primal(self):
@@ -319,6 +319,8 @@ class SemiSmoothNewton(RegSolver):
                 out['info'] += 'Data functional not twice differentiable. '
             elif setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '
+        if setting.data_fid.convexity_param == 0:
+            out['info'] += 'Data fidelity term is not strictly convex.'
         penalty = setting.penalty
         if not penalty.is_separable:
             out['info'] += 'Penalty term not separable. '
