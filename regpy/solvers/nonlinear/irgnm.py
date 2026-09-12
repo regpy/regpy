@@ -8,11 +8,8 @@ from regpy.stoprules import CountIterations
 from regpy.util import Errors
 from regpy.operators import ObsDataT, Operator
 from regpy.vecsps import ReadOnlyVector, Vector
-
-from ..solver import RegSolver
-from ..setting import Setting, check_Hilbert_applicability
+from .. import RegSolver, Setting, GeometricSequence, check_Hilbert_applicability
 from ..linear import LavrentievCG, TikhonovCG
-from ..util import GeometricSequence
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 

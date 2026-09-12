@@ -1,8 +1,7 @@
-from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
-from ..solver import RegSolver
-from ..setting import Setting
-from ..util import GeometricSequence
 from typing import Iterable, Tuple
+
+from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
+from .. import RegSolver, Setting, GeometricSequence
 from regpy.util import Errors
 
 __all__ =["GeneralizedTikhonov"]

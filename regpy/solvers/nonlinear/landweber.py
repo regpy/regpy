@@ -7,10 +7,7 @@ import numpy as np
 from regpy.operators import ObsDataT
 from regpy.util import Errors
 from regpy.vecsps import ReadOnlyVector, Vector
-
-from ..solver import RegSolver
-from ..setting import Setting, check_Hilbert_applicability
-from ..util import powers_of_two
+from .. import RegSolver, Setting, check_Hilbert_applicability, powers_of_two
 
 __all__ = ["Landweber"]
 

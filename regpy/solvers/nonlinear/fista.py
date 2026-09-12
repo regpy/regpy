@@ -8,9 +8,7 @@ import numpy as np
 from regpy.functionals.base import NullFunctional
 from regpy.vecsps import Vector
 from regpy.util import Errors
-from ..solver import RegSolver
-from ..setting import Setting
-from ..util import powers_of_two
+from .. import RegSolver, Setting, powers_of_two
 
 __all__ = ["FISTA"]
 

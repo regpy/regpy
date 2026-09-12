@@ -5,12 +5,9 @@ import logging
 
 from regpy.util import Errors
 from regpy.vecsps import Vector, ReadOnlyVector
-from regpy.functionals.base import SquaredNorm
 from regpy.operators import Identity, Operator, ObsDataT
 from regpy.stoprules import CountIterations, StopRule
-
-from ..solver import RegSolver
-from ..setting import Setting, check_Hilbert_applicability_linear
+from .. import RegSolver, Setting, check_Hilbert_applicability_linear
 
 __all__ = [
     "TikhonovCG",
@@ -807,7 +804,7 @@ class TikhonovAlphaGrid(RegSolver):
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
     ) -> None:
-        from ..util import GeometricSequence
+        from .. import GeometricSequence
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
         )

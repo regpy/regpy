@@ -23,9 +23,9 @@ from regpy.operators.base import (
 from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
 
-from ..util import GeometricSequence, powers_of_two
-from ..solver import RegSolver
-from ..setting import Setting, check_Hilbert_applicability_linear
+from .. import GeometricSequence, powers_of_two, RegSolver, Setting, check_Hilbert_applicability_linear
+#from ..solver import 
+#from ..setting import 
 
 
 __all__ = [
