@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from numbers import Integral, Real
+from math import isfinite
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -18,7 +20,7 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ["plot_operator_evaluations", "convergence_plots", "GeometricSequence", "powers_of_two", "natural_numbers", "squares"]
+__all__ = ["plot_operator_evaluations", "convergence_plots", "GeometricSequence", "powers_of_two", "natural_numbers", "squares", "powers_of_b", "effective_alpha"]
 
 def powers_of_two() -> Iterator[int]:
     """Yield ``1, 2, 4, 8, ...`` indefinitely."""
@@ -26,6 +28,75 @@ def powers_of_two() -> Iterator[int]:
     while True:
         yield 2**n
         n += 1
+
+def powers_of_b(b: int) -> Iterator[int]:
+    """Yield integer powers b**n for n=0,1,2,... indefinitely.
+
+    b must be a positive integer; b=1 produces only ones. Validation occurs
+    on first advancement. Invalid types (including bool) raise TypeError;
+    nonpositive bases raise ValueError. Python integers avoid overflow.
+    """
+    if isinstance(b, (bool, np.bool_)) or not isinstance(b, Integral):
+        raise TypeError("b must be a positive integer.")
+    if b <= 0:
+        raise ValueError("b must be positive.")
+    base = int(b)
+    value = 1
+    while True:
+        yield value
+        value *= base
+
+
+def effective_alpha(alphas: Iterable[float]) -> Iterator[float]:
+    """Yield effective regularization parameters for iterated Tikhonov.
+
+    Parameters
+    ----------
+    alphas : iterable of float
+        Positive finite parameters alpha_j, consumed lazily. Finite inputs
+        produce one output per input; infinite generators are supported.
+
+    Yields
+    ------
+    float
+        alpha_eff_k defined by 1/alpha_eff_k = sum(1/alpha_j, j=1,...,k).
+
+    Notes
+    -----
+    Iterated Tikhonov with parameters alpha_j can be interpreted as implicit
+    time stepping for Showalter's equation with step sizes 1/alpha_j.
+    The accumulated time is therefore 1/alpha_eff_k. This identifies the
+    time scale, not equality of the discrete and continuous filters.
+
+    A stable recurrence avoids explicitly forming reciprocals, whose sum
+    can overflow: alpha_eff is the smaller of the previous effective value
+    and alpha_j divided by one plus their smaller-to-larger ratio.
+
+    Raises
+    ------
+    TypeError
+        For non-real inputs, including booleans.
+    ValueError
+        For nonpositive or nonfinite inputs.
+    FloatingPointError
+        If the effective parameter underflows to zero.
+    """
+    effective = None
+    for alpha in alphas:
+        if isinstance(alpha, (bool, np.bool_)) or not isinstance(alpha, Real):
+            raise TypeError("alphas must contain positive finite real numbers.")
+        alpha = float(alpha)
+        if not isfinite(alpha) or alpha <= 0:
+            raise ValueError("alphas must contain positive finite real numbers.")
+        if effective is None:
+            effective = alpha
+        else:
+            smaller, larger = min(effective, alpha), max(effective, alpha)
+            effective = smaller / (1.0 + smaller / larger)
+            if effective == 0.0:
+                raise FloatingPointError("The effective parameter underflowed to zero.")
+        yield effective
+
 
 def natural_numbers() -> Iterator[int]:
     """Yield ``1, 2, 3, ...`` indefinitely."""
@@ -356,7 +427,7 @@ def convergence_plots(
     ):
         axis.set_yscale("log")
         for label, horizontal, values in curves:
-            axis.plot(horizontal, values, label=label)
+            axis.plot(horizontal, values,'o-', label=label)
         axis.set_title(subplot_title)
         axis.set_xlabel(x_label)
         axis.set_ylabel("Value")
@@ -468,7 +539,7 @@ def op_eval_over_time_plot(
         raise ValueError("No recorded operator-evaluation histories were found.")
     figure, axis = plt.subplots(figsize=(8., 4.5))
     for method_name, values in curves:
-        axis.plot(values[:, 0], values[:, 1], label=method_name)
+        axis.plot(values[:, 0], values[:, 1], 'o-',label=method_name)
     axis.set_xlabel("CPU time [s]")
     axis.set_ylabel("Operator evaluations (weighted)")
     axis.grid(True, alpha=0.3)
