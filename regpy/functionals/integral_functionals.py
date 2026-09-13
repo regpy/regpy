@@ -1714,6 +1714,124 @@ class Quadratic(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
+    def _arithmetic_copy(self):
+        """Copy mutable state without cloning the domain or Hilbert geometry."""
+        result = deepcopy(self, {id(self.domain): self.domain,
+                                 id(self.h_domain): self.h_domain})
+        result.__dict__.pop('conj', None)
+        return result
+
+    def _refresh_quadratic(self):
+        self._precompute_f_l()
+        self._precompute_f_u()
+
+    def __mul__(self, other):
+        if np.isscalar(other):
+            return self.__rmul__(other)
+        return super().__mul__(other)
+
+    def __rmul__(self, other):
+        """Scale coefficients, preserving compatible constraints and tails.
+
+        Nonpositive scaling with constraints or extensions uses the generic
+        representation, whose extended-real semantics cannot in general be
+        represented by the convex quadratic extension machinery.
+        """
+        if not np.isscalar(other) or not np.isrealobj(other):
+            return NotImplemented
+        if not np.isfinite(other):
+            raise ValueError("Quadratic scaling requires a finite real scalar.")
+        if other <= 0 and any(getattr(self, name) is not None for name in (
+                'constr_l', 'constr_u', 'lin_taylor_l', 'lin_taylor_u',
+                'quad_taylor_l', 'quad_taylor_u')):
+            return super().__rmul__(other)
+        result = self._arithmetic_copy()
+        result._a = other * self._a
+        result._b = other * self._b
+        result._c = other * self._c
+        result._refresh_quadratic()
+        return result
+
+    def __imul__(self, other):
+        """Scale in place when the result remains a Quadratic."""
+        result = self.__rmul__(other)
+        if not isinstance(result, Quadratic):
+            return result
+        # Existing conjugate views must continue to point to this object.
+        conjugate = self.__dict__.get('conj')
+        self.__dict__.update(result.__dict__)
+        if conjugate is not None:
+            self.__dict__['conj'] = conjugate
+        return self
+
+    def __add__(self, other):
+        """Add a constant, linear functional, or compatible quadratic.
+
+        Constants are functional values, so their pointwise density is
+        divided by the total measure. A linear functional's dual gradient
+        is divided pointwise by the measure. Without extensions, constraint
+        intervals are intersected. Matching extensions are preserved;
+        incompatible extension joins or empty intersections fall back to
+        LinearCombination.
+        """
+        if np.isscalar(other):
+            if not np.isrealobj(other):
+                return NotImplemented
+            mass = np.sum(self.measure)
+            if not np.isfinite(other) or not np.isfinite(mass) or mass <= 0:
+                return super().__add__(other)
+            result = self._arithmetic_copy()
+            result._c = self._c + other / mass
+        elif isinstance(other, LinearFunctional):
+            if self.domain != other.domain:
+                raise ValueError("Functional domains must agree for addition.")
+            if np.any(self.measure <= 0) or not np.all(np.isfinite(self.measure)):
+                return super().__add__(other)
+            result = self._arithmetic_copy()
+            result._b = self._b + other.gradient / self.measure
+        elif isinstance(other, Quadratic):
+            if self.domain != other.domain:
+                raise ValueError("Functional domains must agree for addition.")
+            names = ('_nat_dom_l', '_nat_dom_u', 'constr_l', 'constr_u',
+                     'lin_taylor_l', 'lin_taylor_u', 'quad_taylor_l', 'quad_taylor_u')
+            compatible = np.array_equal(self.measure, other.measure)
+            for name in names:
+                left, right = getattr(self, name), getattr(other, name)
+                compatible = compatible and (
+                    left is right or (left is not None and right is not None
+                                      and np.array_equal(left, right))
+                )
+            extension_names = ('lin_taylor_l', 'lin_taylor_u',
+                               'quad_taylor_l', 'quad_taylor_u')
+            without_extensions = all(
+                getattr(func, name) is None
+                for func in (self, other) for name in extension_names
+            )
+            intersect = without_extensions and np.array_equal(self.measure, other.measure)
+            if intersect:
+                lower = np.maximum(self.dom_l, other.dom_l)
+                upper = np.minimum(self.dom_u, other.dom_u)
+                if np.any(lower > upper):
+                    return super().__add__(other)
+            elif not compatible:
+                return super().__add__(other)
+            result = self._arithmetic_copy()
+            if intersect:
+                result._nat_dom_l = np.maximum(self._nat_dom_l, other._nat_dom_l)
+                result._nat_dom_u = np.minimum(self._nat_dom_u, other._nat_dom_u)
+                result._constr_l = None if np.all(np.isneginf(lower)) else lower
+                result._constr_u = None if np.all(np.isposinf(upper)) else upper
+            result._a = self._a + other._a
+            result._b = self._b + other._b
+            result._c = self._c + other._c
+        else:
+            return super().__add__(other)
+        result._refresh_quadratic()
+        return result
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
     @property
     def data(self) -> ReadOnlyVector:
         """Current data shift, exposed read-only."""

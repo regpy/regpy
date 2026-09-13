@@ -1611,6 +1611,10 @@ class LinearFunctional(Functional):
         return HorizontalShiftDilation(self-self.domain.vdot(self._gradient,v).real,data=data_shift)
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
+        # Import at call time to avoid a base/integral module import cycle.
+        from .integral_functionals import Quadratic
+        if isinstance(other, Quadratic):
+            return other + self
         if isinstance(other,LinearFunctional):
             gradient = self.gradient
             gradient += other._gradient
