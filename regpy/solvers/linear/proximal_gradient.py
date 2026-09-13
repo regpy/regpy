@@ -222,16 +222,13 @@ class FISTA(RegSolver):
 
         self.codomain_free = setting.codomain_free
         
-        if not self.codomain_free:
-            self.y = self.op.codomain.empty()
-            self.op(self.x, out=self.y)
-        else:
+        self.y = None
+        if self.codomain_free:
             data = setting.get_or_update_data(new_data=data, update=update_setting)
             if data is None:
                 raise ValueError(Errors.value_error(
                     "codomain_free FISTA requires data either in the setting or as an argument."
             ))
-            self.y = None
             self.backpropagated_data = self.op.adjoint_data(data)
 
         self.proximal_pars = {} if proximal_pars is None else dict(proximal_pars)
@@ -264,7 +261,6 @@ class FISTA(RegSolver):
         self.Tp = self.op.domain.zeros()
         self._h = self.op.domain.empty()
         self._domain_work = self.op.domain.empty()
-
         self._dual_variables_computed = False
         
     @staticmethod
@@ -326,9 +322,9 @@ class FISTA(RegSolver):
         return out, par
 
     def primal(self): # for stopping rules and monitoring
-        if self.codomain_free:
-            raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
-        return (self.x,self.y)
+        #if self.codomain_free:
+        #    raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
+        return (self.x,None)
     
     def dual(self): # for stopping rules and monitoring
         if self.codomain_free:
@@ -362,8 +358,8 @@ class FISTA(RegSolver):
              self.op.adjoint_eval(self._h, out=self.Tp)
              self.Tp -= self.backpropagated_data
         else:
-            self.op(self._h, out=self.y)
-            self.data_fid.subgradient(self.y, out=self.p)
+            self.op(self._h, out=self.p)
+            self.data_fid.subgradient(self.p, out=self.p)
             self.op.adjoint(self.p, out=self.Tp)
 
         self.h_domain.gram_inv(self.Tp, out=self._domain_work)
@@ -377,6 +373,4 @@ class FISTA(RegSolver):
             **self.proximal_pars
         )
         self.x, self.x_old = self.x_old, self.x
-        if not self.codomain_free:
-            self.op(self.x, out=self.y)
         
