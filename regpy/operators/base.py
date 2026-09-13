@@ -269,6 +269,11 @@ class Operator:
         wrapper or counter dictionary. Derivative/adjoint wrappers dispatch
         back to the instrumented methods of this operator. Enabling twice
         does not stack wrappers. Counts are reset by default.
+
+        Compositions built while counting is enabled retain this operator as
+        a component instead of flattening it. Enable counting before building
+        a containing composition; already flattened compositions cannot be
+        retroactively instrumented through the original object.
         """
         if not isinstance(reset, bool):
             raise TypeError("reset must be a bool.")
@@ -2305,7 +2310,10 @@ class Composition(Operator):
         self.d_eq_cd = []
         """Whether each operator has compatible domain and codomain."""
         for op in ops:
-            if isinstance(op, Composition):
+            # A counted composition is an observable evaluation boundary.
+            # Flattening it would bypass its instrumented methods (e.g. the
+            # blur inside an SSNewton inactive-set operator T * projection).
+            if isinstance(op, Composition) and not op.eval_count_enabled:
                 self.ops.extend(op.ops)
                 self.d_eq_cd.extend(op.d_eq_cd)
             else:
