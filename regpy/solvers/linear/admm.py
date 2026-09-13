@@ -31,10 +31,12 @@ class ADMM(RegSolver):
         &+ \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2 \\
         &+ \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
 
-    The minimization for :math:`f` simply reduces to the minimization of a quadratic Tikhonov functional.  This can 
-    be achieved by the CG method, but ADMM is particularly efficient if a closed form expression is available for the 
-    Tikhonov regularizer as for convolution operators or a matrix factorization. A corresponding `regpy.operators.operator` 
-    can be passed as argument. 
+    The minimization for :math:`f` reduces to the minimization of a quadratic Tikhonov functional.  
+    This can be achieved by the CG method, but ADMM is usually only competitive if 
+    a closed-form expression for the Tikhonov regularizer is available. 
+    If the operator is marked as an SVD decomposition (as it is the case, e.g., for certain 
+    convolution operators), a Tikhonov regularizer as computed by SVD. 
+    A regularized inverse in form of a `regpy.operators.operator` can also be passed as argument. 
     Splitting up the minimization for :math:`v_1` and :math:`v_2` one gets the algorithm below requiring the proximal 
     operators for the penalty and data fidelity functional. 
 
