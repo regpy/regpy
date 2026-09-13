@@ -76,7 +76,7 @@ class PDHG(RegSolver):
                  op_norm:float|None = None, 
                  proximal_pars_data_fidelity_conjugate: dict|None = None, 
                  proximal_pars_penalty: dict|None = None, 
-                 compute_y: bool = True, 
+                 compute_y: bool = False, 
                  logging_level: str = "INFO"
                  ):
         if not setting.is_tikhonov:

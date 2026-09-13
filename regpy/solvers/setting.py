@@ -635,7 +635,7 @@ class Setting:
         if dual[0] is None and dual[1] is None:
             raise ValueError(Errors.value_error("Either p or T*p must be given in dual tuple!"))
         if dual[1] is None:
-            dual[1] = self.op.adjoint(dual[0])
+            dual = (dual[0], self.op.adjoint(dual[0]))
         if not dual[1] in self.op.adjoint.codomain:
             raise TypeError(Errors.type_error("T*p not in codomain of adjoint operator!"))
         if self._primal_setting is None or own == True:
@@ -678,7 +678,7 @@ class Setting:
         if primal[0] is None and primal[1] is None:
             raise ValueError(Errors.value_error("Either f or Tf must be given in primal tuple!"))
         if primal[1] is None:
-            primal[1] = self.op(primal[0])
+            primal = (primal[0],self.op(primal[0]))
         if not primal[1] in self.op.codomain:
             raise TypeError(Errors.type_error("Tf not in codomain of operator!"))
         if self._primal_setting is None or own==True:
@@ -1095,6 +1095,7 @@ class Setting:
                         | None) = None,
             dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
+            gap_tol: float = 1e-3,
             **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -1119,6 +1120,14 @@ class Setting:
             limit. Default iteration counters record CPU time and cumulative
             operator evaluation counts. If None, a previously stored
             stopping rule is required and used.
+        gap_tol: float, default: 1e-3
+            Absolute duality-gap tolerance for the automatically constructed
+            convex Tikhonov stopping rule. Each run gets a fresh rule combined
+            with a timed, evaluation-counting iteration cap (default 1000).
+            SSNewton and dual_SSNewton evaluate the gap at every iteration;
+            other methods retain DualityGapStopping's default schedule.
+            Explicit or previously configured rules take precedence: gap_tol
+            does not modify those rules or get forwarded to the solver.
         ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
             Reference solution used to monitor iteration errors. A single
             vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
@@ -1187,6 +1196,11 @@ class Setting:
                 default_max_it, timing=True, eval_count=True, logging_level=logging_level
             )
             if self.is_tikhonov and self.is_convex:
+                if (not np.isscalar(gap_tol) or not np.isrealobj(gap_tol)
+                        or isinstance(gap_tol, (bool, np.bool_))):
+                    raise TypeError("gap_tol must be a finite nonnegative real scalar.")
+                if not np.isfinite(gap_tol) or gap_tol < 0:
+                    raise ValueError("gap_tol must be finite and nonnegative.")
                 # Newton methods typically need only a few outer steps.
                 # Record/check every step, including iteration zero.
                 gap_options = (
@@ -1195,7 +1209,7 @@ class Setting:
                 )
                 stoprule = (
                     DualityGapStopping(
-                        tol=1e-10, logging_level=logging_level, **gap_options
+                        tol=gap_tol, logging_level=logging_level, **gap_options
                     )
                     + iteration_limit
                 )
