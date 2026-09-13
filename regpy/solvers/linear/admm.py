@@ -1,4 +1,7 @@
-from regpy.operators import Operator, ConvolutionOperator
+import logging
+import numpy as np
+
+from regpy.operators import Operator, PtwMultiplication
 from regpy.util import Errors
 
 from ..solver import RegSolver
@@ -49,16 +52,21 @@ class ADMM(RegSolver):
     proximal_pars_penalty : dict [default: {}]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
     regularizedInverse: `regpy.operators.Operator` [default: None]
-        The operator :math:` (T^*T+\I)^{-1}`. If None, this operator is computed if T is a regpy.operators.Convolution. 
-        Otherwise, the application of this inverse operator is implemented by CG.
+        The operator (T^dagger T+I)^-1 on the domain Hilbert space, where
+        T^dagger=G_X^-1 T* G_Y. A supplied operator takes precedence.
+        Otherwise a labelled SVD is used to precompute the inverse. Without
+        either option, applicability checking warns and CG is used. The
+        regularization parameter of this inner inverse is 1, independent
+        of the outer Tikhonov parameter and gamma.
     cg_pars : dict [default: {}]
         Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
     logging_level: [default: logging.INFO]
         logging level
     """
 
-    def __init__(self,  setting, init={}, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
+    def __init__(self,  setting, init=None, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
                  regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
+        init = {} if init is None else init
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ADMM requires the setting to contain a regularization parameter!"))       
         super().__init__(setting)
@@ -70,7 +78,7 @@ class ADMM(RegSolver):
         self.log.setLevel(logging_level)
 
         out, _ = ADMM.check_applicability(setting, regularizedInverse=regularizedInverse)
-        if out['applicable']==False and not out['info'] == 'No efficient regularized inverse seems to be available. ':
+        if not out['applicable']:
             raise RuntimeError('ADMM not applicable in this setting. '+out['info'])
 
         self.setting = setting
@@ -86,35 +94,45 @@ class ADMM(RegSolver):
         """ Prox parameters of data fidelity."""
         self.proximal_pars_penalty = proximal_pars_penalty
         """ Prox parameters of penalty."""
-        if regularizedInverse is None and isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==():
-            adj = setting.op.conv_adjoint()
-            regularizedInverse = adj.composition(setting.op)
-            self.regularizedInverse = regularizedInverse.functional_calculus(lambda t: 1./(1.+t))
-        else:
-            self.regularizedInverse = regularizedInverse
-        """ operator (T^*T+I)^{-1}"""
+        self.gramXinv = self.h_domain.gram_inv
+        self.gramY = self.h_codomain.gram
+        self.regularizedInverse = regularizedInverse
+        if regularizedInverse is None and getattr(self.op, 'is_svd', False):
+            from .spectral import SVD
+            hilbert_setting = Setting(self.op, self.h_domain, self.h_codomain)
+            decomposition = SVD(hilbert_setting)
+            # U maps spectral coordinates into X*, with U* G_X^-1 U = I.
+            # I - G_X^-1 U diag(sigma^2/(1+sigma^2)) U* also acts
+            # as identity on the null space of T, for rectangular SVDs.
+            sigma = decomposition.singular_values
+            weights = np.empty_like(sigma, dtype=float)
+            small = sigma <= 1.
+            weights[small] = sigma[small]**2 / (1. + sigma[small]**2)
+            weights[~small] = 1. / (1. + (1. / sigma[~small])**2)
+            self.regularizedInverse = (
+                self.op.domain.identity
+                - self.gramXinv * decomposition.U
+                * PtwMultiplication(decomposition.U.domain, weights)
+                * decomposition.U.adjoint
+            )
 
         if cg_pars is None:
             cg_pars = {}
         self.cg_pars = cg_pars
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
-        self.gramXinv = self.h_codomain.gram.inverse
-        """ The inverse of the Gram matrix of the domain of the forward operator"""
-        self.gramY = self.h_codomain.gram
-        """ The Gram matrix of the image space of the forward operator"""        
-
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
-                data=self.v1+self.p1,
-                xref=self.v2+self.p2,
-                regpar=1.,
+                setting=Setting(
+                    self.op, self.h_domain, self.h_codomain,
+                    data=self.v1+self.p1, init=self.v2+self.p2, regpar=1.,
+                ),
                 **self.cg_pars
             ).run()
         else:
-            self.x = self.regularizedInverse(self.v2+self.p2 + self.op.adjoint(self.v1+self.p1))
+            self.x = self.regularizedInverse(self.v2+self.p2 + self.gramXinv(self.op.adjoint(self.gramY(self.v1+self.p1))))
             self.y = self.op(self.x)
 
+    @staticmethod
     def check_applicability(setting, regularizedInverse = None,op_norm=None):
         out = {'info': ''}; par = {}
         if not setting.is_tikhonov:
@@ -128,9 +146,19 @@ class ADMM(RegSolver):
         if (not setting.codomain_free
                 and not 'proximal' in setting.data_fid.methods):
             out['info'] += 'Missing prox in data fidelity functional. '
-        if regularizedInverse is None and not \
-            (isinstance(setting.op, ConvolutionOperator) and setting.op.domain.shape_codomain==()):
-            out['info'] += 'No efficient regularized inverse seems to be available. '
+        if not setting.op.linear:
+            out['info'] += 'ADMM requires a linear operator. '
+        if regularizedInverse is not None:
+            if not isinstance(regularizedInverse, Operator):
+                out['info'] += 'regularizedInverse must be an Operator. '
+            elif (regularizedInverse.domain != setting.op.domain
+                  or regularizedInverse.codomain != setting.op.domain):
+                out['info'] += 'regularizedInverse must map the operator domain to itself. '
+        elif not getattr(setting.op, 'is_svd', False):
+            logging.getLogger(__name__).warning(
+                'No supplied regularizedInverse and operator is not marked as SVD; '
+                'ADMM will use inner TikhonovCG solves.'
+            )
         out['applicable'] = out['info']==''
         if out['applicable']:
             out['info'] += 'Ergodic rate O(1/n).'
@@ -140,9 +168,14 @@ class ADMM(RegSolver):
     def primal(self):
         return (self.x, self.y)
 
-#    def dual(self):
-#        p = self.setting.primal_to_dual(self.primal)
-#        return p,self.op.adjoint(p)
+    def dual(self):
+        """Use p=0 at iteration zero; reconstruct the usual dual pair later."""
+        if self.iteration_step_nr == 0:
+            return self.op.codomain.zeros(), self.op.domain.zeros()
+        _, dual = self.setting._complete_primal_dual_tuples(
+            primal=self.primal(), dual=None,
+        )
+        return dual
 
     def _next(self):
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)
@@ -152,10 +185,10 @@ class ADMM(RegSolver):
 
         if self.regularizedInverse is None:
             self.x, self.y = TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
-                data=self.v1+self.p1,
-                xref=self.v2+self.p2,
-                regpar=1.,
+                setting=Setting(
+                    self.op, self.h_domain, self.h_codomain,
+                    data=self.v1+self.p1, init=self.v2+self.p2, regpar=1.,
+                ),
                 **self.cg_pars
             ).run()
         else:
