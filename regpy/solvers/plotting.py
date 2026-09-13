@@ -123,6 +123,7 @@ def convergence_plots(
     x_axis: str = "its",
     methods: list[str] | None = None,
     title: str | None = None,
+    fontsize:int =12
 ) :
     """Plot convergence histories for selected methods that have been run.
 
@@ -297,16 +298,17 @@ def convergence_plots(
         axes, active_series, strict=True
     ):
         axis.set_yscale("log")
+        axis.tick_params(axis="both", labelsize=fontsize-2)
         for label, horizontal, values in curves:
             axis.plot(horizontal, values,'o-', label=label)
-        axis.set_title(subplot_title)
-        axis.set_xlabel(x_label)
-        axis.set_ylabel("Value")
+        axis.set_title(subplot_title,fontsize = fontsize+2)
+        axis.set_xlabel(x_label,fontsize = fontsize+2)
+        axis.set_ylabel("Value",fontsize = fontsize+2)
         axis.grid(True, which="both", alpha=0.3)
-        axis.legend()
+        axis.legend(fontsize = fontsize-2)
 
     if title is not None:
-        figure.suptitle(title)
+        figure.suptitle(title,fontsize = fontsize+2)
         figure.tight_layout(rect=(0, 0, 1, 0.97))
     else:
         figure.tight_layout()
