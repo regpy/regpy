@@ -11,7 +11,7 @@ from regpy.hilbert import L2
 
 from .base import Functional, LinearFunctional, LinearCombination,HorizontalShiftDilation, NotInEssentialDomainError,NotTwiceDifferentiableError, as_functional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
+__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","Huber_old","Quadratic","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -1699,11 +1699,6 @@ class Quadratic(IntegralFunctionalBase):
                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
                  quad_taylor_l=None, quad_taylor_u=None,
                  **kwargs):
-        super().__init__(domain, is_quadratic=True,
-                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
-                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
-                         **kwargs
-                         )
         if not np.isscalar(a) and a not in domain:
             raise ValueError(Errors.value_error(f'a needs to be either scalar or an element of the domain. Given a: {a} of type {type(a)}', self))
         self._a = np.broadcast_to(a, domain.shape) if np.isscalar(a) else a
@@ -1713,6 +1708,59 @@ class Quadratic(IntegralFunctionalBase):
         if not np.isscalar(c) and c not in domain:  
             raise ValueError(Errors.value_error(f'c needs to be either scalar or an element of the domain. Given c: {c} of type {type(c)}', self))
         self._c = np.broadcast_to(c, domain.shape) if np.isscalar(c) else c
+
+        super().__init__(domain, is_quadratic=True,
+                         constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
+                         quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
+                         **kwargs
+                         )
+    @property
+    def data(self) -> ReadOnlyVector:
+        """Current data shift, exposed read-only."""
+        return self.domain.read_only(self._data)
+
+    @data.setter
+    def data(self, value: ReadOnlyVector | None) -> None:
+        if value is not None and value not in self.domain:
+            raise ValueError("Quadratic data must be an element of its domain.")
+        old = getattr(self, '_data', self.domain.zeros())
+        new = self.domain.zeros() if value is None else value.copy()
+        delta = new - old
+        # Translate the current polynomial by delta, without accumulating
+        # repeated assignments of the same data vector.
+        b = self._b
+        self._c = self._c - b * delta + 0.5 * self._a * delta**2
+        self._b = b - self._a * delta
+        for name in ('_nat_dom_l', '_nat_dom_u', '_constr_l', '_constr_u',
+                     '_lin_taylor_l', '_lin_taylor_u',
+                     '_quad_taylor_l', '_quad_taylor_u'):
+            bound = getattr(self, name)
+            if bound is not None:
+                setattr(self, name, bound + delta)
+        self._data = new
+        self.is_data_func = value is not None
+        self._precompute_f_l()
+        self._precompute_f_u()
+
+    @data.deleter
+    def data(self):
+        self.data = None
+
+    def as_data_func(self, data: ReadOnlyVector | None = None) -> "Quadratic":
+        """Shift by data in place and return this Quadratic instance.
+
+        For an unshifted polynomial a*x**2/2+b*x+c, the shifted coefficients
+        are b-a*data and c-b*data+a*data**2/2. All constraints and extension
+        points are translated by data as well. Subsequent calls replace the
+        previous data shift. None preserves an existing shift, or installs
+        zero data on a functional that is not yet a data functional.
+        Assigning data=None or deleting data removes the shift.
+        """
+        if data is not None:
+            self.data = data
+        elif not self.is_data_func:
+            self.data = self.domain.zeros()
+        return self
 
     @property
     def a(self):
@@ -2594,7 +2642,33 @@ class RelativeEntropy(IntegralFunctionalBase):
     def _f_conj_second_deriv(self, u_star, out=None, mask=None, **kwargs):
         return self._f_conj(u_star, out=out, mask=mask, **kwargs)
 
-class Huber(IntegralFunctionalBase):
+def Huber(domain, as_primal=True, sigma=1., **kwargs) -> Quadratic:
+    r"""Return the Huber functional as a Quadratic with linear tails.
+
+    Its pointwise value is x**2/2 for abs(x)<=sigma and
+    sigma*abs(x)-sigma**2/2 otherwise. The signature and normalization
+    match Huber_old. sigma may be a positive scalar or domain element.
+    as_primal=False uses the reciprocal measure, as in the legacy class.
+    Data shifts preserve the Quadratic type and translate the tail joins.
+    """
+    if not isinstance(domain, MeasureSpaceFcts):
+        raise TypeError("Huber requires a MeasureSpaceFcts domain.")
+    if not np.isscalar(sigma) and sigma not in domain:
+        raise TypeError("sigma must be a scalar or an element of the domain.")
+    if np.iscomplexobj(sigma) or np.any(~np.isfinite(sigma)) or np.any(np.asarray(sigma) <= 0):
+        raise ValueError("sigma must be positive, finite and real.")
+    sigma = np.array(np.broadcast_to(sigma, domain.shape), dtype=float, copy=True)
+    if not as_primal:
+        domain = deepcopy(domain)
+        domain.measure = 1. / domain.measure
+    # These are the defining Huber tails. Alternative modifications of the
+    # integrand remain available through Huber_old.
+    functional = Quadratic(domain, lin_taylor_l=-sigma, lin_taylor_u=sigma, **kwargs)
+    functional.sigma = sigma
+    return functional
+
+
+class Huber_old(IntegralFunctionalBase):
     r"""Huber functional 
 
     .. math::
@@ -2731,7 +2805,7 @@ class QuadraticIntv(IntegralFunctionalBase):
             super().__init__(domain,convexity_param=1,
                              nat_dom_l=-self.sigmaeps,nat_dom_u=self.sigmaeps,
                              **kwargs)
-            self.conjugate = Huber(domain,as_primal=False,sigma=sigma)
+            self.conjugate = Huber_old(domain,as_primal=False,sigma=sigma)
         else:
             dual_domain = deepcopy(domain)
             dual_domain.measure = 1./domain.measure

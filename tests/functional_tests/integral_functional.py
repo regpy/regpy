@@ -5,7 +5,7 @@ import pytest
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
-from regpy.functionals.integral_functionals import Quadratic 
+from regpy.functionals.integral_functionals import Quadratic, Huber, Huber_old
 from regpy.hilbert import L2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed
@@ -260,3 +260,100 @@ def test_quadbil():
     assert np.isclose(func(-6*dom.ones()),np.inf)
     assert np.isclose(func(9*dom.ones()),850.5)
     ft.test_functional(func)
+
+
+@pytest.fixture(params=[False, True], ids=["unit-measure", "weighted-measure"])
+def huber_comparison_case(request):
+    measure = (np.array([[0.5, 2., 3.], [1.5, 4., 0.75]])
+               if request.param else np.ones((2, 3)))
+    domain = MeasureSpaceFcts(measure=measure, dtype=np.float64)
+    return domain
+
+
+@pytest.mark.parametrize("spatial_sigma", [False, True], ids=["scalar-sigma", "array-sigma"])
+def test_huber_matches_legacy(huber_comparison_case, spatial_sigma):
+    """Compare both implementations inside the quadratic core and in both tails."""
+    domain = huber_comparison_case
+    sigma = (np.array([[0.5, 1., 2.], [1.5, 0.7, 3.]])
+             if spatial_sigma else 1.3)
+    new = Huber(domain, sigma=sigma)
+    old = Huber_old(domain, sigma=sigma)
+    assert type(new) is Quadratic
+    x = np.array([[-3., -0.4, 0.], [0.3, 2.5, -2.]]) * sigma
+    direction = np.array([[1., -0.5, 0.3], [0.2, -1., 0.7]])
+    np.testing.assert_allclose(new(x), old(x), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(new.subgradient(x), old.subgradient(x), rtol=1e-12, atol=1e-12)
+    # Avoid the joins, where the classical second derivative does not exist.
+    np.testing.assert_allclose(new.hessian(x)(direction), old.hessian(x)(direction), rtol=1e-12, atol=1e-12)
+    joins = np.ones(domain.shape) * sigma
+    for boundary in (joins, -joins):
+        np.testing.assert_allclose(new(boundary), old(boundary), rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(new.subgradient(boundary), old.subgradient(boundary), rtol=1e-12, atol=1e-12)
+    for tau in (0.2, 2.):
+        np.testing.assert_allclose(new.proximal(x, tau), old.proximal(x, tau), rtol=1e-12, atol=1e-12)
+    # Strictly interior dual points avoid legacy boundary tolerances.
+    dual = 0.3 * sigma * domain.measure * np.ones(domain.shape)
+    np.testing.assert_allclose(new.conj(dual), old.conj(dual), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(new.conj.subgradient(dual), old.conj.subgradient(dual), rtol=1e-12, atol=1e-12)
+
+
+def test_huber_data_functional_matches_shift(huber_comparison_case):
+    domain = huber_comparison_case
+    sigma = np.array([[0.5, 1., 2.], [1.5, 0.7, 3.]])
+    data = np.array([[0.2, -0.3, 0.6], [1., -0.5, 0.4]])
+    original_data = data.copy()
+    residual = sigma * np.array([[-3., -0.4, 0.], [0.3, 2.5, -2.]])
+    x = data + residual
+    functional = Huber(domain, sigma=sigma)
+    assert functional.as_data_func(data) is functional
+    assert type(functional) is Quadratic
+    assert functional.is_data_func
+    np.testing.assert_array_equal(data, original_data)
+    np.testing.assert_allclose(functional.b, -data)
+    np.testing.assert_allclose(functional.c, 0.5 * data**2)
+    np.testing.assert_allclose(functional.lin_taylor_l, data - sigma)
+    np.testing.assert_allclose(functional.lin_taylor_u, data + sigma)
+    reference = Huber_old(domain, sigma=sigma).as_data_func(data.copy())
+    np.testing.assert_allclose(functional(x), reference(x), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(functional.subgradient(x), reference.subgradient(x), rtol=1e-12, atol=1e-12)
+    for tau in (0.2, 2.):
+        np.testing.assert_allclose(functional.proximal(x, tau), reference.proximal(x, tau), rtol=1e-12, atol=1e-12)
+    dual = 0.3 * sigma * domain.measure
+    np.testing.assert_allclose(functional.conj(dual), reference.conj(dual), rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(functional.conj.subgradient(dual), reference.conj.subgradient(dual), rtol=1e-12, atol=1e-12)
+    # The data shift changes the conjugate by a linear term, not its domain.
+    np.testing.assert_allclose(functional.conj_dom_l, -sigma * domain.measure)
+    np.testing.assert_allclose(functional.conj_dom_u, sigma * domain.measure)
+
+
+@pytest.mark.parametrize("remove_with_none", [False, True], ids=["delete-data", "assign-none"])
+def test_huber_data_replacement_and_removal(huber_comparison_case, remove_with_none):
+    domain = huber_comparison_case
+    data = np.array([[0.2, -0.3, 0.6], [1., -0.5, 0.4]])
+    replacement = -2. * data
+    x = np.array([[-3., -0.4, 0.], [0.3, 2.5, -2.]])
+    plain = Huber(domain, sigma=0.8)
+    functional = Huber(domain, sigma=0.8).as_data_func(data)
+    first_value = functional(x)
+    functional.as_data_func(data)
+    assert functional(x) == pytest.approx(first_value)
+    assert functional.as_data_func() is functional
+    assert functional(x) == pytest.approx(first_value)
+    functional.data = replacement
+    assert functional(x) == pytest.approx(plain(x - replacement))
+    np.testing.assert_allclose(functional.lin_taylor_l, replacement - 0.8)
+    # Both the setter and as_data_func must replace, not accumulate, data.
+    functional.as_data_func(data)
+    assert functional(x) == pytest.approx(first_value)
+    if remove_with_none:
+        functional.data = None
+    else:
+        del functional.data
+    assert not functional.is_data_func
+    assert type(functional) is Quadratic
+    assert functional(x) == pytest.approx(plain(x))
+    np.testing.assert_allclose(functional.b, 0., atol=1e-14)
+    np.testing.assert_allclose(functional.c, 0., atol=1e-14)
+    np.testing.assert_allclose(functional.lin_taylor_l, -0.8)
+    np.testing.assert_allclose(functional.lin_taylor_u, 0.8)
+
