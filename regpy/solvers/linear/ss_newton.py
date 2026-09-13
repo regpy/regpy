@@ -1,4 +1,6 @@
 from math import sqrt,inf
+from collections.abc import Iterable
+from numbers import Real
 import numpy as np
 import logging as log
 from copy import deepcopy
@@ -8,10 +10,11 @@ from regpy.vecsps import NumPyVectorSpace
 from regpy.operators import CoordinateMask
 from regpy.operators.base import Composition
 from regpy.hilbert import GramHilbertSpace, HilbertSpace
-from regpy.functionals.base import Functional, SquaredNorm, Composed
+from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj
 from regpy.stoprules import CountIterations
 from regpy.functionals.integral_functionals import IntegralFunctionalBase
 
+from ..sequences import GeometricSequence
 from ..solver import RegSolver
 from ..setting import Setting
 from .tikhonov import TikhonovCG
@@ -61,7 +64,17 @@ class SemiSmoothNewton(RegSolver):
         domain; infinite bounds require an unbounded domain in that direction.
 
     cg_pars: dictionary, default: None
-        Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
+        Additional CG parameters. The dictionary is copied. The reltolx value
+        is supplied by cg_reltols, overriding any reltolx entry here; other
+        stopping tolerances, such as tol and reltoly, remain unchanged.
+    cg_reltols : iterable of float or None, optional
+        Positive finite relative domain tolerances for successive CG solves.
+        None creates a fresh GeometricSequence(1.0, 1.0/3.0), yielding
+        1, 1/3, 1/9, ... . The first value is used for initialization, then
+        one value is consumed per inactive-set CG solve. Steps with all
+        indices active consume no value. Values are validated when consumed.
+        Exhaustion raises ValueError if another CG solve is needed; it does
+        not imply convergence of the Newton iteration.
     logging_level: Loglevel
         default: logging:INFO
     cg_logging_level: Loglevel
@@ -69,12 +82,22 @@ class SemiSmoothNewton(RegSolver):
 
     Notes
     -----
-    A penalty with restricted essential domain must be an IntegralFunctionalBase.
-    The operator domain must have real Hilbert geometry. Integral penalties are
-    copied; their hard constraints are handled by the active-set method. At
-    finite natural endpoints, quadratic extensions start at the midpoint of
-    the constraint and natural endpoint. Values and first and second derivatives
-    must be finite there, including when the midpoint equals the endpoint.
+    A penalty with restricted essential domain must be an IntegralFunctionalBase
+    or the conjugate of one. The operator domain must have real Hilbert geometry.
+    Hard bounds are retained for the active-set method. In the private copy of
+    a direct integral penalty, hard constraints are removed and finite natural
+    endpoints are extended quadratically at the actual constraint (not at an
+    interior midpoint). Finite values and first and second derivatives are
+    required at that point, even when it is a natural endpoint.
+
+    For a conjugate integral penalty, linear extensions of its private primal
+    functional are replaced by quadratic extensions at the same primal joins.
+    This extends the dual penalty quadratically beyond its original bounds.
+    The primal curvature must be finite and strictly positive at each join;
+    otherwise an error is raised. Any remaining restricted dual domain also
+    raises an error. The original data fidelity is not extended: changing it
+    would change the objective rather than merely extend the penalty outside
+    the active-set constraints.
     The original setting penalty is not modified.
 
     """
@@ -87,6 +110,7 @@ class SemiSmoothNewton(RegSolver):
                  cg_pars = None, 
                  logging_level = "INFO", 
                  cg_logging_level = "WARNING",
+                 cg_reltols: Iterable[float] | None = None,
                  **kwargs
                  ):
         super().__init__(setting)
@@ -114,9 +138,11 @@ class SemiSmoothNewton(RegSolver):
         quad_setting = Setting(self.op, quadTaylor(self.R,x0),quadTaylor(self.S,y0),regpar=regpar)
 
         cg_pars = dict(cg_pars) if cg_pars is not None else {}
-        if 'tol' not in cg_pars.keys():
-            cg_pars['reltolx'] =  1
         self.cg_pars = cg_pars
+        self.cg_reltols = iter(
+            GeometricSequence(1.0, 1.0 / 3.0)
+            if cg_reltols is None else cg_reltols
+        )
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
 
         self.log.setLevel(logging_level)
@@ -129,7 +155,7 @@ class SemiSmoothNewton(RegSolver):
         self.tikhcg=TikhonovCG(quad_setting, 
                                x0 = x0, 
                                logging_level=self.cg_logging_level, 
-                               **self.cg_pars
+                               **self._next_cg_parameters()
                                )
         self.x, self.y = self.tikhcg.run()
 
@@ -142,6 +168,24 @@ class SemiSmoothNewton(RegSolver):
             self.iteration_step_nr,self.tikhcg.iteration_step_nr,
             (1.*self.active_minus+self.active_plus).sum(),0 )
         )
+
+    def _next_cg_parameters(self) -> dict:
+        """Consume one relative tolerance for an actual CG solve."""
+        try:
+            tolerance = next(self.cg_reltols)
+        except StopIteration as error:
+            raise ValueError(
+                "cg_reltols exhausted before the next CG solve; "
+                "supply more tolerances or an infinite iterator."
+            ) from error
+        if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
+            raise TypeError("CG relative tolerances must be positive finite real numbers.")
+        tolerance = float(tolerance)
+        if not np.isfinite(tolerance) or tolerance <= 0:
+            raise ValueError("CG relative tolerances must be positive and finite.")
+        parameters = dict(self.cg_pars)
+        parameters['reltolx'] = tolerance
+        return parameters
 
     def _constraint_vector(self, value, name):
         array = np.asarray(value)
@@ -176,8 +220,54 @@ class SemiSmoothNewton(RegSolver):
                 if not valid:
                     raise ValueError(f"{name} is not in the penalty's essential domain.")
 
+    @staticmethod
+    def _check_extension_point(functional, threshold, mask, *, positive=False):
+        """Require finite Taylor data; dual quadratic tails need positive curvature."""
+        for method in ('_f', '_f_deriv', '_f_second_deriv'):
+            values = functional.domain.zeros()
+            with np.errstate(all='ignore'):
+                getattr(functional, method)(
+                    threshold, out=values, mask=mask, **functional.kwargs
+                )
+            if not np.all(np.isfinite(values[mask])):
+                raise ValueError(
+                    f"Cannot construct quadratic extension: {method} "
+                    "is nonfinite at the extension point."
+                )
+            if positive and method == '_f_second_deriv' and np.any(values[mask] <= 0):
+                raise ValueError(
+                    "A quadratic extension of the conjugate requires a "
+                    "strictly positive primal second derivative at the join."
+                )
+
     def _extended_penalty(self, penalty):
-        """Make a solver-owned extension, retaining constraints separately."""
+        """Extend a private penalty while preserving the original active-set bounds."""
+        if isinstance(penalty, Conj) and isinstance(penalty.func, IntegralFunctionalBase):
+            primal = deepcopy(penalty.func)
+            for side in ('l', 'u'):
+                linear = getattr(primal, 'lin_taylor_' + side)
+                if linear is None:
+                    continue
+                threshold = np.array(
+                    np.broadcast_to(linear, primal.domain.shape), copy=True
+                )
+                natural = getattr(primal, '_nat_dom_' + side)
+                mask = np.isfinite(threshold) & (
+                    threshold >= natural if side == 'l' else threshold <= natural
+                )
+                if np.any(mask):
+                    self._check_extension_point(primal, threshold, mask, positive=True)
+                # The conjugate of a positive-curvature quadratic tail is
+                # quadratic beyond the former dual constraint f'(threshold).
+                setattr(primal, 'lin_taylor_' + side, None)
+                if np.any(mask):
+                    setattr(primal, 'quad_taylor_' + side, threshold)
+            if not primal.conj_everywhere_finite:
+                raise ValueError(
+                    "The conjugate penalty still has a restricted domain after "
+                    "replacing primal linear extensions by quadratic extensions."
+                )
+            return primal.conj
         if not isinstance(penalty, IntegralFunctionalBase):
             return penalty
         result = deepcopy(penalty)
@@ -192,17 +282,8 @@ class SemiSmoothNewton(RegSolver):
             existing = getattr(result, 'quad_taylor_' + side)
             threshold = (np.array(existing, copy=True) if existing is not None
                          else np.full(self.op.domain.shape, -np.inf if side == 'l' else np.inf))
-            threshold[mask] = 0.5 * bound[mask] + 0.5 * np.broadcast_to(natural, bound.shape)[mask]
-            # Check the natural integrand, not a constraint/extension Hessian.
-            for method in ('_f', '_f_deriv', '_f_second_deriv'):
-                values = self.op.domain.zeros()
-                try:
-                    with np.errstate(all='ignore'):
-                        getattr(result, method)(threshold, out=values, mask=mask, **result.kwargs)
-                except (ValueError, NotImplementedError, FloatingPointError) as error:
-                    raise ValueError(f"Cannot construct {side} quadratic extension: {method} unavailable at the extension point.") from error
-                if not np.all(np.isfinite(values[mask])):
-                    raise ValueError(f"Cannot construct {side} quadratic extension: {method} is nonfinite at the extension point.")
+            threshold[mask] = bound[mask]
+            self._check_extension_point(result, threshold, mask)
             setattr(result, 'lin_taylor_' + side, None)
             setattr(result, 'quad_taylor_' + side, threshold)
         if not result.everywhere_finite:
@@ -257,12 +338,11 @@ class SemiSmoothNewton(RegSolver):
                                   regpar=self.regpar,
                                   data = self.op(projection(self.x)-self.x)
                                   )         
-            self.cg_pars['reltolx'] /= 3.
             tikhcg = TikhonovCG(quad_setting, 
                                 init=projection(full_R_taylor.reference_vector()),                                
                                 x0 = projection(self.x), 
                                 logging_level=self.cg_logging_level,
-                                **self.cg_pars
+                                **self._next_cg_parameters()
                                 )
             aux, _ = tikhcg.run()
             self.x[self.inactive] = aux[self.inactive]
@@ -335,10 +415,15 @@ class SemiSmoothNewton(RegSolver):
                 and np.all(np.isneginf(lower))
                 and np.all(np.isposinf(upper))
             )
-            if not full_domain and not isinstance(penalty, IntegralFunctionalBase):
+            integral_penalty = (
+                isinstance(penalty, IntegralFunctionalBase)
+                or (isinstance(penalty, Conj)
+                    and isinstance(penalty.func, IntegralFunctionalBase))
+            )
+            if not full_domain and not integral_penalty:
                 out['info'] += (
                     'A penalty with restricted or unspecified essential domain '
-                    'must be an IntegralFunctionalBase. '
+                    'must be an IntegralFunctionalBase or its conjugate. '
                 )
         if not 'hessian' in setting.penalty.methods:
             out['info'] += 'Penalty term not twice differentiable. '
