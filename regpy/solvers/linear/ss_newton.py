@@ -10,7 +10,7 @@ from regpy.vecsps import NumPyVectorSpace
 from regpy.operators import CoordinateMask
 from regpy.operators.base import Composition
 from regpy.hilbert import GramHilbertSpace, HilbertSpace
-from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj
+from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj, HorizontalShiftDilation
 from regpy.stoprules import CountIterations
 from regpy.functionals.integral_functionals import IntegralFunctionalBase
 
@@ -83,7 +83,11 @@ class SemiSmoothNewton(RegSolver):
     Notes
     -----
     A penalty with restricted essential domain must be an IntegralFunctionalBase
-    or the conjugate of one. The operator domain must have real Hilbert geometry.
+    or the conjugate of one, optionally wrapped in HorizontalShiftDilation.
+    Positive and negative dilations (including the dual scale -regpar) and
+    horizontal/data shifts are preserved in the private extended penalty.
+    Bounds are always extracted in the original solver coordinates.
+    The operator domain must have real Hilbert geometry.
     Hard bounds are retained for the active-set method. In the private copy of
     a direct integral penalty, hard constraints are removed and finite natural
     endpoints are extended quadratically at the actual constraint (not at an
@@ -240,8 +244,24 @@ class SemiSmoothNewton(RegSolver):
                     "strictly positive primal second derivative at the join."
                 )
 
+    @staticmethod
+    def _is_integral_conjugate(penalty) -> bool:
+        """Recognize conjugates through horizontal shift/dilation wrappers."""
+        while isinstance(penalty, HorizontalShiftDilation):
+            penalty = penalty.func
+        return isinstance(penalty, Conj) and isinstance(penalty.func, IntegralFunctionalBase)
+
     def _extended_penalty(self, penalty):
         """Extend a private penalty while preserving the original active-set bounds."""
+        if (isinstance(penalty, HorizontalShiftDilation)
+                and self._is_integral_conjugate(penalty)):
+            # The active-set bounds were extracted from the original wrapper,
+            # including the exchange of lower/upper bounds for negative scale.
+            # Keep the same affine coordinates for the extended functional.
+            result = deepcopy(penalty)
+            result.func = self._extended_penalty(penalty.func)
+            result.__dict__.pop('conj', None)
+            return result
         if isinstance(penalty, Conj) and isinstance(penalty.func, IntegralFunctionalBase):
             primal = deepcopy(penalty.func)
             for side in ('l', 'u'):
@@ -417,13 +437,13 @@ class SemiSmoothNewton(RegSolver):
             )
             integral_penalty = (
                 isinstance(penalty, IntegralFunctionalBase)
-                or (isinstance(penalty, Conj)
-                    and isinstance(penalty.func, IntegralFunctionalBase))
+                or SemiSmoothNewton._is_integral_conjugate(penalty)
             )
             if not full_domain and not integral_penalty:
                 out['info'] += (
                     'A penalty with restricted or unspecified essential domain '
-                    'must be an IntegralFunctionalBase or its conjugate. '
+                    'must be an IntegralFunctionalBase, its conjugate, or a '
+                    'horizontal shift/dilation of such a conjugate. '
                 )
         if not 'hessian' in setting.penalty.methods:
             out['info'] += 'Penalty term not twice differentiable. '
