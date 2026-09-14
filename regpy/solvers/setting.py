@@ -1166,6 +1166,8 @@ class Setting:
         if self.is_tikhonov:
             primal = themethod['primal']
             thesetting = self if primal else self.get_dual_setting()
+            if self.is_convex:
+                kwargs['is_primal'] = primal
         else:
             thesetting = self
         if max_it is not None:
@@ -1339,7 +1341,7 @@ class Setting:
             pending_rules.extend(getattr(rule, 'rules', ()))
         x,y = solver.run(themethod['stoprule'])
         
-        if self.is_tikhonov and not primal:
+        if self.is_tikhonov and not solver.is_primal:
             x_star,y_star = x,y
             x = self.dual_to_primal((x_star,y_star))
             y = self.op(x)
@@ -1456,7 +1458,12 @@ def get_reg_method_dictionary() -> dict:
     }
 
 def get_convex_solver_dictionary() -> dict:
-    """Return the available solvers for convex Tikhonov settings."""
+    """Return the available solvers for convex Tikhonov settings.
+
+    ``primal`` selects the constructor's setting and initial ``is_primal``
+    argument. Final-result conversion uses the solver's current ``is_primal``
+    property, allowing a hybrid solver to change coordinates during its run.
+    """
     from .linear import (
         ADMM,
         FISTA,
@@ -1475,6 +1482,7 @@ def get_convex_solver_dictionary() -> dict:
             'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
             'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
             'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
+            'dual_ADMM': {'class':ADMM, 'primal': False, 'full': 'Alternating Direction Method of Multipliers applied to dual problem'},
             'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
             'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
         }

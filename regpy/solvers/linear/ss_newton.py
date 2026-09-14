@@ -52,6 +52,10 @@ class SemiSmoothNewton(RegSolver):
     
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting: Setting
         The setting. The operator domain must be a real NumPyVectorSpace
         equipped with a Hilbert space. 
@@ -115,9 +119,10 @@ class SemiSmoothNewton(RegSolver):
                  logging_level = "INFO", 
                  cg_logging_level = "WARNING",
                  cg_reltols: Iterable[float] | None = None,
+                 is_primal: bool = True,
                  **kwargs
                  ):
-        super().__init__(setting)
+        super().__init__(setting, is_primal=is_primal)
 
         out, _ = SemiSmoothNewton.check_applicability(self.setting)
         if not out['applicable']:

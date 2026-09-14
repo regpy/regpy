@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 import numpy as np
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from regpy.hilbert import HilbertSpace
     from .setting import Setting
 
-__all__ = ["Solver", "RegSolver"]
+__all__ = ["Solver", "RegSolver", "CombinedSolver"]
 
 class Solver:
     r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
@@ -355,6 +355,8 @@ class RegSolver(Solver):
         Initial domain iterate.
     y : Vector or None [default: None]
         Value at the initial iterate, if available.
+    is_primal : bool, optional
+        Label current coordinates as primal (True, default) or dual (False).
     """
 
     def __init__(
@@ -362,11 +364,13 @@ class RegSolver(Solver):
         setting: "Setting",
         x: Vector | None = None,
         y: Vector | None = None,
+        is_primal: bool = True,
     ) -> None:
         from .setting import Setting
 
         if not isinstance(setting, Setting):
             raise TypeError(Errors.not_instance(setting, Setting))
+        self.is_primal = is_primal
         self.op: Operator = setting.op
         self.penalty: Functional = setting.penalty
         self.h_domain: HilbertSpace = setting.h_domain
@@ -377,6 +381,21 @@ class RegSolver(Solver):
         if setting.is_tikhonov:
             self.regpar: float | None = setting.regpar
         super().__init__(x, y)
+
+    @property
+    def is_primal(self) -> bool:
+        """Whether the current iterate uses original primal coordinates.
+
+        False denotes dual coordinates. Hybrid solvers may change this flag
+        at a stage transition; setting it does not convert any vectors.
+        """
+        return self._is_primal
+
+    @is_primal.setter
+    def is_primal(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise TypeError("is_primal must be a bool.")
+        self._is_primal = value
 
     def runWithDP(
         self,
@@ -449,3 +468,121 @@ class RegSolver(Solver):
             (self.x, self.y), self.dual
         )
     
+
+class CombinedSolver(RegSolver):
+    """Run two solvers successively, selecting a warm start with a stopping rule.
+
+    Parameters
+    ----------
+    solver1 : RegSolver
+        Initialized first solver. Its current state is the combined solver's
+        initial state; it is not restarted. Do not drive it independently while
+        using this wrapper.
+    solver2 : Callable[..., RegSolver]
+        Factory called exactly once as ``solver2(init=x)`` when switching.
+        For example, ``lambda *, init: SemiSmoothNewton(setting, init=init)``.
+        It must return a new solver for the same setting and coordinates.
+        A constructed solver instance is not accepted.
+    stoprule : StopRule or None, optional
+        Rule controlling the first phase. An independent, reset copy is used
+        and exposed as ``stoprule``. Defaults to ``CountIterations(10)``.
+        It is checked at solver1's initial state and after each completed step.
+        Natural convergence of solver1 also starts the second phase.
+
+    Notes
+    -----
+    The transition calls ``best_iterate()`` once and passes a copy of its
+    selected x to the factory. If no best iterate is available, solver1's
+    current x is used. Both pair-valued and vector-valued selections are
+    supported. A missing solution vector raises ``ValueError``.
+
+    The inherited iteration drivers yield read-only views. As for other
+    solvers, the initial state of solver1 is available through ``x`` and ``y``
+    but is not yielded by ``iter`` or ``while_``. Every subsequent first-phase
+    iterate, solver2's initial state, and every second-phase iterate is exposed.
+    The transition counts as one combined iteration, even if solver2's initial
+    state equals the warm start. An exterior rule can therefore stop at each
+    of these states; stopping before the transition avoids constructing solver2.
+
+    ``iteration_step_nr`` counts combined steps, independently of the child
+    counters. Missing public attributes (including primal/dual accessors and
+    ``deriv``, when available) are delegated to ``active_solver``. Both children
+    must represent the same setting so external stopping histories remain
+    comparable. The wrapper does not restart either child or their counters.
+
+    Examples
+    --------
+    >>> combined = CombinedSolver(
+    ...     Landweber(setting),
+    ...     lambda *, init: SemiSmoothNewton(setting, init=init),
+    ...     stoprule=CountIterations(10),
+    ... )
+    >>> x, y = combined.run(exterior_stoprule)
+    """
+
+    def __init__(
+        self,
+        solver1: RegSolver,
+        solver2: Callable[..., RegSolver],
+        stoprule: StopRule | None = None,
+    ) -> None:
+        from regpy.stoprules import CountIterations
+
+        if not isinstance(solver1, RegSolver):
+            raise TypeError("solver1 must be an initialized RegSolver.")
+        if isinstance(solver2, Solver) or not callable(solver2):
+            raise TypeError("solver2 must be a factory accepting init as a keyword.")
+        if stoprule is not None and not isinstance(stoprule, StopRule):
+            raise TypeError("stoprule must be a StopRule or None.")
+        self.solver1 = solver1
+        self.solver2: RegSolver | None = None
+        self.active_solver = solver1
+        self._solver2_factory = solver2
+        self.stoprule = (CountIterations(10) if stoprule is None
+                         else stoprule.copy_and_reset())
+        # Geometry and optional interfaces are delegated, rather than copied:
+        # stage-specific values such as regpar and deriv must not become stale.
+        Solver.__init__(self, solver1.x, solver1.y)
+        self.stoprule._complete_init_with_solver(solver1)
+
+    @property
+    def is_primal(self) -> bool:
+        """Coordinate label of the currently active child solver."""
+        return self.active_solver.is_primal
+
+    def __getattr__(self, name: str):
+        """Expose the active child's public interfaces without stale copies."""
+        if name.startswith('_'):
+            raise AttributeError(name)
+        return getattr(self.active_solver, name)
+
+    def next(self) -> bool:
+        """Advance a child or expose the second child's initial state once."""
+        if self.is_converged():
+            return False
+        if self.solver2 is None:
+            stopped = self.stoprule.stop()
+            if stopped or self.solver1.is_converged():
+                best = self.stoprule.best_iterate()
+                x = (self.solver1.x if best is None else
+                     best[0] if isinstance(best, tuple) else best)
+                if x is None:
+                    raise ValueError("The first solver supplied no warm-start vector.")
+                child = self._solver2_factory(init=x.copy())
+                if not isinstance(child, RegSolver) or child is self.solver1:
+                    raise TypeError("solver2 must return a new RegSolver.")
+                if child.setting is not self.solver1.setting:
+                    raise ValueError("Both solvers must use the same setting instance.")
+                self.solver2 = child
+                self.active_solver = child
+            else:
+                self.solver1.next()
+        elif not self.solver2.next():
+            self.converge()
+            return False
+        self.x, self.y = self.active_solver.x, self.active_solver.y
+        self.iteration_step_nr += 1
+        if self.solver2 is not None and self.solver2.is_converged():
+            self.converge()
+        return True
+

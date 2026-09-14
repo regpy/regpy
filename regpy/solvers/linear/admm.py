@@ -42,6 +42,10 @@ class ADMM(RegSolver):
 
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
     init : dict [default: {}]
@@ -67,11 +71,13 @@ class ADMM(RegSolver):
     """
 
     def __init__(self,  setting, init=None, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = "INFO"):
+                 regularizedInverse=None, cg_pars = None,logging_level = "INFO",
+                 is_primal: bool = True,
+                 ):
         init = {} if init is None else init
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ADMM requires the setting to contain a regularization parameter!"))       
-        super().__init__(setting)
+        super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="ADMM requires the operator to be linear!"))
         if regularizedInverse is not None and not isinstance(regularizedInverse,Operator):

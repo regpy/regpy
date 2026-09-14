@@ -27,6 +27,10 @@ class PDHG(RegSolver):
 
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting : regpy.solvers.Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
@@ -77,11 +81,12 @@ class PDHG(RegSolver):
                  proximal_pars_data_fidelity_conjugate: dict|None = None, 
                  proximal_pars_penalty: dict|None = None, 
                  compute_y: bool = False, 
-                 logging_level: str = "INFO"
+                 logging_level: str = "INFO",
+                 is_primal: bool = True,
                  ):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("PDHG requires the setting to contain a regularization parameter!"))
-        super().__init__(setting)
+        super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="PDHG requires the operator to be linear!"))
         if init_codomain_star is not None and init_codomain_star not in self.op.codomain:

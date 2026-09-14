@@ -22,6 +22,10 @@ class ForwardBackwardSplitting(RegSolver):
 
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
     init : setting.domain [default: None]
@@ -49,10 +53,12 @@ class ForwardBackwardSplitting(RegSolver):
                  proximal_pars: dict = None, 
                  logging_level: int|str = "INFO",
                  op_norm: float | None = None, 
-                 update_setting: bool = False):
+                 update_setting: bool = False,
+                 is_primal: bool = True,
+                 ):
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ForwardBackwardSplitting requires the setting to contain a regularization parameter!")) 
-        super().__init__(setting)
+        super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="ForwardBackwardSplitting requires the operator to be linear!"))
         if init is not None and init not in self.op.domain:
@@ -154,6 +160,10 @@ class FISTA(RegSolver):
     
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting : regpy.solvers.Setting
         The setting of the forward problem. Includes the penalty and data
         fidelity functionals. If ``setting.regpar`` is ``None``, the setting
@@ -204,8 +214,10 @@ class FISTA(RegSolver):
             data: Vector | ObsDataT | None = None,
             op_norm: float | None = None,
             logging_level: int | str = "INFO",
-            update_setting: bool = False):
-        super().__init__(setting)
+            update_setting: bool = False,
+                 is_primal: bool = True,
+                 ):
+        super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
         if setting.is_tikhonov:

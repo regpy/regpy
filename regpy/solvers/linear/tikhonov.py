@@ -80,6 +80,10 @@ class TikhonovCG(RegSolver):
 
     Parameters
     ----------
+    is_primal : bool, optional
+        Whether iterates represent the original primal problem (default True).
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     setting : regpy.solvers.Setting
         The setting of the forward problem. It must contain a positive
         regularization parameter and have quadratic penalty and data-fidelity
@@ -382,8 +386,9 @@ class TikhonovCG(RegSolver):
                 x_exact: ReadOnlyVector | None = None, 
                 y_exact: ReadOnlyVector | None = None,
                 xref: ReadOnlyVector | None = None,
-                ):
-        super().__init__(setting)
+                 is_primal: bool = True,
+                 ):
+        super().__init__(setting, is_primal=is_primal)
         self.tol, self.reltolx, self.reltoly = tol, reltolx, reltoly
         self.all_tol_criteria, self.max_it, self.logging_level = all_tol_criteria, max_it, logging_level
 
@@ -403,7 +408,7 @@ class TikhonovCG(RegSolver):
                 'TikhonovCG not applicable to this setting. '
                 + out['info']
             )
-        super().__init__(setting)
+        super().__init__(setting, is_primal=is_primal)
         self.log.setLevel(logging_level)
         self.data = par['data']
         if self.data is None:
