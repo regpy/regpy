@@ -322,7 +322,9 @@ class DualityGapStopping(StopRule):
     schedule : iterable of int or None, optional
         Iterations at which the duality gap is evaluated. By default it is
         evaluated at iterations ``0, 10, 20, ...``. Pass ``None`` to evaluate
-        it at every iteration.
+        it at every iteration. After the solver marks itself converged, its
+        final iterate is checked regardless of this schedule. Repeated checks
+        of that converged iterate reuse the recorded result.
     """    
     def __init__(
         self,
@@ -350,6 +352,26 @@ class DualityGapStopping(StopRule):
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
         reg_solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
+
+    def stop(self) -> bool:
+        """Always record the converged solver's final gap, even off schedule.
+
+        The solver's converge() flag is not a certificate that the gap is
+        below tolerance: the final value is evaluated and recorded normally.
+        The configured schedule is restored afterwards, including on errors.
+        """
+        if self.solver is None or not self.solver.is_converged():
+            return super().stop()
+        step = getattr(self.solver, 'iteration_step_nr', None)
+        recorded = self.history_step_dict.get('duality gap', ())
+        if step is not None and recorded and recorded[-1] == step:
+            return self._last_result
+        schedule = self.schedule
+        try:
+            self.schedule = None
+            return super().stop()
+        finally:
+            self.schedule = schedule
 
     def _stop(self) -> bool:
         if self.solver is None:
