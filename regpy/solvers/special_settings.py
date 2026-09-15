@@ -34,6 +34,139 @@ Moreover, some specialized settings implement formulas for the duality gap that
 avoid loss of accuracy by cancellation effects.
 """
 
+from regpy.solvers.solver import CombinedSolver
+from regpy.solvers.linear import FISTA, SemiSmoothNewton
+from regpy.stoprules import CountIterations
+
+class dFISTA_SSNewton(CombinedSolver):
+    """Dual FISTA followed by primal SemiSmoothNewton.
+
+    During FISTA, x and y are dual coordinates and is_primal is False.
+    At the transition, the selected dual iterate is converted once into
+    a primal warm start. Thereafter is_primal is True.
+
+    Parameters
+    ----------
+    setting : Setting
+        Original primal Tikhonov setting.
+    init : Vector or None
+        Initial dual FISTA iterate.
+    fista_stps : int
+        Maximum number of FISTA steps. Defaults to 10.
+    is_primal : bool
+        Constructor flag supplied by Setting.run(). The method must be
+        registered with primal=True because it receives the primal setting.
+        Its current coordinate flag follows the active child instead.
+    """
+
+    def __init__(
+        self,
+        setting,
+        init=None,
+        fista_stps=10,
+        logging_level="INFO",
+        is_primal=True,
+        fista_pars=None,
+        ssn_pars=None,
+    ):
+        if is_primal is not True:
+            raise ValueError(
+                "Register dFISTA_SSNewton with primal=True."
+            )
+        if (
+            isinstance(fista_stps, bool)
+            or not isinstance(fista_stps, int)
+            or fista_stps < 0
+        ):
+            raise ValueError("fista_stps must be a nonnegative integer.")
+
+        self._original_setting = setting
+        fista_pars = dict(fista_pars or {})
+        ssn_pars = dict(ssn_pars or {})
+
+        solver1 = FISTA(
+            setting.get_dual_setting(),
+            init=init,
+            is_primal=False,
+            logging_level=logging_level,
+            **fista_pars,
+        )
+
+        super().__init__(
+            solver1,
+            lambda *, init: SemiSmoothNewton(
+                setting,
+                init=init,
+                is_primal=True,
+                logging_level=logging_level,
+                **ssn_pars,
+            ),
+            stoprule=CountIterations(fista_stps),
+        )
+
+    def next(self):
+        if self.is_converged():
+            return False
+
+        if self.solver2 is None:
+            stopped = self.stoprule.stop()
+
+            if stopped or self.solver1.is_converged():
+                best = self.stoprule.best_iterate()
+
+                if best is None:
+                    p, Tstar_p = self.solver1.x, self.solver1.y
+                elif isinstance(best, tuple):
+                    p, Tstar_p = best
+                else:
+                    p, Tstar_p = best, None
+
+                if p is None:
+                    raise ValueError("No dual warm-start iterate available.")
+
+                # Use the selected iterate, not necessarily the last one.
+                if Tstar_p is None:
+                    Tstar_p = self.solver1.op(p)
+
+                x = self._original_setting.dual_to_primal(
+                    (p, Tstar_p)
+                )
+                self.solver2 = self._solver2_factory(init=x.copy())
+                self.active_solver = self.solver2
+            else:
+                self.solver1.next()
+
+        elif not self.solver2.next():
+            self.converge()
+            return False
+
+        self.x, self.y = self.active_solver.x, self.active_solver.y
+        self.iteration_step_nr += 1
+
+        if self.solver2 is not None and self.solver2.is_converged():
+            self.converge()
+
+        return True
+
+    @staticmethod
+    def check_applicability(setting, **kwargs):
+        dual_out, _ = FISTA.check_applicability(
+            setting.get_dual_setting()
+        )
+        ssn_out, _ = SemiSmoothNewton.check_applicability(setting)
+
+        out = dict(dual_out)
+        out["applicable"] = (
+            dual_out["applicable"] and ssn_out["applicable"]
+        )
+        out["info"] = (
+            "Dual FISTA: " + dual_out.get("info", "")
+            + "\nPrimal SSNewton: " + ssn_out.get("info", "")
+        )
+
+        # Child parameters are determined by their own constructors.
+        return out, {}
+
 class HilbertSetting(Setting):
     r""" Class of settings in which both the penalty and the data fidelity functional are squared Hilbert norms.
     """
