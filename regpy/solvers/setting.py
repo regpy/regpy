@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math as ma
+import warnings
 import numpy as np
 from typing import Callable, Any
 from copy import deepcopy
@@ -12,6 +13,7 @@ from regpy.functionals.base import  as_functional, Composed
 from regpy.functionals import Functional
 from regpy.stoprules import (
     StopRule, DualityGapStopping, Discrepancy, CountIterations, ErrorMonitor,
+    OptimalityCondStoppingNonConvex,
 )
 __all__ = [
     "Setting",
@@ -24,7 +26,78 @@ __all__ = [
     "check_Hilbert_applicability_linear",
 ]
 
-_DEFAULT_STOPRULE = object()
+def _iteration_limit(params: dict) -> StopRule:
+    """Create the common timed, evaluation-counting iteration cap."""
+    max_it = params['max_it']
+    if isinstance(max_it, (bool, np.bool_)) or not isinstance(max_it, (int, np.integer)):
+        raise TypeError("max_it must be a nonnegative integer.")
+    if max_it < 0:
+        raise ValueError("max_it must be nonnegative.")
+    return CountIterations(int(max_it), timing=True, eval_count=True,
+                           logging_level=params.get('logging_level', 'INFO'))
+
+
+def _discrepancy_factory(params: dict) -> StopRule:
+    """Build Discrepancy using explicit or setting-owned absolute noise."""
+    setting = params['setting']
+    noise = params.get('absolute_noise_level',
+                       setting._noise_model_param.get('absolute_noise_level'))
+#    if noise is None:
+#        raise ValueError(
+#            "The default discrepancy rule requires absolute_noise_level in "
+#            "stoprule_params or the setting's noise model. Alternatively, "
+#            "configure a stoprule_factory or pass a StopRule to run()."
+#        )
+    return (_iteration_limit(params)
+            if noise is None or setting.codomain_free else 
+              Discrepancy(noise, setting=setting, tau=params.get('tau', 2.1),
+                       logging_level=params.get('logging_level', 'INFO')) + _iteration_limit(params)
+    )
+
+
+def _optimality_factory(params: dict) -> StopRule:
+    """Build the nonconvex first-order optimality rule and iteration cap."""
+    options = {'tol': params.get('tol', 1e-1),
+               'logging_level': params.get('logging_level', 'INFO')}
+    if 'schedule' in params:
+        options['schedule'] = params['schedule']
+    return OptimalityCondStoppingNonConvex(**options) + _iteration_limit(params)
+
+
+def _duality_gap_factory(params: dict) -> StopRule:
+    """Build the convex duality-gap rule and iteration cap."""
+    tol = params.get('tol', 1e-3)
+    if (not np.isscalar(tol) or not np.isrealobj(tol)
+            or isinstance(tol, (bool, np.bool_))):
+        raise TypeError("The duality-gap tolerance must be a real scalar.")
+    if not np.isfinite(tol) or tol < 0:
+        raise ValueError("The duality-gap tolerance must be finite and nonnegative.")
+    options = {'tol': tol, 'logging_level': params.get('logging_level', 'INFO')}
+    if 'schedule' in params:
+        options['schedule'] = params['schedule']
+    return DualityGapStopping(**options) + _iteration_limit(params)
+
+
+def _with_stoprule_defaults(methods: dict, factory: Callable[[dict], StopRule]) -> dict:
+    """Attach independent configuration dictionaries, without creating rules."""
+    short_runs = {'IRGNM_CG', 'LevMar', 'NewtonCG', 'NewtCGFroz', 'IRN',
+                  'Spectral', 'Spectral_SelfAdjoint', 'TikhOnGrid', 'genTikh'}
+    for name, method in methods.items():
+        max_it = 100 if name in ('SSNewton', 'dual_SSNewton') else (
+            50 if name in short_runs else 1000)
+        params = {'max_it': max_it}
+        if factory is _duality_gap_factory:
+            params['tol'] = 1e-3
+            if name in ('SSNewton', 'dual_SSNewton'):
+                params['schedule'] = None
+        elif factory is _optimality_factory:
+            params['tol'] = 1e-3
+        else:
+            params['tau'] = 2.5
+        method.setdefault('stoprule_factory', factory)
+        method.setdefault('stoprule_params', params)
+        method.setdefault('method_params', {})
+    return methods
 
 class Setting:
     r"""A *setting* for an inverse problem, used by RegSolvers. A setting always consists at least of
@@ -918,6 +991,9 @@ class Setting:
         method = {'class': class_name, 'full': full_method_name}
         if self.is_tikhonov:
             method['primal'] = True if primal is None else primal
+        factory = (_discrepancy_factory if not self.is_tikhonov else
+                   _duality_gap_factory if self.is_convex else _optimality_factory)
+        _with_stoprule_defaults({method_abbrv: method}, factory)
         self._methods[method_abbrv] = method
 
     def evaluate_methods(self, method_names: list[str] | None = None)->None:
@@ -993,7 +1069,7 @@ class Setting:
                               params:dict|None=None)->None:
         if method_name not in self._methods:
             raise RuntimeError(Errors.runtime_error(f"Unknown method name {method_name}. Known methods are {self._methods}. Use add_method() to add a new method."))    
-        self._methods[method_name]['parameters'] = (
+        self._methods[method_name]['method_params'] = (
             {} if params is None else dict(params)
         )
 
@@ -1023,53 +1099,64 @@ class Setting:
         return best_method_name
 
     def set_stoprule(self,
-                          rule:StopRule,
-                          method_names:list[str]|None=None) -> None:
-        """Sets a StopRule for an optimization method.
-        
-        Parameters
-        ----------
-        rule: StopRule
-            the stoprule
-        method_names: list[str] or None [default: None]
-            keys of the methods. In the default case the StopRule is attached to all applicable solvers. 
+                     rule: Callable[[dict], StopRule] | StopRule,
+                     method_names: list[str] | None = None,
+                     params: dict | None = None) -> None:
+        """Configure a factory without constructing a stopping rule.
+
+        ``rule(params)`` must return a StopRule. Each run supplies a fresh
+        parameter dictionary containing the method's ``stoprule_params`` plus
+        ``setting`` (the constructor's setting) and ``logging_level``.
+        ``params``, if supplied, updates each selected method's parameters.
+        With no method names, configure all applicable methods.
+
+        Passing a StopRule is deprecated. It is wrapped in a factory returning
+        an independent reset copy. Such a factory ignores the parameter dict.
+        The latest executed rule and its histories remain available through
+        ``get_stoprule`` until the next run.
         """
-        if not isinstance(rule,StopRule):
-            raise TypeError(f"rule must be of class StopRule. Got{rule}.")
+        if isinstance(rule, StopRule):
+            warnings.warn(
+                "Passing a StopRule to set_stoprule is deprecated; pass a "
+                "factory accepting a parameter dictionary instead.",
+                DeprecationWarning, stacklevel=2)
+            template = rule.copy_and_reset()
+            rule = lambda params: template.copy_and_reset()
+        elif not callable(rule):
+            raise TypeError("rule must be a callable accepting a parameter dict.")
+        if params is not None and not isinstance(params, dict):
+            raise TypeError("params must be a dict or None.")
         if method_names is None:
             method_names = list(self.applicable_methods())
-        if (not isinstance(method_names,list)
-                or not all(isinstance(method_name,str) for method_name in method_names)):
-            raise ValueError(Errors.value_error('method_names must be list of strings',method_names))
-        for method_name in method_names:
-            if method_name not in self._methods.keys():
-                raise ValueError(f"{method_name} is unknown method key.")
-            # Keep the configured rule separate from the rule used by the
-            # latest run.  The latter accumulates histories and may contain
-            # run-local additions such as an iteration limit or ErrorMonitor.
-            configured_rule = rule.copy_and_reset()
-            self._methods[method_name]['configured_stoprule'] = configured_rule
-            self._methods[method_name]['stoprule'] = configured_rule.copy_and_reset()
+        if not isinstance(method_names, list) or not all(
+                isinstance(name, str) for name in method_names):
+            raise TypeError("method_names must be a list of strings or None.")
+        for name in method_names:
+            if name not in self._methods:
+                raise ValueError(f"{name} is unknown method key.")
+        for name in method_names:
+            method = self._methods[name]
+            method['stoprule_factory'] = rule
+            if params is not None:
+                method['stoprule_params'].update(deepcopy(params))
 
-    def get_stopping_rule(self, method_name: str) -> StopRule:
-        """Retrieves a stoprule that has run an optimization method 
-        (e.g. to view statistics or (intermediate) solutions)
-        
-        Parameters
-        ----------
-        method_name: str
-            Key of the method
-        
-        Returns
-        -------
-        StopRule
+    def get_stoprule(self, method_name: str) -> StopRule:
+        """Return the executed rule of the latest run, including its history.
+
+        Raises RuntimeError if the method has not been started yet.
+        Configuring a factory alone does not create an executed rule.
         """
-        if not method_name in self._methods.keys():
+        if method_name not in self._methods:
             raise ValueError(f"{method_name} is unknown method key.")
         if 'stoprule' not in self._methods[method_name]:
-            raise RuntimeError(f'Method {method_name} has no StopRule.')
-        else:
-            return self._methods[method_name]['stoprule']   
+            raise RuntimeError(f'Method {method_name} has not been started yet.')
+        return self._methods[method_name]['stoprule']
+
+    def get_stopping_rule(self, method_name: str) -> StopRule:
+        """Deprecated alias of get_stoprule."""
+        warnings.warn("Use get_stoprule instead of get_stopping_rule.",
+                      DeprecationWarning, stacklevel=2)
+        return self.get_stoprule(method_name)
 
     def get_default_method(self):
         if not self.is_tikhonov:
@@ -1089,13 +1176,13 @@ class Setting:
     def run(self,
             method_name: str|None = None,
             max_it: int | None = None,
-            stoprule: StopRule|object = _DEFAULT_STOPRULE,
+            stoprule: StopRule | None = None,
             ref_sol: (ReadOnlyVector
                         | tuple[ReadOnlyVector | None, ReadOnlyVector]
                         | None) = None,
             dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
-            gap_tol: float = 1e-3,
+            gap_tol: float | None = None,
             **kwargs) -> tuple[Vector, Vector]:
         """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -1104,30 +1191,17 @@ class Setting:
         method_name: str or None [default: None] 
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
-        max_it: int [default: 1000]
-            maximal number of iterations
-        stoprule: StopRule | None
-            Stopping rule. An explicit value overrides a rule configured by
-            :meth:`set_stoprule` for this run only. By default, a configured
-            rule is used if present; otherwise convex Tikhonov methods use a
-            duality-gap rule combined with 1000 maximum iterations. For
-            SSNewton and dual_SSNewton, this rule evaluates and records the
-            gap at every iteration, including iteration zero. Settings
-            without a regularization parameter and with deterministic noise
-            use a discrepancy rule with the stored absolute noise level and
-            tau=2.5, combined with 1000 maximum iterations. Other settings use
-            only the iteration limit. An explicit max_it overrides the default
-            limit. Default iteration counters record CPU time and cumulative
-            operator evaluation counts. If None, a previously stored
-            stopping rule is required and used.
-        gap_tol: float, default: 1e-3
-            Absolute duality-gap tolerance for the automatically constructed
-            convex Tikhonov stopping rule. Each run gets a fresh rule combined
-            with a timed, evaluation-counting iteration cap (default 1000).
-            SSNewton and dual_SSNewton evaluate the gap at every iteration;
-            other methods retain DualityGapStopping's default schedule.
-            Explicit or previously configured rules take precedence: gap_tol
-            does not modify those rules or get forwarded to the solver.
+        max_it: int or None, optional
+            Override the factory's iteration cap for this run. For an explicit
+            StopRule, add an extra timed, evaluation-counting cap instead.
+        stoprule: StopRule or None, optional
+            An explicit rule overrides the factory for this run. A reset copy
+            is used; the supplied object is not changed. None uses the method's
+            factory. The executed rule is accessible through get_stoprule().
+        gap_tol: float or None, optional
+            Override ``stoprule_params['tol']`` for the built-in duality-gap
+            factory only. None retains the configured tolerance (default 1e-3).
+            Does not modify an explicit rule or a custom factory.
         ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
             Reference solution used to monitor iteration errors. A single
             vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
@@ -1159,8 +1233,8 @@ class Setting:
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting: '+themethod['info'])
         logging_level = kwargs.get('logging_level', self.log.level)
-        if 'parameters' in themethod:
-            kwargs.update(themethod['parameters'])
+        if 'method_params' in themethod:
+            kwargs.update(themethod['method_params'])
         kwargs['logging_level'] = logging_level
 
         if self.is_tikhonov:
@@ -1171,7 +1245,7 @@ class Setting:
         else:
             thesetting = self
         if max_it is not None:
-            if not isinstance(max_it, (int, np.integer)):
+            if isinstance(max_it, (bool, np.bool_)) or not isinstance(max_it, (int, np.integer)):
                 raise TypeError(Errors.type_error(
                     'max_it must be an integer or None.', max_it
                 ))
@@ -1181,66 +1255,24 @@ class Setting:
                 ))
             max_it = int(max_it)
 
-        configured_stoprule = themethod.get('configured_stoprule')
-        if stoprule is _DEFAULT_STOPRULE and configured_stoprule is not None:
-            stoprule = configured_stoprule.copy_and_reset()
-        elif stoprule is None:
-            stored_stoprule = configured_stoprule or themethod.get('stoprule')
-            if stored_stoprule is None:
-                raise RuntimeError(
-                    'No StopRule given either as argument of run or set '
-                    'explicitly by set_stoprule.'
-                )
-            stoprule = stored_stoprule.copy_and_reset()
-        elif stoprule is _DEFAULT_STOPRULE:
-            default_max_it = 1000 if max_it is None else max_it
-            iteration_limit = CountIterations(
-                default_max_it, timing=True, eval_count=True, logging_level=logging_level
-            )
-            if self.is_tikhonov and self.is_convex:
-                if (not np.isscalar(gap_tol) or not np.isrealobj(gap_tol)
-                        or isinstance(gap_tol, (bool, np.bool_))):
-                    raise TypeError("gap_tol must be a finite nonnegative real scalar.")
-                if not np.isfinite(gap_tol) or gap_tol < 0:
-                    raise ValueError("gap_tol must be finite and nonnegative.")
-                # Newton methods typically need only a few outer steps.
-                # Record/check every step, including iteration zero.
-                gap_options = (
-                    {'schedule': None}
-                    if method_name in ('SSNewton', 'dual_SSNewton') else {}
-                )
-                stoprule = (
-                    DualityGapStopping(
-                        tol=gap_tol, logging_level=logging_level, **gap_options
-                    )
-                    + iteration_limit
-                )
-            elif (
-                not self.is_tikhonov
-                and self._noise_model_param.get('model_name') == 'deterministic'
-            ):
-                stoprule = (
-                    Discrepancy(
-                        self._noise_model_param['absolute_noise_level'],
-                        setting=self,
-                        tau=2.1,
-                        logging_level=logging_level,
-                    )
-                    + iteration_limit
-                )
-            else:
-                stoprule = iteration_limit
-            # The requested limit is already part of the new default rule.
-            max_it = None
+        if stoprule is None:
+            params = deepcopy(themethod['stoprule_params'])
+            params.update(setting=thesetting, logging_level=logging_level)
+            if max_it is not None:
+                params['max_it'] = max_it
+            factory = themethod['stoprule_factory']
+            if gap_tol is not None and factory is _duality_gap_factory:
+                params['tol'] = gap_tol
+            stoprule = factory(params)
+            if not isinstance(stoprule, StopRule):
+                raise TypeError("stoprule_factory must return a StopRule.")
         elif not isinstance(stoprule, StopRule):
-            raise TypeError(Errors.type_error(
-                'stoprule must be a StopRule or None.', stoprule
-            ))
+            raise TypeError("stoprule must be a StopRule or None.")
+        elif max_it is not None:
+            # Copy before composition to leave the caller's rule untouched.
+            stoprule = stoprule.copy_and_reset() + _iteration_limit(
+                {'max_it': max_it, 'logging_level': logging_level})
 
-        if max_it is not None:
-            stoprule = stoprule + CountIterations(
-                max_it, timing=True, logging_level=logging_level
-            )
         if ref_sol is not None:
             monitor_ref_sol = ref_sol
             monitor_dist_x = dist_x
@@ -1309,7 +1341,7 @@ class Setting:
                 "dist_x and dist_y require ref_sol."
             ))
         # Store the actual rule used by this run so that its histories remain
-        # available through get_stopping_rule().  Do not call set_stoprule()
+        # available through get_stoprule().  Do not call set_stoprule()
         # here: doing so would overwrite the independently configured rule.
         themethod['stoprule'] = stoprule.copy_and_reset()
         
@@ -1366,7 +1398,7 @@ def get_linear_reg_method_dictionary() -> dict:
     )
     from .nonlinear import GeneralizedTikhonov
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
-    return {
+    return _with_stoprule_defaults({
             'FISTA':   {'class': FISTA,
                         'primal': True,
                         'full': 'Fast Iterative Thresholding for linear problems'
@@ -1399,7 +1431,7 @@ def get_linear_reg_method_dictionary() -> dict:
                          'class': Spectral_SelfAdjoint,
                          'full': 'spectral regularization of a self-adjoint operator'
                         },
-    }
+    }, _discrepancy_factory)
 
 
 def get_nonlinear_reg_method_dictionary() -> dict:
@@ -1418,7 +1450,7 @@ def get_nonlinear_reg_method_dictionary() -> dict:
         NewtonCGFrozen,
         IterativelyRegularizedNewton
     )
-    return {
+    return _with_stoprule_defaults({
             'genFISTA': {'class': genFISTA,
                          'primal': True,
                          'full': 'Fast Iterative Thresholding for nonlinear problems'
@@ -1441,7 +1473,7 @@ def get_nonlinear_reg_method_dictionary() -> dict:
             'IRN' :      {'class': IterativelyRegularizedNewton,
                           'full': 'Iteratively regularized Newton methods (generalized IRGNM)'
                           }
-    }
+    }, _discrepancy_factory)
 
 
 def get_reg_method_dictionary() -> dict:
@@ -1486,7 +1518,7 @@ def get_convex_solver_dictionary() -> dict:
             'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
             'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
         }
-    return method_dict
+    return _with_stoprule_defaults(method_dict, _duality_gap_factory)
 
 def get_non_convex_solver_dictionary() -> dict:
     """Return the available solvers for non-convex Tikhonov settings."""
@@ -1497,7 +1529,7 @@ def get_non_convex_solver_dictionary() -> dict:
             'genFB': {'class':genFB, 'primal': True, 'full':'generalized forward-backward splitting'},
             'genFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
     }
-    return method_dict
+    return _with_stoprule_defaults(method_dict, _optimality_factory)
 
 def check_Hilbert_applicability(setting: Setting,
                                 user_data: ReadOnlyVector | ObsDataT | None = None,
