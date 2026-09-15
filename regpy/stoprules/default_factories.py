@@ -42,24 +42,39 @@ def default_parameter_choice_rule(setting, params):
 def default_convex_stoprule(setting, params):
     """Use an evaluable Fenchel gap, otherwise relative solution change.
 
-    Require an explicit codomain, a convex Tikhonov setting, evaluation of
-    both functionals and conjugates, and an accessor allowing reconstruction
-    of the missing primal/dual pair. With both accessors no subgradient is
-    needed for reconstruction. No functional/operator evaluations are made.
+    Check the functionals actually used by Setting.duality_gap. For a dual
+    setting with a primal accessor, this is the original primal setting:
+    the supplied tuple is an original dual pair and the missing primal pair
+    is reconstructed using the original penalty's conjugate subgradient.
+    No transformed double conjugates or subgradients are required on that path.
+
+    For a standalone primal setting, two supplied pairs need no reconstruction;
+    one supplied pair needs the appropriate subgradient. Accessor availability
+    is checked on solver_class when supplied. This checks advertised methods,
+    not finiteness of the gap or the values returned by solver accessors.
     """
     applicable = setting.is_tikhonov and setting.is_convex and not setting.codomain_free
     if applicable:
-        R, S = setting.penalty, setting.data_fid
-        applicable = all(_has(f, 'eval') for f in (R, S, R.conj, S.conj))
         primal = _solver_has(params, 'primal')
         dual = _solver_has(params, 'dual')
-        # For unknown solver interfaces, conservatively require both mappings.
-        if params.get('solver_class') is None:
-            applicable = applicable and _has(S, 'subgradient') and _has(R.conj, 'subgradient')
+        original = getattr(setting, '_primal_setting', None)
+        if original is not None and primal:
+            # Matches the early delegation in Setting.duality_gap(primal=...).
+            R, S = original.penalty, original.data_fid
+            applicable = (original.is_tikhonov and original.is_convex
+                          and not original.codomain_free
+                          and all(_has(f, 'eval') for f in (R, S, R.conj, S.conj))
+                          and _has(R.conj, 'subgradient'))
         else:
-            applicable = applicable and (
-                (primal and dual and _has(S, 'subgradient') and _has(R.conj, 'subgradient')) or (primal and _has(S, 'subgradient'))
-                or (dual and _has(R.conj, 'subgradient')))
+            R, S = setting.penalty, setting.data_fid
+            applicable = all(_has(f, 'eval') for f in (R, S, R.conj, S.conj))
+            if params.get('solver_class') is None:
+                applicable = applicable and _has(S, 'subgradient') and _has(R.conj, 'subgradient')
+            else:
+                applicable = applicable and (
+                    (primal and dual)
+                    or (primal and _has(S, 'subgradient'))
+                    or (dual and _has(R.conj, 'subgradient')))
     factory = DualityGapStopping_factory if applicable else RelativeChangeSol_factory
     return factory(setting, params)
 

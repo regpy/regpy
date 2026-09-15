@@ -23,7 +23,8 @@ from regpy.operators.base import (
 from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
 
-from .. import GeometricSequence, powers_of_two, RegSolver, Setting, check_Hilbert_applicability_linear
+from ..sequences import GeometricSequence, powers_of_two
+from .. import RegSolver, Setting, check_Hilbert_applicability_linear
 #from ..solver import 
 #from ..setting import 
 

@@ -799,6 +799,14 @@ class CountIterations(StopRule):
 
     Parameters
     ----------
+    max_op_evals : int or None, optional
+        Stop when the weighted operator evaluation total reaches this cap,
+        or when max_iterations is reached. None disables this additional cap.
+        Supplying a cap automatically enables evaluation counting. Uses
+        Operator.total_eval_count(), including its doubled weights for
+        adjoint_eval and adjoint_deriv. Checked when this rule is evaluated;
+        constructor work or one iteration can overshoot the cap. A schedule
+        can delay checking until the next scheduled application.
     max_iterations : int
         The number of iterations after which to stop.
     while_type : bool, optional
@@ -830,6 +838,8 @@ class CountIterations(StopRule):
 
     """
 
+    # The evaluation cap is checked between iterations, not inside operator
+    # calls; a single iteration or constructor may exceed the requested cap.
     def __init__(
         self,
         max_iterations: int,
@@ -838,11 +848,18 @@ class CountIterations(StopRule):
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = None,
         eval_count: bool = False,
+        max_op_evals: int | None = None,
     ) -> None:
         if not isinstance(eval_count, bool):
             raise TypeError("eval_count must be a bool.")
+        if max_op_evals is not None:
+            if isinstance(max_op_evals, bool) or not isinstance(max_op_evals, Integral):
+                raise TypeError("max_op_evals must be a nonnegative integer or None.")
+            if max_op_evals < 0:
+                raise ValueError("max_op_evals must be nonnegative.")
+        self.max_op_evals = None if max_op_evals is None else int(max_op_evals)
         self._prepared_operator = None
-        self.eval_count = eval_count
+        self.eval_count = eval_count or max_op_evals is not None
         self.eval_counts: dict[str, list[int]] = {}
         self.eval_count_steps: list[int] = []
         if not isinstance(max_iterations,Integral):
@@ -864,7 +881,8 @@ class CountIterations(StopRule):
 
 
     def __repr__(self) -> str:
-        return 'CountIterations(max_iterations={})'.format(self.max_iterations)
+        cap = '' if self.max_op_evals is None else f', max_op_evals={self.max_op_evals}'
+        return f'CountIterations(max_iterations={self.max_iterations}{cap})' 
     
     def reset(self) -> None:
         super().reset()
@@ -927,6 +945,10 @@ class CountIterations(StopRule):
             self.iteration += 1
             triggered = self.iteration >= self.max_iterations
             self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
+        if self.max_op_evals is not None:
+            total = self.eval_counts['total'][-1]
+            triggered = triggered or total >= self.max_op_evals
+            self.log_info += f' | op_evals {total}>={self.max_op_evals}'
         # In a combination, an ordinary iteration-count message should not
         # cause logging between scheduled evaluations of an informative rule.
         # The actual stopping event must always remain visible.
@@ -948,7 +970,12 @@ class CountIterations(StopRule):
 
 
 def CountIterations_factory(setting, params: dict) -> StopRule:
-    """Create a timed, evaluation-counting cap; setting is accepted uniformly."""
+    """Create a timed cap on iterations and weighted operator evaluations.
+
+    max_it defaults to 1000; max_op_evals defaults to 2000. Explicitly set
+    max_op_evals=None to disable the evaluation cap. setting is accepted for
+    the uniform factory interface. All default factories use this cap.
+    """
     from numbers import Integral
     max_it = params.get('max_it', 1000)
     if isinstance(max_it, bool) or not isinstance(max_it, Integral):
@@ -956,6 +983,7 @@ def CountIterations_factory(setting, params: dict) -> StopRule:
     if max_it < 0:
         raise ValueError("max_it must be nonnegative.")
     return CountIterations(int(max_it), timing=True, eval_count=True,
+                           max_op_evals=params.get('max_op_evals', 2000),
                            logging_level=params.get('logging_level', 'INFO'))
 
 
