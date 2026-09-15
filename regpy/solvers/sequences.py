@@ -5,7 +5,7 @@ from numbers import Integral, Real
 from math import isfinite
 import numpy as np
 
-__all__ = ['GeometricSequence', 'powers_of_two', 'powers_of_b', 'natural_numbers', 'squares', 'effective_alpha']
+__all__ = ['GeometricSequence', 'LinearSequence', 'powers_of_two', 'powers_of_b', 'natural_numbers', 'squares', 'effective_alpha']
 
 def powers_of_two() -> Iterator[int]:
     """Yield ``1, 2, 4, 8, ...`` indefinitely."""
@@ -126,3 +126,27 @@ class GeometricSequence:
         self.alpha *= self.q
         return result
 
+
+
+class LinearSequence(Iterator[int]):
+    r"""Iterator generating a linear sequence ``c, c+a, c+2a, ...``.
+    
+    Parameters
+    ----------
+    a : int, optional
+        Difference between neighboring sequence elements. Defaults to ``1``.
+    start : int, optional
+        First element of the sequence. Defaults to ``0``.
+    """    
+    def __init__(self, a: int = 1, start: int = 0) -> None:
+        self.a: int = a
+        self.x: int = start
+
+    def __iter__(self) -> LinearSequence:
+        return self
+
+    def __next__(self)->int:
+        result = self.x
+        self.x += self.a
+        return result
+    

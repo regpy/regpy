@@ -945,3 +945,65 @@ class CountIterations(StopRule):
             'steps'
         )
 
+
+
+def CountIterations_factory(setting, params: dict) -> StopRule:
+    """Create a timed, evaluation-counting cap; setting is accepted uniformly."""
+    from numbers import Integral
+    max_it = params.get('max_it', 1000)
+    if isinstance(max_it, bool) or not isinstance(max_it, Integral):
+        raise TypeError("max_it must be a nonnegative integer.")
+    if max_it < 0:
+        raise ValueError("max_it must be nonnegative.")
+    return CountIterations(int(max_it), timing=True, eval_count=True,
+                           logging_level=params.get('logging_level', 'INFO'))
+
+
+def _capped_factory(rule_class):
+    """Build a factory for a concrete rule, preserving its constructor defaults.
+
+    Factories accept (setting, params). Recognized constructor arguments can
+    be supplied directly in params; rule_params supplies explicit arguments
+    and takes precedence. max_it controls the added cap. Parameters belonging
+    to the default-selector factory are not passed to the rule constructor.
+    Rules requiring a solver can receive it through params['solver']; otherwise
+    normal attachment supplies it after construction.
+    """
+    from inspect import signature
+    names = set(signature(rule_class).parameters)
+
+    def factory(setting, params: dict) -> StopRule:
+        options = {key: value for key, value in params.items() if key in names}
+        if 'setting' in names:
+            options['setting'] = setting
+        if 'solver' in names:
+            options.setdefault('solver', None)
+        if 'max_iter' in names:
+            options.setdefault('max_iter', params.get('max_it', 1000))
+        if rule_class.__name__ in ('RelativeChangeSol', 'RelativeChangeData'):
+            space = setting.h_domain if rule_class.__name__ == 'RelativeChangeSol' else setting.h_codomain
+            options.setdefault('norm', space.norm)
+            options.setdefault('tol', 1e-3)
+        options.update(params.get('rule_params', {}))
+        rule = rule_class(**options)
+        rule.log.setLevel(params.get('logging_level', 'INFO'))
+        return rule + CountIterations_factory(setting, params)
+
+    factory.__name__ = rule_class.__name__ + '_factory'
+    factory.__qualname__ = factory.__name__
+    factory.__module__ = rule_class.__module__
+    factory.__doc__ = (
+        'Create ' + rule_class.__name__ + ' plus a timed, evaluation-counting '
+        'iteration cap. Call as factory(setting, params). Constructor options '
+        'are read from params; rule_params overrides them. max_it defaults to '
+        '1000. Required rule-specific arguments must be supplied by the caller.'
+    )
+    return factory
+
+
+NoneRule_factory = _capped_factory(NoneRule)
+ErrorMonitor_factory = _capped_factory(ErrorMonitor)
+CombineRules_factory = _capped_factory(CombineRules)
+AndCombineRules_factory = _capped_factory(AndCombineRules)
+__all__ += ['CountIterations_factory', 'NoneRule_factory', 'ErrorMonitor_factory',
+            'CombineRules_factory', 'AndCombineRules_factory']

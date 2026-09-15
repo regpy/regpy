@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeAlias, cast
 
 import numpy as np
@@ -26,7 +26,7 @@ Norm: TypeAlias = Callable[[ReadOnlyVector], float]
 _EVERY_TENTH_STEP = range(0, 10**18, 10)
 
 __all__: list[str] = [
-    "RelativeChangeData", "RelativeChangeSol", "LinearSequence",
+    "RelativeChangeData", "RelativeChangeSol",
     "OptimalityCondStopping", "OptimalityCondStoppingNonConvex",
     "DualityGapStopping",
 ]
@@ -179,28 +179,6 @@ class RelativeChangeSol(StopRule):
         return triggered
 
 ######### stopping rules for convex optimization problems #########
-
-class LinearSequence(Iterator[int]):
-    r"""Iterator generating a linear sequence ``c, c+a, c+2a, ...``.
-    
-    Parameters
-    ----------
-    a : int, optional
-        Difference between neighboring sequence elements. Defaults to ``1``.
-    start : int, optional
-        First element of the sequence. Defaults to ``0``.
-    """    
-    def __init__(self, a: int = 1, start: int = 0) -> None:
-        self.a: int = a
-        self.x: int = start
-
-    def __iter__(self) -> LinearSequence:
-        return self
-
-    def __next__(self)->int:
-        result = self.x
-        self.x += self.a
-        return result
 
 class OptimalityCondStopping(StopRule):
     r"""Stopping rule based on optimality condition violation.
@@ -395,3 +373,11 @@ class DualityGapStopping(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered
+
+from .general import _capped_factory
+RelativeChangeData_factory = _capped_factory(RelativeChangeData)
+RelativeChangeSol_factory = _capped_factory(RelativeChangeSol)
+OptimalityCondStopping_factory = _capped_factory(OptimalityCondStopping)
+OptimalityCondStoppingNonConvex_factory = _capped_factory(OptimalityCondStoppingNonConvex)
+DualityGapStopping_factory = _capped_factory(DualityGapStopping)
+__all__ += ['RelativeChangeData_factory', 'RelativeChangeSol_factory', 'OptimalityCondStopping_factory', 'OptimalityCondStoppingNonConvex_factory', 'DualityGapStopping_factory']

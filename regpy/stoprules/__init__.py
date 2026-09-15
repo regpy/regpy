@@ -15,3 +15,7 @@ from .inner_stoprules import __all__ as _inner_stoprules_all
 __all__: list[str] = (
     _general_all + _parameter_choice_all + _inner_stoprules_all
 )
+
+from .default_factories import *
+from .default_factories import __all__ as _factory_all
+__all__ += _factory_all

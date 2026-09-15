@@ -479,3 +479,32 @@ class Oracle(StopRule):
     def best_iterate(self) -> Vector:
         return self.recos[self.best_stopping_index()]
     
+
+
+from .general import CountIterations_factory, _capped_factory
+
+
+def Discrepancy_factory(setting, params: dict) -> StopRule:
+    """Create Discrepancy plus an iteration cap (timing and counts enabled).
+
+    absolute_noise_level defaults to the setting's noise model; tau defaults
+    to 2.1. rule_params can override constructor options, including noiselevel.
+    The default selector handles unavailable noise and codomain-free settings.
+    """
+    options = {key: params[key] for key in
+               ('tau', 'data', 'norm', 'noise_level_is_relative', 'schedule')
+               if key in params}
+    options.setdefault('tau', 2.1)
+    options['setting'] = setting
+    options.update(params.get('rule_params', {}))
+    noise = options.pop('noiselevel', params.get('absolute_noise_level',
+            setting._noise_model_param.get('absolute_noise_level')))
+    rule = Discrepancy(noise, **options)
+    rule.log.setLevel(params.get('logging_level', 'INFO'))
+    return rule + CountIterations_factory(setting, params)
+
+LCurve_factory = _capped_factory(LCurve)
+QuasiOpt_factory = _capped_factory(QuasiOpt)
+Lepskii_factory = _capped_factory(Lepskii)
+Oracle_factory = _capped_factory(Oracle)
+__all__ += ['Discrepancy_factory', 'LCurve_factory', 'QuasiOpt_factory', 'Lepskii_factory', 'Oracle_factory']
