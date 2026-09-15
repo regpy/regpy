@@ -8,7 +8,7 @@ from regpy.stoprules import CountIterations
 from regpy.util import Errors
 from regpy.operators import ObsDataT, Operator
 from regpy.vecsps import ReadOnlyVector, Vector
-from .. import RegSolver, Setting, GeometricSequence, check_Hilbert_applicability
+from .. import RegSolver, Setting, Naturals, check_Hilbert_applicability
 from ..linear import LavrentievCG, TikhonovCG
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
@@ -25,7 +25,7 @@ def _regularization_parameter_iterator(
     explicit iterator is supplied.
     """
     if regpars is None:
-        return iter(GeometricSequence(regpar, regpar_step))
+        return iter((regpar * (regpar_step) ** Naturals()))
     try:
         return iter(regpars)
     except TypeError as error:
@@ -167,8 +167,7 @@ class IrgnmCG(RegSolver):
         Logging level.
     regpars : iterable of float or None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
-        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
-        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
 
     Notes
@@ -347,8 +346,7 @@ class LevenbergMarquardt(RegSolver):
         Logging level.
     regpars : iterable of float or None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
-        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
-        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
 
     Notes
@@ -540,8 +538,7 @@ class IrgnmCGPrec(RegSolver):
         Logging level.
     regpars : iterable of float or None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
-        :class:`~regpy.util.GeometricSequence` initialized with ``regpar`` and
-        ``regpar_step`` is used. If supplied, ``regpar`` and ``regpar_step``
+        sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
     """
 

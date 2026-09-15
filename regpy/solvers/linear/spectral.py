@@ -23,7 +23,7 @@ from regpy.operators.base import (
 from regpy.operators.numpy import MatrixMultiplication
 from regpy.util import Errors
 
-from ..sequences import GeometricSequence, powers_of_two
+from ..sequences import Naturals
 from .. import RegSolver, Setting, check_Hilbert_applicability_linear
 #from ..solver import 
 #from ..setting import 
@@ -825,10 +825,10 @@ class _SpectralFilterMixin:
         self._count_parameter = isinstance(filter, str) and filter in ('Landweber', 'Lardy')
         if self._count_parameter:
             source = self._parameters.pop('k', None)
-            source = powers_of_two() if source is None else source
+            source = (2 ** Naturals()) if source is None else source
             self._fixed_alpha = 1. if regpar is None else regpar
         else:
-            source = GeometricSequence() if regpar is None else regpar
+            source = (1.0 * (0.5) ** Naturals()) if regpar is None else regpar
         self.regpars = iter((source,)) if isinstance(source, Real) else iter(source)
         try:
             self._pending_parameter = next(self.regpars)
@@ -984,9 +984,9 @@ class Spectral(_SpectralFilterMixin, RegSolver):
     ``Landweber``, ``Lardy``, ``Spectral_CutOff`` (truncated SVD), ``Seidman``,
     and ``Truncated_SVD_2``. For alpha-based filters, ``regpar`` accepts
     a positive scalar (one solution), an iterable, or ``None`` (a fresh
-    ``GeometricSequence(1., 0.5)``). Iterated Tikhonov keeps ``k`` fixed.
+    ``0.5 ** Naturals()``). Iterated Tikhonov keeps ``k`` fixed.
     Landweber and Lardy instead accept an integer or iterable through ``k``
-    in ``filter_parameters``; the default is ``powers_of_two()``. Their
+    in ``filter_parameters``; the default is ``2 ** Naturals()``. Their
     ``regpar`` is a fixed alpha (default 1). Lardy uses this fixed alpha in
     every iteration; Landweber uses a fixed ``mu``, defaulting to ``1``.
     Choose ``mu`` within the usual Landweber stability range for the operator.
@@ -1356,7 +1356,7 @@ class Spectral_Showalter(Spectral):
 class Spectral_Landweber(Spectral):
     """Landweber filter with fixed stepsize and a sequence of counts ``k``.
 
-    ``k=None`` uses powers_of_two(), mimicing the standard sampling of regularization parameters alpha in other spectral methods; pass natural_numbers() to mimic the behavior of the non-spectral Landweber iterator
+    ``k=None`` uses 2 ** Naturals(), mimicing the standard sampling of regularization parameters alpha in other spectral methods; pass Naturals(first=1) to mimic the behavior of the non-spectral Landweber iterator
     Each scalar k produces one solution. 
 
     """
@@ -1377,7 +1377,7 @@ class Spectral_Landweber(Spectral):
 class Spectral_Lardy(Spectral):
     """Lardy filter with fixed alpha ``regpar`` (default 1) and varying ``k``.
 
-    ``k=None`` uses powers_of_two(); pass natural_numbers() for every count.
+    ``k=None`` uses 2 ** Naturals(); pass Naturals(first=1) for every count.
     A scalar k produces one solution.
     """
 

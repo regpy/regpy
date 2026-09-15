@@ -17,13 +17,11 @@ from .solver import RegSolver, Solver
 from .setting import Setting, check_Hilbert_applicability, check_Hilbert_applicability_linear
 from .special_settings import *
 from .sequences import (
-    GeometricSequence, powers_of_two, powers_of_b, natural_numbers, squares,
-    effective_alpha,
+    Sequence, Naturals, MappedSequence, EffectiveAlpha, effective_alpha,
 )
 from . import linear
 from . import nonlinear
 
 __all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", "HilbertSetting",
-           "check_Hilbert_applicability", "check_Hilbert_applicability_linear", 
-            "GeometricSequence", "powers_of_two", "powers_of_b",
-            "natural_numbers", "squares", "effective_alpha"]
+           "check_Hilbert_applicability", "check_Hilbert_applicability_linear",
+           "Sequence", "Naturals", "MappedSequence", "EffectiveAlpha", "effective_alpha"]

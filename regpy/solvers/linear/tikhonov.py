@@ -809,7 +809,7 @@ class TikhonovAlphaGrid(RegSolver):
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
     ) -> None:
-        from .. import GeometricSequence
+        from .. import Naturals
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
         )
@@ -821,7 +821,7 @@ class TikhonovAlphaGrid(RegSolver):
         super().__init__(setting)
         self.log.setLevel(logging_level)
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
+            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             self._alphas = iter(alphas)
         self.data = par['data']
@@ -940,7 +940,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
     ) -> None:
-        from ..nonlinear.gen_tikhonov import GeometricSequence
+        from ..sequences import Naturals
         out, par = self.check_applicability(
             setting, user_data=data, user_init=init
         )
@@ -952,7 +952,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         super().__init__(setting)
         self.log.setLevel(logging_level)
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
+            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             self._alphas = iter(alphas)
         self.data = par['data']

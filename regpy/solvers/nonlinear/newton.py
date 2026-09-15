@@ -262,7 +262,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         Semi-Smooth Newton. (Default: None)
     """
     def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
-        from .gen_tikhonov import GeometricSequence
+        from ..sequences import Naturals
         super().__init__(setting)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -278,7 +278,7 @@ class NewtonSemiSmoothFrozen(RegSolver):
         """Reference value in the Tikhonov functional.
         """
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
+            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             self._alphas = iter(alphas)
         self.alpha = next(self._alphas)

@@ -8,7 +8,7 @@ import numpy as np
 from regpy.functionals.base import NullFunctional
 from regpy.vecsps import Vector
 from regpy.util import Errors
-from .. import RegSolver, Setting, powers_of_two
+from .. import RegSolver, Setting, Naturals
 
 __all__ = ["FISTA"]
 
@@ -198,7 +198,7 @@ class FISTA(RegSolver):
         if not self.backtracking:
             try:
                 self._stepsize_selection_steps = iter(
-                    powers_of_two()
+                    (2 ** Naturals())
                     if stepsize_selection_steps is None
                     else stepsize_selection_steps
                 )

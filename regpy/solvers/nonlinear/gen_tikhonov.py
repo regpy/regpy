@@ -1,7 +1,7 @@
 from typing import Iterable, Tuple
 
 from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
-from .. import RegSolver, Setting, GeometricSequence
+from .. import RegSolver, Setting, Naturals
 from regpy.util import Errors
 
 __all__ =["GeneralizedTikhonov"]
@@ -46,7 +46,7 @@ class GeneralizedTikhonov(RegSolver):
         self.inner_logging_level = inner_logging_level
         self.inner_stoprule_param_list = inner_stoprule_param_list
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alpha_iterator = GeometricSequence(alphas[0],alphas[1])
+            self._alpha_iterator = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             try:
                 self._alpha_iterator = iter(alphas)

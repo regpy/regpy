@@ -540,7 +540,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
     """
     def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
                  delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
-        from ..nonlinear.gen_tikhonov import GeometricSequence
+        from ..sequences import Naturals
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
@@ -556,7 +556,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         if xref is not None and xref not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
+            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             self._alphas = iter(alphas)
         self.data = data

@@ -7,7 +7,7 @@ import numpy as np
 from regpy.operators import ObsDataT
 from regpy.util import Errors
 from regpy.vecsps import ReadOnlyVector, Vector
-from .. import RegSolver, Setting, check_Hilbert_applicability, powers_of_two
+from .. import RegSolver, Setting, check_Hilbert_applicability, Naturals
 
 __all__ = ["Landweber"]
 
@@ -131,7 +131,7 @@ class Landweber(RegSolver):
         if stepsize is None:
             try:
                 self._stepsize_selection_steps = iter(
-                    powers_of_two()
+                    (2 ** Naturals())
                     if stepsize_selection_steps is None
                     else stepsize_selection_steps
                 )

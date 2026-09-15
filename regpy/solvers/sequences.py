@@ -1,152 +1,221 @@
-"""Regularization parameter sequences without plotting dependencies."""
+"""Lazy arithmetic on numeric sequences, without NumPy or plotting dependencies.
+
+Examples
+--------
+>>> from itertools import islice
+>>> list(islice(0.1 * (0.5 ** Naturals()), 4))
+[0.1, 0.05, 0.025, 0.0125]
+>>> list(Naturals(first=2, last=4))
+[2, 3, 4]
+>>> list(islice(Naturals(last=3) + 4 * Naturals(first=1), 8))
+[0, 1, 2, 3, 4, 8, 12, 16]
+>>> list(MappedSequence(Naturals(last=3), lambda x: x / (1 + x)))
+[0.0, 0.5, 0.6666666666666666, 0.75]
+"""
 from __future__ import annotations
-from collections.abc import Iterable, Iterator
+
+from collections.abc import Callable, Iterable, Iterator
+from itertools import chain, count
 from numbers import Integral, Real
-from math import isfinite
-import numpy as np
+import operator
+from types import NotImplementedType
 
-__all__ = ['GeometricSequence', 'LinearSequence', 'powers_of_two', 'powers_of_b', 'natural_numbers', 'squares', 'effective_alpha']
+__all__ = ['Sequence', 'Naturals', 'MappedSequence']
+Number = int | float
 
-def powers_of_two() -> Iterator[int]:
-    """Yield ``1, 2, 4, 8, ...`` indefinitely."""
-    n = 0
-    while True:
-        yield 2**n
-        n += 1
 
-def powers_of_b(b: int) -> Iterator[int]:
-    """Yield integer powers b**n for n=0,1,2,... indefinitely.
+def _is_number(value: object) -> bool:
+    return isinstance(value, Real) and not isinstance(value, bool)
 
-    b must be a positive integer; b=1 produces only ones. Validation occurs
-    on first advancement. Invalid types (including bool) raise TypeError;
-    nonpositive bases raise ValueError. Python integers avoid overflow.
+
+class Sequence(Iterator[Number]):
+    """A single-pass, lazy sequence of real numbers.
+
+    Construct from any numeric iterable, including a finite list or an infinite
+    generator. Integers and floats share one interface; values are not coerced
+    to float, so integer powers retain Python's arbitrary precision.
+
+    Multiplication, division, floor division, modulo, subtraction and powers
+    operate elementwise, with a scalar or another Sequence. Unary +, - and abs
+    are supported. Adding two Sequences concatenates them; adding a scalar
+    shifts every value. Use MappedSequence for arbitrary transformations.
+
+    Binary elementwise operations stop at the shorter input. As with zip,
+    discovering exhaustion can consume one unused value of the other input.
+    An operation with exactly the same Sequence object on both sides consumes
+    it only once per result. Distinct expressions sharing an underlying iterator
+    still share its state: construct fresh sequences for independent uses.
+
+    Iteration resumes where it stopped; iter(sequence) does not restart it.
+    Operations construct new wrappers and do not consume inputs until advanced.
+    Concatenation reaches the second input only when the first is exhausted.
+    Arithmetic errors and non-real results are reported when advancing, not
+    when constructing an expression. This includes complex fractional powers.
     """
-    if isinstance(b, (bool, np.bool_)) or not isinstance(b, Integral):
-        raise TypeError("b must be a positive integer.")
-    if b <= 0:
-        raise ValueError("b must be positive.")
-    base = int(b)
-    value = 1
-    while True:
-        yield value
-        value *= base
 
+    def __init__(self, values: Iterable[Number]) -> None:
+        self._iterator = iter(values)
 
-def effective_alpha(alphas: Iterable[float]) -> Iterator[float]:
-    """Yield effective regularization parameters for iterated Tikhonov.
-
-    Parameters
-    ----------
-    alphas : iterable of float
-        Positive finite parameters alpha_j, consumed lazily. Finite inputs
-        produce one output per input; infinite generators are supported.
-
-    Yields
-    ------
-    float
-        alpha_eff_k defined by 1/alpha_eff_k = sum(1/alpha_j, j=1,...,k).
-
-    Notes
-    -----
-    Iterated Tikhonov with parameters alpha_j can be interpreted as implicit
-    time stepping for Showalter's equation with step sizes 1/alpha_j.
-    The accumulated time is therefore 1/alpha_eff_k. This identifies the
-    time scale, not equality of the discrete and continuous filters.
-
-    A stable recurrence avoids explicitly forming reciprocals, whose sum
-    can overflow: alpha_eff is the smaller of the previous effective value
-    and alpha_j divided by one plus their smaller-to-larger ratio.
-
-    Raises
-    ------
-    TypeError
-        For non-real inputs, including booleans.
-    ValueError
-        For nonpositive or nonfinite inputs.
-    FloatingPointError
-        If the effective parameter underflows to zero.
-    """
-    effective = None
-    for alpha in alphas:
-        if isinstance(alpha, (bool, np.bool_)) or not isinstance(alpha, Real):
-            raise TypeError("alphas must contain positive finite real numbers.")
-        alpha = float(alpha)
-        if not isfinite(alpha) or alpha <= 0:
-            raise ValueError("alphas must contain positive finite real numbers.")
-        if effective is None:
-            effective = alpha
-        else:
-            smaller, larger = min(effective, alpha), max(effective, alpha)
-            effective = smaller / (1.0 + smaller / larger)
-            if effective == 0.0:
-                raise FloatingPointError("The effective parameter underflowed to zero.")
-        yield effective
-
-
-def natural_numbers() -> Iterator[int]:
-    """Yield ``1, 2, 3, ...`` indefinitely."""
-    n = 1
-    while True:
-        yield n
-        n += 1
-
-def squares() -> Iterator[int]:
-    """Yield ``0, 1, 4, 9, ...`` indefinitely."""
-    n = 0
-    while True:
-        yield n**2
-        n += 1
-
-class GeometricSequence:
-    r"""Iterator generating a geometric sequence
-    
-    Parameters
-    ----------
-    alpha0 : float
-        :math:`\alpha_0` the initial regularization parameter 
-    q : float
-        Rate of the geometric sequence
-
-    Notes
-    ----- 
-    Sequence defined recursively by
-    
-    .. math::
-        \alpha_0 &= \alpha_0 \\
-        \alpha_{n+1} &= q*\alpha_n
-    """    
-    def __init__(self, alpha0:float=1.0,q:float=0.5):
-        self.alpha, self.alpha0, self.q = alpha0, alpha0, q
-
-    def __iter__(self):
+    def __iter__(self) -> Sequence:
         return self
 
-    def __next__(self)->float:
-        result = self.alpha
-        self.alpha *= self.q
-        return result
+    def __next__(self) -> Number:
+        value = next(self._iterator)
+        if not _is_number(value):
+            raise TypeError(f'Sequence values must be real numbers, got {value!r}.')
+        return value
+
+    def map(self, f: Callable[[Number], Number]) -> MappedSequence:
+        """Apply f lazily to each remaining value."""
+        return MappedSequence(self, f)
+
+    def _binary(self, other, operation, reflected=False):
+        if isinstance(other, Sequence):
+            if other is self:
+                return self.map(lambda x: operation(x, x))
+            left, right = (other, self) if reflected else (self, other)
+            return Sequence(operation(x, y) for x, y in zip(left, right))
+        if _is_number(other):
+            return self.map(lambda x: operation(other, x) if reflected
+                            else operation(x, other))
+        return NotImplemented
+
+    def __add__(self, other) -> Sequence | NotImplementedType:
+        if isinstance(other, Sequence):
+            return Sequence(chain(self, other))
+        return self._binary(other, operator.add)
+
+    def __radd__(self, other) -> Sequence | NotImplementedType:
+        if isinstance(other, Sequence):
+            return Sequence(chain(other, self))
+        return self._binary(other, operator.add, True)
+
+    def __sub__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.sub)
+
+    def __rsub__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.sub, True)
+
+    def __mul__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.mul)
+
+    def __rmul__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.mul, True)
+
+    def __truediv__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.truediv)
+
+    def __rtruediv__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.truediv, True)
+
+    def __floordiv__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.floordiv)
+
+    def __rfloordiv__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.floordiv, True)
+
+    def __mod__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.mod)
+
+    def __rmod__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.mod, True)
+
+    def __pow__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.pow)
+
+    def __rpow__(self, other) -> Sequence | NotImplementedType:
+        return self._binary(other, operator.pow, True)
+
+    def __neg__(self) -> Sequence:
+        return self.map(operator.neg)
+
+    def __pos__(self) -> Sequence:
+        return self.map(operator.pos)
+
+    def __abs__(self) -> Sequence:
+        return self.map(operator.abs)
 
 
+class Naturals(Sequence):
+    """Yield first, first+1, ... through last inclusively.
 
-class LinearSequence(Iterator[int]):
-    r"""Iterator generating a linear sequence ``c, c+a, c+2a, ...``.
-    
-    Parameters
-    ----------
-    a : int, optional
-        Difference between neighboring sequence elements. Defaults to ``1``.
-    start : int, optional
-        First element of the sequence. Defaults to ``0``.
-    """    
-    def __init__(self, a: int = 1, start: int = 0) -> None:
-        self.a: int = a
-        self.x: int = start
+    first defaults to 0; last=None gives an infinite sequence. Both bounds
+    must be nonnegative integers. last < first produces an empty sequence.
+    """
 
-    def __iter__(self) -> LinearSequence:
-        return self
+    def __init__(self, first: int = 0, last: int | None = None) -> None:
+        for name, value in (('first', first), ('last', last)):
+            if name == 'last' and value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, Integral):
+                raise TypeError(f'{name} must be a nonnegative integer.')
+            if value < 0:
+                raise ValueError(f'{name} must be nonnegative.')
+        super().__init__(count(int(first)) if last is None
+                         else range(int(first), int(last) + 1))
 
-    def __next__(self)->int:
-        result = self.x
-        self.x += self.a
-        return result
-    
+
+class MappedSequence(Sequence):
+    """Yield f(x_n) from a supplied Sequence, consuming it lazily.
+
+    f is called exactly once per requested output value. Its result must be
+    real; integer and float values may be freely mixed.
+    """
+
+    def __init__(self, sequence: Sequence,
+                 f: Callable[[Number], Number]) -> None:
+        if not isinstance(sequence, Sequence):
+            raise TypeError('sequence must be a Sequence.')
+        if not callable(f):
+            raise TypeError('f must be callable.')
+        super().__init__(map(f, sequence))
+
+
+class EffectiveAlpha(Sequence):
+    r"""Effective parameters of iterated Tikhonov, consumed lazily.
+
+    Given positive finite parameters alpha_j, yield alpha_eff_k satisfying
+    1/alpha_eff_k = sum(1/alpha_j, j=1,...,k). Integer and float inputs use
+    the same interface. Accept a Sequence or any other numeric iterable.
+
+    Iterated Tikhonov is implicit time stepping for Showalter's equation,
+    with step sizes 1/alpha_j. Thus 1/alpha_eff_k is the accumulated time.
+    This matches time scales, not the discrete and continuous filters.
+
+    A stable recurrence avoids explicitly summing reciprocals. Finite input
+    terminates after the same number of outputs; empty input stays empty.
+    Validation occurs when values are consumed. Nonpositive/nonfinite values
+    raise ValueError, non-real values TypeError, and underflow to zero raises
+    FloatingPointError. Like every Sequence, this is a single-pass iterator.
+    """
+
+    def __init__(self, alphas: Iterable[Number]) -> None:
+        from math import isfinite
+        source = iter(alphas)
+
+        def values():
+            effective = None
+            for alpha in source:
+                if not _is_number(alpha):
+                    raise TypeError('alphas must contain positive finite real numbers.')
+                alpha = float(alpha)
+                if not isfinite(alpha) or alpha <= 0:
+                    raise ValueError('alphas must contain positive finite real numbers.')
+                if effective is None:
+                    effective = alpha
+                else:
+                    smaller, larger = min(effective, alpha), max(effective, alpha)
+                    effective = smaller / (1.0 + smaller / larger)
+                    if effective == 0.0:
+                        raise FloatingPointError('The effective parameter underflowed to zero.')
+                yield effective
+
+        super().__init__(values())
+
+
+def effective_alpha(alphas: Iterable[Number]) -> EffectiveAlpha:
+    """Return EffectiveAlpha(alphas), supporting all Sequence arithmetic."""
+    return EffectiveAlpha(alphas)
+
+
+__all__ += ['EffectiveAlpha', 'effective_alpha']

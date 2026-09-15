@@ -14,7 +14,7 @@ from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj, Hori
 from regpy.stoprules import CountIterations
 from regpy.functionals.integral_functionals import IntegralFunctionalBase
 
-from ..sequences import GeometricSequence
+from ..sequences import Naturals
 from ..solver import RegSolver
 from ..setting import Setting
 from .tikhonov import TikhonovCG
@@ -73,7 +73,7 @@ class SemiSmoothNewton(RegSolver):
         stopping tolerances, such as tol and reltoly, remain unchanged.
     cg_reltols : iterable of float or None, optional
         Positive finite relative domain tolerances for successive CG solves.
-        None creates a fresh GeometricSequence(1.0, 1.0/3.0), yielding
+        None creates a fresh (1.0/3.0) ** Naturals(), yielding
         1, 1/3, 1/9, ... . The first value is used for initialization, then
         one value is consumed per inactive-set CG solve. Steps with all
         indices active consume no value. Values are validated when consumed.
@@ -149,7 +149,7 @@ class SemiSmoothNewton(RegSolver):
         cg_pars = dict(cg_pars) if cg_pars is not None else {}
         self.cg_pars = cg_pars
         self.cg_reltols = iter(
-            GeometricSequence(1.0, 1.0 / 3.0)
+            (1.0 * (1.0 / 3.0) ** Naturals())
             if cg_reltols is None else cg_reltols
         )
         """The additional `regpy.solvers.linear.tikhonov.TikhonovCG` parameters."""
