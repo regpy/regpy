@@ -61,7 +61,10 @@ class SemiSmoothNewton(RegSolver):
         equipped with a Hilbert space. 
     init: np.ndarray or None, default: None
         Zeroth iterate. If None, it is taken from the setting. 
-        init must be feasible.
+        init must be feasible. It is exposed as iteration zero through x, y
+        and primal(), before any CG solve. The first call to next() performs
+        the initial Taylor solve. Iteration drivers retain their usual
+        convention of yielding only completed steps.
     psi_plus, psi_minus : real scalar or array, optional
         Bound constraints, defaulting to the penalty's essential-domain bounds
         (including constr_u/constr_l). Finite bounds must be in its essential
@@ -74,7 +77,7 @@ class SemiSmoothNewton(RegSolver):
     cg_reltols : iterable of float or None, optional
         Positive finite relative domain tolerances for successive CG solves.
         None creates a fresh (1.0/3.0) ** Naturals(), yielding
-        1, 1/3, 1/9, ... . The first value is used for initialization, then
+        1, 1/3, 1/9, ... . The first value is used for the first Newton step, then
         one value is consumed per inactive-set CG solve. Steps with all
         indices active consume no value. Values are validated when consumed.
         Exhaustion raises ValueError if another CG solve is needed; it does
@@ -139,12 +142,11 @@ class SemiSmoothNewton(RegSolver):
             raise ValueError("psi_minus must be strictly below psi_plus.")
         self._validate_constraints(original_penalty)
         self.R = self._extended_penalty(original_penalty)
-        regpar= setting.regpar
-        x0 = setting.get_or_update_initial_guess(init, update=False)
+        x0 = setting.get_or_update_initial_guess(init, update=False).copy()
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
-        y0 = self.op(x0)
-        quad_setting = Setting(self.op, quadTaylor(self.R,x0),quadTaylor(self.S,y0),regpar=regpar)
+        self.x, self.y = x0, self.op(x0)
+        self._initial_step_pending = True
 
         cg_pars = dict(cg_pars) if cg_pars is not None else {}
         self.cg_pars = cg_pars
@@ -161,6 +163,14 @@ class SemiSmoothNewton(RegSolver):
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
 
+        self.active_plus = self.op.domain.IfPos(self.x - self.psi_plus)
+        self.active_minus = self.op.domain.IfPos(self.psi_minus - self.x)
+
+    def _first_step(self) -> None:
+        """Perform the formerly constructor-time unconstrained Taylor solve."""
+        x0, y0 = self.x, self.y
+        quad_setting = Setting(self.op, quadTaylor(self.R, x0),
+                               quadTaylor(self.S, y0), regpar=self.regpar)
         self.tikhcg=TikhonovCG(quad_setting, 
                                x0 = x0, 
                                logging_level=self.cg_logging_level, 
@@ -171,7 +181,7 @@ class SemiSmoothNewton(RegSolver):
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
         if not (self.active_plus).any() and not (self.active_minus).any() and self.data_fid.is_quadratic:
-            self.log.info('Stopped at 0th iterate.')
+            self.log.info('Converged after the first Newton step.')
             self.converge()
         self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(
             self.iteration_step_nr,self.tikhcg.iteration_step_nr,
@@ -316,6 +326,10 @@ class SemiSmoothNewton(RegSolver):
         return result
 
     def _next(self):
+        if self._initial_step_pending:
+            self._first_step()
+            self._initial_step_pending = False
+            return
         """compute active and inactive sets"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
@@ -403,6 +417,25 @@ class SemiSmoothNewton(RegSolver):
         projected_x[self.active_minus] = self.psi_minus[self.active_minus]
         projected_x[self.active_plus] = self.psi_plus[self.active_plus]
         return (projected_x, self.op(projected_x))
+
+    def dual(self):
+        """Return the dual pair used by duality-based stopping rules.
+
+        At iteration zero, use the neutral dual point p=0. Afterward,
+        reconstruct the dual pair exactly as the setting previously did
+        when this solver exposed only primal(). The CG iteration is unchanged.
+        """
+        if self.iteration_step_nr == 0:
+            return (
+                self.op.codomain.zeros(),
+                self.op.domain.zeros(),
+            )
+
+        _, dual = self.setting._complete_primal_dual_tuples(
+            primal=self.primal(),
+            dual=None,
+        )
+        return dual
 
     @staticmethod
     def check_applicability(setting,op_norm=None):

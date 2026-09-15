@@ -385,4 +385,4 @@ class FISTA(RegSolver):
             **self.proximal_pars
         )
         self.x, self.x_old = self.x_old, self.x
-        
+        self.y = None
