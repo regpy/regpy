@@ -1137,7 +1137,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
             decomposition_op,
             require_eig=setting.codomain_free,
         ):
-            out['info'] = 'requires numerical SVD. '
+            out['caveats'] = 'Requires a numerical SVD.'
         return out, par
 
     def _next(self) -> None:
@@ -1289,7 +1289,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         out['applicable'] = out['info'] == ''
         if out['applicable'] and not _is_labelled_svd(
                 setting.op, require_eig=True):
-            out['info'] = 'requires numerical SVD. '
+            out['caveats'] = 'Requires a numerical SVD.'
         return out, par
 
     def _next(self) -> None:

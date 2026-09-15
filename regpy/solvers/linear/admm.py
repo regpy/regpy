@@ -61,7 +61,7 @@ class ADMM(RegSolver):
         The operator (T^dagger T+I)^-1 on the domain Hilbert space, where
         T^dagger=G_X^-1 T* G_Y. A supplied operator takes precedence.
         Otherwise a labelled SVD is used to precompute the inverse. Without
-        either option, applicability checking warns and CG is used. The
+        either option, applicability checking reports a caveat and CG is used. The
         regularization parameter of this inner inverse is 1, independent
         of the outer Tikhonov parameter and gamma.
     cg_pars : dict [default: {}]
@@ -163,7 +163,7 @@ class ADMM(RegSolver):
                   or regularizedInverse.codomain != setting.op.domain):
                 out['info'] += 'regularizedInverse must map the operator domain to itself. '
         elif not getattr(setting.op, 'is_svd', False):
-            logging.getLogger(__name__).warning(
+            out['caveats'] = (
                 'No supplied regularizedInverse and operator is not marked as SVD; '
                 'ADMM will use inner TikhonovCG solves.'
             )

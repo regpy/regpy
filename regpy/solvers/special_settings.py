@@ -159,11 +159,6 @@ class dFISTA_SSNewton(CombinedSolver):
         out["applicable"] = (
             dual_out["applicable"] and ssn_out["applicable"]
         )
-        out["info"] = (
-            "Dual FISTA: " + dual_out.get("info", "")
-            + "\nPrimal SSNewton: " + ssn_out.get("info", "")
-        )
-
         # Child parameters are determined by their own constructors.
         return out, {}
 

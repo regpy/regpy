@@ -972,10 +972,20 @@ class Setting:
                 target_setting = self if primal else self.get_dual_setting()
             else:
                 target_setting = self
-            out,_ = (method['class'].check_applicability(target_setting, op_norm=op_norm)
-                     if op_norm is not None else
-                     method['class'].check_applicability(target_setting)
-                    )
+            # Forward explicitly named applicability options, e.g. ADMM's
+            # regularizedInverse, without sending unrelated solver arguments.
+            from inspect import signature
+            check = method['class'].check_applicability
+            accepted = signature(check).parameters
+            check_params = {key: value for key, value in
+                            method.get('method_params', {}).items()
+                            if key in accepted and key not in ('setting', 'op_norm')}
+            if op_norm is not None:
+                check_params['op_norm'] = op_norm
+            out, _ = check(target_setting, **check_params)
+            method.pop('caveats', None)
+            if out.get('caveats'):
+                method['caveats'] = out['caveats']
             method.pop('rate', None)
             if (self.is_tikhonov and not primal
                     and not 'subgradient' in self.penalty.conj.methods):
@@ -994,24 +1004,41 @@ class Setting:
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
-    def display_all_methods(self, full_names:bool=True)->None:
-        """Display all registered methods and their applicability."""
+    def display_all_methods(self, full_names: bool = True) -> None:
+        """Display applicable, caveated, and non-applicable methods separately.
+
+        Applicability checks may return a nonempty ``out['caveats']`` string
+        (or a list of strings). Caveats do not make a method inapplicable and
+        do not exclude it from automatic method selection.
+        """
         self.evaluate_methods()
-        print('Applicable methods: (default =',self.get_default_method(),')\n')
-        for name,method in self.applicable_methods().items():
-            full_name = method.get('full')
-            suffix = (
-                'linear rate: {:.3e}'.format(method['rate'])
-                if 'rate' in method else ''
-            )
-            print(name, (f' ({full_name}): ' if full_names and full_name else ''),
-                  method['info'], suffix)
-        print('\n Non-applicable methods:\n')
-        for name,method in self._methods.items(): 
-            if method['applicable']==False:
-                full_name = method.get('full')
-                print(name, (f' ({full_name}): ' if full_names and full_name else ''),
-                      method['info'])
+
+        def display(name, method, with_caveats=False):
+            full = method.get('full')
+            label = name + (f' ({full})' if full_names and full else '')
+            rate = (f" linear rate: {method['rate']:.3e}"
+                    if method['applicable'] and 'rate' in method else '')
+            print(f"{label}: {method.get('info', '')}{rate}")
+            if with_caveats:
+                caveats = method['caveats']
+                if isinstance(caveats, (list, tuple)):
+                    caveats = '; '.join(str(item) for item in caveats)
+                print(f"  Caveats: {caveats}")
+
+        print('Applicable methods: (default =', self.get_default_method(), ')\n')
+        for name, method in self._methods.items():
+            if method['applicable'] and not method.get('caveats'):
+                display(name, method)
+        caveated = {name: method for name, method in self._methods.items()
+                    if method['applicable'] and method.get('caveats')}
+        if caveated:
+            print('\nMethods applicable with caveats:\n')
+            for name, method in caveated.items():
+                display(name, method, with_caveats=True)
+        print('\nNon-applicable methods:\n')
+        for name, method in self._methods.items():
+            if not method['applicable']:
+                display(name, method)
 
     def _get_params(self, method_name: str, key: str) -> dict:
         if not isinstance(method_name, str):
