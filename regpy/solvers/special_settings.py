@@ -38,6 +38,69 @@ from regpy.solvers.solver import CombinedSolver
 from regpy.solvers.linear import FISTA, SemiSmoothNewton
 from regpy.stoprules import CountIterations
 
+class FISTA_SSNewton(CombinedSolver):
+    """FISTA followed by SemiSmoothNewton.
+
+    FISTA is stopped after fista_steps iterations. Its stopping rule's
+    selected solution is copied and passed to SemiSmoothNewton as init.
+
+    Both stages use the same setting and coordinate convention.
+    An exterior stopping rule can stop the combined solver at any step,
+    including before SemiSmoothNewton is constructed.
+    """
+
+    def __init__(
+        self,
+        setting,
+        init=None,
+        fista_stps: int = 10,
+        is_primal: bool = True,
+        logging_level="INFO",
+        fista_params: dict | None = None,
+        ssnewton_params: dict | None = None,
+    ):
+        if isinstance(fista_stps, bool) or not isinstance(fista_stps, int):
+            raise TypeError("fista_steps must be an integer.")
+        if fista_stps < 0:
+            raise ValueError("fista_steps must be nonnegative.")
+
+        fista_options = dict(fista_params or {})
+        newton_options = dict(ssnewton_params or {})
+
+        # The wrapper controls initialization and coordinate conventions.
+        for options in (fista_options, newton_options):
+            if "setting" in options or "init" in options:
+                raise ValueError(
+                    "Pass setting and init through the wrapper."
+                )
+            options["is_primal"] = is_primal
+            options.setdefault("logging_level", logging_level)
+
+        super().__init__(
+            solver1=FISTA(setting, init=init, **fista_options),
+            solver2=lambda *, init: SemiSmoothNewton(
+                setting, init=init, **newton_options
+            ),
+            stoprule=CountIterations(
+                max_iterations=fista_stps,
+                logging_level=logging_level,
+            ),
+        )
+
+    @staticmethod
+    def check_applicability(setting, op_norm=None):
+        fista_out, _ = FISTA.check_applicability(
+            setting, op_norm=op_norm
+        )
+        newton_out, _ = SemiSmoothNewton.check_applicability(setting)
+
+        out = {
+            "applicable": (fista_out["applicable"] and newton_out["applicable"]),
+            "info": ''
+            }
+
+        return out, {}
+
 class dFISTA_SSNewton(CombinedSolver):
     """Dual FISTA followed by primal SemiSmoothNewton.
 
@@ -199,7 +262,6 @@ class HilbertSetting(Setting):
             raise RuntimeError(Errors.runtime_error('Penalty of HilbertSetting must be of squared norm type.',self.penalty))
         if not self.data_fid.is_norm_squared_type:
             raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
-
     def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
         return super().duality_gap(primal,dual)
 
@@ -237,10 +299,24 @@ class HilbertNonNegSetting(Setting):
                               _primal_setting=_primal_setting,
                               default_inner_solver = 'FISTA'
                               )
-        if self.penalty.lb is None or (not self.op.domain(self.penalty.lb) == 0):
-            raise RuntimeError(Errors.runtime_error('penalty must have lower bound 0',self.penalty.lb))
+        if self.penalty.dom_l is None or (not self.op.domain.norm(self.penalty.dom_l) == 0):
+            raise RuntimeError(Errors.runtime_error('Penalty must have lower bound 0',self.penalty.lb))
         if not self.data_fid.is_norm_squared_type:
             raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
+        self.add_method(method_abbrv="FISTA_SSN",
+                             class_name= FISTA_SSNewton,
+                             primal=True,
+                             full_method_name="FISTA followed by SemiSmoothNewton"
+                             )
+        self.set_method_params('FISTA_SSN',{'fista_stps':50})
+        self.set_stoprule_params('FISTA_SSN',
+                                      {'factory':'DualityGapStopping',
+                                       'schedule':None,
+                                       'max_it':100
+                                       }
+                                       )
+
+
 
     def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
         return super().duality_gap(primal,dual)
