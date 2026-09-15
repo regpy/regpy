@@ -123,7 +123,10 @@ def convergence_plots(
     x_axis: str = "its",
     methods: list[str] | None = None,
     title: str | None = None,
-    fontsize:int =12
+    fontsize:int =12,
+    ref_err_x: float | None = None,
+    ref_err_y: float | None = None,
+    gap_pow: float = 2,
 ) :
     """Plot convergence histories for selected methods that have been run.
 
@@ -132,7 +135,10 @@ def convergence_plots(
     :class:`ErrorMonitor`, :class:`DualityGapStopping`, and
     :class:`OptimalityCondStopping` components. Each available history type
     gets its own subplot, and every recorded history is plotted on a
-    logarithmic y-axis.
+    logarithmic y-axis. The duality-gap subplot appears first and also shows
+    the untransformed x-error histories as dotted lines without markers.
+    Method colors are shared across subplots. Curve widths and marker sizes
+    are half the Matplotlib defaults active when this function is called.
 
     Parameters
     ----------
@@ -152,6 +158,18 @@ def convergence_plots(
     title : str or None, optional
         Figure title. If omitted, no figure-level title is added.
 
+    ref_err_x, ref_err_y : float or None, optional
+        Add a horizontal line labelled 'reference error' to the corresponding
+        'Error in x' or 'Error in y' subplot, if that subplot is present.
+        Values should be positive to be visible on the logarithmic y-axis.
+        None (default) omits the respective reference line.
+
+    gap_pow : float, optional
+        Positive finite exponent denominator for duality-gap curves. Plot
+        gap**(1/gap_pow), with the matching subplot title. Defaults to 2
+        (square root); use 1 to plot the untransformed gap. Stored histories
+        and all other subplot values are unchanged.
+
     Returns
     -------
     figure : matplotlib.figure.Figure
@@ -169,6 +187,11 @@ def convergence_plots(
         available, if x_axis is unknown, or if a history cannot be aligned
         with the requested timing or evaluation counter.
     """
+    if (isinstance(gap_pow, (bool, np.bool_))
+            or not isinstance(gap_pow, (int, float, np.integer, np.floating))):
+        raise TypeError("gap_pow must be a positive finite real number.")
+    if not np.isfinite(gap_pow) or gap_pow <= 0:
+        raise ValueError("gap_pow must be positive and finite.")
     import matplotlib.pyplot as plt    
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
@@ -200,6 +223,7 @@ def convergence_plots(
     if title is not None and not isinstance(title, str):
         raise TypeError("title must be a string or None.")
 
+    curve_methods: dict[str, str] = {}
     series: dict[str, list[tuple[str, np.ndarray, np.ndarray]]] = {
         subplot_title: [] for subplot_title, _, _ in _PLOT_SPECS
     }
@@ -268,6 +292,7 @@ def convergence_plots(
                         else _history_steps(component, key, len(values))
                     )
                     label = f"{method_name}{rule_suffix}: {key}"
+                    curve_methods[label] = method_name
                     series[subplot_title].append(
                         (label, horizontal, values)
                     )
@@ -282,6 +307,16 @@ def convergence_plots(
             "No recorded ErrorMonitor, DualityGapStopping, or "
             "OptimalityCondStopping histories were found."
         )
+
+    # Keep each method's color stable across histories and subplots.
+    active_series.sort(key=lambda item: item[0] != "Duality gap")
+    palette = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
+    method_colors = {
+        name: palette[index % len(palette)]
+        for index, (name, _) in enumerate(selected_methods)
+    }
+    linewidth = plt.rcParams['lines.linewidth'] / 2
+    markersize = plt.rcParams['lines.markersize'] / 2
 
     figure, axes_grid = plt.subplots(
         len(active_series),
@@ -300,11 +335,34 @@ def convergence_plots(
         axis.set_yscale("log")
         axis.tick_params(axis="both", labelsize=fontsize-2)
         for label, horizontal, values in curves:
-            axis.plot(horizontal, values,'o-', label=label)
-        axis.set_title(subplot_title,fontsize = fontsize+2)
+            plotted_values = (
+                np.power(values, 1.0 / gap_pow)
+                if subplot_title == "Duality gap" else values
+            )
+            axis.plot(horizontal, plotted_values, 'o-', label=label,
+                      color=method_colors[curve_methods[label]],
+                      linewidth=linewidth, markersize=markersize)
+        if subplot_title == "Duality gap":
+            for label, horizontal, values in series["Error in x"]:
+                axis.plot(horizontal, values, linestyle=":", marker=None,
+                          color=method_colors[curve_methods[label]],
+                          linewidth=linewidth, label=label)
+        reference_error = {
+            "Error in x": ref_err_x,
+            "Error in y": ref_err_y,
+        }.get(subplot_title)
+        if reference_error is not None:
+            axis.axhline(reference_error, color="black", linestyle="--",
+                         label="reference error", linewidth=linewidth)
+        display_title = (
+            rf"$(\mathrm{{Duality\ gap}})^{{1/{gap_pow:g}}}$"
+            if subplot_title == "Duality gap" else subplot_title
+        )
+        axis.set_title(display_title, fontsize=fontsize+2)
         axis.set_xlabel(x_label,fontsize = fontsize+2)
         axis.set_ylabel("Value",fontsize = fontsize+2)
-        axis.grid(True, which="both", alpha=0.3)
+        axis.grid(True, which="both", alpha=0.3,
+                  linewidth=plt.rcParams["grid.linewidth"] / 2)
         axis.legend(fontsize = fontsize-2)
 
     if title is not None:
