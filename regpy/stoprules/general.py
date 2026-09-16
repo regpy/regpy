@@ -4,8 +4,8 @@ This module contains the base class, rule combinators, and the iteration-count r
 """
 
 from __future__ import annotations
-
 from copy import deepcopy
+from numpy import sqrt
 import logging
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -484,7 +484,7 @@ class ErrorMonitor(StopRule):
 
     @staticmethod
     def _norm_distance(norm: Callable[[ReadOnlyVector], float]) -> Distance:
-        return lambda pair: float(norm(pair[0] - pair[1]))
+        return lambda pair: float(norm(pair[0] - pair[1])/sqrt(2))
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
         super()._complete_init_with_solver(solver)

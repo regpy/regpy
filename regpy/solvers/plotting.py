@@ -136,7 +136,11 @@ def convergence_plots(
     :class:`OptimalityCondStopping` components. Each available history type
     gets its own subplot, and every recorded history is plotted on a
     logarithmic y-axis. The duality-gap subplot appears first and also shows
-    the untransformed x-error histories as dotted lines without markers.
+    the x-error histories as dashed lines and y-errors divided by sqrt(setting.regpar)
+    as dotted lines, both without markers. These also share one errors panel.
+    Only the first overlay of each error type is labelled in the gap panel.
+    Final curve points are excluded from y-limit selection where possible,
+    except in the errors panel, which uses automatic scaling of all points.
     Method colors are shared across subplots. Curve widths and marker sizes
     are half the Matplotlib defaults active when this function is called.
 
@@ -159,8 +163,9 @@ def convergence_plots(
         Figure title. If omitted, no figure-level title is added.
 
     ref_err_x, ref_err_y : float or None, optional
-        Add a horizontal line labelled 'reference error' to the corresponding
-        'Error in x' or 'Error in y' subplot, if that subplot is present.
+        Add reference lines to the merged errors subplot where the respective
+        error history exists. The x reference is dashed; the y reference is
+        divided by sqrt(setting.regpar) and dotted.
         Values should be positive to be visible on the logarithmic y-axis.
         None (default) omits the respective reference line.
 
@@ -297,11 +302,27 @@ def convergence_plots(
                         (label, horizontal, values)
                     )
 
+    error_curves = []
+    if series["Error in y"]:
+        alpha = getattr(setting, "regpar", None)
+        if (alpha is None or not np.isscalar(alpha) or not np.isrealobj(alpha)
+                or not np.isfinite(alpha) or alpha <= 0):
+            raise ValueError("Plotting error_y/sqrt(alpha) requires a positive finite setting.regpar.")
+    else:
+        alpha = None
+    for component, style, suffix in (
+        ("Error in x", "--", "error_x"),
+        ("Error in y", ":", r"error_y/$\sqrt{\alpha}$"),
+    ):
+        for label, horizontal, values in series[component]:
+            scaled = values / np.sqrt(alpha) if component == "Error in y" else values
+            error_curves.append((label, horizontal, scaled, style, suffix))
     active_series = [
-        (subplot_title, curves)
-        for subplot_title, curves in series.items()
-        if curves
+        (name, curves) for name, curves in series.items()
+        if curves and name not in ("Error in x", "Error in y")
     ]
+    if error_curves:
+        active_series.append(("Errors in x and y", []))
     if not active_series:
         raise ValueError(
             "No recorded ErrorMonitor, DualityGapStopping, or "
@@ -334,26 +355,51 @@ def convergence_plots(
     ):
         axis.set_yscale("log")
         axis.tick_params(axis="both", labelsize=fontsize-2)
+        scale_samples = []
+
+        def include_for_scaling(values):
+            # Keep all plotted points, but ignore terminal drops/spikes when
+            # choosing limits. A singleton has no earlier point to use.
+            values = np.asarray(values, dtype=float)
+            values = values[:-1] if values.size > 1 else values
+            valid = values[np.isfinite(values) & (values > 0)]
+            if valid.size:
+                scale_samples.append(valid)
+
         for label, horizontal, values in curves:
-            plotted_values = (
-                np.power(values, 1.0 / gap_pow)
-                if subplot_title == "Duality gap" else values
-            )
+            plotted_values = (np.power(values, 1.0 / gap_pow)
+                              if subplot_title == "Duality gap" else values)
             axis.plot(horizontal, plotted_values, 'o-', label=label,
                       color=method_colors[curve_methods[label]],
                       linewidth=linewidth, markersize=markersize)
-        if subplot_title == "Duality gap":
-            for label, horizontal, values in series["Error in x"]:
-                axis.plot(horizontal, values, linestyle=":", marker=None,
+            include_for_scaling(plotted_values)
+        if subplot_title in ("Duality gap", "Errors in x and y"):
+            labelled = set()
+            for label, horizontal, values, style, suffix in error_curves:
+                if subplot_title == "Duality gap":
+                    legend_label = suffix if suffix not in labelled else '_nolegend_'
+                    labelled.add(suffix)
+                else:
+                    legend_label = label.rsplit(': ', 1)[0] + ': ' + suffix
+                axis.plot(horizontal, values, linestyle=style, marker=None,
                           color=method_colors[curve_methods[label]],
-                          linewidth=linewidth, label=label)
-        reference_error = {
-            "Error in x": ref_err_x,
-            "Error in y": ref_err_y,
-        }.get(subplot_title)
-        if reference_error is not None:
-            axis.axhline(reference_error, color="black", linestyle="--",
-                         label="reference error", linewidth=linewidth)
+                          linewidth=linewidth, label=legend_label)
+                include_for_scaling(values)
+        if subplot_title == "Errors in x and y":
+            references = []
+            if series["Error in x"] and ref_err_x is not None:
+                references.append((ref_err_x, '--', 'reference error_x'))
+            if series["Error in y"] and ref_err_y is not None:
+                references.append((ref_err_y / np.sqrt(alpha), ':', r'reference error_y/$\sqrt{\alpha}$'))
+            for value, style, label in references:
+                axis.axhline(value, color='black', linestyle=style,
+                             label=label, linewidth=linewidth)
+                include_for_scaling([value])
+        if scale_samples and subplot_title != "Errors in x and y":
+            samples = np.concatenate(scale_samples)
+            lower, upper = np.log10(samples.min()), np.log10(samples.max())
+            margin = max(0.05 * (upper - lower), 0.05)
+            axis.set_ylim(10.0 ** (lower - margin), 10.0 ** (upper + margin))
         display_title = (
             rf"$(\mathrm{{Duality\ gap}})^{{1/{gap_pow:g}}}$"
             if subplot_title == "Duality gap" else subplot_title

@@ -318,8 +318,65 @@ class HilbertNonNegSetting(Setting):
 
 
 
-    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
-        return super().duality_gap(primal,dual)
+    def duality_gap(self, primal=None, dual=None) -> float:
+        r"""Evaluate the nonnegative quadratic gap as nonnegative terms.
+
+        Write R(x)=1/2 ||x-x0||_A^2 + indicator_{x>=0} + const and
+        S(y)=1/2 ||y-g||_B^2 + const. A is the weighted L2 Gram operator
+        (including penalty curvature); B is the data-fidelity Gram operator.
+        The dual argument is ignored: p is always reconstructed as
+        -S'(Tx)/alpha = -B(Tx-g)/alpha in algebraic dual coordinates.
+        With h=A^{-1}T*p+x0, the gap is
+
+        .. math::
+            \frac12\|x-[h]_+\|_A^2
+            +\langle A[h]_-,x\rangle.
+
+        Here [h]_- = max(-h,0), so the complementarity term is positive.
+        This form avoids subtraction of large primal and dual objective values.
+        Supply primal=(x, Tx), or primal=(x, None) to compute Tx.
+        To evaluate a gap with an independent dual iterate, call
+        Setting.duality_gap(self, primal, dual) instead.
+        Inputs are not modified. An infeasible primal vector gives infinity.
+        The formula assumes the stated weighted L2 quadratic penalty with
+        only a nonnegativity constraint and an unconstrained squared-norm
+        data fidelity; more general penalties use Setting's generic gap.
+        """
+        if not self.is_tikhonov or not self.is_convex or self.codomain_free:
+            return super().duality_gap(primal, dual)
+        if self._primal_setting is not None:
+            return super().duality_gap(primal, dual)
+        # The constructor's lower-bound check alone does not exclude upper
+        # constraints or nonquadratic extensions; these need the generic gap.
+        upper = getattr(self.penalty, 'dom_u', None)
+        if (upper is not None and np.any(np.isfinite(upper))) or any(
+                getattr(self.penalty, name, None) is not None
+                for name in ('lin_taylor_l', 'lin_taylor_u',
+                             'quad_taylor_l', 'quad_taylor_u')):
+            return super().duality_gap(primal, dual)
+
+        if primal is None:
+            raise ValueError("This duality gap requires a primal iterate.")
+        (x, Tx), (p, Tstar_p) = self._complete_primal_dual_tuples(primal, None)
+        if np.any(x < 0):
+            return ma.inf
+
+        # Evaluate in the interior, where the constraint does not affect the
+        # quadratic derivatives. Recover the unconstrained center from the
+        # affine gradient; a constrained reference_vector need not equal x0.
+        probe = self.op.domain.ones()
+        A = self.penalty.hessian(probe)
+        x0 = probe - A.inverse(self.penalty.subgradient(probe))
+        h = A.inverse(Tstar_p) + x0
+        positive = np.maximum(h, 0)
+        negative = np.maximum(-h, 0)
+        delta = x - positive
+        penalty_gap = (
+            0.5 * self.op.domain.vdot(delta, A(delta)).real
+            + self.op.domain.vdot(x, A(negative)).real
+        )
+
+        return float(penalty_gap)
 
 
 class HuberXSetting(Setting):
