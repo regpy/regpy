@@ -147,6 +147,8 @@ class SemiSmoothNewton(RegSolver):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         self.x, self.y = x0, self.op(x0)
         self._initial_step_pending = True
+        self._cg_dual = None
+        self._cg_dual_adjoint = None
 
         cg_pars = dict(cg_pars) if cg_pars is not None else {}
         self.cg_pars = cg_pars
@@ -177,6 +179,7 @@ class SemiSmoothNewton(RegSolver):
                                **self._next_cg_parameters()
                                )
         self.x, self.y = self.tikhcg.run()
+        self._store_cg_dual(self.tikhcg)
 
         self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
         self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
@@ -384,6 +387,10 @@ class SemiSmoothNewton(RegSolver):
                                 **self._next_cg_parameters()
                                 )
             aux, _ = tikhcg.run()
+            # Capture before resetting S_taylor.data below: CG's dual belongs
+            # to the shifted, restricted quadratic subproblem.
+            self._store_cg_dual(tikhcg)
+            self.tikhcg = tikhcg
             self.x[self.inactive] = aux[self.inactive]
         self.y = self.op(self.x)
 
@@ -412,30 +419,37 @@ class SemiSmoothNewton(RegSolver):
         if added_ind+removed_ind==0 and self.data_fid.is_quadratic:
             self.converge()
 
+    def _store_cg_dual(self, solver) -> None:
+        """Snapshot the latest inner dual before its Taylor functional changes."""
+        pair = solver.dual()
+        if pair is None or pair[0] is None:
+            raise RuntimeError("The inner CG solver did not provide a dual iterate.")
+        self._cg_dual = pair[0].copy()
+        self._cg_dual_adjoint = None
+
+    def dual(self):
+        """Return the latest inner CG dual vector and its full adjoint image.
+
+        At initialization use the neutral pair (0, 0). Inactive-set CG uses
+        T composed with a coordinate mask, so its second dual component is
+        projected and cannot be reused here. Compute T* p lazily and cache it.
+        Steps with all coordinates active perform no CG solve and retain the
+        previous dual pair. For nonquadratic fidelities p comes from the
+        quadratic Taylor model; a smaller or finite original gap is not
+        guaranteed. No projection or alteration of p is performed.
+        """
+        if self._cg_dual is None:
+            self._cg_dual = self.op.codomain.zeros()
+            self._cg_dual_adjoint = self.op.domain.zeros()
+        elif self._cg_dual_adjoint is None:
+            self._cg_dual_adjoint = self.op.adjoint(self._cg_dual)
+        return self._cg_dual, self._cg_dual_adjoint
+
     def primal(self):
         projected_x = self.x.copy()
         projected_x[self.active_minus] = self.psi_minus[self.active_minus]
         projected_x[self.active_plus] = self.psi_plus[self.active_plus]
         return (projected_x, self.op(projected_x))
-
-    def dual(self):
-        """Return the dual pair used by duality-based stopping rules.
-
-        At iteration zero, use the neutral dual point p=0. Afterward,
-        reconstruct the dual pair exactly as the setting previously did
-        when this solver exposed only primal(). The CG iteration is unchanged.
-        """
-        if self.iteration_step_nr == 0:
-            return (
-                self.op.codomain.zeros(),
-                self.op.domain.zeros(),
-            )
-
-        _, dual = self.setting._complete_primal_dual_tuples(
-            primal=self.primal(),
-            dual=None,
-        )
-        return dual
 
     @staticmethod
     def check_applicability(setting,op_norm=None):
