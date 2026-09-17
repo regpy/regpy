@@ -4,6 +4,7 @@ import pytest
 
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
+from regpy.functionals import SquaredNorm, KullbackLeibler, RelativeEntropy
 from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
 from regpy.functionals.integral_functionals import Quadratic, Huber, Huber_old
 from regpy.hilbert import L2
@@ -357,3 +358,69 @@ def test_huber_data_replacement_and_removal(huber_comparison_case, remove_with_n
     np.testing.assert_allclose(functional.lin_taylor_l, -0.8)
     np.testing.assert_allclose(functional.lin_taylor_u, 0.8)
 
+
+
+@pytest.fixture
+def bregman_case():
+    """Positive reproducible inputs on the notebook's periodic grid."""
+    domain = UniformGridFcts((0, 1, 10), periodic=True)
+    rng = np.random.default_rng(20260917)
+    x = 5. + rng.uniform(-1., 1., size=domain.shape)
+    y = 6. + rng.uniform(-1., 1., size=domain.shape)
+    return domain, x, y
+
+
+@pytest.mark.parametrize("kind", ["squared_norm", "kullback_leibler"])
+def test_bregman_identities(bregman_case, kind):
+    """Symmetrization, explicit subgradients, and reversed conjugate identity."""
+    domain, x, y = bregman_case
+    functional = (SquaredNorm(L2(domain)) if kind == "squared_norm"
+                  else KullbackLeibler(domain, w=domain.ones()))
+    forward = functional.bregman(x, y)
+    assert forward + functional.bregman(y, x) == pytest.approx(
+        functional.symm_bregman(x, y), rel=0, abs=1e-12
+    )
+    xstar = functional.subgradient(x)
+    ystar = functional.subgradient(y)
+    assert forward == pytest.approx(
+        functional.bregman(x, y, ystar), rel=0, abs=1e-12
+    )
+    assert forward == pytest.approx(
+        functional.conj.bregman(ystar, xstar), rel=0, abs=1e-12
+    )
+
+
+def test_squared_norm_bregman_is_squared_distance(bregman_case):
+    domain, x, y = bregman_case
+    functional = SquaredNorm(L2(domain))
+    assert functional.bregman(x, y) == pytest.approx(
+        functional(x - y), rel=0, abs=1e-12
+    )
+
+
+def test_relative_entropy_bregman_independent_of_reference(bregman_case):
+    domain, x, y = bregman_case
+    unit_reference = RelativeEntropy(domain, w=1.)
+    variable_reference = RelativeEntropy(domain, w=y)
+    assert unit_reference.bregman(x, y) == pytest.approx(
+        variable_reference.bregman(x, y), rel=0, abs=1e-12
+    )
+
+
+def test_nonnegative_quadratic_bregman_with_boundary_subgradient():
+    """Include the normal-cone contribution at zero coordinates of y."""
+    domain = UniformGridFcts((0, 1, 10), periodic=True)
+    functional = Quadratic(domain, constr_l=0.)
+    quadratic = Quadratic(domain)
+    # Fixed arrays ensure both active and inactive constraints are exercised.
+    x = np.array([1., 0., 2., 0.5, 0., 3., 0., 1.5, 0.2, 0.])
+    y = np.array([0., 1., 0., 0.5, 0., 2., 1., 0., 0.3, 0.])
+    gradient = functional.subgradient(y)
+    ystar = gradient - 5. * (y == 0)
+    assert functional.dist_subdiff(ystar, y) == pytest.approx(
+        0., rel=0, abs=1e-12
+    )
+    expected = quadratic(x - y) + domain.vdot(gradient - ystar, x - y)
+    assert functional.bregman(x, y, ystar) == pytest.approx(
+        expected, rel=0, abs=1e-12
+    )
