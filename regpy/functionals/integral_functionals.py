@@ -689,7 +689,48 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf')
 
-    def _eval(self, v, func_vals=None):
+    def bregman(self, x: ReadOnlyVector, x0: ReadOnlyVector,
+                pstar: ReadOnlyVector | None = None) -> float:
+        r"""Evaluate the Bregman divergence by summing pointwise differences.
+
+        Computes F(x)-F(x0)-<pstar,x-x0>, with pstar in the
+        subdifferential at x0. If omitted, pstar is computed by
+        subgradient(x0). Constraints and linear/quadratic extensions are included. 
+
+        Subtraction precedes the final integration, reducing cancellation
+        between large global values. 
+        """
+        for name, value in (("x", x), ("x0", x0)):
+            if value not in self.domain:
+                raise ValueError(Errors.not_in_vecsp(
+                    value, self.domain, space_name="domain",
+                    add_info=f"{name} of bregman must belong to the domain."
+                ))
+        if pstar is None:
+            pstar = self.subgradient(x0)
+        else:
+            if pstar not in self.domain:
+                raise ValueError(Errors.not_in_vecsp(
+                    pstar, self.domain, space_name="domain",
+                    add_info="The Bregman subgradient must belong to the domain."
+                ))
+            distance = self.dist_subdiff(pstar, x0)
+            if distance > 0:
+                raise ValueError(Errors.value_error(
+                    "Given subgradient not in subdifferential",
+                    (distance, pstar, x0)
+                ))
+
+        values = self.domain.empty()
+        reference = self.domain.empty()
+        self._eval(x, func_vals=values, sum_values=False)
+        self._eval(x0, func_vals=reference, sum_values=False)
+        values -= reference
+        values *= self.measure
+        values -= np.real(np.conjugate(pstar) * (x - x0))
+        return float(np.sum(values))
+
+    def _eval(self, v, func_vals=None, *, sum_values=True):
         # See the comment in _conj.
         buf = self._get_scratch('_buf', v)
         try:
@@ -740,6 +781,8 @@ class IntegralFunctionalBase(Functional):
                 buf[v > self.dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
+            if not sum_values:
+                return None
             buf *= self.measure
             return np.sum(buf)
         finally:

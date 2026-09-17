@@ -766,6 +766,46 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
 
+    def bregman(self,x:Vector, x0:Vector, pstar:Vector|None=None) -> float:
+        r"""Computes the Bregman divergence of the functional `F`for two points `x` and `x0` 
+        with respect to a subgradient :math:`p \in \partial F(x0)` given by 
+
+
+        .. math::
+            \Delta^p(x,x0) := F(x) - F(x0) - \langle p,x-x0\rangle       
+
+        Parameters
+        ----------
+        `x`, `x0` : Vector
+            Points in `domain` at which to evaluate the Bregman divergence
+        `p`: Vector|None [default None]
+            Element of the subdifferental at x0. If None, it is computed by subgradient(x0) 
+        """
+
+        if x not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                x, self.domain, space_name="domain",
+                add_info=f"First argument of bregman cannot be handled by {self}."
+            ))
+        if x0 not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                x0, self.domain, space_name="domain",
+                add_info=f"Second argument of bregman cannot be handled by {self}."
+            ))
+        if pstar is None:
+            pstar = self.subgradient(x0)  
+        else: 
+            if pstar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    pstar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(pstar,x0)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,pstar,f0)))
+
+        return self(x) - self(x0) - self.domain.vdot(pstar,x-x0)
+
     def gradient_as_operator(self) -> operators.Operator:
         r"""Return the functional's gradient as a nonlinear operator.
 
