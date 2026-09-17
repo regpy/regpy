@@ -1051,31 +1051,35 @@ class Setting:
         """Return a shallow copy of one method's constructor parameters."""
         return dict(self._get_params(method_name, 'method_params'))
 
-    def set_method_params(self, method_name: str, params: dict | None = None) -> None:
+    def set_method_params(self, method_names: str, params: dict | None = None) -> None:
         """Update constructor parameters; omitted keys retain their values."""
-        current = self._get_params(method_name, 'method_params')
-        if params is not None:
-            if not isinstance(params, dict):
-                raise TypeError("params must be a dict or None.")
-            current.update(params)
+        method_names = [method_names] if isinstance(method_names,str) else method_names
+        for method_name in method_names:
+            current = self._get_params(method_name, 'method_params')
+            if params is not None:
+                if not isinstance(params, dict):
+                    raise TypeError("params must be a dict or None.")
+                current.update(params)
 
     def get_stoprule_params(self, method_name: str) -> dict:
         """Return a shallow copy of one method's rule parameters, including factory."""
         return dict(self._get_params(method_name, 'stoprule_params'))
 
-    def set_stoprule_params(self, method_name: str, params: dict | None = None) -> None:
+    def set_stoprule_params(self, method_names: str|list[str], params: dict | None = None) -> None:
         """Update rule parameters without constructing a rule.
 
         factory accepts a callable (setting, params), a factory name, or a
         StopRule class name such as 'RelativeChangeSol'.
         """
-        current = self._get_params(method_name, 'stoprule_params')
-        if params is not None:
-            if not isinstance(params, dict):
-                raise TypeError("params must be a dict or None.")
-            if 'factory' in params:
-                resolve_stoprule_factory(params['factory'])
-            current.update(params)
+        method_names = [method_names] if isinstance(method_names,str) else method_names
+        for method_name in method_names:
+            current = self._get_params(method_name, 'stoprule_params')
+            if params is not None:
+                if not isinstance(params, dict):
+                    raise TypeError("params must be a dict or None.")
+                if 'factory' in params:
+                    resolve_stoprule_factory(params['factory'])
+                current.update(params)
 
     def set_method_parameters(self, method_name: str, params: dict | None = None) -> None:
         """Deprecated alias of set_method_params; parameters are now updated."""

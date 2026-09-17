@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from regpy.solvers import RegSolver, Solver
 
 Norm: TypeAlias = Callable[[ReadOnlyVector], float]
+GapPair: TypeAlias = tuple[Vector | None, Vector | None] | None
+GapFunctional: TypeAlias = Callable[[GapPair, GapPair], float]
 _EVERY_TENTH_STEP = range(0, 10**18, 10)
 
 __all__: list[str] = [
@@ -314,6 +316,8 @@ class DualityGapStopping(StopRule):
     ----------
     tol : float, optional
         The tolerance for the duality gap.
+    reltol : float, optional
+        relative tolerance
     stop_at_infty : bool, optional
         Whether an infinite duality gap triggers the rule. Defaults to
         ``True``.
@@ -325,19 +329,47 @@ class DualityGapStopping(StopRule):
         it at every iteration. After the solver marks itself converged, its
         final iterate is checked regardless of this schedule. Repeated checks
         of that converged iterate reuse the recorded result.
-    """    
+    additional_gap_functions : list of callable or None, optional
+        Extra functionals called as ``gap(primal, dual)`` using the same
+        arguments as the setting's duality gap. Each argument is a pair of
+        vectors (entries may be None), or None if unavailable. These values
+        are monitored only and do not affect stopping. They are evaluated
+        on the same schedule, including the final converged iterate.
+        Histories are stored under ``additional_gap_keys``, in list order;
+        keys include a one-based index and the callable name when available.
+    """
     def __init__(
         self,
         tol: float = 0.,
+        reltol: float = 1e-1,
+        rpow = 2,
         stop_at_infty: bool = True,
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = _EVERY_TENTH_STEP,
+        additional_gap_functions: list[GapFunctional] | None = None,
     ) -> None:
         super().__init__(
             logging_level=logging_level,
             schedule=schedule,
         )
+        if additional_gap_functions is not None and (
+            not isinstance(additional_gap_functions, list)
+            or not all(callable(gap) for gap in additional_gap_functions)
+        ):
+            raise TypeError("additional_gap_functions must be a list of callables or None.")
+        self.additional_gap_functions = tuple(additional_gap_functions or ())
+        self.additional_gap_keys = tuple(
+            f"additional duality gap {index}: {getattr(gap, '__name__', type(gap).__name__)}"
+            for index, gap in enumerate(self.additional_gap_functions, start=1)
+        )
+        for key in self.additional_gap_keys:
+            self.history_dict[key] = []
         self.tol: float = float(tol)
+        if (reltol>=1):
+            raise ValueError('Relative tolerance must be smaller than 1.', reltol)
+        self.reltol: float = float(reltol)
+ 
+        self.rpow = rpow
         self.history_dict["duality gap"] = []
         self.stop_at_infty: bool = stop_at_infty
 
@@ -352,6 +384,16 @@ class DualityGapStopping(StopRule):
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
         reg_solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
+        if self.reltol>0:
+            pen = reg_solver.setting.penalty
+            refsol = pen.reference_vector()
+            dist = pen.dist_subdiff(pen.domain.zeros(),refsol)
+            if dist>0:
+                self.log.warning(f"penalty reference vector is no minimizer. {dist}" 
+                                 "Assuming 0 as infimum in duality gap relative error estimate.")
+                self.minpen  = 0.
+            else:
+                self.minpen = pen(refsol)
 
     def stop(self) -> bool:
         """Always record the converged solver's final gap, even off schedule.
@@ -382,16 +424,32 @@ class DualityGapStopping(StopRule):
         if primal is None and dual is None:
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
         gap = solver.setting.duality_gap(primal = primal, dual = dual)
+        # Evaluate before appending so a failing monitor cannot leave partial
+        # gap histories or make the final-iterate cache skip a retry.
+        additional_gaps = [
+            float(functional(primal, dual))
+            for functional in self.additional_gap_functions
+        ]
         self.history_dict["duality gap"].append(gap)
+        for key, value in zip(self.additional_gap_keys, additional_gaps):
+            self.history_dict[key].append(value)
+        if self.reltol>0:
+            prim = primal[0] if isinstance(primal,tuple) else primal
+            if prim is None:
+                raise RuntimeError(Errors.runtime_error('primal does not provide a domain solution.',primal))
+            pen_val = solver.setting.penalty(prim)
+            rel_bound = (self.reltol/(1.-self.reltol))**self.rpow * (pen_val - self.minpen)
         triggered = (
             gap <= self.tol
+            or (self.reltol > 0 and gap <= rel_bound)
             or np.isnan(gap)
             or (np.isinf(gap) and self.stop_at_infty)
         )
         if np.isnan(gap):
             self.log_info = 'duality gap is NaN'
         else:
-            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap,self.tol)
+            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap, 
+                                                    rel_bound if self.reltol>0 else self.tol)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered

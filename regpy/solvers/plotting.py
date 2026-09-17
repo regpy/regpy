@@ -16,9 +16,17 @@ _PLOT_SPECS = (
     ("Error in x", ErrorMonitor, ("error_x",)),
     ("Error in y", ErrorMonitor, ("error_y",)),
     ("Duality gap", DualityGapStopping, ("duality gap",)),
+    ("Duality gap comparison", DualityGapStopping, ()),
     ("Optimality condition: dSstar", OptimalityCondStopping, ("dSstar",)),
     ("Optimality condition: dR", OptimalityCondStopping, ("dR",)),
 )
+
+
+def _history_keys(component, subplot_title, default_keys):
+    """Resolve the dynamically named additional gap histories."""
+    if subplot_title == "Duality gap comparison":
+        return ("duality gap",) + tuple(getattr(component, "additional_gap_keys", ()))
+    return default_keys
 
 
 def _rule_components(rule: StopRule) -> Iterator[StopRule]:
@@ -138,6 +146,9 @@ def convergence_plots(
     logarithmic y-axis. The duality-gap subplot appears first and also shows
     the x-error histories as dashed lines and y-errors divided by sqrt(setting.regpar)
     as dotted lines, both without markers. These also share one errors panel.
+    Methods with more than one recorded gap curve also appear in a separate
+    comparison subplot containing their original and additional gaps, with
+    one labelled curve per functional and method and the gap_pow transform.
     Only the first overlay of each error type is labelled in the gap panel.
     Final curve points are excluded from y-limit selection where possible,
     except in the errors panel, which uses automatic scaling of all points.
@@ -171,7 +182,7 @@ def convergence_plots(
 
     gap_pow : float, optional
         Positive finite exponent denominator for duality-gap curves. Plot
-        gap**(1/gap_pow), with the matching subplot title. Defaults to 2
+        gap**(1/gap_pow) for both gap panels, with matching subplot titles. Defaults to 2
         (square root); use 1 to plot the untransformed gap. Stored histories
         and all other subplot values are unchanged.
 
@@ -250,9 +261,9 @@ def convergence_plots(
             isinstance(component, rule_type)
             and any(
                 len(component.history_dict.get(key, ())) > 0
-                for key in history_keys
+                for key in _history_keys(component, subplot_title, history_keys)
             )
-            for _, rule_type, history_keys in _PLOT_SPECS
+            for subplot_title, rule_type, history_keys in _PLOT_SPECS
             for component in components
         )
         if not has_requested_history:
@@ -276,7 +287,7 @@ def convergence_plots(
                 rule_suffix = (
                     f" #{rule_index}" if len(matching_rules) > 1 else ""
                 )
-                for key in history_keys:
+                for key in _history_keys(component, subplot_title, history_keys):
                     values = np.asarray(
                         component.history_dict.get(key, ()), dtype=float
                     )
@@ -301,6 +312,16 @@ def convergence_plots(
                     series[subplot_title].append(
                         (label, horizontal, values)
                     )
+
+    # A comparison is useful only for methods with multiple recorded gaps.
+    comparison = series["Duality gap comparison"]
+    gap_counts = {}
+    for label, _, _ in comparison:
+        method = curve_methods[label]
+        gap_counts[method] = gap_counts.get(method, 0) + 1
+    series["Duality gap comparison"] = [
+        curve for curve in comparison if gap_counts[curve_methods[curve[0]]] > 1
+    ]
 
     error_curves = []
     if series["Error in y"]:
@@ -366,10 +387,12 @@ def convergence_plots(
             if valid.size:
                 scale_samples.append(valid)
 
-        for label, horizontal, values in curves:
+        for curve_index, (label, horizontal, values) in enumerate(curves):
             plotted_values = (np.power(values, 1.0 / gap_pow)
-                              if subplot_title == "Duality gap" else values)
-            axis.plot(horizontal, plotted_values, 'o-', label=label,
+                              if subplot_title in ("Duality gap", "Duality gap comparison") else values)
+            style = (('-', '--', ':', '-.')[curve_index % 4]
+                     if subplot_title == "Duality gap comparison" else '-')
+            axis.plot(horizontal, plotted_values, marker='o', linestyle=style, label=label,
                       color=method_colors[curve_methods[label]],
                       linewidth=linewidth, markersize=markersize)
             include_for_scaling(plotted_values)
@@ -404,6 +427,8 @@ def convergence_plots(
             rf"$(\mathrm{{Duality\ gap}})^{{1/{gap_pow:g}}}$"
             if subplot_title == "Duality gap" else subplot_title
         )
+        if subplot_title == "Duality gap comparison":
+            display_title = rf"$(\mathrm{{Duality\ gap\ comparison}})^{{1/{gap_pow:g}}}$"
         axis.set_title(display_title, fontsize=fontsize+2)
         axis.set_xlabel(x_label,fontsize = fontsize+2)
         axis.set_ylabel("Value",fontsize = fontsize+2)
