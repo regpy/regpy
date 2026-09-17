@@ -700,6 +700,16 @@ class IntegralFunctionalBase(Functional):
         Subtraction precedes the final integration, reducing cancellation
         between large global values. 
         """
+        return self._pointwise_bregman(x, x0, pstar, conjugate=False)
+
+    def conj_bregman(self, x: ReadOnlyVector, x0: ReadOnlyVector,
+                     pstar: ReadOnlyVector | None = None) -> float:
+        r"""Evaluate the conjugate Bregman divergence before integration.
+        """
+        return self._pointwise_bregman(x, x0, pstar, conjugate=True)
+
+    def _pointwise_bregman(self, x, x0, pstar, *, conjugate):
+        """Shared pointwise reduction for the primal and conjugate."""
         for name, value in (("x", x), ("x0", x0)):
             if value not in self.domain:
                 raise ValueError(Errors.not_in_vecsp(
@@ -707,14 +717,15 @@ class IntegralFunctionalBase(Functional):
                     add_info=f"{name} of bregman must belong to the domain."
                 ))
         if pstar is None:
-            pstar = self.subgradient(x0)
+            pstar = self.conj_subgradient(x0) if conjugate else self.subgradient(x0)
         else:
             if pstar not in self.domain:
                 raise ValueError(Errors.not_in_vecsp(
                     pstar, self.domain, space_name="domain",
                     add_info="The Bregman subgradient must belong to the domain."
                 ))
-            distance = self.dist_subdiff(pstar, x0)
+            distance = (self._conj_dist_subdiff(pstar, x0) if conjugate
+                        else self.dist_subdiff(pstar, x0))
             if distance > 0:
                 raise ValueError(Errors.value_error(
                     "Given subgradient not in subdifferential",
@@ -723,8 +734,9 @@ class IntegralFunctionalBase(Functional):
 
         values = self.domain.empty()
         reference = self.domain.empty()
-        self._eval(x, func_vals=values, sum_values=False)
-        self._eval(x0, func_vals=reference, sum_values=False)
+        evaluate = self._conj if conjugate else self._eval
+        evaluate(x, func_vals=values, sum_values=False)
+        evaluate(x0, func_vals=reference, sum_values=False)
         values -= reference
         values *= self.measure
         values -= np.real(np.conjugate(pstar) * (x - x0))
@@ -788,7 +800,7 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf')
 
-    def _conj(self, vstar, func_vals=None):
+    def _conj(self, vstar, func_vals=None, *, sum_values=True):
         # Using the definition of the conjugate, exterior values are given by
         # the corresponding Taylor extensions.
         buf = self._get_scratch('_buf', vstar)
@@ -846,6 +858,8 @@ class IntegralFunctionalBase(Functional):
                 buf[vstar > self.conj_dom_u + self._ESS_DOM_TOL] = np.inf
             if func_vals is not None:
                 np.copyto(func_vals, buf)
+            if not sum_values:
+                return None
             buf *= self.measure
             return np.sum(buf)
         finally:

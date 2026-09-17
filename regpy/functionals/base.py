@@ -802,9 +802,73 @@ class Functional:
                 ))
             dist = self.dist_subdiff(pstar,x0)
             if dist>0:
-                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,pstar,f0)))
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,pstar,x0)))
 
         return self(x) - self(x0) - self.domain.vdot(pstar,x-x0)
+
+    def conj_bregman(self, x: Vector, x0: Vector,
+                     pstar: Vector | None = None) -> float:
+        r""" A separate implementation for the conjugate is included to allow replacement
+        by derived classes.
+        """
+        return Functional.bregman(self.conj, x, x0, pstar)
+
+    def symm_bregman(self,x:Vector, y:Vector,
+                     xstar:Vector|None = None, ystar:Vector|None = None):
+        r"""
+        Computes the symmetric Bregman divergence of the functional `F` for two points 
+        `x` and `y` with respect to subgradients :math:`xstar \in \partial F(x)` 
+        and :math:`ystar \in \partial F(y)` given by 
+
+        .. math::
+            \Delta_{symm}^{x^*,y^*}(x,y)  F(x) - F(x0) 
+                         = \Delta^{y^*}(x,y) + \Delta^{x^*}(y,x)
+                         = \langle x^*-y^*,x-y\rangle.       
+
+        The latter formula is used for evaluation. 
+                         
+        Parameters
+        ----------
+        `x`, `y` : Vector
+            Points in `domain` at which to evaluate the Bregman divergence
+        `xstar`, `ystar`: Vector|None [default None]
+            Elements of the subdifferentals at x and y, respectively. 
+            If None, these vectors are computed by subgradient applied to `x`/ `y`. 
+        """
+        if x not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                x, self.domain, space_name="domain",
+                add_info=f"First argument of symm_bregman cannot be handled by {self}."
+            ))
+        if y not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                y, self.domain, space_name="domain",
+                add_info=f"Second argument of symm_bregman cannot be handled by {self}."
+            ))
+        if xstar is None:
+            xstar = self.subgradient(x)  
+        else: 
+            if xstar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    xstar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(xstar,x)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,xstar,x)))
+        if ystar is None:
+            ystar = self.subgradient(y)  
+        else: 
+            if ystar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    ystar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(ystar,y)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,ystar,y)))
+
+        return self.domain.vdot(xstar-ystar,x-y)
 
     def gradient_as_operator(self) -> operators.Operator:
         r"""Return the functional's gradient as a nonlinear operator.
@@ -1455,6 +1519,10 @@ class Conj(Functional):
         **proximal_par: Any,
     ) -> Vector:
         return self.func.proximal(x, tau, out=out, **proximal_par)
+
+    def bregman(self, x: Vector, x0: Vector,
+                pstar: Vector | None = None) -> float:
+        return self.func.conj_bregman(x, x0, pstar)
 
     @property
     def conj(self)-> Functional:
