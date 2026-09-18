@@ -18,7 +18,7 @@ from regpy.hilbert import L2
 
 from .setting import Setting
 
-__all__ = ['HilbertSetting']
+__all__ = ['HilbertSetting', 'BoundConstrSetting']
 
 """
 Special settings are mainly convenience classes. 
@@ -262,47 +262,56 @@ class HilbertSetting(Setting):
             raise RuntimeError(Errors.runtime_error('Penalty of HilbertSetting must be of squared norm type.',self.penalty))
         if not self.data_fid.is_norm_squared_type:
             raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
-    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
-        return super().duality_gap(primal,dual)
 
+class BoundConstrSetting(Setting):
+    r"""Settings with smooth convex penalty and data fidelity functionals, separable penalty, 
+    and pointwise bound constraints on the unknown.
 
-class HilbertNonNegSetting(Setting):
-    r""" Class of settings in which the data fidelity functional is a squared Hilbert norm and 
-    the penalty functional is a squared L^2 norm with nonnegativity constraint.
+    The operator must be linear on a real domain. The data fidelity must be
+    convex and provide a subgradient.
+
+    Parameters:
+    ------------------
+    penalty: Quadratic | None [default: None]
+        In the default case a Quadratic is used with defaults a=1, b=0, c=0 and given constraints.
+    constr_l, constr_u: Vector | None [default: None]
+        Constraints of the penalty if penalty is None. Otherwise, constr_l and constr_u are ignored.
     """
-    def  __init__(self,
-            op: Operator, 
-            penalty: Functional|HilbertSpace|Callable|None = None, 
-            data_fid:Functional|HilbertSpace|Callable|None = None,
-            regpar: float|None =None,
-            data: ReadOnlyVector | ObsDataT | None = None, 
-            exact_data: ReadOnlyVector | None = None, 
-            init: ReadOnlyVector | None = None,
-            incorporate_init_in_penalty: bool = True,
-            codomain_free: bool = False,
-            logging_level = "INFO",
-            explicitDataWarning:bool = True,                 
-            _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
-             )->None:
-        from regpy.functionals import QuadNonneg
 
-        penalty = QuadNonneg(op.domain) if penalty is None else penalty
-        data_fid = L2(op.codomain) if data_fid is None else data_fid
-        super().__init__(op, penalty, data_fid, regpar, 
-                              data = data, 
-                              exact_data = exact_data, 
-                              init=init, 
-                              incorporate_init_in_penalty=incorporate_init_in_penalty,
-                              codomain_free=codomain_free, 
-                              logging_level=logging_level, 
-                              explicitDataWarning=explicitDataWarning, 
-                              _primal_setting=_primal_setting,
-                              default_inner_solver = 'FISTA'
-                              )
-        if self.penalty.dom_l is None or (not self.op.domain.norm(self.penalty.dom_l) == 0):
-            raise RuntimeError(Errors.runtime_error('Penalty must have lower bound 0',self.penalty.lb))
-        if not self.data_fid.is_norm_squared_type:
-            raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
+    def __init__(self, 
+                 op: Operator, 
+                 penalty: Functional,
+                 data_fid: Functional | HilbertSpace | Callable | None,
+                 constr_l: Vector | None = None, 
+                 constr_u: Vector | None = None,
+                 regpar: float | None = None, 
+                 **kwargs
+                 ) -> None:
+        from regpy.functionals import IntegralFunctionalBase
+
+        if not np.issubdtype(op.domain.dtype, np.floating):
+            raise ValueError("BoundConstrSetting requires a real domain.")
+       
+        super().__init__(
+            op, 
+            penalty, 
+            data_fid,
+            regpar, **kwargs
+        )
+        if not isinstance(self.penalty, IntegralFunctionalBase):
+            raise TypeError(Errors.type_error("The penalty must be a subtype of IntegralFunctionalBase.",self))
+        if constr_l is not None:
+            self.penalty.constr_l = constr_l
+        if constr_u is not None:
+            self.penalty.constr_u = constr_u
+
+        if any(getattr(self.penalty, name, None) is not None
+               for name in ("lin_taylor_l", "lin_taylor_u",
+                            "quad_taylor_l", "quad_taylor_u")):
+            raise ValueError("The quadratic penalty must not have Taylor extensions.")
+
+        if not self.data_fid.is_convex or "subgradient" not in self.data_fid.methods:
+            raise ValueError("The data fidelity must be convex and provide its gradient.")
         self.add_method(method_abbrv="FISTA_SSN",
                              class_name= FISTA_SSNewton,
                              primal=True,
@@ -317,69 +326,7 @@ class HilbertNonNegSetting(Setting):
                                        )
 
 
-
-    def duality_gap(self, primal=None, dual=None) -> float:
-        r"""Evaluate the nonnegative quadratic gap as nonnegative terms.
-
-        Write R(x)=1/2 ||x-x0||_A^2 + indicator_{x>=0} + const and
-        S(y)=1/2 ||y-g||_B^2 + const. A is the weighted L2 Gram operator
-        (including penalty curvature); B is the data-fidelity Gram operator.
-        The dual argument is ignored: p is always reconstructed as
-        -S'(Tx)/alpha = -B(Tx-g)/alpha in algebraic dual coordinates.
-        With h=A^{-1}T*p+x0, the gap is
-
-        .. math::
-            \frac12\|x-[h]_+\|_A^2
-            +\langle A[h]_-,x\rangle.
-
-        Here [h]_- = max(-h,0), so the complementarity term is positive.
-        This form avoids subtraction of large primal and dual objective values.
-        Supply primal=(x, Tx), or primal=(x, None) to compute Tx.
-        To evaluate a gap with an independent dual iterate, call
-        Setting.duality_gap(self, primal, dual) instead.
-        Inputs are not modified. An infeasible primal vector gives infinity.
-        The formula assumes the stated weighted L2 quadratic penalty with
-        only a nonnegativity constraint and an unconstrained squared-norm
-        data fidelity; more general penalties use Setting's generic gap.
-        """
-        if not self.is_tikhonov or not self.is_convex or self.codomain_free:
-            return super().duality_gap(primal, dual)
-        if self._primal_setting is not None:
-            return super().duality_gap(primal, dual)
-        # The constructor's lower-bound check alone does not exclude upper
-        # constraints or nonquadratic extensions; these need the generic gap.
-        upper = getattr(self.penalty, 'dom_u', None)
-        if (upper is not None and np.any(np.isfinite(upper))) or any(
-                getattr(self.penalty, name, None) is not None
-                for name in ('lin_taylor_l', 'lin_taylor_u',
-                             'quad_taylor_l', 'quad_taylor_u')):
-            return super().duality_gap(primal, dual)
-
-        if primal is None:
-            raise ValueError("This duality gap requires a primal iterate.")
-        (x, Tx), (p, Tstar_p) = self._complete_primal_dual_tuples(primal, None)
-        if np.any(x < 0):
-            return ma.inf
-
-        # Evaluate in the interior, where the constraint does not affect the
-        # quadratic derivatives. Recover the unconstrained center from the
-        # affine gradient; a constrained reference_vector need not equal x0.
-        probe = self.op.domain.ones()
-        A = self.penalty.hessian(probe)
-        x0 = probe - A.inverse(self.penalty.subgradient(probe))
-        h = A.inverse(Tstar_p) + x0
-        positive = np.maximum(h, 0)
-        negative = np.maximum(-h, 0)
-        delta = x - positive
-        penalty_gap = (
-            0.5 * self.op.domain.vdot(delta, A(delta)).real
-            + self.op.domain.vdot(x, A(negative)).real
-        )
-
-        return float(penalty_gap)
-
-
-class HuberXSetting(Setting):
+class Huber_XSetting(Setting):
     def  __init__(self,
             op: Operator, 
             penalty: Functional|HilbertSpace|Callable|None = None, 
