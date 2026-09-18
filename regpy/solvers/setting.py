@@ -755,54 +755,74 @@ class Setting:
             dual = (p,Tsp)
         return primal,dual
 
-    def duality_gap(self, 
+    def _duality_gap_pen(self, 
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None
                     ) -> float:
+        return self.penalty.bregman(primal[0],None,ystar = dual[1])
+
+    def _duality_gap_data_fid(self, 
+                    primal: tuple[Vector|None,Vector|None] | None =None, 
+                    dual: tuple[Vector|None,Vector|None] | None  =None
+                    ) -> float:
+        return self.data_fid.bregman(primal[1],None,ystar = -self.regpar* dual[0]) / self.regpar
+
+    def duality_gap(self, 
+                    primal: tuple[Vector|None,Vector|None] | None =None, 
+                    dual: tuple[Vector|None,Vector|None] | None  =None,
+                    use_bregman_formula = True
+                    ) -> float:
         r"""Computes the value of the duality gap. 
-    
+            
+        .. math::
+            \mathcal{G}_{\alpha}(f,p):=\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
+
+        If the flag use_bregman_formal is set (default), the following equivalent formula in 
+        terms of Bregman divergences is used:
         
         .. math::
-            \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
-
+            mathcal{G}_{\alpha}(f,p) = \frac{1}{\alpha} \Delta_{\mathcal{S}}(Tf,g_p) + \Delta_{\Runf}(f, f_p)
+            
+        where :math:`g_p\in \partial \mathcal{S}^*(-\alpha p)` and :math:`f_p \in \partial \mathcal{R}^*(T^\ast p)`
+            
         Parameters
         ----------
         primal: tuple[Vector,Vector|None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
         dual: tuple[Vector|None,Vector|None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
+        use_bregman_formula: bool [default: True]
+            If True, the second formula above is used.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
 
-        if self._primal_setting is not None and primal is not None:
-            # A primal variable of the transformed dual setting is precisely
-            # a dual variable of the original setting.  Evaluate the gap
-            # there directly.  This is algebraically equivalent to computing
-            # the transformed gap and multiplying it by
-            # self.regpar**2, but avoids magnifying cancellation errors by
-            # alpha_primal**(-2).
+        if self._primal_setting is not None and primal is not None: 
             return self._primal_setting.duality_gap(dual=primal)
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
 
-        dat = 1./alpha * self.data_fid(Tf)
-        pen = self.penalty(f)
-        ddat = self.penalty.conj(Tsp)
-        dpen = 1./alpha * self.data_fid.conj(-alpha*p)
-        ares = ma.fabs(dat)+ma.fabs(pen)+ma.fabs(ddat)+ma.fabs(dpen) 
-        if not ma.isfinite(ares):
-            self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e}'.format(pen,dat,dpen,ddat))
-            return ma.inf
-        res = dat+pen+ddat+dpen
-        if ares/res>1e10:
-            self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-        elif ares/res>1e5*self.duality_gap_warning_incr:
-            self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-            self.duality_gap_warning_incr *=10.
+        if use_bregman_formula:
+            res = self._duality_gap_pen((f,Tf),(p,Tsp)) 
+            res += self._duality_gap_data_fid((f,Tf),(p,Tsp)) 
+        else:           
+            dat = 1./alpha * self.data_fid(Tf)
+            pen = self.penalty(f)
+            ddat = self.penalty.conj(Tsp)
+            dpen = 1./alpha * self.data_fid.conj(-alpha*p)
+            ares = ma.fabs(dat)+ma.fabs(pen)+ma.fabs(ddat)+ma.fabs(dpen) 
+            if not ma.isfinite(ares):
+                self.log.warning('duality gap infinite: R(..)={:.3e}, S(..)={:.3e}, S*(..)={:.3e}, R*(..)={:.3e}'.format(pen,dat,dpen,ddat))
+                return ma.inf
+            res = dat+pen+ddat+dpen
+            if ares/res>1e10:
+                self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
+            elif ares/res>1e5*self.duality_gap_warning_incr:
+                self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
+                self.duality_gap_warning_incr *=10.
 
         return (res
                 if self._primal_setting is None else

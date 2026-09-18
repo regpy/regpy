@@ -392,7 +392,9 @@ def convergence_plots(
                               if subplot_title in ("Duality gap", "Duality gap comparison") else values)
             style = (('-', '--', ':', '-.')[curve_index % 4]
                      if subplot_title == "Duality gap comparison" else '-')
-            axis.plot(horizontal, plotted_values, marker='o', linestyle=style, label=label,
+            marker = (('.', 's', 'o','x')[curve_index % 4]
+                      if subplot_title == "Duality gap comparison" else 'o')
+            axis.plot(horizontal, plotted_values, marker=marker, linestyle=style, label=label,
                       color=method_colors[curve_methods[label]],
                       linewidth=linewidth, markersize=markersize)
             include_for_scaling(plotted_values)
