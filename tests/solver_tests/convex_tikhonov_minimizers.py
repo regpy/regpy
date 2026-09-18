@@ -73,13 +73,14 @@ def problem():
 
 def make_setting(problem):
     """Return a fresh setting so that solver runs cannot share state."""
-    return Setting(
+    sett =  Setting(
         op=problem["operator"],
         penalty=problem["penalty"],
         data_fid=problem["data_fidelity"],
         regpar=1e-1,
     )
-
+    sett.set_stoprule_params(list(sett.applicable_methods().keys()),{'reltol':1e-2})
+    return sett
 
 @pytest.fixture(scope="module")
 def ss_newton_reference(problem):

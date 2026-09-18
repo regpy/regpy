@@ -428,6 +428,25 @@ class SemiSmoothNewton(RegSolver):
         self._cg_dual_adjoint = None
 
     def dual(self):
+        """Return the dual pair used by duality-based stopping rules.
+
+        At iteration zero, use the neutral dual point p=0. Afterward,
+        reconstruct the dual pair exactly as the setting previously did
+        when this solver exposed only primal(). The CG iteration is unchanged.
+        """
+        if self.iteration_step_nr == 0:
+            return (
+                self.op.codomain.zeros(),
+                self.op.domain.zeros(),
+            )
+
+        _, dual = self.setting._complete_primal_dual_tuples(
+            primal=self.primal(),
+            dual=None,
+        )
+        return dual
+        
+    def dual_cg(self):
         """Return the latest inner CG dual vector and its full adjoint image.
 
         At initialization use the neutral pair (0, 0). Inactive-set CG uses
