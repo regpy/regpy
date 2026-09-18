@@ -62,8 +62,11 @@ class SemiSmoothNewton(RegSolver):
     init: np.ndarray or None, default: None
         Zeroth iterate. If None, it is taken from the setting. 
         init must be feasible. It is exposed as iteration zero through x, y
-        and primal(), before any CG solve. The first call to next() performs
-        the initial Taylor solve. Iteration drivers retain their usual
+        and primal(), before any CG solve. Boundary multipliers are initialized
+        from the objective gradient at this point, and the next active sets
+        are computed from these multipliers. The first call to next() performs
+        an ordinary active-set Newton step; there is no preliminary
+        unconstrained Taylor solve. Iteration drivers retain their usual
         convention of yielding only completed steps.
     psi_plus, psi_minus : real scalar or array, optional
         Bound constraints, defaulting to the penalty's essential-domain bounds
@@ -111,6 +114,15 @@ class SemiSmoothNewton(RegSolver):
     the active-set constraints.
     The original setting penalty is not modified.
 
+    Initial multipliers use the same Hilbert-gradient coordinates as the
+    subsequent steps: G^{-1}(T* S'(T x0) + regpar R'(x0)), where G is the
+    domain Gram operator. On upper bounds lam_plus is minus this gradient;
+    on lower bounds lam_minus is plus this gradient. Other entries are zero.
+    Multipliers are not clipped to be nonnegative: a negative boundary
+    multiplier releases that constraint in the next active set.
+    Equal initial and predicted active sets do not mark the solver converged;
+    an interior starting point may still require a Newton solve.
+
     """
 
     def __init__(self, 
@@ -146,7 +158,6 @@ class SemiSmoothNewton(RegSolver):
         if not np.all(x0<=self.psi_plus) or not np.all(x0>=self.psi_minus):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         self.x, self.y = x0, self.op(x0)
-        self._initial_step_pending = True
         self._cg_dual = None
         self._cg_dual_adjoint = None
 
@@ -161,35 +172,26 @@ class SemiSmoothNewton(RegSolver):
         self.log.setLevel(logging_level)
         self.cg_logging_level = cg_logging_level
 
-        """Prepare first iteration step"""
+        # A^0 records the constraints attained by the supplied feasible x0.
+        initial_plus = self.x == self.psi_plus
+        initial_minus = self.x == self.psi_minus
+        residual = self.op.adjoint(self.S.subgradient(self.y))
+        residual = residual + self.regpar * self.R.subgradient(self.x)
+        residual = self.setting.h_domain.gram_inv(residual)
+
         self.lam_plus = self.op.domain.zeros()
         self.lam_minus = self.op.domain.zeros()
+        self.lam_plus[initial_plus] = -residual[initial_plus]
+        self.lam_minus[initial_minus] = residual[initial_minus]
 
-        self.active_plus = self.op.domain.IfPos(self.x - self.psi_plus)
-        self.active_minus = self.op.domain.IfPos(self.psi_minus - self.x)
-
-    def _first_step(self) -> None:
-        """Perform the formerly constructor-time unconstrained Taylor solve."""
-        x0, y0 = self.x, self.y
-        quad_setting = Setting(self.op, quadTaylor(self.R, x0),
-                               quadTaylor(self.S, y0), regpar=self.regpar)
-        self.tikhcg=TikhonovCG(quad_setting, 
-                               x0 = x0, 
-                               logging_level=self.cg_logging_level, 
-                               **self._next_cg_parameters()
-                               )
-        self.x, self.y = self.tikhcg.run()
-        self._store_cg_dual(self.tikhcg)
-
-        self.active_plus = self.op.domain.IfPos(self.lam_plus +self.regpar*(self.x-self.psi_plus ))
-        self.active_minus = self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
-        if not (self.active_plus).any() and not (self.active_minus).any() and self.data_fid.is_quadratic:
-            self.log.info('Converged after the first Newton step.')
-            self.converge()
-        self.log.info('it {}: CG its {}; changes active sets +{},-{}'.format(
-            self.iteration_step_nr,self.tikhcg.iteration_step_nr,
-            (1.*self.active_minus+self.active_plus).sum(),0 )
-        )
+        # Store A^1 for the first ordinary Newton step. Do not infer
+        # stationarity merely from A^0 == A^1: inactive gradients may be nonzero.
+        self.active_plus = (
+            self.lam_plus + self.regpar * (self.x - self.psi_plus)
+        ) >= 0
+        self.active_minus = (
+            self.lam_minus - self.regpar * (self.x - self.psi_minus)
+        ) >= 0
 
     def _next_cg_parameters(self) -> dict:
         """Consume one relative tolerance for an actual CG solve."""
@@ -329,10 +331,6 @@ class SemiSmoothNewton(RegSolver):
         return result
 
     def _next(self):
-        if self._initial_step_pending:
-            self._first_step()
-            self._initial_step_pending = False
-            return
         """compute active and inactive sets"""
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
@@ -350,8 +348,6 @@ class SemiSmoothNewton(RegSolver):
         self.lam_minus[self.active_plus]=0
 
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
-        # Clamping changes x; linearize the fidelity at its current image.
-        self.y = self.op(self.x)
         S_taylor = quadTaylor(self.S, self.y)
         full_R_taylor = quadTaylor(self.R, self.x)
         if self.active.all():
@@ -394,9 +390,11 @@ class SemiSmoothNewton(RegSolver):
             self.x[self.inactive] = aux[self.inactive]
         self.y = self.op(self.x)
 
-        S_taylor.data = self.op.codomain.zeros() # Has been changed by data in quad_setting!
-        residual = self.op.adjoint(S_taylor.subgradient(self.y))
-        residual += self.regpar*full_R_taylor.subgradient(self.x)
+        #S_taylor.data = self.op.codomain.zeros() # Has been changed by data in quad_setting!
+        #residual = self.op.adjoint(S_taylor.subgradient(self.y))
+        #residual += self.regpar*full_R_taylor.subgradient(self.x)
+        residual = self.op.adjoint(self.setting.data_fid.subgradient(self.y))
+        residual += self.regpar * self.R.subgradient(self.x)
         residual = self.setting.h_domain.gram_inv(residual)
         
         self.lam_plus[self.active_plus]  = -residual[self.active_plus]
@@ -416,7 +414,7 @@ class SemiSmoothNewton(RegSolver):
             removed_ind
             )
         )
-        if added_ind+removed_ind==0 and self.data_fid.is_quadratic:
+        if added_ind+removed_ind==0 and self.data_fid.is_quadratic and self.R.is_quadratic:
             self.converge()
 
     def _store_cg_dual(self, solver) -> None:
