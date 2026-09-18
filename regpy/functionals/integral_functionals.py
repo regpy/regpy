@@ -689,27 +689,51 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf')
 
-    def bregman(self, x: ReadOnlyVector, x0: ReadOnlyVector,
-                pstar: ReadOnlyVector | None = None) -> float:
+    def bregman(self, x: ReadOnlyVector, y: ReadOnlyVector | None,
+                ystar: ReadOnlyVector | None = None) -> float:
         r"""Evaluate the Bregman divergence by summing pointwise differences.
 
-        Computes F(x)-F(x0)-<pstar,x-x0>, with pstar in the
-        subdifferential at x0. If omitted, pstar is computed by
-        subgradient(x0). Constraints and linear/quadratic extensions are included. 
+        Computes F(x)-F(y)-<ystar,x-y>, with ystar in the
+        subdifferential at y. If omitted, ystar is computed by
+        subgradient(y). Constraints and linear/quadratic extensions are included. 
+
+        With y=None, ystar is required and the pointwise Fenchel--Young
+        expression F(x)+F*(ystar)-<ystar,x> is integrated instead.
 
         Subtraction precedes the final integration, reducing cancellation
         between large global values. 
         """
-        return self._pointwise_bregman(x, x0, pstar, conjugate=False)
+        return self._pointwise_bregman(x, y, ystar, conjugate=False)
 
-    def conj_bregman(self, x: ReadOnlyVector, x0: ReadOnlyVector,
-                     pstar: ReadOnlyVector | None = None) -> float:
+    def conj_bregman(self, xstar: ReadOnlyVector, ystar: ReadOnlyVector | None,
+                     y: ReadOnlyVector | None = None) -> float:
         r"""Evaluate the conjugate Bregman divergence before integration.
+
+        ystar=None uses F*(xstar)+F(y)-<y,xstar> and requires y.
         """
-        return self._pointwise_bregman(x, x0, pstar, conjugate=True)
+        return self._pointwise_bregman(xstar, ystar, y, conjugate=True)
 
     def _pointwise_bregman(self, x, x0, pstar, *, conjugate):
         """Shared pointwise reduction for the primal and conjugate."""
+        if x0 is None:
+            if pstar is None:
+                raise ValueError("bregman requires x0 or pstar.")
+            for name, value in (("x", x), ("pstar", pstar)):
+                if value not in self.domain:
+                    raise ValueError(Errors.not_in_vecsp(
+                        value, self.domain, space_name="domain",
+                        add_info=f"{name} of bregman must belong to the domain."
+                    ))
+            values = self.domain.empty()
+            conjugate_values = self.domain.empty()
+            evaluate = self._conj if conjugate else self._eval
+            evaluate_conjugate = self._eval if conjugate else self._conj
+            evaluate(x, func_vals=values, sum_values=False)
+            evaluate_conjugate(pstar, func_vals=conjugate_values, sum_values=False)
+            values += conjugate_values
+            values *= self.measure
+            values -= np.real(np.conjugate(pstar) * x)
+            return float(np.sum(values))
         for name, value in (("x", x), ("x0", x0)):
             if value not in self.domain:
                 raise ValueError(Errors.not_in_vecsp(
@@ -3065,8 +3089,8 @@ class QuadraticNonneg(IntegralFunctionalBase):
 
     def  __init__(self, domain, **kwargs):
         super().__init__(domain,convexity_param = 1., nat_dom_l=0.,
-                         methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
-                         conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal'},
+                         methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
+                         conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
                          **kwargs)
 
     def _f(self, u, out=None, mask=None, **kwargs):
@@ -3129,7 +3153,22 @@ class QuadraticNonneg(IntegralFunctionalBase):
         return out
     
     def _ptw_dist_subdiff(self, vstar, x):
-        raise NotImplementedError
+        """Dual residual to the subdifferential; integrated by dist_subdiff.
+
+        At x>0 the subgradient is measure*x. At x=0 the
+        subdifferential is the negative half-line. Negative x is infeasible.
+        """
+        if np.any(x < 0):
+            raise NotInEssentialDomainError(
+                "QuadraticNonneg requires nonnegative x."
+            )
+        residual = vstar - self.measure * x
+        return np.where(x == 0, np.maximum(residual, 0.), residual)
+
+    def _conj_ptw_dist_subdiff(self, v, xstar, **kwargs):
+        """The conjugate is differentiable, with gradient max(xstar/w, 0)."""
+        return v - np.maximum(xstar / self.measure, 0.)
+
 
 def QuadraticBilateralConstraints(
     domain: MeasureSpaceFcts, lb=None, ub=None, x0=None, alpha: float = 1.,

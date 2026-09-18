@@ -766,20 +766,26 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
 
-    def bregman(self,x:Vector, x0:Vector, pstar:Vector|None=None) -> float:
-        r"""Computes the Bregman divergence of the functional `F`for two points `x` and `x0` 
-        with respect to a subgradient :math:`p \in \partial F(x0)` given by 
-
+    def bregman(self,x:Vector, y:Vector|None, ystar:Vector|None=None) -> float:
+        r"""Computes the Bregman divergence of the functional `F`for two points `x` and `y` 
+        with respect to a subgradient :math:`y^* \in \partial F(y)` given by 
 
         .. math::
-            \Delta^p(x,x0) := F(x) - F(x0) - \langle p,x-x0\rangle       
+            \Delta^{y^*}(x,y) := F(x) - F(y) - \langle y^*,x-y\rangle       
+
+        The second argument `y` can be None if `ystar` is provided. In this case the Bregman 
+        divergence is evaluated by the equivalent formula
+
+         .. math::
+            \Delta^{y^*}(x,y) := F(x) + F^*(y^*) - \langle y^*,x\rangle  
 
         Parameters
         ----------
-        `x`, `x0` : Vector
+        `x`: Vector
+        `y`: Vector | None
             Points in `domain` at which to evaluate the Bregman divergence
-        `p`: Vector|None [default None]
-            Element of the subdifferental at x0. If None, it is computed by subgradient(x0) 
+        `ystar`: Vector|None [default None]
+            Element of the subdifferental at y. If None, it is computed by subgradient(y) 
         """
 
         if x not in self.domain:
@@ -787,31 +793,40 @@ class Functional:
                 x, self.domain, space_name="domain",
                 add_info=f"First argument of bregman cannot be handled by {self}."
             ))
-        if x0 not in self.domain:
+        if y is None:
+            if ystar is None:
+                raise ValueError("bregman requires y or ystar.")
+            if ystar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    ystar, self.domain, space_name="domain"
+                ))
+            return float(np.real(self(x) + self.conj(ystar)
+                                 - self.domain.vdot(ystar, x)))
+        if y not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
-                x0, self.domain, space_name="domain",
+                y, self.domain, space_name="domain",
                 add_info=f"Second argument of bregman cannot be handled by {self}."
             ))
-        if pstar is None:
-            pstar = self.subgradient(x0)  
+        if ystar is None:
+            ystar = self.subgradient(y)  
         else: 
-            if pstar not in self.domain:
+            if ystar not in self.domain:
                 raise ValueError(util.Errors.not_in_vecsp(
-                    pstar, self.domain, space_name="domain",
+                    ystar, self.domain, space_name="domain",
                     add_info=f"Given subgradient of bregman cannot be handled by {self}."
                 ))
-            dist = self.dist_subdiff(pstar,x0)
+            dist = self.dist_subdiff(ystar,y)
             if dist>0:
-                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,pstar,x0)))
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,ystar,y)))
 
-        return self(x) - self(x0) - self.domain.vdot(pstar,x-x0)
+        return self(x) - self(y) - self.domain.vdot(ystar,x-y)
 
-    def conj_bregman(self, x: Vector, x0: Vector,
-                     pstar: Vector | None = None) -> float:
+    def conj_bregman(self, xstar: Vector, ystar: Vector | None,
+                     y: Vector | None = None) -> float:
         r""" A separate implementation for the conjugate is included to allow replacement
         by derived classes.
         """
-        return Functional.bregman(self.conj, x, x0, pstar)
+        return Functional.bregman(self.conj, xstar, ystar, y)
 
     def symm_bregman(self,x:Vector, y:Vector,
                      xstar:Vector|None = None, ystar:Vector|None = None):
@@ -1520,9 +1535,9 @@ class Conj(Functional):
     ) -> Vector:
         return self.func.proximal(x, tau, out=out, **proximal_par)
 
-    def bregman(self, x: Vector, x0: Vector,
-                pstar: Vector | None = None) -> float:
-        return self.func.conj_bregman(x, x0, pstar)
+    def bregman(self, x: Vector, y: Vector | None,
+                ystar: Vector | None = None) -> float:
+        return self.func.conj_bregman(x, y, ystar)
 
     @property
     def conj(self)-> Functional:
