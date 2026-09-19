@@ -1,5 +1,6 @@
 from math import isnan
 
+import numpy as np
 import ngsolve as ngs
 from netgen.geom2d import unit_square
 import pytest
@@ -62,8 +63,28 @@ class TestNgsVectorSpace():
 
     def test_mask(self):
         v = self.domain.from_ngs(ngs.x**2*ngs.y)
-        mask_regpy = self.domain.IfPos(v-0.5*self.domain.ones())
-        v[mask_regpy] = v
+        difference = v - 0.5 * self.domain.ones()
+        mask = self.domain.IfPos(difference)
+        assert self.domain.is_mask(mask)
+        selected = np.asarray(list(self.domain.iter_mask(mask)), dtype=bool)
+        coefficients = np.asarray(list(self.domain.iter_coefficients(v)))
+        original = coefficients.copy()
+        expected_mask = np.asarray(
+            list(self.domain.iter_coefficients(difference))
+        ) > 0
+        np.testing.assert_array_equal(selected, expected_mask)
+        assert selected.any() and (~selected).any()
+
+        result = self.domain.zeros()
+        self.domain.copyto(result, v, where=mask)
+        np.testing.assert_allclose(
+            list(self.domain.iter_coefficients(result)),
+            np.where(selected, coefficients, 0.),
+            rtol=0, atol=0,
+        )
+        np.testing.assert_array_equal(
+            list(self.domain.iter_coefficients(v)), original
+        )
 
 class TestNgsVectorSpaceWithInnerProd():
     bdr = "left|top|right|bottom"
@@ -119,5 +140,25 @@ class TestNgsVectorSpaceWithInnerProd():
 
     def test_mask(self):
         v = self.domain.from_ngs(ngs.x**2*ngs.y)
-        mask_regpy = self.domain.IfPos(v-0.5*self.domain.ones())
-        v[mask_regpy] = v
+        difference = v - 0.5 * self.domain.ones()
+        mask = self.domain.IfPos(difference)
+        assert self.domain.is_mask(mask)
+        selected = np.asarray(list(self.domain.iter_mask(mask)), dtype=bool)
+        coefficients = np.asarray(list(self.domain.iter_coefficients(v)))
+        original = coefficients.copy()
+        expected_mask = np.asarray(
+            list(self.domain.iter_coefficients(difference))
+        ) > 0
+        np.testing.assert_array_equal(selected, expected_mask)
+        assert selected.any() and (~selected).any()
+
+        result = self.domain.zeros()
+        self.domain.copyto(result, v, where=mask)
+        np.testing.assert_allclose(
+            list(self.domain.iter_coefficients(result)),
+            np.where(selected, coefficients, 0.),
+            rtol=0, atol=0,
+        )
+        np.testing.assert_array_equal(
+            list(self.domain.iter_coefficients(v)), original
+        )

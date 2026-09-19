@@ -708,33 +708,9 @@ class VectorSpaceBase:
             f"Setting coefficients is not implemented for {type(self).__name__}."
         ))
 
-    def logical_and(self, x: Vector, y: Vector) -> Vector:
-        """Logical and of two boolean vectors
-        """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.logical_and(x,y) 
 
-    def logical_or(self, x: Vector, y: Vector) -> Vector:
-        """Logical or of two boolean vectors
-        """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.logical_or(x,y) 
     
-    def logical_not(self, x: Vector) -> Vector:
-        """Logical not of a boolean vectors
-        """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.logical_not(x) 
     
-    def logical_xor(self, x: Vector, y: Vector) -> Vector:
-        """Logical xor of two boolean vectors
-        """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.logical_xor(x,y) 
 
     def iter_basis(self) -> Iterator[ReadOnlyVector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
@@ -865,36 +841,7 @@ class VectorSpaceBase:
         """
         raise NotImplementedError
     
-    def masked_space(self, mask: object) -> VectorSpaceBase:
-        """Gives a masked space given a mask.
-
-        Parameters
-        ----------
-        mask : boolean
-            mask for masking the vector space
-        
-        Returns
-        -------
-        regpy.vecsps.VectorSpaceBase
-            The masked Space depending on the vector space.
-        """
-        raise NotImplementedError
     
-    def IfPos(self, x: Vector) -> object:
-        """Analyses which components contribute to the positive part of the 
-        function corresponding to the vector.
-
-        Parameters
-        ----------
-        x : Vector
-            The vector to analyse.
-
-        Returns
-        -------
-        mask : object
-            Mask for the vector components contributing to the positive part of a function.
-        """
-        raise NotImplementedError
     
     def norm(self, x: Vector) -> float:
         return sqrt(self.vdot(x,x).real)
@@ -990,6 +937,14 @@ class DirectSum(VectorSpaceBase):
         VectorSpaceBase.__add__, i.e. when using the `+` operator, in order to make repeated sums
         like `A + B + C` unambiguous.
     """
+
+    def __new__(cls, *summands, **kwargs):
+        # Local import avoids a base -> maskable -> base import cycle.
+        if cls is DirectSum:
+            from .maskable import MaskableVectorSpace, MaskableDirectSum
+            if all(isinstance(s, MaskableVectorSpace) for s in summands):
+                return object.__new__(MaskableDirectSum)
+        return object.__new__(cls)
 
     def __init__(self, *summands: VectorSpaceBase, flatten: bool = False) -> None:
         if any(not isinstance(s, VectorSpaceBase) for s in summands):
@@ -1154,17 +1109,9 @@ class DirectSum(VectorSpaceBase):
             "received more."
         ))
 
-    def logical_and(self, x: TupleVector, y: TupleVector) -> TupleVector:
-        return TupleVector([s.logical_and(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
     
-    def logical_or(self, x: TupleVector, y: TupleVector) -> TupleVector:
-        return TupleVector([s.logical_or(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
     
-    def logical_not(self, x: TupleVector) -> TupleVector:
-        return TupleVector([s.logical_not(x_i) for x_i,s in zip(x.v,self.summands)])
     
-    def logical_xor(self, x: TupleVector, y: TupleVector) -> TupleVector:
-        return TupleVector([s.logical_xor(x_i,y_i) for x_i,y_i,s in zip(x.v,y.v,self.summands)])
 
     def complex_space(self) -> DirectSum:
         return DirectSum(*[s.complex_space() for s in self.summands])
@@ -1249,31 +1196,7 @@ class DirectSum(VectorSpaceBase):
                 vec.v[i] = b
                 yield vec
 
-    def masked_space(self, mask: object) -> DirectSum:
-        if isinstance(mask,int):
-            self.summands[mask]
-        x = self.rand()
-        _ = x[mask]
-        x[mask] = self.ones()[mask]
-        return DirectSum(*[s_i.masked_space(m_i) for s_i,m_i in zip(self.summands,mask)])
     
-    def IfPos(self, x: TupleVector) -> tuple[object, ...]:
-        """Analyses which components contribute to the positive part of the 
-        function corresponding to the vector.
-
-        Parameters
-        ----------
-        x : TupleVector
-            The vector to analyse.
-
-        Returns
-        -------
-        mask : tuple(BitArray)
-            Tuple of masks for the vector components contributing to the positive part of a function.
-        """
-        if not x in self:
-            raise ValueError(Errors.not_in_vecsp(x,self,add_info="IfPos only defined for vectors in the space!"))
-        return tuple(s_i.IfPos(x_i) for s_i,x_i in zip(self.summands,x.v))
 
     def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):

@@ -6,10 +6,11 @@ import numpy as np
 
 from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
 from .base import ReadOnlyVector, Scalar, VectorSpaceBase
+from .maskable import MaskableVectorSpace
 
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
-class NumPyVectorSpace(VectorSpaceBase):
+class NumPyVectorSpace(MaskableVectorSpace):
     r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
     space) without any additional structure.
 
@@ -77,17 +78,79 @@ class NumPyVectorSpace(VectorSpaceBase):
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
-    def fill(self, x: np.ndarray, value) -> None:
-        r"""Fill ``x`` in place with the scalar ``value``."""
+
+    def is_mask(self, mask):
+        return (isinstance(mask, np.ndarray) and mask.dtype == bool
+                and mask.shape == self.shape)
+
+    def iter_mask(self, mask):
+        if not self.is_mask(mask):
+            raise ValueError("Mask must be boolean and have the vector shape.")
+        return iter(mask.flat)
+
+    def mask_from_iterable(self, values):
+        return super().mask_from_iterable(values).reshape(self.shape)
+
+    def nrTrues(self, mask):
+        if not self.is_mask(mask):
+            raise ValueError("Invalid mask.")
+        return int(np.count_nonzero(mask))
+
+    def _logical(self, x, y, operation):
+        if not self.is_mask(x) or not self.is_mask(y):
+            raise ValueError("Invalid mask.")
+        return operation(x, y)
+
+    def logical_and(self, x, y):
+        return self._logical(x, y, np.logical_and)
+
+    def logical_or(self, x, y):
+        return self._logical(x, y, np.logical_or)
+
+    def logical_xor(self, x, y):
+        return self._logical(x, y, np.logical_xor)
+
+    def logical_not(self, x):
+        if not self.is_mask(x):
+            raise ValueError("Invalid mask.")
+        return np.logical_not(x)
+
+    def _comparison(self, x, predicate, *, ordered=False):
         if x not in self:
-            raise ValueError(Errors.not_in_vecsp(
-                x, self, vec_name="vector", add_info="fill argument is not in the NumPyVectorSpace."
-            ))
-        if not np.isscalar(value):
-            raise TypeError(Errors.type_error(
-                f"fill value must be a scalar. Got {type(value)}."
-            ))
-        x.fill(value)
+            raise ValueError("Vector outside space.")
+        if ordered and not self.is_ordered:
+            raise TypeError("Complex spaces have no coordinate ordering.")
+        return predicate(x)
+
+    def copyto(self, x, y, where=None):
+        if x not in self or y not in self:
+            raise ValueError("Vector outside space.")
+        if where is not None and not self.is_mask(where):
+            raise ValueError("Invalid mask.")
+        np.copyto(x, y, where=True if where is None else where)
+
+    def fill(self, x, value, where=None):
+        if x not in self or not np.isscalar(value):
+            raise ValueError("Expected a vector and scalar value.")
+        if where is not None and not self.is_mask(where):
+            raise ValueError("Invalid mask.")
+        np.copyto(x, value, where=True if where is None else where)
+
+    def restrict(self, x, mask):
+        if x not in self or not self.is_mask(mask):
+            raise ValueError("Invalid vector or mask.")
+        return x[mask].copy()
+
+    def extend(self, x, mask):
+        if not self.is_mask(mask):
+            raise ValueError("Invalid mask.")
+        if not isinstance(x, np.ndarray) or x.shape != (self.nrTrues(mask),):
+            raise ValueError("Invalid restricted vector.")
+        if not np.can_cast(x.dtype, np.dtype(self.dtype), casting="same_kind"):
+            raise TypeError("Restricted vector has an incompatible dtype.")
+        result = self.zeros()
+        result[mask] = x
+        return result
 
     def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
         """Iterate over native NumPy coefficients in C order."""
@@ -261,46 +324,7 @@ class NumPyVectorSpace(VectorSpaceBase):
         other.is_complex = False
         return other
     
-    def masked_space(self, mask):
-        """Gives a masked space given a mask.
-
-        Parameters
-        ----------
-        mask : np.ndarray
-            mask for masking the vector space can be anything broadcastable to the shape of the vector space
-        
-        Returns
-        -------
-        regpy.vecsps.NumPyVectorSpace
-            The masked Space depending on the vector space.
-        """
-        mask = np.broadcast_to(mask, self.shape)
-        if mask.dtype != bool:
-            raise TypeError(Errors.type_error(f"The dtype of a mask need to be boolean! was given "+"\n\t"+f"mask = {mask}"))
-        res = NumPyVectorSpace(np.sum(mask).item(), dtype=self.dtype)
-        res.mask = mask
-        return res
     
-    def IfPos(self, x):
-        """Analyses which components contribute to the positive part of the 
-        function corresponding to the vector.
-
-        Parameters
-        ----------
-        x : ndarray
-            The vector to analyse.
-
-        Returns
-        -------
-        mask : BitArray
-            Mask for the vector components contributing to the positive part of a function.
-        """
-        if not x in self:
-            raise ValueError(Errors.not_in_vecsp(x,self,add_info="IfPos not supported for vectors outside the space!"))
-        if not self.is_complex: 
-            return x > 0
-        else:
-            return TypeError("The vector space {} is complex, use IfPos only works for real valued functions.".format(self))
 
     def iter_basis(self):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,

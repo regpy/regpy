@@ -24,6 +24,7 @@ from pyngcore.pyngcore import BitArray
 from regpy.util import is_complex_dtype, Errors, ClassLogger
 
 from .base import ReadOnlyVector, Scalar, VectorSpaceBase
+from .maskable import MaskableVectorSpace
 
 
 @dataclass 
@@ -301,7 +302,7 @@ class NgsBaseVector:
         return NgsBaseVector(self.vec.Copy())
 
 
-class NgsVectorSpace(VectorSpaceBase):
+class NgsVectorSpace(MaskableVectorSpace):
     r"""A vector space wrapping an `ngsolve.FESpace`.
 
     Parameters
@@ -488,7 +489,9 @@ class NgsVectorSpace(VectorSpaceBase):
     def vdot(self, x, y):
         return ngs.InnerProduct(y.vec,x.vec)
 
-    def copyto(self, x, y):
+    def copyto(self, x, y, where=None):
+        if where is not None:
+            return MaskableVectorSpace.copyto(self, x, y, where=where)
         r"""Copy ``y`` into the existing :class:`NgsBaseVector` ``x``.
 
         NGSolve performs vector assignment through the writable ``data``
@@ -517,7 +520,9 @@ class NgsVectorSpace(VectorSpaceBase):
             x.is_dynamic = False
         x.vec.data = y.vec
 
-    def fill(self, x, value) -> None:
+    def fill(self, x, value, where=None) -> None:
+        if where is not None:
+            return MaskableVectorSpace.fill(self, x, value, where=where)
         r"""Fill an existing :class:`NgsBaseVector` with ``value``."""
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
@@ -680,29 +685,6 @@ class NgsVectorSpace(VectorSpaceBase):
             return False
         return self.fes == other.fes
     
-    def IfPos(self, x):
-        """Analyses which components contribute to the positive part of the 
-        function corresponding to the vector.
-
-        Parameters
-        ----------
-        x : NgsBaseVector
-            The vector to analyse.
-
-        Returns
-        -------
-        mask : BitArray
-            A BitArray of masks for the vector components contributing to the positive part of a function.
-        """
-        if not x in self:
-            raise ValueError(Errors.not_in_vecsp(x,self,"IfPos requires the a vector in the space!"))
-        if not self.is_complex: 
-            self._gfu_fes.vec.data = x.vec
-            gfu_help = ngs.GridFunction(self.fes)
-            gfu_help.Set(ngs.IfPos(self._gfu_fes,1,0))
-            return BitArray([v_i==0 for v_i in gfu_help.vec])
-        else:
-            return TypeError("The vector space {} is complex, use IfPos only works for real valued functions.".format(self))
     
     def iter_basis(self):
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
@@ -720,17 +702,9 @@ class NgsVectorSpace(VectorSpaceBase):
                 yield elm
             elm[idx] = 0
 
-    def logical_and(self,x,y):
-        return x & y 
     
-    def logical_or(self,x,y):
-        return x | y 
     
-    def logical_not(self,x):
-        return not x
     
-    def logical_xor(self,x,y):
-        return x ^ y
 
     def is_on_boundary(self,x):
         if self.bdr is None:

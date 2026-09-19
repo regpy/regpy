@@ -28,10 +28,16 @@ representations.
 import logging
 
 from .base import *
+from .maskable import MaskableVectorSpace, MaskedVectorSpace, TupleMask, MaskableDirectSum
 from .numpy import *
 from .curve import *
 
-__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum", "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
+__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum",
+           "MaskableVectorSpace", "MaskedVectorSpace", "TupleMask", "MaskableDirectSum",
+           "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod",
+           "GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse",
+           "Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc",
+           "GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
 
 try:
     from .ngsolve import *
