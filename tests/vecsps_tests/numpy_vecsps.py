@@ -152,9 +152,9 @@ def test_numpy_mask_shape_and_comparisons():
     x = np.array([[-1., 0., 2.], [0., -3., 4.]])
     assert space.is_ordered
     np.testing.assert_array_equal(space.IfPos(x), x > 0)
-    np.testing.assert_array_equal(space.IfNonneg(x), x >= 0)
-    np.testing.assert_array_equal(space.IfZero(x), x == 0)
-    assert space.nrTrues(space.IfNonneg(x)) == 4
+    np.testing.assert_array_equal(space.geq_mask(x, space.zeros()), x >= 0)
+    np.testing.assert_array_equal(space.eq_mask(x, space.zeros()), x == 0)
+    assert space.nrTrues(space.geq_mask(x, space.zeros())) == 4
     assert not space.is_mask(np.ones((2, 3)))
     assert not space.is_mask(np.ones(6, dtype=bool))
     assert not space.is_mask(np.ones((1, 3), dtype=bool))

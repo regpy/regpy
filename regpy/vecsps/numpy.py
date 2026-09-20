@@ -122,6 +122,13 @@ class NumPyVectorSpace(MaskableVectorSpace):
             raise TypeError("Complex spaces have no coordinate ordering.")
         return predicate(x)
 
+    def _compare_pair(self, x, y, predicate, *, ordered=False):
+        if x not in self or y not in self:
+            raise ValueError("Vectors outside the space.")
+        if ordered and not self.is_ordered:
+            raise TypeError("Complex spaces have no coordinate ordering.")
+        return predicate(x, y)
+
     def copyto(self, x, y, where=None):
         if x not in self or y not in self:
             raise ValueError("Vector outside space.")

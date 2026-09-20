@@ -3196,148 +3196,84 @@ class Identity(Operator):
         return util.make_repr(self, self.domain)
 
 class CoordinateProjection(Operator):
-    r"""A projection operator onto a subset of the domain. The codomain is a one-dimensional
-    `regpy.vecsps.VectorSpaceBase` of the same dtype as the domain.
+    """Restriction to selected coordinates of a MaskableVectorSpace.
 
-    Parameters
-    ----------
-    domain : regpy.vecsps.VectorSpaceBase
-        The underlying vector space
-    mask : ArrayLike
-        Boolean mask of the subset onto which to project.
+    The codomain is the corresponding MaskedVectorSpace. The adjoint is
+    extension by zero in algebraic dual coordinates. Masks must match the
+    domain's mask protocol and are copied at construction.
     """
-    def __init__(
-        self, domain: vecsps.VectorSpaceBase, mask: ArrayLike
-    ) -> None:
-        if isinstance(domain,vecsps.NumPyVectorSpace):
-            try:
-                mask = np.broadcast_to(mask, domain.shape)
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t"+ f"mask = {mask}"
-                ))
-            if mask.dtype != bool:
-                raise TypeError(util.Errors.not_instance(
-                    mask,
-                    bool,
-                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
-                ))
-        else:
-            try:
-                x = domain.rand()
-                _ = x[mask]
-                x[mask] = domain.ones()[mask]
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
-                ))
-        self.mask = mask
-        super().__init__(
-            domain=domain,
-            codomain=domain.masked_space(mask),
-            linear=True
-        )
+
+    def __init__(self, domain: vecsps.VectorSpaceBase, mask) -> None:
+        from regpy.vecsps.maskable import MaskableVectorSpace
+        if not isinstance(domain, MaskableVectorSpace):
+            raise TypeError("CoordinateProjection requires a MaskableVectorSpace.")
+        restricted = domain.get_masked_space(mask)
+        self.mask = restricted.mask
+        super().__init__(domain=domain, codomain=restricted, linear=True)
 
     def _eval(self, x: Vector) -> Vector:
-        return x[self.mask]
+        return self.codomain.restrict(x)
 
     def _adjoint(self, x: Vector) -> Vector:
-        y = self.domain.zeros()
-        y[self.mask] = x
-        return y
-    
+        return self.codomain.extend(x)
+
     def _adjoint_eval(self, x: Vector) -> Vector:
-        y = self.domain.empty()
-        self.domain.copyto(y, x)
-        y[~self.mask] = 0
-        return y
+        result = self.domain.zeros()
+        self.domain.copyto(result, x, where=self.mask)
+        return result
 
     def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
-        if x is out:
-            out[~self.mask] = 0
-            return out
-        else:
-            self.domain.fill(out, 0)
-            out[self.mask] = x[self.mask]
-            return out
+        # Copy first to preserve overlapping views and shared tuple components.
+        value = self._adjoint_eval(x)
+        self.domain.copyto(out, value)
+        return out
 
     def __repr__(self) -> str:
         return util.make_repr(self, self.domain, self.mask)
 
-class CoordinateMask(Operator):
-    """A projection operator onto a subset of the domain. The remaining vector entries are set to zero.
 
-    Parameters
-    ----------
-    domain : regpy.vecsps.VectorSpace
-        The underlying vector space
-    mask : ArrayLike
-        Boolean mask of the subset onto which to project.
+class CoordinateMask(Operator):
+    """Full-space coordinate projection using the maskable-space protocol.
+
+    Selected coefficients are preserved; all others are zeroed. Supports
+    NumPy, NGSolve and maskable direct sums without indexing vector objects.
     """
-    def __init__(
-        self, domain: vecsps.VectorSpaceBase, mask: ArrayLike
-    ) -> None:
-        if isinstance(domain,vecsps.NumPyVectorSpace):
-            try:
-                mask = np.broadcast_to(mask, domain.shape)
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t "+f"mask = {mask}"
-                ))
-            if mask.dtype != bool:
-                raise TypeError(util.Errors.not_instance(
-                    mask,
-                    bool,
-                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
-                ))
-        else:
-            try:
-                x = domain.rand()
-                _ = x[mask]
-                x[mask] = domain.ones()[mask]
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
-                ))
-        self.mask = mask
-        super().__init__(
-            domain=domain,
-            codomain=domain,
-            linear=True
-        )
+
+    def __init__(self, domain: vecsps.VectorSpaceBase, mask) -> None:
+        from regpy.vecsps.maskable import MaskableVectorSpace
+        if not isinstance(domain, MaskableVectorSpace):
+            raise TypeError("CoordinateMask requires a MaskableVectorSpace.")
+        self.mask = domain.get_masked_space(mask).mask
+        super().__init__(domain=domain, codomain=domain, linear=True)
 
     def _eval(self, x: Vector) -> Vector:
-        res = self.domain.zeros()
-        res[self.mask] = x[self.mask]
-        return res
+        result = self.domain.zeros()
+        self.domain.copyto(result, x, where=self.mask)
+        return result
 
     def _ieval(self, x: Vector, out: Vector) -> Vector:
         if x is out:
-            out[~self.mask] = 0
-            return out
+            self.domain.fill(out, 0, where=self.domain.logical_not(self.mask))
         else:
-            self.codomain.fill(out, 0)
-            out[self.mask] = x[self.mask]
-            return out
+            # A distinct object can still share storage with x.
+            value = self._eval(x)
+            self.domain.copyto(out, value)
+        return out
 
     def _adjoint(self, x: Vector) -> Vector:
         return self._eval(x)
-    
+
     def _adjoint_eval(self, x: Vector) -> Vector:
         return self._eval(x)
 
     def _iadjoint(self, x: Vector, out: Vector) -> Vector:
         return self._ieval(x, out)
-    
+
     def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
         return self._ieval(x, out)
 
     def __repr__(self) -> str:
-        return util.make_repr(self, self.domain)
+        return util.make_repr(self, self.domain, self.mask)
 
 
 class PtwMultiplication(Operator):

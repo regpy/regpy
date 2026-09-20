@@ -59,8 +59,8 @@ def test_comparisons(space):
     assert space.is_ordered
     for mask, expected in [
         (space.IfPos(x), values > 0),
-        (space.IfNonneg(x), values >= 0),
-        (space.IfZero(x), values == 0),
+        (space.geq_mask(x, space.zeros()), values >= 0),
+        (space.eq_mask(x, space.zeros()), values == 0),
     ]:
         assert space.is_mask(mask)
         np.testing.assert_array_equal(list(space.iter_mask(mask)), expected)
@@ -151,7 +151,7 @@ def test_direct_sum_construction_and_tuple_masks():
     a, b = NumPyVectorSpace(2), NumPyVectorSpace((2, 2))
     for space in (DirectSum(a, b), a + b, a ** 2):
         assert isinstance(space, MaskableDirectSum)
-        mask = space.IfZero(space.zeros())
+        mask = space.eq_mask(space.zeros(), space.zeros())
         assert isinstance(mask, TupleMask)
         assert mask.all()
         assert not (~mask).any()
@@ -175,7 +175,7 @@ def test_complex_ordering(mixed):
     space = DirectSum(NumPyVectorSpace(2), complex_space) if mixed else complex_space
     assert not space.is_ordered
     assert space.is_complex == (not mixed)
-    for comparison in (space.IfPos, space.IfNonneg):
+    for comparison in (space.IfPos, lambda x: space.geq_mask(x, space.zeros())):
         with pytest.raises(TypeError):
             comparison(space.zeros())
-    assert space.nrTrues(space.IfZero(space.zeros())) == space.size
+    assert space.nrTrues(space.eq_mask(space.zeros(), space.zeros())) == space.size

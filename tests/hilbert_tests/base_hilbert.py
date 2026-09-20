@@ -132,3 +132,136 @@ def test_AbstractSpace():
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         raise AssertionError(Errors.failed_test(f"Trying to evaluate on the registered space failed with exception {e} from: {tb}",AbstractSpace,meth="evaluation"))
+
+
+# Masked Hilbert geometries: deterministic vectors make these tests reproducible.
+from regpy.hilbert import L2
+from regpy.vecsps import UniformGridFcts
+from regpy.vecsps.maskable import MaskableDirectSum, TupleMask
+from regpy.operators import Identity, PtwMultiplication
+from regpy.operators import DirectSum as OperatorDirectSum
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+@pytest.mark.parametrize("kind", ["identity", "scaled_identity", "pointwise"])
+def test_masked_hilbert_diagonal_inverse(dtype, kind):
+    full = NumPyVectorSpace(4, dtype=dtype)
+    diagonal = {
+        "identity": np.ones(4),
+        "scaled_identity": np.full(4, 3.0),
+        "pointwise": np.array([2., 3., 5., 7.]),
+    }[kind]
+    gram = (Identity(full) if kind == "identity" else
+            3 * Identity(full) if kind == "scaled_identity" else
+            PtwMultiplication(full, diagonal))
+    masked = full.get_masked_space(np.array([True, False, True, False]))
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    x = np.array([1., -2.], dtype=dtype)
+    if dtype is complex:
+        x += np.array([2j, 1j])
+    expected = diagonal[[0, 2]] * x
+    np.testing.assert_allclose(h.gram(x), expected)
+    np.testing.assert_allclose(h.gram_inv(expected), x)
+    np.testing.assert_allclose(h.gram(h.gram_inv(x)), x)
+    assert h.inner(x, x) == pytest.approx(h.space.inner(masked.extend(x), masked.extend(x)))
+    assert h.gram_inv is h.gram_inv  # Cached construction.
+
+
+def test_masked_l2_registration_preserves_grid_weights():
+    full = UniformGridFcts(np.linspace(0., 1., 5))
+    mask = np.array([True, False, True, True, False])
+    masked = full.get_masked_space(mask)
+    weights = np.array([1., 2., 3., 4., 5.])
+    h = L2(masked, weights=weights)
+    assert isinstance(h, MaskedHilbertSpace)
+    x = np.array([1., 2., -1.])
+    diagonal = full.volume_elem * weights[mask]
+    np.testing.assert_allclose(h.gram(x), diagonal * x)
+    np.testing.assert_allclose(h.gram_inv(x), x / diagonal)
+    assert h.norm(x) == pytest.approx(L2(full, weights=weights).norm(masked.extend(x)))
+
+
+def test_masked_l2_registration_nested_masks():
+    full = NumPyVectorSpace(4)
+    first = full.get_masked_space(np.array([True, False, True, True]))
+    second = first.get_masked_space(np.array([False, True, True]))
+    # A restricted Gram is represented by projections, not by one of the
+    # recognized diagonal operator types. The registry deliberately rejects it.
+    with pytest.raises(ValueError, match="recognized as coordinate-diagonal"):
+        L2(second)
+    h = MaskedHilbertSpace(L2(first), second)
+    assert isinstance(h.space, MaskedHilbertSpace)
+    x = np.array([2., -3.])
+    np.testing.assert_allclose(h.gram(x), x)
+
+
+def test_masked_hilbert_direct_sum_inverse():
+    a, b = NumPyVectorSpace(3), NumPyVectorSpace(2)
+    full = MaskableDirectSum(a, b)
+    gram = OperatorDirectSum(
+        2 * Identity(a), PtwMultiplication(b, np.array([3., 5.])),
+        domain=full, codomain=full,
+    )
+    mask = TupleMask((np.array([True, False, True]), np.array([False, True])))
+    masked = full.get_masked_space(mask)
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    x = np.array([1., -2., 4.])
+    np.testing.assert_allclose(h.gram(x), np.array([2., 2., 5.]) * x)
+    np.testing.assert_allclose(h.gram_inv(h.gram(x)), x)
+    default = L2(masked)
+    assert isinstance(default, MaskedHilbertSpace)
+    np.testing.assert_allclose(default.gram(x), x)
+    np.testing.assert_allclose(default.gram_inv(x), x)
+
+
+def test_masked_hilbert_coupled_gram():
+    full = NumPyVectorSpace(3)
+    matrix = np.array([[4., 1., 2.], [1., 3., .5], [2., .5, 5.]])
+    gram = MatrixMultiplication(matrix, domain=full, codomain=full)
+    masked = full.get_masked_space(np.array([True, False, True]))
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    restricted = matrix[np.ix_([0, 2], [0, 2])]
+    x = np.array([1., -2.])
+    np.testing.assert_allclose(h.gram(x), restricted @ x)
+    with pytest.raises(NotImplementedError):
+        _ = h.gram_inv
+    inverse = MatrixMultiplication(
+        np.linalg.inv(restricted), domain=masked, codomain=masked
+    )
+    explicit = MaskedHilbertSpace(h.space, masked, inverse=inverse)
+    assert explicit.gram_inv is inverse
+    np.testing.assert_allclose(explicit.gram_inv(h.gram(x)), x)
+    # Restricting the full inverse would incorrectly retain eliminated couplings.
+    assert not np.allclose(
+        np.linalg.inv(restricted), np.linalg.inv(matrix)[np.ix_([0, 2], [0, 2])]
+    )
+
+
+@pytest.mark.parametrize("matrix", [
+    np.diag([2., 3., 4.]),
+    np.array([[4., 1., 0.], [1., 3., 0.], [0., 0., 2.]]),
+])
+def test_masked_l2_rejects_unrecognized_gram_types(monkeypatch, matrix):
+    import regpy.hilbert as hilbert
+
+    full = NumPyVectorSpace(3)
+    masked = full.get_masked_space(np.array([True, False, True]))
+    geometry = GramHilbertSpace(
+        MatrixMultiplication(matrix, domain=full, codomain=full)
+    )
+    # Use the registered dispatcher, but replace only its recursive full-space
+    # lookup. Even a diagonal dense matrix is intentionally not recognized.
+    registered_l2 = hilbert.L2
+
+    def full_l2(vecsp, **kwargs):
+        assert vecsp == full
+        return geometry
+
+    monkeypatch.setattr(hilbert, "L2", full_l2)
+    with pytest.raises(ValueError, match="recognized as coordinate-diagonal"):
+        registered_l2(masked)
+    explicit = MaskedHilbertSpace(geometry, masked)
+    x = np.array([1., -2.])
+    np.testing.assert_allclose(
+        explicit.gram(x), matrix[np.ix_([0, 2], [0, 2])] @ x
+    )

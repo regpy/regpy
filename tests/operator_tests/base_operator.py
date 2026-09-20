@@ -928,3 +928,37 @@ class TestOperatorGraph():
         x=op.domain.ones()
         x[0]*=2
         op_evaluation_and_ot(op,x=x,res=16*op.codomain.ones())
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+def test_coordinate_projection_masked_l2(dtype):
+    """The projection codomain must support the default L2 dispatch."""
+    from regpy.vecsps.maskable import MaskedVectorSpace
+    domain = NumPyVectorSpace((2, 3), dtype=dtype)
+    mask = np.array([[True, False, True], [False, True, False]])
+    projection = op_base.CoordinateProjection(domain, mask)
+    assert isinstance(projection.codomain, MaskedVectorSpace)
+    h = L2(projection.codomain)
+    x = np.array([1., 2., 3.], dtype=dtype)
+    if dtype is complex:
+        x += 1j * np.array([.5, -1., 2.])
+    np.testing.assert_allclose(h.gram(x), x)
+    np.testing.assert_allclose(h.gram_inv(x), x)
+    assert h.norm(x)**2 == pytest.approx(np.vdot(x, x).real)
+    assert projection.norm(method="power") == pytest.approx(1., rel=1e-3)
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+def test_coordinate_projection_direct_sum_l2(dtype):
+    """L2 dispatch also reaches masked components inside operator sums."""
+    domain = NumPyVectorSpace(3, dtype=dtype)
+    projection = op_base.CoordinateProjection(
+        domain, np.array([True, False, True])
+    )
+    combined = op_base.DirectSum(domain.identity, projection)
+    h = L2(combined.codomain)
+    x = combined.codomain.ones()
+    actual = h.gram(x)
+    for component, expected in zip(actual, x, strict=True):
+        np.testing.assert_allclose(component, expected)
+    assert combined.norm(method="power") == pytest.approx(1., rel=1e-3)

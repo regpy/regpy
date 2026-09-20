@@ -6,6 +6,7 @@ import logging
 from regpy.util import Errors
 from regpy.vecsps import *
 from regpy.vecsps import DirectSum as DirectSumVS
+from regpy.vecsps.maskable import MaskedVectorSpace
 from regpy.operators import Operator
 
 from .base import *
@@ -87,6 +88,27 @@ def componentwise(dispatcher, cls=DirectSum):
 
 
 
+def _masked_l2(vecsp, **kwargs):
+    """Restrict the full space's L2 geometry; kwargs describe that full geometry.
+
+    In particular, weights have the shape of the full space, not the masked
+    coefficient vector. For another chosen full-space geometry, construct
+    MaskedHilbertSpace explicitly. Automatic registration requires a Gram
+    operator recognized by the explicit diagonal-inverse implementation;
+    no numerical or general matrix-diagonality test is performed.
+    """
+    full_hilbert = L2(vecsp.get_full_space(), **kwargs)
+    if MaskedHilbertSpace._coordinate_diagonal(full_hilbert.gram) is None:
+        raise ValueError(
+            "L2 on a MaskedVectorSpace requires a full-space Gram operator "
+            "recognized as coordinate-diagonal (Identity, PtwMultiplication, "
+            "or supported direct sums, scalings, sums and compositions). "
+            "Construct MaskedHilbertSpace explicitly for other Gram operators "
+            "and provide an inverse if needed."
+        )
+    return MaskedHilbertSpace(full_hilbert, vecsp)
+
+
 def _register_spaces():
     r"""Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
@@ -98,6 +120,8 @@ def _register_spaces():
     L2.register(Prod, componentwise(L2,cls=TensorProd))
     L2.register(DirectSumVS, componentwise(L2))
     L2.register(NumPyVectorSpace, L2Generic)
+    # Inherit the L2 geometry of the full space, including quadrature weights.
+    L2.register(MaskedVectorSpace, _masked_l2)
     L2.register(MeasureSpaceFcts,L2MeasureSpaceFcts)
     L2.register(UniformGridFcts, L2UniformGridFcts)
 

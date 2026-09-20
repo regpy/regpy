@@ -78,13 +78,19 @@ class MaskableVectorSpace(VectorSpaceBase):
         """Mask of strictly positive coefficients."""
         return self._comparison(x, lambda v: v > 0, ordered=True)
 
-    def IfNonneg(self, x):
-        """Mask of nonnegative coefficients."""
-        return self._comparison(x, lambda v: v >= 0, ordered=True)
+    def _compare_pair(self, x, y, predicate, *, ordered=False):
+        if ordered and not self.is_ordered:
+            raise TypeError("Coordinate ordering is unavailable on this space.")
+        return self.mask_from_iterable(predicate(a, b) for a, b in zip(
+            self.iter_coefficients(x), self.iter_coefficients(y), strict=True))
 
-    def IfZero(self, x):
-        """Mask of exactly zero coefficients, also on complex spaces."""
-        return self._comparison(x, lambda v: v == 0)
+    def eq_mask(self, x, y):
+        """Return the mask x == y in native coefficient coordinates."""
+        return self._compare_pair(x, y, lambda a, b: a == b)
+
+    def geq_mask(self, x, y):
+        """Return the mask x >= y; requires an ordered space."""
+        return self._compare_pair(x, y, lambda a, b: a >= b, ordered=True)
 
     def copyto(self, x, y, where=None) -> None:
         if where is None:
@@ -152,10 +158,26 @@ class MaskedVectorSpace(MaskableVectorSpace):
     def get_full_space(self):
         return self.full_space
 
-    def restrict(self, x):
+    def restrict(self, x, mask=None):
+        """Restrict from the parent space, or select coordinates of this space.
+
+        Without mask, x belongs to get_full_space() and the stored mask is
+        used. With mask, x belongs to this space and mask selects a further
+        subset of its coordinates (the MaskableVectorSpace interface).
+        """
+        if mask is not None:
+            return super().restrict(x, mask)
         return self.full_space.restrict(x, self.mask)
 
-    def extend(self, x):
+    def extend(self, x, mask=None):
+        """Zero-extend into the parent space, or into this space using mask.
+
+        Without mask, x belongs to this space and the result belongs to
+        get_full_space(). With mask, x belongs to get_masked_space(mask)
+        and the result belongs to this space.
+        """
+        if mask is not None:
+            return super().extend(x, mask)
         return self.full_space.extend(x, self.mask)
 
     def __contains__(self, x):
@@ -291,6 +313,11 @@ class MaskableDirectSum(DirectSum, MaskableVectorSpace):
         return (isinstance(mask, TupleMask) and len(mask) == len(self.summands)
                 and all(s.is_mask(m) for s, m in zip(self.summands, mask)))
 
+    def nrTrues(self, mask):
+        if not self.is_mask(mask):
+            raise ValueError("Invalid direct-sum mask.")
+        return sum(s.nrTrues(m) for s, m in zip(self.summands, mask))
+
     def iter_mask(self, mask):
         if not self.is_mask(mask):
             raise ValueError("Invalid direct-sum mask.")
@@ -304,6 +331,14 @@ class MaskableDirectSum(DirectSum, MaskableVectorSpace):
         if next(iterator, None) is not None:
             raise ValueError("Too many mask entries.")
         return result
+
+    def _compare_pair(self, x, y, predicate, *, ordered=False):
+        if x not in self or y not in self:
+            raise ValueError("Vectors outside the direct sum.")
+        if ordered and not self.is_ordered:
+            raise TypeError("Coordinate ordering is unavailable on this space.")
+        return TupleMask(s._compare_pair(a, b, predicate, ordered=ordered)
+                         for s, a, b in zip(self.summands, x, y, strict=True))
 
     def copyto(self, x, y, where=None):
         if where is None:
