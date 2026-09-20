@@ -19,10 +19,9 @@ must be part of the specialized vector-space or algorithm contract; NumPy- and
 NGSolve-specific implementations may naturally use their native APIs.
 
 Vector-space classes also carry metadata such as grid coordinates and define
-space equality for consistency checks. All spaces are treated as real vector
-spaces, even when their vectors have complex coefficients. This convention
-affects basis iteration, dimensions, inner products, and flattened real
-representations.
+space equality for consistency checks. as_real_space selects real or complex
+scalars. The default is real, even for complex storage; in that case coordinates
+interleave real and imaginary parts and dimension doubles.
 """
 
 import logging
@@ -32,7 +31,7 @@ from .maskable import MaskableVectorSpace, MaskedVectorSpace, TupleMask, Maskabl
 from .numpy import *
 from .curve import *
 
-__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum",
+__all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "VectorSpace", "DirectSum",
            "MaskableVectorSpace", "MaskedVectorSpace", "TupleMask", "MaskableDirectSum",
            "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod",
            "GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse",

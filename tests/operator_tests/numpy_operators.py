@@ -48,8 +48,8 @@ class TestMatrixMultiplication():
         op_evaluation_and_ot(op, sample_N=2)
 
     def test_genuinely_complex_coordinates(self):
-        domain = NumPyVectorSpace((2, 2), dtype=complex)
-        codomain = NumPyVectorSpace(3, dtype=complex)
+        domain = NumPyVectorSpace((2, 2), dtype=complex, as_real_space=False)
+        codomain = NumPyVectorSpace(3, dtype=complex, as_real_space=False)
         matrix = (
             np.arange(12.).reshape(3, 4)
             + 1j * np.arange(12., 24.).reshape(3, 4)
@@ -63,11 +63,11 @@ class TestMatrixMultiplication():
         )
         y = np.array([1 + 2j, -0.5j, 3 - 1j])
 
-        expected = codomain.complex_fromflat(
-            matrix @ domain.complex_flatten(x)
+        expected = codomain.fromflat(
+            matrix @ domain.flatten(x)
         )
-        expected_adjoint = domain.complex_fromflat(
-            matrix.conj().T @ codomain.complex_flatten(y)
+        expected_adjoint = domain.fromflat(
+            matrix.conj().T @ codomain.flatten(y)
         )
         assert op.complex_coordinates is True
         np.testing.assert_allclose(op(x), expected)

@@ -9,6 +9,7 @@ The base class is `Operator`.
 """
 
 from __future__ import annotations
+import warnings
 
 from typing import TypeVar
 from collections import defaultdict
@@ -338,9 +339,9 @@ class Operator:
         inverse: Operator | None = None,
         self_adjoint: bool = False,
     ) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase):
+        if not isinstance(domain,vecsps.VectorSpace):
             raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of vector spaces."))
-        if not isinstance(codomain,vecsps.VectorSpaceBase):
+        if not isinstance(codomain,vecsps.VectorSpace):
             raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of vector spaces."))
         if not isinstance(self_adjoint, bool):
             raise TypeError(util.Errors.type_error(
@@ -350,6 +351,15 @@ class Operator:
             raise ValueError(util.Errors.value_error(
                 "self_adjoint=True requires identical domain and codomain."
             ))
+        if domain is not None and codomain is not None:
+            if domain.as_real_space != codomain.as_real_space:
+                warnings.warn(
+                    "Operator domain and codomain use different scalar fields; "
+                    "interpreting both over R. Configure spaces explicitly before construction.",
+                    RuntimeWarning, stacklevel=2)
+                domain.as_real_space = True
+                codomain.as_real_space = True
+
         self.domain = domain
         r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
@@ -3291,8 +3301,9 @@ class PtwMultiplication(Operator):
     The operator is marked as self-adjoint exactly when the stored multiplier
     is real-valued. Native pointwise vector operations are used when
     available. Otherwise the operator falls back to
-    :meth:`~regpy.vecsps.VectorSpaceBase.iter_coefficients` and
-    :meth:`~regpy.vecsps.VectorSpaceBase.set_coefficients`.
+    the backend's private native-coordinate hooks. This operator requires
+    coordinatewise multiplication capabilities beyond the Vector protocol;
+    realified coordinate pairs must not be multiplied independently.
     """
     def __init__(
         self,
@@ -3335,7 +3346,7 @@ class PtwMultiplication(Operator):
             except (AttributeError, TypeError, NotImplementedError):
                 factor_is_real = all(
                     np.isreal(coefficient)
-                    for coefficient in domain.iter_coefficients(self.factor)
+                    for coefficient in domain._iter_native_coefficients(self.factor)
                 )
         super().__init__(
             domain,
@@ -3415,8 +3426,8 @@ class PtwMultiplication(Operator):
         squared_modulus: bool = False,
     ) -> Vector:
         """Protocol-conforming coefficientwise fallback implementation."""
-        x_coefficients = self.domain.iter_coefficients(x)
-        factor_coefficients = self.domain.iter_coefficients(self.factor)
+        x_coefficients = self.domain._iter_native_coefficients(x)
+        factor_coefficients = self.domain._iter_native_coefficients(self.factor)
         if squared_modulus:
             result = (
                 x_coefficient
@@ -3440,7 +3451,7 @@ class PtwMultiplication(Operator):
                     x_coefficients, factor_coefficients
                 )
             )
-        self.domain.set_coefficients(out, result)
+        self.domain._set_native_coefficients(out, result)
         return out
 
     @property
@@ -3458,11 +3469,11 @@ class PtwMultiplication(Operator):
                 inverse_factor = 1 / self.factor
             except (AttributeError, TypeError, ValueError, NotImplementedError):
                 inverse_factor = self.domain.empty()
-                self.domain.set_coefficients(
+                self.domain._set_native_coefficients(
                     inverse_factor,
                     (
                         1 / coefficient
-                        for coefficient in self.domain.iter_coefficients(
+                        for coefficient in self.domain._iter_native_coefficients(
                             self.factor
                         )
                     ),
@@ -4315,32 +4326,49 @@ class RealPart(Operator):
         `regpy.vecsps.VectorSpaceBase.real_space`.
     """
 
-    def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase):
-            raise ValueError(util.Errors.not_a_vecsp(
-                domain,
-                vecsps.VectorSpaceBase
-            ))
-        codomain = domain.real_space()
-        super().__init__(domain, codomain, linear=True)
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
+    def __new__(cls, domain=None):
+        # deepcopy/pickle allocate an empty instance before restoring state.
+        if domain is None:
+            return super().__new__(cls)
+        if not domain.is_complex or not callable(getattr(domain, "real_space", None)):
+            raise TypeError("RealPart requires complex storage and a real_space() method.")
+        if isinstance(domain, vecsps.DirectSum):
+            ops = [RealPart(component) for component in domain.summands]
+            return DirectSum(*ops, domain=domain)
+        return super().__new__(cls)
+
+    def __init__(self, domain):
+        # Real/imaginary extraction is R-linear, never C-linear.
+        super().__init__(domain, domain.real_space(), linear=True)
+
+
+    def _ieval(self, x, out):
+        """Use the optional backend .real attribute, otherwise real coordinates.
+
+        This is a local optimization only: Vector does not require .real.
+        The fallback expects the domain's interleaved real/imag coordinate
+        ordering and the corresponding real_space coordinate ordering.
+        """
         try:
-            real_part = x.real
+            component = x.real
         except (AttributeError, TypeError, NotImplementedError):
+            from itertools import islice
             self.codomain.set_coefficients(
-                out,
-                (
-                    np.real(coefficient)
-                    for coefficient in self.domain.iter_coefficients(x)
-                ),
-            )
-            return out
-        self.codomain.copyto(out, real_part)
+                out, islice(self.domain.iter_coefficients(x), 0, None, 2))
+        else:
+            self.codomain.copyto(out, component)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        self.domain.copyto(out, y)
+
+    def _iadjoint(self, y, out):
+        # Populate pairs via the protocol; real and complex storage may use
+        # different vector representations, so copyto between them is unsafe.
+        def coordinates():
+            for value in self.codomain.iter_coefficients(y):
+                yield value
+                yield 0.0
+        self.domain.set_coefficients(out, coordinates())
         return out
 
 
@@ -4358,33 +4386,49 @@ class ImaginaryPart(Operator):
         `regpy.vecsps.VectorSpaceBase.real_space`.
     """
 
-    def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
-            raise ValueError(util.Errors.not_a_vecsp(
-                domain,
-                vecsps.VectorSpaceBase,
-                add_info="To consider a ImaginaryPart operator the domain is required to be complex!"
-            ))
-        codomain = domain.real_space()
-        super().__init__(domain, codomain, linear=True)
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
+    def __new__(cls, domain=None):
+        # deepcopy/pickle allocate an empty instance before restoring state.
+        if domain is None:
+            return super().__new__(cls)
+        if not domain.is_complex or not callable(getattr(domain, "real_space", None)):
+            raise TypeError("ImaginaryPart requires complex storage and a real_space() method.")
+        if isinstance(domain, vecsps.DirectSum):
+            ops = [ImaginaryPart(component) for component in domain.summands]
+            return DirectSum(*ops, domain=domain)
+        return super().__new__(cls)
+
+    def __init__(self, domain):
+        # Real/imaginary extraction is R-linear, never C-linear.
+        super().__init__(domain, domain.real_space(), linear=True)
+
+
+    def _ieval(self, x, out):
+        """Use the optional backend .imag attribute, otherwise real coordinates.
+
+        This is a local optimization only: Vector does not require .imag.
+        The fallback expects the domain's interleaved real/imag coordinate
+        ordering and the corresponding real_space coordinate ordering.
+        """
         try:
-            imaginary_part = x.imag
+            component = x.imag
         except (AttributeError, TypeError, NotImplementedError):
+            from itertools import islice
             self.codomain.set_coefficients(
-                out,
-                (
-                    np.imag(coefficient)
-                    for coefficient in self.domain.iter_coefficients(x)
-                ),
-            )
-            return out
-        self.codomain.copyto(out, imaginary_part)
+                out, islice(self.domain.iter_coefficients(x), 1, None, 2))
+        else:
+            self.codomain.copyto(out, component)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        self.domain.copyto(out, 1j * y)
+
+    def _iadjoint(self, y, out):
+        # Populate pairs via the protocol; real and complex storage may use
+        # different vector representations, so copyto between them is unsafe.
+        def coordinates():
+            for value in self.codomain.iter_coefficients(y):
+                yield 0.0
+                yield value
+        self.domain.set_coefficients(out, coordinates())
         return out
 
 class SplitRealImag(VectorOfOperators):
@@ -4419,7 +4463,9 @@ class SquaredModulus(Operator):
 
     Native NumPy-style operations are used when the vector representation
     provides them. Otherwise evaluation, derivative and adjoint derivative
-    fall back to the coefficient interface of the vector spaces.
+    fall back to the backend's native-coordinate hooks. Pointwise modulus
+    and the optional vector real/imag attributes are local capabilities, not
+    requirements of the generic Vector protocol.
 
     Parameters
     ----------
@@ -4446,11 +4492,11 @@ class SquaredModulus(Operator):
             np.square(x.real, out=out)
             out += np.square(x.imag)
         except (AttributeError, TypeError, ValueError, NotImplementedError):
-            self.codomain.set_coefficients(
+            self.codomain._set_native_coefficients(
                 out,
                 (
                     np.real(coefficient * np.conjugate(coefficient))
-                    for coefficient in self.domain.iter_coefficients(x)
+                    for coefficient in self.domain._iter_native_coefficients(x)
                 ),
             )
         return out
@@ -4461,15 +4507,15 @@ class SquaredModulus(Operator):
             if self.domain.is_complex:
                 out += self._factor.imag * h.imag
         except (AttributeError, TypeError, ValueError, NotImplementedError):
-            self.codomain.set_coefficients(
+            self.codomain._set_native_coefficients(
                 out,
                 (
                     np.real(
                         np.conjugate(factor_coefficient) * h_coefficient
                     )
                     for factor_coefficient, h_coefficient in zip(
-                        self.domain.iter_coefficients(self._factor),
-                        self.domain.iter_coefficients(h),
+                        self.domain._iter_native_coefficients(self._factor),
+                        self.domain._iter_native_coefficients(h),
                     )
                 ),
             )
@@ -4479,13 +4525,13 @@ class SquaredModulus(Operator):
         try:
             np.multiply(self._factor, y, out=out)
         except (AttributeError, TypeError, ValueError, NotImplementedError):
-            self.domain.set_coefficients(
+            self.domain._set_native_coefficients(
                 out,
                 (
                     factor_coefficient * y_coefficient
                     for factor_coefficient, y_coefficient in zip(
-                        self.domain.iter_coefficients(self._factor),
-                        self.codomain.iter_coefficients(y),
+                        self.domain._iter_native_coefficients(self._factor),
+                        self.codomain._iter_native_coefficients(y),
                     )
                 ),
             )
@@ -4556,9 +4602,9 @@ class SciPyLinearOperator(LinearOperator):
             ))
         self.op2 = op2
         r"""the wrapped operator"""
-        domain_shape=op2.domain.realsize
-        codomain_shape=op2.codomain.realsize
-        super().__init__(np.float64, (codomain_shape,domain_shape))
+        domain_shape=op2.domain.dimension
+        codomain_shape=op2.codomain.dimension
+        super().__init__(np.float64 if op2.domain.as_real_space else np.complex128, (codomain_shape,domain_shape))
 
     
     def _matvec(self, x: NDArray[np.float64]) -> NDArray[np.float64]:

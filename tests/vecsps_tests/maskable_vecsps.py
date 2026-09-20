@@ -19,14 +19,37 @@ class IteratorSpace(MaskableVectorSpace):
     def __init__(self, size=6):
         super().__init__(np.ndarray, size, type=np)
 
-    def iter_coefficients(self, x):
+    def empty(self):
+        return np.empty(self.dimension)
+
+    def zeros(self, read_only=False):
+        x = np.zeros(self.dimension)
+        x.flags.writeable = not read_only
+        return x
+
+    def ones(self, read_only=False):
+        x = np.ones(self.dimension)
+        x.flags.writeable = not read_only
+        return x
+
+    def __contains__(self, x):
+        return (isinstance(x, np.ndarray) and x.shape == (self.dimension,)
+                and np.issubdtype(x.dtype, np.floating))
+
+    def __eq__(self, other):
+        return type(other) is type(self) and other.dimension == self.dimension
+
+    def compatible(self, other):
+        return self == other
+
+    def _iter_native_coefficients(self, x):
         if x not in self:
             raise ValueError("Vector outside space.")
         return iter(x)
 
-    def set_coefficients(self, x, coefficients):
+    def _set_native_coefficients(self, x, coefficients):
         values = list(coefficients)
-        if x not in self or len(values) != self.size:
+        if x not in self or len(values) != self.dimension:
             raise ValueError("Invalid coefficient count or vector.")
         x[:] = values
 
@@ -54,7 +77,7 @@ def coefficients(space, x):
 
 
 def test_comparisons(space):
-    values = np.resize(np.array([-2., 0., 3.]), space.size)
+    values = np.resize(np.array([-2., 0., 3.]), space.dimension)
     x = vector(space, values)
     assert space.is_ordered
     for mask, expected in [
@@ -68,8 +91,8 @@ def test_comparisons(space):
 
 
 def test_mask_logic(space):
-    a = np.arange(space.size) % 2 == 0
-    b = np.arange(space.size) % 3 == 0
+    a = np.arange(space.dimension) % 2 == 0
+    b = np.arange(space.dimension) % 3 == 0
     ma, mb = space.mask_from_iterable(a), space.mask_from_iterable(b)
     for result, expected in [
         (space.logical_and(ma, mb), a & b),
@@ -83,15 +106,15 @@ def test_mask_logic(space):
 
 @pytest.mark.parametrize("selection", ["empty", "full", "partial"])
 def test_restriction_extension(space, selection):
-    keep = np.arange(space.size) % 2 == 0
+    keep = np.arange(space.dimension) % 2 == 0
     if selection != "partial":
         keep[:] = selection == "full"
     mask = space.mask_from_iterable(keep)
     restricted = space.get_masked_space(mask)
     assert isinstance(restricted, MaskedVectorSpace)
     assert restricted.get_full_space() is space
-    assert restricted.size == np.count_nonzero(keep)
-    x = vector(space, np.arange(space.size) + 1.)
+    assert restricted.dimension == np.count_nonzero(keep)
+    x = vector(space, np.arange(space.dimension) + 1.)
     small = restricted.restrict(x)
     assert small in restricted
     np.testing.assert_array_equal(small, coefficients(space, x)[keep])
@@ -111,9 +134,9 @@ def test_restriction_extension(space, selection):
 
 def test_masked_writes_and_source_preservation(space):
     rng = np.random.default_rng(20260919)
-    values = rng.normal(size=space.size)
+    values = rng.normal(size=space.dimension)
     x = vector(space, values)
-    keep = np.arange(space.size) % 2 == 0
+    keep = np.arange(space.dimension) % 2 == 0
     mask = space.mask_from_iterable(keep)
     out = space.zeros()
     space.fill(out, -4.)
@@ -128,10 +151,10 @@ def test_masked_writes_and_source_preservation(space):
 
 def test_restriction_and_extension_are_adjoint(space):
     rng = np.random.default_rng(83)
-    mask = space.mask_from_iterable(np.arange(space.size) % 2 == 0)
+    mask = space.mask_from_iterable(np.arange(space.dimension) % 2 == 0)
     restricted = space.get_masked_space(mask)
-    x = vector(space, rng.normal(size=space.size))
-    y = rng.normal(size=restricted.size)
+    x = vector(space, rng.normal(size=space.dimension))
+    y = rng.normal(size=restricted.dimension)
     np.testing.assert_allclose(
         restricted.vdot(restricted.restrict(x), y),
         space.vdot(x, restricted.extend(y)), rtol=1e-13, atol=1e-13,
@@ -140,9 +163,9 @@ def test_restriction_and_extension_are_adjoint(space):
 
 def test_mask_validation(space):
     assert not space.is_mask(None)
-    assert not space.is_mask(iter([True] * space.size))
+    assert not space.is_mask(iter([True] * space.dimension))
     with pytest.raises(ValueError):
-        space.mask_from_iterable([True] * (space.size + 1))
+        space.mask_from_iterable([True] * (space.dimension + 1))
     with pytest.raises(ValueError):
         space.get_masked_space(None)
 
@@ -178,4 +201,23 @@ def test_complex_ordering(mixed):
     for comparison in (space.IfPos, lambda x: space.geq_mask(x, space.zeros())):
         with pytest.raises(TypeError):
             comparison(space.zeros())
-    assert space.nrTrues(space.eq_mask(space.zeros(), space.zeros())) == space.size
+    # Masks select native entries, not real and imaginary coordinates separately.
+    assert space.nrTrues(space.eq_mask(space.zeros(), space.zeros())) == (5 if mixed else 3)
+    assert space.dimension == (8 if mixed else 6)
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_complex_mask_restriction_and_coordinates(as_real):
+    space = NumPyVectorSpace(3, dtype=complex, as_real_space=as_real)
+    x = np.array([1+2j, 3+4j, 5+6j])
+    mask = np.array([True, False, True])
+    restricted = space.get_masked_space(mask)
+    assert space.nrTrues(mask) == 2
+    assert restricted.dimension == (4 if as_real else 2)
+    assert restricted.as_real_space == as_real
+    small = restricted.restrict(x)
+    np.testing.assert_array_equal(small, x[mask])
+    np.testing.assert_array_equal(restricted.extend(small), np.where(mask, x, 0))
+    np.testing.assert_array_equal(restricted.flatten(small),
+                                  [1, 2, 5, 6] if as_real else [1+2j, 5+6j])
+    np.testing.assert_array_equal(restricted.fromflat(restricted.flatten(small)), small)

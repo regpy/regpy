@@ -27,12 +27,12 @@ class MaskableVectorSpace(VectorSpaceBase):
 
     def is_mask(self, mask) -> bool:
         if isinstance(mask, np.ndarray):
-            return mask.dtype == bool and mask.shape == (self.size,)
+            return mask.dtype == bool and mask.shape == (self._native_dimension,)
         # Reject consumable iterators: validation must not consume a mask.
         try:
             if iter(mask) is mask:
                 return False
-            return len(mask) == self.size and all(
+            return len(mask) == self._native_dimension and all(
                 isinstance(v, (bool, np.bool_)) for v in mask)
         except TypeError:
             return False
@@ -44,7 +44,7 @@ class MaskableVectorSpace(VectorSpaceBase):
 
     def mask_from_iterable(self, values):
         values = list(values)
-        if len(values) != self.size or any(
+        if len(values) != self._native_dimension or any(
                 not isinstance(v, (bool, np.bool_)) for v in values):
             raise ValueError("Expected one boolean per coordinate.")
         return np.asarray(values, dtype=bool)
@@ -72,7 +72,7 @@ class MaskableVectorSpace(VectorSpaceBase):
     def _comparison(self, x, predicate, *, ordered=False):
         if ordered and not self.is_ordered:
             raise TypeError("Coordinate ordering is unavailable on this space.")
-        return self.mask_from_iterable(predicate(v) for v in self.iter_coefficients(x))
+        return self.mask_from_iterable(predicate(v) for v in self._iter_native_coefficients(x))
 
     def IfPos(self, x):
         """Mask of strictly positive coefficients."""
@@ -82,7 +82,7 @@ class MaskableVectorSpace(VectorSpaceBase):
         if ordered and not self.is_ordered:
             raise TypeError("Coordinate ordering is unavailable on this space.")
         return self.mask_from_iterable(predicate(a, b) for a, b in zip(
-            self.iter_coefficients(x), self.iter_coefficients(y), strict=True))
+            self._iter_native_coefficients(x), self._iter_native_coefficients(y), strict=True))
 
     def eq_mask(self, x, y):
         """Return the mask x == y in native coefficient coordinates."""
@@ -96,9 +96,9 @@ class MaskableVectorSpace(VectorSpaceBase):
         if where is None:
             return super().copyto(x, y)
         selection = list(self.iter_mask(where))
-        source = list(self.iter_coefficients(y))
-        target = list(self.iter_coefficients(x))
-        self.set_coefficients(x, (b if m else a for a, b, m in
+        source = list(self._iter_native_coefficients(y))
+        target = list(self._iter_native_coefficients(x))
+        self._set_native_coefficients(x, (b if m else a for a, b, m in
                                  zip(target, source, selection, strict=True)))
 
     def fill(self, x, value, where=None) -> None:
@@ -106,13 +106,13 @@ class MaskableVectorSpace(VectorSpaceBase):
             return super().fill(x, value)
         if not np.isscalar(value):
             raise TypeError("fill requires a scalar.")
-        target = list(self.iter_coefficients(x))
-        self.set_coefficients(x, (value if m else a for a, m in
+        target = list(self._iter_native_coefficients(x))
+        self._set_native_coefficients(x, (value if m else a for a, m in
                                  zip(target, self.iter_mask(where), strict=True)))
 
     def restrict(self, x, mask):
         """Copy selected native coefficients to a one-dimensional vector."""
-        return np.asarray([v for v, m in zip(self.iter_coefficients(x),
+        return np.asarray([v for v, m in zip(self._iter_native_coefficients(x),
                           self.iter_mask(mask), strict=True) if m],
                           dtype=complex if self.is_complex else float)
 
@@ -123,7 +123,7 @@ class MaskableVectorSpace(VectorSpaceBase):
             raise ValueError("Vector does not belong to the masked space.")
         selected = iter(x)
         result = self.zeros()
-        self.set_coefficients(result, (next(selected) if m else 0
+        self._set_native_coefficients(result, (next(selected) if m else 0
                                       for m in self.iter_mask(mask)))
         return result
 
@@ -151,8 +151,10 @@ class MaskedVectorSpace(MaskableVectorSpace):
         self.mask = full_space.mask_from_iterable(full_space.iter_mask(mask))
         if isinstance(self.mask, np.ndarray):
             self.mask.flags.writeable = False
-        super().__init__(np.ndarray, full_space.nrTrues(self.mask),
-                         complex=full_space.is_complex, type=np)
+        self.shape = (full_space.nrTrues(self.mask),)
+        super().__init__(np.ndarray, self.shape[0],
+                         complex=full_space.is_complex, type=np,
+                         as_real_space=full_space.as_real_space)
         self.dtype = np.dtype(complex if self.is_complex else float)
 
     def get_full_space(self):
@@ -202,12 +204,12 @@ class MaskedVectorSpace(MaskableVectorSpace):
         result.flags.writeable = False
         return result
 
-    def iter_coefficients(self, x):
+    def _iter_native_coefficients(self, x):
         if x not in self:
             raise ValueError("Vector outside masked space.")
         return iter(x)
 
-    def set_coefficients(self, x, coefficients):
+    def _set_native_coefficients(self, x, coefficients):
         if x not in self:
             raise ValueError("Vector outside masked space.")
         values = np.asarray(list(coefficients))
@@ -215,10 +217,19 @@ class MaskedVectorSpace(MaskableVectorSpace):
             raise ValueError("Wrong number of coefficients.")
         np.copyto(x, values, casting="same_kind")
 
+    @property
+    def ndim(self):
+        return len(self.shape)
+
+    def compatible(self, other):
+        return (isinstance(other, MaskedVectorSpace) and self.shape == other.shape
+                and self.is_complex == other.is_complex
+                and self.as_real_space == other.as_real_space)
+
     def _coordinate_space(self):
         # Delayed import: NumPyVectorSpace itself derives from MaskableVectorSpace.
         from .numpy import NumPyVectorSpace
-        return NumPyVectorSpace(self.shape, dtype=self.dtype)
+        return NumPyVectorSpace(self.shape, dtype=self.dtype, as_real_space=self.as_real_space)
 
     def flatten(self, x):
         return self._coordinate_space().flatten(x)
@@ -226,11 +237,7 @@ class MaskedVectorSpace(MaskableVectorSpace):
     def fromflat(self, x):
         return self._coordinate_space().fromflat(x)
 
-    def complex_flatten(self, x):
-        return self._coordinate_space().complex_flatten(x)
 
-    def complex_fromflat(self, x):
-        return self._coordinate_space().complex_fromflat(x)
 
     def iter_basis(self):
         return self._coordinate_space().iter_basis()
@@ -243,6 +250,7 @@ class MaskedVectorSpace(MaskableVectorSpace):
 
     def __eq__(self, other):
         return (isinstance(other, MaskedVectorSpace)
+                and self.as_real_space == other.as_real_space
                 and self.full_space == other.full_space
                 and tuple(self.full_space.iter_mask(self.mask))
                 == tuple(other.full_space.iter_mask(other.mask)))
@@ -326,7 +334,7 @@ class MaskableDirectSum(DirectSum, MaskableVectorSpace):
     def mask_from_iterable(self, values):
         from itertools import islice
         iterator = iter(values)
-        result = TupleMask(s.mask_from_iterable(islice(iterator, s.size))
+        result = TupleMask(s.mask_from_iterable(islice(iterator, s._native_dimension))
                            for s in self.summands)
         if next(iterator, None) is not None:
             raise ValueError("Too many mask entries.")

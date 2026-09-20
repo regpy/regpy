@@ -45,10 +45,11 @@ class BasisTransform(Operator):
             raise ValueError(Errors.value_error("The number of vector dimension cannot be large then 26!"))
         if not np.issubdtype(dtype,coef_domain.dtype) or not np.issubdtype(dtype,eval_domain.dtype):
             raise ValueError(Errors.value_error(f"The dtypes of the different domains have to be identical with the given dtype. coef.dtype = {coef_domain.dtype}, eval.dtype = {eval_domain.dtype}, and dtype = {dtype}"))
-        if any(basis.shape[0] != int(eval.size) for (basis,eval) in zip(bases,eval_domain)):
-            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[0] for basis in bases)}"+"\n\t"+f"eval_domain sizes = {tuple(int(eval.size) for eval in eval_domain)}"))
-        if any(basis.shape[1] != coef.size for (basis,coef) in zip(bases,coef_domain)):
-            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 1 the size of the coef domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[1] for basis in bases)}"+"\n\t"+f"coef_domain sizes = {tuple(int(coef.size) for coef in coef_domain)}"))
+        # Basis axes count native entries, also for realified complex spaces.
+        if any(basis.shape[0] != int(np.prod(eval.shape)) for (basis,eval) in zip(bases,eval_domain)):
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 0 the size of the eval domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[0] for basis in bases)}"+"\n\t"+f"eval_domain sizes = {tuple(int(np.prod(eval.shape)) for eval in eval_domain)}"))
+        if any(basis.shape[1] != int(np.prod(coef.shape)) for (basis,coef) in zip(bases,coef_domain)):
+            raise ValueError(Errors.value_error("The vectors in the bases need to have as shape 1 the size of the coef domain!"+"\n\t"+f"bases shapes = {tuple(basis.shape[1] for basis in bases)}"+"\n\t"+f"coef_domain sizes = {tuple(int(int(np.prod(coef.shape))) for coef in coef_domain)}"))
         super().__init__(coef_domain,eval_domain, linear=True)
         self.dtype = dtype
         r""" `dtype` of the vector spaces."""
@@ -107,13 +108,13 @@ class BasisTransform(Operator):
         coef = self._copy_if_aliased(coef, out)
 
         # Keep the BLAS-backed special cases used by the allocating implementation.
-        if self.ndim == 1 and self.domain[0].size * self.codomain[0].size <= 50000000:
+        if self.ndim == 1 and self.bases[0].shape[1] * self.bases[0].shape[0] <= 50000000:
             np.matmul(self.bases[0], coef, out=out)
             return out
 
         if (self.ndim == 2 and
-                (self.domain[0].size + self.domain[1].size) *
-                (self.codomain[0].size + self.codomain[1].size) <= 4000000):
+                (self.bases[0].shape[1] + self.bases[1].shape[1]) *
+                (self.bases[0].shape[0] + self.bases[1].shape[0]) <= 4000000):
             basis_left, basis_right = self.bases
             n_left, n_right = coef.shape
             m_left, m_right = out.shape
@@ -144,13 +145,13 @@ class BasisTransform(Operator):
         """Apply the real-Hilbert-space adjoint directly into ``out``."""
         values = self._copy_if_aliased(values, out)
 
-        if self.ndim == 1 and self.domain[0].size * self.codomain[0].size <= 50000000:
+        if self.ndim == 1 and self.bases[0].shape[1] * self.bases[0].shape[0] <= 50000000:
             np.matmul(self._conjugate_bases[0].T, values, out=out)
             return out
 
         if (self.ndim == 2 and
-                (self.domain[0].size + self.domain[1].size) *
-                (self.codomain[0].size + self.codomain[1].size) <= 4000000):
+                (self.bases[0].shape[1] + self.bases[1].shape[1]) *
+                (self.bases[0].shape[0] + self.bases[1].shape[0]) <= 4000000):
             basis_left_h = self._conjugate_bases[0].T
             basis_right_conj = self._conjugate_bases[1]
             m_left, m_right = values.shape

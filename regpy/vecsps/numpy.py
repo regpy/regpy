@@ -11,8 +11,7 @@ from .maskable import MaskableVectorSpace
 __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
 
 class NumPyVectorSpace(MaskableVectorSpace):
-    r"""Discrete space \(\mathbb{R}^\text{shape}\) or \(\mathbb{C}^\text{shape}\) (viewed as a real
-    space) without any additional structure.
+    r"""Arrays over real or complex storage with a selectable scalar field.
 
     `regpy.vecsps.VectorSpaceBase`s can be added, producing `DirectSum` instances.
 
@@ -22,14 +21,20 @@ class NumPyVectorSpace(MaskableVectorSpace):
         The shape of the arrays representing elements of this vector space.
     dtype : data-type, optional
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
+    as_real_space : bool, optional
+        Default True. Complex storage then has twice as many real coordinates.
+        False selects complex scalars and requires a complex dtype.
     seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
         The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
         to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
         numpy documentation.
     """
 
-    def __init__(self, shape : tuple, dtype : type = float):
-        super().__init__(vec_type=np.ndarray,shape=shape, complex = is_complex_dtype(np.array([],dtype=dtype)),type = np)
+    def __init__(self, shape: tuple | int, dtype: type = float, as_real_space: bool = True):
+        self.shape = (shape,) if isinstance(shape, (int, np.integer)) else tuple(shape)
+        super().__init__(vec_type=np.ndarray, dimension=int(np.prod(self.shape)),
+                         complex=is_complex_dtype(np.array([], dtype=dtype)),
+                         type=np, as_real_space=as_real_space)
         self.dtype = dtype
 
     @overload
@@ -159,7 +164,7 @@ class NumPyVectorSpace(MaskableVectorSpace):
         result[mask] = x
         return result
 
-    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+    def _iter_native_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
         """Iterate over native NumPy coefficients in C order."""
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
@@ -170,7 +175,7 @@ class NumPyVectorSpace(MaskableVectorSpace):
             ))
         return iter(np.asarray(x).flat)
 
-    def set_coefficients(
+    def _set_native_coefficients(
         self,
         x: np.ndarray,
         coefficients: Iterable[Scalar],
@@ -188,12 +193,12 @@ class NumPyVectorSpace(MaskableVectorSpace):
                 "Cannot write coefficients into a read-only NumPy vector."
             ))
         iterator = iter(coefficients)
-        for index in range(int(self.size)):
+        for index in range(int(self._native_dimension)):
             try:
                 coefficient = next(iterator)
             except StopIteration as error:
                 raise ValueError(Errors.value_error(
-                    f"Expected {self.size} coefficients, but received only "
+                    f"Expected {self._native_dimension} coefficients, but received only "
                     f"{index}."
                 )) from error
             if not self.is_complex and np.iscomplexobj(coefficient):
@@ -210,7 +215,7 @@ class NumPyVectorSpace(MaskableVectorSpace):
         except StopIteration:
             return
         raise ValueError(Errors.value_error(
-            f"Expected {self.size} coefficients, but received more."
+            f"Expected {self._native_dimension} coefficients, but received more."
         ))
 
     def rand(self, distribution = "uniform", seed = None,**kwargs):
@@ -228,13 +233,28 @@ class NumPyVectorSpace(MaskableVectorSpace):
         else:
             return np.asarray(r, dtype=self.dtype)
 
-    def poisson(self, x,seed = None,**kwargs):
+    def poisson(self, x, seed=None, **kwargs):
+        """Sample Poisson counts in a space with real storage.
+
+        Complex spaces are unsupported, including complex storage interpreted
+        as a real vector space (as_real_space=True). Rates must be finite,
+        nonnegative real vectors belonging to this space.
+        """
+        if self.is_complex:
+            raise TypeError("poisson is available only for vector spaces with real storage.")
         if x not in self:
-            raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
-        return self.rand(distribution="poisson", lam = x,seed=seed, **kwargs)
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, add_info="poisson rates must belong to the vector space."))
+        rates = np.asarray(x)
+        if np.any(np.imag(rates) != 0):
+            raise ValueError("Poisson rates must be real-valued.")
+        rates = np.real(rates)
+        if np.any(~np.isfinite(rates)) or np.any(rates < 0):
+            raise ValueError("Poisson rates must be finite and nonnegative.")
+        return self.rand(distribution="poisson", lam=rates, seed=seed, **kwargs)
     
     def __contains__(self, x):
-        if not super().__contains__(x):
+        if not isinstance(x, np.ndarray) or x.shape != self.shape:
             return False
         elif is_complex_dtype(x.dtype):
             return self.is_complex
@@ -243,65 +263,30 @@ class NumPyVectorSpace(MaskableVectorSpace):
         else:
             return False
         
-    def flatten(self, x : np.ndarray) -> np.ndarray:
-        x = np.asarray(x)
-        if self.shape != x.shape:
-            raise ValueError(Errors.value_error(f"After casting the input {x} to an ndarray it is not of the shape of the vector space and thus cannot be flatted to a flatted vector of the space!"))
-        if self.is_complex:
-            if is_complex_dtype(x.dtype):
-                return complex2real(x).ravel()
-            else:
-                aux = self.empty()
-                aux.real = x
-                return complex2real(aux).ravel()
-        elif is_complex_dtype(x.dtype):
-            raise TypeError(Errors.type_error('Real vector space can not handle complex vectors to flatten!'))
-        return x.ravel()
 
-    def fromflat(self, x : np.ndarray) -> np.ndarray:
-        x = np.asarray(x)
-        if not is_real_dtype(x.dtype):
-            raise TypeError(Errors.type_error(f"Flatted vectors need to be of real dtype. The given vector has different dtype"+"\n\t "+f"x = {x}"))
-        if self.is_complex:
-            return real2complex(x.reshape(self.shape + (2,)))
-        else:
-            return x.reshape(self.shape)
-
-    def complex_flatten(self, x: np.ndarray) -> np.ndarray:
-        """Return flattened coefficients without realifying the vector."""
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_flatten is defined only for complex vector spaces."
-            ))
+    def flatten(self, x):
+        """Flat coordinates; complex realification interleaves real and imag."""
         if x not in self:
-            raise ValueError(Errors.not_in_vecsp(
-                x,
-                self,
-                add_info="Argument in complex_flatten is not in the vector space."
-            ))
-        return np.asarray(x, dtype=self.dtype).reshape(-1)
+            raise ValueError("Vector outside this space.")
+        x = np.asarray(x, dtype=self.dtype)
+        if self.is_complex and self.as_real_space:
+            return complex2real(x).ravel()
+        return x.reshape(-1)
 
-    def complex_fromflat(self, x: np.ndarray) -> np.ndarray:
-        """Construct a complex vector without splitting its coefficients."""
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_fromflat is defined only for complex vector spaces."
-            ))
+
+    def fromflat(self, x):
         x = np.asarray(x)
-        if x.ndim != 1 or x.size != self.size:
-            raise ValueError(Errors.value_error(
-                "complex_fromflat requires a one-dimensional array of "
-                f"length {self.size}. Got shape {x.shape}."
-            ))
-        if not (
-            np.issubdtype(x.dtype, np.floating)
-            or np.issubdtype(x.dtype, np.complexfloating)
-        ):
-            raise TypeError(Errors.type_error(
-                "complex_fromflat requires real or complex floating-point "
-                f"coefficients. Got dtype={x.dtype}."
-            ))
+        if x.shape != (self.dimension,):
+            raise ValueError("Expected dimension flat coordinates.")
+        if self.as_real_space:
+            if np.any(np.imag(x) != 0):
+                raise ValueError("Real coordinates must be real.")
+            x = x.real
+        if self.is_complex and self.as_real_space:
+            x = x[0::2] + 1j * x[1::2]
         return np.asarray(x, dtype=self.dtype).reshape(self.shape)
+
+
 
     def complex_space(self):
         r"""Compute the corresponding complex vector space.
@@ -329,6 +314,7 @@ class NumPyVectorSpace(MaskableVectorSpace):
         other = deepcopy(self)
         other.dtype = np.empty(0, dtype=self.dtype).real.dtype
         other.is_complex = False
+        other.as_real_space = True
         return other
     
     
@@ -344,21 +330,24 @@ class NumPyVectorSpace(MaskableVectorSpace):
         for idx in np.ndindex(self.shape):
             elm[idx] = 1
             yield elm
-            if self.is_complex:
+            if self.is_complex and self.as_real_space:
                 elm[idx] = 1j
                 yield elm
             elm[idx] = 0
 
-    def __eq__(self,other):
-        if hasattr(self,"mask") and hasattr(other,"mask"):
-            if (self.mask == other.mask).all():
-                return super().__eq__(other)
-            else:
-                False
-        elif hasattr(self,"mask") ^ hasattr(other,"mask"):
-            return False
-        else:
-            return super().__eq__(other)
+
+    def __eq__(self, other):
+        return (isinstance(other, type(self)) and self.shape == other.shape
+                and self.dtype == other.dtype and self.as_real_space == other.as_real_space)
+
+    def compatible(self, other):
+        return (isinstance(other, NumPyVectorSpace) and self.shape == other.shape
+                and self.is_complex == other.is_complex
+                and self.as_real_space == other.as_real_space)
+
+    @property
+    def ndim(self):
+        return len(self.shape)
 
     def __repr__(self):
         if hasattr(self,"mask"):
@@ -402,16 +391,16 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
     """
     @overload
-    def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...
+    def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
 
     @overload
-    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : Tuple[int | None] | int = (), dtype : type = float) -> None: ...
+    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
 
     def __init__(self,
                  measure : np.ndarray | None = None, 
                  shape : Tuple[int] | int | None = None, 
                  shape_codomain : Tuple[int | None] | int = (), 
-                 dtype : type = float) -> None:
+                 dtype : type = float, as_real_space: bool = True) -> None:
         if(not isinstance(measure,np.ndarray) and shape is None):
             raise ValueError(Errors._compose_message("Invalid Init",'Either measure or shape have to be set to determine shape of space.'))
         if shape is None:
@@ -426,7 +415,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             shape_codomain=(shape_codomain,)
         elif not isinstance(shape_codomain,tuple):
             raise ValueError(Errors._compose_message("Wrong Value",'The shape_codomain of a MeasureSpaceFcts has to be an int or a tuple of ints or an empty tuple.'))
-        super().__init__(shape = shape + shape_codomain, dtype = dtype)
+        super().__init__(shape=shape + shape_codomain, dtype=dtype, as_real_space=as_real_space)
         self.shape_domain = shape
         r"""The shape of the domain of the functions (`N`)."""
         self.shape_codomain = shape_codomain
@@ -570,7 +559,7 @@ class GridFcts(MeasureSpaceFcts):
                  dtype : type = float,
                  use_cell_measure : bool =True,
                  boundary_ext : str = 'sym',
-                 ext_const : None | float | tuple[float] = None):
+                 ext_const : None | float | tuple[float] = None, as_real_space: bool = True):
         axes = []
         extents=[]
         if axisdata and not coords:
@@ -603,12 +592,12 @@ class GridFcts(MeasureSpaceFcts):
             super().__init__(GridFcts._calc_cell_measure(self.axes,boundary_ext,ext_const),
                              shape=self.coords[0].shape,
                              shape_codomain=shape_codomain, 
-                             dtype=dtype
+                             dtype=dtype, as_real_space=as_real_space
                              )
         else:
             super().__init__(shape=self.coords[0].shape, 
                              shape_codomain=shape_codomain, 
-                             dtype=dtype
+                             dtype=dtype, as_real_space=as_real_space
                              )
 
         if axisdata is not None:
@@ -717,14 +706,14 @@ class UniformGridFcts(GridFcts):
                  axisdata : None | tuple[np.ndarray] = None, 
                  shape_codomain : int | tuple[int] = (),  
                  dtype : type =float, 
-                 periodic : bool = False):
+                 periodic : bool = False, as_real_space: bool = True):
         if periodic and all(isinstance(c,tuple) for c in coords):
             coords = tuple((l, (l+(n-1)*r)/n ,n) for (l,r,n) in coords)
         super().__init__(*coords, 
                          axisdata=axisdata,
                          shape_codomain=shape_codomain,
                          dtype=dtype,
-                         use_cell_measure=False
+                         use_cell_measure=False, as_real_space=as_real_space
                         )
         spacing = []
         for axis in self.axes:
@@ -774,6 +763,8 @@ class Prod(NumPyVectorSpace):
             raise TypeError(Errors.type_error("One of spaces is to factor is not a VectorSpace!"))
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
             raise TypeError(Errors.type_error("There are both complex and non-complex Factors. This is not supported in Prod!"))
+        if len({s.as_real_space for s in factors}) > 1:
+            raise ValueError("Tensor factors must have the same scalar field.")
         self.factors = []
         """List of the `vector spaces` to be taken as Product."""
         shape = ()
@@ -791,11 +782,12 @@ class Prod(NumPyVectorSpace):
                 shape += s.shape
             else:
                 self.factors.append(s)
-                shape += (s.size,)
+                # Tensor storage counts native entries, not realified coordinates.
+                shape += (int(np.prod(s.shape)),)
         characters=tuple(chr(k) for k in range(ord('A'),ord('A')+len(self.factors)))
         self._prod_trafo_string=f"{','.join(characters)}->{''.join(characters)}"
         """String to compute the outer product in einsum."""
-        super().__init__(shape,dtype=dt)
+        super().__init__(shape, dtype=dt, as_real_space=factors[0].as_real_space)
 
     def __eq__(self, other):
         return (

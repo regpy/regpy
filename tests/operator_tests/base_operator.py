@@ -821,7 +821,7 @@ class TestZero():
 def test_MatrixOfOperators():
     shape = (2,2)
     dom=NumPyVectorSpace(shape)
-    op1=op_base.RealPart(dom)
+    op1=op_base.Identity(dom)
     op2=op_base.PtwMultiplication(dom,2)
     op3=op_base.PtwMultiplication(dom,3)
     op4=op_base.PtwMultiplication(dom,4)
@@ -962,3 +962,114 @@ def test_coordinate_projection_direct_sum_l2(dtype):
     for component, expected in zip(actual, x, strict=True):
         np.testing.assert_allclose(component, expected)
     assert combined.norm(method="power") == pytest.approx(1., rel=1e-3)
+
+
+@pytest.mark.parametrize("operator,part", [
+    (op_base.RealPart, "real"), (op_base.ImaginaryPart, "imag"),
+])
+def test_parts_on_direct_sum(operator, part):
+    from regpy.vecsps import DirectSum
+    a = NumPyVectorSpace(2, dtype=complex)
+    b = NumPyVectorSpace(3, dtype=complex)
+    space = DirectSum(a, b)
+    op = operator(space)
+    assert isinstance(op, op_base.DirectSum)
+    x = space.join(np.array([1+2j, 3-4j]), np.array([5j, 6+7j, -8j]))
+    result = op(x)
+    for block, source in zip(result, x):
+        np.testing.assert_allclose(block, getattr(source, part))
+    y = op.codomain.ones()
+    assert np.real(op.codomain.vdot(result, y)) == pytest.approx(
+        np.real(space.vdot(x, op.adjoint(y))))
+    # TupleVector does not need real/imag/conj methods.
+    for name in ("real", "imag", "conj"):
+        assert not hasattr(x, name)
+
+
+@pytest.mark.parametrize("operator", [op_base.RealPart, op_base.ImaginaryPart])
+def test_parts_reject_real_storage(operator):
+    with pytest.raises(TypeError):
+        operator(NumPyVectorSpace(3))
+
+
+def test_operator_scalar_field_coercion():
+    c = NumPyVectorSpace(2, dtype=complex, as_real_space=False)
+    r = NumPyVectorSpace(2)
+    with pytest.warns(RuntimeWarning, match="different scalar fields"):
+        op = op_base.Zero(c, r)
+    assert op.domain.as_real_space and op.codomain.as_real_space
+    assert c.dimension == 4
+
+
+def test_complex_linear_scipy_adapter():
+    space = NumPyVectorSpace(3, dtype=complex, as_real_space=False)
+    op = op_base.PtwMultiplication(space, np.array([1+2j, 3-4j, 5j]))
+    scipy_op = op_base.SciPyLinearOperator(op)
+    x = np.array([2+1j, -1+3j, 4j])
+    assert scipy_op.shape == (3, 3)
+    assert np.issubdtype(scipy_op.dtype, np.complexfloating)
+    np.testing.assert_allclose(scipy_op @ x, op(x))
+    np.testing.assert_allclose(scipy_op.rmatvec(x), op.adjoint(x))
+
+
+@pytest.mark.parametrize("operator,expected", [
+    (op_base.RealPart, np.array([1., 3.])),
+    (op_base.ImaginaryPart, np.array([2., -4.])),
+])
+def test_parts_coefficient_fallback(operator, expected):
+    class NoPartsArray(np.ndarray):
+        @property
+        def real(self):
+            raise AttributeError("No vector real attribute")
+        @property
+        def imag(self):
+            raise AttributeError("No vector imag attribute")
+
+    space = NumPyVectorSpace(2, dtype=complex)
+    x = np.array([1+2j, 3-4j]).view(NoPartsArray)
+    op = operator(space)
+    np.testing.assert_allclose(op(x), expected)
+    y = np.array([2., -1.])
+    assert np.real(space.vdot(x, op.adjoint(y))) == pytest.approx(
+        op.codomain.vdot(expected, y))
+
+
+def test_parts_require_real_space_capability():
+    class WithoutRealSpace(NumPyVectorSpace):
+        real_space = None
+    space = WithoutRealSpace(2, dtype=complex)
+    for cls in (op_base.RealPart, op_base.ImaginaryPart):
+        with pytest.raises(TypeError, match="real_space"):
+            cls(space)
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_matrix_complex_coordinates_and_inverse(as_real):
+    from regpy.operators import MatrixMultiplication, CholeskyInverse
+    space = NumPyVectorSpace(2, dtype=complex, as_real_space=as_real)
+    matrix = np.array([[3., 1j], [-1j, 2.]])
+    op = MatrixMultiplication(matrix, domain=space, codomain=space)
+    x = np.array([1+2j, 3-1j])
+    np.testing.assert_allclose(op(x), matrix @ x)
+    np.testing.assert_allclose(op.adjoint(x), matrix.conj().T @ x)
+    inverse = CholeskyInverse(op)
+    np.testing.assert_allclose(inverse(op(x)), x)
+
+
+@pytest.mark.parametrize("operator", [op_base.RealPart, op_base.ImaginaryPart,
+                                      op_base.SplitRealImag])
+@pytest.mark.parametrize("direct_sum", [False, True])
+def test_real_imag_deepcopy(operator, direct_sum):
+    from regpy.vecsps.base import DirectSum
+    domain = NumPyVectorSpace(3, dtype=complex)
+    if direct_sum:
+        domain = DirectSum(domain, NumPyVectorSpace(2, dtype=complex))
+    op = operator(domain)
+    copied = deepcopy(op)
+    x = domain.ones() * (1 + 2j)
+    assert copied is not op
+    np.testing.assert_allclose(copied.codomain.flatten(copied(x)),
+                               op.codomain.flatten(op(x)))
+    y = op.codomain.ones()
+    np.testing.assert_allclose(copied.domain.flatten(copied.adjoint(y)),
+                               op.domain.flatten(op.adjoint(y)))

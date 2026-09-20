@@ -316,7 +316,9 @@ class HmDomain(HilbertSpace):
     @memoized_property
     def _I_minus_Delta_operator(self)->Operator:
         return MatrixMultiplication(
-            self.I_minus_Delta(),
+            # Keep native grid entries here. MatrixMultiplication handles
+            # interleaved real coordinates when the complex space is realified.
+            self.I_minus_Delta().astype(self.dtype, copy=False),
             inverse="superLU",
             domain=self.proj.codomain,
             codomain=self.proj.codomain,

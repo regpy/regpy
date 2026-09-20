@@ -4,12 +4,13 @@ from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
 from types import NotImplementedType
-from typing import Any, Callable, Iterable, Iterator, Literal, overload, Protocol, TYPE_CHECKING
+from typing import Any, Callable, Iterable, Iterator, Literal, overload, Protocol, runtime_checkable, TYPE_CHECKING
 
 from typing_extensions import Self
 
 
 import numpy as np
+import warnings
 
 if TYPE_CHECKING:
     from regpy.operators import Operator
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
 __all__ = [
-    "Scalar", "ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "DirectSum"
+    "Scalar", "ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "VectorSpace", "DirectSum"
 ]
 
 
@@ -102,64 +103,8 @@ class TupleVector:
     def __len__(self) -> int:
         return self.ndim
     
-    def conj(self) -> Self:
-        r"""Return the componentwise complex conjugate.
 
-        This is a convenience operation of :class:`TupleVector`, not part of
-        the generic :class:`ReadOnlyVector` protocol. Each component must
-        provide its own ``conj`` method. If it does not, the exception names
-        the unsupported component.
-        """
-        result = []
-        for index, component in enumerate(self):
-            try:
-                result.append(component.conj())
-            except (AttributeError, TypeError, NotImplementedError) as error:
-                raise NotImplementedError(Errors.generic_message(
-                    "Complex conjugation is unavailable for TupleVector "
-                    f"component {index} ({type(component).__name__})."
-                )) from error
-        return TupleVector(result)
-
-    @property
-    def real(self) -> Self:
-        r"""Return the componentwise real part.
-
-        This fast convenience property is not required by the generic vector
-        protocol. Components without a ``real`` attribute are reported by
-        index. Generic algorithms should instead use the coefficient methods
-        of the associated :class:`VectorSpaceBase`.
-        """
-        result = []
-        for index, component in enumerate(self):
-            try:
-                result.append(component.real)
-            except (AttributeError, TypeError, NotImplementedError) as error:
-                raise NotImplementedError(Errors.generic_message(
-                    "The real part is unavailable for TupleVector component "
-                    f"{index} ({type(component).__name__})."
-                )) from error
-        return TupleVector(result)
     
-    @property
-    def imag(self) -> Self:
-        r"""Return the componentwise imaginary part.
-
-        This fast convenience property is not required by the generic vector
-        protocol. Components without an ``imag`` attribute are reported by
-        index. Generic algorithms should instead use the coefficient methods
-        of the associated :class:`VectorSpaceBase`.
-        """
-        result = []
-        for index, component in enumerate(self):
-            try:
-                result.append(component.imag)
-            except (AttributeError, TypeError, NotImplementedError) as error:
-                raise NotImplementedError(Errors.generic_message(
-                    "The imaginary part is unavailable for TupleVector "
-                    f"component {index} ({type(component).__name__})."
-                )) from error
-        return TupleVector(result)
 
     def __eq__(self, other: object) -> TupleVector:
         if isinstance(other,TupleVector) and self.ndim == other.ndim:
@@ -356,60 +301,90 @@ class TupleVector:
             raise TypeError(Errors.type_error(f"To apply a method componentwise to a TupleVector the method has to be a callable. {method} is not callable"))
         return TupleVector([method(s_k) for s_k in self])
 
+@runtime_checkable
+class VectorSpace(Protocol):
+    """Structural scalar-field vector-space contract.
+
+    A backend need not provide shape, ndim, real_space, complex_space or
+    componentwise vector attributes. Mathematical coordinates, basis vectors
+    and flattening must all agree and have length dimension. Implementations
+    may derive from VectorSpaceBase to reuse its defaults.
+    """
+    is_complex: bool
+    as_real_space: bool
+
+    @property
+    def dimension(self) -> int: ...
+    def zeros(self, read_only: bool = False) -> Vector: ...
+    def ones(self, read_only: bool = False) -> Vector: ...
+    def empty(self) -> Vector: ...
+    def read_only(self, x: ReadOnlyVector) -> ReadOnlyVector: ...
+    def __contains__(self, x: object) -> bool: ...
+    def __eq__(self, other: object) -> bool: ...
+    def compatible(self, other: object) -> bool: ...
+    def copyto(self, x: Vector, y: ReadOnlyVector) -> None: ...
+    def fill(self, x: Vector, value: Scalar) -> None: ...
+    def vdot(self, x: ReadOnlyVector, y: ReadOnlyVector) -> Scalar: ...
+    def norm(self, x: ReadOnlyVector) -> float: ...
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]: ...
+    def set_coefficients(self, x: Vector, coefficients: Iterable[Scalar]) -> None: ...
+    def iter_basis(self) -> Iterator[ReadOnlyVector]: ...
+    def flatten(self, x: ReadOnlyVector) -> np.ndarray: ...
+    def fromflat(self, x: np.ndarray) -> Vector: ...
+    def rand(self, distribution: str = "uniform", **kwargs: Any) -> Vector: ...
+    def randn(self, **kwargs: Any) -> Vector: ...
+
+
 class VectorSpaceBase:
-    r"""Base class for vector representations and their storage operations.
+    """Base implementation of the VectorSpace protocol.
 
-    Vectors themselves are duck typed. Generic RegPy code may rely only on
-    linear operations: addition, subtraction, scalar multiplication and
-    division, unary negation, and their in-place variants. It must not assume
-    that a vector is a NumPy array, exposes ``shape`` or ``dtype``, supports
-    indexing or componentwise comparisons, or provides a ``copy`` method.
+    No shape, ndim, vector indexing, real/imag/conj attributes or storage
+    layout are assumed. Concrete spaces provide allocation, membership,
+    equality, compatibility and coefficient access. Coefficients describe
+    coordinates over R when as_real_space=True, otherwise over C. Complex
+    storage is necessary, but not sufficient, for a complex vector space.
 
-    A concrete ``VectorSpaceBase`` connects those vectors to operations that
-    cannot be expressed purely through linear algebra. In particular, it must
-    recognize its elements via :meth:`__contains__` and provide appropriate
-    allocation and copying operations. Generic code that needs an independent
-    copy should allocate it with :meth:`empty` and populate it with
-    :meth:`copyto`.
-
-    Subclasses may override the methods directly. Alternatively, ``type`` may
-    be an adapter object that supplies methods such as ``zeros``, ``ones``,
-    ``empty``, ``vdot``, ``copyto``, and the logical operations. Specialized
-    vector spaces may expose further capabilities such as indexing, masking,
-    flattening, or pointwise operations; algorithms using those capabilities
-    should explicitly restrict their accepted vector spaces.
-
-    Vector spaces can be added to construct :class:`DirectSum` instances.
-
-    Parameters
-    ----------
-    vec_type : object
-        Class used to recognize vectors belonging to this space.
-    shape : tuple(int) or int
-        The general shape of the vectors.
-    complex : boolean, optional
-        Whether vectors have complex coefficients. Defaults to ``False``.
-    type : {None,object}, optional
-        Optional adapter implementing storage operations for ``vec_type``.
-        Defaults to ``None``.
+    dimension in this constructor counts native complex coordinates when
+    complex=True; the dimension property doubles it for real scalars.
+    real_space/complex_space conversions
+    are optional backend capabilities, not part of this base interface.
     """
 
     log = ClassLogger()
 
-    def __init__(self, 
-                 vec_type: type[Vector] | tuple[type[Vector], ...],
-                 shape: int | tuple[int, ...],
-                 complex : bool = False, 
-                 type: Any | None = None) -> None:
+
+    def __init__(self, vec_type, dimension: int, complex: bool = False,
+                 type=None, as_real_space: bool = True) -> None:
+        if not isinstance(dimension, (int, np.integer)) or dimension < 0:
+            raise ValueError("dimension must be a nonnegative integer.")
         self.vec_type = vec_type
-        """The vector type"""
-        self.shape = (shape,) if isinstance(shape,int) else shape
-        """The vector space's shape"""
-        self.is_complex = complex
-        self.type = type 
-        """Type of the vectors if different"""
+        self.is_complex = bool(complex)
+        self._coordinate_count = int(dimension)
+        self.type = type
         self._no_pickle = {'type', 'vec_type'}
-        """A dictionary containing modules kept extra in the copy"""
+        self.as_real_space = as_real_space
+
+    @property
+    def as_real_space(self) -> bool:
+        """True for real scalars; False for complex scalars."""
+        return self._as_real_space
+
+    @as_real_space.setter
+    def as_real_space(self, value: bool) -> None:
+        if not isinstance(value, (bool, np.bool_)):
+            raise TypeError("as_real_space must be boolean.")
+        if not value and not self.is_complex:
+            raise ValueError("A non-complex representation requires as_real_space=True.")
+        self._as_real_space = bool(value)
+
+    @property
+    def dimension(self) -> int:
+        """Dimension over the chosen scalar field; not a storage shape."""
+        return self._coordinate_count * (2 if self.is_complex and self.as_real_space else 1)
+
+    @property
+    def _native_dimension(self):
+        return self._coordinate_count
 
     @staticmethod
     def _validate_read_only_flag(read_only: bool) -> bool:
@@ -432,33 +407,17 @@ class VectorSpaceBase:
                 setattr(result, k, deepcopy(v, memo))
         return result
 
-    @overload
-    def zeros(self, read_only: Literal[False] = False) -> Vector: ...
+    def zeros(self, read_only: bool = False):
+        """Backend-defined representation operation."""
+        raise NotImplementedError
 
-    @overload
-    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
 
-    def zeros(self, read_only: bool = False) -> ReadOnlyVector:
-        """Return the zero vector, optionally as a read-only view."""
-        read_only = self._validate_read_only_flag(read_only)
-        if self.type is None:
-            raise NotImplementedError
-        result = self.type.zeros(shape = self.shape)
-        return self.read_only(result) if read_only else result
     
-    @overload
-    def ones(self, read_only: Literal[False] = False) -> Vector: ...
+    def ones(self, read_only: bool = False):
+        """Backend-defined representation operation."""
+        raise NotImplementedError
 
-    @overload
-    def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
 
-    def ones(self, read_only: bool = False) -> ReadOnlyVector:
-        """Return a vector of ones, optionally as a read-only view."""
-        read_only = self._validate_read_only_flag(read_only)
-        if self.type is None:
-            raise NotImplementedError
-        result = self.type.ones(shape = self.shape)
-        return self.read_only(result) if read_only else result
 
     def read_only(self, x: ReadOnlyVector) -> ReadOnlyVector:
         r"""Return a read-only view of ``x``.
@@ -474,12 +433,9 @@ class VectorSpaceBase:
             ))
         return x
 
-    def empty(self) -> Vector:
-        """Return an uninitialized element of the space.
-        """
-        if self.type is None:
-            raise NotImplementedError
-        return self.type.empty(shape = self.shape)
+    def empty(self):
+        """Backend-defined representation operation."""
+        raise NotImplementedError
     
     def set_rng_seed(self, seed: int | None) -> None:
         set_rng_seed(seed)
@@ -509,10 +465,10 @@ class VectorSpaceBase:
             Samples that :meth:`fromflat` can convert into a vector.
         """
         if size is None:
-            size = self.realsize
-        elif isinstance(size,int) and size != self.realsize:
+            size = self.dimension
+        elif isinstance(size,int) and size != self.dimension:
             self.log.debug(f"You are sampling on a size specified as an integer that is different from the realsize. This might lead to vectors that are not in the space.")
-        elif isinstance(size,tuple) and np.prod(size) != self.realsize:
+        elif isinstance(size,tuple) and np.prod(size) != self.dimension:
             self.log.debug(f"You are sampling on a size specified as a tuple of integers that taken as a product is different from the realsize. This might lead to vectors that are not in the space.")
         if seed is not None:
             set_rng_seed(seed)
@@ -549,7 +505,10 @@ class VectorSpaceBase:
             A vector in the space. The vector is created as a flat NumPy array and then cast to the actual 
             vector and type by the `fromflat` method
         """
-        return self.fromflat(self._draw_sample(distribution=distribution))
+        values = self._draw_sample(distribution=distribution, **kwargs)
+        if not self.as_real_space:
+            values = values + 1j * self._draw_sample(distribution=distribution, **kwargs)
+        return self.fromflat(values)
     
     def poisson(self, x: Vector, **kwargs: Any) -> Vector:
         """Return a Poisson-distributed vector with rate ``x``.
@@ -639,109 +598,79 @@ class VectorSpaceBase:
         except AttributeError as exc:
             raise NotImplementedError from exc
 
-    def iter_coefficients(
-        self, x: ReadOnlyVector
-    ) -> Iterator[Scalar]:
-        r"""Iterate over the native coefficients of ``x``.
 
-        The coefficients are ordered consistently with
-        :meth:`set_coefficients`. Complex vector spaces yield one complex
-        coefficient per degree of freedom, rather than two real coordinates.
-        Consequently, the iterator always yields exactly :attr:`size`
-        coefficients.
+    def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        """Yield dimension scalars in basis order.
 
-        Vector-space implementations should override this method whenever
-        their vector representation exposes coefficients. Generic code must
-        not attempt to iterate over the vector object itself.
-
-        Parameters
-        ----------
-        x : ReadOnlyVector
-            Vector whose coefficients are requested.
-
-        Returns
-        -------
-        collections.abc.Iterator
-            Iterator of real or complex scalars.
+        For complex storage interpreted over R, each real part is immediately
+        followed by its imaginary part. Backends may override this public
+        method directly; it never requires a shape attribute.
         """
-        if x not in self:
-            raise ValueError(Errors.not_in_vecsp(
-                x,
-                self,
-                vec_name="vector",
-                add_info="iter_coefficients argument is not in the vector space."
-            ))
-        raise NotImplementedError(Errors.generic_message(
-            f"Coefficient iteration is not implemented for {type(self).__name__}."
-        ))
+        for value in self._iter_native_coefficients(x):
+            if self.is_complex and self.as_real_space:
+                yield np.real(value)
+                yield np.imag(value)
+            else:
+                yield value
 
-    def set_coefficients(
-        self,
-        x: Vector,
-        coefficients: Iterable[Scalar],
-    ) -> None:
-        r"""Overwrite a vector from its native coefficients.
+    def _iter_native_coefficients(self, x):
+        """Backend hook used by coordinate-storage implementations."""
+        raise NotImplementedError
 
-        ``coefficients`` must contain exactly :attr:`size` entries in the
-        order produced by :meth:`iter_coefficients`. The identity of ``x`` is
-        preserved.
 
-        Complex vector spaces consume complex coefficients directly. This is
-        distinct from :meth:`fromflat`, whose input always represents real
-        coordinates.
+    def set_coefficients(self, x: Vector, coefficients: Iterable[Scalar]) -> None:
+        """Write exactly dimension coordinates, preserving x's identity.
 
-        Parameters
-        ----------
-        x : Vector
-            Writable destination.
-        coefficients : collections.abc.Iterable
-            Exactly :attr:`size` real or complex coefficients.
+        Realified complex coordinates must be consecutive (real, imaginary)
+        pairs. Input length and scalar field are checked before any write.
         """
-        if x not in self:
-            raise ValueError(Errors.not_in_vecsp(
-                x,
-                self,
-                vec_name="vector",
-                add_info="set_coefficients destination is not in the vector space."
-            ))
-        raise NotImplementedError(Errors.generic_message(
-            f"Setting coefficients is not implemented for {type(self).__name__}."
-        ))
+        values = np.asarray(list(coefficients))
+        if values.shape != (self.dimension,):
+            raise ValueError("Expected exactly dimension coefficients.")
+        if self.as_real_space:
+            if np.any(np.imag(values) != 0):
+                raise ValueError("Real coordinates must be real.")
+            values = values.real
+        if self.is_complex and self.as_real_space:
+            values = values[0::2] + 1j * values[1::2]
+        self._set_native_coefficients(x, values)
+
+    def _set_native_coefficients(self, x, coefficients):
+        """Backend hook used by coordinate-storage implementations."""
+        raise NotImplementedError
 
 
     
     
+
 
     def iter_basis(self) -> Iterator[ReadOnlyVector]:
-        r"""Generator iterating over the standard basis of the vector space. For efficiency,
-        the same vector should be returned in each step and subsequently modified in-place. If you need
-        the vector longer than that, perform a copy. In case of a complex vector space, after each
-        vector with a real one it should return the same vector with \(1i\)
-        in its place.
-        """
-        raise NotImplementedError
+        """Yield the coordinate basis; the mutable work vector may be reused."""
+        values = np.zeros(self.dimension, dtype=float if self.as_real_space else complex)
+        result = self.empty()
+        for j in range(self.dimension):
+            values[j] = 1
+            self.set_coefficients(result, values)
+            yield result
+            values[j] = 0
     
     def __iter__(self) -> Iterator[ReadOnlyVector]:
         return self.iter_basis()
     
+
     @property
     def size(self) -> int:
-        """The number of coefficients used to represent an element."""
-        return np.prod(self.shape)
+        """Deprecated alias of dimension over the selected scalar field."""
+        warnings.warn("size is deprecated; use dimension.", DeprecationWarning, stacklevel=2)
+        return self.dimension
+
 
     @property
     def realsize(self) -> int:
-        """The dimension of the vector space as a real vector space. For complex
-        coefficients, this is twice :attr:`size`."""
-        if self.is_complex:
-            return 2 * np.prod(self.shape)
-        else:
-            return np.prod(self.shape)
+        """Deprecated alias of dimension over the selected scalar field."""
+        warnings.warn("realsize is deprecated; use dimension.", DeprecationWarning, stacklevel=2)
+        return self.dimension
 
-    @property
-    def ndim(self) -> int:
-        """The number of representation dimensions, i.e. the length of ``shape``."""
-        return len(self.shape)
 
     @memoized_property
     def identity(self) -> Operator:
@@ -749,139 +678,44 @@ class VectorSpaceBase:
         from regpy.operators import Identity
         return Identity(self)
 
-    def __contains__(self, x: object) -> bool:
-        return isinstance(x,self.vec_type) and all(xis == si for xis,si in zip(x.shape, self.shape))
-
-    def flatten(self, x: Vector) -> np.ndarray:
-        r"""Transform the vector `x`, an element of the vector space, into a flattened vector. Inverse
-        to `fromflat`.
-
-        Parameters
-        ----------
-        x : self.vec_type
-            The vector to transform.
-
-        Returns
-        -------
-        array
-            The flattened array. If memory layout allows, it will be a view into `x`.
-        """
+    def __contains__(self, x):
+        """Backend-defined representation operation."""
         raise NotImplementedError
+
+
+    def flatten(self, x: ReadOnlyVector) -> np.ndarray:
+        """Coordinates over the selected scalar field, in basis order."""
+        return np.asarray(list(self.iter_coefficients(x)),
+                          dtype=float if self.as_real_space else complex)
+
 
     def fromflat(self, x: np.ndarray) -> Vector:
-        """Transform a flattened vector into an element of the vector space. Inverse to `flatten`.
+        """Reconstruct from exactly dimension coordinates; inverse of flatten."""
+        values = np.asarray(x)
+        if values.shape != (self.dimension,):
+            raise ValueError("Expected a one-dimensional array of length dimension.")
+        if self.as_real_space and np.any(np.imag(values) != 0):
+            raise ValueError("Real coordinates must have zero imaginary part.")
+        result = self.empty()
+        self.set_coefficients(result, values.real if self.as_real_space else values)
+        return result
 
-        Parameters
-        ----------
-        x : numpy.ndarray
-            The flat vector to transform
 
-        Returns
-        -------
-        Vector
-            The reconstructed vector.
-        """
-        raise NotImplementedError
 
-    def complex_flatten(self, x: Vector) -> np.ndarray:
-        r"""Return one-dimensional coordinates over the complex field.
 
-        Unlike :meth:`flatten`, this method does not split complex
-        coefficients into their real and imaginary parts. It is defined only
-        for complex vector spaces and is inverse to
-        :meth:`complex_fromflat`. Backends supporting genuinely complex
-        numerical linear algebra should override both methods.
-
-        Parameters
-        ----------
-        x : Vector
-            Element of this complex vector space.
-
-        Returns
-        -------
-        numpy.ndarray
-            One-dimensional complex array of length :attr:`size`.
-        """
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_flatten is defined only for complex vector spaces."
-            ))
-        raise NotImplementedError
-
-    def complex_fromflat(self, x: np.ndarray) -> Vector:
-        r"""Construct a complex vector from complex-field coordinates.
-
-        This is inverse to :meth:`complex_flatten`. The input must contain
-        :attr:`size` coefficients; complex coefficients are retained rather
-        than represented by two real entries as in :meth:`fromflat`.
-        """
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_fromflat is defined only for complex vector spaces."
-            ))
-        raise NotImplementedError
-
-    def complex_space(self) -> VectorSpaceBase:
-        """Compute the corresponding complex vector space.
-
-        Returns
-        -------
-        regpy.vecsps.VectorSpaceBase
-            The complex space corresponding to this vector space.
-        """
-        raise NotImplementedError
-
-    def real_space(self) -> VectorSpaceBase:
-        """Compute the corresponding real vector space.
-
-        Returns
-        -------
-        regpy.vecsps.VectorSpaceBase
-            The real space corresponding to this vector space.
-        """
-        raise NotImplementedError
     
     
     
     def norm(self, x: Vector) -> float:
         return sqrt(self.vdot(x,x).real)
 
-    def __eq__(self, other: VectorSpaceBase) -> bool:
-        if not isinstance(other, type(self)):
-            return False
-        return (self.type == other.type and
-                self.shape == other.shape and
-                self.is_complex == other.is_complex and
-                self.vec_type == other.vec_type)
+    def __eq__(self, other):
+        """Backend-defined representation operation."""
+        raise NotImplementedError
     
-    def compatible(self,other: VectorSpaceBase) -> bool:
-        """Tests compatibility of vectors! This is not as restrictive as `__eq__`
-        in the sense, that we only compare the underlying vector type, shape and
-        if both are complex. This guarantees that vectors of the space can be 
-        also considered as vectors of the other space. Note that the interpretation
-        of the vectors might be significantly different! 
-
-        Parameters
-        ----------
-        other : object
-            Another vector space to be compared with.
-
-        Returns
-        -------
-        boolean
-            True if the vectors are compatible
-        
-        Raise
-        -----
-        ValueError
-            If other is not a `regpy.vecsps.VectorSpaceBase`.
-        """
-        if not isinstance(other, VectorSpaceBase):
-            raise ValueError(Errors.not_instance(other,VectorSpaceBase,add_info="TO have a compatible vector space the other object has to be a vector space in RegPy."))
-        return (self.vec_type == other.vec_type and 
-                self.shape == other.shape and
-                self.is_complex == other.is_complex
-                )
+    def compatible(self, other):
+        """Backend-defined representation operation."""
+        raise NotImplementedError
         
     def __iadd__(self, other: object) -> DirectSum | NotImplementedType:
         if isinstance(other, VectorSpaceBase):
@@ -909,8 +743,8 @@ class VectorSpaceBase:
             domain = DirectSum(domain, self, flatten=True)
         return domain
     
-    def __repr__(self) -> str:
-        return make_repr(self,self.shape,self.is_complex)
+    def __repr__(self):
+        return make_repr(self, self.dimension, as_real_space=self.as_real_space)
 
 
 class DirectSum(VectorSpaceBase):
@@ -947,7 +781,7 @@ class DirectSum(VectorSpaceBase):
         return object.__new__(cls)
 
     def __init__(self, *summands: VectorSpaceBase, flatten: bool = False) -> None:
-        if any(not isinstance(s, VectorSpaceBase) for s in summands):
+        if any(not isinstance(s, VectorSpace) for s in summands):
             raise TypeError(Errors.type_error(f"The list of summands for a DirectSum vector space contains elements which are not a RegPy vector space! Given "+"\n\t "+f"summands = {summands}"))
         if flatten:
             self.summands = []
@@ -959,16 +793,55 @@ class DirectSum(VectorSpaceBase):
         else:
             self.summands = summands
         self.n_components = len(self.summands)
-        shape = tuple(s.shape for s in self.summands)
-        super().__init__(vec_type=TupleVector,shape=shape,complex=all((s.is_complex for s in self.summands)))
+        flags = {s.as_real_space for s in self.summands}
+        if len(flags) > 1:
+            warnings.warn("Mixed scalar fields in DirectSum; interpreting all summands over R.",
+                          RuntimeWarning, stacklevel=2)
+            for summand in self.summands:
+                summand.as_real_space = True
+        super().__init__(vec_type=TupleVector, dimension=0,
+                         complex=bool(self.summands) and all(s.is_complex for s in self.summands),
+                         as_real_space=all(s.as_real_space for s in self.summands))
+
+
+    
 
     @property
-    def size(self) -> int:
-        return sum([s.size for s in self.summands]) 
-    
+    def dimension(self):
+        return sum(s.dimension for s in self.summands)
+
     @property
-    def realsize(self) -> int:
-        return sum([s.realsize for s in self.summands]) 
+    def as_real_space(self):
+        flags = {s.as_real_space for s in self.summands}
+        if len(flags) > 1:
+            raise ValueError("DirectSum summands no longer share a scalar field.")
+        return next(iter(flags), True)
+
+    @as_real_space.setter
+    def as_real_space(self, value):
+        if not isinstance(value, (bool, np.bool_)):
+            raise TypeError("as_real_space must be boolean.")
+        if not value and not self.is_complex:
+            raise ValueError("Mixed/real storage cannot be a complex vector space.")
+        for summand in self.summands:
+            summand.as_real_space = value
+        self._as_real_space = bool(value)
+
+    def _iter_native_coefficients(self, x):
+        for space, component in zip(self.summands, x, strict=True):
+            yield from space._iter_native_coefficients(component)
+
+    def _set_native_coefficients(self, x, coefficients):
+        from itertools import islice
+        iterator = iter(coefficients)
+        for space, component in zip(self.summands, x, strict=True):
+            space._set_native_coefficients(component, list(islice(iterator, space._native_dimension)))
+        if next(iterator, None) is not None:
+            raise ValueError("Too many coefficients.")
+
+    @property
+    def _native_dimension(self):
+        return sum(s._native_dimension for s in self.summands)
 
     def zeros(self, read_only: bool = False) -> TupleVector:
         read_only = self._validate_read_only_flag(read_only)
@@ -1084,13 +957,13 @@ class DirectSum(VectorSpaceBase):
         consumed = 0
         for index, (summand, component) in enumerate(zip(self.summands, x)):
             component_coefficients = []
-            for _ in range(int(summand.size)):
+            for _ in range(int(summand.dimension)):
                 try:
                     component_coefficients.append(next(iterator))
                     consumed += 1
                 except StopIteration as error:
                     raise ValueError(Errors.value_error(
-                        f"Expected {self.size} coefficients for the "
+                        f"Expected {self.dimension} coefficients for the "
                         f"DirectSum, but received only {consumed}."
                     )) from error
             try:
@@ -1105,7 +978,7 @@ class DirectSum(VectorSpaceBase):
         except StopIteration:
             return
         raise ValueError(Errors.value_error(
-            f"Expected {self.size} coefficients for the DirectSum, but "
+            f"Expected {self.dimension} coefficients for the DirectSum, but "
             "received more."
         ))
 
@@ -1127,55 +1000,10 @@ class DirectSum(VectorSpaceBase):
             for x_i, s in zip(x.v, self.summands)
         ])
     
-    def fromflat(self, x : np.ndarray) -> TupleVector:
-        if x.ndim == 1 and np.isreal(x).all() and x.size == self.realsize:
-            ret = []
-            ind = 0
-            for s in self.summands:
-                if s.is_complex:
-                    ret.append(s.fromflat(x[ind:ind+2*s.size]))
-                    ind += 2*s.size
-                else:
-                    ret.append(s.fromflat(x[ind:ind+s.size]))
-                    ind += s.size
-            return TupleVector(ret)
-        else:
-            raise ValueError(Errors.value_error("Construction of a vector from a flat vector only supported for x an np.ndarray not {}".format(type(x))))
+    def fromflat(self, x):
+        return super().fromflat(x)
 
-    def complex_flatten(self, x: TupleVector) -> np.ndarray:
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_flatten requires every DirectSum summand to be "
-                "complex."
-            ))
-        if x not in self:
-            raise ValueError(Errors.not_in_vecsp(
-                x, self, add_info="Argument in complex_flatten is not in the DirectSum."
-            ))
-        return np.concatenate([
-            np.asarray(s.complex_flatten(x_i)).reshape(-1)
-            for x_i, s in zip(x.v, self.summands)
-        ])
 
-    def complex_fromflat(self, x: np.ndarray) -> TupleVector:
-        if not self.is_complex:
-            raise ValueError(Errors.value_error(
-                "complex_fromflat requires every DirectSum summand to be "
-                "complex."
-            ))
-        x = np.asarray(x)
-        if x.ndim != 1 or x.size != self.size:
-            raise ValueError(Errors.value_error(
-                "complex_fromflat requires a one-dimensional array of "
-                f"length {self.size}. Got shape {x.shape}."
-            ))
-        result = []
-        start = 0
-        for summand in self.summands:
-            stop = start + summand.size
-            result.append(summand.complex_fromflat(x[start:stop]))
-            start = stop
-        return TupleVector(result)
     
     def compatible(self, other: VectorSpaceBase) -> bool:
         return (

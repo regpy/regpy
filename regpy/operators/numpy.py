@@ -37,12 +37,12 @@ class MatrixMultiplication(Operator):
         or array. If `inv`, `numpy.linalg.inv` will be used. If `cholesky` or `superLU`, a
         `CholeskyInverse` or `SuperLU` instance will be returned.
     domain, codomain : regpy.vecsps.VectorSpaceBase, optional
-        Spaces represented by the matrix. Real spaces use their
-        :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat``
-        coordinates. Complex spaces implementing ``complex_flatten`` and
-        ``complex_fromflat`` may instead use genuinely complex coordinates,
-        avoiding realification. If omitted, one-dimensional NumPy spaces
-        matching the matrix dimensions are constructed.
+        Spaces represented in their flatten/fromflat coordinates over the
+        selected scalar field. With as_real_space=False, complex matrices act
+        on complex coordinates. Native complex matrices on realified complex
+        storage are converted to interleaved real block matrices.
+        If omitted, matching NumPy spaces with the default real scalar field
+        are constructed.
     dtype: type or None, optional
         Data type. 
         
@@ -50,12 +50,9 @@ class MatrixMultiplication(Operator):
     -----
     The matrix multiplication is done by applying numpy.dot to the matrix and an element of the domain. 
     The adjoint is implemented in the same way by multiplying with the adjoint matrix.
-    Multidimensional NumPy spaces and arbitrary real vector spaces are
-    supported through their flattened coordinates. A genuinely complex
-    representation is available for backends implementing
-    ``complex_flatten`` and ``complex_fromflat``; other complex backends can
-    still be represented by a real matrix of shape
-    ``(codomain.realsize, domain.realsize)``.
+    Multidimensional NumPy and shape-free spaces use the same coordinate
+    interface. The coordinate matrix has shape
+    (codomain.dimension, domain.dimension).
     """
 
     def __init__(self, 
@@ -85,45 +82,44 @@ class MatrixMultiplication(Operator):
         elif not isinstance(codomain,VectorSpaceBase):
             raise TypeError(Errors.type_error(f"While initializing MatrixMultiplication: Codomain either none or VectorSpaceBase given was {type(codomain)}"))
         
-        complex_shape = (int(codomain.size), int(domain.size))
-        real_shape = (int(codomain.realsize), int(domain.realsize))
-        complex_coordinates = (
-            domain.is_complex
-            and codomain.is_complex
-            and matrix.shape == complex_shape
-        )
-        if complex_coordinates:
-            pass
-        elif matrix.shape == real_shape:
-            matrix_values = (
-                matrix if isinstance(matrix, np.ndarray) else matrix.data
-            )
-            if not np.all(np.isreal(matrix_values)):
-                raise ValueError(Errors.value_error(
-                    "A matrix acting on real flattened coordinates must be "
-                    "real-valued."
-                ))
-        else:
-            raise ValueError(Errors.value_error(
-                f"Matrix shape {matrix.shape} is incompatible with domain "
-                f"and codomain coordinates; expected real shape "
-                f"{real_shape}" + (
-                    f" or complex shape {complex_shape}."
-                    if domain.is_complex and codomain.is_complex
-                    else "."
-                )
-            ))
+        if domain.as_real_space != codomain.as_real_space:
+            import warnings
+            warnings.warn("Mixed matrix scalar fields; interpreting both spaces over R.",
+                          RuntimeWarning, stacklevel=2)
+            domain.as_real_space = codomain.as_real_space = True
+        # Preserve native complex matrices on realified complex storage by
+        # representing their action on interleaved real/imaginary coordinates.
+        if (domain.is_complex and codomain.is_complex and domain.as_real_space
+                and matrix.shape == (codomain.dimension // 2, domain.dimension // 2)):
+            if isinstance(matrix, np.ndarray):
+                real_matrix = np.empty((codomain.dimension, domain.dimension))
+                real_matrix[0::2, 0::2] = matrix.real
+                real_matrix[0::2, 1::2] = -matrix.imag
+                real_matrix[1::2, 0::2] = matrix.imag
+                real_matrix[1::2, 1::2] = matrix.real
+                matrix = real_matrix
+            else:
+                from scipy.sparse import kron
+                matrix = (kron(matrix.real, np.eye(2))
+                          + kron(matrix.imag, np.array([[0., -1.], [1., 0.]]))).tocsc()
+        if matrix.shape != (codomain.dimension, domain.dimension):
+            raise ValueError("Matrix dimensions do not match the scalar-field dimensions.")
+        if domain.as_real_space:
+            values = matrix if isinstance(matrix, np.ndarray) else matrix.data
+            if np.any(np.imag(values) != 0):
+                raise ValueError("A matrix acting on real coordinates must be real.")
+        complex_coordinates = not domain.as_real_space
         self.matrix = matrix
         self.complex_coordinates = complex_coordinates
 
         def domain_coordinates(vector):
             if self.complex_coordinates:
-                return np.asarray(domain.complex_flatten(vector)).reshape(-1)
+                return np.asarray(domain.flatten(vector)).reshape(-1)
             return np.asarray(domain.flatten(vector)).reshape(-1)
 
         def codomain_coordinates(vector):
             if self.complex_coordinates:
-                return np.asarray(codomain.complex_flatten(vector)).reshape(-1)
+                return np.asarray(codomain.flatten(vector)).reshape(-1)
             return np.asarray(codomain.flatten(vector)).reshape(-1)
 
         self._domain_coordinates = domain_coordinates
@@ -164,7 +160,7 @@ class MatrixMultiplication(Operator):
     def _eval(self, x):
         result = np.asarray(self.matvec(x))
         if self.complex_coordinates:
-            return self.codomain.complex_fromflat(result)
+            return self.codomain.fromflat(result)
         return self.codomain.fromflat(result)
 
     def _ieval(self, x, out):
@@ -174,7 +170,7 @@ class MatrixMultiplication(Operator):
     def _adjoint(self, y):
         result = np.asarray(self.rmatvec(y))
         if self.complex_coordinates:
-            return self.domain.complex_fromflat(result)
+            return self.domain.fromflat(result)
         return self.domain.fromflat(result)
 
     def _iadjoint(self, y, out):
@@ -189,7 +185,7 @@ class MatrixMultiplication(Operator):
             matrix = self._MTM
         result = np.asarray(matrix @ self._domain_coordinates(x))
         if self.complex_coordinates:
-            return self.domain.complex_fromflat(result)
+            return self.domain.fromflat(result)
         return self.domain.fromflat(result)
 
     @memoized_property
@@ -349,9 +345,9 @@ class CholeskyInverse(Operator):
             if isinstance(op,MatrixMultiplication):
                 matrix = op.matrix
             else:
-                matrix = np.empty((domain.realsize,) * 2, dtype=float)
+                matrix = np.empty((domain.dimension,) * 2, dtype=float if domain.as_real_space else complex)
                 for j, elm in enumerate(domain.iter_basis()):
-                    matrix[j, :] = domain.flatten(op(elm))
+                    matrix[:, j] = domain.flatten(op(elm))
         self.factorization = cho_factor(matrix)
         """The Cholesky factorization for use with `scipy.linalg.cho_solve`"""
         super().__init__(
@@ -419,40 +415,29 @@ class SuperLUInverse(Operator):
         self.op = op
         self.lu = sla.splu(op.matrix)
 
-    def _eval(self,x):
-        if np.issubdtype(self.lu.U.dtype,np.complexfloating):
-            return self.lu.solve(x)
-        else: 
-            if np.isrealobj(x):
-                return self.lu.solve(x)
-            else:
-                return self.lu.solve(x.real) + 1j*self.lu.solve(x.imag) 
+    def _solve_coordinates(self, rhs, trans='N'):
+        """Solve in the scalar-field coordinates used by op.matrix."""
+        if np.iscomplexobj(rhs) and not np.issubdtype(
+                self.lu.U.dtype, np.complexfloating):
+            # A real LU factorization can still act on complex coordinates.
+            return (self.lu.solve(rhs.real, trans=trans)
+                    + 1j * self.lu.solve(rhs.imag, trans=trans))
+        return self.lu.solve(rhs, trans=trans)
+
+    def _eval(self, x):
+        rhs = self.domain.flatten(x)
+        return self.codomain.fromflat(self._solve_coordinates(rhs))
 
     def _ieval(self, x, out):
-        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
-            np.copyto(out, self.lu.solve(x))
-        else:
-            # A real SuperLU factorization cannot consume a complex right-hand
-            # side directly. Fill the two components without constructing the
-            # additional ``real + 1j * imag`` result array.
-            out.real[...] = self.lu.solve(x.real)
-            out.imag[...] = self.lu.solve(x.imag)
+        self.codomain.copyto(out, self._eval(x))
         return out
 
     def _adjoint(self, x):
-        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
-            return self.lu.solve(x, trans='H')
-        return (
-            self.lu.solve(x.real, trans='H')
-            + 1j * self.lu.solve(x.imag, trans='H')
-        )
+        rhs = self.codomain.flatten(x)
+        return self.domain.fromflat(self._solve_coordinates(rhs, trans='H'))
 
     def _iadjoint(self, x, out):
-        if np.issubdtype(self.lu.U.dtype, np.complexfloating) or np.isrealobj(x):
-            np.copyto(out, self.lu.solve(x, trans='H'))
-        else:
-            out.real[...] = self.lu.solve(x.real, trans='H')
-            out.imag[...] = self.lu.solve(x.imag, trans='H')
+        self.domain.copyto(out, self._adjoint(x))
         return out
 
     @property

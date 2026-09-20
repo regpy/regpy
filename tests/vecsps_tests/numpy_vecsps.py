@@ -1,3 +1,4 @@
+# Poisson tests revision: 20260920-real-only
 import numpy as np
 import pytest
 
@@ -181,3 +182,43 @@ def test_direct_sum_scalar_field_regression(dtypes, complex_expected, ordered_ex
         assert (1. + 2j) * x in space
     else:
         assert (1. + 2j) * x not in space
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_poisson_rejects_complex_spaces(as_real):
+    space = NumPyVectorSpace((2, 3), dtype=complex, as_real_space=as_real)
+    for rates in (space.ones(), np.ones(space.shape)):
+        with pytest.raises(TypeError, match="real storage"):
+            space.poisson(rates, seed=20260920)
+
+
+def test_poisson_real_space_seeded():
+    space = NumPyVectorSpace((2, 3))
+    rates = np.array([[0., 1., 2.], [3., 4., 5.]])
+    sample = space.poisson(rates, seed=20260920)
+    np.testing.assert_array_equal(sample, space.poisson(rates, seed=20260920))
+    assert sample in space
+    assert np.all(sample >= 0)
+    np.testing.assert_array_equal(sample, np.floor(sample))
+    assert sample[0, 0] == 0
+
+
+@pytest.mark.parametrize("bad_rate", [-1., np.nan, np.inf])
+def test_poisson_rejects_invalid_rates(bad_rate):
+    space = NumPyVectorSpace(3)
+    rates = np.ones(3)
+    rates[1] = bad_rate
+    with pytest.raises(ValueError, match="Poisson rates"):
+        space.poisson(rates, seed=20260920)
+
+
+def test_complex_prod_uses_storage_dimensions():
+    # Default complex spaces are realified: dimension is twice storage size.
+    a = NumPyVectorSpace(2, dtype=complex)
+    b = NumPyVectorSpace(3, dtype=complex)
+    product_space = Prod(a, b)
+    assert product_space.shape == (2, 3)
+    assert product_space.dimension == 12
+    x = np.array([1+2j, 3-4j])
+    y = np.array([2j, 1-1j, 3.])
+    np.testing.assert_allclose(product_space.product(x, y), np.outer(x, y))

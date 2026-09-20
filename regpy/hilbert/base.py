@@ -29,26 +29,25 @@ class HilbertSpace:
     ----------
     vecsp : regpy.vecsps.VectorSpaceBase
         The underlying vector space. Should be the domain and codomain of the Gram matrix.
-    as_real_space: bool
-        If True for a complex vector space, the vector space is interpreted as a real vector space, and a real part is taken in the inner product.
-        This can be necessary when dealing with operators mapping between real and complex spaces. 
-        This argument has no effect for real vector spaces. Default: False
+    Scalar-field interpretation is taken from vecsp.as_real_space.
         """
 
     log = ClassLogger()
 
-    def __init__(self, vecsp:VectorSpaceBase,as_real_space = False):
+    def __init__(self, vecsp:VectorSpaceBase):
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
             raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are defined only on subclasses of regpy.vecsps.VectorSpaceBase."))
         self.vecsp = vecsp
         """The underlying vector space."""
-        if not isinstance(as_real_space,bool):
-            raise TypeError(Errors.type_error('as_real_space must be bool',as_real_space))
-        self.as_real_space = as_real_space
         self._no_pickle = {}
         # Allocated lazily because many Hilbert spaces are only used through
         # their Gram operator and never evaluate inner products directly.
         self._inner_buffer = None
+
+    @property
+    def as_real_space(self):
+        """Scalar-field interpretation belongs to vecsp."""
+        return self.vecsp.as_real_space
 
     def __deepcopy__(self, memo):
         cls = type(self)
@@ -214,7 +213,7 @@ class MaskedHilbertSpace(HilbertSpace):
         self.space = space
         self.projection = CoordinateProjection(space.vecsp, vecsp.mask)
         self._inverse_spec = inverse
-        super().__init__(vecsp, as_real_space=space.as_real_space)
+        super().__init__(vecsp)
 
     @memoized_property
     def gram(self) -> Operator:
@@ -252,9 +251,9 @@ class MaskedHilbertSpace(HilbertSpace):
         if op.domain != op.codomain:
             return None
         if isinstance(op, Identity):
-            return np.ones(op.domain.size)
+            return np.ones(op.domain._native_dimension)
         if isinstance(op, PtwMultiplication):
-            return np.asarray(list(op.domain.iter_coefficients(op.factor)))
+            return np.asarray(list(op.domain._iter_native_coefficients(op.factor)))
         if isinstance(op, (DirectSumOp, LinearCombination, Composition)):
             diagonals = [MaskedHilbertSpace._coordinate_diagonal(part)
                          for part in op.ops]
@@ -264,11 +263,11 @@ class MaskedHilbertSpace(HilbertSpace):
                 return np.concatenate(diagonals) if diagonals else np.empty(0)
             if isinstance(op, LinearCombination):
                 return sum((c * d for c, d in zip(op.coeffs, diagonals)),
-                           np.zeros(op.domain.size))
+                           np.zeros(op.domain._native_dimension))
             # Each factor must be diagonal on the same coordinate space.
             if any(part.domain != op.domain for part in op.ops):
                 return None
-            result = np.ones(op.domain.size)
+            result = np.ones(op.domain._native_dimension)
             for diagonal in diagonals:
                 result = result * diagonal
             return result
@@ -408,6 +407,12 @@ class DirectSum(HilbertSpace):
         Either the underlying vector space or a factory function that will be
         called with all summands' vector spaces passed as arguments and should
         return a vecsps.DirectSum instance. Default: vecsps.DirectSum.
+    Notes
+    -----
+    All factors must have the same scalar field. Complex Hilbert factors
+    (as_real_space=False) produce a complex tensor product. With complex
+    storage, factor Gram operators must be complex-linear.
+
     """
 
     def __init__(self, *args, flatten:bool=False, vecsp:VectorSpaceBase=None):
@@ -578,32 +583,33 @@ class TensorProd(HilbertSpace):
     @memoized_property
     def gram(self)->Operator:
         bases = []
-        domains = []
         for weight, space in zip(self.weights, self.factors):
             gram = space.gram
-            domain_real = gram.domain.real_space()
-            codomain_real = space.vecsp.real_space()
-            domains.append(gram.domain)
-
-            # Fill the matrix row by row. This avoids allocating one Gram
-            # result per basis vector and repeatedly constructing a scaled
-            # operator for weighted factors.
-            basis = np.empty(
-                (domain_real.size, codomain_real.size),
-                dtype=codomain_real.dtype,
-            )
-            gram_value = codomain_real.empty()
-            scale = weight**2
-            for row, vector in enumerate(domain_real.iter_basis()):
+            domain = space.vecsp
+            # BasisTransform acts on native tensor entries, not realified
+            # coordinates. Gram images are matrix columns, including their
+            # imaginary parts for complex Hilbert spaces.
+            n = int(np.prod(domain.shape))
+            basis = np.empty((n, n), dtype=domain.dtype)
+            vector = domain.zeros()
+            gram_value = domain.empty()
+            for column in range(n):
+                domain.fill(vector, 0)
+                vector.flat[column] = 1
                 gram(vector, out=gram_value)
-                if scale != 1:
-                    gram_value *= scale
-                basis[row] = codomain_real.flatten(gram_value)
+                basis[:, column] = weight**2 * np.asarray(gram_value).reshape(-1)
+                if domain.is_complex and domain.as_real_space:
+                    # A native complex matrix cannot represent a general
+                    # real-linear Gram operator on complex storage.
+                    imag_value = gram(1j * vector)
+                    if not np.allclose(imag_value, 1j * gram_value):
+                        raise ValueError(
+                            "TensorProd requires complex-linear Gram operators "
+                            "for factors with complex storage.")
             bases.append(basis)
 
-        product = vecsps.Prod(*domains)
         return BasisTransform(
-            product, product, bases, dtype=self.vecsp.dtype
+            self.vecsp, self.vecsp, bases, dtype=self.vecsp.dtype
         )
 
     def __getitem__(self, item):
