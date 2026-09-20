@@ -3387,21 +3387,42 @@ class FunctionalOnDirectSum(Functional):
     def is_convex(self) -> bool:
         return all([func.is_convex for func in self.funcs])
 
+    def _join_domain_bounds(self, name: str) -> vecsps.TupleVector | None:
+        """Assemble component bounds, broadcasting scalars in their spaces.
+
+        Unknown bounds remain unknown. Scalar bounds (including infinities)
+        are expanded with fill rather than multiplication, which would
+        produce NaNs from zero coordinates.
+        """
+        if not self.is_separable:
+            return None
+        bounds = []
+        for func, space in zip(self.funcs, self.domain.summands, strict=True):
+            bound = getattr(func, name)
+            if bound is None:
+                return None
+            if np.isscalar(bound):
+                value = space.empty()
+                space.fill(value, bound)
+                bound = value
+            bounds.append(bound)
+        return self.domain.join(*bounds)
+
     @property
     def dom_l(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.dom_l for func in self.funcs]) if self.is_separable else None
+        return self._join_domain_bounds("dom_l")
 
     @property
     def dom_u(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.dom_u for func in self.funcs]) if self.is_separable else None
+        return self._join_domain_bounds("dom_u")
 
     @property
     def conj_dom_l(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.conj_dom_l for func in self.funcs]) if self.is_separable else None
+        return self._join_domain_bounds("conj_dom_l")
 
     @property
     def conj_dom_u(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.conj_dom_u for func in self.funcs]) if self.is_separable else None
+        return self._join_domain_bounds("conj_dom_u")
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other,FunctionalOnDirectSum):

@@ -7,7 +7,7 @@ an upper-bounded relative-entropy penalty.
 Run explicitly because this requested filename does not match pytest's default
 ``test_*.py`` discovery pattern::
 
-    pytest convex_tikhonov.py
+    pytest convex_tikhonov_minimizers.py
 """
 
 import numpy as np
@@ -107,3 +107,91 @@ def test_shifted_kl_with_constrained_relative_entropy(
     relative_error = np.linalg.norm(reconstruction - ss_newton_reference)
     relative_error /= np.linalg.norm(ss_newton_reference)
     assert relative_error <= RELATIVE_ERROR_TOL
+
+
+def test_ss_newton_two_steps_on_split_domain(problem):
+    """Splitting coordinates must preserve two complete Newton iterations.
+
+    Q = (P1, P2) maps the original domain to two complementary coordinate
+    spaces. The equivalent forward operator on the direct sum is T * Q*.
+    Explicit pointwise Grams preserve the original quadrature weights and
+    keep the component SquaredNorm penalties recognizable as separable.
+    """
+    from copy import deepcopy
+
+    from regpy.functionals.base import FunctionalOnDirectSum, SquaredNorm
+    from regpy.hilbert import GramHilbertSpace, L2
+    from regpy.operators import CoordinateProjection, PtwMultiplication, VectorOfOperators
+    from regpy.solvers.linear import SemiSmoothNewton
+    from regpy.vecsps.maskable import MaskableDirectSum
+
+    operator = problem["operator"]
+    domain = operator.domain
+    mask = (np.arange(domain.size).reshape(domain.shape) % 3) == 0
+    p1 = CoordinateProjection(domain, mask)
+    p2 = CoordinateProjection(domain, ~mask)
+    split_domain = MaskableDirectSum(p1.codomain, p2.codomain)
+    split = VectorOfOperators([p1, p2], codomain=split_domain)
+    split_operator = operator * split.adjoint
+
+    initial = 60.0 * domain.ones()
+    reference = 200.0 * domain.ones()
+    full_hilbert = L2(domain)
+    diagonal = full_hilbert.gram(domain.ones())
+    components = [
+        SquaredNorm(
+            GramHilbertSpace(PtwMultiplication(p.codomain, p(diagonal))),
+            shift=p(reference),
+        )
+        for p in (p1, p2)
+    ]
+    penalty = SquaredNorm(full_hilbert, shift=reference)
+    split_penalty = FunctionalOnDirectSum(components, domain=split_domain)
+    settings = [
+        Setting(
+            op=op,
+            penalty=reg,
+            data_fid=deepcopy(problem["data_fidelity"]),
+            regpar=1e-3,
+        )
+        for op, reg in ((operator, penalty), (split_operator, split_penalty))
+    ]
+
+    # Verify that we compare the same objective and geometry.
+    probe = initial + 10.0 * np.sin(np.arange(domain.size)).reshape(domain.shape)
+    np.testing.assert_allclose(split.adjoint(split(probe)), probe)
+    np.testing.assert_allclose(split_operator(split(probe)), operator(probe))
+    assert split_penalty(split(probe)) == pytest.approx(penalty(probe), rel=1e-12)
+
+    def make_solver(setting, init):
+        return SemiSmoothNewton(
+            setting,
+            init=init,
+            psi_minus=0.0,
+            psi_plus=120.0,
+            # Identical, accurate inner solves isolate representation errors.
+            cg_reltols=[1e-10, 1e-10],
+            logging_level="WARNING",
+            cg_logging_level="WARNING",
+        )
+
+    natural = make_solver(settings[0], initial.copy())
+    blocked = make_solver(settings[1], split(initial))
+    np.testing.assert_allclose(split.adjoint(blocked.x), natural.x)
+    for step in (1, 2):
+        assert natural.next(), f"Natural solver stopped before step {step}"
+        assert blocked.next(), f"Split solver stopped before step {step}"
+        assert natural.iteration_step_nr == blocked.iteration_step_nr == step
+        reconstructed = split.adjoint(blocked.x)
+        assert np.all(np.isfinite(reconstructed))
+        np.testing.assert_allclose(
+            reconstructed, natural.x, rtol=1e-7, atol=1e-8,
+            err_msg=f"Different SSNewton domain iterates at step {step}",
+        )
+        np.testing.assert_allclose(
+            blocked.y, natural.y, rtol=1e-7, atol=1e-8,
+            err_msg=f"Different SSNewton images at step {step}",
+        )
+
+    # Guard against a vacuous comparison of unchanged initial guesses.
+    assert np.linalg.norm(natural.x - initial) > 1e-6

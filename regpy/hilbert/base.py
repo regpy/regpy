@@ -465,6 +465,20 @@ class DirectSum(HilbertSpace):
                 ops.append(w**2 * s.gram)
         return DirectSumOp(*ops, domain=self.vecsp, codomain=self.vecsp)
 
+    @memoized_property
+    def gram_inv(self) -> Operator:
+        """Combine the summands' Hilbert-space inverses with inverse weights.
+
+        Use gram_inv rather than gram.inverse: a summand may supply a
+        specialized inverse for a restricted Gram whose individual projection
+        factors are not invertible.
+        """
+        return DirectSumOp(
+            *(s.gram_inv if w == 1 else (1 / w**2) * s.gram_inv
+              for w, s in zip(self.weights, self.summands)),
+            domain=self.vecsp, codomain=self.vecsp,
+        )
+
     def __getitem__(self, item):
         return self.summands[item]
 
